@@ -30,9 +30,15 @@ The worker loads workspace ingestion settings and applies the configured chunkin
 
 Fixed-window chunking always uses fixed-size overlapping text windows. Semantic and recursive text chunking first handle Markdown or HTML tables with repeated headers, then use code-aware chunking for fenced code blocks and source-code documents when parser support is available. Code-aware chunking is attempted for common shell, C-family, CSS, Go, Java, JavaScript, Kotlin, PHP, Python, Ruby, Rust, Scala, SQL, Swift, TOML, TypeScript, XML, and YAML inputs. If parser support is unavailable, processing falls back to text chunking.
 
+### Enrich the document when enabled
+
+AI document enrichment is optional and disabled by default. When enabled by the workspace setting, a source override, or a reprocess override, the worker makes one model call for the document. The call classifies the document shape and extracts supported temporal facts.
+
+The enrichment result is validated before it changes metadata. Event dates are attached to overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level. If validation or the provider call fails, the document continues through processing without enriched metadata.
+
 ### Embed and publish chunks
 
-Each chunk gets search text and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
+Each chunk gets search text from its final metadata and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
 
 ### Mark the document ready for retrieval
 
@@ -47,6 +53,13 @@ Document processing is revision-aware. If a document is updated while an older j
 
 - Inline text documents store their source content directly in the document record.
 - Uploaded files store source file details and are materialized during processing before chunking begins.
+- Website and connector sources can carry a source-level enrichment override. That override can inherit the workspace default, force enrichment on, or force it off.
+
+## Queue payloads
+
+Document processing jobs are durable PostgreSQL rows. Queue dispatch, including AMQP and Cloud Tasks, sends only the job identity needed to wake a worker.
+
+Reprocess options such as `documentEnrichmentOverride` live on the processing job row. Retries and reschedules preserve the same row options; the queue message shape does not change.
 
 ## Failure and verification
 

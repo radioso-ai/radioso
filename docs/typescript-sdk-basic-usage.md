@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, chat, streaming, history, and error handling patterns."
-last_updated: 2026-06-22
+last_updated: 2026-07-02
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -114,6 +114,22 @@ Reprocess a document:
 await client.documents.reprocess("document-id");
 ```
 
+Force enrichment for a single reprocess run:
+
+```ts
+await client.documents.reprocess("document-id", {
+  documentEnrichmentOverride: "on",
+});
+```
+
+Reprocess all eligible documents for one source:
+
+```ts
+await client.documents.reprocessSource("source-id", {
+  documentEnrichmentOverride: "on",
+});
+```
+
 ## Settings
 
 Read ingestion settings:
@@ -133,6 +149,7 @@ await client.settings.updateIngestion({
   fixedWindowChunkOverlap: 120,
   structuredMinChunkSize: 400,
   structuredMaxChunkSize: 1200,
+  documentEnrichmentEnabled: true,
 });
 ```
 
@@ -140,6 +157,14 @@ Queue workspace-wide reprocessing after an ingestion change:
 
 ```ts
 await client.settings.reprocessIngestion();
+```
+
+Workspace reprocessing also accepts a one-run enrichment override:
+
+```ts
+await client.settings.reprocessIngestion({
+  documentEnrichmentOverride: "off",
+});
 ```
 
 Read general settings:
@@ -201,6 +226,8 @@ const created = await fetch(`/api/v1/agents/${agentId}/skills`, {
 Retrieval answer settings now live on the default-answer `retrieve` skill.
 Suggested questions are part of that skill's config. Contact escalation is a
 `notify` skill, and routine completion export is a `webhook_call` skill.
+
+Temporal retrieval fields such as `temporalStructuredLookupEnabled`, `temporalBoostUpcomingEnabled`, and `temporalDeterministicSortEnabled` are per-agent `retrieval.answer` skill settings. They default to on and control date-aware event lookup, boosting, and ordering when enriched chunks contain `dateFrom` and `dateTo` metadata.
 
 Retrieval answer responses are lean by default. When you need diagnostics, pass `includeDebug: true` through the REST contract. The response then includes `debug.evidence`, `debug.activityTrace`, and `debug.activitySummary`. Check `debug.activitySummary.shapeName`, `debug.activitySummary.queryShape`, `debug.activitySummary.resolvedSteps`, and the `shape_selection` stage to see how the answer was retrieved.
 

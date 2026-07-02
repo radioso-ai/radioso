@@ -140,8 +140,58 @@ describe("document contract", () => {
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
         documentCount: 1,
+        documentEnrichmentOverride: "inherit",
       }),
     ]);
+  });
+
+  it("updates source enrichment override and reprocesses source documents with a one-run override", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "document-source-enrichment@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Events source page",
+        content: "Summer workshop details.",
+        source: {
+          kind: "website",
+          url: "https://example.com/events",
+        },
+      })
+      .expect(202);
+
+    const listResponse = await request(app)
+      .get("/api/v1/document/sources")
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    const sourceId = listResponse.body.sources[0].id as string;
+
+    const updateResponse = await request(app)
+      .patch(`/api/v1/document/sources/${sourceId}`)
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on" })
+      .expect(200);
+
+    expect(updateResponse.body).toMatchObject({
+      id: sourceId,
+      documentEnrichmentOverride: "on",
+    });
+
+    const reprocessResponse = await request(app)
+      .post(`/api/v1/document/sources/${sourceId}/reprocess`)
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "off" })
+      .expect(202);
+
+    expect(reprocessResponse.body).toMatchObject({
+      sourceId,
+      workspaceId: expect.any(String),
+      queuedDocumentCount: 1,
+      skippedDocumentCount: 0,
+      status: "queued",
+    });
   });
 
   it("imports uploaded files under a workspace upload source", async () => {
@@ -530,7 +580,8 @@ describe("document contract", () => {
 
     const reprocessResponse = await request(app)
       .post(`/api/v1/document/${createResponse.body.documentId}/reprocess`)
-      .set(adminSessionHeaders(session));
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on" });
 
     expect(reprocessResponse.status).toBe(202);
     expect(reprocessResponse.body).toMatchObject({

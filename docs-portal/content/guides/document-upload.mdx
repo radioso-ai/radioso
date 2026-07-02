@@ -35,6 +35,10 @@ Uploaded files are parsed into markdown or text content. Inline text documents a
 
 The worker applies workspace ingestion settings, creates searchable chunks, and generates embeddings.
 
+### Optional enrichment runs
+
+When AI document enrichment is enabled for the workspace, source, or reprocess run, the worker classifies the document shape and may add temporal metadata to dated event chunks.
+
 ### Retrieval can use the document
 
 Only after processing completes should you expect grounded answers to cite that document.
@@ -45,6 +49,7 @@ Only after processing completes should you expect grounded answers to cite that 
 - the document exists in the workspace
 - processing finished successfully for the latest revision
 - the document metadata looks correct
+- enrichment provenance looks correct if enrichment was enabled
 - at least one grounded query retrieves it when asked directly about the document
 
 ## Metadata and external ids

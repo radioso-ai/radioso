@@ -43,7 +43,7 @@ There are four main setting groups:
 - model and credential settings for provider access
 - reusable webhook destinations for routine completion export
 
-When ingestion settings change, you can requeue eligible documents so the new chunking behavior is applied to existing content.
+When ingestion settings change, you can requeue eligible documents so the new chunking or enrichment behavior is applied to existing content.
 
 ## Retrieval defaults
 
@@ -61,10 +61,15 @@ The response includes inherited retrieval values such as:
 - `metadataRules`
 - `customInstruction`
 - `metadataFieldSuggestions`
+- `temporalStructuredLookupEnabled`
+- `temporalBoostUpcomingEnabled`
+- `temporalDeterministicSortEnabled`
 
 `metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware and comes from indexed document metadata. The agent Skills tab uses this endpoint to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`.
 
 To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, use system defaults and still accept per-call request controls such as `metadataFilter`.
+
+The three temporal fields default to `true`. They control whether an agent can use extracted event dates for upcoming-event lookup, upcoming-event boosting, and deterministic date ordering.
 
 ## Ingestion settings
 
@@ -75,6 +80,7 @@ This payload includes fields such as:
 - `fixedWindowChunkOverlap`
 - `structuredMinChunkSize`
 - `structuredMaxChunkSize`
+- `documentEnrichmentEnabled`
 
 Supported `chunkingStrategy` values are:
 
@@ -109,6 +115,16 @@ If you change these values and want them applied to existing documents, call:
 ```text
 POST /api/v1/settings/ingestion/reprocess
 ```
+
+`documentEnrichmentEnabled` is disabled by default. When enabled, the worker makes one enrichment model call per processed document to classify document shape and extract supported temporal facts. Reprocess requests may include a one-run override:
+
+```json
+{
+  "documentEnrichmentOverride": "on"
+}
+```
+
+The override can be `on` or `off`. It applies only to the processing jobs created by that reprocess request.
 
 ## General settings
 

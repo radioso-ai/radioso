@@ -23,7 +23,7 @@ pnpm run build
 - `createRadiosoClient({ baseUrl, apiToken })`
 - `client.settings.getIngestion()`
 - `client.settings.updateIngestion(...)`
-- `client.settings.reprocessIngestion()`
+- `client.settings.reprocessIngestion(...)`
 - `client.settings.getGeneral()`
 - `client.settings.updateGeneral(...)`
 - `client.documents.list(...)`
@@ -36,6 +36,7 @@ pnpm run build
 - `client.documents.listHistory(...)`
 - `client.documents.getHistory(...)`
 - `client.documents.reprocess(...)`
+- `client.documents.reprocessSource(...)`
 - `client.chat.create(...)`
 - `client.chat.listHistory(...)`
 - `client.chat.getHistoryConversation(...)`

@@ -67,15 +67,13 @@ integration verification.
 - [X] T023 [P] [US1] Write article/profile/generic strategy tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
 - [X] T024 [P] [US1] Write single-call enrichment service tests with mocked LLM output in `backend/tests/unit/document-enrichment-service.test.ts`
 - [ ] T025 [P] [US1] Write document processing enrichment integration tests in `backend/tests/integration/document-chunking.integration.test.ts`
-- [ ] T026 [P] [US1] Write enrichment failure processing tests in `backend/tests/unit/document-processing-worker-error-reporting.test.ts`
+- [X] T026 [P] [US1] Write enrichment failure processing tests in `backend/tests/unit/document-processing-worker-error-reporting.test.ts`
 - [ ] T027 [P] [US1] Write grounded chat date-answer fixture test in `backend/tests/integration/retrieval-answer.integration.test.ts`
 
 **Run-scope deviation**: T025 and T027 remain unchecked because this run
-explicitly disallows Postgres-backed integration tests. T026 remains unchecked
-because the existing processor unit test import path is blocked in this sandbox
-by unresolved local workspace packages (`@radioso/conversation-defaults`), which
-also blocks collecting `document-subject-search-text.test.ts`; the enrichment
-service fail-open path is unit-tested in `document-enrichment-service.test.ts`.
+explicitly disallows Postgres-backed integration tests. T026 is now covered by a
+worker-level fail-open regression plus the enrichment service fail-open unit
+coverage in `document-enrichment-service.test.ts`.
 
 ### Implementation for User Story 1
 
@@ -118,18 +116,19 @@ and catalog registration, not a separate `paths/documentsPaths.ts` edit.
 - [X] T045 [P] [US2] Write single-document reprocess override tests in `backend/tests/unit/document-ingestion.test.ts`
 - [X] T046 [P] [US2] Write per-source reprocess service tests in `backend/tests/unit/document-source-reprocess-service.test.ts`
 - [ ] T047 [P] [US2] Write per-source reprocess integration tests in `backend/tests/integration/document-repository.integration.test.ts`
-- [ ] T048 [P] [US2] Write document/settings contract tests for new fields/endpoints in `backend/tests/contract/document.contract.test.ts`
-- [ ] T049 [P] [US2] Write settings contract tests for ingestion enrichment field and workspace override body in `backend/tests/contract/settings.contract.test.ts`
+- [X] T048 [P] [US2] Write document/settings contract tests for new fields/endpoints in `backend/tests/contract/document.contract.test.ts`
+- [X] T049 [P] [US2] Write settings contract tests for ingestion enrichment field and workspace override body in `backend/tests/contract/settings.contract.test.ts`
 - [ ] T050 [P] [US2] Write Playwright coverage for ingestion toggle and source reprocess controls in `frontend/tests/e2e/source-detail.spec.ts`
-- [ ] T051 [P] [US2] Write frontend API adapter unit tests for reprocess overrides in `frontend/tests/unit/document-enrichment-api.test.ts`
+- [X] T051 [P] [US2] Write frontend API adapter unit tests for reprocess overrides in `frontend/tests/unit/document-enrichment-api.test.ts`
 - [X] T052 [P] [US2] Write MCP reprocess override tests in `packages/radioso-mcp-server/tests/writeTools.test.ts`
 
 **Run-scope deviation**: T043, T044, and T047 remain unchecked because this run
 was constrained to unit tests only and no Postgres-backed integration tests.
-T048 and T049 remain unchecked because contract tests were not run in this
-unit-test-only slice; the code-first OpenAPI registry and generated artifacts
-were updated. T050 and T051 remain unchecked because frontend verification was
-limited to linting the touched files in this run.
+T048 and T049 are authored, but full Supertest contract execution is blocked in
+this sandbox by `listen EPERM 0.0.0.0`; code-first OpenAPI registry drift is
+covered by `sdk-openapi.contract.test.ts`. T050 remains unchecked because
+Playwright execution is out of scope for this run. T051 is covered by
+`frontend/tests/unit/document-enrichment-api.test.ts`.
 
 ### Implementation for User Story 2
 
@@ -294,22 +293,30 @@ instead of asserting answer phrasing.
 - [X] T119 Sync TypeScript SDK OpenAPI snapshots and generated client in `typescript-sdk/src/generated/client.ts`
 - [X] T120 Sync TypeScript SDK generated types in `typescript-sdk/src/generated/types.ts`
 - [X] T121 Sync MCP generated OpenAPI types in `packages/radioso-mcp-server/src/generated/openapiTypes.ts`
-- [ ] T122 [P] Update ingestion settings docs in `docs/settings-docs/ingestion/reprocess-existing-documents.md`
-- [ ] T123 [P] Add mirrored frontend ingestion enrichment setting docs in `frontend/docs/settings-docs/ingestion/document-enrichment.md`
-- [ ] T124 [P] Add retrieval temporal setting docs in `docs/settings-docs/retrieval/temporal-structured-lookup.md`
-- [ ] T125 [P] Add mirrored frontend retrieval temporal setting docs in `frontend/docs/settings-docs/retrieval/temporal-structured-lookup.md`
-- [ ] T126 [P] Update source/reprocess docs in `docs-portal/content/operators/document-processing.mdx`
-- [ ] T127 [P] Update API docs for document/source/settings contracts in `docs-portal/content/api/documents-and-search.mdx`
-- [ ] T128 [P] Update settings API docs in `docs-portal/content/api/settings.mdx`
-- [ ] T129 [P] Update retrieval architecture docs in `docs-portal/content/architecture/retrieval-pipeline.mdx`
-- [ ] T130 [P] Update document processing lifecycle docs in `docs-portal/content/architecture/document-processing-lifecycle.mdx`
-- [ ] T131 [P] Update SDK docs in `docs/typescript-sdk-basic-usage.md`
-- [ ] T132 [P] Update MCP docs for `reprocess_document` override in `docs/mcp-client-setup.md`
-- [ ] T133 [P] Update package MCP README in `packages/radioso-mcp-server/README.md`
-- [ ] T134 [P] Update repository overview for new ingestion/retrieval settings in `readme.md`
-- [ ] T135 Verify generated contract drift checks are covered by `backend/tests/contract/sdk-openapi.contract.test.ts`
-- [ ] T136 Verify no queue message schema change by reviewing `backend/tests/unit/amqp-document-job-queue.test.ts`
-- [ ] T137 Document validation commands and any skipped commands in PR notes using `specs/099-date-aware-event-retrieval/quickstart.md`
+- [X] T122 [P] Update ingestion settings docs in `docs/settings-docs/ingestion/reprocess-existing-documents.md`
+- [X] T123 [P] Add mirrored frontend ingestion enrichment setting docs in `frontend/docs/settings-docs/ingestion/document-enrichment.md`
+- [X] T124 [P] Add retrieval temporal setting docs in `docs/settings-docs/retrieval/temporal-structured-lookup.md`
+- [X] T125 [P] Add mirrored frontend retrieval temporal setting docs in `frontend/docs/settings-docs/retrieval/temporal-structured-lookup.md`
+- [X] T126 [P] Update source/reprocess docs in `docs-portal/content/operators/document-processing.mdx`
+- [X] T127 [P] Update API docs for document/source/settings contracts in `docs-portal/content/api/documents-and-search.mdx`
+- [X] T128 [P] Update settings API docs in `docs-portal/content/api/settings.mdx`
+- [X] T129 [P] Update retrieval architecture docs in `docs-portal/content/architecture/retrieval-pipeline.mdx`
+- [X] T130 [P] Update document processing lifecycle docs in `docs-portal/content/architecture/document-processing-lifecycle.mdx`
+- [X] T131 [P] Update SDK docs in `docs/typescript-sdk-basic-usage.md`
+- [X] T132 [P] Update MCP docs for `reprocess_document` override in `docs/mcp-client-setup.md`
+- [X] T133 [P] Update package MCP README in `packages/radioso-mcp-server/README.md`
+- [X] T134 [P] Update repository overview for new ingestion/retrieval settings in `readme.md`
+- [X] T135 Verify generated contract drift checks are covered by `backend/tests/contract/sdk-openapi.contract.test.ts`
+- [X] T136 Verify no queue message schema change by reviewing `backend/tests/unit/amqp-document-job-queue.test.ts`
+- [X] T137 Document validation commands and any skipped commands in PR notes using `specs/099-date-aware-event-retrieval/quickstart.md`
+
+**Final phase verification notes**:
+- Docs inventory from `plan.md` is complete. Additional parity docs updated beyond T122-T134: `docs/settings-docs/ingestion/document-enrichment.md`, `docs/website-crawler.md`, `docs/architecture/vector-search-indexing.md`, `docs/typescript-sdk-getting-started.md`, `docs-portal/content/guides/document-upload.mdx`, `docs-portal/content/sdk/basic-usage.mdx`, and `docs-portal/content/sdk/typescript-getting-started.mdx`.
+- `.env.example` needs no change. The feature adds no secret or runtime environment variable; enrichment is controlled through workspace/source/reprocess settings and existing provider credentials.
+- Queue documentation was reviewed and updated where relevant. `docs-portal/content/architecture/document-processing-lifecycle.mdx` and `docs-portal/content/operators/document-processing.mdx` state that `documentEnrichmentOverride` lives on the durable processing job row and AMQP/Cloud Tasks messages still carry only job identity.
+- Queue message compatibility was verified in `backend/tests/unit/amqp-document-job-queue.test.ts`; the test rejects an `options` field on the strict queue message schema.
+- Validation run on 2026-07-02: `cd backend && pnpm exec tsc --noEmit` passed; `cd backend && pnpm exec vitest run tests/unit/amqp-document-job-queue.test.ts tests/unit/document-processing-worker-error-reporting.test.ts tests/unit/document-enrichment-contract.test.ts tests/unit/document-enrichment-enablement.test.ts tests/unit/document-enrichment-strategies.test.ts tests/unit/document-enrichment-service.test.ts tests/unit/ingestion-settings.test.ts tests/unit/document-ingestion.test.ts tests/unit/document-source-reprocess-service.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/temporal-candidate-merge.test.ts tests/unit/retrieval-skill-settings-drift.test.ts tests/unit/retrieval-pipeline-stages.test.ts tests/unit/temporal-context-ordering.test.ts tests/unit/eval-suite.test.ts tests/unit/workbench-replay-runner.test.ts tests/contract/sdk-openapi.contract.test.ts` passed with 17 files and 120 tests; `cd frontend && pnpm exec vitest run tests/unit/document-enrichment-api.test.ts tests/unit/retrieval-skill-settings.test.ts tests/unit/eval-workbench-seed.test.ts` passed with 3 files and 14 tests; `cd docs-portal && pnpm run lint` passed.
+- Skipped by instruction or existing run-scope deviation: Postgres-backed integration tests, Supertest contract execution blocked by sandbox `listen EPERM 0.0.0.0`, Playwright tests, `pnpm install`, `pnpm run build`, broad local CI, and frontend full `tsc --noEmit` because it is outside the requested validation and currently reports broader pre-existing fixture/type drift unrelated to the final docs/test edits.
 
 ---
 

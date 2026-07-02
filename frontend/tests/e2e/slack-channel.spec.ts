@@ -199,7 +199,7 @@ test("Slack routine skill authoring creates and disables a skill", async ({ page
   const skillDialog = page.getByRole("dialog", { name: "Configure Slack Post" });
   await expect(skillDialog).toBeVisible();
   await skillDialog.getByLabel("Skill name").fill("post_update_to_slack");
-  await skillDialog.getByRole("button", { name: "Advanced" }).click();
+  await skillDialog.getByRole("button", { name: /Routine integration/ }).click();
   await skillDialog.getByRole("combobox", { name: "channelId" }).click();
   await page.getByRole("option", { name: "Use a fixed value" }).click();
   await skillDialog.locator("input[placeholder='channelId']").fill("#ops");

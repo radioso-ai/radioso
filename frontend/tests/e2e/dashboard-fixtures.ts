@@ -216,6 +216,9 @@ export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
 export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"] => ({
   queryRewriteEnabled: false,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: "Keep semantic rewrites standalone.",
   lexicalRewriteInstructions: "Prefer exact phrases.",
   suggestedQuestionsEnabled: true,
@@ -243,6 +246,7 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   structuredMaxChunkSize: 1200,
   embeddingModel: "text-embedding-3-small",
   pendingEmbeddingModel: null,
+  documentEnrichmentEnabled: false,
   supportedEmbeddingModels: [
     "text-embedding-3-small",
     "text-embedding-3-large",
@@ -538,6 +542,9 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
       { key: "vectorTopK", label: "Vector top K", type: "number", min: 1, max: 300, group: "Retrieval tuning", advanced: true },
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", group: "Retrieval tuning", advanced: true },
       { key: "rerankTopK", label: "Rerank top K", type: "number", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", group: "Temporal retrieval", advanced: true },
+      { key: "temporalBoostUpcomingEnabled", label: "Upcoming event boost", type: "boolean", group: "Temporal retrieval", advanced: true },
+      { key: "temporalDeterministicSortEnabled", label: "Deterministic temporal sort", type: "boolean", group: "Temporal retrieval", advanced: true },
       { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", group: "Query rewrite", advanced: true },
       { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },
       { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", group: "Query rewrite", advanced: true },

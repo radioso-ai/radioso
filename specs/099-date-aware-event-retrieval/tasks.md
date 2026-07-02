@@ -29,9 +29,9 @@ P1 stories 1 and 2 first, then stories 3, 4, and 5.
 
 **Critical**: No user story work starts until this phase is complete.
 
-- [ ] T007 [P] Write migration test expectations for enrichment columns and generated chunk date columns in `backend/tests/integration/document-repository.integration.test.ts`
-- [ ] T008 [P] Write processing job options repository tests in `backend/tests/integration/document-processing-job-repository.integration.test.ts`
-- [ ] T009 [P] Write chunk temporal generated-column repository tests in `backend/tests/integration/document-chunking.integration.test.ts`
+- [X] T007 [P] Write migration test expectations for enrichment columns and generated chunk date columns in `backend/tests/integration/document-repository.integration.test.ts`
+- [X] T008 [P] Write processing job options repository tests in `backend/tests/integration/document-processing-job-repository.integration.test.ts`
+- [X] T009 [P] Write chunk temporal generated-column repository tests in `backend/tests/integration/document-chunking.integration.test.ts`
 - [X] T010 Add migration for ingestion setting, document enrichment provenance, source config support, job options, and chunk date generated columns in `backend/src/db/migrations/119_date_aware_event_retrieval.sql`
 - [X] T011 Update generated schema type expectations for new columns in `backend/src/shared/infra/kysely/schema.ts`
 - [X] T012 Update schema snapshot for new tables/columns/indexes in `backend/src/db/schema.sql`
@@ -66,9 +66,9 @@ integration verification.
 - [X] T022 [P] [US1] Write event strategy chunk-overlap metadata tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
 - [X] T023 [P] [US1] Write article/profile/generic strategy tests in `backend/tests/unit/document-enrichment-strategies.test.ts`
 - [X] T024 [P] [US1] Write single-call enrichment service tests with mocked LLM output in `backend/tests/unit/document-enrichment-service.test.ts`
-- [ ] T025 [P] [US1] Write document processing enrichment integration tests in `backend/tests/integration/document-chunking.integration.test.ts`
+- [X] T025 [P] [US1] Write document processing enrichment integration tests in `backend/tests/integration/document-chunking.integration.test.ts`
 - [X] T026 [P] [US1] Write enrichment failure processing tests in `backend/tests/unit/document-processing-worker-error-reporting.test.ts`
-- [ ] T027 [P] [US1] Write grounded chat date-answer fixture test in `backend/tests/integration/retrieval-answer.integration.test.ts`
+- [X] T027 [P] [US1] Write grounded chat date-answer fixture test in `backend/tests/integration/retrieval-answer.integration.test.ts`
 
 **Run-scope deviation**: T025 and T027 remain unchecked because this run
 explicitly disallows Postgres-backed integration tests. T026 is now covered by a
@@ -111,14 +111,14 @@ and catalog registration, not a separate `paths/documentsPaths.ts` edit.
 ### Tests for User Story 2
 
 - [X] T042 [P] [US2] Write ingestion settings default/update tests for `documentEnrichmentEnabled` in `backend/tests/unit/ingestion-settings.test.ts`
-- [ ] T043 [P] [US2] Write ingestion settings repository tests for enrichment default persistence in `backend/tests/integration/document-settings.integration.test.ts`
-- [ ] T044 [P] [US2] Write document source override repository tests in `backend/tests/integration/document-source-repository.integration.test.ts`
+- [X] T043 [P] [US2] Write ingestion settings repository tests for enrichment default persistence in `backend/tests/integration/document-settings.integration.test.ts`
+- [X] T044 [P] [US2] Write document source override repository tests in `backend/tests/integration/document-source-repository.integration.test.ts`
 - [X] T045 [P] [US2] Write single-document reprocess override tests in `backend/tests/unit/document-ingestion.test.ts`
 - [X] T046 [P] [US2] Write per-source reprocess service tests in `backend/tests/unit/document-source-reprocess-service.test.ts`
-- [ ] T047 [P] [US2] Write per-source reprocess integration tests in `backend/tests/integration/document-repository.integration.test.ts`
+- [X] T047 [P] [US2] Write per-source reprocess integration tests in `backend/tests/integration/document-repository.integration.test.ts`
 - [X] T048 [P] [US2] Write document/settings contract tests for new fields/endpoints in `backend/tests/contract/document.contract.test.ts`
 - [X] T049 [P] [US2] Write settings contract tests for ingestion enrichment field and workspace override body in `backend/tests/contract/settings.contract.test.ts`
-- [ ] T050 [P] [US2] Write Playwright coverage for ingestion toggle and source reprocess controls in `frontend/tests/e2e/source-detail.spec.ts`
+- [X] T050 [P] [US2] Write Playwright coverage for ingestion toggle and source reprocess controls in `frontend/tests/e2e/source-detail.spec.ts`
 - [X] T051 [P] [US2] Write frontend API adapter unit tests for reprocess overrides in `frontend/tests/unit/document-enrichment-api.test.ts`
 - [X] T052 [P] [US2] Write MCP reprocess override tests in `packages/radioso-mcp-server/tests/writeTools.test.ts`
 
@@ -173,7 +173,7 @@ Playwright execution is out of scope for this run. T051 is covered by
 - [X] T078 [P] [US3] Write candidate merge/dedupe tests for temporal candidates in `backend/tests/unit/temporal-candidate-merge.test.ts`
 - [X] T079 [P] [US3] Write retrieval settings drift tests for temporal fields in `backend/tests/unit/retrieval-skill-settings-drift.test.ts`
 - [X] T080 [P] [US3] Write retrieval pipeline tests for next-events listing mode in `backend/tests/unit/retrieval-pipeline-stages.test.ts`
-- [ ] T081 [P] [US3] Write Playwright coverage for three temporal toggles in `frontend/tests/e2e/assistant-retrieval-settings.spec.ts`
+- [X] T081 [P] [US3] Write Playwright coverage for three temporal toggles in `frontend/tests/e2e/assistant-retrieval-settings.spec.ts`
 - [X] T082 [P] [US3] Write frontend retrieval skill settings unit tests for temporal fields in `frontend/tests/unit/retrieval-skill-settings.test.ts`
 
 **Run-scope deviation**: T077 is authored but not run because this run is
@@ -222,7 +222,7 @@ settings panel edit was needed beyond fallback defaults.
 ### Tests for User Story 4
 
 - [X] T101 [P] [US4] Write deterministic temporal ordering unit tests in `backend/tests/unit/temporal-context-ordering.test.ts`
-- [ ] T102 [P] [US4] Write repeated-run retrieval integration test for actuality sort in `backend/tests/integration/retrieval-answer.integration.test.ts`
+- [X] T102 [P] [US4] Write repeated-run retrieval integration test for actuality sort in `backend/tests/integration/retrieval-answer.integration.test.ts`
 
 **Run-scope deviation**: T102 remains unchecked because this run is constrained
 to unit tests only and no Postgres-backed integration tests. Repeated
@@ -258,7 +258,7 @@ only delegates assembly and did not need product-rule changes.
 - [X] T108 [P] [US5] Write enriched event fixture seed tests in `backend/tests/unit/eval-suite.test.ts`
 - [X] T109 [P] [US5] Write workbench replay tests for event query eval outcomes in `backend/tests/unit/workbench-replay-runner.test.ts`
 - [X] T110 [P] [US5] Write frontend workbench seed unit tests for event cases in `frontend/tests/unit/eval-workbench-seed.test.ts`
-- [ ] T111 [P] [US5] Write Playwright workbench eval coverage for event suite in `frontend/tests/e2e/workbench-replay.spec.ts`
+- [X] T111 [P] [US5] Write Playwright workbench eval coverage for event suite in `frontend/tests/e2e/workbench-replay.spec.ts`
 
 **Run-scope deviation**: T111 remains unchecked because this run is constrained
 to unit tests only and no Playwright execution. Event seed rendering is covered
@@ -396,3 +396,14 @@ Task: "T052 Write MCP reprocess override tests in packages/radioso-mcp-server/te
 
 Do not run validation in the planning phase. During implementation, use focused
 Vitest/Playwright/contract checks per story, then local CI before PR.
+
+## Execution note (final verification)
+
+Postgres-backed integration tests (T007-T009, T025, T027, T043-T047, T102) and
+Playwright specs (T050, T081, T111) were authored by the implementation agent and
+executed by the reviewing agent against a clean pgvector database and Chromium.
+During execution the reviewer fixed: migration 119 generated columns (text-to-date
+cast is not IMMUTABLE; replaced with the `chunk_metadata_iso_date` helper), one
+claim-time clock bug in the job-options test, fake-infra query calibration in the
+retrieval-answer tests, and Playwright label/copy drift against the real skill
+catalog and eval UI.

@@ -225,3 +225,122 @@ test("connector sources reopen setup with sync status and manual sync", async ({
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Sync started.")).toBeVisible();
 });
+
+test("operator toggles document enrichment and reprocesses one source", async ({ page }) => {
+  const ingestionSettingsUpdates: unknown[] = [];
+  const sourceRequests: Array<{ method: string; url: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    ingestionSettingsUpdates,
+    ingestionSettings: {
+      workspaceId: "workspace-1",
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 1000,
+      fixedWindowChunkOverlap: 200,
+      structuredMinChunkSize: 200,
+      structuredMaxChunkSize: 1200,
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: null,
+      documentEnrichmentEnabled: false,
+      supportedEmbeddingModels: ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002", "gemini-embedding-001"],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    },
+  });
+
+  await page.route("**/backend/api/v1/document/sources", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.continue();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sources: [
+          {
+            id: websiteSourceId,
+            kind: "website",
+            name: websiteSourceName,
+            externalId: "https://anandaeurope.org",
+            documentCount: 2,
+            documentEnrichmentOverride: "inherit",
+            lastSyncedAt: nowIso,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/document/sources/${websiteSourceId}`, async (route) => {
+    sourceRequests.push({
+      method: route.request().method(),
+      url: route.request().url(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: websiteSourceId,
+        kind: "website",
+        name: websiteSourceName,
+        externalId: "https://anandaeurope.org",
+        documentCount: 2,
+        documentEnrichmentOverride: "on",
+        lastSyncedAt: nowIso,
+      }),
+    });
+  });
+
+  await page.route(`**/backend/api/v1/document/sources/${websiteSourceId}/reprocess`, async (route) => {
+    sourceRequests.push({
+      method: route.request().method(),
+      url: route.request().url(),
+      body: route.request().postDataJSON(),
+    });
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sourceId: websiteSourceId,
+        workspaceId: "workspace-1",
+        queuedDocumentCount: 2,
+        skippedDocumentCount: 0,
+        status: "queued",
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=ingestion`);
+  await page.getByRole("switch", { name: "AI document enrichment" }).click();
+
+  await expect.poll(() => ingestionSettingsUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(ingestionSettingsUpdates.at(-1)).toMatchObject({
+    documentEnrichmentEnabled: true,
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
+  await page.getByRole("button", { name: new RegExp(websiteSourceName) }).first().click();
+  await page.getByRole("combobox").click();
+  await page.getByRole("option", { name: "On" }).click();
+
+  await expect.poll(() => sourceRequests.some((entry) =>
+    entry.method === "PATCH" &&
+    JSON.stringify(entry.body).includes("documentEnrichmentOverride"),
+  )).toBe(true);
+  expect(sourceRequests).toContainEqual(expect.objectContaining({
+    method: "PATCH",
+    body: { documentEnrichmentOverride: "on" },
+  }));
+
+  await page.getByRole("button", { name: "Reprocess source" }).click();
+  await expect(page.getByText("Queued 2 documents for reprocessing. Skipped 0.")).toBeVisible();
+  expect(sourceRequests).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      method: "POST",
+      body: null,
+    }),
+  ]));
+});

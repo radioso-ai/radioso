@@ -128,4 +128,149 @@ describe("retrieval answer integration", () => {
       retrievalInvoked: true,
     });
   });
+
+  it("answers a named event date from dated retrieved evidence", async () => {
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: `${input.query} August 10 2026`,
+            semanticQuery: "Summer Workshop August 10 2026",
+            lexicalQuery: "Summer Workshop August 10 2026",
+            queryShape: "event_date_lookup",
+            temporalQueryMode: "topic_refinement",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.96,
+          };
+        },
+      },
+    });
+    const session = await issueTestSession(app, "retrieval-answer-event-date@example.com");
+    const headers = adminSessionHeaders(session);
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(headers)
+      .send({
+        title: "Summer Workshop",
+        content: [
+          "Summer Workshop introduces advanced practice for returning students.",
+          "Registration instructions appear in the final section.",
+          "The Summer Workshop takes place on August 10, 2026.",
+        ].join("\n\n"),
+        metadata: {
+          dateFrom: "2026-08-10",
+          dateTo: "2026-08-10",
+          sourceUrl: "https://events.example/summer-workshop",
+        },
+      })
+      .expect(202);
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/answer")
+      .set(headers)
+      .send({
+        query: "When does the Summer Workshop take place?",
+        includeDebug: true,
+      })
+      .expect(200);
+
+    expect(response.body.outcome).toBe("answer");
+    expect(response.body.answer).toEqual(expect.any(String));
+    // Deterministic assertion boundary (spec Testing Strategy): retrieval must
+    // surface the dated evidence, including the chunk that states the date in a
+    // different paragraph than the event introduction. Answer phrasing is the
+    // live LLM's job and is covered by the workbench eval cases.
+    expect(response.body.debug.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Summer Workshop",
+          metadata: expect.objectContaining({
+            dateFrom: "2026-08-10",
+            dateTo: "2026-08-10",
+          }),
+        }),
+      ]),
+    );
+    const evidenceContents = (response.body.debug.evidence as Array<{ content: string }>).map(
+      (entry) => entry.content,
+    );
+    expect(evidenceContents.some((content) => content.includes("August 10, 2026"))).toBe(true);
+  });
+
+  it("returns deterministic evidence order across repeated actuality-sort retrieval answers", async () => {
+    const { app } = createTestApp({
+      queryRewriteGateway: {
+        async rewrite(input) {
+          return {
+            rewrittenQuery: `${input.query} event schedule`,
+            semanticQuery: "event schedule",
+            lexicalQuery: "event schedule",
+            queryShape: "event_date_lookup",
+            temporalQueryMode: "listing",
+            turnKind: "fresh_subject",
+            relatedEntities: [],
+            unresolved: false,
+            confidence: 0.96,
+          };
+        },
+      },
+      rerankGateway: {
+        async rerank(input) {
+          const order = new Map([
+            ["Morning Retreat", 0.98],
+            ["Summer Workshop", 0.97],
+            ["Autumn Intensive", 0.96],
+          ]);
+          return input.contexts.map((context) => ({
+            chunkId: context.chunkId,
+            relevanceScore: order.get(context.title) ?? 0.1,
+          }));
+        },
+      },
+    });
+    const session = await issueTestSession(app, "retrieval-answer-actuality-sort@example.com");
+    const headers = adminSessionHeaders(session);
+
+    for (const event of [
+      { title: "Autumn Intensive", date: "2026-09-12", content: "Event schedule: Autumn Intensive happens on September 12, 2026." },
+      { title: "Summer Workshop", date: "2026-08-10", content: "Event schedule: Summer Workshop happens on August 10, 2026." },
+      { title: "Morning Retreat", date: "2026-07-05", content: "Event schedule: Morning Retreat happens on July 5, 2026." },
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set(headers)
+        .send({
+          title: event.title,
+          content: event.content,
+          metadata: { dateFrom: event.date, dateTo: event.date },
+        })
+        .expect(202);
+    }
+
+    const observedOrders: string[][] = [];
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await request(app)
+        .post("/api/v1/retrieval/answer")
+        .set(headers)
+        .send({
+          query: "Sort events by actuality.",
+          includeDebug: true,
+        })
+        .expect(200);
+
+      observedOrders.push((response.body.debug.evidence as Array<{ title: string }>).map((entry) => entry.title));
+      expect(response.body.debug.activitySummary.temporalDeterministicSort).toMatchObject({
+        enabled: true,
+      });
+    }
+
+    expect(observedOrders).toEqual([
+      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
+      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
+      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
+    ]);
+  });
 });

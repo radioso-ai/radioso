@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   basePlatformSettings,
+  baseSkillCapabilities,
   defaultAgentId,
   installDashboardApiMocks,
   seedDashboardStorage,
@@ -118,4 +119,52 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
   await expect(dialog.getByLabel("Copy webhook verify token")).toBeVisible();
   await expect(dialog.getByText("verify-token-1234")).toBeVisible();
   await expect(dialog.getByText("Phone number ID")).toBeVisible();
+});
+
+test("retrieval skill settings expose individual temporal event toggles", async ({ page }) => {
+  const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentSkillRequests,
+    skillCapabilities: baseSkillCapabilities(),
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-skills`);
+  await expect(page.getByRole("heading", { name: "Skills", level: 1 })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add new skill" }).click();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  await expect(page.getByRole("dialog", { name: "Configure Knowledge Retrieval" })).toBeVisible();
+  await page.getByLabel("Skill name").fill("retrieve_events");
+  await page.getByRole("button", { name: "Advanced" }).click();
+
+  // Skill-config convention: unset booleans render unchecked and mean
+  // "inherit the system default" (which is ON for the temporal behaviors);
+  // toggling stores an explicit per-agent value.
+  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Upcoming event boost" })).not.toBeChecked();
+  await expect(page.getByRole("switch", { name: "Deterministic temporal sort" })).not.toBeChecked();
+
+  await page.getByRole("switch", { name: "Temporal structured lookup" }).click();
+  await page.getByRole("switch", { name: "Upcoming event boost" }).click();
+  await page.getByRole("switch", { name: "Deterministic temporal sort" }).click();
+  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).toBeChecked();
+  await page.getByRole("button", { name: "Create skill" }).click();
+
+  await expect(page.getByText("@retrieve_events")).toBeVisible();
+  await expect.poll(() => agentSkillRequests.length).toBeGreaterThanOrEqual(1);
+  expect(agentSkillRequests.at(-1)).toMatchObject({
+    method: "POST",
+    path: `/agents/${defaultAgentId}/skills`,
+    body: {
+      capability: "retrieve",
+      config: {
+        temporalStructuredLookupEnabled: true,
+        temporalBoostUpcomingEnabled: true,
+        temporalDeterministicSortEnabled: true,
+      },
+    },
+  });
 });

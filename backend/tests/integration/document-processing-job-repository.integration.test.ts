@@ -1,0 +1,118 @@
+import { randomUUID } from "node:crypto";
+
+import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+
+import { DocumentProcessingJobRepository } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import { Database } from "../../src/shared/infra/database.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+
+describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
+  const database = new Database(integrationDatabaseUrl as string);
+  const repository = new DocumentProcessingJobRepository(database.kysely);
+
+  const accountId = randomUUID();
+  const workspaceId = randomUUID();
+
+  beforeAll(async () => {
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Processing Job Test Co", `job-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Processing Job Workspace", `job-route-${workspaceId}`],
+    );
+  });
+
+  beforeEach(async () => {
+    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  afterAll(async () => {
+    await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
+    await database.close().catch(() => undefined);
+  });
+
+  const insertDocument = async (revision = 1): Promise<string> => {
+    const documentId = randomUUID();
+    await database.query(
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision, metadata)
+       VALUES ($1, $2, $3, $4, $4, 'queued', $5, '{}'::jsonb)`,
+      [documentId, workspaceId, "Queued Document", "Queued content", revision],
+    );
+    return documentId;
+  };
+
+  it("persists processing job options through lookup and claim paths", async () => {
+    const documentId = await insertDocument();
+
+    const enqueued = await repository.enqueue({
+      documentId,
+      workspaceId,
+      documentRevision: 1,
+      options: { documentEnrichmentOverride: "on" },
+    });
+
+    expect(enqueued.options).toEqual({ documentEnrichmentOverride: "on" });
+    expect((await repository.findById(enqueued.id))?.options).toEqual({ documentEnrichmentOverride: "on" });
+    expect(
+      (await repository.findByDocumentRevision({ documentId, workspaceId, documentRevision: 1 }))?.options,
+    ).toEqual({ documentEnrichmentOverride: "on" });
+
+    const claimed = await repository.claimById(enqueued.id, new Date(Date.now() + 60_000));
+    expect(claimed?.options).toEqual({ documentEnrichmentOverride: "on" });
+  });
+
+  it("preserves processing job options when rescheduled or released after timeout", async () => {
+    const documentId = await insertDocument();
+    const job = await repository.enqueue({
+      documentId,
+      workspaceId,
+      documentRevision: 1,
+      options: { documentEnrichmentOverride: "off" },
+    });
+
+    await repository.reschedule(job.id, new Date("2026-07-03T00:00:00.000Z"), "retry later");
+    expect((await repository.findById(job.id))?.options).toEqual({ documentEnrichmentOverride: "off" });
+
+    const claimed = await repository.claimById(job.id, new Date("2026-07-04T00:00:00.000Z"));
+    expect(claimed?.options).toEqual({ documentEnrichmentOverride: "off" });
+
+    const released = await repository.releaseTimedOutClaim(
+      job.id,
+      new Date("2026-07-04T00:00:00.000Z"),
+      "timed out",
+    );
+
+    expect(released).toBe(true);
+    expect((await repository.findById(job.id))?.options).toEqual({ documentEnrichmentOverride: "off" });
+  });
+
+  it("maps missing and unrecognized options to null", async () => {
+    const documentWithoutOptions = await insertDocument();
+    const documentWithUnknownOptions = await insertDocument();
+
+    const noOptions = await repository.enqueue({
+      documentId: documentWithoutOptions,
+      workspaceId,
+      documentRevision: 1,
+    });
+    await database.query(
+      `INSERT INTO document_processing_jobs
+         (id, document_id, workspace_id, document_revision, status, options)
+       VALUES ($1, $2, $3, 1, 'queued', $4::jsonb)`,
+      [randomUUID(), documentWithUnknownOptions, workspaceId, JSON.stringify({ documentEnrichmentOverride: "inherit" })],
+    );
+
+    expect((await repository.findById(noOptions.id))?.options).toBeNull();
+    expect(
+      (await repository.findByDocumentRevision({
+        documentId: documentWithUnknownOptions,
+        workspaceId,
+        documentRevision: 1,
+      }))?.options,
+    ).toBeNull();
+  });
+});

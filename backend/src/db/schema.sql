@@ -36,6 +36,20 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
+-- Name: chunk_metadata_iso_date(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.chunk_metadata_iso_date(value text) RETURNS date
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE RETURNS NULL ON NULL INPUT
+    AS $$
+  SELECT CASE
+    WHEN value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN to_date(value, 'YYYY-MM-DD')
+    ELSE NULL
+  END
+$$;
+
+
+--
 -- Name: agent_skill_target_uuid(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -611,17 +625,8 @@ CREATE TABLE public.chunks (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (
-CASE
-    WHEN ((metadata ->> 'dateFrom'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateFrom'::text))::date
-    ELSE NULL::date
-END) STORED,
-    date_to date GENERATED ALWAYS AS (
-CASE
-    WHEN ((metadata ->> 'dateTo'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateTo'::text))::date
-    WHEN ((metadata ->> 'dateFrom'::text) ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'::text) THEN ((metadata ->> 'dateFrom'::text))::date
-    ELSE NULL::date
-END) STORED
+    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
+    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
 )
 PARTITION BY HASH (workspace_id);
 

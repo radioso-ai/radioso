@@ -392,6 +392,9 @@ export function ChatWorkbench({
         description={`Test ${assistantName?.trim() || 'your agent'}`}
         actions={
           <div className="flex items-center gap-2">
+            {mode === 'chat' && conversationId ? (
+              <CompactIdField label="Conversation" value={conversationId} />
+            ) : null}
             <div className="inline-flex items-center rounded-lg border border-input bg-input/30 p-0.5">
               {(['chat', 'history'] as const).map((value) => (
                 <button
@@ -416,9 +419,6 @@ export function ChatWorkbench({
             </div>
             {mode === 'chat' ? (
               <>
-                {conversationId ? (
-                  <CompactIdField label="Conversation" value={conversationId} />
-                ) : null}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button type="button" size="icon" variant="outline" aria-label="Chat options">

@@ -5,6 +5,7 @@ import {
   type SkillCapabilityDescriptor,
   skillCapabilityIds,
 } from "../../../src/modules/skills/capabilityRegistry.js";
+import { defaultRetrievalSettings } from "../../../src/modules/settings/contracts/retrieval.js";
 
 const rootSettingKey = (key: string) => key.split(".")[0] ?? key;
 
@@ -155,7 +156,7 @@ describe("SkillCapabilityRegistry", () => {
     const retrieveAdvancedSettings = registry.get("retrieve")?.settingsFields
       .filter((field) => field.advanced === true)
       .map((field) => field.key) ?? [];
-    expect(retrieveEssentialSettings).toEqual(["sourceScope", "instruction", "suggestedQuestionsEnabled"]);
+    expect(retrieveEssentialSettings).toEqual(["sourceScope", "instruction", "suggestedQuestionsEnabled", "suggestedQuestionsCount"]);
     expect(retrieveAdvancedSettings).toEqual(expect.arrayContaining([
       "vectorTopK",
       "rerankEnabled",
@@ -163,7 +164,33 @@ describe("SkillCapabilityRegistry", () => {
       "queryRewriteEnabled",
       "semanticRewriteInstructions",
       "lexicalRewriteInstructions",
-      "suggestedQuestionsCount",
     ]));
+  });
+
+  it("describes retrieve setting defaults and dependencies for operator forms", () => {
+    const registry = createDefaultSkillCapabilityRegistry();
+    const descriptor = registry.get("retrieve");
+    const defaults = defaultRetrievalSettings("00000000-0000-4000-8000-000000000000");
+
+    expect(descriptor).toBeDefined();
+    const fields = descriptor?.settingsFields ?? [];
+    const byKey = new Map(fields.map((field) => [field.key, field]));
+
+    for (const field of fields) {
+      expect(field.help?.trim(), field.key).toBeTruthy();
+    }
+
+    expect(byKey.get("retrievalStrategy")?.defaultValue).toBe(defaults.retrievalStrategy);
+    expect(byKey.get("vectorTopK")?.defaultValue).toBe(defaults.vectorTopK);
+    expect(byKey.get("rerankEnabled")?.defaultValue).toBe(defaults.rerankEnabled);
+    expect(byKey.get("rerankTopK")?.defaultValue).toBe(defaults.rerankTopK);
+    expect(byKey.get("queryRewriteEnabled")?.defaultValue).toBe(defaults.queryRewriteEnabled);
+    expect(byKey.get("suggestedQuestionsEnabled")?.defaultValue).toBe(defaults.suggestedQuestionsEnabled);
+    expect(byKey.get("suggestedQuestionsCount")?.defaultValue).toBe(defaults.suggestedQuestionsCount);
+
+    expect(byKey.get("rerankTopK")?.dependsOnKey).toBe("rerankEnabled");
+    expect(byKey.get("semanticRewriteInstructions")?.dependsOnKey).toBe("queryRewriteEnabled");
+    expect(byKey.get("lexicalRewriteInstructions")?.dependsOnKey).toBe("queryRewriteEnabled");
+    expect(byKey.get("suggestedQuestionsCount")?.dependsOnKey).toBe("suggestedQuestionsEnabled");
   });
 });

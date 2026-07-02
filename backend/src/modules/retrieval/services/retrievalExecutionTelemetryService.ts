@@ -48,6 +48,10 @@ export class RetrievalExecutionTelemetryService {
     temporalCandidateCount?: number;
     temporalQueryMode?: TemporalQueryMode;
     temporalStructuredLookupEnabled?: boolean;
+    temporalDeterministicSortEnabled?: boolean;
+    temporalDeterministicSortApplied?: boolean;
+    temporalDeterministicSortToday?: string;
+    temporalDeterministicSortDatedContextCount?: number;
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
@@ -120,6 +124,9 @@ export class RetrievalExecutionTelemetryService {
           triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
           temporalQueryMode: input.temporalQueryMode,
           temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? false,
+          temporalDeterministicSortEnabled: input.temporalDeterministicSortEnabled ?? false,
+          temporalDeterministicSortApplied: input.temporalDeterministicSortApplied ?? false,
+          temporalDeterministicSortDatedContextCount: input.temporalDeterministicSortDatedContextCount ?? 0,
           executionSurface: input.execution?.surface,
           executionPath: input.execution?.path,
           retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
@@ -168,6 +175,9 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.candidates.temporal.count": boundedTraceCount(input.temporalCandidateCount),
   "retrieval.temporal.mode": input.temporalQueryMode,
   "retrieval.temporal.structured_lookup.enabled": input.temporalStructuredLookupEnabled,
+  "retrieval.temporal.deterministic_sort.enabled": input.temporalDeterministicSortEnabled,
+  "retrieval.temporal.deterministic_sort.applied": input.temporalDeterministicSortApplied,
+  "retrieval.temporal.deterministic_sort.dated_context.count": boundedTraceCount(input.temporalDeterministicSortDatedContextCount),
   "retrieval.candidates.normalized.count": boundedTraceCount(input.normalizedCandidateCount),
   "retrieval.context.final.count": boundedTraceCount(input.finalContextCount),
   "retrieval.constraint.count": boundedTraceCount(input.appliedConstraints?.length),

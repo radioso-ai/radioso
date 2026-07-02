@@ -22,6 +22,7 @@ export interface EvalSnapshotOriginalRetrievalChunk {
   title: string
   rank: number
   similarity?: number
+  metadata?: Record<string, unknown>
 }
 
 export interface EvalSnapshotReplayTarget {
@@ -56,6 +57,8 @@ export type EvalAssertion =
   | { type: 'retrieval_includes_document'; documentId: string }
   | { type: 'retrieval_excludes_document'; documentId: string }
   | { type: 'retrieval_top_k_includes_document'; documentId: string; k: number }
+  | { type: 'retrieval_document_order'; documentIds: string[] }
+  | { type: 'retrieval_chunk_metadata'; documentId: string; metadata: Record<string, string | number | boolean | null> }
   | { type: 'answer_cites_document'; documentId: string }
   | {
       type: 'answer_contains'

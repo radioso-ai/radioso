@@ -1,14 +1,17 @@
 import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 import type { RerankedCandidate, RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
+import { orderTemporalPromptContexts } from "./temporal/temporalContextOrdering.js";
 
 export class ContextSelectionStageService implements ContextSelectionStageContract {
   constructor(
     private readonly rerankService: RerankService,
     private readonly promptContextSelectorService: PromptContextSelectorService,
+    private readonly clock: Clock = systemClock,
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
@@ -35,8 +38,15 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
           workspaceContext: { workspaceId: input.request.workspaceId },
           usageContext: input.request.usageContext,
         });
-    const contexts = this.promptContextSelectorService.select({
+    const temporalOrdering = orderTemporalPromptContexts({
       contexts: reranked.contexts,
+      enabled: input.settings.temporalDeterministicSortEnabled ?? true,
+      queryShape: input.rewrittenQuery.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
+      temporalQueryMode: input.temporalQueryMode ?? input.rewrittenQuery.structuredResult?.temporalQueryMode,
+      today: formatIsoDateUtc(this.clock()),
+    });
+    const contexts = this.promptContextSelectorService.select({
+      contexts: temporalOrdering.orderedContexts,
       topK: finalContextTopK,
     });
 
@@ -44,6 +54,10 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       ...input,
       rerankedContexts: reranked.contexts,
       rerankStatus: reranked.status,
+      temporalDeterministicSortEnabled: input.settings.temporalDeterministicSortEnabled ?? true,
+      temporalDeterministicSortApplied: temporalOrdering.applied,
+      temporalDeterministicSortToday: temporalOrdering.today,
+      temporalDeterministicSortDatedContextCount: temporalOrdering.datedContextCount,
       contexts,
     };
   }

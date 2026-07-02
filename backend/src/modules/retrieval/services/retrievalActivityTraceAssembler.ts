@@ -334,13 +334,17 @@ export class ActivityTraceAssembler {
           shapeRerankOverride: contextSelectionClauses.ranking.rerankMode === "disabled" ? "disabled_by_shape" : undefined,
           lexicalBias: contextSelectionClauses.ranking.lexicalBias,
           rerankTopK: prompt.settings.rerankTopK,
+          temporalDeterministicSortEnabled: prompt.temporalDeterministicSortEnabled ?? true,
         },
         outputs: {
           finalContextTitles: prompt.contexts.map((context) => context.title),
           finalContexts: toChunkRefs(prompt.contexts),
+          temporalDeterministicSortApplied: prompt.temporalDeterministicSortApplied ?? false,
+          temporalDeterministicSortToday: prompt.temporalDeterministicSortToday,
         },
         metrics: {
           rerankedCount: prompt.rerankedContexts.length,
+          temporalSortedDatedContextCount: prompt.temporalDeterministicSortDatedContextCount ?? 0,
           finalContextCount: prompt.contexts.length,
         },
       }),
@@ -367,6 +371,7 @@ export class ActivityTraceAssembler {
           retrievalSkipped: diagnostics.retrievalSkipped,
           fallbackApplied: diagnostics.fallbackApplied,
           continuityDecision: diagnostics.continuityDecision,
+          temporalDeterministicSortApplied: diagnostics.temporalDeterministicSortApplied,
           finalContexts: toChunkRefs(prompt.contexts),
         },
         metrics: {
@@ -447,6 +452,12 @@ export class ActivityTraceAssembler {
         appliedConstraints: diagnostics.appliedConstraints,
         fallbackApplied: diagnostics.fallbackApplied,
         rerankStatus: diagnostics.rerankStatus,
+        temporalDeterministicSort: {
+          enabled: diagnostics.temporalDeterministicSortEnabled ?? true,
+          applied: diagnostics.temporalDeterministicSortApplied ?? false,
+          today: diagnostics.temporalDeterministicSortToday,
+          datedContextCount: diagnostics.temporalDeterministicSortDatedContextCount ?? 0,
+        },
         rewrite: {
           status: diagnostics.rewriteStatus,
           eligible: Boolean(diagnostics.rewriteEligible),

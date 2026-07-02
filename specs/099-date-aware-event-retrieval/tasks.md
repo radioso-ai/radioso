@@ -222,16 +222,27 @@ settings panel edit was needed beyond fallback defaults.
 
 ### Tests for User Story 4
 
-- [ ] T101 [P] [US4] Write deterministic temporal ordering unit tests in `backend/tests/unit/temporal-context-ordering.test.ts`
+- [X] T101 [P] [US4] Write deterministic temporal ordering unit tests in `backend/tests/unit/temporal-context-ordering.test.ts`
 - [ ] T102 [P] [US4] Write repeated-run retrieval integration test for actuality sort in `backend/tests/integration/retrieval-answer.integration.test.ts`
+
+**Run-scope deviation**: T102 remains unchecked because this run is constrained
+to unit tests only and no Postgres-backed integration tests. Repeated
+deterministic ordering is covered at unit level by
+`backend/tests/unit/temporal-context-ordering.test.ts` and
+`backend/tests/unit/retrieval-pipeline-stages.test.ts`.
 
 ### Implementation for User Story 4
 
-- [ ] T103 [US4] Implement temporal context ordering helper in `backend/src/modules/retrieval/services/temporal/temporalContextOrdering.ts`
-- [ ] T104 [US4] Apply deterministic ordering after rerank and before prompt selection in `backend/src/modules/retrieval/services/contextSelectionStage.ts`
-- [ ] T105 [US4] Include deterministic ordering status in retrieval diagnostics in `backend/src/modules/retrieval/services/retrievalDiagnosticsStage.ts`
-- [ ] T106 [US4] Include temporal order evidence in activity trace summary in `backend/src/modules/retrieval/services/retrievalPipelineActivityTraceBuilder.ts`
-- [ ] T107 [US4] Confirm disabling deterministic sort restores model/rerank order in `backend/src/modules/retrieval/services/contextSelectionStage.ts`
+- [X] T103 [US4] Implement temporal context ordering helper in `backend/src/modules/retrieval/services/temporal/temporalContextOrdering.ts`
+- [X] T104 [US4] Apply deterministic ordering after rerank and before prompt selection in `backend/src/modules/retrieval/services/contextSelectionStage.ts`
+- [X] T105 [US4] Include deterministic ordering status in retrieval diagnostics in `backend/src/modules/retrieval/services/retrievalDiagnosticsStage.ts`
+- [X] T106 [US4] Include temporal order evidence in activity trace summary in `backend/src/modules/retrieval/services/retrievalPipelineActivityTraceBuilder.ts`
+- [X] T107 [US4] Confirm disabling deterministic sort restores model/rerank order in `backend/src/modules/retrieval/services/contextSelectionStage.ts`
+
+**Code-reality deviation**: T106 is implemented in the current activity trace
+summary owner `backend/src/modules/retrieval/services/retrievalActivityTraceAssembler.ts`
+and `activitySummaryPresenter.ts`; `retrievalPipelineActivityTraceBuilder.ts`
+only delegates assembly and did not need product-rule changes.
 
 **Checkpoint**: User Story 4 works repeatedly and can be disabled per agent.
 
@@ -245,18 +256,30 @@ settings panel edit was needed beyond fallback defaults.
 
 ### Tests for User Story 5
 
-- [ ] T108 [P] [US5] Write enriched event fixture seed tests in `backend/tests/unit/eval-suite.test.ts`
-- [ ] T109 [P] [US5] Write workbench replay tests for event query eval outcomes in `backend/tests/unit/workbench-replay-runner.test.ts`
-- [ ] T110 [P] [US5] Write frontend workbench seed unit tests for event cases in `frontend/tests/unit/eval-workbench-seed.test.ts`
+- [X] T108 [P] [US5] Write enriched event fixture seed tests in `backend/tests/unit/eval-suite.test.ts`
+- [X] T109 [P] [US5] Write workbench replay tests for event query eval outcomes in `backend/tests/unit/workbench-replay-runner.test.ts`
+- [X] T110 [P] [US5] Write frontend workbench seed unit tests for event cases in `frontend/tests/unit/eval-workbench-seed.test.ts`
 - [ ] T111 [P] [US5] Write Playwright workbench eval coverage for event suite in `frontend/tests/e2e/workbench-replay.spec.ts`
+
+**Run-scope deviation**: T111 remains unchecked because this run is constrained
+to unit tests only and no Playwright execution. Event seed rendering is covered
+through `frontend/tests/unit/eval-workbench-seed.test.ts` plus assertion summary
+support in `frontend/components/dashboard/eval-view.tsx`.
 
 ### Implementation for User Story 5
 
-- [ ] T112 [US5] Add deterministic enriched corpus fixtures in `backend/tests/fixtures/event-retrieval/event-corpus.ts`
-- [ ] T113 [US5] Add named-event date eval case definitions in `backend/tests/fixtures/event-retrieval/event-eval-cases.ts`
-- [ ] T114 [US5] Add next-events and actuality-sort assertions in `backend/src/modules/chat/services/workbenchReplayRunner.ts`
-- [ ] T115 [US5] Expose event eval seed option in `frontend/lib/eval-workbench-seed.ts`
-- [ ] T116 [US5] Render event eval cases in workbench UI in `frontend/components/dashboard/eval-view.tsx`
+- [X] T112 [US5] Add deterministic enriched corpus fixtures in `backend/tests/fixtures/event-retrieval/event-corpus.ts`
+- [X] T113 [US5] Add named-event date eval case definitions in `backend/tests/fixtures/event-retrieval/event-eval-cases.ts`
+- [X] T114 [US5] Add next-events and actuality-sort assertions in `backend/src/modules/chat/services/workbenchReplayRunner.ts`
+- [X] T115 [US5] Expose event eval seed option in `frontend/lib/eval-workbench-seed.ts`
+- [X] T116 [US5] Render event eval cases in workbench UI in `frontend/components/dashboard/eval-view.tsx`
+
+**Code-reality deviation**: T114 required adding retrieval evidence metadata
+and order/metadata assertion support in the eval domain
+(`backend/src/modules/eval/domain/types.ts`, `outcomes.ts`,
+`evalCaseService.ts`, and `evalRoutes.ts`) plus metadata propagation through
+Workbench replay and eval runners. This follows the existing eval-case model
+instead of asserting answer phrasing.
 
 **Checkpoint**: User Story 5 provides deterministic regression coverage.
 

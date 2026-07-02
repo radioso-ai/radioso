@@ -102,6 +102,10 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
 export interface ContextSelectionStageResult extends CandidatePreparationStageResult {
   rerankedContexts: import("../domain/retrievalPipelineTypes.js").RerankedCandidate[];
   rerankStatus: import("../domain/retrievalPipelineTypes.js").RerankStatus;
+  temporalDeterministicSortEnabled?: boolean;
+  temporalDeterministicSortApplied?: boolean;
+  temporalDeterministicSortToday?: string;
+  temporalDeterministicSortDatedContextCount?: number;
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
 }
 
@@ -209,6 +213,9 @@ type TraceCandidatePreparationInput = TraceCandidateRetrievalInput & {
 type TraceContextSelectionInput = TraceCandidatePreparationInput & {
   rerankStatus?: unknown;
   rerankedContexts?: Array<unknown>;
+  temporalDeterministicSortEnabled?: boolean;
+  temporalDeterministicSortApplied?: boolean;
+  temporalDeterministicSortDatedContextCount?: number;
   contexts?: Array<unknown>;
 };
 
@@ -312,6 +319,9 @@ export const buildContextSelectionTraceAttributes = (result: TraceContextSelecti
     ...buildCandidatePreparationTraceAttributes(result),
     "retrieval.rerank.status": result.rerankStatus,
     "retrieval.candidates.reranked.count": boundedTraceCount(result.rerankedContexts?.length),
+    "retrieval.temporal.deterministic_sort.enabled": result.temporalDeterministicSortEnabled,
+    "retrieval.temporal.deterministic_sort.applied": result.temporalDeterministicSortApplied,
+    "retrieval.temporal.deterministic_sort.dated_context.count": boundedTraceCount(result.temporalDeterministicSortDatedContextCount),
     "retrieval.context.final.count": boundedTraceCount(result.contexts?.length),
   });
 

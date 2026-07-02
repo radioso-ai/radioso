@@ -22,6 +22,8 @@ const ASSERTION_KIND_LABELS: Record<EvalAssertionKind, string> = {
   retrieval_includes_document: 'Retrieval should include a document',
   retrieval_excludes_document: 'Retrieval should NOT include a document',
   retrieval_top_k_includes_document: 'Document should appear in top-K results',
+  retrieval_document_order: 'Documents should appear in order',
+  retrieval_chunk_metadata: 'Retrieved chunk should have metadata',
   answer_cites_document: 'Answer should cite a document',
   answer_contains: 'Answer should contain text',
   answer_does_not_contain: 'Answer should NOT contain text',
@@ -32,6 +34,8 @@ const ASSERTION_KIND_HINTS: Record<EvalAssertionKind, string> = {
   retrieval_includes_document: 'Pass when at least one chunk from the picked document is retrieved.',
   retrieval_excludes_document: 'Pass when no chunk from the picked document is retrieved.',
   retrieval_top_k_includes_document: 'Pass when a chunk from the picked document is among the first K retrieved chunks.',
+  retrieval_document_order: 'Pass when the retrieved evidence contains the selected documents in the expected order.',
+  retrieval_chunk_metadata: 'Pass when a retrieved chunk from the selected document has the expected metadata values.',
   answer_cites_document: 'Pass when the generated answer carries a citation to the picked document. Requires full-assistant run mode.',
   answer_contains: 'Pass when the generated answer contains a substring or matches a regex. Requires full-assistant run mode.',
   answer_does_not_contain: 'Pass when the generated answer does NOT contain a substring/regex. Requires full-assistant run mode.',
@@ -46,6 +50,10 @@ const createDefaultAssertion = (kind: EvalAssertionKind): EvalAssertion => {
       return { type: 'retrieval_excludes_document', documentId: '' }
     case 'retrieval_top_k_includes_document':
       return { type: 'retrieval_top_k_includes_document', documentId: '', k: 3 }
+    case 'retrieval_document_order':
+      return { type: 'retrieval_document_order', documentIds: [] }
+    case 'retrieval_chunk_metadata':
+      return { type: 'retrieval_chunk_metadata', documentId: '', metadata: {} }
     case 'answer_cites_document':
       return { type: 'answer_cites_document', documentId: '' }
     case 'answer_contains':
@@ -65,6 +73,10 @@ const isComplete = (a: EvalAssertion): boolean => {
       return Boolean(a.documentId)
     case 'retrieval_top_k_includes_document':
       return Boolean(a.documentId) && Number.isInteger(a.k) && a.k > 0
+    case 'retrieval_document_order':
+      return a.documentIds.length > 0 && a.documentIds.every(Boolean)
+    case 'retrieval_chunk_metadata':
+      return Boolean(a.documentId) && Object.keys(a.metadata).length > 0
     case 'answer_contains':
     case 'answer_does_not_contain':
       return Boolean(a.pattern.trim())
@@ -75,9 +87,17 @@ const isComplete = (a: EvalAssertion): boolean => {
 
 // Every assertion that targets a document (retrieval checks + answer_cites_document)
 // renders the same document picker; only top-K adds the extra K field.
+type PickerDocumentAssertion = Extract<
+  EvalAssertion,
+  | { type: 'retrieval_includes_document' }
+  | { type: 'retrieval_excludes_document' }
+  | { type: 'retrieval_top_k_includes_document' }
+  | { type: 'answer_cites_document' }
+>
+
 const isDocumentAssertion = (
   a: EvalAssertion,
-): a is Extract<EvalAssertion, { documentId: string }> =>
+): a is PickerDocumentAssertion =>
   a.type === 'retrieval_includes_document' ||
   a.type === 'retrieval_excludes_document' ||
   a.type === 'retrieval_top_k_includes_document' ||
@@ -251,6 +271,20 @@ function AssertionFields({ assertion, disabled, resolveDocumentTitle, onChange }
   if (isJudgeAssertion(assertion)) {
     return <JudgeAssertionFields assertion={assertion} disabled={disabled} onChange={onChange} />
   }
+  if (assertion.type === 'retrieval_document_order') {
+    return (
+      <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+        {assertion.documentIds.map((id, index) => resolveDocumentTitle?.(id) ?? `${index + 1}. ${id.slice(0, 8)}`).join(' -> ')}
+      </div>
+    )
+  }
+  if (assertion.type === 'retrieval_chunk_metadata') {
+    return (
+      <div className="rounded-md border border-border bg-muted/30 p-3 text-sm text-muted-foreground">
+        {resolveDocumentTitle?.(assertion.documentId) ?? assertion.documentId.slice(0, 8)} - {JSON.stringify(assertion.metadata)}
+      </div>
+    )
+  }
   return null
 }
 
@@ -305,7 +339,7 @@ function RetrievalAssertionFields({
   resolveDocumentTitle,
   onChange,
 }: {
-  assertion: Extract<EvalAssertion, { documentId: string }>
+  assertion: PickerDocumentAssertion
   disabled?: boolean
   resolveDocumentTitle?: (docId: string) => string | undefined
   onChange: (next: EvalAssertion) => void

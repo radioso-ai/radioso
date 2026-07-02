@@ -109,6 +109,63 @@ export const evaluateAssertion = (
         reason: `Document ${assertion.documentId} did not appear in the top ${assertion.k} retrieved chunks. ${tail}`,
       };
     }
+    case "retrieval_document_order": {
+      if (assertion.documentIds.length === 0) {
+        return {
+          assertion,
+          status: "error",
+          reason: "retrieval_document_order requires at least one document id.",
+        };
+      }
+      const observedDocumentOrder = uniqueInOrder(output.retrievedChunks.map((chunk) => chunk.documentId));
+      const expectedPositions = assertion.documentIds.map((documentId) => observedDocumentOrder.indexOf(documentId));
+      const missingIndex = expectedPositions.findIndex((position) => position === -1);
+      if (missingIndex !== -1) {
+        return {
+          assertion,
+          status: "fail",
+          reason: `Retrieval did not include expected document ${assertion.documentIds[missingIndex]}. Observed order: ${observedDocumentOrder.join(", ")}.`,
+        };
+      }
+      const sortedPositions = [...expectedPositions].sort((left, right) => left - right);
+      const matchesOrder = expectedPositions.every((position, index) => position === sortedPositions[index]);
+      if (matchesOrder) {
+        return {
+          assertion,
+          status: "pass",
+          reason: `Retrieval document order matched: ${assertion.documentIds.join(", ")}.`,
+        };
+      }
+      return {
+        assertion,
+        status: "fail",
+        reason: `Retrieval document order did not match. Expected ${assertion.documentIds.join(", ")} within observed order ${observedDocumentOrder.join(", ")}.`,
+      };
+    }
+    case "retrieval_chunk_metadata": {
+      const hit = output.retrievedChunks.find((chunk) => chunk.documentId === assertion.documentId);
+      if (!hit) {
+        return {
+          assertion,
+          status: "fail",
+          reason: `Retrieval did not include any chunk from document ${assertion.documentId}.`,
+        };
+      }
+      const mismatched = Object.entries(assertion.metadata).find(([key, expected]) => hit.metadata?.[key] !== expected);
+      if (!mismatched) {
+        return {
+          assertion,
+          status: "pass",
+          reason: `Retrieval included expected metadata for document ${assertion.documentId}.`,
+        };
+      }
+      const [key, expected] = mismatched;
+      return {
+        assertion,
+        status: "fail",
+        reason: `Retrieved metadata ${key} for document ${assertion.documentId} was ${JSON.stringify(hit.metadata?.[key])}, expected ${JSON.stringify(expected)}.`,
+      };
+    }
     case "answer_cites_document": {
       // Citations only exist on a composed answer; an answer is required to assert on them.
       if (typeof output.answer !== "string") {
@@ -225,4 +282,17 @@ export const aggregateAssertions = (
   }
 
   return combineVerdicts(assertions.map((a) => evaluateAssertion(a, output)));
+};
+
+const uniqueInOrder = (values: string[]): string[] => {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    result.push(value);
+  }
+  return result;
 };

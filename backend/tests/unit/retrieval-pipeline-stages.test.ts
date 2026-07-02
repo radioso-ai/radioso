@@ -12,6 +12,9 @@ import type { PromptBuilder } from "../../src/modules/retrieval/services/promptB
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { CandidatePreparationStageService } from "../../src/modules/retrieval/services/candidatePreparationStage.js";
 import { MetadataRuleScoringService } from "../../src/modules/retrieval/services/metadataRuleScoringService.js";
+import { ContextSelectionStageService } from "../../src/modules/retrieval/services/contextSelectionStage.js";
+import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
+import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import type { TemporalCandidateRetrievalPort } from "../../src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.js";
 import {
   buildCandidatePreparationTraceAttributes,
@@ -400,12 +403,133 @@ describe("retrieval pipeline stages", () => {
       ...candidatePreparationResult,
       rerankStatus: "skipped",
       rerankedContexts: new Array(2).fill({}),
+      temporalDeterministicSortEnabled: true,
+      temporalDeterministicSortApplied: true,
+      temporalDeterministicSortDatedContextCount: 2,
       contexts: new Array(1).fill({}),
     } as never)).toMatchObject({
       "retrieval.rerank.status": "skipped",
       "retrieval.candidates.reranked.count": 2,
+      "retrieval.temporal.deterministic_sort.enabled": true,
+      "retrieval.temporal.deterministic_sort.applied": true,
+      "retrieval.temporal.deterministic_sort.dated_context.count": 2,
       "retrieval.context.final.count": 1,
     });
+  });
+
+  it("orders event date lookup contexts deterministically before prompt selection", async () => {
+    const stage = new ContextSelectionStageService(
+      new RerankService(undefined, undefined, () => new Date("2026-07-02T23:30:00.000Z")),
+      new PromptContextSelectorService(10_000),
+      () => new Date("2026-07-02T23:30:00.000Z"),
+    );
+    const scoredCandidates = [
+      {
+        chunkId: "undated-rank-1",
+        documentId: "doc-undated",
+        title: "Undated",
+        content: "Undated event details.",
+        similarity: 0.99,
+        retrievalSources: ["semantic_original"],
+        retrievalText: "Undated event details.",
+        semanticScore: 0.99,
+        lexicalScore: 0,
+      },
+      {
+        chunkId: "august-rank-2",
+        documentId: "doc-august",
+        title: "August",
+        content: "August event details.",
+        similarity: 0.98,
+        retrievalSources: ["semantic_original"],
+        retrievalText: "August event details.",
+        semanticScore: 0.98,
+        lexicalScore: 0,
+        metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+      },
+      {
+        chunkId: "july-rank-3",
+        documentId: "doc-july",
+        title: "July",
+        content: "July event details.",
+        similarity: 0.97,
+        retrievalSources: ["semantic_original"],
+        retrievalText: "July event details.",
+        semanticScore: 0.97,
+        lexicalScore: 0,
+        metadata: { dateFrom: "2026-07-03", dateTo: "2026-07-03" },
+      },
+    ];
+
+    const result = await stage.execute({
+      ...baseCandidateRetrievalInput(),
+      settings: {
+        ...baseCandidateRetrievalInput().settings,
+        rerankEnabled: false,
+        temporalDeterministicSortEnabled: true,
+      },
+      rewrittenQuery: {
+        ...baseCandidateRetrievalInput().rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "events by actuality",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+      temporalQueryMode: "listing",
+      scoredCandidates,
+    } as never);
+
+    expect(result.rerankedContexts.map((context) => context.chunkId)).toEqual([
+      "undated-rank-1",
+      "august-rank-2",
+      "july-rank-3",
+    ]);
+    expect(result.contexts.map((context) => context.chunkId)).toEqual([
+      "july-rank-3",
+      "august-rank-2",
+      "undated-rank-1",
+    ]);
+    expect(result).toMatchObject({
+      temporalDeterministicSortEnabled: true,
+      temporalDeterministicSortApplied: true,
+      temporalDeterministicSortToday: "2026-07-02",
+      temporalDeterministicSortDatedContextCount: 2,
+    });
+
+    const disabled = await stage.execute({
+      ...baseCandidateRetrievalInput(),
+      settings: {
+        ...baseCandidateRetrievalInput().settings,
+        rerankEnabled: false,
+        temporalDeterministicSortEnabled: false,
+      },
+      rewrittenQuery: {
+        ...baseCandidateRetrievalInput().rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "events by actuality",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+      temporalQueryMode: "listing",
+      scoredCandidates,
+    } as never);
+
+    expect(disabled.contexts.map((context) => context.chunkId)).toEqual([
+      "undated-rank-1",
+      "august-rank-2",
+      "july-rank-3",
+    ]);
+    expect(disabled.temporalDeterministicSortApplied).toBe(false);
   });
 
   it("keeps structured query literals during query interpretation", async () => {

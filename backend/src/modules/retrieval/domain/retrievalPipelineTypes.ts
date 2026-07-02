@@ -242,6 +242,12 @@ export interface ActivitySummary {
   appliedConstraints?: AppliedConstraint[];
   fallbackApplied?: boolean;
   rerankStatus?: RerankStatus;
+  temporalDeterministicSort?: {
+    enabled: boolean;
+    applied: boolean;
+    today?: string;
+    datedContextCount: number;
+  };
   rewrite?: {
     status: RewriteStatus;
     eligible: boolean;
@@ -299,6 +305,10 @@ export interface RetrievalExecutionDiagnostics {
   temporalCandidateCount?: number;
   temporalQueryMode?: TemporalQueryMode;
   temporalStructuredLookupEnabled?: boolean;
+  temporalDeterministicSortEnabled?: boolean;
+  temporalDeterministicSortApplied?: boolean;
+  temporalDeterministicSortToday?: string;
+  temporalDeterministicSortDatedContextCount?: number;
   normalizedCandidateCount: number;
   finalContextCount: number;
   queryEmbeddingDurationMs?: number;

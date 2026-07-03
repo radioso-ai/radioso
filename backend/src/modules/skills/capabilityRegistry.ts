@@ -41,6 +41,10 @@ export interface SkillCapabilitySettingsField {
   max?: number;
   group?: string;
   advanced?: boolean;
+  // Effective value when the agent leaves the field unset (the system-layer
+  // default). Editors use it to render the real behavior instead of showing an
+  // unset toggle as "off" when the behavior is actually on.
+  defaultValue?: string | number | boolean;
 }
 
 export interface SkillCapabilityDescriptor<

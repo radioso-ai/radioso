@@ -47,6 +47,7 @@ import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
   documentsApi,
+  settingsApi,
   type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
   type WebsiteCrawlJobSummary,
@@ -222,6 +223,7 @@ function SourceExpandedPanel({
   onOpenConnectorSettings,
   onSettingsSaved,
   onSourceUpdated,
+  workspaceEnrichmentEnabled,
 }: {
   source: DocumentSourceListItem
   crawlStatusVersion: number
@@ -231,6 +233,7 @@ function SourceExpandedPanel({
   onOpenConnectorSettings: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
   onSourceUpdated: (source: DocumentSourceListItem) => void
+  workspaceEnrichmentEnabled?: boolean
 }) {
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
   const [isLoading, setIsLoading] = useState(source.kind === 'website')
@@ -372,22 +375,29 @@ function SourceExpandedPanel({
       </Collapsible>
       <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+          <div className="min-w-0 max-w-xl">
             <p className="text-sm font-medium text-foreground">AI document enrichment</p>
-            <p className="mt-1 text-xs text-muted-foreground">Override the workspace ingestion default for this source.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Detects each document&apos;s type and extracts event dates during processing (one extra AI call per
+              document), so the agent can answer date and event questions from this source.
+            </p>
           </div>
           <Select
             value={enrichmentOverride}
             onValueChange={(value) => void handleEnrichmentOverrideChange(value as DocumentEnrichmentOverride)}
             disabled={isSavingEnrichmentOverride}
           >
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-56">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="inherit">Inherit</SelectItem>
-              <SelectItem value="on">On</SelectItem>
-              <SelectItem value="off">Off</SelectItem>
+              <SelectItem value="inherit">
+                {workspaceEnrichmentEnabled === undefined
+                  ? 'Use workspace setting'
+                  : `Use workspace setting (${workspaceEnrichmentEnabled ? 'on' : 'off'})`}
+              </SelectItem>
+              <SelectItem value="on">Always on for this source</SelectItem>
+              <SelectItem value="off">Always off for this source</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -396,6 +406,9 @@ function SourceExpandedPanel({
             {isReprocessingSource ? <Spinner className="mr-2 h-3.5 w-3.5" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
             Reprocess source
           </Button>
+          <p className="text-xs text-muted-foreground">
+            Applies setting changes to documents already in this source by processing them again.
+          </p>
           {sourceActionMessage ? <p className="text-xs text-muted-foreground">{sourceActionMessage}</p> : null}
           {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
         </div>
@@ -423,7 +436,25 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
   const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
   const [pendingResumeSourceIds, setPendingResumeSourceIds] = useState<Set<string>>(new Set())
   const [crawlStatusVersion, setCrawlStatusVersion] = useState(0)
+  const [workspaceEnrichmentEnabled, setWorkspaceEnrichmentEnabled] = useState<boolean | undefined>(undefined)
   const sectionShellClassName = 'w-full'
+
+  useEffect(() => {
+    let cancelled = false
+    settingsApi
+      .getIngestionSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setWorkspaceEnrichmentEnabled(settings.documentEnrichmentEnabled)
+        }
+      })
+      .catch(() => {
+        // Best-effort label context only; the override select works without it.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspaceId])
 
   const refreshCrawlingStatus = useCallback((pendingResumeSourceIdsOverride?: ReadonlySet<string>) => {
     void Promise.all([
@@ -844,6 +875,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
                             ),
                           )
                         }}
+                        workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
                       />
                     </div>
                   ) : null}

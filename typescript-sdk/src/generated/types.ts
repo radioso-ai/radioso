@@ -13403,6 +13403,7 @@ export interface operations {
                                 max?: number;
                                 group?: string;
                                 advanced?: boolean;
+                                defaultValue?: string | number | boolean;
                             }[];
                             outcomeVocabulary: string[];
                             supportedInvocationModes: ("default_answer" | "routine_named" | "agent_selectable")[];

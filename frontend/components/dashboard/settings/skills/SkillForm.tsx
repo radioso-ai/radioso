@@ -95,13 +95,20 @@ function SkillSettingControl({
   }
 
   if (field.type === 'boolean') {
+    // An unset field inherits the system default, so the switch must show the
+    // effective behavior — not render "off" for a behavior that is actually on.
+    const inherited = value === undefined && typeof field.defaultValue === 'boolean'
+    const effective = value === true || (value === undefined && field.defaultValue === true)
     return (
       <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
         <div className="space-y-1">
           <Label htmlFor={fieldId}>{field.label}</Label>
           {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+          {inherited ? (
+            <p className="text-xs text-muted-foreground/70">Using the default ({field.defaultValue ? 'on' : 'off'}).</p>
+          ) : null}
         </div>
-        <Switch id={fieldId} checked={value === true} onCheckedChange={onChange} />
+        <Switch id={fieldId} checked={effective} onCheckedChange={onChange} />
       </div>
     )
   }
@@ -112,7 +119,12 @@ function SkillSettingControl({
         <Label htmlFor={fieldId}>{field.label}</Label>
         <Select value={typeof value === 'string' ? value : undefined} onValueChange={onChange}>
           <SelectTrigger id={fieldId}>
-            <SelectValue placeholder="Choose option" />
+            <SelectValue
+              placeholder={(() => {
+                const defaultOption = (field.options ?? []).find((option) => option.value === field.defaultValue)
+                return defaultOption ? `Default: ${defaultOption.label}` : 'Choose option'
+              })()}
+            />
           </SelectTrigger>
           <SelectContent>
             {(field.options ?? []).map((option) => (
@@ -186,6 +198,7 @@ function SkillSettingControl({
         value={field.type === 'number'
           ? typeof value === 'number' ? String(value) : ''
           : typeof value === 'string' ? value : ''}
+        placeholder={field.defaultValue !== undefined ? `Default: ${String(field.defaultValue)}` : undefined}
         onChange={(event) => {
           if (field.type === 'number') {
             onChange(event.target.value === '' ? undefined : Number(event.target.value))

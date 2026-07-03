@@ -25355,6 +25355,19 @@
                                 },
                                 "advanced": {
                                   "type": "boolean"
+                                },
+                                "defaultValue": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
                                 }
                               },
                               "required": [

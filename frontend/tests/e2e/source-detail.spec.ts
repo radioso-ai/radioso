@@ -324,7 +324,7 @@ test("operator toggles document enrichment and reprocesses one source", async ({
   await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
   await page.getByRole("button", { name: new RegExp(websiteSourceName) }).first().click();
   await page.getByRole("combobox").click();
-  await page.getByRole("option", { name: "On" }).click();
+  await page.getByRole("option", { name: "Always on for this source" }).click();
 
   await expect.poll(() => sourceRequests.some((entry) =>
     entry.method === "PATCH" &&

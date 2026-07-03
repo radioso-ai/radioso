@@ -63,6 +63,7 @@ const CapabilitySettingsFieldSchema = z.object({
   max: z.number().optional(),
   group: z.string().optional(),
   advanced: z.boolean().optional(),
+  defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
 const CapabilitySchema = z.object({

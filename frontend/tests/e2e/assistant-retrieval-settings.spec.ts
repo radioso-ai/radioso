@@ -140,17 +140,17 @@ test("retrieval skill settings expose individual temporal event toggles", async 
   await page.getByLabel("Skill name").fill("retrieve_events");
   await page.getByRole("button", { name: "Advanced" }).click();
 
-  // Skill-config convention: unset booleans render unchecked and mean
-  // "inherit the system default" (which is ON for the temporal behaviors);
-  // toggling stores an explicit per-agent value.
-  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).not.toBeChecked();
-  await expect(page.getByRole("switch", { name: "Upcoming event boost" })).not.toBeChecked();
-  await expect(page.getByRole("switch", { name: "Deterministic temporal sort" })).not.toBeChecked();
+  // Unset fields inherit the system default (ON for the temporal behaviors),
+  // and the switches render that effective state; toggling stores an explicit
+  // per-agent value.
+  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Upcoming event boost" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Deterministic temporal sort" })).toBeChecked();
 
   await page.getByRole("switch", { name: "Temporal structured lookup" }).click();
   await page.getByRole("switch", { name: "Upcoming event boost" }).click();
   await page.getByRole("switch", { name: "Deterministic temporal sort" }).click();
-  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).toBeChecked();
+  await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).not.toBeChecked();
   await page.getByRole("button", { name: "Create skill" }).click();
 
   await expect(page.getByText("@retrieve_events")).toBeVisible();
@@ -161,9 +161,9 @@ test("retrieval skill settings expose individual temporal event toggles", async 
     body: {
       capability: "retrieve",
       config: {
-        temporalStructuredLookupEnabled: true,
-        temporalBoostUpcomingEnabled: true,
-        temporalDeterministicSortEnabled: true,
+        temporalStructuredLookupEnabled: false,
+        temporalBoostUpcomingEnabled: false,
+        temporalDeterministicSortEnabled: false,
       },
     },
   });

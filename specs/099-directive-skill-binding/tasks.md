@@ -112,16 +112,16 @@ bindings.
 
 **Independent test**: quickstart.md step 7 + trace assertions.
 
-- [ ] T019 [P] [US3] Write failing tests: `SelectionDecision`/engine conversation
+- [X] T019 [P] [US3] Write failing tests: `SelectionDecision`/engine conversation
       trace carries winner reason `directive:<name>` plus losing and skipped binding
       records (directive name, skill name, outcome, reason) at the selector seam
-- [ ] T020 [P] [US3] Write failing round-trip tests for `AuthoredDirectiveConfig`
+- [X] T020 [P] [US3] Write failing round-trip tests for `AuthoredDirectiveConfig`
       export/import preserving `binding` (including import into an agent lacking the
       skill — preserved, no validation error) beside existing agentConfig tests
-- [ ] T021 [US3] Implement trace enrichment in
+- [X] T021 [US3] Implement trace enrichment in
       backend/src/modules/chat/services/turnSkillSelector.ts (+ resolver output
       mapping); T019 green
-- [ ] T022 [US3] Add `binding` to `AuthoredDirectiveConfig` serialize/materialize in
+- [X] T022 [US3] Add `binding` to `AuthoredDirectiveConfig` serialize/materialize in
       backend/src/modules/agents/agentConfig.ts; T020 green
 
 **Checkpoint**: all three stories complete.

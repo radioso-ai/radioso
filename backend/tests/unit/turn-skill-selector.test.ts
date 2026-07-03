@@ -90,9 +90,35 @@ describe("ChatTurnSkillSelector", () => {
 
     expect(skill).toBe(orderLookup);
     expect(decision.selected).toEqual([
-      { skillName: "order.lookup", reason: "directive:order-status" },
+      {
+        skillName: "order.lookup",
+        reason: "directive:order-status",
+        metadata: {
+          directiveBinding: {
+            directiveName: "order-status",
+            skillName: "order.lookup",
+            outcome: "selected",
+            reason: "selected",
+          },
+        },
+      },
     ]);
     expect(decision.reason).toBe("directive:order-status");
+    expect(decision.considered).toEqual([
+      {
+        skillName: "order.lookup",
+        selected: true,
+        reason: "directive:order-status",
+        metadata: {
+          directiveBinding: {
+            directiveName: "order-status",
+            skillName: "order.lookup",
+            outcome: "selected",
+            reason: "selected",
+          },
+        },
+      },
+    ]);
   });
 
   it("preserves default behavior when no matched directive has a binding", () => {
@@ -101,6 +127,49 @@ describe("ChatTurnSkillSelector", () => {
     expect(skill).toBe(social);
     expect(decision.selected).toEqual([
       { skillName: "direct.answer", reason: "turn_selection_strategy" },
+    ]);
+  });
+
+  it("records losing directive bindings in selection considerations", () => {
+    const defaultAnswer = skillStub("retrieval.answer", () => true);
+    const orderLookup = skillStub("order.lookup", () => false);
+    const escalation = skillStub("escalate.lookup", () => false);
+    const boundSelector = new ChatTurnSkillSelector([defaultAnswer, orderLookup, escalation], strategy);
+    const prepared = sessionWithBoundDirective("retrieval");
+    prepared.directiveSteering!.matches.push({
+      directive: {
+        name: "escalation",
+        condition: { kind: "always" },
+        action: "Escalate.",
+        priority: 10,
+        binding: { kind: "skill", skillName: "escalate.lookup" },
+      },
+      selectionMode: "deterministic",
+      selectionReason: "always",
+    });
+
+    const { decision } = boundSelector.select(prepared);
+
+    expect(decision.reason).toBe("directive:order-status");
+    expect(decision.considered).toEqual([
+      expect.objectContaining({
+        skillName: "order.lookup",
+        selected: true,
+        reason: "directive:order-status",
+      }),
+      {
+        skillName: "escalate.lookup",
+        selected: false,
+        reason: "lost_conflict",
+        metadata: {
+          directiveBinding: {
+            directiveName: "escalation",
+            skillName: "escalate.lookup",
+            outcome: "lost_conflict",
+            reason: "lost_conflict",
+          },
+        },
+      },
     ]);
   });
 
@@ -123,6 +192,21 @@ describe("ChatTurnSkillSelector", () => {
     ]);
     expect(decision.selected).toEqual([
       { skillName: "retrieval.answer", reason: "turn_selection_strategy" },
+    ]);
+    expect(decision.considered).toEqual([
+      {
+        skillName: "order.lookup",
+        selected: false,
+        reason: "skill_not_enabled",
+        metadata: {
+          directiveBinding: {
+            directiveName: "order-status",
+            skillName: "order.lookup",
+            outcome: "skipped",
+            reason: "skill_not_enabled",
+          },
+        },
+      },
     ]);
     expect(logger.warn).toHaveBeenCalledWith(
       {

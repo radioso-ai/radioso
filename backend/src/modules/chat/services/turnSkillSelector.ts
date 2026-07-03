@@ -1,4 +1,5 @@
 import type { SelectionDecision } from "@radioso/conversation-contract";
+import type { SkillSelectionConsideration } from "@radioso/conversation-contract";
 
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { TurnSkill } from "./turnOutcome.js";
@@ -8,6 +9,8 @@ import {
   resolveDirectiveBinding,
   type DirectiveBindingResolution,
   type DirectiveBindingSkillState,
+  type DirectiveBindingOutcome,
+  type SkippedDirectiveBinding,
 } from "./directiveBindingResolution.js";
 
 /** The terminal skill that claims a turn, with the engine-shaped decision behind it. */
@@ -22,6 +25,56 @@ export interface ChatTurnSkillSelectorOptions {
     warn(payload: Record<string, unknown>, message: string): void;
   };
 }
+
+const selectedBindingMetadata = (binding: DirectiveBindingOutcome) => ({
+  directiveBinding: {
+    directiveName: binding.directiveName,
+    skillName: binding.skillName,
+    outcome: "selected",
+    reason: "selected",
+  },
+});
+
+const loserBindingMetadata = (binding: DirectiveBindingOutcome) => ({
+  directiveBinding: {
+    directiveName: binding.directiveName,
+    skillName: binding.skillName,
+    outcome: "lost_conflict",
+    reason: "lost_conflict",
+  },
+});
+
+const skippedBindingMetadata = (binding: SkippedDirectiveBinding) => ({
+  directiveBinding: {
+    directiveName: binding.directiveName,
+    skillName: binding.skillName,
+    outcome: "skipped",
+    reason: binding.reason,
+  },
+});
+
+const bindingConsiderations = (binding: DirectiveBindingResolution): SkillSelectionConsideration[] => [
+  ...(binding.winner
+    ? [{
+        skillName: binding.winner.skillName,
+        selected: true,
+        reason: `directive:${binding.winner.directiveName}`,
+        metadata: selectedBindingMetadata(binding.winner),
+      }]
+    : []),
+  ...binding.losers.map((loser) => ({
+    skillName: loser.skillName,
+    selected: false,
+    reason: "lost_conflict",
+    metadata: loserBindingMetadata(loser),
+  })),
+  ...binding.skipped.map((skipped) => ({
+    skillName: skipped.skillName,
+    selected: false,
+    reason: skipped.reason,
+    metadata: skippedBindingMetadata(skipped),
+  })),
+];
 
 export const filterAutonomousTurnSkills = (
   candidates: Array<{ skill: TurnSkill; invocationMode: AgentSkillInvocationMode }>,
@@ -109,10 +162,16 @@ export class ChatTurnSkillSelector {
       directives: session.directiveSteering?.matches ?? [],
     });
     const reason = binding.winner ? `directive:${binding.winner.directiveName}` : undefined;
+    const considerations = bindingConsiderations(binding);
     return {
       skill,
       decision: {
-        selected: [{ skillName: skill.definition.name, reason: reason ?? "turn_selection_strategy" }],
+        selected: [{
+          skillName: skill.definition.name,
+          reason: reason ?? "turn_selection_strategy",
+          ...(binding.winner ? { metadata: selectedBindingMetadata(binding.winner) } : {}),
+        }],
+        ...(considerations.length > 0 ? { considered: considerations } : {}),
         reason: reason ?? (candidates.length > 0 ? `candidates:${candidates.join(",")}` : "turn_selection_strategy"),
       },
     };

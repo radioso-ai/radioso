@@ -1,3 +1,4 @@
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import { EMBEDDING_MODEL_DEFAULT, type IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -21,6 +22,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     lexicalSearch: LexicalSearchPort,
     ingestionSettingsService?: IngestionSettingsReaderPort,
     temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    clock?: Clock,
   );
   constructor(
     embeddingService: EmbeddingService,
@@ -29,6 +31,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     ingestionSettingsService: IngestionSettingsReaderPort | undefined,
     chunkHydrator: ChunkCandidateHydratorPort,
     temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    clock?: Clock,
   );
   constructor(
     private readonly embeddingService: EmbeddingService,
@@ -36,8 +39,15 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     private readonly lexicalSearch: LexicalSearchPort,
     private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
     chunkHydratorOrTemporal?: ChunkCandidateHydratorPort | TemporalCandidateRetrievalPort,
-    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    temporalOrClock?: TemporalCandidateRetrievalPort | Clock,
+    clock?: Clock,
   ) {
+    // The overloads put the optional clock last in both call shapes, so at the
+    // shared implementation position it can be either the temporal port (long
+    // form) or the clock (short form). A Clock is a bare function; ports are
+    // objects — disambiguate on that.
+    const temporalCandidateRetrieval = typeof temporalOrClock === "function" ? undefined : temporalOrClock;
+    this.clock = (typeof temporalOrClock === "function" ? temporalOrClock : clock) ?? systemClock;
     if (chunkHydratorOrTemporal && "hydrate" in chunkHydratorOrTemporal) {
       this.chunkHydrator = chunkHydratorOrTemporal;
       this.temporalCandidateRetrieval = temporalCandidateRetrieval;
@@ -48,6 +58,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
 
   private readonly chunkHydrator?: ChunkCandidateHydratorPort;
   private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort;
+  private readonly clock: Clock;
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
@@ -141,7 +152,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
       ? await this.temporalCandidateRetrieval.findUpcoming({
           workspaceId: input.request.workspaceId,
-          today: utcToday(),
+          today: formatIsoDateUtc(this.clock()),
           topK: input.settings.vectorTopK,
           metadataFilter: input.request.metadataFilter,
           sourceFilter,
@@ -218,4 +229,3 @@ const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): Tempor
   return structured.temporalQueryMode ?? "none";
 };
 
-const utcToday = (): string => new Date().toISOString().slice(0, 10);

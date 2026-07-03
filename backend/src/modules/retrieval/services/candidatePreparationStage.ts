@@ -1,3 +1,4 @@
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -15,6 +16,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
   constructor(
     private readonly candidatePreparationService: CandidatePreparationService,
     private readonly metadataRuleScoringService: MetadataRuleScoringService,
+    private readonly clock: Clock = systemClock,
   ) {}
 
   async execute(input: CandidateRetrievalStageResult): Promise<CandidatePreparationStageResult> {
@@ -121,7 +123,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const boostedCandidates = applyUpcomingEventBoost({
       candidates: selectedCandidates.candidates,
       enabled: (input.settings.temporalBoostUpcomingEnabled ?? true) && (input.temporalQueryMode ?? "none") !== "none",
-      today: utcToday(),
+      today: formatIsoDateUtc(this.clock()),
     });
     const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
     const temporallyMergedCandidates = mergeTemporalCandidates({
@@ -173,4 +175,3 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
   }
 }
 
-const utcToday = (): string => new Date().toISOString().slice(0, 10);

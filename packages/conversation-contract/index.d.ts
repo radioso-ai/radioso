@@ -85,6 +85,13 @@ export interface Directive {
   condition: DirectiveCondition;
   action: string;
   /**
+   * Optional authored routing target. The matcher never reads bindings; matching
+   * continues to depend only on directive name and condition. `kind` is shaped as
+   * a union so future targets such as `routine` can extend the contract without a
+   * persistence migration.
+   */
+  binding?: DirectiveBinding | null;
+  /**
    * Optional authored tags. Scope tags use `routine:<id>` and
    * `step:<routineId>:<stepId>` conventions: untagged directives are global,
    * routine tags apply only while that routine is active, and step tags apply
@@ -103,6 +110,11 @@ export interface Directive {
 export type DirectiveCondition =
   | { kind: "always" }
   | { kind: "contextual"; description: string };
+
+export interface DirectiveBinding {
+  kind: "skill";
+  skillName: string;
+}
 
 export type DirectiveSelectionMode = "deterministic" | "probabilistic";
 

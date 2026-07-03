@@ -20,6 +20,7 @@ export const authoredDirectiveToDirective = (
     ...(priority === null
       ? options.defaultPriority === undefined ? {} : { priority: options.defaultPriority }
       : { priority }),
+    binding: directive.binding,
     requiredCapabilities: directive.requiredCapabilities,
     dependsOn: directive.dependsOn,
     excludes: directive.excludes,

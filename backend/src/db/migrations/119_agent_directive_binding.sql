@@ -1,0 +1,2 @@
+ALTER TABLE agent_directives
+  ADD COLUMN IF NOT EXISTS binding JSONB NULL;

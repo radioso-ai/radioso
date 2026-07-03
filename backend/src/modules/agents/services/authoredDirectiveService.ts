@@ -80,6 +80,7 @@ export class AuthoredDirectiveService {
       tags: input.tags ?? existing.tags,
       routes: [],
       description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
+      binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
       metadata: input.metadata ?? existing.metadata,
     });
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);

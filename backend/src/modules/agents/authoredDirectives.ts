@@ -10,6 +10,7 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
   description: 1000,
   relationshipName: 200,
   capabilityName: 200,
+  bindingSkillName: 200,
   tag: 200,
 } as const;
 
@@ -56,6 +57,11 @@ export const authoredDirectiveConditionSchema = z.discriminatedUnion("kind", [
   }).strict(),
 ]);
 
+export const authoredDirectiveBindingSchema = z.object({
+  kind: z.literal("skill"),
+  skillName: trimmedText(AUTHORED_DIRECTIVE_LIMITS.bindingSkillName),
+}).strict();
+
 export const authoredDirectiveInputSchema = z.object({
   name: trimmedText(AUTHORED_DIRECTIVE_LIMITS.name)
     .refine((name) => !builtInDirectiveNames.has(name), {
@@ -76,6 +82,7 @@ export const authoredDirectiveInputSchema = z.object({
   routes: z.array(z.enum(authoredDirectiveRouteValues)).optional().default([]).transform((values) => [...new Set(values)]),
   tags: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.tag),
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
+  binding: authoredDirectiveBindingSchema.nullable().optional().transform((value) => value ?? null),
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
@@ -84,6 +91,8 @@ export type AuthoredDirectiveInput = z.input<typeof authoredDirectiveInputSchema
 export type NormalizedAuthoredDirectiveInput = z.infer<typeof authoredDirectiveInputSchema>;
 
 export type AuthoredDirectiveCondition = NormalizedAuthoredDirectiveInput["condition"];
+
+export type AuthoredDirectiveBinding = NormalizedAuthoredDirectiveInput["binding"];
 
 export interface AuthoredDirective {
   id: string;
@@ -98,6 +107,7 @@ export interface AuthoredDirective {
   routes: ChatTurnRoute[];
   tags: string[];
   description: string | null;
+  binding: AuthoredDirectiveBinding;
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;

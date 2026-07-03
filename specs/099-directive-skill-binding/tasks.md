@@ -19,17 +19,17 @@ hand-edit. Do not run `pnpm run build` during implementation; verify with
 
 ## Phase 2: Foundational (blocking all user stories)
 
-- [ ] T002 Write failing unit tests for the authored directive `binding` field
+- [X] T002 Write failing unit tests for the authored directive `binding` field
       (accepts `{kind:"skill",skillName}`, rejects unknown kinds, rejects >200-char
       skill names, defaults to null) in backend/tests/unit/modules/agents (beside the
       existing authoredDirectives tests)
-- [ ] T003 Add `DirectiveBinding` + `Directive.binding?` to
+- [X] T003 Add `DirectiveBinding` + `Directive.binding?` to
       packages/conversation-contract/index.d.ts (JSDoc: kind union reserved for future
       `routine`; matcher never reads bindings)
 - [ ] T004 Add migration backend/src/db/migrations/119_agent_directive_binding.sql
       (`ALTER TABLE agent_directives ADD COLUMN binding JSONB NULL`), then regenerate
       generated artifacts: `pnpm run db:types` and `pnpm run db:schema` in backend/
-- [ ] T005 Implement `binding` in backend/src/modules/agents/authoredDirectives.ts
+- [X] T005 Implement `binding` in backend/src/modules/agents/authoredDirectives.ts
       (schema + `AUTHORED_DIRECTIVE_LIMITS` entry + `AuthoredDirective` interface) and
       row mapping in backend/src/modules/agents/authoredDirectiveMapper.ts and the
       directives repository (persist/read the JSONB column); T002 tests go green

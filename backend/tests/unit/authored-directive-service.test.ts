@@ -40,6 +40,7 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     tags: input.tags ?? [],
     routes: [],
     description: input.description ?? null,
+    binding: input.binding ?? null,
     metadata: {},
     createdAt: now,
     updatedAt: now,
@@ -93,6 +94,7 @@ class StubAgentRepository implements StubAgentRepositoryPort {
       dependsOn: input.dependsOn ?? existing?.dependsOn ?? [],
       excludes: input.excludes ?? existing?.excludes ?? [],
       tags: input.tags ?? existing?.tags ?? [],
+      binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing?.binding ?? null,
     });
     return { ...merged, id: directiveId };
   }
@@ -117,6 +119,48 @@ class CapturingChecker implements DirectiveCoherenceChecker {
 }
 
 describe("AuthoredDirectiveService", () => {
+  it("normalizes directive skill bindings and defaults absent bindings to null", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: " order.lookup " },
+    }));
+    expect(repository.created.at(-1)?.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
+
+    await service.create(workspaceId, agentId, directiveInput());
+    expect(repository.created.at(-1)?.binding).toBeNull();
+  });
+
+  it("rejects unsupported directive binding targets and overlong skill names", async () => {
+    const repository = new StubAgentRepository();
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+    });
+
+    await expect(service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "routine", routineName: "returns" } as never,
+    }))).rejects.toMatchObject({
+      statusCode: 400,
+      code: "bad_request",
+    });
+
+    await expect(service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "x".repeat(201) },
+    }))).rejects.toMatchObject({
+      statusCode: 400,
+      code: "bad_request",
+    });
+
+    expect(repository.created).toHaveLength(0);
+  });
+
   it("persists a valid create and returns the coherence verdict", async () => {
     const repository = new StubAgentRepository();
     const checker = new CapturingChecker(coherentVerdict);

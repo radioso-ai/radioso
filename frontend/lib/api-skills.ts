@@ -61,6 +61,8 @@ export type SkillCapabilitySettingsField = {
   label: string
   type: 'boolean' | 'number' | 'text' | 'textarea' | 'select' | 'string_list' | 'source_scope'
   help?: string
+  defaultValue?: boolean | number | string
+  dependsOnKey?: string
   options?: Array<{ value: string; label: string }>
   min?: number
   max?: number
@@ -96,6 +98,7 @@ export type AgentSkillCreateInput = {
 export type AgentSkillUpdateInput = {
   target?: AgentSkillTarget
   config?: Record<string, unknown>
+  replaceConfig?: Record<string, unknown>
   invocationMode?: AgentSkillInvocationMode
   enabled?: boolean
 }

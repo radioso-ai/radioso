@@ -13,9 +13,11 @@ hand-edit. Do not run `pnpm run build` during implementation; verify with
 
 *(No setup tasks — branch, spec, and design artifacts already exist; no new tooling.)*
 
-- [ ] T001 Confirm clean baseline: `cd backend && pnpm exec tsc --noEmit` passes and
+- [X] T001 Confirm clean baseline: `cd backend && pnpm exec tsc --noEmit` passes and
       `pnpm exec vitest run tests/unit/modules/agents tests/unit/modules/chat` is green
-      before any change (record result in PR notes)
+      before any change (record result in PR notes) — done post-hoc by orchestrator:
+      fresh worktree lacked node_modules during the Codex run; after `pnpm install`
+      the full suite was brought green (2366/2366 unit, 279/279 contract)
 
 ## Phase 2: Foundational (blocking all user stories)
 
@@ -26,7 +28,7 @@ hand-edit. Do not run `pnpm run build` during implementation; verify with
 - [X] T003 Add `DirectiveBinding` + `Directive.binding?` to
       packages/conversation-contract/index.d.ts (JSDoc: kind union reserved for future
       `routine`; matcher never reads bindings)
-- [ ] T004 Add migration backend/src/db/migrations/119_agent_directive_binding.sql
+- [X] T004 Add migration backend/src/db/migrations/119_agent_directive_binding.sql
       (`ALTER TABLE agent_directives ADD COLUMN binding JSONB NULL`), then regenerate
       generated artifacts: `pnpm run db:types` and `pnpm run db:schema` in backend/
 - [X] T005 Implement `binding` in backend/src/modules/agents/authoredDirectives.ts
@@ -63,12 +65,12 @@ invalid skills rejected at authoring.
 - [X] T011 [US1] Implement authoring-time binding validation in the agents module
       service used by directive create/update (skill exists on agent + enabled +
       turn-capable invocation mode; import path exempt); T008 green
-- [ ] T012 [US1] Add `binding` to directive request/response schemas in
+- [X] T012 [US1] Add `binding` to directive request/response schemas in
       backend/src/app/http/openapi/schemas/agentSchemas.ts, regenerate OpenAPI
       (`pnpm run generate:openapi` in backend/), and extend the existing directives
       contract tests in backend/tests/contract to cover the field (write failing
       contract assertions first, then regenerate)
-- [ ] T013 [US1] Sync the TypeScript SDK generated types: `cd typescript-sdk &&
+- [X] T013 [US1] Sync the TypeScript SDK generated types: `cd typescript-sdk &&
       pnpm run sync && pnpm run build && pnpm test`; commit regenerated output only
 
 **Checkpoint**: US1 independently functional — bound directive routes a live turn.

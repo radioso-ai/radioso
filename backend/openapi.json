@@ -3465,6 +3465,27 @@
           }
         ]
       },
+      "AuthoredDirectiveBinding": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill"
+            ]
+          },
+          "skillName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "kind",
+          "skillName"
+        ],
+        "additionalProperties": false
+      },
       "AuthoredDirectiveCreateRequest": {
         "type": "object",
         "properties": {
@@ -3528,6 +3549,19 @@
             ],
             "minLength": 1,
             "maxLength": 1000
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           },
           "metadata": {
             "type": "object",
@@ -3604,6 +3638,19 @@
             ],
             "minLength": 1,
             "maxLength": 1000
+          },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           },
           "metadata": {
             "type": "object",
@@ -3775,6 +3822,19 @@
               "null"
             ]
           },
+          "binding": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": {}
@@ -3801,6 +3861,7 @@
           "routes",
           "tags",
           "description",
+          "binding",
           "metadata",
           "createdAt",
           "updatedAt"

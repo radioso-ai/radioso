@@ -5,17 +5,23 @@ import {
   resolveDirectiveBinding,
 } from "../../src/modules/chat/services/directiveBindingResolution.js";
 
-const match = (overrides: Partial<DirectiveMatch> & { name: string; skillName?: string }): DirectiveMatch => ({
+type MatchOverrides = Partial<Omit<DirectiveMatch, "directive">> & {
+  name: string;
+  skillName?: string;
+  directive?: Partial<DirectiveMatch["directive"]>;
+};
+
+const match = ({ name, skillName, directive, ...rest }: MatchOverrides): DirectiveMatch => ({
   directive: {
-    name: overrides.name,
+    name,
     condition: { kind: "always" },
     action: "Use the bound skill.",
-    ...(overrides.skillName ? { binding: { kind: "skill", skillName: overrides.skillName } } : {}),
-    ...overrides.directive,
+    ...(skillName ? { binding: { kind: "skill", skillName } } : {}),
+    ...directive,
   },
   selectionMode: "deterministic",
   selectionReason: "always",
-  ...overrides,
+  ...rest,
 });
 
 describe("resolveDirectiveBinding", () => {

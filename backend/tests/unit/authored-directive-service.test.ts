@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { AuthoredDirectiveService } from "../../src/modules/agents/public.js";
 import type { AuthoredDirective, AuthoredDirectiveInput, AuthoredDirectiveServiceOptions } from "../../src/modules/agents/public.js";
+import type { AgentSkillSpine } from "../../src/modules/agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../src/modules/directives/public.js";
 import type { Directive } from "../../src/modules/directives/public.js";
 import { AppError } from "../../src/shared/domain/errors.js";
@@ -24,6 +25,24 @@ const directiveInput = (overrides: Partial<AuthoredDirectiveInput> = {}): Author
   action: "Use the operator configured behavior.",
   ...overrides,
 });
+
+const agentSkill = (overrides: Partial<AgentSkillSpine> & Pick<AgentSkillSpine, "skillName">): AgentSkillSpine => {
+  const now = new Date("2026-06-05T12:00:00.000Z");
+  return {
+    id: randomUUID(),
+    agentId,
+    workspaceId,
+    kind: "external_mcp",
+    invocationMode: "agent_selectable",
+    enabled: true,
+    targetType: "mcp_connection",
+    targetId: randomUUID(),
+    config: {},
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+};
 
 const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<AuthoredDirective> = {}): AuthoredDirective => {
   const now = new Date("2026-06-05T12:00:00.000Z");
@@ -104,6 +123,14 @@ class StubAgentRepository implements StubAgentRepositoryPort {
   }
 }
 
+class StubAgentSkillRepository {
+  readonly skills: AgentSkillSpine[] = [];
+
+  async findByName(_workspaceId: string, _agentId: string, skillName: string): Promise<AgentSkillSpine | null> {
+    return this.skills.find((skill) => skill.skillName === skillName) ?? null;
+  }
+}
+
 class CapturingChecker implements DirectiveCoherenceChecker {
   readonly checks: Array<{ candidate: Directive; existingDirectives: Directive[] }> = [];
 
@@ -121,10 +148,13 @@ class CapturingChecker implements DirectiveCoherenceChecker {
 describe("AuthoredDirectiveService", () => {
   it("normalizes directive skill bindings and defaults absent bindings to null", async () => {
     const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
     const service = new AuthoredDirectiveService({
       repository,
       coherenceChecker: new CapturingChecker(),
       registeredCapabilityNames: new Set(),
+      agentSkills,
     });
 
     await service.create(workspaceId, agentId, directiveInput({
@@ -210,6 +240,51 @@ describe("AuthoredDirectiveService", () => {
       code: "bad_request",
     });
     expect(repository.created).toHaveLength(0);
+  });
+
+  it("rejects directive bindings to unknown, disabled, or routine-only skills", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(
+      agentSkill({ skillName: "disabled.lookup", enabled: false }),
+      agentSkill({ skillName: "routine.lookup", invocationMode: "routine_named" }),
+    );
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    for (const skillName of ["missing.lookup", "disabled.lookup", "routine.lookup"]) {
+      await expect(service.create(workspaceId, agentId, directiveInput({
+        binding: { kind: "skill", skillName },
+      }))).rejects.toMatchObject({
+        statusCode: 400,
+        code: "bad_request",
+        message: expect.stringContaining(skillName),
+      });
+    }
+
+    expect(repository.created).toHaveLength(0);
+  });
+
+  it("accepts directive bindings to enabled agent-selectable skills", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    await service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "order.lookup" },
+    }));
+
+    expect(repository.created.at(-1)?.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
   });
 
   it("includes built-in directives in the coherence comparison set", async () => {

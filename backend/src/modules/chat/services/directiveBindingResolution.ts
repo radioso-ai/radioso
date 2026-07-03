@@ -72,7 +72,7 @@ const skipReason = (
 export const resolveDirectiveBinding = (input: ResolveDirectiveBindingInput): DirectiveBindingResolution => {
   const boundMatches = input.matches
     .filter((match) => match.directive.binding?.kind === "skill")
-    .toSorted(compareBoundMatches);
+    .sort(compareBoundMatches);
 
   const resolution: DirectiveBindingResolution = {
     winner: undefined,

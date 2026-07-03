@@ -326,6 +326,7 @@ interface TestRepositories {
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   messageRepository: InMemoryMessageRepository;
   agentRepository: InMemoryAgentRepository;
+  agentSkillRepository: InMemoryAgentSkillRepository;
   routineDefinitionRepository: InMemoryRoutineDefinitionRepository;
 }
 
@@ -1196,6 +1197,7 @@ export const createTestDependencies = (overrides: {
       },
     },
     registeredCapabilityNames,
+    agentSkills: agentSkillRepository,
   });
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
@@ -1639,6 +1641,7 @@ export const createTestDependencies = (overrides: {
       conversationOwnershipRepository,
       messageRepository,
       agentRepository,
+      agentSkillRepository,
       routineDefinitionRepository,
     },
   };

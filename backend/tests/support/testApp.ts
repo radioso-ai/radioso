@@ -16,6 +16,7 @@ import { EmailVerificationService } from "../../src/modules/auth/services/emailV
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import {
+  createRouteScopedDirectiveSteering,
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
@@ -179,7 +180,10 @@ import {
   createDefaultSkillCatalogRegistry,
   SkillAuthoringCatalogService,
   SkillCatalogService,
+  SkillExecutorRegistry,
 } from "../../src/modules/skills/public.js";
+import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
+import { RepositoryAgentSkillTurnSkillProvider } from "../../src/app/composition/builtIn/agentSkillTurnSkillProvider.js";
 import type { ApplicationRouteMount } from "../../src/app/composition/applicationModule.js";
 import type { AbuseControlRepositoryPort } from "../../src/db/repositories/abuseControlRepository.js";
 import {
@@ -517,6 +521,8 @@ export const createTestDependencies = (overrides: {
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
+  skillExecutorRegistry?: SkillExecutorRegistry;
+  agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
 } = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore } => {
   const env = {
     ...createTestEnv(),
@@ -1200,6 +1206,7 @@ export const createTestDependencies = (overrides: {
     agentSkills: agentSkillRepository,
   });
   const skillCatalogRegistry = createDefaultSkillCatalogRegistry();
+  const skillExecutorRegistry = overrides.skillExecutorRegistry ?? new SkillExecutorRegistry();
   const capabilityPolicy = new DefaultAllowCapabilityPolicy();
   const skillCatalogService = new SkillCatalogService({
     capabilityPolicy,
@@ -1386,6 +1393,18 @@ export const createTestDependencies = (overrides: {
     conversationEngine: createConversationEngine(),
     routineStore: routineStateStore,
     routineProvider,
+    // Mirror production wiring (dependencyBuilders): a real route-scoped directive
+    // runtime so authored directives are matchable in integration tests. Built-in
+    // registrations stay empty to keep existing test prompts unchanged; the default
+    // deterministic matcher covers `always` directives without an LLM gateway.
+    directiveSteering: createRouteScopedDirectiveSteering({
+      capabilityPolicy,
+      registrations: [],
+    }),
+    agentSkillTurnSkillProvider: overrides.agentSkillTurnSkillProvider ?? new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: agentSkillRepository,
+      executorRegistry: skillExecutorRegistry,
+    }),
   });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,
@@ -1665,6 +1684,8 @@ export const createTestApp = (overrides: {
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
   chatInferencePipelineComplete?: AppDependencies["chatInferencePipeline"]["complete"];
   logger?: AppDependencies["logger"];
+  skillExecutorRegistry?: SkillExecutorRegistry;
+  agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
 } = {}) => {
   const { dependencies, repositories, routineStateStore } = createTestDependencies(overrides);
   const app = createApp(dependencies);

@@ -1,5 +1,10 @@
 import { RETRIEVAL_ANSWER_ADAPTER, retrieveSkillConfigSchema } from "../../retrieval/public.js";
+import { defaultRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
+
+// Only the per-field defaults are read from this record; the workspaceId it
+// embeds never leaves this module, so a placeholder is safe here.
+const retrieveSettingsDefaults = defaultRetrievalSettings("__retrieve_capability_descriptor__");
 
 export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve"> = {
   id: "retrieve",
@@ -33,6 +38,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "retrievalStrategy",
       label: "Retrieval strategy",
       type: "select",
+      help: "Fixed runs one search pass. Reasoning lets the model plan and run multiple searches. Auto picks per query.",
+      defaultValue: retrieveSettingsDefaults.retrievalStrategy,
       options: [
         { value: "fixed", label: "Fixed" },
         { value: "reasoning", label: "Reasoning" },
@@ -45,6 +52,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "vectorTopK",
       label: "Vector top K",
       type: "number",
+      help: "How many chunks are fetched from the vector index before filtering and reranking.",
+      defaultValue: retrieveSettingsDefaults.vectorTopK,
       min: 1,
       max: 300,
       group: "Retrieval tuning",
@@ -54,6 +63,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "rerankEnabled",
       label: "Rerank results",
       type: "boolean",
+      help: "Re-score the fetched chunks with a reranker model to improve ordering.",
+      defaultValue: retrieveSettingsDefaults.rerankEnabled,
       group: "Retrieval tuning",
       advanced: true,
     },
@@ -61,6 +72,9 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "rerankTopK",
       label: "Rerank top K",
       type: "number",
+      help: "How many chunks survive reranking and are passed to the answer.",
+      defaultValue: retrieveSettingsDefaults.rerankTopK,
+      dependsOnKey: "rerankEnabled",
       min: 1,
       max: 100,
       group: "Retrieval tuning",
@@ -70,6 +84,8 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "queryRewriteEnabled",
       label: "Query rewrite",
       type: "boolean",
+      help: "Rewrite the user message into search queries before retrieval.",
+      defaultValue: retrieveSettingsDefaults.queryRewriteEnabled,
       group: "Query rewrite",
       advanced: true,
     },
@@ -77,6 +93,9 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "semanticRewriteInstructions",
       label: "Semantic rewrite instructions",
       type: "textarea",
+      help: "Instructions used to rewrite the user message into the semantic (vector) search query. Replaces the default; leave empty to keep the default shown.",
+      defaultValue: retrieveSettingsDefaults.semanticRewriteInstructions,
+      dependsOnKey: "queryRewriteEnabled",
       group: "Query rewrite",
       advanced: true,
     },
@@ -84,6 +103,9 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "lexicalRewriteInstructions",
       label: "Lexical rewrite instructions",
       type: "textarea",
+      help: "Instructions used to rewrite the user message into the lexical (keyword) search query. Replaces the default; leave empty to keep the default shown.",
+      defaultValue: retrieveSettingsDefaults.lexicalRewriteInstructions,
+      dependsOnKey: "queryRewriteEnabled",
       group: "Query rewrite",
       advanced: true,
     },
@@ -91,16 +113,20 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "suggestedQuestionsEnabled",
       label: "Suggested questions",
       type: "boolean",
+      help: "Offer follow-up question suggestions after each answer.",
+      defaultValue: retrieveSettingsDefaults.suggestedQuestionsEnabled,
       group: "Suggested questions",
     },
     {
       key: "suggestedQuestionsCount",
       label: "Suggested questions count",
       type: "number",
+      help: "How many follow-up questions to suggest.",
+      defaultValue: retrieveSettingsDefaults.suggestedQuestionsCount,
+      dependsOnKey: "suggestedQuestionsEnabled",
       min: 1,
       max: 4,
       group: "Suggested questions",
-      advanced: true,
     },
   ],
   outcomeVocabulary: ["found", "empty"],

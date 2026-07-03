@@ -16166,6 +16166,13 @@ paths:
                                   - source_scope
                               help:
                                 type: string
+                              defaultValue:
+                                anyOf:
+                                  - type: boolean
+                                  - type: number
+                                  - type: string
+                              dependsOnKey:
+                                type: string
                               options:
                                 type: array
                                 items:
@@ -16554,6 +16561,9 @@ paths:
                     - kind
                     - id
                 config:
+                  type: object
+                  additionalProperties: {}
+                replaceConfig:
                   type: object
                   additionalProperties: {}
                 invocationMode:

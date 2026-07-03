@@ -25,6 +25,7 @@ const AgentSkillCreateSchema = z.object({
 const AgentSkillUpdateSchema = z.object({
   target: AgentSkillTargetSchema.optional(),
   config: z.record(z.unknown()).optional(),
+  replaceConfig: z.record(z.unknown()).optional(),
   invocationMode: InvocationModeSchema.optional(),
   enabled: z.boolean().optional(),
 });
@@ -55,6 +56,8 @@ const CapabilitySettingsFieldSchema = z.object({
   label: z.string(),
   type: z.enum(["boolean", "number", "text", "textarea", "select", "string_list", "source_scope"]),
   help: z.string().optional(),
+  defaultValue: z.union([z.boolean(), z.number(), z.string()]).optional(),
+  dependsOnKey: z.string().optional(),
   options: z.array(z.object({
     value: z.string(),
     label: z.string(),

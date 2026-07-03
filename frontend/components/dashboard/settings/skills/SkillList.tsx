@@ -229,7 +229,7 @@ export function SkillList({ agentId }: { agentId: string }) {
       if (editingSkill) {
         await agentSkillsApi.updateSkill(agentId, editingSkill.id, {
           target: input.target,
-          config: input.config,
+          replaceConfig: input.config,
           invocationMode: input.invocationMode,
           enabled: input.enabled,
         })

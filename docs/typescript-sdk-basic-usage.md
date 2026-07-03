@@ -237,7 +237,8 @@ const response = await client.chat.create({
 
 Agents use the retrieval pipeline through their default-answer `retrieve` skill.
 Edit that skill to configure retrieval behavior for one agent. Omitted fields
-inherit system/model defaults. Direct-only agents answer from their own
+inherit system/model defaults, and the dashboard shows those inherited values
+inline before saving only explicit overrides. Direct-only agents answer from their own
 instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
 ## Non-Streaming Chat

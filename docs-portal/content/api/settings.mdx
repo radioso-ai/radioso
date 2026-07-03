@@ -7,7 +7,7 @@ description: Read and update ingestion, public-surface, credentials, and model s
 
 Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models.
 
-Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values.
+Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values for unset fields.
 
 ## Relevant endpoints
 
@@ -62,7 +62,7 @@ The response includes inherited retrieval values such as:
 - `customInstruction`
 - `metadataFieldSuggestions`
 
-`metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware and comes from indexed document metadata. The agent Skills tab uses this endpoint to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`.
+`metadataRules` is empty in the system defaults response. `metadataFieldSuggestions` is workspace-aware and comes from indexed document metadata. The agent Skills tab uses this endpoint and the retrieve capability descriptor to show inherited values and suggested metadata fields before saving per-agent overrides in `skillSettings["retrieval.answer"]`. When a retrieve skill field is unset, the dashboard shows the inherited default inline. Saving the form still stores only fields that were explicitly overridden.
 
 To configure retrieval answer behavior, update the agent rather than the settings resource. Retrieval-only API calls, such as `POST /api/v1/retrieval/answer`, use system defaults and still accept per-call request controls such as `metadataFilter`.
 

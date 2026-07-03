@@ -43,9 +43,15 @@ Radioso builds the final prompt, generates citations, and captures diagnostics a
 
 Retrieval behavior is configured per agent through the `retrieval.answer` skill. Retrieval-only API calls use system defaults and still accept per-call controls such as `metadataFilter`.
 
-- `queryRewriteEnabled` and rewrite instructions affect how the active retrieval query is formed.
-- `vectorTopK` controls how many semantic candidates make it into later stages.
-- `rerankEnabled` and `rerankTopK` control whether final ordering is delegated to the rerank model.
+- `retrievalStrategy` controls the execution style. `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
+- `vectorTopK` controls how many chunks are fetched from the vector index before filtering and reranking.
+- `rerankEnabled` controls whether fetched chunks are re-scored with the reranker model. It is off by default.
+- `rerankTopK` controls how many chunks survive reranking and are passed to the answer.
+- `queryRewriteEnabled` controls whether the user message is rewritten into search queries before retrieval.
+- `semanticRewriteInstructions` replaces the default instructions for rewriting the semantic vector search query. Empty means the default applies.
+- `lexicalRewriteInstructions` replaces the default instructions for rewriting the lexical keyword search query. Empty means the default applies.
+- `suggestedQuestionsEnabled` controls whether follow-up question suggestions are offered after each answer.
+- `suggestedQuestionsCount` controls how many follow-up questions to suggest.
 - `metadataRules` constrain the candidate set before prompt assembly for the agent.
 - Per-request `metadataFilter` constrains retrieval API calls without changing saved agent settings.
 - `customInstruction` influences how the final answer is written, but it cannot rescue bad retrieval.

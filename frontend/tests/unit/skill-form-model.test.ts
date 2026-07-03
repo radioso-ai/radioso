@@ -203,6 +203,75 @@ describe('skill form model', () => {
     })
   })
 
+  it('does not persist unset boolean defaults', () => {
+    const capability = baseCapability({
+      id: 'retrieve',
+      storedKind: 'retrieve',
+      targetKind: 'source_scope',
+      requiresTarget: false,
+      inputSchema: { source: 'static', schema: { fields: [] } },
+      settingsFields: [
+        { key: 'rerankEnabled', label: 'Rerank results', type: 'boolean', defaultValue: true },
+      ],
+      targets: [],
+    })
+    const draft = createInitialSkillDraft([capability], null)
+    draft.name = 'retrieve_answer'
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).not.toHaveProperty('rerankEnabled')
+  })
+
+  it('persists explicit boolean overrides from unset defaults', () => {
+    const capability = baseCapability({
+      id: 'retrieve',
+      storedKind: 'retrieve',
+      targetKind: 'source_scope',
+      requiresTarget: false,
+      inputSchema: { source: 'static', schema: { fields: [] } },
+      settingsFields: [
+        { key: 'rerankEnabled', label: 'Rerank results', type: 'boolean', defaultValue: true },
+      ],
+      targets: [],
+    })
+    const draft = createInitialSkillDraft([capability], null)
+    draft.name = 'retrieve_answer'
+    draft.settingDrafts.rerankEnabled = false
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toMatchObject({
+      rerankEnabled: false,
+    })
+  })
+
+  it('clears reset boolean and default select values before persisting config', () => {
+    const capability = baseCapability({
+      id: 'retrieve',
+      storedKind: 'retrieve',
+      targetKind: 'source_scope',
+      requiresTarget: false,
+      inputSchema: { source: 'static', schema: { fields: [] } },
+      settingsFields: [
+        { key: 'rerankEnabled', label: 'Rerank results', type: 'boolean', defaultValue: true },
+        {
+          key: 'retrievalStrategy',
+          label: 'Retrieval strategy',
+          type: 'select',
+          defaultValue: 'fixed',
+          options: [{ value: 'fixed', label: 'Fixed' }],
+        },
+      ],
+      targets: [],
+    })
+    const draft = createInitialSkillDraft([capability], null)
+    draft.name = 'retrieve_answer'
+    draft.settingDrafts.rerankEnabled = undefined
+    draft.settingDrafts.retrievalStrategy = undefined
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).not.toMatchObject({
+      rerankEnabled: expect.anything(),
+      retrievalStrategy: expect.anything(),
+    })
+  })
+
   it('keeps genuinely unknown config in the JSON escape hatch only', () => {
     const capability = baseCapability({
       settingsFields: [{ key: 'mode', label: 'Mode', type: 'select', options: [{ value: 'send', label: 'Send' }] }],

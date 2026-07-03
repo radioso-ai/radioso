@@ -36,6 +36,8 @@ export interface SkillCapabilitySettingsField {
   label: string;
   type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
   help?: string;
+  defaultValue?: boolean | number | string;
+  dependsOnKey?: string;
   options?: SkillCapabilitySettingsFieldOption[];
   min?: number;
   max?: number;

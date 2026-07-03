@@ -17,6 +17,7 @@ import { publicChatApi } from '@/lib/api'
 
 vi.mock('@/components/chat/public-chat-shell', () => ({
   PublicChatShell: () => null,
+  PublicChatThreadLoadingView: () => null,
 }))
 
 vi.mock('@/lib/api', () => ({

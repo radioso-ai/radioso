@@ -7,6 +7,7 @@
   const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
   const SESSION_MESSAGE = 'radioso:embed:session'
+  const PREPARE_MESSAGE = 'radioso:embed:preparing'
   const IDENTITY_MESSAGE = 'radioso:embed:identity'
   const ERROR_MESSAGE = 'radioso:embed:error'
   const COLLAPSE_MESSAGE = 'radioso:embed:collapse'
@@ -935,7 +936,10 @@
   const createIframe = (scriptUrl, token, options) => {
     const iframe = document.createElement('iframe')
     iframe.title = options.copy.iframeTitle
-    iframe.loading = 'lazy'
+    // Eager (not lazy): the iframe is pre-mounted hidden so the chat app is
+    // already booted when the visitor opens the widget — a lazy iframe in a
+    // hidden panel would defer loading and defeat the warm-up.
+    iframe.loading = 'eager'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
     iframe.allow = 'clipboard-read; clipboard-write'
     iframe.style.border = '0'
@@ -1400,6 +1404,11 @@
     let suppressNextLauncherClick = false
     let bootstrapPromise = null
     let iframe = null
+    // The iframe is pre-mounted at page load and pings READY once booted, but the
+    // session/greeting bootstrap is deferred until the visitor actually opens the
+    // widget — so there is no eager per-pageview session or greeting LLM call.
+    let iframeReady = false
+    let openRequested = false
     const postIdentityToIframe = () => {
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage({ type: IDENTITY_MESSAGE, signedIdentity: signedIdentityToken }, scriptUrl.origin)
@@ -1535,6 +1544,69 @@
       return iframe
     }
 
+    // Creates the session (and lets the frame stream its greeting). Deferred
+    // until the visitor opens the widget, so pre-mounting the iframe costs no
+    // eager session or greeting LLM call. Posts PREPARE first so the frame arms
+    // its verification timeout only once bootstrap is actually under way.
+    const startBootstrap = () => {
+      if (bootstrapPromise || !iframe) {
+        return
+      }
+      const activeIframe = iframe
+      const activeContentWindow = activeIframe && activeIframe.contentWindow
+      if (!activeContentWindow) {
+        return
+      }
+
+      activeContentWindow.postMessage({ type: PREPARE_MESSAGE }, scriptUrl.origin)
+
+      bootstrapPromise = bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey)
+        .then(({ session, resumed }) => {
+          if (!activeContentWindow || iframe !== activeIframe) {
+            return
+          }
+
+          storeResumeToken(resumeStorageKey, session)
+          const sessionAvatarUrl = resolveAvatarUrl(session.assistantAvatarUrl, scriptUrl)
+          const iconContainer = button.querySelector('[data-radioso-launcher-avatar="true"]')
+          if (sessionAvatarUrl && iconContainer) {
+            setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
+          }
+          activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, signedIdentity: signedIdentityToken, resumed }, scriptUrl.origin)
+        })
+        .catch((error) => {
+          if (!activeContentWindow || iframe !== activeIframe) {
+            return
+          }
+
+          activeContentWindow.postMessage(
+            {
+              type: ERROR_MESSAGE,
+              message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
+            },
+            scriptUrl.origin,
+          )
+        })
+        .finally(() => {
+          if (iframe === activeIframe) {
+            bootstrapPromise = null
+          }
+        })
+    }
+
+    // The visitor opened the widget: from here on it's fine to create the
+    // session. Bootstraps now if the frame has already booted, otherwise the
+    // READY handler will bootstrap as soon as it does.
+    const requestOpen = () => {
+      if (openRequested) {
+        return
+      }
+      openRequested = true
+      if (iframeReady) {
+        startBootstrap()
+      }
+    }
+
     const handleIframeMessage = (event) => {
       if (event.source !== (iframe && iframe.contentWindow)) {
         return
@@ -1574,42 +1646,11 @@
         return
       }
 
-      if (!bootstrapPromise) {
-        const activeIframe = iframe
-        const activeContentWindow = activeIframe && activeIframe.contentWindow
-
-        bootstrapPromise = bootstrapEmbeddedSessionWithResumeFallback(scriptUrl, token, resumeStorageKey)
-          .then(({ session, resumed }) => {
-            if (!activeContentWindow || iframe !== activeIframe) {
-              return
-            }
-
-            storeResumeToken(resumeStorageKey, session)
-            const sessionAvatarUrl = resolveAvatarUrl(session.assistantAvatarUrl, scriptUrl)
-            const iconContainer = button.querySelector('[data-radioso-launcher-avatar="true"]')
-            if (sessionAvatarUrl && iconContainer) {
-              setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
-            }
-            activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, signedIdentity: signedIdentityToken, resumed }, scriptUrl.origin)
-          })
-          .catch((error) => {
-            if (!activeContentWindow || iframe !== activeIframe) {
-              return
-            }
-
-            activeContentWindow.postMessage(
-              {
-                type: ERROR_MESSAGE,
-                message: error instanceof Error ? error.message : 'Embedded chat could not be started from this website.',
-              },
-              scriptUrl.origin,
-            )
-          })
-          .finally(() => {
-            if (iframe === activeIframe) {
-              bootstrapPromise = null
-            }
-          })
+      // The frame has booted. Bootstrap only once the visitor has opened the
+      // widget; otherwise wait — requestOpen() will bootstrap on open.
+      iframeReady = true
+      if (openRequested) {
+        startBootstrap()
       }
     }
 
@@ -1757,6 +1798,9 @@
       safeStorage.set(openedStorageKey, '1')
       stopAttention()
       dismissTeaser(true)
+      // Every open path funnels through markOpened, so this is the single point
+      // where the deferred session bootstrap is triggered.
+      requestOpen()
     }
 
     const installBubbleDragEffects = () => {
@@ -2067,6 +2111,12 @@
     window.visualViewport?.addEventListener('scroll', updatePanelVisibility)
     updatePanelVisibility()
     document.body.appendChild(host)
+
+    // Pre-mount the iframe (hidden) so the chat app is already booted when the
+    // visitor opens the widget — opening then lands directly on the chat window
+    // instead of a cold iframe load. The session/greeting bootstrap stays
+    // deferred until open (see requestOpen), so this warm-up has no backend cost.
+    ensureIframe()
 
     if (proactiveGreetingEnabled && !teaserPreviouslyDismissed && !hasBeenOpened && !isOpen && teaserText) {
       teaserTimer = setTimeout(showTeaser, teaserDelayMs)

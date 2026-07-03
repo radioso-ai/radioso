@@ -1,6 +1,6 @@
 'use client'
 
-import { Send, Sparkles } from 'lucide-react'
+import { Send, Sparkles, X } from 'lucide-react'
 import type {
   CSSProperties,
   FormEvent,
@@ -12,6 +12,7 @@ import type {
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   formatWebsiteEmbedDisclaimer,
   getWebsiteEmbedTheme,
@@ -312,6 +313,83 @@ export function PublicChatBubbleComposerSurface({
       }}
     >
       {children}
+    </div>
+  )
+}
+
+// The loading view shown while the session/history are still being fetched.
+// It mirrors the centered greeting intro — avatar, name, a typing bubble, and a
+// (read-only) composer — so opening the widget lands directly on the chat window
+// with the assistant "typing", instead of a separate full-screen loading splash.
+// The composer goes live and the typing bubble fills with the greeting once the
+// live chat takes over, so the transition is seamless.
+export function PublicChatConnectingView({
+  theme,
+  themeOverrides,
+  copy,
+  workspaceName,
+  avatarUrl,
+  branding = null,
+  onRequestCollapse,
+}: {
+  theme: WebsiteEmbedTheme
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
+  copy: WebsiteEmbedCopy
+  workspaceName: string
+  avatarUrl?: string | null
+  branding?: AgentBrandingSettings | null
+  onRequestCollapse?: () => void
+}) {
+  return (
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      style={{ background: theme.panelBackground, color: theme.panelForeground }}
+    >
+      {onRequestCollapse ? (
+        <div className="absolute right-2 top-2 z-10 flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={onRequestCollapse}
+            className="h-8 w-8 hover:opacity-90"
+            style={{ color: theme.mutedForeground }}
+          >
+            <X className="h-4 w-4" />
+            <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+          </Button>
+        </div>
+      ) : null}
+      <div
+        className="radioso-themed-scrollbar relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-8"
+        style={{ background: theme.panelBackground }}
+      >
+        <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6 pb-[12vh]">
+          <div className="flex flex-col items-center gap-3">
+            <AssistantAvatar
+              avatarUrl={avatarUrl}
+              label={workspaceName}
+              themeOverrides={themeOverrides}
+              className="size-20"
+            />
+            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+              {workspaceName}
+            </h2>
+          </div>
+          <div className="flex justify-center">
+            <TypingIndicator />
+          </div>
+          <div className="w-full pt-2">
+            <PublicChatBubbleComposerForm theme={theme} copy={copy} value="" readOnly hero />
+          </div>
+          <PublicChatBubbleDisclaimer
+            theme={theme}
+            copy={copy}
+            workspaceName={workspaceName}
+            branding={branding}
+          />
+        </div>
+      </div>
     </div>
   )
 }

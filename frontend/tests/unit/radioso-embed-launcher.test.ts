@@ -573,7 +573,10 @@ describe('radioso embed launcher', () => {
       }
     }
     button.dispatchEvent('click')
-    expect(collectElements(body, (element) => element.tagName === 'IFRAME')).toHaveLength(0)
+    // The bubble was dragged, so the click is suppressed and the widget stays
+    // closed. The iframe is pre-mounted now, so its presence no longer signals
+    // "opened" — assert the closed state directly.
+    expect(button.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('keeps an over-dragged bubble inside the viewport and returns it on window release', async () => {
@@ -681,7 +684,9 @@ describe('radioso embed launcher', () => {
     expect(button.style.transform).toBe('translate3d(0px, 0px, 0) rotate(0deg)')
     const removedWindowListeners = window.removeEventListener.mock.calls.map(([eventName]) => eventName)
     expect(removedWindowListeners).toEqual(expect.arrayContaining(['pointerup', 'pointercancel', 'blur']))
-    expect(collectElements(body, (element) => element.tagName === 'IFRAME')).toHaveLength(0)
+    // Dragging never opens the widget. The iframe is pre-mounted now, so assert
+    // the closed state rather than the absence of an iframe.
+    expect(button.getAttribute('aria-expanded')).toBe('false')
   })
 
   it('toggles the mounted embed fullscreen state on iframe request', async () => {
@@ -796,6 +801,133 @@ describe('radioso embed launcher', () => {
     expect(panel?.style.width).toBe('min(560px, calc(100vw - 2rem))')
     expect(panel?.style.borderRadius).toBe('28px')
     expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
+  })
+
+  it('pre-mounts the iframe but defers the session bootstrap until the widget opens', async () => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+
+    const head = new FakeElement('head')
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head,
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionStorage = {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    }
+    const sessionUrl = (url: unknown) => String(url).includes('/api/embed/session/')
+    const fetch = vi.fn(async (url: unknown) => {
+      if (sessionUrl(url)) {
+        return {
+          ok: true,
+          json: async () => ({
+            publicChatToken: 'public-chat-token',
+            publicSessionToken: 'public-session-token',
+            publicSessionId: 'public-session-id',
+            resumeToken: 'resume-token',
+            resumeExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+            workspaceName: 'Acme',
+          }),
+        }
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          launcherLabel: 'Chat with us',
+          launcherPosition: 'bottom-right',
+          theme: { brand: '#0f172a', brandText: '#f8fafc', surface: '#ffffff', text: '#0f172a' },
+          copy: {},
+          expertOverrides: {},
+          proactiveGreetingEnabled: false,
+        }),
+      }
+    })
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage,
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    // The iframe is pre-mounted at load, before any interaction.
+    const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
+    expect(iframe).toBeDefined()
+    expect(iframe.loading).toBe('eager')
+    const postMessage = vi.fn()
+    iframe.contentWindow = { postMessage }
+
+    const messageHandlers = window.addEventListener.mock.calls
+      .filter(([eventName]) => eventName === 'message')
+      .map(([, handler]) => handler as (event: unknown) => void)
+    const dispatchFromFrame = (data: unknown) => {
+      for (const handler of messageHandlers) {
+        handler({ source: iframe.contentWindow, origin: 'https://app.example.com', data })
+      }
+    }
+
+    // The frame boots and pings READY while the widget is still closed — this
+    // must NOT trigger a session bootstrap.
+    dispatchFromFrame({ type: 'radioso:embed:ready' })
+    for (let index = 0; index < 5; index += 1) {
+      await Promise.resolve()
+    }
+    expect(fetch.mock.calls.some(([url]) => sessionUrl(url))).toBe(false)
+    expect(postMessage).not.toHaveBeenCalled()
+
+    // Opening the widget triggers the deferred bootstrap: PREPARE, then session.
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+    button.dispatchEvent('click')
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'radioso:embed:preparing' }),
+      'https://app.example.com',
+    )
+    expect(fetch.mock.calls.some(([url]) => sessionUrl(url))).toBe(true)
+
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'radioso:embed:session' }),
+      'https://app.example.com',
+    )
   })
 
 })

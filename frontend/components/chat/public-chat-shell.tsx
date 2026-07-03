@@ -10,6 +10,7 @@ import {
   PublicChatBubbleComposerSurface,
   PublicChatBubbleDisclaimer,
   PublicChatBubbleHeader,
+  PublicChatConnectingView,
 } from '@/components/chat/public-chat-bubble-view'
 import { Button } from '@/components/ui/button'
 import {
@@ -18,7 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/components/ui/spinner'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   ChatMessageThread,
@@ -42,7 +43,6 @@ import {
 import { editionController } from '@/lib/edition-controller'
 import {
   buildWebsiteEmbedSurfaceCssVars,
-  formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
@@ -56,6 +56,14 @@ import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 type PublicChatSurface = 'public' | 'embed'
 const HUMAN_CONTACT_SKILL_NAME = 'human_contact.request'
 const HUMAN_CONTACT_INTENT_NAME = 'explicit_contact_request'
+const noop = () => undefined
+const LOADING_FIRST_MESSAGE: ChatThreadMessage = {
+  id: 'public-chat-loading-first-message',
+  role: 'assistant',
+  content: '',
+  createdAt: '1970-01-01T00:00:00.000Z',
+  status: 'streaming',
+}
 
 const isEditableElement = (element: Element | null) => {
   if (!element) {
@@ -296,6 +304,125 @@ function PublicChatOptionsMenu({
   )
 }
 
+export function PublicChatThreadLoadingView({
+  copy,
+  theme,
+  themeOverrides,
+  workspaceName,
+  avatarUrl,
+  branding,
+  onRequestCollapse,
+  onOpenFullScreen,
+  onOpenNewTab,
+}: {
+  copy: ReturnType<typeof getWebsiteEmbedCopy>
+  theme: ReturnType<typeof getWebsiteEmbedTheme>
+  themeOverrides?: WebsiteEmbedThemeOverrides | null
+  workspaceName: string
+  avatarUrl?: string | null
+  branding?: AgentBrandingSettings | null
+  onRequestCollapse?: () => void
+  onOpenFullScreen?: () => void
+  onOpenNewTab?: () => void
+}) {
+  return (
+    <div
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      style={{
+        ...buildWebsiteEmbedSurfaceCssVars(theme),
+        background: theme.panelBackground,
+        color: theme.panelForeground,
+      }}
+    >
+      <PublicChatBubbleHeader
+        theme={theme}
+        themeOverrides={themeOverrides}
+        workspaceName={workspaceName}
+        subtitle={copy.publicChatSubtitle}
+        avatarUrl={avatarUrl}
+        actions={
+          <>
+            <PublicChatOptionsMenu
+              copy={copy}
+              theme={theme}
+              contactAvailable={false}
+              contactDisabled
+              clearDisabled
+              openNewTabAvailable={Boolean(onOpenNewTab)}
+              onContact={noop}
+              onClear={noop}
+              onOpenNewTab={() => onOpenNewTab?.()}
+              iconColor={theme.accentForeground}
+            />
+            {onOpenFullScreen ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onOpenFullScreen}
+                className="h-8 w-8 hover:opacity-90"
+                style={{ color: theme.accentForeground }}
+              >
+                <Maximize2 className="h-4 w-4" />
+                <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
+              </Button>
+            ) : null}
+            {onRequestCollapse ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={onRequestCollapse}
+                className="h-8 w-8 hover:opacity-90"
+                style={{ color: theme.accentForeground }}
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">{copy.publicChatCollapseLabel}</span>
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+
+      <div
+        className="radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto p-6"
+        style={{ background: theme.panelBackground }}
+      >
+        <div className="mx-auto max-w-3xl space-y-6">
+          <ChatMessageThread
+            messages={[LOADING_FIRST_MESSAGE]}
+            onOpenDocument={async () => 'unavailable'}
+            assistantAvatarUrl={avatarUrl}
+            assistantAvatarLabel={workspaceName}
+            hideFeedbackEntries
+            theme={theme}
+            themedSuggestionButtons
+            showCitations={false}
+            documentInteractivity="link-only"
+            analyticsSurface="embed"
+            analyticsEnabled={false}
+          />
+        </div>
+      </div>
+
+      <PublicChatBubbleComposerSurface theme={theme}>
+        <PublicChatBubbleComposerForm
+          theme={theme}
+          copy={copy}
+          value=""
+          readOnly
+        />
+        <PublicChatBubbleDisclaimer
+          theme={theme}
+          copy={copy}
+          workspaceName={workspaceName}
+          branding={branding}
+        />
+      </PublicChatBubbleComposerSurface>
+    </div>
+  )
+}
+
 function PublicChatCenteredIntro({
   copy,
   theme,
@@ -463,7 +590,7 @@ function PublicChatContent({
   const visibleMessages = messages
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
-  const useCenteredIntro = !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
+  const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
@@ -626,16 +753,32 @@ function PublicChatContent({
   }
 
   if (isHydrating) {
+    if (surface === 'embed') {
+      return (
+        <PublicChatThreadLoadingView
+          copy={copy}
+          theme={theme}
+          themeOverrides={resolvedThemeOverrides}
+          workspaceName={resolvedWorkspaceName}
+          avatarUrl={resolvedAvatarUrl}
+          branding={branding}
+          onRequestCollapse={onRequestCollapse}
+          onOpenFullScreen={onOpenFullScreen}
+          onOpenNewTab={onOpenNewTab}
+        />
+      )
+    }
+
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <LogoSpinner imageClassName="h-7 w-7" />
-        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {formatWebsiteEmbedStartingMessage({
-            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
-            embeddedChatTitle: resolvedWorkspaceName,
-          })}
-        </p>
-      </div>
+      <PublicChatConnectingView
+        theme={theme}
+        themeOverrides={resolvedThemeOverrides}
+        copy={copy}
+        workspaceName={resolvedWorkspaceName}
+        avatarUrl={resolvedAvatarUrl}
+        branding={branding}
+        onRequestCollapse={onRequestCollapse}
+      />
     )
   }
 

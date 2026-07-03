@@ -356,6 +356,7 @@ export function AnonymousChatProvider({
   // it is still generating can await it and join the same conversation instead
   // of forking a new one. Resolves to the greeting's identifiers (or null).
   const pendingGreetingRef = useRef<Promise<{ conversationId?: string; bootstrapGreetingId?: string } | null> | null>(null)
+  const sendInFlightRef = useRef(false)
   // Bumped on every hydrate so a late-resolving background greeting from a stale
   // run (e.g. token change / new chat) does not write into the current one.
   const hydrationRunIdRef = useRef(0)
@@ -817,186 +818,213 @@ export function AnonymousChatProvider({
   const sendMessage = useCallback(
     async (content: string, inputMetadata?: ChatUserInputMetadata) => {
       const query = content.trim()
-      if (!query || isLoading || isHydrating || isUnavailable) return
-
-      // A proactive greeting may still be generating in the background. Await it
-      // so this turn joins the greeting's conversation (via conversationId or
-      // bootstrapGreetingId) instead of forking a separate one. In practice the
-      // greeting has almost always resolved by the time the visitor finishes
-      // typing, so this reads as instant.
-      let resolvedConversationId = conversationId
-      let resolvedBootstrapGreetingId = bootstrapGreetingId
-      if (pendingGreetingRef.current) {
-        const greeting = await pendingGreetingRef.current.catch(() => null)
-        if (greeting && !resolvedConversationId) {
-          resolvedConversationId = greeting.conversationId ?? resolvedConversationId
-          resolvedBootstrapGreetingId = greeting.conversationId
-            ? undefined
-            : greeting.bootstrapGreetingId ?? resolvedBootstrapGreetingId
-        }
-      }
-
-      const previousMessages = messages
-
-      setRateLimitError(null)
-      setRetryAfterSeconds(null)
-
-      const userMessage: ChatMessage = {
-        id: createClientId('public-chat-user'),
-        role: 'user',
-        content: query,
-        createdAt: new Date().toISOString(),
-        inputMetadata,
-        status: 'complete',
-      }
-
-      const assistantMessageId = createClientId('public-chat-assistant')
-      const assistantCreatedAt = new Date().toISOString()
-      const inputMethod = inputMetadata?.method ?? 'typed'
-
-      onAnalyticsEvent?.({
-        event: 'chat.started',
-        subjectType: resolvedConversationId ? 'conversation' : undefined,
-        subjectId: resolvedConversationId,
-        properties: {
-          inputMethod,
-          hasExistingConversation: Boolean(resolvedConversationId),
-        },
-      })
-
-      setIsLoading(true)
-      setMessages((prev) => [
-        ...clearMessageSuggestions(prev),
-        userMessage,
-        {
-          id: assistantMessageId,
-          role: 'assistant',
-          content: '',
-          createdAt: assistantCreatedAt,
-          status: 'streaming',
-        },
-      ])
+      if (!query || isLoading || isHydrating || isUnavailable || sendInFlightRef.current) return
+      sendInFlightRef.current = true
 
       try {
-        let didComplete = false
-        let activeRequestToken = publicChatTokenRef.current
-
-        const completion = await withPublicSessionRetry((activeToken) => {
-          activeRequestToken = activeToken
-          return publicChatApi.streamMessage(
-            activeToken,
-            {
-              message: query,
-              stream: true,
-              conversationId: resolvedConversationId,
-              bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
-              inputMetadata,
-              userExpectedLocale: resolveAnonymousChatBootstrapLocale({
-                localeOverride,
-                pageContext,
-              }),
-              pageContext,
-              signedIdentity,
-            },
-            {
-              onConversation: ({ conversationId: newId }) => {
-                setConversationId(newId)
-                setBootstrapGreetingId(undefined)
-              },
-              onChunk: ({ text }) => {
-                setMessages((prev) =>
-                  prev.map((message) =>
-                    message.id === assistantMessageId
-                      ? { ...message, content: `${message.content}${text}` }
-                      : message,
-                  ),
-                )
-              },
-              onDone: (completion) => {
-                didComplete = true
-                applyCompletion(assistantMessageId, completion)
-              },
-              onSuggestions: ({ suggestions }) => {
-                setMessages((prev) =>
-                  prev.map((message) =>
-                    message.id === assistantMessageId
-                      ? {
-                          ...message,
-                          suggestions: stripPublicSuggestionCitations(suggestions),
-                        }
-                      : message,
-                  ),
-                )
-              },
-              onSkill: (skillPayload) => {
-                setMessages((prev) =>
-                  prev.map((message) =>
-                    message.id === assistantMessageId
-                      ? {
-                          ...message,
-                          skill: {
-                            skillName: skillPayload.skillName,
-                            phase: skillPayload.phase,
-                            display: skillPayload.display,
-                            localizedTitle: skillPayload.localizedTitle,
-                            receipt: skillPayload.receipt,
-                          },
-                        }
-                      : message,
-                  ),
-                )
-              },
-            },
-          )
-        })
-
-        const nextConversationId = completion.conversationId ?? resolvedConversationId
-        const suppressedByHumanOwnership =
-          completion.ownership?.state === 'human_owned' && completion.ownership.suppressed
-
-        if (suppressedByHumanOwnership) {
-          if (!didComplete) {
-            applyCompletion(assistantMessageId, {
-              conversationId: nextConversationId,
-              answer: completion.answer,
-              citations: completion.citations,
-              answerSegments: completion.answerSegments,
-              suggestions: completion.suggestions,
-              ownership: completion.ownership,
-              debug: completion.debug,
-            })
+        // A proactive greeting may still be generating in the background. Await it
+        // so this turn joins the greeting's conversation (via conversationId or
+        // bootstrapGreetingId) instead of forking a separate one. In practice the
+        // greeting has almost always resolved by the time the visitor finishes
+        // typing, so this reads as instant.
+        let resolvedConversationId = conversationId
+        let resolvedBootstrapGreetingId = bootstrapGreetingId
+        if (pendingGreetingRef.current) {
+          const greeting = await pendingGreetingRef.current.catch(() => null)
+          if (greeting && !resolvedConversationId) {
+            resolvedConversationId = greeting.conversationId ?? resolvedConversationId
+            resolvedBootstrapGreetingId = greeting.conversationId
+              ? undefined
+              : greeting.bootstrapGreetingId ?? resolvedBootstrapGreetingId
           }
-          onAnalyticsEvent?.({
-            event: 'chat.completed',
-            subjectType: 'conversation',
-            subjectId: nextConversationId,
-            properties: {
-              inputMethod,
-              citationCount: 0,
-              hasAnswer: false,
-              ownershipSuppressed: true,
-              recovered: false,
-              suggestionCount: 0,
-            },
-          })
-          return
         }
 
-        const needsRecovery = !completion.answer?.trim()
+        const previousMessages = messages
 
-        if (needsRecovery) {
-          const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId, activeRequestToken)
-          if (recovered) {
+        setRateLimitError(null)
+        setRetryAfterSeconds(null)
+
+        const userMessage: ChatMessage = {
+          id: createClientId('public-chat-user'),
+          role: 'user',
+          content: query,
+          createdAt: new Date().toISOString(),
+          inputMetadata,
+          status: 'complete',
+        }
+
+        const assistantMessageId = createClientId('public-chat-assistant')
+        const assistantCreatedAt = new Date().toISOString()
+        const inputMethod = inputMetadata?.method ?? 'typed'
+
+        onAnalyticsEvent?.({
+          event: 'chat.started',
+          subjectType: resolvedConversationId ? 'conversation' : undefined,
+          subjectId: resolvedConversationId,
+          properties: {
+            inputMethod,
+            hasExistingConversation: Boolean(resolvedConversationId),
+          },
+        })
+
+        setIsLoading(true)
+        setMessages((prev) => [
+          ...clearMessageSuggestions(prev),
+          userMessage,
+          {
+            id: assistantMessageId,
+            role: 'assistant',
+            content: '',
+            createdAt: assistantCreatedAt,
+            status: 'streaming',
+          },
+        ])
+
+        try {
+          let didComplete = false
+          let activeRequestToken = publicChatTokenRef.current
+
+          const completion = await withPublicSessionRetry((activeToken) => {
+            activeRequestToken = activeToken
+            return publicChatApi.streamMessage(
+              activeToken,
+              {
+                message: query,
+                stream: true,
+                conversationId: resolvedConversationId,
+                bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
+                inputMetadata,
+                userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+                  localeOverride,
+                  pageContext,
+                }),
+                pageContext,
+                signedIdentity,
+              },
+              {
+                onConversation: ({ conversationId: newId }) => {
+                  setConversationId(newId)
+                  setBootstrapGreetingId(undefined)
+                },
+                onChunk: ({ text }) => {
+                  setMessages((prev) =>
+                    prev.map((message) =>
+                      message.id === assistantMessageId
+                        ? { ...message, content: `${message.content}${text}` }
+                        : message,
+                    ),
+                  )
+                },
+                onDone: (completion) => {
+                  didComplete = true
+                  applyCompletion(assistantMessageId, completion)
+                },
+                onSuggestions: ({ suggestions }) => {
+                  setMessages((prev) =>
+                    prev.map((message) =>
+                      message.id === assistantMessageId
+                        ? {
+                            ...message,
+                            suggestions: stripPublicSuggestionCitations(suggestions),
+                          }
+                        : message,
+                    ),
+                  )
+                },
+                onSkill: (skillPayload) => {
+                  setMessages((prev) =>
+                    prev.map((message) =>
+                      message.id === assistantMessageId
+                        ? {
+                            ...message,
+                            skill: {
+                              skillName: skillPayload.skillName,
+                              phase: skillPayload.phase,
+                              display: skillPayload.display,
+                              localizedTitle: skillPayload.localizedTitle,
+                              receipt: skillPayload.receipt,
+                            },
+                          }
+                        : message,
+                    ),
+                  )
+                },
+              },
+            )
+          })
+
+          const nextConversationId = completion.conversationId ?? resolvedConversationId
+          const suppressedByHumanOwnership =
+            completion.ownership?.state === 'human_owned' && completion.ownership.suppressed
+
+          if (suppressedByHumanOwnership) {
+            if (!didComplete) {
+              applyCompletion(assistantMessageId, {
+                conversationId: nextConversationId,
+                answer: completion.answer,
+                citations: completion.citations,
+                answerSegments: completion.answerSegments,
+                suggestions: completion.suggestions,
+                ownership: completion.ownership,
+                debug: completion.debug,
+              })
+            }
             onAnalyticsEvent?.({
               event: 'chat.completed',
               subjectType: 'conversation',
               subjectId: nextConversationId,
               properties: {
                 inputMethod,
-                citationCount: recovered.citations?.length ?? 0,
-                hasAnswer: Boolean(recovered.content.trim()),
-                recovered: true,
-                suggestionCount: recovered.suggestions?.length ?? 0,
+                citationCount: 0,
+                hasAnswer: false,
+                ownershipSuppressed: true,
+                recovered: false,
+                suggestionCount: 0,
+              },
+            })
+            return
+          }
+
+          const needsRecovery = !completion.answer?.trim()
+
+          if (needsRecovery) {
+            const recovered = await recoverAssistantMessage(nextConversationId, assistantMessageId, activeRequestToken)
+            if (recovered) {
+              onAnalyticsEvent?.({
+                event: 'chat.completed',
+                subjectType: 'conversation',
+                subjectId: nextConversationId,
+                properties: {
+                  inputMethod,
+                  citationCount: recovered.citations?.length ?? 0,
+                  hasAnswer: Boolean(recovered.content.trim()),
+                  recovered: true,
+                  suggestionCount: recovered.suggestions?.length ?? 0,
+                },
+              })
+              return
+            }
+
+            if (!didComplete) {
+              applyCompletion(assistantMessageId, {
+                conversationId: nextConversationId,
+                answer: completion.answer,
+                citations: completion.citations,
+                answerSegments: completion.answerSegments,
+                suggestions: completion.suggestions,
+                debug: completion.debug,
+              })
+            }
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: nextConversationId ? 'conversation' : undefined,
+              subjectId: nextConversationId,
+              properties: {
+                inputMethod,
+                errorCode: 'empty_answer',
+                hasAnswer: false,
+                rateLimited: false,
+                recovered: false,
               },
             })
             return
@@ -1013,113 +1041,91 @@ export function AnonymousChatProvider({
             })
           }
           onAnalyticsEvent?.({
-            event: 'chat.failed',
-            subjectType: nextConversationId ? 'conversation' : undefined,
+            event: 'chat.completed',
+            subjectType: 'conversation',
             subjectId: nextConversationId,
             properties: {
               inputMethod,
-              errorCode: 'empty_answer',
-              hasAnswer: false,
-              rateLimited: false,
+              citationCount: completion.citations?.length ?? 0,
+              hasAnswer: Boolean(completion.answer?.trim()),
+              suggestionCount: completion.suggestions?.length ?? 0,
               recovered: false,
             },
           })
-          return
-        }
+        } catch (error) {
+          const structuredError = getErrorResponse(error)
+          const rateLimit = isRateLimitError(error)
+          if (rateLimit) {
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: resolvedConversationId ? 'conversation' : undefined,
+              subjectId: resolvedConversationId,
+              properties: {
+                inputMethod,
+                errorCode: structuredError?.code ?? 'rate_limit_exceeded',
+                rateLimited: true,
+                retryAfterSeconds: rateLimit.retryAfterSeconds,
+              },
+            })
+            setRateLimitError(rateLimit.message)
+            setRetryAfterSeconds(rateLimit.retryAfterSeconds)
+            setMessages((prev) =>
+              restoreMessageSuggestions(
+                prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id),
+                previousMessages,
+              ),
+            )
+            setIsLoading(false)
+            return
+          }
 
-        if (!didComplete) {
-          applyCompletion(assistantMessageId, {
-            conversationId: nextConversationId,
-            answer: completion.answer,
-            citations: completion.citations,
-            answerSegments: completion.answerSegments,
-            suggestions: completion.suggestions,
-            debug: completion.debug,
-          })
-        }
-        onAnalyticsEvent?.({
-          event: 'chat.completed',
-          subjectType: 'conversation',
-          subjectId: nextConversationId,
-          properties: {
-            inputMethod,
-            citationCount: completion.citations?.length ?? 0,
-            hasAnswer: Boolean(completion.answer?.trim()),
-            suggestionCount: completion.suggestions?.length ?? 0,
-            recovered: false,
-          },
-        })
-      } catch (error) {
-        const structuredError = getErrorResponse(error)
-        const rateLimit = isRateLimitError(error)
-        if (rateLimit) {
+          if (structuredError?.code === 'not_found') {
+            onAnalyticsEvent?.({
+              event: 'chat.failed',
+              subjectType: resolvedConversationId ? 'conversation' : undefined,
+              subjectId: resolvedConversationId,
+              properties: {
+                inputMethod,
+                errorCode: structuredError.code,
+                rateLimited: false,
+              },
+            })
+            setIsUnavailable(true)
+            setMessages(previousMessages)
+            setIsLoading(false)
+            return
+          }
+
+          const errorMessage = getErrorMessage(error)
           onAnalyticsEvent?.({
             event: 'chat.failed',
             subjectType: resolvedConversationId ? 'conversation' : undefined,
             subjectId: resolvedConversationId,
             properties: {
               inputMethod,
-              errorCode: structuredError?.code ?? 'rate_limit_exceeded',
-              rateLimited: true,
-              retryAfterSeconds: rateLimit.retryAfterSeconds,
+              errorCode: structuredError?.code ?? 'unknown_error',
+              rateLimited: false,
             },
           })
-          setRateLimitError(rateLimit.message)
-          setRetryAfterSeconds(rateLimit.retryAfterSeconds)
           setMessages((prev) =>
             restoreMessageSuggestions(
-              prev.filter((message) => message.id !== assistantMessageId && message.id !== userMessage.id),
+              prev.map((message) => {
+                if (message.id !== assistantMessageId) return message
+                return {
+                  ...message,
+                  content: message.content || errorMessage,
+                  status: 'error' as const,
+                  answerSegments: undefined,
+                  suggestions: undefined,
+                }
+              }),
               previousMessages,
             ),
           )
           setIsLoading(false)
-          return
         }
-
-        if (structuredError?.code === 'not_found') {
-          onAnalyticsEvent?.({
-            event: 'chat.failed',
-            subjectType: resolvedConversationId ? 'conversation' : undefined,
-            subjectId: resolvedConversationId,
-            properties: {
-              inputMethod,
-              errorCode: structuredError.code,
-              rateLimited: false,
-            },
-          })
-          setIsUnavailable(true)
-          setMessages(previousMessages)
-          setIsLoading(false)
-          return
-        }
-
-        const errorMessage = getErrorMessage(error)
-        onAnalyticsEvent?.({
-          event: 'chat.failed',
-          subjectType: resolvedConversationId ? 'conversation' : undefined,
-          subjectId: resolvedConversationId,
-          properties: {
-            inputMethod,
-            errorCode: structuredError?.code ?? 'unknown_error',
-            rateLimited: false,
-          },
-        })
-        setMessages((prev) =>
-          restoreMessageSuggestions(
-            prev.map((message) => {
-              if (message.id !== assistantMessageId) return message
-              return {
-                ...message,
-                content: message.content || errorMessage,
-                status: 'error' as const,
-                answerSegments: undefined,
-                suggestions: undefined,
-              }
-            }),
-            previousMessages,
-          ),
-        )
-        setIsLoading(false)
+      } finally {
+        sendInFlightRef.current = false
       }
     },
     [applyCompletion, bootstrapGreetingId, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, signedIdentity, withPublicSessionRetry],

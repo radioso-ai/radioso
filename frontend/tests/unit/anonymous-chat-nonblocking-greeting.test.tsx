@@ -69,9 +69,11 @@ type Snapshot = { messages: ChatMessage[]; isHydrating: boolean }
 
 function ChatProbe({
   sendMessage,
+  sendMessages,
   onSnapshot,
 }: {
   sendMessage?: string
+  sendMessages?: string[]
   onSnapshot: (snapshot: Snapshot) => void
 }) {
   const chat = useAnonymousChat()
@@ -82,12 +84,15 @@ function ChatProbe({
   }, [chat.messages, chat.isHydrating, onSnapshot])
 
   useEffect(() => {
-    if (!sendMessage || chat.isHydrating || didSendRef.current) {
+    const messagesToSend = sendMessages ?? (sendMessage ? [sendMessage] : [])
+    if (messagesToSend.length === 0 || chat.isHydrating || didSendRef.current) {
       return
     }
     didSendRef.current = true
-    void chat.sendMessage(sendMessage, { method: 'typed' })
-  }, [chat, sendMessage])
+    for (const message of messagesToSend) {
+      void chat.sendMessage(message, { method: 'typed' })
+    }
+  }, [chat, sendMessage, sendMessages])
 
   return null
 }
@@ -103,9 +108,11 @@ const deferred = <T,>() => {
 const renderProvider = ({
   onSnapshot,
   sendMessage,
+  sendMessages,
 }: {
   onSnapshot: (snapshot: Snapshot) => void
   sendMessage?: string
+  sendMessages?: string[]
 }) => {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -114,7 +121,7 @@ const renderProvider = ({
   act(() => {
     root.render(
       <AnonymousChatProvider token="public-chat-token" sessionChannel={null}>
-        <ChatProbe onSnapshot={onSnapshot} sendMessage={sendMessage} />
+        <ChatProbe onSnapshot={onSnapshot} sendMessage={sendMessage} sendMessages={sendMessages} />
       </AnonymousChatProvider>,
     )
   })
@@ -253,6 +260,71 @@ describe('anonymous chat non-blocking greeting', () => {
         'Welcome!',
         'what are your hours?',
         'Here is your answer.',
+      ])
+    })
+  })
+
+  it('ignores duplicate submits while the first turn waits for the greeting', async () => {
+    const greeting = deferred<unknown>()
+    publicChatApiMock.bootstrapConversation.mockReturnValue(greeting.promise as Promise<never>)
+
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, data, handlers) => {
+      const message = (data as { message: string }).message
+      const completion = {
+        conversationId: 'conversation-1',
+        assistantMessageId: 'assistant-2',
+        answer: `Answer to ${message}`,
+        citations: [],
+        answerSegments: [],
+        suggestions: [],
+      }
+      handlers.onConversation?.({ conversationId: completion.conversationId })
+      handlers.onDone?.(completion)
+      return completion
+    })
+
+    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    mounted = renderProvider({
+      sendMessages: ['first question', 'second question'],
+      onSnapshot: (next) => {
+        snapshot = next
+      },
+    })
+
+    await waitFor(() => {
+      expect(snapshot.isHydrating).toBe(false)
+    })
+
+    await act(async () => {
+      await flush()
+    })
+    expect(publicChatApiMock.streamMessage).not.toHaveBeenCalled()
+
+    await act(async () => {
+      greeting.resolve({
+        bootstrapGreetingId: 'greeting-1',
+        assistantMessageId: 'assistant-1',
+        answer: 'Welcome!',
+        citations: [],
+        answerSegments: [],
+        suggestions: [],
+      })
+      await flush()
+    })
+
+    await waitFor(() => {
+      expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
+    })
+
+    expect(publicChatApiMock.streamMessage.mock.calls[0]?.[1]).toMatchObject({
+      message: 'first question',
+      bootstrapGreetingId: 'greeting-1',
+    })
+    await waitFor(() => {
+      expect(snapshot.messages.map((message) => message.content)).toEqual([
+        'Welcome!',
+        'first question',
+        'Answer to first question',
       ])
     })
   })

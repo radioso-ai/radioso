@@ -81,6 +81,7 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
     page.getByRole("button", { name: "New routine" }).click(),
   ]);
   await expect(page.getByRole("button", { name: "Back to routines" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByLabel("Name").fill("Collect pricing intake");
@@ -247,6 +248,14 @@ test("agent routines revise and publish a new version without duplicating the li
   await expect(versionHistory.getByRole("button", { name: /v1/ })).toContainText("superseded");
   await expect(versionHistory.getByRole("button", { name: /v2/ })).toContainText("published");
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
+  const revisionSave = routineUpdates.find((update) => update.method === "PATCH");
+  expect(revisionSave).toMatchObject({
+    body: {
+      activation: {
+        triggerDescription: "Visitor asks about pricing, quotes, or plans.",
+      },
+    },
+  });
 
   await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toHaveCount(1);
@@ -328,6 +337,8 @@ test("agent routines archive from a revision draft without publishing first", as
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
   await expect(page.getByText("draft v2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete draft Collect pricing intake" })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
 
   await Promise.all([

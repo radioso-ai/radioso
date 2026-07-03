@@ -867,9 +867,64 @@ function RoutineEditorScreen({
     setForm((current) => current ? updater(current) : current)
   }
 
+  const headerActions = (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {editingRoutine?.status === 'draft' && publishedSibling ? (
+        <Button type="button" variant="outline" onClick={() => void archiveFromDraft()} disabled={isSaving}>
+          <Archive className="mr-2 h-4 w-4" />
+          Archive routine
+        </Button>
+      ) : null}
+      {editingRoutine?.status === 'published' ? (
+        <>
+          <Button type="button" variant="outline" onClick={() => void archivePublished()} disabled={isSaving}>
+            <Archive className="mr-2 h-4 w-4" />
+            Archive
+          </Button>
+          <Button type="button" onClick={() => void revisePublished()} disabled={isSaving}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit revision
+          </Button>
+        </>
+      ) : null}
+      {editingRoutine?.status === 'archived' ? (
+        <Button type="button" onClick={() => void restoreArchived()} disabled={isSaving}>
+          <RotateCcw className="mr-2 h-4 w-4" />
+          Restore
+        </Button>
+      ) : null}
+      {!isReadOnly && form ? (
+        <>
+          <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving}>
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Validate
+          </Button>
+          <Button type="button" onClick={() => void publishDraft()} disabled={isSaving}>
+            <Send className="mr-2 h-4 w-4" />
+            Publish
+          </Button>
+        </>
+      ) : null}
+      {editingRoutine?.status === 'draft' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => void deleteDraft()}
+          disabled={isSaving}
+          aria-label={`Delete draft ${editingRoutine.name}`}
+          title="Delete draft"
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  )
+
   return (
-    <div className="space-y-5 rounded-lg border border-border bg-card/95 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
+      <div className="sticky top-14 z-10 flex flex-wrap items-start justify-between gap-3 rounded-t-lg border-b border-border bg-card/95 px-5 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="min-w-0">
           <Button type="button" variant="ghost" className="-ml-3 mb-2 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
             <ArrowLeft className="mr-2 h-4 w-4" />
@@ -891,199 +946,152 @@ function RoutineEditorScreen({
             Validation passed
           </p>
         ) : null}
+        {headerActions}
       </div>
 
-      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-      {isLoading || !form ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner className="h-4 w-4" />
-          Loading routine...
-        </div>
-      ) : (
-        <RoutineSkillCatalogProvider agentId={agentId}>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
-            <div className="space-y-1">
-              <Label htmlFor="routineName">Name</Label>
-              <Input
-                id="routineName"
-                value={draftHeader.name}
-                onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
-                disabled={isReadOnly}
-              />
+      <div className="space-y-5 p-5">
+        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+        {isLoading || !form ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Spinner className="h-4 w-4" />
+            Loading routine...
+          </div>
+        ) : (
+          <RoutineSkillCatalogProvider agentId={agentId}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+              <div className="space-y-1">
+                <Label htmlFor="routineName">Name</Label>
+                <Input
+                  id="routineName"
+                  value={draftHeader.name}
+                  onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
+                  disabled={isReadOnly}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="routinePriority">Priority</Label>
+                <Input
+                  id="routinePriority"
+                  type="number"
+                  value={draftHeader.activation.priority}
+                  onChange={(event) => setDraftHeader((current) => ({
+                    ...current,
+                    activation: { ...current.activation, priority: event.target.value },
+                  }))}
+                  disabled={isReadOnly}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="routineReentryMode">Reentry</Label>
+                <Select
+                  value={draftHeader.activation.reentryMode}
+                  disabled={isReadOnly}
+                  onValueChange={(value) => setDraftHeader((current) => ({
+                    ...current,
+                    activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
+                  }))}
+                >
+                  <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REENTRY_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
+                </p>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label htmlFor="routineTrigger">Activation trigger</Label>
+                <Textarea
+                  id="routineTrigger"
+                  value={draftHeader.activation.triggerDescription}
+                  onChange={(event) => setDraftHeader((current) => ({
+                    ...current,
+                    activation: { ...current.activation, triggerDescription: event.target.value },
+                  }))}
+                  rows={2}
+                  disabled={isReadOnly}
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="routinePriority">Priority</Label>
-              <Input
-                id="routinePriority"
-                type="number"
-                value={draftHeader.activation.priority}
-                onChange={(event) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, priority: event.target.value },
-                }))}
-                disabled={isReadOnly}
+            <RoutineDiagnosticList diagnostics={routineDiagnostics} />
+
+            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
+              <TabsList aria-label="Routine editor view">
+                {/* The chip editor has no read-only mode; a published/archived routine
+                    is viewed in the (disabled) Form tab rather than an editable prose surface. */}
+                <TabsTrigger value="prose" disabled={isReadOnly}>
+                  <Sparkles className="h-4 w-4" />
+                  Prose
+                </TabsTrigger>
+                <TabsTrigger value="form">
+                  <FormInput className="h-4 w-4" />
+                  Form
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {viewMode === 'prose' && proseSource ? (
+              <RoutineProseTab
+                key={proseKey}
+                source={proseSource}
+                header={draftHeader}
+                webhookDestinations={webhookDestinations}
+                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+                webhookDestinationsError={webhookDestinationsError}
+                onDraftChange={setProseDraft}
+                onHeaderChange={setDraftHeader}
               />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="routineReentryMode">Reentry</Label>
-              <Select
-                value={draftHeader.activation.reentryMode}
-                disabled={isReadOnly}
-                onValueChange={(value) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
-                }))}
-              >
-                <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REENTRY_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+            ) : null}
+
+            {viewMode === 'form' ? (
+              <RoutineFormEditor
+                form={form}
+                diagnostics={validationDiagnostics}
+                isPublished={isReadOnly}
+                slotKeys={slotKeys}
+                webhookDestinations={webhookDestinations}
+                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+                webhookDestinationsError={webhookDestinationsError}
+                emailSkills={emailSkills}
+                onChange={updateForm}
+              />
+            ) : null}
+
+            {versionHistory.length > 0 ? (
+              <div className="rounded-lg border border-border p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  Version history
+                </div>
+                <div className="space-y-2">
+                  {versionHistory.map((version) => (
+                    <button
+                      key={version.id}
+                      type="button"
+                      className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
+                      onClick={() => router.push(buildPersistedHref(version.id))}
+                    >
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">v{version.version}</span>
+                        <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
+                        {version.id === editingRoutine?.id ? (
+                          <span className="text-xs text-muted-foreground">current view</span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
+                    </button>
                   ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
-              </p>
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="routineTrigger">Activation trigger</Label>
-              <Textarea
-                id="routineTrigger"
-                value={draftHeader.activation.triggerDescription}
-                onChange={(event) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, triggerDescription: event.target.value },
-                }))}
-                rows={2}
-                disabled={isReadOnly}
-              />
-            </div>
-          </div>
-          <RoutineDiagnosticList diagnostics={routineDiagnostics} />
-
-          <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
-            <TabsList aria-label="Routine editor view">
-              {/* The chip editor has no read-only mode; a published/archived routine
-                  is viewed in the (disabled) Form tab rather than an editable prose surface. */}
-              <TabsTrigger value="prose" disabled={isReadOnly}>
-                <Sparkles className="h-4 w-4" />
-                Prose
-              </TabsTrigger>
-              <TabsTrigger value="form">
-                <FormInput className="h-4 w-4" />
-                Form
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {viewMode === 'prose' && proseSource ? (
-            <RoutineProseTab
-              key={proseKey}
-              source={proseSource}
-              header={draftHeader}
-              webhookDestinations={webhookDestinations}
-              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-              webhookDestinationsError={webhookDestinationsError}
-              onDraftChange={setProseDraft}
-              onHeaderChange={setDraftHeader}
-            />
-          ) : null}
-
-          {viewMode === 'form' ? (
-            <RoutineFormEditor
-              form={form}
-              diagnostics={validationDiagnostics}
-              isPublished={isReadOnly}
-              slotKeys={slotKeys}
-              webhookDestinations={webhookDestinations}
-              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-              webhookDestinationsError={webhookDestinationsError}
-              emailSkills={emailSkills}
-              onChange={updateForm}
-            />
-          ) : null}
-
-          {versionHistory.length > 0 ? (
-            <div className="rounded-lg border border-border p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-                <History className="h-4 w-4 text-muted-foreground" />
-                Version history
+                </div>
               </div>
-              <div className="space-y-2">
-                {versionHistory.map((version) => (
-                  <button
-                    key={version.id}
-                    type="button"
-                    className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
-                    onClick={() => router.push(buildPersistedHref(version.id))}
-                  >
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">v{version.version}</span>
-                      <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
-                      {version.id === editingRoutine?.id ? (
-                        <span className="text-xs text-muted-foreground">current view</span>
-                      ) : null}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap justify-end gap-2">
-            {editingRoutine?.status === 'draft' ? (
-              <>
-                {publishedSibling ? (
-                  <Button type="button" variant="outline" onClick={() => void archiveFromDraft()} disabled={isSaving}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive routine
-                  </Button>
-                ) : null}
-                <Button type="button" variant="ghost" onClick={() => void deleteDraft()} disabled={isSaving} aria-label={`Delete draft ${editingRoutine.name}`}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete draft
-                </Button>
-              </>
             ) : null}
-            {editingRoutine?.status === 'published' ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => void archivePublished()} disabled={isSaving}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </Button>
-                <Button type="button" onClick={() => void revisePublished()} disabled={isSaving}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit revision
-                </Button>
-              </>
-            ) : null}
-            {editingRoutine?.status === 'archived' ? (
-              <Button type="button" onClick={() => void restoreArchived()} disabled={isSaving}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Restore
-              </Button>
-            ) : null}
-            {!isReadOnly ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}>
-                  Save draft
-                </Button>
-                <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving}>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Validate
-                </Button>
-                <Button type="button" onClick={() => void publishDraft()} disabled={isSaving}>
-                  <Send className="mr-2 h-4 w-4" />
-                  Publish
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </RoutineSkillCatalogProvider>
-      )}
+          </RoutineSkillCatalogProvider>
+        )}
+      </div>
     </div>
   )
 }

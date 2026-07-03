@@ -46,6 +46,14 @@ const retrievalCapability = (): SkillCapabilityDescriptor => ({
       defaultValue: true,
       group: 'Retrieval tuning',
     },
+    {
+      key: 'semanticRewriteInstructions',
+      label: 'Semantic rewrite instructions',
+      type: 'textarea',
+      help: 'Instructions used for the semantic rewrite.',
+      defaultValue: 'Rewrite with the same meaning.',
+      group: 'Query rewrite',
+    },
   ],
   outcomeVocabulary: ['found'],
   supportedInvocationModes: ['default_answer'],
@@ -224,5 +232,75 @@ describe('SkillForm submit', () => {
 
     expect(onSubmit).toHaveBeenCalledOnce()
     expect(onSubmit.mock.calls[0]?.[0].config).not.toHaveProperty('rerankEnabled')
+  })
+
+  it('keeps a defaulted textarea read-only until overridden and submits the edited override', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(
+        <SkillForm
+          open
+          capabilities={[retrievalCapability()]}
+          skills={[]}
+          isSaving={false}
+          error={null}
+          onOpenChange={() => undefined}
+          onSubmit={onSubmit}
+        />,
+      )
+    })
+
+    const textarea = document.body.querySelector<HTMLTextAreaElement>('#skill-setting-semanticRewriteInstructions')
+    expect(textarea).toBeTruthy()
+    expect(textarea?.disabled).toBe(true)
+    expect(textarea?.value).toBe('Rewrite with the same meaning.')
+
+    const overrideButton = [...document.body.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Override')
+    expect(overrideButton).toBeTruthy()
+
+    await act(async () => {
+      overrideButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const editable = document.body.querySelector<HTMLTextAreaElement>('#skill-setting-semanticRewriteInstructions')
+    expect(editable?.disabled).toBe(false)
+    expect(editable?.value).toBe('Rewrite with the same meaning.')
+
+    const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+    await act(async () => {
+      setTextareaValue?.call(editable, 'Rewrite with the same meaning. Prefer event names.')
+      editable?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await submitForm()
+
+    expect(onSubmit).toHaveBeenCalledOnce()
+    expect(onSubmit.mock.calls[0]?.[0].config).toMatchObject({
+      semanticRewriteInstructions: 'Rewrite with the same meaning. Prefer event names.',
+    })
+  })
+
+  it('omits a defaulted textarea from the config when it is not overridden', async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined)
+
+    await act(async () => {
+      root.render(
+        <SkillForm
+          open
+          capabilities={[retrievalCapability()]}
+          skills={[]}
+          isSaving={false}
+          error={null}
+          onOpenChange={() => undefined}
+          onSubmit={onSubmit}
+        />,
+      )
+    })
+
+    await submitForm()
+
+    expect(onSubmit).toHaveBeenCalledOnce()
+    expect(onSubmit.mock.calls[0]?.[0].config).not.toHaveProperty('semanticRewriteInstructions')
   })
 })

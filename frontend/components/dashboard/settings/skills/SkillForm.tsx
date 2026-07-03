@@ -218,14 +218,57 @@ function SkillSettingControl({
   }
 
   if (field.type === 'textarea') {
+    const defaultText = typeof field.defaultValue === 'string' ? field.defaultValue : null
+    const hasOverride = typeof value === 'string'
+    const tallDefault = defaultText !== null && defaultText.length > 200
+
+    if (defaultText !== null && !hasOverride) {
+      return (
+        <div className="space-y-2 md:col-span-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor={fieldId}>{field.label}</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Override ${field.label}`}
+              onClick={() => onChange(defaultText)}
+            >
+              Override
+            </Button>
+          </div>
+          <Textarea
+            id={fieldId}
+            value={defaultText}
+            disabled
+            className={cn('min-h-24', tallDefault ? 'min-h-56' : '')}
+          />
+          <p className="text-xs text-muted-foreground">Default shown. Override to edit it for this skill.</p>
+          {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+        </div>
+      )
+    }
+
     return (
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor={fieldId}>{field.label}</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={fieldId}>{field.label}</Label>
+          {defaultText !== null ? (
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-xs text-muted-foreground"
+              onClick={() => onChange(undefined)}
+            >
+              Reset to default
+            </Button>
+          ) : null}
+        </div>
         <Textarea
           id={fieldId}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
-          className="min-h-24"
+          className={cn('min-h-24', tallDefault ? 'min-h-56' : '')}
         />
         {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
       </div>

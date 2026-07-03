@@ -148,16 +148,16 @@ export const DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS = loadPromptTemplate(
 
 export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettingsRecord => ({
   workspaceId,
-  // Query rewrite and reranking are on by default: terse, vague, or
-  // emotionally framed user questions recall poorly when searched verbatim,
-  // and reranking lifts the most relevant chunks out of the broader pool.
-  // Both can still be turned off per agent via retrieval.answer skill settings.
+  // Query rewrite is on by default: terse, vague, or emotionally framed user
+  // questions recall poorly when searched verbatim. Reranking is off by
+  // default: it adds a reranker model call to every retrieval, and operators
+  // opt in per agent when ordering quality is worth that latency.
   queryRewriteEnabled: true,
   semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   suggestedQuestionsEnabled: DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
   suggestedQuestionsCount: DEFAULT_SUGGESTED_QUESTIONS_COUNT,
-  rerankEnabled: true,
+  rerankEnabled: false,
   vectorTopK: 15,
   similarityThreshold: RETRIEVAL_BEHAVIOR.defaultSimilarityThreshold,
   rerankTopK: 5,

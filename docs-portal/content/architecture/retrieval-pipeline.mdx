@@ -45,11 +45,11 @@ Retrieval behavior is configured per agent through the `retrieval.answer` skill.
 
 - `retrievalStrategy` controls the execution style. `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
 - `vectorTopK` controls how many chunks are fetched from the vector index before filtering and reranking.
-- `rerankEnabled` controls whether fetched chunks are re-scored with the reranker model.
+- `rerankEnabled` controls whether fetched chunks are re-scored with the reranker model. It is off by default.
 - `rerankTopK` controls how many chunks survive reranking and are passed to the answer.
 - `queryRewriteEnabled` controls whether the user message is rewritten into search queries before retrieval.
-- `semanticRewriteInstructions` adds guidance for rewriting the semantic vector search query.
-- `lexicalRewriteInstructions` adds guidance for rewriting the lexical keyword search query.
+- `semanticRewriteInstructions` replaces the default instructions for rewriting the semantic vector search query. Empty means the default applies.
+- `lexicalRewriteInstructions` replaces the default instructions for rewriting the lexical keyword search query. Empty means the default applies.
 - `suggestedQuestionsEnabled` controls whether follow-up question suggestions are offered after each answer.
 - `suggestedQuestionsCount` controls how many follow-up questions to suggest.
 - `metadataRules` constrain the candidate set before prompt assembly for the agent.

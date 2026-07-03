@@ -187,6 +187,10 @@ describe("SkillCapabilityRegistry", () => {
     expect(byKey.get("queryRewriteEnabled")?.defaultValue).toBe(defaults.queryRewriteEnabled);
     expect(byKey.get("suggestedQuestionsEnabled")?.defaultValue).toBe(defaults.suggestedQuestionsEnabled);
     expect(byKey.get("suggestedQuestionsCount")?.defaultValue).toBe(defaults.suggestedQuestionsCount);
+    expect(byKey.get("semanticRewriteInstructions")?.defaultValue).toBe(defaults.semanticRewriteInstructions);
+    expect(byKey.get("lexicalRewriteInstructions")?.defaultValue).toBe(defaults.lexicalRewriteInstructions);
+    expect(defaults.semanticRewriteInstructions.trim()).not.toBe("");
+    expect(defaults.lexicalRewriteInstructions.trim()).not.toBe("");
 
     expect(byKey.get("rerankTopK")?.dependsOnKey).toBe("rerankEnabled");
     expect(byKey.get("semanticRewriteInstructions")?.dependsOnKey).toBe("queryRewriteEnabled");

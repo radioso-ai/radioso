@@ -71,9 +71,14 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.locator("#skill-setting-retrievalStrategy").click();
   await page.getByRole("option", { name: "Reasoning" }).click();
   await page.getByLabel("Vector top K").fill("12");
+  await expect(page.getByLabel("Rerank top K")).toHaveCount(0);
+  await page.getByRole("switch", { name: "Rerank results" }).click();
   await page.getByLabel("Rerank top K").fill("6");
-  await page.getByLabel("Semantic rewrite instructions").fill("Prefer event names and dates.");
-  await page.getByLabel("Lexical rewrite instructions").fill("Include exact venue terms.");
+  await expect(page.getByLabel("Semantic rewrite instructions", { exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Override Semantic rewrite instructions" }).click();
+  await page.getByLabel("Semantic rewrite instructions", { exact: true }).fill("Prefer event names and dates.");
+  await page.getByRole("button", { name: "Override Lexical rewrite instructions" }).click();
+  await page.getByLabel("Lexical rewrite instructions", { exact: true }).fill("Include exact venue terms.");
   await page.getByLabel("Suggested questions count").fill("3");
   await page.getByRole("button", { name: "Create skill" }).click();
 
@@ -117,6 +122,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
       instruction: "Use event-specific sources only.",
       retrievalStrategy: "reasoning",
       vectorTopK: 12,
+      rerankEnabled: true,
       rerankTopK: 6,
       semanticRewriteInstructions: "Prefer event names and dates.",
       lexicalRewriteInstructions: "Include exact venue terms.",

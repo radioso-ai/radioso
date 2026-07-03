@@ -121,7 +121,7 @@ describe("settings contract", () => {
       queryRewriteEnabled: true,
       suggestedQuestionsEnabled: true,
       suggestedQuestionsCount: 3,
-      rerankEnabled: true,
+      rerankEnabled: false,
       vectorTopK: 15,
       rerankTopK: 5,
       retrievalStrategy: "fixed",

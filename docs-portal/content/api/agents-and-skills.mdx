@@ -83,11 +83,11 @@ The main tuning fields are:
 
 - `retrievalStrategy`: `fixed` runs one search pass, `reasoning` lets the model plan and run multiple searches, and `auto` lets Radioso choose per query.
 - `vectorTopK`: how many chunks are fetched from the vector index before filtering and reranking.
-- `rerankEnabled`: whether the fetched chunks are re-scored with the reranker model.
+- `rerankEnabled`: whether the fetched chunks are re-scored with the reranker model. Off by default because it adds a model call to every retrieval.
 - `rerankTopK`: how many chunks survive reranking and are passed to the answer. It is relevant when reranking is enabled.
 - `queryRewriteEnabled`: whether the user message is rewritten into search queries before retrieval.
-- `semanticRewriteInstructions`: extra guidance for the semantic vector search rewrite. It is relevant when query rewrite is enabled.
-- `lexicalRewriteInstructions`: extra guidance for the lexical keyword search rewrite. It is relevant when query rewrite is enabled.
+- `semanticRewriteInstructions`: the instructions used to rewrite the user message into the semantic vector search query. A non-empty value replaces the default. The dashboard shows the default read-only until you choose Override, which copies it into the editor so you can adjust it. It is relevant when query rewrite is enabled.
+- `lexicalRewriteInstructions`: the instructions used to rewrite the user message into the lexical keyword search query. It behaves the same way as the semantic instructions. It is relevant when query rewrite is enabled.
 - `suggestedQuestionsEnabled`: whether the assistant offers follow-up question suggestions after each answer.
 - `suggestedQuestionsCount`: how many follow-up questions to suggest. It is relevant when suggested questions are enabled.
 

@@ -128,13 +128,13 @@ bindings.
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T023 [P] Update docs/architecture/conversational-directives.md: binding concept,
+- [X] T023 [P] Update docs/architecture/conversational-directives.md: binding concept,
       conflict rule, fall-through, inert-with-routine/step-scope-tags caveat (read
       docs/document-writer-prompt.md first)
-- [ ] T024 [P] Update docs-portal/content/api/agents-and-skills.mdx (or the page that
+- [X] T024 [P] Update docs-portal/content/api/agents-and-skills.mdx (or the page that
       owns the directives API) with the `binding` field, validation errors, and
       examples (read docs/document-writer-prompt.md first)
-- [ ] T025 Record the message-queue impact review outcome (none — in-turn selection
+- [X] T025 Record the message-queue impact review outcome (none — in-turn selection
       only) in the PR body; confirm no worker/AMQP/queue tests or docs are affected
 - [ ] T026 Full validation: `cd backend && pnpm exec tsc --noEmit && pnpm run
       test:unit && pnpm run test:contract`; then repo `pnpm run ci:local -- origin/main`

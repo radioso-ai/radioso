@@ -18,7 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/components/ui/spinner'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
   ChatMessageThread,
@@ -42,7 +42,6 @@ import {
 import { editionController } from '@/lib/edition-controller'
 import {
   buildWebsiteEmbedSurfaceCssVars,
-  formatWebsiteEmbedStartingMessage,
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
@@ -626,15 +625,24 @@ function PublicChatContent({
   }
 
   if (isHydrating) {
+    // Show the assistant's identity with a typing bubble rather than a blocking
+    // "loading" screen, so opening the chat reads as "the agent is here" and the
+    // transition into the live conversation is visually continuous.
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-        <LogoSpinner imageClassName="h-7 w-7" />
-        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {formatWebsiteEmbedStartingMessage({
-            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
-            embeddedChatTitle: resolvedWorkspaceName,
-          })}
-        </p>
+      <div
+        className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
+        style={{ background: theme.panelBackground }}
+      >
+        <AssistantAvatar
+          avatarUrl={resolvedAvatarUrl}
+          label={resolvedWorkspaceName}
+          themeOverrides={resolvedThemeOverrides}
+          className="size-16"
+        />
+        <span className="text-base font-semibold" style={{ color: theme.panelForeground }}>
+          {resolvedWorkspaceName}
+        </span>
+        <TypingIndicator />
       </div>
     )
   }

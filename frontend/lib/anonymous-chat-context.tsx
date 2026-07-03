@@ -352,6 +352,13 @@ export function AnonymousChatProvider({
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
   const [retryAfterSeconds, setRetryAfterSeconds] = useState<number | null>(null)
   const tailCursorRef = useRef<string | null>(null)
+  // Tracks the in-flight proactive greeting so a message the visitor sends while
+  // it is still generating can await it and join the same conversation instead
+  // of forking a new one. Resolves to the greeting's identifiers (or null).
+  const pendingGreetingRef = useRef<Promise<{ conversationId?: string; bootstrapGreetingId?: string } | null> | null>(null)
+  // Bumped on every hydrate so a late-resolving background greeting from a stale
+  // run (e.g. token change / new chat) does not write into the current one.
+  const hydrationRunIdRef = useRef(0)
 
   const createPublicLaunchSession = useCallback(
     async (input?: { resetSession?: boolean }) => {
@@ -407,7 +414,92 @@ export function AnonymousChatProvider({
     [createPublicLaunchSession, ensurePublicLaunchSession, sessionChannel],
   )
 
+  // Fetches the proactive greeting in the background and streams it into a
+  // placeholder message so the visitor sees a typing bubble (and can read/type)
+  // instead of a blocking loading screen while the greeting LLM runs.
+  const runBootstrapGreeting = useCallback(
+    async (runId: number): Promise<{ conversationId?: string; bootstrapGreetingId?: string } | null> => {
+      const greetingMessageId = createClientId('public-chat-assistant')
+      const isStale = () => hydrationRunIdRef.current !== runId
+
+      // An assistant message that is `streaming` with empty content renders as a
+      // typing bubble in both the centered intro and the message thread.
+      setMessages([
+        {
+          id: greetingMessageId,
+          role: 'assistant',
+          content: '',
+          createdAt: new Date().toISOString(),
+          status: 'streaming',
+        },
+      ])
+
+      try {
+        const bootstrap = await withPublicSessionRetry((activeToken) =>
+          publicChatApi.bootstrapConversation(activeToken, {
+            stream: false,
+            startConversation: true,
+            userExpectedLocale: resolveAnonymousChatBootstrapLocale({
+              localeOverride,
+              pageContext,
+              browserLocales:
+                typeof navigator !== 'undefined'
+                  ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
+                  : [],
+            }),
+            pageContext,
+          }),
+        )
+
+        if (isStale()) {
+          return null
+        }
+
+        if (bootstrap?.answer) {
+          if (bootstrap.conversationId) {
+            setConversationId(bootstrap.conversationId)
+          } else {
+            setBootstrapGreetingId(bootstrap.bootstrapGreetingId)
+          }
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === greetingMessageId
+                ? {
+                    ...message,
+                    content: bootstrap.answer ?? '',
+                    citations: bootstrap.citations,
+                    answerSegments: toPublicAnswerSegments(bootstrap.answerSegments),
+                    suggestions: stripPublicSuggestionCitations(bootstrap.suggestions),
+                    activitySummary: bootstrap.activitySummary,
+                    activityTrace: bootstrap.activityTrace,
+                    persistedAssistantMessageId: bootstrap.assistantMessageId,
+                    status: 'complete',
+                  }
+                : message,
+            ),
+          )
+          return {
+            conversationId: bootstrap.conversationId,
+            bootstrapGreetingId: bootstrap.conversationId ? undefined : bootstrap.bootstrapGreetingId,
+          }
+        }
+
+        // No greeting produced — drop the placeholder and fall back to the empty state.
+        setMessages((prev) => prev.filter((message) => message.id !== greetingMessageId))
+        return null
+      } catch {
+        if (!isStale()) {
+          setMessages((prev) => prev.filter((message) => message.id !== greetingMessageId))
+        }
+        return null
+      }
+    },
+    [localeOverride, pageContext, withPublicSessionRetry],
+  )
+
   const hydrateConversation = useCallback(async () => {
+    const runId = ++hydrationRunIdRef.current
+    pendingGreetingRef.current = null
     setIsHydrating(true)
     setIsUnavailable(false)
     setMessages([])
@@ -438,44 +530,11 @@ export function AnonymousChatProvider({
 
       if (response.conversations.length === 0) {
         if (response.assistantBootstrapActive) {
-          const bootstrap = await withPublicSessionRetry((activeToken) =>
-            publicChatApi.bootstrapConversation(activeToken, {
-              stream: false,
-              startConversation: true,
-              userExpectedLocale: resolveAnonymousChatBootstrapLocale({
-                localeOverride,
-                pageContext,
-                browserLocales:
-                  typeof navigator !== 'undefined'
-                    ? [navigator.languages?.[0] ?? navigator.language].filter((value): value is string => Boolean(value))
-                    : [],
-              }),
-              pageContext,
-            }),
-          )
-
-          if (bootstrap?.answer) {
-            if (bootstrap.conversationId) {
-              setConversationId(bootstrap.conversationId)
-            } else {
-              setBootstrapGreetingId(bootstrap.bootstrapGreetingId)
-            }
-            setMessages([
-              {
-                id: createClientId('public-chat-assistant'),
-                role: 'assistant',
-                content: bootstrap.answer,
-                createdAt: new Date().toISOString(),
-                citations: bootstrap.citations,
-                answerSegments: toPublicAnswerSegments(bootstrap.answerSegments),
-                suggestions: stripPublicSuggestionCitations(bootstrap.suggestions),
-                activitySummary: bootstrap.activitySummary,
-                activityTrace: bootstrap.activityTrace,
-                persistedAssistantMessageId: bootstrap.assistantMessageId,
-                status: 'complete',
-              },
-            ])
-          }
+          // Don't block the UI on the greeting LLM: unblock here (the `finally`
+          // clears isHydrating) and stream the greeting into a typing bubble in
+          // the background. sendMessage awaits pendingGreetingRef so the first
+          // user turn still joins the greeting's conversation.
+          pendingGreetingRef.current = runBootstrapGreeting(runId)
         }
         return
       }
@@ -501,7 +560,7 @@ export function AnonymousChatProvider({
     } finally {
       setIsHydrating(false)
     }
-  }, [localeOverride, pageContext, withPublicSessionRetry])
+  }, [runBootstrapGreeting, withPublicSessionRetry])
 
   useEffect(() => {
     let cancelled = false
@@ -759,6 +818,24 @@ export function AnonymousChatProvider({
     async (content: string, inputMetadata?: ChatUserInputMetadata) => {
       const query = content.trim()
       if (!query || isLoading || isHydrating || isUnavailable) return
+
+      // A proactive greeting may still be generating in the background. Await it
+      // so this turn joins the greeting's conversation (via conversationId or
+      // bootstrapGreetingId) instead of forking a separate one. In practice the
+      // greeting has almost always resolved by the time the visitor finishes
+      // typing, so this reads as instant.
+      let resolvedConversationId = conversationId
+      let resolvedBootstrapGreetingId = bootstrapGreetingId
+      if (pendingGreetingRef.current) {
+        const greeting = await pendingGreetingRef.current.catch(() => null)
+        if (greeting && !resolvedConversationId) {
+          resolvedConversationId = greeting.conversationId ?? resolvedConversationId
+          resolvedBootstrapGreetingId = greeting.conversationId
+            ? undefined
+            : greeting.bootstrapGreetingId ?? resolvedBootstrapGreetingId
+        }
+      }
+
       const previousMessages = messages
 
       setRateLimitError(null)
@@ -779,11 +856,11 @@ export function AnonymousChatProvider({
 
       onAnalyticsEvent?.({
         event: 'chat.started',
-        subjectType: conversationId ? 'conversation' : undefined,
-        subjectId: conversationId,
+        subjectType: resolvedConversationId ? 'conversation' : undefined,
+        subjectId: resolvedConversationId,
         properties: {
           inputMethod,
-          hasExistingConversation: Boolean(conversationId),
+          hasExistingConversation: Boolean(resolvedConversationId),
         },
       })
 
@@ -811,8 +888,8 @@ export function AnonymousChatProvider({
             {
               message: query,
               stream: true,
-              conversationId,
-              bootstrapGreetingId: conversationId ? undefined : bootstrapGreetingId,
+              conversationId: resolvedConversationId,
+              bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
               inputMetadata,
               userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                 localeOverride,
@@ -873,7 +950,7 @@ export function AnonymousChatProvider({
           )
         })
 
-        const nextConversationId = completion.conversationId ?? conversationId
+        const nextConversationId = completion.conversationId ?? resolvedConversationId
         const suppressedByHumanOwnership =
           completion.ownership?.state === 'human_owned' && completion.ownership.suppressed
 
@@ -978,8 +1055,8 @@ export function AnonymousChatProvider({
         if (rateLimit) {
           onAnalyticsEvent?.({
             event: 'chat.failed',
-            subjectType: conversationId ? 'conversation' : undefined,
-            subjectId: conversationId,
+            subjectType: resolvedConversationId ? 'conversation' : undefined,
+            subjectId: resolvedConversationId,
             properties: {
               inputMethod,
               errorCode: structuredError?.code ?? 'rate_limit_exceeded',
@@ -1002,8 +1079,8 @@ export function AnonymousChatProvider({
         if (structuredError?.code === 'not_found') {
           onAnalyticsEvent?.({
             event: 'chat.failed',
-            subjectType: conversationId ? 'conversation' : undefined,
-            subjectId: conversationId,
+            subjectType: resolvedConversationId ? 'conversation' : undefined,
+            subjectId: resolvedConversationId,
             properties: {
               inputMethod,
               errorCode: structuredError.code,
@@ -1019,8 +1096,8 @@ export function AnonymousChatProvider({
         const errorMessage = getErrorMessage(error)
         onAnalyticsEvent?.({
           event: 'chat.failed',
-          subjectType: conversationId ? 'conversation' : undefined,
-          subjectId: conversationId,
+          subjectType: resolvedConversationId ? 'conversation' : undefined,
+          subjectId: resolvedConversationId,
           properties: {
             inputMethod,
             errorCode: structuredError?.code ?? 'unknown_error',

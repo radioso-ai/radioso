@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
+import { AssistantAvatar } from '@/components/chat/public-chat-bubble-view'
 import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { LogoSpinner } from '@/components/ui/spinner'
+import { TypingIndicator } from '@/components/ui/typing-indicator'
 import {
-  formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopyOverrides,
@@ -296,18 +296,23 @@ export function EmbeddedChatFrame({
   }, [copy.embeddedChatLauncherRequiredMessage, resetNonce, token])
 
   if (state.status === 'bootstrapping') {
+    // Session bootstrap (a fast, no-LLM round-trip, and resumed for returning
+    // visitors) — present it as the assistant's identity plus a typing bubble so
+    // it flows straight into the live chat instead of a "loading" screen.
+    const connectingName = state.workspaceName?.trim() || copy.embeddedChatTitle
     return (
       <div
-        className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
-        style={{ color: theme.panelForeground }}
+        className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
+        style={{ background: theme.panelBackground, color: theme.panelForeground }}
       >
-        <LogoSpinner imageClassName="h-7 w-7" />
-        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {formatWebsiteEmbedStartingMessage({
-            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
-            embeddedChatTitle: state.workspaceName?.trim() || copy.embeddedChatTitle,
-          })}
-        </p>
+        <AssistantAvatar
+          avatarUrl={avatarUrl}
+          label={connectingName}
+          themeOverrides={themeOverrides}
+          className="size-16"
+        />
+        <span className="text-base font-semibold">{connectingName}</span>
+        <TypingIndicator />
       </div>
     )
   }

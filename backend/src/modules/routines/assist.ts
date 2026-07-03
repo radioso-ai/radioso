@@ -8,6 +8,7 @@ import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { traceOperation } from "../../shared/observability/tracing/operations.js";
+import type { SkillAuthoringCatalog, SkillAuthoringDescriptor } from "../skills/public.js";
 import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
@@ -72,6 +73,7 @@ export interface RoutineDraftAssistServiceOptions {
   repository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
   textGenerationClient: RoutineDraftAssistTextGenerationPort;
   actionCatalog: RoutineDraftAssistActionCatalogEntry[];
+  skillAuthoringCatalog?: Pick<SkillAuthoringCatalog, "listForAgent">;
   logger: Pick<AppLogger, "info" | "warn">;
   telemetryService?: Pick<TelemetryService, "emit">;
 }
@@ -101,6 +103,34 @@ const actionAliasTokens = (catalog: RoutineDraftAssistActionCatalogEntry[]): Set
     }
   }
   return aliases;
+};
+
+const skillDescriptorToActionCatalogEntry = (
+  descriptor: SkillAuthoringDescriptor,
+): RoutineDraftAssistActionCatalogEntry => ({
+  type: descriptor.skillName,
+  kind: "tool",
+  label: descriptor.displayName,
+  ...(descriptor.description ? { description: descriptor.description } : {}),
+  outcomeStatuses: descriptor.outcomes.map((outcome) => outcome.name),
+});
+
+const mergeActionCatalog = (
+  staticCatalog: RoutineDraftAssistActionCatalogEntry[],
+  skillDescriptors: SkillAuthoringDescriptor[],
+): RoutineDraftAssistActionCatalogEntry[] => {
+  const byType = new Map<string, RoutineDraftAssistActionCatalogEntry>();
+  for (const entry of staticCatalog) {
+    byType.set(entry.type, entry);
+  }
+  for (const descriptor of skillDescriptors) {
+    const entry = skillDescriptorToActionCatalogEntry(descriptor);
+    byType.set(entry.type, {
+      ...byType.get(entry.type),
+      ...entry,
+    });
+  }
+  return [...byType.values()];
 };
 
 const extractVariableHints = (
@@ -277,9 +307,10 @@ export class RoutineDraftAssistService {
   ): Promise<RoutineDraftAssistResponse> {
     const parsedInput = routineDraftAssistRequestSchema.parse(input);
     const agent = await this.requireAgent(workspaceId, agentId);
+    const actionCatalog = await this.resolveActionCatalog(workspaceId, agentId);
     const requestId = randomUUID();
-    const variableHints = extractVariableHints(parsedInput.prose, this.actionCatalog);
-    const prompt = this.buildPrompt(agent, parsedInput, variableHints);
+    const variableHints = extractVariableHints(parsedInput.prose, actionCatalog);
+    const prompt = this.buildPrompt(agent, parsedInput, variableHints, actionCatalog);
 
     const primary = await this.callLlm({
       workspaceId,
@@ -288,6 +319,7 @@ export class RoutineDraftAssistService {
       prompt,
       proseLength: parsedInput.prose.length,
       attemptKey: "primary",
+      catalogSize: actionCatalog.length,
     });
     const primaryDraft = parseDraft(primary, variableHints);
     if (primaryDraft) {
@@ -298,6 +330,7 @@ export class RoutineDraftAssistService {
         prompt,
         proseLength: parsedInput.prose.length,
         variableHints,
+        actionCatalog,
         draft: primaryDraft,
       });
     }
@@ -317,6 +350,7 @@ export class RoutineDraftAssistService {
       prompt: `${prompt}\n\nReturn valid JSON only. Do not wrap it in markdown. The JSON must match the requested routine draft schema exactly.`,
       proseLength: parsedInput.prose.length,
       attemptKey: "schema_retry",
+      catalogSize: actionCatalog.length,
     });
     const retryDraft = parseDraft(retry, variableHints);
     if (retryDraft) {
@@ -327,6 +361,7 @@ export class RoutineDraftAssistService {
         prompt,
         proseLength: parsedInput.prose.length,
         variableHints,
+        actionCatalog,
         draft: retryDraft,
       });
     }
@@ -348,9 +383,10 @@ export class RoutineDraftAssistService {
     prompt: string;
     proseLength: number;
     variableHints: string[];
+    actionCatalog: RoutineDraftAssistActionCatalogEntry[];
     draft: RoutineDefinitionDraftInput;
   }): Promise<RoutineDraftAssistResponse> {
-    const original = this.finalizeDraft(input.agentId, input.draft);
+    const original = this.finalizeDraft(input.agentId, input.draft, input.actionCatalog);
     if (original.validation.diagnostics.length === 0) {
       return original;
     }
@@ -362,6 +398,7 @@ export class RoutineDraftAssistService {
       prompt: appendValidationDiagnosticsToPrompt(input.prompt, original.validation.diagnostics),
       proseLength: input.proseLength,
       attemptKey: "validation_retry",
+      catalogSize: input.actionCatalog.length,
     });
     const retryDraft = parseDraft(retry, input.variableHints);
     if (!retryDraft) {
@@ -375,10 +412,21 @@ export class RoutineDraftAssistService {
       return original;
     }
 
-    const corrected = this.finalizeDraft(input.agentId, retryDraft);
+    const corrected = this.finalizeDraft(input.agentId, retryDraft, input.actionCatalog);
     return corrected.validation.diagnostics.length < original.validation.diagnostics.length
       ? corrected
       : original;
+  }
+
+  private async resolveActionCatalog(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<RoutineDraftAssistActionCatalogEntry[]> {
+    if (!this.options.skillAuthoringCatalog) {
+      return this.actionCatalog;
+    }
+    const descriptors = await this.options.skillAuthoringCatalog.listForAgent({ workspaceId, agentId });
+    return mergeActionCatalog(this.actionCatalog, descriptors);
   }
 
   private async requireAgent(workspaceId: string, agentId: string): Promise<RoutineDraftAssistAgentContext> {
@@ -399,6 +447,7 @@ export class RoutineDraftAssistService {
     agent: RoutineDraftAssistAgentContext,
     input: RoutineDraftAssistRequest,
     variableHints: string[],
+    actionCatalog: RoutineDraftAssistActionCatalogEntry[],
   ): string {
     const template = loadPromptTemplate(PROMPT_PATH);
     return renderTemplate(template, {
@@ -408,7 +457,7 @@ export class RoutineDraftAssistService {
         customInstruction: agent.customInstruction ?? null,
         greetingInstruction: agent.greetingInstruction ?? null,
       }),
-      permitted_action_catalog: serializePromptData(this.actionCatalog),
+      permitted_action_catalog: serializePromptData(actionCatalog),
       variable_hints: serializePromptData(variableHints),
       procedure_text: input.prose,
     });
@@ -421,6 +470,7 @@ export class RoutineDraftAssistService {
     prompt: string;
     proseLength: number;
     attemptKey: string;
+    catalogSize: number;
   }): Promise<string> {
     const startedAt = Date.now();
     const baseFields = {
@@ -430,7 +480,7 @@ export class RoutineDraftAssistService {
       attemptKey: input.attemptKey,
       promptLength: input.prompt.length,
       proseLength: input.proseLength,
-      catalogSize: this.actionCatalog.length,
+      catalogSize: input.catalogSize,
     };
 
     this.options.logger.info(baseFields, "routine_draft_assist_llm_call_started");
@@ -495,10 +545,14 @@ export class RoutineDraftAssistService {
     }
   }
 
-  private finalizeDraft(agentId: string, draft: RoutineDefinitionDraftInput): RoutineDraftAssistResponse {
+  private finalizeDraft(
+    agentId: string,
+    draft: RoutineDefinitionDraftInput,
+    actionCatalog: RoutineDraftAssistActionCatalogEntry[],
+  ): RoutineDraftAssistResponse {
     const normalizedDraft = normalizeDraftSlotReferences(draft);
     const validation = validateRoutineDefinition(draftDefinitionFromInput(agentId, normalizedDraft));
-    const catalogValidationDiagnostics = catalogDiagnostics(normalizedDraft, this.actionCatalog);
+    const catalogValidationDiagnostics = catalogDiagnostics(normalizedDraft, actionCatalog);
     const diagnostics = [...validation.diagnostics, ...catalogValidationDiagnostics];
     return {
       draft: normalizedDraft,

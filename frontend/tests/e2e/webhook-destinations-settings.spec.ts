@@ -106,8 +106,8 @@ test("routine editor configures completion export with destination dropdown and 
   await page.getByLabel("Terminal 1 id").fill("complete");
   await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
 
-  await page.getByRole("button", { name: "Save draft" }).click();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "POST")).toBe(true);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
 
   const createUpdate = routineUpdates.find((update) => update.method === "POST");
   expect(createUpdate).toMatchObject({

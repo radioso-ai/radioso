@@ -20,6 +20,7 @@ export interface AgentSkillUpdateRecord {
   targetType?: string | null;
   targetId?: string | null;
   config?: Record<string, unknown>;
+  replaceConfig?: Record<string, unknown>;
   invocationMode?: AgentSkillInvocationMode;
   enabled?: boolean;
 }
@@ -146,10 +147,13 @@ export class AgentSkillRepository implements AgentSkillRepositoryPort {
         updated_at: currentTimestamp(),
         // Mirror the prior COALESCE/CASE semantics: target_type updates only when a
         // value is supplied; target_id distinguishes an explicit null (key present)
-        // from "leave unchanged" (key absent); config is a shallow jsonb merge.
+        // from "leave unchanged" (key absent); config remains a shallow jsonb merge
+        // unless a full replacement is explicitly requested.
         ...(input.targetType != null ? { target_type: input.targetType } : {}),
         ...("targetId" in input ? { target_id: input.targetId ?? null } : {}),
-        ...(input.config ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config)) } : {}),
+        ...(input.replaceConfig !== undefined
+          ? { config: toJsonb(input.replaceConfig) }
+          : input.config ? { config: jsonbConcat(eb.ref("config"), toJsonb(input.config)) } : {}),
         ...(input.invocationMode != null ? { invocation_mode: input.invocationMode } : {}),
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
       }))

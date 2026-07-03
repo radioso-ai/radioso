@@ -426,7 +426,11 @@ const readSettingDraftValue = (
     return typeof value === 'number' ? value : undefined
   }
   if (field.type === 'select') {
-    return typeof value === 'string' ? value : field.options?.[0]?.value
+    return typeof value === 'string' ? value : undefined
+  }
+  if (field.type === 'textarea') {
+    // Tri-state: undefined means "inherit the default", a string is an override.
+    return typeof value === 'string' ? value : undefined
   }
   return typeof value === 'string' ? value : ''
 }

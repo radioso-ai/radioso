@@ -188,9 +188,13 @@ describe('anonymous chat non-blocking greeting', () => {
     const greeting = deferred<unknown>()
     publicChatApiMock.bootstrapConversation.mockReturnValue(greeting.promise as Promise<never>)
 
-    let capturedSendPayload: { conversationId?: string; bootstrapGreetingId?: string } | null = null
+    // Held on an object so TS keeps the union type across the mock closure
+    // (a plain `let` gets flow-narrowed to its initial `null`).
+    const captured: { payload: { conversationId?: string; bootstrapGreetingId?: string } | null } = {
+      payload: null,
+    }
     publicChatApiMock.streamMessage.mockImplementation(async (_token, data, handlers) => {
-      capturedSendPayload = data as { conversationId?: string; bootstrapGreetingId?: string }
+      captured.payload = data as { conversationId?: string; bootstrapGreetingId?: string }
       const completion = {
         conversationId: 'conversation-1',
         assistantMessageId: 'assistant-2',
@@ -241,8 +245,8 @@ describe('anonymous chat non-blocking greeting', () => {
       expect(publicChatApiMock.streamMessage).toHaveBeenCalledTimes(1)
     })
 
-    expect(capturedSendPayload?.bootstrapGreetingId).toBe('greeting-1')
-    expect(capturedSendPayload?.conversationId).toBeUndefined()
+    expect(captured.payload?.bootstrapGreetingId).toBe('greeting-1')
+    expect(captured.payload?.conversationId).toBeUndefined()
 
     await waitFor(() => {
       expect(snapshot.messages.map((message) => message.content)).toEqual([

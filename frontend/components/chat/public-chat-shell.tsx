@@ -10,6 +10,7 @@ import {
   PublicChatBubbleComposerSurface,
   PublicChatBubbleDisclaimer,
   PublicChatBubbleHeader,
+  PublicChatConnectingView,
 } from '@/components/chat/public-chat-bubble-view'
 import { Button } from '@/components/ui/button'
 import {
@@ -625,25 +626,20 @@ function PublicChatContent({
   }
 
   if (isHydrating) {
-    // Show the assistant's identity with a typing bubble rather than a blocking
-    // "loading" screen, so opening the chat reads as "the agent is here" and the
-    // transition into the live conversation is visually continuous.
+    // Render the chat window itself — avatar, name, a typing bubble, and a
+    // read-only composer — rather than a loading splash, so opening the widget
+    // lands directly on the chat with the assistant "typing" and flows straight
+    // into the live conversation.
     return (
-      <div
-        className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
-        style={{ background: theme.panelBackground }}
-      >
-        <AssistantAvatar
-          avatarUrl={resolvedAvatarUrl}
-          label={resolvedWorkspaceName}
-          themeOverrides={resolvedThemeOverrides}
-          className="size-16"
-        />
-        <span className="text-base font-semibold" style={{ color: theme.panelForeground }}>
-          {resolvedWorkspaceName}
-        </span>
-        <TypingIndicator />
-      </div>
+      <PublicChatConnectingView
+        theme={theme}
+        themeOverrides={resolvedThemeOverrides}
+        copy={copy}
+        workspaceName={resolvedWorkspaceName}
+        avatarUrl={resolvedAvatarUrl}
+        branding={branding}
+        onRequestCollapse={onRequestCollapse}
+      />
     )
   }
 

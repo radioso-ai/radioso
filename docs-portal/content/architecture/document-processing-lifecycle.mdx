@@ -32,9 +32,9 @@ Fixed-window chunking always uses fixed-size overlapping text windows. Semantic 
 
 ### Enrich the document when enabled
 
-AI document enrichment is optional and disabled by default. When enabled by the workspace setting, a source override, or a reprocess override, the worker makes one model call for the document. The call classifies the document shape and extracts supported temporal facts.
+Metadata extraction is optional and disabled by default. When enabled by the workspace setting, a source override, or a reprocess override, the worker makes one model call for the document. The call understands the document type and extracts supported structured tags such as event dates.
 
-The enrichment result is validated before it changes metadata. Event dates are attached to overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level. If validation or the provider call fails, the document continues through processing without enriched metadata.
+The extraction result is validated before it changes metadata. Event dates are attached to overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level. If validation or the provider call fails, the document continues through processing without extracted tags.
 
 ### Embed and publish chunks
 
@@ -53,7 +53,7 @@ Document processing is revision-aware. If a document is updated while an older j
 
 - Inline text documents store their source content directly in the document record.
 - Uploaded files store source file details and are materialized during processing before chunking begins.
-- Website and connector sources can carry a source-level enrichment override. That override can inherit the workspace default, force enrichment on, or force it off.
+- Website and connector sources can carry a source-level metadata extraction override. That override can inherit the workspace default, force extraction on, or force it off.
 
 ## Queue payloads
 

@@ -107,9 +107,9 @@ Use `POST /api/v1/document/{documentId}/reprocess` when you want to run the curr
 
 Both flows return `202` because processing is queued.
 
-Document detail responses include enrichment provenance when a processing run attempted or skipped AI document enrichment. The `enrichment` object reports safe operator fields such as status, detected shape, model, anchor date, fact count, applied chunk count, and failure reason. It does not include source text, prompts, completions, or chunk content.
+Document detail responses include extraction provenance when a processing run attempted or skipped metadata extraction. The `enrichment` object reports safe operator fields such as status, detected shape, model, anchor date, fact count, applied chunk count, and failure reason. It does not include source text, prompts, completions, or chunk content.
 
-Single-document reprocess accepts an optional enrichment override for that run:
+Single-document reprocess accepts an optional metadata extraction override for that run:
 
 ```bash
 curl -sS -X POST http://localhost:8080/api/v1/document/document-id/reprocess \
@@ -120,7 +120,7 @@ curl -sS -X POST http://localhost:8080/api/v1/document/document-id/reprocess \
 
 `documentEnrichmentOverride` can be `on` or `off`. It is stored on the processing job, not on the queue message, and it does not change the saved workspace or source setting.
 
-## Source enrichment and reprocessing
+## Source metadata extraction and reprocessing
 
 Sources expose `documentEnrichmentOverride` as `inherit`, `on`, or `off`. `inherit` uses the workspace ingestion setting.
 

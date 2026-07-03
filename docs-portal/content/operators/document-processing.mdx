@@ -36,7 +36,7 @@ In local mode, the worker can poll the durable queue directly. In cloud mode, th
 
 The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
 
-If AI document enrichment is enabled for the run, the worker performs one enrichment model call before chunk publication. The result classifies the document shape and may add temporal metadata such as `dateFrom` and `dateTo` to the relevant chunks.
+If metadata extraction is enabled for the run, the worker performs one extraction model call before chunk publication. The call understands the document type and may add structured tags such as `dateFrom` and `dateTo` to the relevant chunks.
 </Steps>
 
 ## What users will notice
@@ -51,13 +51,13 @@ If AI document enrichment is enabled for the run, the worker performs one enrich
 - `DOCUMENT_STORAGE_DRIVER` selects local filesystem or GCS storage for uploaded source files.
 - `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
 - workspace ingestion settings control chunking strategy and chunk sizes.
-- `documentEnrichmentEnabled` controls the workspace default for AI document enrichment. Source overrides and reprocess overrides can force enrichment on or off for narrower runs.
+- `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
 - `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
 - `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
 
 Reprocessing can target a single document, a single source, or the whole workspace. Source reprocessing queues eligible documents for that source only and reports queued and skipped counts.
 
-Queue-backed deployments keep the same dispatch contract for enrichment reprocesses. The Cloud Tasks or AMQP message wakes a worker by job id; the enrichment override is loaded from the durable processing job row.
+Queue-backed deployments keep the same dispatch contract for extraction reprocesses. The Cloud Tasks or AMQP message wakes a worker by job id; the extraction override is loaded from the durable processing job row.
 
 ## First checks during incidents
 

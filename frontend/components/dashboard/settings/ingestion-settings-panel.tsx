@@ -380,8 +380,8 @@ export function IngestionSettingsPanel({
                 <div className="flex items-center justify-between gap-4">
                   <SettingFieldHeader
                     htmlFor="documentEnrichmentEnabled"
-                    label="AI document enrichment"
-                    description="Classify document shape and extract temporal facts with one model call per document."
+                    label="Metadata extraction"
+                    description="Understands each document's type and extracts structured tags — like event dates — with one extra model call per document."
                     className="pr-4"
                   />
                   <Switch

@@ -226,7 +226,7 @@ test("connector sources reopen setup with sync status and manual sync", async ({
   await expect(page.getByText("Sync started.")).toBeVisible();
 });
 
-test("operator toggles document enrichment and reprocesses one source", async ({ page }) => {
+test("operator toggles metadata extraction and reprocesses one source", async ({ page }) => {
   const ingestionSettingsUpdates: unknown[] = [];
   const sourceRequests: Array<{ method: string; url: string; body?: unknown }> = [];
 
@@ -314,7 +314,7 @@ test("operator toggles document enrichment and reprocesses one source", async ({
   });
 
   await page.goto(`/w/${workspaceKey}/knowledge?tab=ingestion`);
-  await page.getByRole("switch", { name: "AI document enrichment" }).click();
+  await page.getByRole("switch", { name: "Metadata extraction" }).click();
 
   await expect.poll(() => ingestionSettingsUpdates.length).toBeGreaterThanOrEqual(1);
   expect(ingestionSettingsUpdates.at(-1)).toMatchObject({

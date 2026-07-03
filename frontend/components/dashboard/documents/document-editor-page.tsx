@@ -367,7 +367,7 @@ export function DocumentEditorPage({
                 {enrichment ? (
                   <div className="space-y-2 border-t border-border/70 pt-4">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      AI enrichment
+                      Extracted metadata
                     </p>
                     <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-sm">
                       {enrichmentRows.map(([label, value]) => (

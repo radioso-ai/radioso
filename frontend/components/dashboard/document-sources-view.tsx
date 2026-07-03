@@ -373,13 +373,22 @@ function SourceExpandedPanel({
           </CollapsibleContent>
         ) : null}
       </Collapsible>
+      {source.id === MANUALLY_ADDED_SOURCE_ID ? (
+        <div className="rounded-md border border-border bg-background/40 p-3">
+          <p className="text-sm font-medium text-foreground">Metadata extraction</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Manually added documents follow the workspace setting (Knowledge → Ingestion → Metadata extraction)
+            {workspaceEnrichmentEnabled === undefined ? '' : ` — currently ${workspaceEnrichmentEnabled ? 'on' : 'off'}`}.
+          </p>
+        </div>
+      ) : (
       <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0 max-w-xl">
-            <p className="text-sm font-medium text-foreground">AI document enrichment</p>
+            <p className="text-sm font-medium text-foreground">Metadata extraction</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Detects each document&apos;s type and extracts event dates during processing (one extra AI call per
-              document), so the agent can answer date and event questions from this source.
+              Understands each document&apos;s type and extracts structured tags like event dates during processing
+              (one extra AI call per document), so the agent can answer date and event questions from this source.
             </p>
           </div>
           <Select
@@ -413,6 +422,7 @@ function SourceExpandedPanel({
           {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
         </div>
       </div>
+      )}
     </div>
   )
 }

@@ -94,7 +94,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       label: "Temporal structured lookup",
       type: "boolean",
       defaultValue: retrieveSettingsDefaults.temporalStructuredLookupEnabled,
-      help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs AI document enrichment on the knowledge base.",
+      help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.",
       group: "Temporal retrieval",
       advanced: true,
     },

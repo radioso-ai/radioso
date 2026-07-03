@@ -52,9 +52,9 @@ Pages whose content exceeds 500,000 characters are skipped during ingestion with
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the workspace API token and authorize through the crawler's document-management permission. Public chat and website embed launch credentials are not accepted as crawler bearer tokens.
 
-Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, enrichment, retrieval, and citations remain owned by the standard document worker.
+Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, metadata extraction, retrieval, and citations remain owned by the standard document worker.
 
-Website sources can also carry a document enrichment override. The override is `inherit`, `on`, or `off`; `inherit` uses the workspace ingestion setting. When enrichment is on, the standard document worker classifies each processed page and may attach temporal metadata to event-shaped chunks.
+Website sources can also carry a metadata extraction override. The override is `inherit`, `on`, or `off`; `inherit` uses the workspace ingestion setting. When extraction is on, the standard document worker classifies each processed page and may attach date tags to event-shaped chunks.
 
 The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. Before each outbound fetch hop, including redirects, Radioso rejects URLs that resolve to localhost or private network addresses. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
 
@@ -192,9 +192,9 @@ Duplicate pages are handled by the existing `externalDocumentId` upsert — unch
 POST /api/v1/document/sources/{sourceId}/reprocess
 ```
 
-Requeues eligible documents that already belong to the source. This does not crawl the site again. Use it after changing chunking settings or a source enrichment override when the existing documents should be rebuilt.
+Requeues eligible documents that already belong to the source. This does not crawl the site again. Use it after changing chunking settings or a source metadata extraction override when the existing documents should be rebuilt.
 
-The optional body can force enrichment for this run:
+The optional body can force metadata extraction for this run:
 
 ```json
 {

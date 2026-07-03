@@ -228,7 +228,10 @@ export class DocumentProcessingService {
       }));
       const enrichmentResult = await this.runEnrichmentStage({
         job,
-        document: documentWithContent,
+        document: {
+          ...documentWithContent,
+          metadata: baseDocumentMetadata,
+        },
         settings,
         chunks: chunkRecordsWithoutSearchText,
       });

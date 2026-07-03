@@ -6,6 +6,7 @@ import {
   type DocumentEnrichmentOutput,
   type DocumentEnrichmentProvenance,
   type EnrichmentAnchorSource,
+  type TemporalFact,
 } from "../domain/enrichment/documentEnrichmentContract.js";
 import {
   createDefaultDocumentEnrichmentStrategyRegistry,
@@ -103,15 +104,19 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
     try {
+      const representation = buildBoundedDocumentRepresentation(input.document);
       const gatewayResult = await this.deps.gateway.generate({
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
         prompt: this.prompt,
-        documentRepresentation: buildBoundedDocumentRepresentation(input.document),
+        documentRepresentation: representation.text,
       });
       const parsed = validateOutputForDocument(
-        documentEnrichmentOutputSchema.parse(gatewayResult.output),
-        input.document.markdownContent.length,
+        normalizeRepresentationRanges(
+          documentEnrichmentOutputSchema.parse(gatewayResult.output),
+          representation.bodyOffset,
+        ),
+        representation.bodyLength,
       );
       const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
       const strategyResult = this.strategyRegistry.get(shape).apply({
@@ -169,22 +174,46 @@ const buildBoundedDocumentRepresentation = (document: {
   title: string;
   markdownContent: string;
   createdAt: Date;
-}): string => {
+}): { text: string; bodyOffset: number; bodyLength: number } => {
   const body = document.markdownContent.slice(0, MAX_DOCUMENT_REPRESENTATION_CHARS);
-  return [
+  const prefix = [
     `Title: ${document.title}`,
     `Created at: ${document.createdAt.toISOString()}`,
     "",
-    body,
+    "",
   ].join("\n");
+  return {
+    text: `${prefix}${body}`,
+    bodyOffset: prefix.length,
+    bodyLength: body.length,
+  };
 };
+
+const normalizeRepresentationRanges = (
+  output: DocumentEnrichmentOutput,
+  bodyOffset: number,
+): DocumentEnrichmentOutput => ({
+  ...output,
+  facts: output.facts.map((fact) => ({
+    ...fact,
+    sourceRange: toBodySourceRange(fact.sourceRange, bodyOffset),
+  })),
+});
+
+const toBodySourceRange = (
+  sourceRange: TemporalFact["sourceRange"],
+  bodyOffset: number,
+): TemporalFact["sourceRange"] => ({
+  start: sourceRange.start - bodyOffset,
+  end: sourceRange.end - bodyOffset,
+});
 
 const validateOutputForDocument = (
   output: DocumentEnrichmentOutput,
   documentLength: number,
 ): DocumentEnrichmentOutput => {
   for (const fact of output.facts) {
-    if (fact.sourceRange.end > documentLength) {
+    if (fact.sourceRange.start < 0 || fact.sourceRange.end > documentLength) {
       throw new Error("enrichment_fact_range_out_of_bounds");
     }
   }

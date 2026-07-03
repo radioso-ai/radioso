@@ -979,7 +979,7 @@ const describeIndexedContent = (
   // content-only so storage quota accounting is unaffected.
   const metadataSearchText = renderMetadataSearchText(metadata ?? {});
   const fingerprint = metadataSearchText
-    ? `${normalizedMarkdown}${metadataSearchText}`
+    ? `${normalizedMarkdown}\u0000${metadataSearchText}`
     : normalizedMarkdown;
   return {
     markdownContent: normalizedMarkdown,

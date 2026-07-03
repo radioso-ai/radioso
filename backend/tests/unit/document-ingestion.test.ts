@@ -910,6 +910,31 @@ describe("document ingestion", () => {
     const current = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
     expect(current?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
     expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
+
+    stage.enrich.mockImplementationOnce(async (input) => ({
+      status: "failed",
+      documentMetadata: {
+        ...input.document.metadata,
+        enrichment: { status: "failed", failureReason: "invalid_output", factCount: 0, appliedChunkCount: 0 },
+      },
+      chunks: input.chunks,
+      factCount: 0,
+      appliedChunkCount: 0,
+    }));
+    await documentRepository.requeueAndQueue(document.id, "workspace-1", { documentEnrichmentOverride: "on" });
+    const failedJob = await jobRepository.findByDocumentRevision({
+      documentId: document.id,
+      workspaceId: "workspace-1",
+      documentRevision: 3,
+    });
+
+    expect(await service.process(failedJob!)).toBe("completed");
+    const failedCurrent = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
+    expect(failedCurrent?.metadata).toEqual({
+      sourceUrl: "https://events.example/event",
+      enrichment: { status: "failed", failureReason: "invalid_output", factCount: 0, appliedChunkCount: 0 },
+    });
+    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
   });
 
   it("returns not_found when update loses a delete race", async () => {

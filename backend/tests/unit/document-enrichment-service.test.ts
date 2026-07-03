@@ -5,22 +5,25 @@ import { DocumentEnrichmentService } from "../../src/modules/documents/services/
 
 describe("DocumentEnrichmentService", () => {
   it("makes exactly one structured model call and returns metadata patches", async () => {
-    const generate = vi.fn().mockResolvedValue({
-      model: "gpt-5.2",
-      output: {
-        shape: "event",
-        confidence: 0.91,
-        facts: [
-          {
-            id: "workshop",
-            kind: "event_date",
-            label: "workshop",
-            dateFrom: "2026-07-17",
-            dateTo: "2026-07-19",
-            sourceRange: { start: 0, end: 41 },
-          },
-        ],
-      },
+    const generate = vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
+      const bodyStart = documentRepresentation.indexOf("Summer workshop\n\nDates");
+      return Promise.resolve({
+        model: "gpt-5.2",
+        output: {
+          shape: "event",
+          confidence: 0.91,
+          facts: [
+            {
+              id: "workshop",
+              kind: "event_date",
+              label: "workshop",
+              dateFrom: "2026-07-17",
+              dateTo: "2026-07-19",
+              sourceRange: { start: bodyStart, end: bodyStart + 41 },
+            },
+          ],
+        },
+      });
     });
 
     const service = new DocumentEnrichmentService({

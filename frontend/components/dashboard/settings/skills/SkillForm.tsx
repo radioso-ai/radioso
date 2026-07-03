@@ -322,7 +322,6 @@ function SkillSettingControl({
         value={field.type === 'number'
           ? typeof value === 'number' ? String(value) : ''
           : typeof value === 'string' ? value : ''}
-        placeholder={field.defaultValue !== undefined ? `Default: ${String(field.defaultValue)}` : undefined}
         onChange={(event) => {
           if (field.type === 'number') {
             onChange(event.target.value === '' ? undefined : Number(event.target.value))

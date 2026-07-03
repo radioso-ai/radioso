@@ -41,26 +41,26 @@ invalid skills rejected at authoring.
 
 **Independent test**: quickstart.md steps 2-4 and 6.
 
-- [ ] T006 [P] [US1] Write failing unit tests for pure binding resolution (happy path:
+- [X] T006 [P] [US1] Write failing unit tests for pure binding resolution (happy path:
       one bound matched directive + registered enabled skill → winner) in
       backend/tests/unit/modules/chat/directiveBindingResolution.test.ts
-- [ ] T007 [P] [US1] Write failing unit tests for `ChatTurnSkillSelector` binding
+- [X] T007 [P] [US1] Write failing unit tests for `ChatTurnSkillSelector` binding
       routing (bound skill wins over first-`selects()` default; no bindings → exactly
       today's behavior; decision reason `directive:<name>`) beside existing selector
       tests in backend/tests/unit/modules/chat
-- [ ] T008 [P] [US1] Write failing unit tests for authoring validation (unknown skill,
+- [X] T008 [P] [US1] Write failing unit tests for authoring validation (unknown skill,
       disabled skill, routine-only invocation mode → descriptive error naming the
       skill; valid skill passes) in backend/tests/unit/modules/agents
-- [ ] T009 [US1] Implement pure helper
+- [X] T009 [US1] Implement pure helper
       backend/src/modules/chat/services/directiveBindingResolution.ts per
       data-model.md `DirectiveBindingResolution` (winner only in this story; losers/
       skipped shapes present but exercised in US2); T006 green
-- [ ] T010 [US1] Wire binding resolution into
+- [X] T010 [US1] Wire binding resolution into
       backend/src/modules/chat/services/turnSkillSelector.ts (`resolveSkill` +
       `select`: consult resolver with `session.directiveSteering?.matches`, agent
       skill state, and registered turn skills; fall back to existing first-match;
       keep `TurnSelectionStrategy` untouched); T007 green
-- [ ] T011 [US1] Implement authoring-time binding validation in the agents module
+- [X] T011 [US1] Implement authoring-time binding validation in the agents module
       service used by directive create/update (skill exists on agent + enabled +
       turn-capable invocation mode; import path exempt); T008 green
 - [ ] T012 [US1] Add `binding` to directive request/response schemas in
@@ -80,25 +80,28 @@ fall-through when the bound skill is unavailable; routine turns untouched.
 
 **Independent test**: quickstart.md step 5 plus multi-directive unit scenarios.
 
-- [ ] T014 [P] [US2] Write failing unit tests for conflict ordering in
+- [X] T014 [P] [US2] Write failing unit tests for conflict ordering in
       backend/tests/unit/modules/chat/directiveBindingResolution.test.ts: priority
       desc; null priority ranks as 50; confidence desc; deterministic `always` match
       ranks as certain (1.0); missing confidence on probabilistic match; directive
       name asc final tie-breaker; two directives bound to the same skill → no
       conflict, highest-ranked named
-- [ ] T015 [P] [US2] Write failing unit tests for fall-through/skip reasons
+- [X] T015 [P] [US2] Write failing unit tests for fall-through/skip reasons
       (`skill_not_registered`, `skill_not_enabled`, `skill_not_turn_capable`) and for
       "binding ignored but text steering unaffected" at the selector level
-- [ ] T016 [US2] Complete resolver ordering + skip classification in
+- [X] T016 [US2] Complete resolver ordering + skip classification in
       backend/src/modules/chat/services/directiveBindingResolution.ts; T014/T015 green
-- [ ] T017 [US2] Emit warn-level log on skipped bindings (workspaceId, agentId,
+- [X] T017 [US2] Emit warn-level log on skipped bindings (workspaceId, agentId,
       conversation/session id, directive name, skill name, skip reason — never
       message content) from the selector's host wiring; assert via logger spy in unit
       tests
-- [ ] T018 [US2] Add regression test proving routine turns never evaluate bindings
+- [X] T018 [US2] Add regression test proving routine turns never evaluate bindings
       (routine path does not run terminal selection — cover via existing routine
       engine/backend test seams; document the covering test in tasks notes if one
-      already exists)
+      already exists) — covered by
+      `packages/conversation-engine/tests/defaultConversationEngine.test.ts`
+      "resumes an active routine before normal selection and short-circuits
+      select/dispatch/compose", which asserts `selector.select` is not called.
 
 **Checkpoint**: conflict + fall-through deterministic and observable.
 

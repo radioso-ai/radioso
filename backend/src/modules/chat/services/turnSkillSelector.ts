@@ -4,11 +4,23 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
 import type { AgentSkillInvocationMode } from "../../agentSkills/domain.js";
+import {
+  resolveDirectiveBinding,
+  type DirectiveBindingResolution,
+  type DirectiveBindingSkillState,
+} from "./directiveBindingResolution.js";
 
 /** The terminal skill that claims a turn, with the engine-shaped decision behind it. */
 export interface TurnSkillSelection {
   skill: TurnSkill;
   decision: SelectionDecision;
+}
+
+export interface ChatTurnSkillSelectorOptions {
+  agentSkillStates?: ReadonlyMap<string, DirectiveBindingSkillState>;
+  logger?: {
+    warn(payload: Record<string, unknown>, message: string): void;
+  };
 }
 
 export const filterAutonomousTurnSkills = (
@@ -37,11 +49,46 @@ export class ChatTurnSkillSelector {
   constructor(
     private readonly turnSkills: TurnSkill[],
     private readonly selectionStrategy: TurnSelectionStrategy,
+    private readonly options: ChatTurnSkillSelectorOptions = {},
   ) {}
+
+  private resolveBinding(session: PreparedSession): DirectiveBindingResolution {
+    const binding = resolveDirectiveBinding({
+      matches: session.directiveSteering?.matches ?? [],
+      registeredTurnSkillNames: new Set(this.turnSkills.map((skill) => skill.definition.name)),
+      agentSkillStates: this.options.agentSkillStates,
+    });
+    for (const skipped of binding.skipped) {
+      this.options.logger?.warn(
+        {
+          event: "directive_binding_skipped",
+          workspaceId: session.agent?.workspaceId,
+          agentId: session.agent?.id,
+          conversationId: session.conversation?.id,
+          directiveName: skipped.directiveName,
+          skillName: skipped.skillName,
+          reason: skipped.reason,
+        },
+        "Directive skill binding skipped",
+      );
+    }
+    return binding;
+  }
+
+  private resolveDefaultSkill(session: PreparedSession): TurnSkill {
+    const skill = this.turnSkills.find((candidate) => candidate.selects(session)) ?? this.turnSkills[0];
+    if (!skill) {
+      throw new Error("chat_no_turn_skill_registered");
+    }
+    return skill;
+  }
 
   /** The terminal skill that claims this prepared turn. */
   resolveSkill(session: PreparedSession): TurnSkill {
-    const skill = this.turnSkills.find((candidate) => candidate.selects(session)) ?? this.turnSkills[0];
+    const binding = this.resolveBinding(session);
+    const skill = binding.winner
+      ? this.turnSkills.find((candidate) => candidate.definition.name === binding.winner?.skillName)
+      : this.resolveDefaultSkill(session);
     if (!skill) {
       throw new Error("chat_no_turn_skill_registered");
     }
@@ -50,16 +97,23 @@ export class ChatTurnSkillSelector {
 
   /** Resolves the terminal skill and the engine-shaped decision that selected it. */
   select(session: PreparedSession): TurnSkillSelection {
-    const skill = this.resolveSkill(session);
+    const binding = this.resolveBinding(session);
+    const skill = binding.winner
+      ? this.turnSkills.find((candidate) => candidate.definition.name === binding.winner?.skillName)
+      : this.resolveDefaultSkill(session);
+    if (!skill) {
+      throw new Error("chat_no_turn_skill_registered");
+    }
     const candidates = this.selectionStrategy.select({
       session,
       directives: session.directiveSteering?.matches ?? [],
     });
+    const reason = binding.winner ? `directive:${binding.winner.directiveName}` : undefined;
     return {
       skill,
       decision: {
-        selected: [{ skillName: skill.definition.name, reason: "turn_selection_strategy" }],
-        reason: candidates.length > 0 ? `candidates:${candidates.join(",")}` : "turn_selection_strategy",
+        selected: [{ skillName: skill.definition.name, reason: reason ?? "turn_selection_strategy" }],
+        reason: reason ?? (candidates.length > 0 ? `candidates:${candidates.join(",")}` : "turn_selection_strategy"),
       },
     };
   }

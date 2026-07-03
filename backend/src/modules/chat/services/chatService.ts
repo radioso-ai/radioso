@@ -535,7 +535,7 @@ export class ChatService {
     );
     // One selection seam shared by the engine turn and the host streaming path, so
     // streamed and non-streamed turns resolve the terminal skill identically.
-    this.turnSkillSelector = new ChatTurnSkillSelector(this.turnSkills, this.selectionStrategy);
+    this.turnSkillSelector = new ChatTurnSkillSelector(this.turnSkills, this.selectionStrategy, { logger });
   }
 
   /**

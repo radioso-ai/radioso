@@ -98,6 +98,7 @@ const createRepository = () => ({
 const createService = (
   textGenerationClient: FakeTextClient,
   actionCatalog: RoutineDraftAssistActionCatalogEntry[] = [{ type: "contact.send", kind: "action" }],
+  skillAuthoringCatalog?: ConstructorParameters<typeof RoutineDraftAssistService>[0]["skillAuthoringCatalog"],
 ) => {
   const repository = createRepository();
   const logger = {
@@ -111,6 +112,7 @@ const createService = (
     repository,
     textGenerationClient,
     actionCatalog,
+    ...(skillAuthoringCatalog ? { skillAuthoringCatalog } : {}),
     logger: logger as never,
     telemetryService: telemetryService as never,
   });
@@ -289,6 +291,58 @@ describe("RoutineDraftAssistService", () => {
     expect(result.draft.steps[0]).toMatchObject({
       kind: "tool",
       toolRef: "retrieval.context",
+    });
+    expect(result.validation).toEqual({ ok: true, diagnostics: [] });
+  });
+
+  it("permits agent skill catalog tool steps and treats @skill mentions as skills, not slots", async () => {
+    const draft = validDraft({
+      slots: [],
+      steps: [{
+        stableStepId: "refund_customer",
+        kind: "tool",
+        instruction: "Issue the refund with the agent refund skill.",
+        toolRef: "refund_customer",
+        actionType: null,
+        ordinal: 0,
+        metadata: { outlineLabel: "Refund customer" },
+      }],
+      transitions: [{
+        fromStep: "refund_customer",
+        toRef: "complete",
+        guardKind: "default",
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: 0,
+      }],
+    });
+    const textGenerationClient = new FakeTextClient([completion(draft)]);
+    const skillAuthoringCatalog = {
+      listForAgent: vi.fn().mockResolvedValue([{
+        skillName: "refund_customer",
+        displayName: "Refund customer",
+        category: "external_mcp",
+        description: "Issue a customer refund.",
+        inputs: [],
+        outcomes: [{ name: "completed", displayName: "Completed", status: "completed" }],
+        hasDataOutputs: false,
+      }]),
+    };
+    const { service } = createService(textGenerationClient, [{ type: "contact.send", kind: "action" }], skillAuthoringCatalog);
+
+    const result = await service.draft(workspaceId, agentId, {
+      prose: "When a refund is approved, use @refund_customer and then confirm completion.",
+    });
+
+    expect(skillAuthoringCatalog.listForAgent).toHaveBeenCalledWith({ workspaceId, agentId });
+    expect(textGenerationClient.calls[0]?.prompt).toContain('"type": "refund_customer"');
+    expect(textGenerationClient.calls[0]?.prompt).toContain('"kind": "tool"');
+    expect(textGenerationClient.calls[0]?.prompt).toContain("treat it as that action/tool skill instead of a slot");
+    expect(result.draft.slots).toHaveLength(0);
+    expect(result.draft.steps[0]).toMatchObject({
+      kind: "tool",
+      toolRef: "refund_customer",
     });
     expect(result.validation).toEqual({ ok: true, diagnostics: [] });
   });

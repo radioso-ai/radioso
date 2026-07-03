@@ -6,6 +6,7 @@ import { Globe2, RefreshCw, X } from 'lucide-react'
 
 import { ChatView } from '@/components/dashboard/chat-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { RoutineHeaderActionsProvider, useRoutineHeaderState } from '@/components/dashboard/shared/routine-header-actions'
 import { AddSkillHeaderButton, SkillsHeaderActionProvider } from '@/components/dashboard/shared/skills-header-action'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { WorkspaceAssistantChannelsTab } from '@/components/dashboard/settings/workspace-assistant-channels-tab'
@@ -30,6 +31,13 @@ import {
 import { editionController } from '@/lib/edition-controller'
 import { useWorkspace } from '@/lib/workspace-context'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+
+type AgentPageSaveState = {
+  state: 'idle' | 'saved' | 'saving' | 'error'
+  message?: string | null
+}
+
+type AgentSectionMeta = { title: string; mode: 'assistant' | 'channels'; description?: string }
 
 type WizardDialogComponent = (props: {
   open: boolean
@@ -64,7 +72,7 @@ const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
   : () => {}
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
-const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, { title: string; mode: 'assistant' | 'channels'; description?: string }> = {
+const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMeta> = {
   identity: { title: 'Identity & appearance', mode: 'assistant' },
   behavior: { title: 'Behavior', mode: 'assistant' },
   skills: {
@@ -141,6 +149,57 @@ function AgentCreationHandoffBanner({
   )
 }
 
+function AgentSettingsDashboardPage({
+  accountId,
+  agentCreationHandoff,
+  channelsTabHref,
+  dismissAgentCreationHandoff,
+  meta,
+  routeState,
+  saveStateAccessory,
+  section,
+  selectedAgentId,
+  setSaveState,
+}: {
+  accountId: string
+  agentCreationHandoff: AgentCreationHandoff | null
+  channelsTabHref: string
+  dismissAgentCreationHandoff: () => void
+  meta: AgentSectionMeta
+  routeState: DashboardRouteState
+  saveStateAccessory: React.ReactNode
+  section: Exclude<AgentSectionId, 'chat'>
+  selectedAgentId: string
+  setSaveState: React.Dispatch<React.SetStateAction<AgentPageSaveState>>
+}) {
+  const routineHeader = useRoutineHeaderState()
+  const isRoutineDetail = section === 'routines' && Boolean(routeState.agentRoutineId)
+  return (
+    <DashboardPage
+      title={isRoutineDetail ? routineHeader.title ?? 'Routine' : meta.title}
+      description={isRoutineDetail ? routineHeader.description ?? 'Loading…' : meta.description}
+      backAction={isRoutineDetail ? routineHeader.backAction ?? null : undefined}
+      titleAccessory={saveStateAccessory}
+      actions={section === 'skills' ? <AddSkillHeaderButton /> : isRoutineDetail ? routineHeader.actions : undefined}
+      contentClassName="flex flex-col overflow-hidden p-0"
+      contentScroll={false}
+    >
+      {section === 'identity' && agentCreationHandoff ? (
+        <AgentCreationHandoffBanner summary={agentCreationHandoff} onDismiss={dismissAgentCreationHandoff} />
+      ) : null}
+      <WorkspaceAssistantChannelsTab
+        accountId={accountId}
+        mode={meta.mode}
+        agentId={selectedAgentId}
+        agentSection={section}
+        routeState={routeState}
+        channelsTabHref={channelsTabHref}
+        onSaveStateChange={setSaveState}
+      />
+    </DashboardPage>
+  )
+}
+
 export function AgentView({
   accountId,
   routeState,
@@ -157,10 +216,7 @@ export function AgentView({
   const [agents, setAgents] = useState<AgentSettings[]>([])
   const [agentsError, setAgentsError] = useState<string | null>(null)
   const [isAgentsLoading, setIsAgentsLoading] = useState(true)
-  const [saveState, setSaveState] = useState<{
-    state: 'idle' | 'saved' | 'saving' | 'error'
-    message?: string | null
-  }>({ state: 'idle' })
+  const [saveState, setSaveState] = useState<AgentPageSaveState>({ state: 'idle' })
   const [agentCreationHandoff, setAgentCreationHandoff] = useState<AgentCreationHandoff | null>(null)
   const [agentCreationActionDefinitions, setAgentCreationActionDefinitions] = useState<AgentCreationActionDefinition[]>([])
   const [wizardOpen, setWizardOpen] = useState(false)
@@ -432,28 +488,21 @@ export function AgentView({
   const meta = AGENT_SECTION_META[section]
   return (
     <SkillsHeaderActionProvider>
-      <DashboardPage
-        title={meta.title}
-        description={meta.description}
-        titleAccessory={saveStateAccessory}
-        actions={section === 'skills' ? <AddSkillHeaderButton /> : undefined}
-        contentClassName="flex flex-col overflow-hidden p-0"
-        contentScroll={false}
-      >
-        {section === 'identity' && agentCreationHandoff ? (
-          <AgentCreationHandoffBanner summary={agentCreationHandoff} onDismiss={dismissAgentCreationHandoff} />
-        ) : null}
-        <WorkspaceAssistantChannelsTab
+      <RoutineHeaderActionsProvider>
+        <AgentSettingsDashboardPage
           accountId={accountId}
-          mode={meta.mode}
-          agentId={selectedAgentId}
-          agentSection={section}
-          routeState={routeState}
+          agentCreationHandoff={agentCreationHandoff}
           channelsTabHref={channelsTabHref}
-          onSaveStateChange={setSaveState}
+          dismissAgentCreationHandoff={dismissAgentCreationHandoff}
+          meta={meta}
+          routeState={routeState}
+          saveStateAccessory={saveStateAccessory}
+          section={section}
+          selectedAgentId={selectedAgentId}
+          setSaveState={setSaveState}
         />
-      </DashboardPage>
-      {wizard}
+        {wizard}
+      </RoutineHeaderActionsProvider>
     </SkillsHeaderActionProvider>
   )
 }

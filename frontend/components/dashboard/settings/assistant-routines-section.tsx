@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Archive,
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
@@ -17,15 +18,27 @@ import {
   Send,
   Sparkles,
   Trash2,
+  WandSparkles,
 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
+import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
-import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -35,6 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { customerEmailApi, type CustomerEmailSkillDefinition } from '@/lib/api-customer-email'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -69,6 +83,34 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
+
+function RoutineValidationStatusIcon({
+  state,
+}: {
+  state: 'checking' | 'invalid' | 'valid'
+}) {
+  const label = state === 'valid'
+    ? 'Routine valid'
+    : state === 'invalid'
+      ? 'Routine has validation issues'
+      : 'Checking routine'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="status"
+          aria-label={label}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
+        >
+          {state === 'valid' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : null}
+          {state === 'invalid' ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
+          {state === 'checking' ? <Spinner className="h-4 w-4" /> : null}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 // Author-facing reentry policy options. Order puts the safe default first.
 const REENTRY_MODE_OPTIONS: { value: RoutineReentryMode; label: string; hint: string }[] = [
@@ -171,6 +213,41 @@ const currentBrowserUrlMatches = (href: string) => {
   return `${window.location.pathname}${window.location.search}` === href
 }
 
+type NewRoutineRecovery = {
+  draft: RoutineDefinitionDraft
+  header: RoutineDraftHeader
+  viewMode: 'prose' | 'form'
+}
+
+const newRoutineRecoveryKey = (agentId: string) => `radioso:routine-new-draft:${agentId}`
+
+const readNewRoutineRecovery = (agentId: string): NewRoutineRecovery | null => {
+  if (typeof window === 'undefined') return null
+  const value = window.sessionStorage.getItem(newRoutineRecoveryKey(agentId))
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<NewRoutineRecovery>
+    if (!parsed.draft || !parsed.header || (parsed.viewMode !== 'prose' && parsed.viewMode !== 'form')) return null
+    return {
+      draft: parsed.draft,
+      header: parsed.header,
+      viewMode: parsed.viewMode,
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeNewRoutineRecovery = (agentId: string, recovery: NewRoutineRecovery) => {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(newRoutineRecoveryKey(agentId), JSON.stringify(recovery))
+}
+
+const clearNewRoutineRecovery = (agentId: string) => {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(newRoutineRecoveryKey(agentId))
+}
+
 export function AssistantRoutinesSection({
   accountId,
   agentId,
@@ -216,7 +293,6 @@ function RoutineListScreen({
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [proseOpen, setProseOpen] = useState(false)
 
   const groupedRoutines = useMemo(
     () => groupRoutineLineages(routines),
@@ -233,7 +309,7 @@ function RoutineListScreen({
       anchor: undefined,
     })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true
     queueMicrotask(() => {
       if (!active) return
@@ -370,31 +446,14 @@ function RoutineListScreen({
     )
   }
 
-  if (proseOpen) {
-    return (
-      <RoutineProseEditor
-        agentId={agentId}
-        onClose={() => setProseOpen(false)}
-        onCreated={(routine) => {
-          setProseOpen(false)
-          router.push(buildRoutineHref(routine.id))
-        }}
-      />
-    )
-  }
-
   return (
     <SettingsCard
       id="assistant-routines-card"
       icon={<Route className="h-5 w-5 text-primary" />}
       title="Routines"
-      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough. Validate and publish before it goes live."
+      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough."
       headerEnd={(
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setProseOpen(true)}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Write in prose
-          </Button>
           <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
             <Plus className="mr-2 h-4 w-4" />
             New routine
@@ -461,14 +520,22 @@ function RoutineEditorScreen({
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
   const [viewMode, setViewMode] = useState<'prose' | 'form'>('prose')
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
+  const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
+  const [proseLocalValidationError, setProseLocalValidationError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDraftingRoutine, setIsDraftingRoutine] = useState(false)
+  const [draftAssistDialogOpen, setDraftAssistDialogOpen] = useState(false)
+  const [draftAssistProse, setDraftAssistProse] = useState('')
   const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
+  const initializedRouteKeyRef = useRef<string | null>(null)
+  const routineEditorDirtyRef = useRef(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
 
   const listHref = buildDashboardHref(accountId, {
@@ -502,11 +569,6 @@ function RoutineEditorScreen({
     () => form?.slots.map((slot) => slot.key.trim()).filter(Boolean) ?? [],
     [form],
   )
-  const routineDiagnostics = useMemo(
-    () => (validation?.diagnostics ?? []).filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
-    [validation],
-  )
-  const validationDiagnostics = validation?.diagnostics ?? []
   const isReadOnly = editingRoutine ? editingRoutine.status !== 'draft' : false
   const versionHistory = useMemo(
     () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
@@ -515,6 +577,44 @@ function RoutineEditorScreen({
   const publishedSibling = useMemo(
     () => versionHistory.find((version) => version.status === 'published') ?? null,
     [versionHistory],
+  )
+  const activeRoutineDraft = useMemo(() => {
+    if (viewMode === 'prose' && proseDraft) return proseDraft
+    return form ? formToRoutineDraft(form, { header: draftHeader }) : null
+  }, [draftHeader, form, proseDraft, viewMode])
+  const activeRoutineDraftSignature = useMemo(
+    () => activeRoutineDraft ? JSON.stringify(activeRoutineDraft) : null,
+    [activeRoutineDraft],
+  )
+  const activeRoutineDraftError = useMemo(
+    () => {
+      if (viewMode === 'prose') {
+        if (!draftHeader.name.trim()) return 'Name is required.'
+        if (!draftHeader.activation.triggerDescription.trim()) return 'Activation trigger is required.'
+        if (proseLocalValidationError) return proseLocalValidationError
+      }
+      return activeRoutineDraft ? draftError(activeRoutineDraft) : 'Routine draft is not ready.'
+    },
+    [activeRoutineDraft, draftHeader.activation.triggerDescription, draftHeader.name, proseLocalValidationError, viewMode],
+  )
+  const nameLocalValidationError = viewMode === 'prose' && !draftHeader.name.trim() ? 'Name is required.' : null
+  const triggerLocalValidationError = viewMode === 'prose' && draftHeader.name.trim() && !draftHeader.activation.triggerDescription.trim()
+    ? 'Activation trigger is required.'
+    : null
+  const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
+  const validationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
+    ? 'invalid'
+    : isValidationCurrent && validation?.ok
+      ? 'valid'
+      : 'checking'
+  const canPublishDraft = !isReadOnly && Boolean(form && isValidationCurrent && validation?.ok)
+  const validationDiagnostics = useMemo(
+    () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
+    [isValidationCurrent, validation?.diagnostics],
+  )
+  const routineDiagnostics = useMemo(
+    () => validationDiagnostics.filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
+    [validationDiagnostics],
   )
 
   useEffect(() => {
@@ -571,30 +671,43 @@ function RoutineEditorScreen({
       }
 
       setValidation(null)
+      setValidatedDraftSignature(null)
+      setProseLocalValidationError(null)
       setError(null)
 
       if (routineRouteId === 'new') {
-        const nextDraft = emptyRoutineDraft()
-        const nextHeader = headerFromDraft(nextDraft)
+        const routeLoadKey = `${agentId}:${routineRouteId}`
+        if (initializedRouteKeyRef.current === routeLoadKey) {
+          setIsLoading(false)
+          return
+        }
+        const recovered = readNewRoutineRecovery(agentId)
+        const nextDraft = recovered?.draft ?? emptyRoutineDraft()
+        const nextHeader = recovered?.header ?? headerFromDraft(nextDraft)
         currentRoutineIdRef.current = null
+        initializedRouteKeyRef.current = routeLoadKey
+        routineEditorDirtyRef.current = false
         setEditingRoutineId(null)
         setEditingRoutine(null)
         setAllRoutines([])
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
-        setProseSource(emptyProseDraftFromHeader(nextHeader))
+        setProseSource(isBlankFormDraft(nextDraft) ? emptyProseDraftFromHeader(nextHeader) : nextDraft)
         setProseDraft(null)
+        setProseLocalValidationError(null)
         setProseKey((key) => key + 1)
-        setViewMode('prose')
+        setViewMode(recovered?.viewMode ?? 'prose')
         setIsLoading(false)
         return
       }
 
       currentRoutineIdRef.current = null
+      initializedRouteKeyRef.current = `${agentId}:${routineRouteId}`
       setEditingRoutineId(routineRouteId)
       setEditingRoutine(null)
       setForm(null)
       setProseSource(null)
+      setProseLocalValidationError(null)
       setIsLoading(true)
       void Promise.all([
         routinesApi.getRoutine(agentId, routineRouteId),
@@ -610,7 +723,10 @@ function RoutineEditorScreen({
           setForm(routineToForm(response.routine))
           setProseSource(response.routine)
           setProseDraft(null)
+          setProseLocalValidationError(null)
           setProseKey((key) => key + 1)
+          setValidatedDraftSignature(null)
+          routineEditorDirtyRef.current = false
           // Prose-representable drafts open in the prose editor; advanced routines and
           // read-only (non-draft) versions open in the strict Form tab.
           const editable = response.routine.status === 'draft'
@@ -630,13 +746,6 @@ function RoutineEditorScreen({
     }
   }, [agentId, routineRouteId])
 
-  const activeDraft = (): RoutineDefinitionDraft | null => {
-    if (viewMode === 'prose') {
-      return proseDraft
-    }
-    return form ? formToRoutineDraft(form, { header: draftHeader }) : null
-  }
-
   const synchronizeView = (nextView: 'prose' | 'form') => {
     if (nextView === viewMode) return
     if (nextView === 'form' && proseDraft && proseDraft.steps.length > 0) {
@@ -648,19 +757,22 @@ function RoutineEditorScreen({
       const formDraft = formToRoutineDraft(form, { header: draftHeader })
       setProseSource(isBlankFormDraft(formDraft) ? emptyProseDraftFromHeader(draftHeader) : formDraft)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     }
     setViewMode(nextView)
   }
 
-  const saveDraft = async (): Promise<RoutineDefinition | null> => {
-    const draft = activeDraft()
+  const saveDraft = async ({ refreshEditor = true }: { refreshEditor?: boolean } = {}): Promise<RoutineDefinition | null> => {
+    const draft = activeRoutineDraft
     if (!draft) return null
-    const errorMessage = draftError(draft)
+    const errorMessage = activeRoutineDraftError ?? draftError(draft)
     if (errorMessage) {
       setError(errorMessage)
+      setValidatedDraftSignature(null)
       return null
     }
+    const draftSignature = JSON.stringify(draft)
     const saveId = beginSave()
     const wasNew = !editingRoutineId
     setIsSaving(true)
@@ -674,21 +786,30 @@ function RoutineEditorScreen({
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
       mergeLoadedRoutine(response.routine)
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setProseSource(response.routine)
-      setProseDraft(null)
-      setProseKey((key) => key + 1)
+      if (refreshEditor) {
+        setDraftHeader(headerFromDraft(response.routine))
+        setForm(routineToForm(response.routine))
+        setProseSource(response.routine)
+        setProseDraft(null)
+        setProseLocalValidationError(null)
+        setProseKey((key) => key + 1)
+      }
       setValidation(response.validation)
+      setValidatedDraftSignature(draftSignature)
       markSaved()
       if (wasNew) {
-        replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        clearNewRoutineRecovery(agentId)
+        const newDraftHref = buildPersistedHref('new')
+        if (currentBrowserUrlMatches(newDraftHref)) {
+          replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        }
       }
       return response.routine
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return null
       const message = getApiErrorMessage(saveError, 'Failed to save routine draft.')
       setError(message)
+      setValidatedDraftSignature(null)
       markError(message)
       return null
     } finally {
@@ -696,22 +817,30 @@ function RoutineEditorScreen({
     }
   }
 
-  const validateDraft = async () => {
-    const routine = await saveDraft()
-    if (!routine) return
-    setIsSaving(true)
-    setError(null)
-    try {
-      const response = await routinesApi.validateRoutine(agentId, routine.id)
-      setValidation(response.validation)
-    } catch (validateError) {
-      setError(getApiErrorMessage(validateError, 'Failed to validate routine.'))
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  const saveDraftRef = useRef(saveDraft)
+  useEffect(() => {
+    saveDraftRef.current = saveDraft
+  })
+
+  useEffect(() => {
+    if (isLoading || isReadOnly || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
+    const timeoutId = window.setTimeout(() => {
+      void saveDraftRef.current({ refreshEditor: false })
+    }, 1500)
+    return () => window.clearTimeout(timeoutId)
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isReadOnly, isValidationCurrent])
+
+  useEffect(() => {
+    if (!isNewRoutine || !activeRoutineDraft) return
+    writeNewRoutineRecovery(agentId, {
+      draft: activeRoutineDraft,
+      header: draftHeader,
+      viewMode,
+    })
+  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine, viewMode])
 
   const publishDraft = async () => {
+    if (!canPublishDraft) return
     const routine = await saveDraft()
     if (!routine) return
     const saveId = beginSave()
@@ -781,8 +910,10 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
       setValidation(null)
+      setValidatedDraftSignature(null)
       markSaved()
       const persistedHref = buildPersistedHref(response.routine.id)
       if (!currentBrowserUrlMatches(persistedHref)) {
@@ -818,6 +949,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
@@ -855,6 +987,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (restoreError) {
       setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
@@ -864,109 +997,182 @@ function RoutineEditorScreen({
   }
 
   const updateForm = (updater: (current: RoutineFormState) => RoutineFormState) => {
+    routineEditorDirtyRef.current = true
     setForm((current) => current ? updater(current) : current)
   }
 
-  const headerActions = (
+  const handleProseDraftChange = useCallback((draft: RoutineDefinitionDraft | null) => {
+    routineEditorDirtyRef.current = true
+    setProseDraft(draft)
+  }, [])
+
+  const handleProseHeaderChange = useCallback((update: (header: RoutineDraftHeader) => RoutineDraftHeader) => {
+    routineEditorDirtyRef.current = true
+    setDraftHeader(update)
+  }, [])
+
+  const loadAssistedDraft = useCallback(async () => {
+    const prose = draftAssistProse.trim()
+    if (!prose || isReadOnly) return
+    setIsDraftingRoutine(true)
+    setError(null)
+    try {
+      const response = await routinesApi.draftRoutineFromProcedure(agentId, { prose })
+      const nextHeader = headerFromDraft(response.draft)
+      const nextSignature = JSON.stringify(response.draft)
+      routineEditorDirtyRef.current = true
+      setDraftHeader(nextHeader)
+      setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
+      setProseSource(response.draft)
+      setProseDraft(null)
+      setProseLocalValidationError(null)
+      setProseKey((key) => key + 1)
+      setValidation(response.validation)
+      setValidatedDraftSignature(nextSignature)
+      setViewMode(routineToChipDoc(response.draft) ? 'prose' : 'form')
+      setDraftAssistDialogOpen(false)
+    } catch (draftError) {
+      setError(getApiErrorMessage(draftError, 'Failed to draft routine from procedure.'))
+    } finally {
+      setIsDraftingRoutine(false)
+    }
+  }, [agentId, draftAssistProse, editingRoutine, isReadOnly])
+
+  const openDeleteDraftDialog = useCallback(() => setDeleteDraftDialogOpen(true), [])
+  const actionHandlersRef = useRef({
+    archiveFromDraft,
+    archivePublished,
+    loadAssistedDraft,
+    openDeleteDraftDialog,
+    publishDraft,
+    restoreArchived,
+    revisePublished,
+  })
+  useEffect(() => {
+    actionHandlersRef.current = {
+      archiveFromDraft,
+      archivePublished,
+      loadAssistedDraft,
+      openDeleteDraftDialog,
+      publishDraft,
+      restoreArchived,
+      revisePublished,
+    }
+  })
+
+  const headerActions = useMemo(() => (
     <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
+      {!isReadOnly && form ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => setDraftAssistDialogOpen(true)} disabled={isSaving || isDraftingRoutine}>
+          <WandSparkles className="mr-2 h-4 w-4" />
+          Draft with AI
+        </Button>
+      ) : null}
       {editingRoutine?.status === 'draft' && publishedSibling ? (
-        <Button type="button" variant="outline" onClick={() => void archiveFromDraft()} disabled={isSaving}>
+        <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archiveFromDraft()} disabled={isSaving}>
           <Archive className="mr-2 h-4 w-4" />
-          Archive routine
+          Archive
         </Button>
       ) : null}
       {editingRoutine?.status === 'published' ? (
         <>
-          <Button type="button" variant="outline" onClick={() => void archivePublished()} disabled={isSaving}>
+          <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archivePublished()} disabled={isSaving}>
             <Archive className="mr-2 h-4 w-4" />
             Archive
           </Button>
-          <Button type="button" onClick={() => void revisePublished()} disabled={isSaving}>
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.revisePublished()} disabled={isSaving}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit revision
           </Button>
         </>
       ) : null}
       {editingRoutine?.status === 'archived' ? (
-        <Button type="button" onClick={() => void restoreArchived()} disabled={isSaving}>
+        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
           <RotateCcw className="mr-2 h-4 w-4" />
           Restore
         </Button>
       ) : null}
       {!isReadOnly && form ? (
-        <>
-          <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving}>
-            <CheckCircle2 className="mr-2 h-4 w-4" />
-            Validate
-          </Button>
-          <Button type="button" onClick={() => void publishDraft()} disabled={isSaving}>
-            <Send className="mr-2 h-4 w-4" />
-            Publish
-          </Button>
-        </>
+        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
+          <Send className="mr-2 h-4 w-4" />
+          Publish
+        </Button>
       ) : null}
       {editingRoutine?.status === 'draft' ? (
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => void deleteDraft()}
+          onClick={() => actionHandlersRef.current.openDeleteDraftDialog()}
           disabled={isSaving}
           aria-label={`Delete draft ${editingRoutine.name}`}
           title="Delete draft"
-          className="text-muted-foreground hover:text-destructive"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
       ) : null}
     </div>
-  )
+  ), [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus])
+
+  const headerBackAction = useMemo(() => (
+    <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
+      <ArrowLeft className="mr-2 h-4 w-4" />
+      Back to routines
+    </Button>
+  ), [listHref, router])
+
+  const routineHeader = useMemo(() => ({
+    actions: headerActions,
+    backAction: headerBackAction,
+    description: editingRoutine?.name ?? (isNewRoutine ? 'New routine' : 'Loading…'),
+    title: 'Routine',
+  }), [editingRoutine?.name, headerActions, headerBackAction, isNewRoutine])
+
+  useRegisterRoutineHeader(routineHeader)
 
   return (
-    <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
-      <div className="sticky top-14 z-10 flex flex-wrap items-start justify-between gap-3 rounded-t-lg border-b border-border bg-card/95 px-5 py-4 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80">
-        <div className="min-w-0">
-          <Button type="button" variant="ghost" className="-ml-3 mb-2 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to routines
-          </Button>
-          <h3 className="text-sm font-semibold text-foreground">
-            {editingRoutine ? `${isReadOnly ? 'View' : 'Edit'} ${editingRoutine.name}` : 'Create routine'}
-          </h3>
-          {editingRoutine ? (
-            <p className="text-xs text-muted-foreground">
-              {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
-              {isReadOnly ? ' (read-only)' : ''}
-            </p>
-          ) : null}
-        </div>
-        {validation?.ok ? (
-          <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="h-4 w-4" />
-            Validation passed
-          </p>
-        ) : null}
-        {headerActions}
-      </div>
-
-      <div className="space-y-5 p-5">
-        {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-        {isLoading || !form ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="h-4 w-4" />
-            Loading routine...
+    <>
+      <RoutineDraftAssistDialog
+        isOpen={draftAssistDialogOpen}
+        isDrafting={isDraftingRoutine}
+        prose={draftAssistProse}
+        onOpenChange={setDraftAssistDialogOpen}
+        onProseChange={setDraftAssistProse}
+        onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
+      />
+      <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
+        <div className="space-y-5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {editingRoutine ? (
+              <p className="text-xs text-muted-foreground">
+                {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
+                {isReadOnly ? ' (read-only)' : ''}
+              </p>
+            ) : null}
           </div>
-        ) : (
-          <RoutineSkillCatalogProvider agentId={agentId}>
+          {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+          {isLoading || !form ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner className="h-4 w-4" />
+              Loading routine...
+            </div>
+          ) : (
+            <RoutineSkillCatalogProvider agentId={agentId}>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
               <div className="space-y-1">
                 <Label htmlFor="routineName">Name</Label>
                 <Input
                   id="routineName"
                   value={draftHeader.name}
-                  onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
+                  }}
                   disabled={isReadOnly}
                 />
+                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="routinePriority">Priority</Label>
@@ -974,10 +1180,13 @@ function RoutineEditorScreen({
                   id="routinePriority"
                   type="number"
                   value={draftHeader.activation.priority}
-                  onChange={(event) => setDraftHeader((current) => ({
-                    ...current,
-                    activation: { ...current.activation, priority: event.target.value },
-                  }))}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, priority: event.target.value },
+                    }))
+                  }}
                   disabled={isReadOnly}
                 />
               </div>
@@ -986,10 +1195,13 @@ function RoutineEditorScreen({
                 <Select
                   value={draftHeader.activation.reentryMode}
                   disabled={isReadOnly}
-                  onValueChange={(value) => setDraftHeader((current) => ({
-                    ...current,
-                    activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
-                  }))}
+                  onValueChange={(value) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
+                    }))
+                  }}
                 >
                   <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
                     <SelectValue />
@@ -1009,13 +1221,17 @@ function RoutineEditorScreen({
                 <Textarea
                   id="routineTrigger"
                   value={draftHeader.activation.triggerDescription}
-                  onChange={(event) => setDraftHeader((current) => ({
-                    ...current,
-                    activation: { ...current.activation, triggerDescription: event.target.value },
-                  }))}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, triggerDescription: event.target.value },
+                    }))
+                  }}
                   rows={2}
                   disabled={isReadOnly}
                 />
+                {triggerLocalValidationError ? <p className="text-xs text-destructive" role="status">{triggerLocalValidationError}</p> : null}
               </div>
             </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
@@ -1043,8 +1259,9 @@ function RoutineEditorScreen({
                 webhookDestinations={webhookDestinations}
                 isWebhookDestinationsLoading={isWebhookDestinationsLoading}
                 webhookDestinationsError={webhookDestinationsError}
-                onDraftChange={setProseDraft}
-                onHeaderChange={setDraftHeader}
+                onDraftChange={handleProseDraftChange}
+                onHeaderChange={handleProseHeaderChange}
+                onLocalValidationError={setProseLocalValidationError}
               />
             ) : null}
 
@@ -1089,9 +1306,33 @@ function RoutineEditorScreen({
                 </div>
               </div>
             ) : null}
-          </RoutineSkillCatalogProvider>
-        )}
+            </RoutineSkillCatalogProvider>
+          )}
+        </div>
       </div>
-    </div>
+      <AlertDialog open={deleteDraftDialogOpen} onOpenChange={setDeleteDraftDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete draft?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the draft for {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'}. Published or archived versions in the lineage are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault()
+                void deleteDraft()
+              }}
+            >
+              Delete draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

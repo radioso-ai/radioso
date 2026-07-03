@@ -18,9 +18,9 @@ test("routine prose survives a copy to an external file and back", async ({ page
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
 
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Greeter");
-  await page.getByLabel("Trigger", { exact: true }).fill("When the user says thanks");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When the user says thanks");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -68,9 +68,9 @@ test("an action step survives a copy to an external file and back", async ({ pag
   await installDashboardApiMocks(page, {});
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Escalate");
-  await page.getByLabel("Trigger", { exact: true }).fill("When the visitor asks for a person");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When the visitor asks for a person");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -108,7 +108,7 @@ test("pasting a foreign document that opens with --- does not wipe the routine",
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
 
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Greeter");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });

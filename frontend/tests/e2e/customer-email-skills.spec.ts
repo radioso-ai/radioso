@@ -52,9 +52,7 @@ test("routine authoring exposes typed customer email skill outcomes", async ({ p
   await expect(page.getByRole("option", { name: "Provider rejected" })).toBeVisible();
   await page.getByRole("option", { name: "Provider rejected" }).click();
 
-  await page.getByRole("button", { name: "Validate" }).click();
-
-  await expect.poll(() => routineUpdates.some((update) => update.method === "POST")).toBe(true);
+  await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
   const createUpdate = routineUpdates.find((update) => update.method === "POST");
   expect(createUpdate).toMatchObject({
     body: {

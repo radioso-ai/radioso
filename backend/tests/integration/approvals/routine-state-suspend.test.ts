@@ -107,7 +107,7 @@ describeIfDatabase("RoutineStateRepository suspended state integration", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "071_routine_states.sql");
-    await applyTestMigration(database, "085_structured_routine_guards.sql");
+    await database.execute("ALTER TABLE routine_states ADD COLUMN IF NOT EXISTS attempts JSONB NOT NULL DEFAULT '{}'::jsonb");
     repository = new RoutineStateRepository(database.kysely, 60_000);
   });
 

@@ -17,9 +17,9 @@ test("branch lines show whether a rule or the AI decides them", async ({ page })
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
 
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Eligibility");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer asks about an order");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer asks about an order");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();

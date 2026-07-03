@@ -27,6 +27,7 @@ export function RoutineProseTab({
   webhookDestinationsError,
   onDraftChange,
   onHeaderChange,
+  onLocalValidationError,
 }: {
   source: RoutineDefinitionDraft
   header: RoutineDraftHeader
@@ -34,6 +35,7 @@ export function RoutineProseTab({
   isWebhookDestinationsLoading: boolean
   webhookDestinationsError: string | null
   onDraftChange: (draft: RoutineDefinitionDraft | null) => void
+  onLocalValidationError?: (message: string | null) => void
   // Pasting a whole routine carries its name/trigger; lift them back into the host header.
   onHeaderChange?: (update: (header: RoutineDraftHeader) => RoutineDraftHeader) => void
 }) {
@@ -57,6 +59,24 @@ export function RoutineProseTab({
   // The handoff message only applies when the routine actually hands off — show its input
   // when a handoff branch exists in the body or the loaded routine already had one.
   const usesHandoff = blocks.some((block) => block.chips.some((chip) => chip.kind === 'handoff')) || Boolean(initialTerminals.handoff)
+  const localValidationError = useMemo(() => {
+    for (const block of blocks) {
+      if (/(^|\s)@handoff\b/i.test(block.text)) {
+        return 'Use the Handoff button for handoff branches.'
+      }
+      const targetCount = block.chips.filter((chip) =>
+        chip.kind === 'handoff' || chip.kind === 'end' || chip.kind === 'step'
+      ).length
+      if (targetCount > 1) {
+        return 'Each branch can only go to one target.'
+      }
+    }
+    return null
+  }, [blocks])
+
+  useEffect(() => {
+    onLocalValidationError?.(localValidationError)
+  }, [localValidationError, onLocalValidationError])
 
   const reservedRefKinds = useMemo(() => {
     const reserved: Record<string, RoutineChipKind> = {}
@@ -156,6 +176,7 @@ export function RoutineProseTab({
       <p className="text-xs text-muted-foreground">
         Type <kbd className="rounded border border-border px-1">@</kbd> or use the toolbar to insert a variable. Click a chip to set its type.
       </p>
+      {localValidationError ? <p className="text-xs text-destructive" role="status">{localValidationError}</p> : null}
       <RoutineTerminalMessages
         idPrefix="routineProseTab"
         completionMessage={completionMessage}

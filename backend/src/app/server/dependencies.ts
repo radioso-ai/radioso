@@ -550,6 +550,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         kind: "action" as const,
       })),
     ],
+    skillAuthoringCatalog,
     logger,
     telemetryService: infrastructure.telemetryService,
   });

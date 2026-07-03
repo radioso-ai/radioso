@@ -17,7 +17,9 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
   await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
 
   await page.getByLabel("Name").fill("Refund approval");
   await page.getByLabel("Activation trigger").fill("A refund over the limit needs a manager.");
@@ -50,8 +52,7 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
   await page.getByLabel("Step 1 option 2 target").click();
   await page.getByRole("option", { name: "complete", exact: true }).click();
 
-  await page.getByRole("button", { name: "Validate" }).click();
-  await expect(page.getByText("Validation passed")).toBeVisible();
+  await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
 
   const created = routineUpdates.find((update) => update.method === "POST");
   const body = created?.body as RoutineFixture | undefined;
@@ -83,10 +84,10 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   await page.getByLabel("Name", { exact: true }).fill("Refund approval");
-  await page.getByLabel("Trigger", { exact: true }).fill("A refund over the limit needs a manager.");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("A refund over the limit needs a manager.");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -110,8 +111,8 @@ test("author an approval gate in the Prose editor, save, and reload without Form
   await expect(chip).toContainText("if Approve then End");
   await expect(chip).toContainText("if Deny then Handoff");
 
-  await page.getByRole("button", { name: "Save routine" }).click();
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
 
   const created = routineUpdates.find((update) => update.method === "POST");
   const body = created?.body as RoutineFixture | undefined;
@@ -149,9 +150,9 @@ test("author an approval gate by typing the rules in the Prose editor (no button
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Typed approval");
-  await page.getByLabel("Trigger", { exact: true }).fill("A refund needs a manager.");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("A refund needs a manager.");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -174,8 +175,8 @@ test("author an approval gate by typing the rules in the Prose editor (no button
   await editor.pressSequentially("@handoff");
   await page.getByRole("option", { name: "Handoff (escalate to a person)" }).click();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
 
   const body = routineUpdates.find((update) => update.method === "POST")?.body as RoutineFixture | undefined;
   const approvalStep = body?.steps.find((step) => step.kind === "approval");

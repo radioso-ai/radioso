@@ -81,8 +81,16 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
     page.getByRole("button", { name: "New routine" }).click(),
   ]);
   await expect(page.getByRole("button", { name: "Back to routines" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Routine", level: 1 })).toBeVisible();
+  await expect(page.getByText("New routine", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Validate" })).toHaveCount(0);
+  await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible();
+  await expect(page.getByText("Name is required.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
   await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
   await expect(page.getByLabel("Name")).toBeVisible();
   await page.getByLabel("Name").fill("Collect pricing intake");
   await page.getByLabel("Priority").fill("20");
@@ -109,10 +117,10 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await page.getByLabel("Terminal 1 id").fill("complete");
   await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
 
-  await page.getByRole("button", { name: "Validate" }).click();
-  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
-  await expect(page.getByText("Validation passed")).toBeVisible();
-  await expect.poll(() => routineUpdates.some((update) => update.method === "VALIDATE")).toBe(true);
+  await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+  expect(routineUpdates.some((update) => update.method === "VALIDATE")).toBe(false);
 
   await page.getByRole("button", { name: "Publish", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
@@ -163,6 +171,42 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
 
   await clickBackToRoutines(page);
   await expect(page.getByText("Collect pricing intake")).toBeVisible();
+});
+
+test("new routine can be authored from an AI procedure draft", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+
+  await Promise.all([
+    page.waitForURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new$`)),
+    page.getByRole("button", { name: "New routine" }).click(),
+  ]);
+
+  await page.getByRole("button", { name: "Draft with AI" }).click();
+  await expect(page.getByRole("dialog", { name: "Draft with AI" })).toBeVisible();
+  await page.getByLabel("Procedure text for routine drafting assist").fill("When the visitor asks for follow-up, collect @email and send the contact request.");
+  await page.getByRole("button", { name: "Load proposal" }).click();
+
+  await expect(page.getByRole("dialog", { name: "Draft with AI" })).toHaveCount(0);
+  await expect(page.getByLabel("Name")).toHaveValue("assisted-contact");
+  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks for a person to follow up.");
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+
+  await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}}.");
+  await expect(page.getByLabel("Step 2 action type")).toHaveValue("contact.send");
+
+  expect(routineUpdates).toContainEqual({
+    method: "ASSIST",
+    body: {
+      prose: "When the visitor asks for follow-up, collect @email and send the contact request.",
+    },
+  });
 });
 
 test("an existing routine opens in prose (outline retired) and toggles to form", async ({ page }) => {
@@ -232,6 +276,8 @@ test("agent routines revise and publish a new version without duplicating the li
 
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
   await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-8555-000000000001$`));
+  await expect(page.getByRole("heading", { name: "Routine", level: 1 })).toBeVisible();
+  await expect(page.getByText("Collect pricing intake", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("draft v2", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
 
@@ -240,7 +286,14 @@ test("agent routines revise and publish a new version without duplicating the li
   await expect(page.getByText("draft revision")).toBeVisible();
 
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
+  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks about pricing or wants a quote.");
   await page.getByLabel("Activation trigger").fill("Visitor asks about pricing, quotes, or plans.");
+  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks about pricing, quotes, or plans.");
+  await expect.poll(() => routineUpdates.some((update) => {
+    const body = update.body as { activation?: { triggerDescription?: string } } | undefined;
+    return update.method === "PATCH" && body?.activation?.triggerDescription === "Visitor asks about pricing, quotes, or plans.";
+  }), { timeout: 15_000 }).toBe(true);
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Publish", exact: true }).click();
 
   await expect(page.getByText("published v2 (read-only)", { exact: true })).toBeVisible();
@@ -248,7 +301,10 @@ test("agent routines revise and publish a new version without duplicating the li
   await expect(versionHistory.getByRole("button", { name: /v1/ })).toContainText("superseded");
   await expect(versionHistory.getByRole("button", { name: /v2/ })).toContainText("published");
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
-  const revisionSave = routineUpdates.find((update) => update.method === "PATCH");
+  const revisionSave = routineUpdates.find((update) => {
+    const body = update.body as { activation?: { triggerDescription?: string } } | undefined;
+    return update.method === "PATCH" && body?.activation?.triggerDescription === "Visitor asks about pricing, quotes, or plans.";
+  });
   expect(revisionSave).toMatchObject({
     body: {
       activation: {
@@ -343,7 +399,7 @@ test("agent routines archive from a revision draft without publishing first", as
 
   await Promise.all([
     page.waitForURL(routinesListUrl),
-    page.getByRole("button", { name: "Archive routine" }).click(),
+    page.getByRole("button", { name: "Archive", exact: true }).click(),
   ]);
   await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
 
@@ -351,4 +407,33 @@ test("agent routines archive from a revision draft without publishing first", as
   await expect(page.getByRole("button", { name: /Collect pricing intake published/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Archived routines (1)" }).click();
   await expect(page.getByText("Collect pricing intake")).toBeVisible();
+});
+
+test("agent routine draft delete requires confirmation", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000601",
+      status: "draft",
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000601`);
+  await expect(page.getByText("draft v1", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete draft Collect pricing intake" }).click();
+  await expect(page.getByRole("alertdialog", { name: "Delete draft?" })).toBeVisible();
+  await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(false);
+
+  await Promise.all([
+    page.waitForURL(routinesListUrl),
+    page.getByRole("alertdialog", { name: "Delete draft?" }).getByRole("button", { name: "Delete draft" }).click(),
+  ]);
+  await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(true);
+  await expect(page.getByText("Collect pricing intake")).toHaveCount(0);
 });

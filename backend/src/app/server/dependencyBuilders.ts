@@ -221,6 +221,7 @@ import { createMailService } from "../../modules/mail/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
 import { ContextVariableResolverService } from "../../modules/context-variables/public.js";
 import { SkillBackedContextResolver } from "../composition/builtIn/contextResolverModule.js";
+import { RepositoryAgentSkillTurnSkillProvider } from "../composition/builtIn/agentSkillTurnSkillProvider.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
@@ -1481,6 +1482,10 @@ export const buildChatServices = (input: {
       askMargin: retrievalSenseAnswerFirstAskMargin,
       maxOptions: retrievalSensePolicy.maxOptions,
     },
+    agentSkillTurnSkillProvider: new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: new AgentSkillRepository(input.database.kysely),
+      executorRegistry: input.composition.skillExecutorRegistry,
+    }),
     ...(input.metricsRegistry
       ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
           recordClarificationDecision(input.metricsRegistry!, decision) }

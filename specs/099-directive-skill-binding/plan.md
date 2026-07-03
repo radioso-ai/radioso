@@ -41,8 +41,11 @@ frontend are untouched.
 - Module boundaries: contract type in `packages/conversation-contract`; authoring
   validation + persistence mapping in `backend/src/modules/agents/`; binding resolution
   as a pure module consumed by `ChatTurnSkillSelector` in `backend/src/modules/chat/`;
-  no composition changes (no new app-wide adapters/registries — existing wiring already
-  passes directives and skills where needed). Composition ownership: **N/A**.
+  composition ownership (added during review): `backend/src/app/composition/builtIn/
+  agentSkillTurnSkillProvider.ts` wires the per-session agent-skill turn runtime
+  (hydrates enabled `agent_selectable` agent skills as dispatchable turn skills via the
+  skill executor registry) — app-wide replaceable wiring, correctly owned by
+  composition per the constitution; the port lives in the chat module.
 - OpenAPI: code-first registry update in `backend/src/app/http/openapi/` (agent schemas)
   + `pnpm run generate:openapi`; `backend/openapi.yaml`/`.json` regenerated, never
   hand-edited. TypeScript SDK updated via `typescript-sdk` `pnpm run sync` chain.

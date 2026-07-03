@@ -3551,15 +3551,15 @@
             "maxLength": 1000
           },
           "binding": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3640,15 +3640,15 @@
             "maxLength": 1000
           },
           "binding": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -3823,15 +3823,15 @@
             ]
           },
           "binding": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },

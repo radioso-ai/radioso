@@ -2378,11 +2378,10 @@ components:
           minLength: 1
           maxLength: 1000
         binding:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/AuthoredDirectiveBinding"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         metadata:
           type: object
           additionalProperties: {}
@@ -2441,11 +2440,10 @@ components:
           minLength: 1
           maxLength: 1000
         binding:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/AuthoredDirectiveBinding"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         metadata:
           type: object
           additionalProperties: {}
@@ -2569,11 +2567,10 @@ components:
             - string
             - "null"
         binding:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/AuthoredDirectiveBinding"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         metadata:
           type: object
           additionalProperties: {}

@@ -71,6 +71,7 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -412,6 +413,7 @@ export interface ChatServiceOptions {
   recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
+  agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
 }
 
 export class ChatService {
@@ -427,8 +429,9 @@ export class ChatService {
   private readonly chatSessionPreparer: ChatSessionPreparer;
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly turnSkills: TurnSkill[];
-  private readonly turnSkillSelector: ChatTurnSkillSelector;
+  private readonly agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
+  private readonly logger?: Pick<AppLogger, "warn">;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
   private readonly suspendedRoutineReader?: SuspendedRoutineReader;
@@ -480,6 +483,7 @@ export class ChatService {
       recordClarificationDecision,
       retrievalSenseDetector,
       retrievalSenseClarificationPolicy,
+      agentSkillTurnSkillProvider,
     } = options;
     this.conversationRepository = conversationRepository;
     this.messageRepository = messageRepository;
@@ -508,6 +512,8 @@ export class ChatService {
     this.turnRouter = turnRouter;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
+    this.agentSkillTurnSkillProvider = agentSkillTurnSkillProvider;
+    this.logger = logger;
     this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
     this.turnSkills = turnRuntime.turnSkills;
     this.chatTurnLifecycle = new ChatTurnLifecycle(
@@ -533,9 +539,6 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       contextVariableRepository,
     );
-    // One selection seam shared by the engine turn and the host streaming path, so
-    // streamed and non-streamed turns resolve the terminal skill identically.
-    this.turnSkillSelector = new ChatTurnSkillSelector(this.turnSkills, this.selectionStrategy, { logger });
   }
 
   /**
@@ -1171,6 +1174,24 @@ export class ChatService {
     };
   }
 
+  private async turnSelectionRuntime(session: PreparedSession): Promise<{
+    turnSkills: TurnSkill[];
+    turnSkillSelector: ChatTurnSkillSelector;
+  }> {
+    const agentSkillRuntime = await this.agentSkillTurnSkillProvider?.forSession(session);
+    const turnSkills = [
+      ...this.turnSkills,
+      ...(agentSkillRuntime?.turnSkills ?? []),
+    ];
+    return {
+      turnSkills,
+      turnSkillSelector: new ChatTurnSkillSelector(turnSkills, this.selectionStrategy, {
+        agentSkillStates: agentSkillRuntime?.skillStates,
+        logger: this.logger,
+      }),
+    };
+  }
+
   /**
    * Produces the answer for a prepared turn. The conversation engine drives
    * selection + dispatch and renders the outcome through the shared registry,
@@ -1180,11 +1201,12 @@ export class ChatService {
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
   ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] }> {
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session);
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
-      turnSkillSelector: this.turnSkillSelector,
-      turnSkills: this.turnSkills,
+      turnSkillSelector,
+      turnSkills,
       directiveRuntime: this.directiveRuntime,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
@@ -1197,11 +1219,12 @@ export class ChatService {
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
   ): AsyncIterable<PreparedChatStreamTurnEvent> {
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session);
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
       engine: this.conversationEngine,
       session,
-      turnSkillSelector: this.turnSkillSelector,
-      turnSkills: this.turnSkills,
+      turnSkillSelector,
+      turnSkills,
       directiveRuntime: this.directiveRuntime,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,

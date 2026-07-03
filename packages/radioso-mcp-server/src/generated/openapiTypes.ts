@@ -3595,7 +3595,7 @@ export interface components {
             excludes?: string[];
             tags?: string[];
             description?: string | null;
-            binding?: components["schemas"]["AuthoredDirectiveBinding"] & (Record<string, never> | null);
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3610,7 +3610,7 @@ export interface components {
             excludes?: string[];
             tags?: string[];
             description?: string | null;
-            binding?: components["schemas"]["AuthoredDirectiveBinding"] & (Record<string, never> | null);
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3651,7 +3651,7 @@ export interface components {
             routes: string[];
             tags: string[];
             description: string | null;
-            binding: components["schemas"]["AuthoredDirectiveBinding"] & (Record<string, never> | null);
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata: {
                 [key: string]: unknown;
             };

@@ -25326,19 +25326,6 @@
                                 "help": {
                                   "type": "string"
                                 },
-                                "defaultValue": {
-                                  "anyOf": [
-                                    {
-                                      "type": "boolean"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
                                 "dependsOnKey": {
                                   "type": "string"
                                 },

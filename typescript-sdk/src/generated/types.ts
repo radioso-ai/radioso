@@ -13415,7 +13415,6 @@ export interface operations {
                                 /** @enum {string} */
                                 type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
                                 help?: string;
-                                defaultValue?: boolean | number | string;
                                 dependsOnKey?: string;
                                 options?: {
                                     value: string;

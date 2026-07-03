@@ -4,8 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
-import { PublicChatConnectingView } from '@/components/chat/public-chat-bubble-view'
-import { PublicChatShell } from '@/components/chat/public-chat-shell'
+import { PublicChatShell, PublicChatThreadLoadingView } from '@/components/chat/public-chat-shell'
 import {
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
@@ -320,18 +319,22 @@ export function EmbeddedChatFrame({
     }
   }
 
+  const handleOpenFullScreen = () => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
+    }
+  }
+
   if (state.status === 'bootstrapping') {
-    // Session bootstrap is a fast, no-LLM round-trip (resumed for returning
-    // visitors). Render the chat window itself with the assistant "typing"
-    // instead of a loading splash, so it flows straight into the live chat.
     return (
-      <PublicChatConnectingView
+      <PublicChatThreadLoadingView
+        copy={copy}
         theme={theme}
         themeOverrides={themeOverrides}
-        copy={copy}
         workspaceName={state.workspaceName?.trim() || copy.embeddedChatTitle}
         avatarUrl={avatarUrl}
         onRequestCollapse={handleRequestCollapse}
+        onOpenFullScreen={handleOpenFullScreen}
       />
     )
   }
@@ -358,12 +361,6 @@ export function EmbeddedChatFrame({
     isBootstrappedRef.current = false
     setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)
-  }
-
-  const handleOpenFullScreen = () => {
-    if (typeof window !== 'undefined' && window.parent !== window) {
-      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
-    }
   }
 
   const handleOpenNewTab = () => {

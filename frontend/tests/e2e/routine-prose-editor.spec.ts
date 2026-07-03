@@ -105,7 +105,7 @@ test("completion export is configured and saved from the prose composer", async 
   await page.getByRole("combobox", { name: "Webhook destination" }).click();
   await page.getByRole("option", { name: destination.name }).click();
 
-  await page.getByRole("button", { name: "Save draft" }).click();
+  await page.getByRole("button", { name: "Validate" }).click();
 
   await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");

@@ -1358,6 +1358,15 @@ export class InMemoryRoutineDefinitionRepository implements RoutineDefinitionRep
     if (!existing || existing.status !== "published") {
       return false;
     }
+    for (const definition of [...this.items.values()]) {
+      if (
+        definition.agentId === agentId &&
+        definition.lineageId === existing.lineageId &&
+        definition.status === "draft"
+      ) {
+        this.items.delete(definition.id);
+      }
+    }
     this.items.set(id, {
       ...existing,
       status: "archived",

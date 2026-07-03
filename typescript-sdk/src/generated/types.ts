@@ -2311,6 +2311,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/conversations/{conversationId}/fork": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fork a conversation into a dashboard test session
+         * @description Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
+         */
+        post: operations["forkConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/decisions": {
         parameters: {
             query?: never;
@@ -13395,6 +13415,8 @@ export interface operations {
                                 /** @enum {string} */
                                 type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
                                 help?: string;
+                                defaultValue?: boolean | number | string;
+                                dependsOnKey?: string;
                                 options?: {
                                     value: string;
                                     label: string;
@@ -13710,6 +13732,9 @@ export interface operations {
                         id: string | null;
                     };
                     config?: {
+                        [key: string]: unknown;
+                    };
+                    replaceConfig?: {
                         [key: string]: unknown;
                     };
                     /** @enum {string} */
@@ -15112,6 +15137,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                sourceScope?: "end_user" | "operator_test" | "all";
             };
             header?: never;
             path?: never;
@@ -15145,6 +15171,7 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 cursor?: string;
+                sourceScope?: "end_user" | "operator_test" | "all";
             };
             header?: never;
             path?: never;
@@ -15700,6 +15727,49 @@ export interface operations {
             };
             /** @description Conversation ownership changed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    forkConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Forked test-session conversation created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        conversationId: string;
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

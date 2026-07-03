@@ -112,7 +112,7 @@ describe("settings and chunking", () => {
     expect(defaults.semanticRewriteInstructions).not.toBe("");
     expect(defaults.lexicalRewriteInstructions).not.toBe("");
     expect(defaults.queryRewriteEnabled).toBe(true);
-    expect(defaults.rerankEnabled).toBe(true);
+    expect(defaults.rerankEnabled).toBe(false);
     expect(defaults.suggestedQuestionsEnabled).toBe(true);
     expect(defaults.suggestedQuestionsCount).toBe(3);
   });

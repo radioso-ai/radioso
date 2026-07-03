@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Bug, Check, Copy, Search, Workflow, X } from 'lucide-react'
+import { Bug, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -19,6 +19,7 @@ import { ActivityTraceGraph } from './activity-trace-graph'
 import { TurnFlowOverlay } from './turn-flow-overlay'
 import { ChatMessageThread } from './chat-message-thread'
 import { OperatorActionBar } from './operator-action-bar'
+import { ContinueInTestChatAction } from './workbench/continue-in-test-chat-action'
 import { HistoryDocumentDialog } from '@/components/dashboard/history/history-document-dialog'
 import { MetadataBadges } from '@/components/dashboard/shared/metadata-badges'
 import {
@@ -31,7 +32,6 @@ import {
   type ContactHistoryDetail,
   type DocumentSearchResponse,
   type PendingApprovalDecision,
-  type TurnTraceEnvelope,
 } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
@@ -41,44 +41,19 @@ import {
   getConversationSourceBadge,
 } from '@/lib/history-source'
 import {
-  type DiagnosticPresentation,
   presentActivityOutcome,
   presentRunParameters,
 } from '@/lib/activity-diagnostics'
+import {
+  CompactIdField,
+  DiagnosticPresentationSection,
+  TurnDiagnosticsPanel,
+  type TurnDiagnosticsInput,
+} from '@/components/dashboard/turn-inspector/turn-diagnostics-panel'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 import { computeRoutineThreadMarkers } from '@/lib/routine-thread-grouping'
 import { useRoutineCatalog } from '@/lib/routine-catalog'
-import { clarificationDecisionFromSpine, routineTurnSignalFromSpine } from '@/lib/turn-trace'
-
-const toneStyles: Record<DiagnosticPresentation['tone'], string> = {
-  neutral: 'border-border/70 bg-background/60',
-  ok: 'border-emerald-500/30 bg-emerald-500/10',
-  warning: 'border-amber-500/30 bg-amber-500/10',
-  error: 'border-destructive/30 bg-destructive/10',
-}
-
-function CompactIdField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1500)
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => void handleCopy()}
-      className="flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs transition hover:bg-muted/50"
-      title={`Copy ${label} ID: ${value}`}
-    >
-      <span className="shrink-0 font-medium text-muted-foreground">{label}</span>
-      <code className="min-w-0 truncate font-mono text-foreground">{value}</code>
-      {copied ? <Check className="h-3 w-3 shrink-0 text-green-500" /> : <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />}
-    </button>
-  )
-}
+import { routineTurnSignalFromSpine } from '@/lib/turn-trace'
 
 const contactStatusLabels: Record<ContactHistoryDetail['status'], string> = {
   pending: 'Pending',
@@ -139,128 +114,45 @@ function ContactRequestPanel({
   )
 }
 
-function DiagnosticPresentationSection({
-  label,
-  presentation,
-}: {
-  label: string
-  presentation: DiagnosticPresentation
-}) {
-  return (
-    <section className={`rounded-lg border p-3 ${toneStyles[presentation.tone]}`}>
-      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-1 text-base font-medium text-foreground">{presentation.title}</p>
-      <p className="mt-1 text-sm leading-6 text-muted-foreground">{presentation.summary}</p>
-      {presentation.facts.length ? (
-        <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
-          {presentation.facts.map((fact) => (
-            <div key={`${label}-${fact.label}`} className="min-w-0">
-              <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{fact.label}</dt>
-              <dd className="mt-0.5 break-words text-sm text-foreground">{fact.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-    </section>
-  )
-}
-
-function ChatDiagnosticsPanel({
-  selectedMessage,
+/**
+ * Maps a history-shaped conversation turn (debug nested under `message.debug`)
+ * into the surface-neutral {@link TurnDiagnosticsInput} the shared inspector
+ * consumes. `activityTrace`/`activeEnvelope` are the already-resolved values the
+ * history detail hook derives from the turn spine.
+ */
+function buildHistoryTurnDiagnostics({
+  selectedThreadMessage,
   diagnosticsMessage,
-  activeEnvelope,
   activityTrace,
-  routineNamesById,
-  selectedStageId,
-  onSelectLeafStage,
+  activeEnvelope,
 }: {
-  selectedMessage: ChatConversationTurn | null
+  selectedThreadMessage: ChatConversationTurn | null
   diagnosticsMessage: ChatConversationTurn | null
-  activeEnvelope?: TurnTraceEnvelope
-  activityTrace?: NonNullable<ChatConversationTurn['debug']>['activityTrace']
-  routineNamesById?: ReadonlyMap<string, string>
-  selectedStageId?: string
-  onSelectLeafStage: (stageId: string) => void
-}) {
-  if (!selectedMessage) {
-    return (
-      <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-        Select a message to inspect diagnostics.
-      </div>
-    )
+  activityTrace?: TurnDiagnosticsInput['activityTrace']
+  activeEnvelope?: TurnDiagnosticsInput['turnTrace']
+}): TurnDiagnosticsInput | null {
+  if (!selectedThreadMessage) {
+    return null
   }
 
-  const diagnosticsDebug =
-    diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
-  const diagnosticsMetadata = diagnosticsMessage && typeof diagnosticsMessage === 'object'
-    ? diagnosticsMessage as ChatConversationTurn & { metadataJson?: Record<string, unknown>; metadata_json?: Record<string, unknown> }
+  const debug = diagnosticsMessage?.role === 'assistant' ? diagnosticsMessage.debug : undefined
+  const metadata = diagnosticsMessage && typeof diagnosticsMessage === 'object'
+    ? (diagnosticsMessage as ChatConversationTurn & {
+        metadataJson?: Record<string, unknown>
+        metadata_json?: Record<string, unknown>
+      })
     : null
-  const visitorContext = diagnosticsMetadata?.metadataJson?.contextVariables ?? diagnosticsMetadata?.metadata_json?.contextVariables
-  const resolvedActivityTrace = activityTrace ?? diagnosticsDebug?.activityTrace
-  // The outcome summary reads from the turn spine — which knows a routine drove
-  // the reply or that a clarification was asked — so it can be specific instead
-  // of flattening everything that isn't retrieval to a "direct reply".
-  const spine = diagnosticsDebug?.turnTrace?.spine
-  const routineSignal = routineTurnSignalFromSpine(spine)
-  const routineName = routineSignal ? routineNamesById?.get(routineSignal.routineId) : undefined
-  const outcomePresentation = presentActivityOutcome({
-    trace: resolvedActivityTrace,
-    route: diagnosticsDebug?.route,
-    answerOutcome: diagnosticsDebug?.answerOutcome,
-    routine: routineSignal ? { name: routineName, completed: routineSignal.completed } : undefined,
-    clarificationAsked: clarificationDecisionFromSpine(spine) === 'asked',
-  })
-  const runParameters = presentRunParameters(resolvedActivityTrace)
+  const visitorContext = metadata?.metadataJson?.contextVariables ?? metadata?.metadata_json?.contextVariables
 
-  return (
-    <div className="space-y-4">
-      <CompactIdField label="Message" value={selectedMessage.id} />
-
-      {diagnosticsDebug?.errorMessage ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          {diagnosticsDebug.errorMessage}
-        </div>
-      ) : null}
-
-      <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
-
-      {runParameters ? (
-        <DiagnosticPresentationSection label="Run parameters" presentation={runParameters} />
-      ) : null}
-
-      {/* The turn flow opens full-screen from the header (envelope turns). Legacy
-          turns without an envelope keep the inline flat activity trace explorer. */}
-      {activeEnvelope ? (
-        <p className="text-xs text-muted-foreground">
-          Open <span className="font-medium text-foreground">Flow</span> to explore this turn as a graph —
-          inputs flow into the engine, which selects a skill and its retrieval path, leading to the outcome.
-        </p>
-      ) : (
-        <div className="grid grid-cols-[minmax(200px,260px)_1fr] gap-4">
-          <div className="sticky top-0 self-start overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2">
-            {resolvedActivityTrace ? (
-              <ActivityTraceGraph
-                activityTrace={resolvedActivityTrace}
-                selectedStageId={selectedStageId ?? resolvedActivityTrace.stages[0]?.stageId ?? ''}
-                onSelectStage={onSelectLeafStage}
-              />
-            ) : (
-              <div className="rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
-                Activity trace unavailable for this turn.
-              </div>
-            )}
-          </div>
-          <div className="min-h-0">
-            <ActivityTraceDetail
-              activityTrace={resolvedActivityTrace}
-              selectedStageId={selectedStageId}
-              visitorContext={visitorContext}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  return {
+    messageId: selectedThreadMessage.id,
+    route: debug?.route,
+    answerOutcome: debug?.answerOutcome,
+    errorMessage: debug?.errorMessage ?? undefined,
+    activityTrace: activityTrace ?? debug?.activityTrace,
+    turnTrace: activeEnvelope,
+    visitorContext,
+  }
 }
 
 function SearchDiagnosticsPanel({
@@ -592,6 +484,12 @@ export function ConversationDrawer({
                 })() : null}
               </div>
               <div className="flex items-center gap-2">
+                {selectedItem?.kind === 'chat' && conversationDetail?.agentId ? (
+                  <ContinueInTestChatAction
+                    conversationId={selectedItem.id}
+                    agentId={conversationDetail.agentId}
+                  />
+                ) : null}
                 {showGraph && activeEnvelope ? (
                   <Button
                     type="button"
@@ -709,11 +607,13 @@ export function ConversationDrawer({
 
                 {showGraph ? (
                   <div className="min-h-0 overflow-y-auto rounded-xl border border-border/70 bg-background/50 p-4">
-                    <ChatDiagnosticsPanel
-                      selectedMessage={selectedThreadMessage}
-                      diagnosticsMessage={selectedDiagnosticsAssistantMessage}
-                      activeEnvelope={activeEnvelope}
-                      activityTrace={activeTrace}
+                    <TurnDiagnosticsPanel
+                      diagnostics={buildHistoryTurnDiagnostics({
+                        selectedThreadMessage,
+                        diagnosticsMessage: selectedDiagnosticsAssistantMessage,
+                        activityTrace: activeTrace,
+                        activeEnvelope,
+                      })}
                       routineNamesById={routineNamesById}
                       selectedStageId={selectedStageId}
                       onSelectLeafStage={setSelectedStageId}

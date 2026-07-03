@@ -16304,6 +16304,13 @@ paths:
                                   - source_scope
                               help:
                                 type: string
+                              defaultValue:
+                                anyOf:
+                                  - type: boolean
+                                  - type: number
+                                  - type: string
+                              dependsOnKey:
+                                type: string
                               options:
                                 type: array
                                 items:
@@ -16697,6 +16704,9 @@ paths:
                     - kind
                     - id
                 config:
+                  type: object
+                  additionalProperties: {}
+                replaceConfig:
                   type: object
                   additionalProperties: {}
                 invocationMode:
@@ -18038,6 +18048,16 @@ paths:
           required: false
           name: offset
           in: query
+        - schema:
+            type: string
+            enum:
+              - end_user
+              - operator_test
+              - all
+            description: Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.
+          required: false
+          name: sourceScope
+          in: query
       responses:
         "200":
           description: Merged history items
@@ -18078,6 +18098,16 @@ paths:
             minLength: 1
           required: false
           name: cursor
+          in: query
+        - schema:
+            type: string
+            enum:
+              - end_user
+              - operator_test
+              - all
+            description: Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.
+          required: false
+          name: sourceScope
           in: query
       responses:
         "200":
@@ -18612,6 +18642,47 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "409":
           description: Conversation ownership changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/fork:
+    post:
+      tags:
+        - Conversation Ownership
+      summary: Fork a conversation into a dashboard test session
+      description: Copies the conversation's user and assistant message thread into a new conversation tagged as an authenticated_chat test session (same agent and workspace), leaving the original untouched.
+      operationId: forkConversation
+      security: *a77
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: Forked test-session conversation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversationId:
+                    type: string
+                    format: uuid
+                required:
+                  - conversationId
+                additionalProperties: false
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
           content:
             application/json:
               schema:

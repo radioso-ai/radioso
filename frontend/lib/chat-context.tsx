@@ -22,6 +22,7 @@ import {
   type ActivitySummary,
   type ActivityTrace,
   type SkillStreamPayload,
+  type TurnTraceEnvelope,
 } from '@/lib/api'
 import { createClientId } from '@/lib/client-id'
 
@@ -37,6 +38,7 @@ export interface ChatMessage {
   answerFeedback?: AnswerFeedbackState
   activitySummary?: ActivitySummary
   activityTrace?: ActivityTrace
+  turnTrace?: TurnTraceEnvelope
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
   skill?: SkillStreamPayload
@@ -57,6 +59,7 @@ interface ChatContextValue {
   initializeSession: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
   sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string) => Promise<boolean>
   startNewChat: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
+  adoptConversation: (workspaceId: string, conversationId: string, messages: ChatMessage[], agentId?: string) => void
 }
 
 const EMPTY_SESSION: ChatSession = {
@@ -230,6 +233,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 suggestions: completion.suggestions,
                 activitySummary: completion.debug?.activitySummary,
                 activityTrace: completion.debug?.activityTrace,
+                turnTrace: completion.debug?.turnTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete',
               }
@@ -569,14 +573,32 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     [sessions, updateSession],
   )
 
+  // Seed the live session with an already-persisted conversation (e.g. a forked
+  // test session) and skip bootstrap so the operator continues it in place.
+  const adoptConversation = useCallback(
+    (accountId: string, conversationId: string, messages: ChatMessage[], agentId?: string) => {
+      updateSession(accountId, agentId, (session) => ({
+        ...session,
+        conversationId,
+        bootstrapGreetingId: undefined,
+        messages,
+        isLoading: false,
+        isBootstrapping: false,
+        isInitialized: true,
+      }))
+    },
+    [updateSession],
+  )
+
   const value = useMemo<ChatContextValue>(
     () => ({
       getSession,
       initializeSession,
       sendMessage,
       startNewChat,
+      adoptConversation,
     }),
-    [getSession, initializeSession, sendMessage, startNewChat],
+    [getSession, initializeSession, sendMessage, startNewChat, adoptConversation],
   )
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
@@ -596,5 +618,7 @@ export const useChatSession = (workspaceId: string, agentId?: string) => {
     sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata, agentId),
     startNewChat: (userExpectedLocale?: string) =>
       context.startNewChat(workspaceId, userExpectedLocale, agentId),
+    adoptConversation: (conversationId: string, messages: ChatMessage[]) =>
+      context.adoptConversation(workspaceId, conversationId, messages, agentId),
   }
 }

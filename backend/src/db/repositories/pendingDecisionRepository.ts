@@ -1,5 +1,6 @@
 import { sql } from "kysely";
 
+import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
@@ -111,6 +112,31 @@ const pendingDecisionColumns = sql`
   deadline,
   created_at,
   updated_at
+`;
+
+// The same projection as `pendingDecisionColumns`, qualified with the `pd` alias so it stays
+// unambiguous when `listPending` joins `conversations` (both tables share column names such as
+// id, workspace_id, agent_id, created_at, updated_at). Column order matches `mapRecord`.
+const pendingDecisionListColumns = sql`
+  pd.id,
+  pd.handle,
+  pd.conversation_id,
+  pd.session_id,
+  pd.workspace_id,
+  pd.agent_id,
+  pd.routine_id,
+  pd.step_id,
+  pd.reason,
+  pd.options,
+  pd.decider_scope,
+  pd.content_hash,
+  pd.status,
+  pd.decision,
+  pd.decided_by,
+  pd.decided_at,
+  pd.deadline,
+  pd.created_at,
+  pd.updated_at
 `;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -253,12 +279,23 @@ export class PendingDecisionRepository {
   }
 
   async listPending(input: PendingDecisionListInput): Promise<PendingDecisionRecord[]> {
+    // Join conversations so operator-driven test traffic (dashboard test chat, workbench
+    // replay) never surfaces in the Needs-Attention approvals inbox. NULL-safe exclusion:
+    // `NOT IN` yields NULL for NULL source rows, which would wrongly drop real approvals.
+    const operatorTestChannels = sql.join(OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => sql.val(channel)));
+    // LEFT JOIN (not INNER): a pending decision must never silently vanish from the inbox if
+    // its conversation row is missing. A missing conversation yields NULL source_channel, which
+    // the null-safe condition keeps — the same "always surfaces" behavior as before this filter.
     const result = await sql<PendingDecisionRow>`
-      SELECT ${pendingDecisionColumns}
-        FROM pending_decisions
-       WHERE workspace_id = ${input.workspaceId}
-         AND status = 'pending'
-       ORDER BY created_at DESC
+      SELECT ${pendingDecisionListColumns}
+        FROM pending_decisions pd
+        LEFT JOIN conversations c
+          ON c.id = pd.conversation_id
+         AND c.workspace_id = pd.workspace_id
+       WHERE pd.workspace_id = ${input.workspaceId}
+         AND pd.status = 'pending'
+         AND (c.source_channel IS NULL OR c.source_channel NOT IN (${operatorTestChannels}))
+       ORDER BY pd.created_at DESC
     `.execute(this.db);
 
     return result.rows.map(mapRecord);

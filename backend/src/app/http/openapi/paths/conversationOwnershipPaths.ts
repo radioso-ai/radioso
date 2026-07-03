@@ -32,6 +32,10 @@ const handBackConversationRequestSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
 }).strict();
 
+const forkConversationResponseSchema = z.object({
+  conversationId: z.string().uuid(),
+}).strict();
+
 export const registerConversationOwnershipPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
@@ -144,6 +148,29 @@ export const registerConversationOwnershipPaths = (
       403: errorResponse("Workspace conversation takeover permission required", schemas),
       404: errorResponse("Conversation not found", schemas),
       409: errorResponse("Conversation ownership changed", schemas),
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/conversations/{conversationId}/fork",
+    tags: ["Conversation Ownership"],
+    summary: "Fork a conversation into a dashboard test session",
+    description:
+      "Copies the conversation's user and assistant message thread into a new conversation tagged " +
+      "as an authenticated_chat test session (same agent and workspace), leaving the original untouched.",
+    operationId: "forkConversation",
+    security: bearerSecurity,
+    request: {
+      params: schemas.conversationParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Forked test-session conversation created",
+        content: json(forkConversationResponseSchema),
+      },
+      401: errorResponse("Authentication required", schemas),
+      404: errorResponse("Conversation not found", schemas),
     },
   });
 };

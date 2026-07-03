@@ -69,6 +69,67 @@ const groupedSettingsFields = (fields: readonly SkillCapabilitySettingsField[]) 
   return [...groups.entries()]
 }
 
+const DEFAULT_SELECT_VALUE = '__default__'
+
+const optionLabel = (field: SkillCapabilitySettingsField, value: unknown): string | null =>
+  typeof value === 'string'
+    ? field.options?.find((option) => option.value === value)?.label ?? value
+    : null
+
+const formatDefaultValue = (field: SkillCapabilitySettingsField): string | null => {
+  if (field.defaultValue === undefined) return null
+  if (field.type === 'select') return optionLabel(field, field.defaultValue)
+  if (typeof field.defaultValue === 'boolean') return field.defaultValue ? 'On' : 'Off'
+  return String(field.defaultValue)
+}
+
+const isParentEffectivelyEnabled = (
+  parent: SkillCapabilitySettingsField | undefined,
+  settingDrafts: Record<string, SkillSettingDraftValue>,
+): boolean => {
+  if (!parent || parent.type !== 'boolean') return false
+  const value = settingDrafts[parent.key]
+  return typeof value === 'boolean' ? value : parent.defaultValue === true
+}
+
+const visibleSettingRows = (
+  fields: readonly SkillCapabilitySettingsField[],
+  settingDrafts: Record<string, SkillSettingDraftValue>,
+): Array<{ field: SkillCapabilitySettingsField; nested: boolean }> => {
+  const byKey = new Map(fields.map((field) => [field.key, field]))
+  const childrenByParent = new Map<string, SkillCapabilitySettingsField[]>()
+  const childKeys = new Set<string>()
+
+  for (const field of fields) {
+    if (!field.dependsOnKey) continue
+    childKeys.add(field.key)
+    childrenByParent.set(field.dependsOnKey, [...(childrenByParent.get(field.dependsOnKey) ?? []), field])
+  }
+
+  const rows: Array<{ field: SkillCapabilitySettingsField; nested: boolean }> = []
+  for (const field of fields) {
+    if (childKeys.has(field.key)) continue
+    rows.push({ field, nested: false })
+    if (!isParentEffectivelyEnabled(field, settingDrafts)) continue
+    for (const child of childrenByParent.get(field.key) ?? []) {
+      rows.push({ field: child, nested: true })
+    }
+  }
+
+  for (const field of fields) {
+    if (!field.dependsOnKey || byKey.has(field.dependsOnKey)) continue
+    rows.push({ field, nested: false })
+  }
+
+  return rows
+}
+
+const shouldShowGroupHeading = (
+  group: string,
+  fields: readonly SkillCapabilitySettingsField[],
+): boolean =>
+  !(fields.length === 1 && fields[0]?.type === 'boolean' && fields[0].label === group)
+
 function SkillSettingControl({
   field,
   value,
@@ -81,6 +142,7 @@ function SkillSettingControl({
   onChange: (value: SkillSettingDraftValue) => void
 }) {
   const fieldId = `skill-setting-${field.key.replace(/[^a-z0-9_-]/giu, '-')}`
+  const defaultValue = formatDefaultValue(field)
 
   if (field.type === 'source_scope') {
     return (
@@ -95,38 +157,56 @@ function SkillSettingControl({
   }
 
   if (field.type === 'boolean') {
-    // An unset field inherits the system default, so the switch must show the
-    // effective behavior — not render "off" for a behavior that is actually on.
-    const inherited = value === undefined && typeof field.defaultValue === 'boolean'
-    const effective = value === true || (value === undefined && field.defaultValue === true)
+    const hasOverride = typeof value === 'boolean'
     return (
-      <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 rounded-md bg-muted/20 px-3 py-2">
         <div className="space-y-1">
           <Label htmlFor={fieldId}>{field.label}</Label>
           {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
-          {inherited ? (
-            <p className="text-xs text-muted-foreground/70">Using the default ({field.defaultValue ? 'on' : 'off'}).</p>
+          {!hasOverride && field.defaultValue !== undefined ? (
+            <p className="text-xs text-muted-foreground">Default: {defaultValue}</p>
+          ) : null}
+          {hasOverride && field.defaultValue !== undefined ? (
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-xs text-muted-foreground"
+              onClick={() => onChange(undefined)}
+            >
+              Reset to default
+            </Button>
           ) : null}
         </div>
-        <Switch id={fieldId} checked={effective} onCheckedChange={onChange} />
+        <Switch
+          id={fieldId}
+          checked={hasOverride ? value : field.defaultValue === true}
+          onCheckedChange={onChange}
+        />
       </div>
     )
   }
 
   if (field.type === 'select') {
+    const selectedDefaultLabel = optionLabel(field, field.defaultValue)
+    const selectValue = typeof value === 'string' ? value : DEFAULT_SELECT_VALUE
     return (
       <div className="space-y-2">
         <Label htmlFor={fieldId}>{field.label}</Label>
-        <Select value={typeof value === 'string' ? value : undefined} onValueChange={onChange}>
+        <Select
+          value={selectValue}
+          onValueChange={(nextValue) => onChange(nextValue === DEFAULT_SELECT_VALUE ? undefined : nextValue)}
+        >
           <SelectTrigger id={fieldId}>
-            <SelectValue
-              placeholder={(() => {
-                const defaultOption = (field.options ?? []).find((option) => option.value === field.defaultValue)
-                return defaultOption ? `Default: ${defaultOption.label}` : 'Choose option'
-              })()}
-            />
+            <SelectValue placeholder={selectedDefaultLabel ? `Default (${selectedDefaultLabel})` : 'Choose option'}>
+              {selectValue === DEFAULT_SELECT_VALUE
+                ? selectedDefaultLabel ? `Default (${selectedDefaultLabel})` : 'Choose option'
+                : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value={DEFAULT_SELECT_VALUE}>
+              {selectedDefaultLabel ? `Use default (${selectedDefaultLabel})` : 'Choose option'}
+            </SelectItem>
             {(field.options ?? []).map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
             ))}
@@ -138,14 +218,57 @@ function SkillSettingControl({
   }
 
   if (field.type === 'textarea') {
+    const defaultText = typeof field.defaultValue === 'string' ? field.defaultValue : null
+    const hasOverride = typeof value === 'string'
+    const tallDefault = defaultText !== null && defaultText.length > 200
+
+    if (defaultText !== null && !hasOverride) {
+      return (
+        <div className="space-y-2 md:col-span-2">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor={fieldId}>{field.label}</Label>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Override ${field.label}`}
+              onClick={() => onChange(defaultText)}
+            >
+              Override
+            </Button>
+          </div>
+          <Textarea
+            id={fieldId}
+            value={defaultText}
+            disabled
+            className={cn('min-h-24', tallDefault ? 'min-h-56' : '')}
+          />
+          <p className="text-xs text-muted-foreground">Default shown. Override to edit it for this skill.</p>
+          {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+        </div>
+      )
+    }
+
     return (
       <div className="space-y-2 md:col-span-2">
-        <Label htmlFor={fieldId}>{field.label}</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={fieldId}>{field.label}</Label>
+          {defaultText !== null ? (
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto p-0 text-xs text-muted-foreground"
+              onClick={() => onChange(undefined)}
+            >
+              Reset to default
+            </Button>
+          ) : null}
+        </div>
         <Textarea
           id={fieldId}
           value={typeof value === 'string' ? value : ''}
           onChange={(event) => onChange(event.target.value)}
-          className="min-h-24"
+          className={cn('min-h-24', tallDefault ? 'min-h-56' : '')}
         />
         {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
       </div>
@@ -195,6 +318,7 @@ function SkillSettingControl({
         type={field.type === 'number' ? 'number' : 'text'}
         min={field.min}
         max={field.max}
+        placeholder={field.type === 'number' && field.defaultValue !== undefined ? `Default: ${field.defaultValue}` : undefined}
         value={field.type === 'number'
           ? typeof value === 'number' ? String(value) : ''
           : typeof value === 'string' ? value : ''}
@@ -241,6 +365,7 @@ export function SkillForm({
   }, [capabilities, capabilityId, editingSkill])
   const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [routineOpen, setRoutineOpen] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
   const capability = useMemo(
     () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
@@ -266,6 +391,7 @@ export function SkillForm({
     queueMicrotask(() => {
       setDraft(createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
       setAdvancedOpen(false)
+      setRoutineOpen(false)
       setLocalError(null)
     })
   }, [editingSkill, open, scopedCapabilities, skills])
@@ -329,6 +455,41 @@ export function SkillForm({
   }
 
   const displayedError = localError ?? error
+  const renderSettingsGroups = (settingsFields: readonly SkillCapabilitySettingsField[]) => {
+    if (!capability || settingsFields.length === 0) return null
+
+    return (
+      <div className="space-y-5">
+        {groupedSettingsFields(settingsFields).map(([group, groupFields], index) => (
+          <div key={group} className={cn('space-y-3', index > 0 ? 'border-t border-border pt-4' : '')}>
+            {shouldShowGroupHeading(group, groupFields) ? (
+              <h5 className="text-sm font-medium text-foreground">{group}</h5>
+            ) : null}
+            <div className="grid gap-3 md:grid-cols-2">
+              {visibleSettingRows(groupFields, draft.settingDrafts).map(({ field, nested }) => (
+                <div
+                  key={field.key}
+                  className={cn(
+                    field.type === 'source_scope' || field.type === 'textarea' || field.type === 'string_list'
+                      ? 'md:col-span-2'
+                      : '',
+                    nested ? 'border-l border-border pl-4 md:col-span-2' : '',
+                  )}
+                >
+                  <SkillSettingControl
+                    field={field}
+                    value={draft.settingDrafts[field.key]}
+                    sourceList={sourceTargetsToList(capability)}
+                    onChange={(value) => updateSetting(field.key, value)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -389,6 +550,11 @@ export function SkillForm({
             ) : null}
           </div>
 
+          <div className="flex items-center justify-between gap-3 rounded-md bg-muted/20 px-3 py-2">
+            <Label htmlFor="skill-enabled">Enabled</Label>
+            <Switch id="skill-enabled" checked={draft.enabled} onCheckedChange={(enabled) => updateDraft({ enabled })} />
+          </div>
+
           {capability?.inputSchema.source === 'discovered' ? (
             <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
               <Label htmlFor="skill-tool-name">Discovered tool name</Label>
@@ -402,26 +568,7 @@ export function SkillForm({
           ) : null}
 
           {essentialSettingsFields.length ? (
-            <div className="space-y-3">
-              <div className="space-y-4">
-                {groupedSettingsFields(essentialSettingsFields).map(([group, groupFields]) => (
-                  <div key={group} className="space-y-3 rounded-md border border-border p-3">
-                    <h5 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group}</h5>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {groupFields.map((field) => (
-                        <SkillSettingControl
-                          key={field.key}
-                          field={field}
-                          value={draft.settingDrafts[field.key]}
-                          sourceList={sourceTargetsToList(capability)}
-                          onChange={(value) => updateSetting(field.key, value)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            renderSettingsGroups(essentialSettingsFields)
           ) : null}
 
           <div className="rounded-md border border-border">
@@ -454,35 +601,36 @@ export function SkillForm({
                   </Select>
                 </div>
 
-                {advancedSettingsFields.length ? (
-                  <div className="space-y-4">
-                    {groupedSettingsFields(advancedSettingsFields).map(([group, groupFields]) => (
-                      <div key={group} className="space-y-3 rounded-md border border-border p-3">
-                        <h5 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{group}</h5>
-                        <div className="grid gap-3 md:grid-cols-2">
-                          {groupFields.map((field) => (
-                            <SkillSettingControl
-                              key={field.key}
-                              field={field}
-                              value={draft.settingDrafts[field.key]}
-                              sourceList={sourceTargetsToList(capability)}
-                              onChange={(value) => updateSetting(field.key, value)}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
+                {advancedSettingsFields.length ? renderSettingsGroups(advancedSettingsFields) : null}
+              </div>
+            ) : null}
+          </div>
 
+          <div className="rounded-md border border-border">
+            <button
+              type="button"
+              onClick={() => setRoutineOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm font-medium text-foreground"
+              aria-expanded={routineOpen}
+            >
+              <span className="space-y-1">
+                <span className="block">Routine integration</span>
+                <span className="block text-xs font-normal text-muted-foreground">
+                  These only matter when the skill is invoked from a routine or selected by the agent.
+                </span>
+              </span>
+              <ChevronDown className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', routineOpen ? 'rotate-180' : '')} />
+            </button>
+            {routineOpen ? (
+              <div className="space-y-5 border-t border-border p-3">
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-foreground">Inputs</h4>
                   {fields.length === 0 ? (
-                    <p className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+                    <p className="px-3 py-4 text-sm text-muted-foreground">
                       No inputs are published for this capability.
                     </p>
                   ) : (
-                    <div className="divide-y divide-border rounded-md border border-border">
+                    <div className="divide-y divide-border">
                       {fields.map((field) => {
                         const fieldDraft = draft.inputDrafts[field.name]
                         return (
@@ -515,18 +663,24 @@ export function SkillForm({
                               />
                             ) : fieldDraft?.mode === 'expose' ? (
                               <div className="grid gap-2 sm:grid-cols-2">
-                                <Input
-                                  value={fieldDraft.slotBinding}
-                                  onChange={(event) => updateInput(field.name, { slotBinding: event.target.value })}
-                                  placeholder={field.name}
-                                  aria-label={`${field.name} slot`}
-                                />
-                                <Input
-                                  value={fieldDraft.description}
-                                  onChange={(event) => updateInput(field.name, { description: event.target.value })}
-                                  placeholder="Label shown to the agent"
-                                  aria-label={`${field.name} description`}
-                                />
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Slot</Label>
+                                  <Input
+                                    value={fieldDraft.slotBinding}
+                                    onChange={(event) => updateInput(field.name, { slotBinding: event.target.value })}
+                                    placeholder={field.name}
+                                    aria-label={`${field.name} slot`}
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">Description shown to the agent</Label>
+                                  <Input
+                                    value={fieldDraft.description}
+                                    onChange={(event) => updateInput(field.name, { description: event.target.value })}
+                                    placeholder="Label shown to the agent"
+                                    aria-label={`${field.name} description`}
+                                  />
+                                </div>
                               </div>
                             ) : (
                               <p className="self-center text-sm text-muted-foreground">Not included</p>
@@ -568,11 +722,6 @@ export function SkillForm({
                     onChange={(event) => updateDraft({ extraConfigJson: event.target.value })}
                     className="min-h-28 font-mono text-xs"
                   />
-                </div>
-
-                <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-muted/20 px-3 py-2">
-                  <Label htmlFor="skill-enabled">Enabled</Label>
-                  <Switch id="skill-enabled" checked={draft.enabled} onCheckedChange={(enabled) => updateDraft({ enabled })} />
                 </div>
               </div>
             ) : null}

@@ -32,10 +32,13 @@ export type AgentSkillCreateInput = z.infer<typeof agentSkillCreateSchema>;
 export const agentSkillUpdateSchema = z.object({
   target: targetSchema.optional(),
   config: z.record(z.unknown()).optional(),
+  replaceConfig: z.record(z.unknown()).optional(),
   invocationMode: z.enum(agentSkillInvocationModes).optional(),
   enabled: z.boolean().optional(),
 }).strict().refine((input) => Object.keys(input).length > 0, {
   message: "At least one field must be provided",
+}).refine((input) => !(input.config && input.replaceConfig), {
+  message: "config and replaceConfig cannot both be provided",
 });
 
 export type AgentSkillUpdateInput = z.infer<typeof agentSkillUpdateSchema>;
@@ -144,14 +147,14 @@ export class AgentSkillsService {
     if (!descriptor) {
       throw badRequest(`Unsupported skill kind "${existing.kind}"`);
     }
-    const mergedConfig = { ...(existing.config ?? {}), ...(input.config ?? {}) };
+    const nextConfig = input.replaceConfig ?? { ...(existing.config ?? {}), ...(input.config ?? {}) };
     const invocationMode = input.invocationMode ?? existing.invocationMode;
     const target = input.target ?? { kind: existing.targetType ?? descriptor.targetKind, id: existing.targetId ?? null };
     await this.validateCreateOrUpdate(workspaceId, agentId, descriptor, {
       name: existing.skillName,
       capability: descriptor.id,
       target,
-      config: mergedConfig,
+      config: nextConfig,
       invocationMode,
       enabled: input.enabled ?? existing.enabled,
     }, existing.id);
@@ -161,6 +164,7 @@ export class AgentSkillsService {
         targetType: input.target?.kind,
         targetId: input.target?.id,
         config: input.config,
+        replaceConfig: input.replaceConfig,
         invocationMode: input.invocationMode,
         enabled: input.enabled,
       });

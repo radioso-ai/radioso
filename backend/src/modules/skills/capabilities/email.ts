@@ -10,9 +10,11 @@ import {
 } from "../../customerEmail/public.js";
 import type { SkillCapabilityDescriptor } from "../capabilityRegistry.js";
 
+const DEFAULT_EMAIL_SKILL_MODE = "draft";
+
 const emailConfigSchema = z
   .object({
-    mode: z.enum(customerEmailSkillModes).default("draft"),
+    mode: z.enum(customerEmailSkillModes).default(DEFAULT_EMAIL_SKILL_MODE),
     boundInputs: customerEmailBoundInputsSchema.default({}),
     exposedInputs: customerEmailExposedInputsSchema.default({}),
   })
@@ -67,6 +69,7 @@ export const emailCapability: SkillCapabilityDescriptor<"email", "customer_email
       key: "mode",
       label: "Mode",
       type: "select",
+      defaultValue: DEFAULT_EMAIL_SKILL_MODE,
       options: [
         { value: "draft", label: "Draft" },
         { value: "send", label: "Send" },

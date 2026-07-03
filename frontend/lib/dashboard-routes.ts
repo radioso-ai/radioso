@@ -49,6 +49,8 @@ export interface DashboardRouteState {
   agentId?: string
   agentTab?: AgentTab
   agentRoutineId?: string
+  /** When opening the agent chat tab, adopt this (forked test) conversation into the live session. */
+  agentChatConversationId?: string
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -79,6 +81,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentId',
   'agentTab',
   'agentRoutineId',
+  'agentChatConversationId',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -288,6 +291,14 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.agentTab && state.agentTab !== DEFAULT_AGENT_TAB) {
       normalized.agentTab = state.agentTab
     }
+    if (
+      state.agentId &&
+      !state.agentRoutineId &&
+      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
+      state.agentChatConversationId
+    ) {
+      normalized.agentChatConversationId = state.agentChatConversationId
+    }
     if (state.anchor) {
       normalized.anchor = state.anchor
     }
@@ -409,6 +420,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
   if (normalized.section === 'agents') {
     if (normalized.agentTab) {
       searchParams.set('tab', normalized.agentTab)
+    }
+    if (normalized.agentChatConversationId) {
+      searchParams.set('chatConversation', normalized.agentChatConversationId)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -662,6 +676,9 @@ export const parseDashboardRoute = (
       ...(secondSegment ? { agentId: secondSegment } : {}),
       ...(fourthSegment ? { agentRoutineId: fourthSegment } : {}),
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
+      ...(searchParams?.get('chatConversation')
+        ? { agentChatConversationId: searchParams.get('chatConversation') ?? undefined }
+        : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
   }

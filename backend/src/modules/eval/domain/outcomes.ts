@@ -143,27 +143,38 @@ export const evaluateAssertion = (
       };
     }
     case "retrieval_chunk_metadata": {
-      const hit = output.retrievedChunks.find((chunk) => chunk.documentId === assertion.documentId);
-      if (!hit) {
+      // Enrichment attaches temporal metadata only to the chunks overlapping a
+      // fact's source range, and a different chunk of the same document can rank
+      // first — so the assertion holds when ANY retrieved chunk of the document
+      // carries the expected metadata, not just the top-ranked one.
+      const documentChunks = output.retrievedChunks.filter((chunk) => chunk.documentId === assertion.documentId);
+      if (documentChunks.length === 0) {
         return {
           assertion,
           status: "fail",
           reason: `Retrieval did not include any chunk from document ${assertion.documentId}.`,
         };
       }
-      const mismatched = Object.entries(assertion.metadata).find(([key, expected]) => hit.metadata?.[key] !== expected);
-      if (!mismatched) {
+      const expectedEntries = Object.entries(assertion.metadata);
+      const matched = documentChunks.some((chunk) =>
+        expectedEntries.every(([key, expected]) => chunk.metadata?.[key] === expected),
+      );
+      if (matched) {
         return {
           assertion,
           status: "pass",
           reason: `Retrieval included expected metadata for document ${assertion.documentId}.`,
         };
       }
-      const [key, expected] = mismatched;
+      const observed = documentChunks
+        .map((chunk) =>
+          JSON.stringify(Object.fromEntries(expectedEntries.map(([key]) => [key, chunk.metadata?.[key]]))),
+        )
+        .join("; ");
       return {
         assertion,
         status: "fail",
-        reason: `Retrieved metadata ${key} for document ${assertion.documentId} was ${JSON.stringify(hit.metadata?.[key])}, expected ${JSON.stringify(expected)}.`,
+        reason: `No retrieved chunk from document ${assertion.documentId} matched expected metadata ${JSON.stringify(assertion.metadata)}. Observed per chunk: ${observed}.`,
       };
     }
     case "answer_cites_document": {

@@ -7,17 +7,32 @@ ALTER TABLE document_processing_jobs
 -- Text-to-date casts are only STABLE (DateStyle-dependent), so a generated column
 -- cannot use them directly. Strict ISO 'YYYY-MM-DD' parsing is deterministic under
 -- every DateStyle, which makes this wrapper safe to declare IMMUTABLE.
+-- Chunk metadata is caller-writable, so the function must never raise: an invalid
+-- calendar date (for example 2026-02-31, which to_date rejects on PostgreSQL 10+)
+-- inside a generated column would otherwise fail the entire chunk INSERT and the
+-- backfill for existing rows. Invalid values resolve to NULL, and the round-trip
+-- comparison rejects any permissive normalization.
 CREATE OR REPLACE FUNCTION chunk_metadata_iso_date(value text)
 RETURNS date
-LANGUAGE sql
+LANGUAGE plpgsql
 IMMUTABLE
 PARALLEL SAFE
 RETURNS NULL ON NULL INPUT
 AS $$
-  SELECT CASE
-    WHEN value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN to_date(value, 'YYYY-MM-DD')
-    ELSE NULL
-  END
+DECLARE
+  parsed date;
+BEGIN
+  IF value !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+    RETURN NULL;
+  END IF;
+  parsed := to_date(value, 'YYYY-MM-DD');
+  IF to_char(parsed, 'YYYY-MM-DD') <> value THEN
+    RETURN NULL;
+  END IF;
+  RETURN parsed;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END;
 $$;
 
 ALTER TABLE chunks

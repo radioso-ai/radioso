@@ -20,7 +20,22 @@ export interface DocumentEnrichmentProvenance {
   failureReason?: string | null;
 }
 
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+// Shape alone is not enough: a model can emit a well-formed but calendar-invalid
+// date such as 2026-02-31, which would later make the chunk insert fail inside the
+// generated date columns. The UTC round-trip rejects any date the calendar
+// normalizes or refuses.
+const isValidIsoCalendarDate = (value: string): boolean => {
+  const timestamp = Date.parse(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  return new Date(timestamp).toISOString().slice(0, 10) === value;
+};
+
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isValidIsoCalendarDate, { message: "must be a valid ISO calendar date" });
 
 const sourceRangeSchema = z.object({
   start: z.number().int().min(0),

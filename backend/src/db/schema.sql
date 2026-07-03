@@ -178,12 +178,22 @@ $$;
 --
 
 CREATE FUNCTION public.chunk_metadata_iso_date(value text) RETURNS date
-    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
     AS $_$
-  SELECT CASE
-    WHEN value ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN to_date(value, 'YYYY-MM-DD')
-    ELSE NULL
-  END
+DECLARE
+  parsed date;
+BEGIN
+  IF value !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
+    RETURN NULL;
+  END IF;
+  parsed := to_date(value, 'YYYY-MM-DD');
+  IF to_char(parsed, 'YYYY-MM-DD') <> value THEN
+    RETURN NULL;
+  END IF;
+  RETURN parsed;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
+END;
 $_$;
 
 

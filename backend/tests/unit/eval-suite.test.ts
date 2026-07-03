@@ -150,6 +150,29 @@ describe("event retrieval eval fixtures", () => {
       documentId: "11111111-1111-4111-8111-111111111101",
       metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
     }, observedOutput)).toMatchObject({ status: "pass" });
+    // Enrichment attaches dates only to the chunks overlapping the fact's source
+    // range, so the dated chunk may not be the document's first retrieved chunk.
+    expect(evaluateAssertion({
+      type: "retrieval_chunk_metadata",
+      documentId: "11111111-1111-4111-8111-111111111101",
+      metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+    }, {
+      retrievedChunks: [
+        {
+          chunkId: "chunk-workshop-intro",
+          documentId: "11111111-1111-4111-8111-111111111101",
+          title: "Summer Workshop",
+          rank: 0,
+          metadata: {},
+        },
+        ...observedOutput.retrievedChunks,
+      ],
+    })).toMatchObject({ status: "pass" });
+    expect(evaluateAssertion({
+      type: "retrieval_chunk_metadata",
+      documentId: "11111111-1111-4111-8111-111111111101",
+      metadata: { dateFrom: "2027-01-01" },
+    }, observedOutput)).toMatchObject({ status: "fail" });
     expect(evaluateAssertion({
       type: "retrieval_document_order",
       documentIds: [

@@ -403,4 +403,28 @@ describeIntegration("chunk temporal generated columns (Postgres)", () => {
       { id: invalidChunkId, date_from: null, date_to: null },
     ]);
   });
+
+  it("resolves ISO-shaped but calendar-invalid dates to NULL instead of failing the insert", async () => {
+    // to_date raises on 2026-02-31; the generated columns must swallow that so
+    // caller-supplied metadata can never fail chunk persistence.
+    const impossibleDateChunkId = randomUUID();
+
+    await database.query(
+      `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, metadata)
+       VALUES ($1, $2, $3, 3, 'impossible date', 'impossible date', $4::jsonb)`,
+      [
+        impossibleDateChunkId,
+        documentId,
+        workspaceId,
+        JSON.stringify({ dateFrom: "2026-02-31", dateTo: "2026-11-31" }),
+      ],
+    );
+
+    const rows = await database.query<{ date_from: string | null; date_to: string | null }>(
+      `SELECT date_from::text, date_to::text FROM chunks WHERE id = $1`,
+      [impossibleDateChunkId],
+    );
+
+    expect(rows).toEqual([{ date_from: null, date_to: null }]);
+  });
 });

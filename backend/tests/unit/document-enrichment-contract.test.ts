@@ -47,6 +47,42 @@ describe("document enrichment contract", () => {
     ).toThrow();
   });
 
+  it("rejects calendar-invalid dates that pass the ISO shape check", () => {
+    // 2026-02-31 is shaped like an ISO date, but letting it through would later
+    // fail the chunk insert inside the generated date columns (to_date raises).
+    expect(() =>
+      documentEnrichmentOutputSchema.parse({
+        shape: "event",
+        confidence: 0.8,
+        facts: [
+          {
+            id: "bad-calendar-date",
+            kind: "event_date",
+            label: "impossible february day",
+            dateFrom: "2026-02-31",
+            sourceRange: { start: 0, end: 10 },
+          },
+        ],
+      }),
+    ).toThrow();
+    expect(() =>
+      documentEnrichmentOutputSchema.parse({
+        shape: "event",
+        confidence: 0.8,
+        facts: [
+          {
+            id: "bad-anchor",
+            kind: "event_date",
+            label: "valid date, invalid anchor",
+            dateFrom: "2026-07-10",
+            anchorDate: "2026-11-31",
+            sourceRange: { start: 0, end: 10 },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("normalizes unknown or low-confidence shapes to generic", () => {
     expect(normalizeDocumentShape("product", 0.95)).toBe("generic");
     expect(normalizeDocumentShape("event", 0.2)).toBe("generic");

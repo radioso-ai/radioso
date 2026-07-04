@@ -233,9 +233,12 @@ describe("candidate preparation stage", () => {
   });
 
   it("applies built-in upcoming event boost only for temporal event lookups when enabled", async () => {
+    // Fixed clock: the fixture event date must stay "upcoming" regardless of
+    // when the suite runs.
     const stage = new CandidatePreparationStageService(
       new CandidatePreparationService(),
       new MetadataRuleScoringService(),
+      () => new Date("2026-07-01T12:00:00.000Z"),
     );
     const datedCandidate = semanticChunk(1, {
       chunkId: "future-event",

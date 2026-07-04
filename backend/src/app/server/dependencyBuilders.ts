@@ -1412,6 +1412,13 @@ export const buildChatServices = (input: {
     logger: input.logger,
     metrics: input.metricsRegistry ?? null,
   });
+  // One agent-skill turn runtime shared by the live chat turn and workbench replay,
+  // so a replayed directive-bound turn selects and dispatches exactly like production.
+  const agentSkillTurnSkillProvider = new RepositoryAgentSkillTurnSkillProvider({
+    agentSkills: new AgentSkillRepository(input.database.kysely),
+    executorRegistry: input.composition.skillExecutorRegistry,
+    capabilityPolicy: input.composition.capabilityPolicy,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1482,11 +1489,7 @@ export const buildChatServices = (input: {
       askMargin: retrievalSenseAnswerFirstAskMargin,
       maxOptions: retrievalSensePolicy.maxOptions,
     },
-    agentSkillTurnSkillProvider: new RepositoryAgentSkillTurnSkillProvider({
-      agentSkills: new AgentSkillRepository(input.database.kysely),
-      executorRegistry: input.composition.skillExecutorRegistry,
-      capabilityPolicy: input.composition.capabilityPolicy,
-    }),
+    agentSkillTurnSkillProvider,
     ...(input.metricsRegistry
       ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
           recordClarificationDecision(input.metricsRegistry!, decision) }
@@ -1535,6 +1538,7 @@ export const buildChatServices = (input: {
     routineProvider,
     chatGateway,
     chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
+    agentSkillTurnSkillProvider,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

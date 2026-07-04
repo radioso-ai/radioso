@@ -15,6 +15,9 @@ import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAn
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
+import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
+import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
 
@@ -249,6 +252,81 @@ describe("WorkbenchReplayRunner", () => {
     });
     expect(capturedRequests[0]?.history).toEqual([]);
     expect(classify).toHaveBeenCalledOnce();
+  });
+
+  it("hydrates directive-bound agent skills so replay selects like live chat", async () => {
+    const boundSkill: TurnSkill = {
+      definition: { name: "order_lookup", outcomeKinds: ["agent_skill"] },
+      selects: () => false,
+      dispatch: (session) => ({
+        kind: "agent_skill",
+        skillName: "order_lookup",
+        outcome: { status: "completed", answer: "Order 123 is in transit." },
+        stagedContext: session.stagedContext,
+        steering: session.directiveSteering?.rules ?? [],
+        trace: session.turnTrace,
+      }),
+      renderer: {
+        supports: (outcome) => outcome.kind === "agent_skill",
+        render: async (outcome) => ({
+          answer: outcome.outcome.answer ?? "",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        }),
+      },
+    };
+    const forSession = vi.fn(async () => ({
+      turnSkills: [boundSkill],
+      skillStates: new Map([["order_lookup", { enabled: true, turnCapable: true }]]),
+    }));
+    const provider: AgentSkillTurnSkillProvider = { forSession };
+    const boundAgent: ConversationAgent = {
+      ...agent(),
+      authoredDirectives: [{
+        id: "directive-1",
+        agentId: "agent-1",
+        name: "order-status",
+        condition: { kind: "always" },
+        action: "Look up the order.",
+        priority: null,
+        binding: { kind: "skill", skillName: "order_lookup" },
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
+        tags: [],
+        description: null,
+        metadata: {},
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      }],
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [],
+      }),
+      agentSkillTurnSkillProvider: provider,
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(boundAgent),
+      query: "Where is order 123?",
+      history: [],
+    });
+
+    expect(result.answer).toBe("Order 123 is in transit.");
+    expect(forSession).toHaveBeenCalledOnce();
+    const selection = result.turnTrace?.spine.stages.find((stage) => stage.kind === "skill_selection");
+    expect(selection?.outputs ?? {}).toMatchObject({ reason: "directive:order-status" });
   });
 
   it("does not wire routines or enqueue actions for contact-like replay queries", async () => {

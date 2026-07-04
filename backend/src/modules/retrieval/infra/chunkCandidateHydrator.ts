@@ -5,12 +5,14 @@ import type { JsonValue } from "../../../shared/infra/kysely/schema.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { VectorIndexCandidate } from "../domain/vectorIndex.js";
+import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
+import { hasVectorMetadataFilter } from "../domain/vectorFilter.js";
 
 export interface ChunkCandidateHydratorPort {
   hydrate(input: {
     workspaceId: string;
     candidates: VectorIndexCandidate[];
-    metadataFilter?: Record<string, unknown>;
+    metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
     embeddingModel?: string;
   }): Promise<RetrievedChunk[]>;
@@ -22,7 +24,7 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
   async hydrate(input: {
     workspaceId: string;
     candidates: VectorIndexCandidate[];
-    metadataFilter?: Record<string, unknown>;
+    metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
     embeddingModel?: string;
   }): Promise<RetrievedChunk[]> {
@@ -54,7 +56,7 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
       query = query.where("c.embedding_model", "=", input.embeddingModel);
     }
 
-    if (input.metadataFilter && Object.keys(input.metadataFilter).length > 0) {
+    if (hasVectorMetadataFilter(input.metadataFilter)) {
       query = query.where(sql<boolean>`${sql.ref("c.metadata")} @> ${JSON.stringify(input.metadataFilter)}::jsonb`);
     }
 

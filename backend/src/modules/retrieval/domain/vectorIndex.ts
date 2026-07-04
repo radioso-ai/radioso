@@ -1,4 +1,4 @@
-import type { RetrievalSourceFilter } from "./retrievalSourceFilter.js";
+import type { VectorChunkFilter } from "./vectorFilter.js";
 
 export interface VectorIndexCandidate {
   chunkId: string;
@@ -6,10 +6,7 @@ export interface VectorIndexCandidate {
   score: number;
 }
 
-export interface VectorIndexFilter {
-  metadataContains?: Record<string, unknown>;
-  source?: RetrievalSourceFilter;
-}
+export type VectorIndexFilter = VectorChunkFilter;
 
 export interface VectorIndexSearchInput {
   workspaceId: string;
@@ -51,4 +48,3 @@ export interface VectorIndexPort {
 
   health?(): Promise<VectorIndexHealth>;
 }
-

@@ -7,6 +7,7 @@ import type {
 } from "./domain.js";
 import type {
   AuthoredDirective,
+  AuthoredDirectiveBinding,
   AuthoredDirectiveCondition,
 } from "./authoredDirectives.js";
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
@@ -74,6 +75,7 @@ export interface AuthoredDirectiveConfig {
   routes: ChatTurnRoute[];
   tags: string[];
   description: string | null;
+  binding: AuthoredDirectiveBinding;
   metadata: Record<string, unknown>;
 }
 
@@ -415,6 +417,7 @@ const serializeAuthoredDirectives = (
     routes: [...directive.routes],
     tags: [...directive.tags],
     description: directive.description,
+    binding: directive.binding,
     metadata: cloneJson(directive.metadata),
   }));
 
@@ -579,6 +582,7 @@ const materializeAuthoredDirectives = (
     routes: [...(directive.routes ?? [])],
     tags: [...(directive.tags ?? [])],
     description: directive.description ?? null,
+    binding: directive.binding ?? null,
     metadata: cloneJson(directive.metadata ?? {}),
     createdAt: new Date(INTERNAL_CONFIG_DATE.getTime()),
     updatedAt: new Date(INTERNAL_CONFIG_DATE.getTime()),

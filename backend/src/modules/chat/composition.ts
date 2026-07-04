@@ -8,6 +8,11 @@ export {
   ChatService,
   type ChatRoutineProvider,
 } from "./services/chatService.js";
+export type { PreparedSession } from "./services/chatSessionPreparer.js";
+export type {
+  AgentSkillTurnRuntime,
+  AgentSkillTurnSkillProvider,
+} from "./services/agentSkillTurnSkillProvider.js";
 export {
   WorkbenchReplayRunner,
   type WorkbenchReplayInput,
@@ -72,6 +77,17 @@ export {
   type ChatTurnRuntime,
   type ChatTurnRuntimeDependencies,
 } from "./services/chatTurnRuntime.js";
+export {
+  GenericTurnOutcomeRenderer,
+  type TurnOutcome,
+  type TurnSkill,
+} from "./services/turnOutcome.js";
+export { buildPreparedTurnOutcome } from "./services/preparedTurnOutcome.js";
+export {
+  toConversationAgentConfig,
+  toConversationInputEvent,
+  toConversationMessages,
+} from "./services/conversationContractMappers.js";
 export {
   createRouteScopedDirectiveSteering,
   type RouteScopedDirectiveRegistration,

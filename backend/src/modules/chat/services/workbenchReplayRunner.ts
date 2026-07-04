@@ -45,6 +45,7 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type { TurnRouter } from "./turnRouter.js";
 
 export interface WorkbenchReplayResolvedConfig {
@@ -83,6 +84,12 @@ export interface WorkbenchReplayRunnerOptions {
   routineProvider?: ChatRoutineProvider;
   chatGateway?: Pick<ChatGateway, "answer">;
   chatAnswerPresenter?: ChatAnswerPresenter;
+  /**
+   * Same per-session agent-skill turn runtime live chat uses, so a replayed turn
+   * with a directive-bound agent skill selects and dispatches exactly like
+   * production. When omitted, only the static turn skills are selectable.
+   */
+  agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
 }
 
 /**
@@ -188,7 +195,6 @@ export class WorkbenchReplayRunner {
   private readonly preparer: ChatSessionPreparer;
   private readonly selectionStrategy: TurnSelectionStrategy;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
-  private readonly turnSkillSelector: ChatTurnSkillSelector;
   private readonly turnRouter: TurnRouter;
   private readonly answerSupport: ChatAnswerSupport;
   private readonly options: WorkbenchReplayRunnerOptions;
@@ -198,7 +204,6 @@ export class WorkbenchReplayRunner {
     this.turnRouter = options.turnRouter;
     this.directiveRuntime = options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
     this.answerSupport = new ChatAnswerSupport();
-    this.turnSkillSelector = new ChatTurnSkillSelector(options.turnSkills, this.selectionStrategy);
     this.preparer = new ChatSessionPreparer(
       createNoopConversationRepository(),
       createNoopMessageRepository(),
@@ -261,12 +266,20 @@ export class WorkbenchReplayRunner {
       ? await this.preparer.prepareRetrieval(prepareInput, session, routing.framing)
       : await this.preparer.prepareDirect(prepareInput, session, routing.framing);
 
+    // Mirror live chat's per-session selection runtime: hydrate directive-bindable
+    // agent skills so a replayed bound turn selects and dispatches like production.
+    const agentSkillRuntime = await this.options.agentSkillTurnSkillProvider?.forSession(session);
+    const turnSkills = [...this.options.turnSkills, ...(agentSkillRuntime?.turnSkills ?? [])];
+    const turnSkillSelector = new ChatTurnSkillSelector(turnSkills, this.selectionStrategy, {
+      agentSkillStates: agentSkillRuntime?.skillStates,
+    });
+
     const answerStartedAt = Date.now();
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
-      turnSkillSelector: this.turnSkillSelector,
-      turnSkills: this.options.turnSkills,
+      turnSkillSelector,
+      turnSkills,
       directiveRuntime: this.directiveRuntime,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,

@@ -2985,6 +2985,8 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
         contentLength: chunk.content.length,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
+        dateFrom: typeof chunk.metadata?.dateFrom === "string" ? chunk.metadata.dateFrom : null,
+        dateTo: typeof chunk.metadata?.dateTo === "string" ? chunk.metadata.dateTo : null,
       }));
   }
 

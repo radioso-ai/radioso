@@ -248,6 +248,8 @@ export interface DocumentChunkSummary {
   contentLength: number
   startOffset: number
   endOffset: number
+  dateFrom: string | null
+  dateTo: string | null
 }
 
 export interface DocumentChunkListResponse {

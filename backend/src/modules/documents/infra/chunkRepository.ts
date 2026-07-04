@@ -77,13 +77,17 @@ export class ChunkRepository implements ChunkRepositoryPort {
       start_offset: number;
       end_offset: number;
       content_length: number;
+      date_from: string | null;
+      date_to: string | null;
     }>(
       `SELECT id,
               chunk_index,
               LEFT(content, $3) AS content,
               start_offset,
               end_offset,
-              LENGTH(content) AS content_length
+              LENGTH(content) AS content_length,
+              date_from::text,
+              date_to::text
        FROM chunks
        WHERE document_id = $1 AND workspace_id = $2
        ORDER BY chunk_index ASC`,
@@ -97,6 +101,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
       contentLength: Number(row.content_length),
       startOffset: Number(row.start_offset),
       endOffset: Number(row.end_offset),
+      dateFrom: row.date_from,
+      dateTo: row.date_to,
     }));
   }
 

@@ -71,7 +71,19 @@ export const temporalFactSchema = z.union([
   withTemporalFactRules(z.object({ kind: z.literal("article_date"), ...baseTemporalFactShape })),
 ]);
 
-export type TemporalFact = z.infer<typeof temporalFactSchema>;
+// Explicit boundary type: zod's inference degrades through the preprocess
+// wrappers above, and downstream strategies should not depend on it anyway.
+export interface TemporalFact {
+  kind: "event_date" | "article_date";
+  id: string;
+  label: string;
+  dateFrom?: string;
+  dateTo?: string;
+  unresolvedText?: string;
+  sourceRange: { start: number; end: number };
+  anchorSource?: EnrichmentAnchorSource;
+  anchorDate?: string;
+}
 
 export const documentEnrichmentOutputSchema = z.object({
   // Unknown shape labels degrade to generic (no extraction) instead of failing
@@ -101,7 +113,16 @@ export const documentEnrichmentOutputSchema = z.object({
   ),
 });
 
-export type DocumentEnrichmentOutput = z.infer<typeof documentEnrichmentOutputSchema>;
+// Explicit boundary type for the same reason as TemporalFact; the schema
+// guarantees this shape at parse time.
+export interface DocumentEnrichmentOutput {
+  shape: DocumentShape;
+  confidence: number;
+  facts: TemporalFact[];
+}
+
+export const parseDocumentEnrichmentOutput = (value: unknown): DocumentEnrichmentOutput =>
+  documentEnrichmentOutputSchema.parse(value) as unknown as DocumentEnrichmentOutput;
 
 const MIN_SHAPE_CONFIDENCE = 0.5;
 

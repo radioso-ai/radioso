@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import {
-  documentEnrichmentOutputSchema,
+  parseDocumentEnrichmentOutput,
   normalizeDocumentShape,
   type DocumentEnrichmentOutput,
   type DocumentEnrichmentProvenance,
@@ -118,7 +118,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       });
       const parsed = validateOutputForDocument(
         normalizeRepresentationRanges(
-          documentEnrichmentOutputSchema.parse(gatewayResult.output),
+          parseDocumentEnrichmentOutput(gatewayResult.output),
           representation.bodyOffset,
         ),
         representation.bodyLength,

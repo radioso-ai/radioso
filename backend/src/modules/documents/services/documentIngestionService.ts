@@ -249,6 +249,8 @@ export interface ChunkSummary {
   contentLength: number;
   startOffset: number;
   endOffset: number;
+  dateFrom: string | null;
+  dateTo: string | null;
 }
 
 export interface ChunkDetail {

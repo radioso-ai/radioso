@@ -18,7 +18,9 @@ The call reads a bounded portion of the document (up to roughly the first 48,000
 
 ### What It Adds
 
-For event content, extraction attaches `dateFrom` and `dateTo` tags to the parts of the document that describe the dated event — even when the date appears in a different paragraph than the event itself. For articles, it can add a publication date at document level.
+For event content, extraction writes the overall event span (`dateFrom` and `dateTo`) into the document's metadata — where you can see and edit it like any other tag — and attaches precise date tags to the parts of the document that describe each dated event, even when the date appears in a different paragraph than the event itself. For articles, it writes the publication date into document metadata the same way.
+
+Extracted tags are refreshed on each extraction run, so manual edits to `dateFrom`/`dateTo` persist until the next run that has extraction enabled. To manage dates fully by hand, turn extraction off for the document or source and edit the metadata directly — manually set date tags flow into retrieval exactly like extracted ones after a reprocess.
 
 Profiles, reference pages, and generic documents are still classified, but Radioso does not invent dates when the document does not support them.
 

@@ -31,6 +31,26 @@ describe("document enrichment strategies", () => {
     expect(patched[2]?.metadata).toMatchObject({ dateFrom: "2026-08-01", dateTo: "2026-08-03" });
   });
 
+  it("writes the overall event span into document metadata as editable flat tags", () => {
+    const registry = createDefaultDocumentEnrichmentStrategyRegistry();
+    const result = registry.get("event").apply({
+      documentMetadata: { sourceUrl: "https://events.example" },
+      chunks: [
+        { chunkIndex: 0, startOffset: 0, endOffset: 50, metadata: {} },
+      ],
+      facts: [
+        { id: "f1", kind: "event_date", label: "opening", dateFrom: "2026-07-03", dateTo: "2026-07-03", sourceRange: { start: 0, end: 10 } },
+        { id: "f2", kind: "event_date", label: "closing", dateFrom: "2026-07-05", sourceRange: { start: 20, end: 30 } },
+      ],
+    });
+
+    expect(result.documentMetadata).toEqual({
+      sourceUrl: "https://events.example",
+      dateFrom: "2026-07-03",
+      dateTo: "2026-07-05",
+    });
+  });
+
   it("attaches article publication dates at document level and leaves profile/generic temporal facts empty", () => {
     const registry = createDefaultDocumentEnrichmentStrategyRegistry();
     const article = registry.get("article").apply({

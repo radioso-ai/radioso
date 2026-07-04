@@ -19,12 +19,7 @@ export const rangesOverlap = (
 
 export const buildChunkMetadataPatches = (
   chunks: EnrichableChunk[],
-  facts: Array<{
-    dateFrom?: string;
-    dateTo?: string;
-    sourceRange: TemporalFact["sourceRange"];
-    [key: string]: unknown;
-  }>,
+  facts: Array<Partial<TemporalFact> & Pick<TemporalFact, "sourceRange">>,
 ): ChunkMetadataPatch[] => {
   const patches: ChunkMetadataPatch[] = [];
 

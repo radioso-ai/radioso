@@ -41,13 +41,30 @@ class StaticDocumentEnrichmentStrategyRegistry implements DocumentEnrichmentStra
 const eventStrategy: DocumentEnrichmentStrategy = {
   shape: "event",
   apply(input) {
-    const patches = buildChunkMetadataPatches(
-      input.chunks,
-      input.facts.filter((fact): fact is Extract<TemporalFact, { kind: "event_date" }> => fact.kind === "event_date"),
-    );
+    const eventFacts = input.facts.filter((fact) => fact.kind === "event_date");
+    const patches = buildChunkMetadataPatches(input.chunks, eventFacts);
     const patchedChunks = applyMetadataPatches(input.chunks, patches);
+    // Extracted tags belong in the document's flat metadata too, so operators
+    // can see and edit them like any hand-written tag. The document carries the
+    // overall event span; chunk-level tags stay precise per fact.
+    const resolvedStarts = eventFacts
+      .map((fact) => fact.dateFrom)
+      .filter((value): value is string => Boolean(value))
+      .sort();
+    const resolvedEnds = eventFacts
+      .map((fact) => fact.dateTo ?? fact.dateFrom)
+      .filter((value): value is string => Boolean(value))
+      .sort();
+    const documentMetadata =
+      resolvedStarts.length > 0
+        ? {
+            ...input.documentMetadata,
+            dateFrom: resolvedStarts[0],
+            dateTo: resolvedEnds[resolvedEnds.length - 1],
+          }
+        : { ...input.documentMetadata };
     return {
-      documentMetadata: { ...input.documentMetadata },
+      documentMetadata,
       chunks: patchedChunks,
       appliedChunkCount: new Set(patches.map((patch) => patch.chunkIndex)).size,
     };

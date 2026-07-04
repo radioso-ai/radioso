@@ -224,18 +224,17 @@ describe("document subject search text", () => {
       async enrich({ chunks }) {
         return {
           status: "applied",
-          documentMetadata: {
-            enrichment: {
-              status: "applied",
-              shape: "event",
-              model: "gpt-5.2",
-              enrichedAt: "2026-07-02T12:00:00.000Z",
-              anchorDate: "2026-07-02",
-              anchorSource: "document_created_at",
-              factCount: 1,
-              appliedChunkCount: 1,
-              failureReason: null,
-            },
+          documentMetadata: {},
+          provenance: {
+            status: "applied" as const,
+            shape: "event" as const,
+            model: "gpt-5.2",
+            enrichedAt: "2026-07-02T12:00:00.000Z",
+            anchorDate: "2026-07-02",
+            anchorSource: "document_created_at" as const,
+            factCount: 1,
+            appliedChunkCount: 1,
+            failureReason: null,
           },
           chunks: chunks.map((chunk) =>
             chunk.chunkIndex === 0

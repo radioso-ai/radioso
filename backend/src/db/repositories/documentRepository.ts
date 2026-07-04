@@ -75,6 +75,7 @@ const documentSelectColumns = [
   "created_at",
   "updated_at",
   "metadata",
+  "enrichment",
   "source_kind",
   "source_filename",
   "source_mime_type",
@@ -95,6 +96,7 @@ const documentSummarySelectColumns = [
   "created_at",
   "updated_at",
   "metadata",
+  "enrichment",
   "source_id",
   sourceSummaryExpression.as("source"),
   "external_document_id",
@@ -513,6 +515,9 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .updateTable("documents")
       .set({
         metadata: toJsonb(input.metadata),
+        ...(input.enrichment !== undefined
+          ? { enrichment: input.enrichment === null ? null : toJsonb(input.enrichment) }
+          : {}),
         updated_at: currentTimestamp(),
       })
       .where("id", "=", input.documentId)

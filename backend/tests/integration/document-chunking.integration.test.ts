@@ -182,18 +182,17 @@ Chunking behavior.`,
       async enrich({ chunks }) {
         return {
           status: "applied",
-          documentMetadata: {
-            enrichment: {
-              status: "applied",
-              shape: "event",
-              model: "gpt-5.2",
-              enrichedAt: "2026-07-02T12:00:00.000Z",
-              anchorDate: "2026-07-02",
-              anchorSource: "document_created_at",
-              factCount: 1,
-              appliedChunkCount: 1,
-              failureReason: null,
-            },
+          documentMetadata: {},
+          provenance: {
+            status: "applied" as const,
+            shape: "event" as const,
+            model: "gpt-5.2",
+            enrichedAt: "2026-07-02T12:00:00.000Z",
+            anchorDate: "2026-07-02",
+            anchorSource: "document_created_at" as const,
+            factCount: 1,
+            appliedChunkCount: 1,
+            failureReason: null,
           },
           chunks: chunks.map((chunk) => {
             const eventOffset = content.indexOf("Summer Workshop");
@@ -284,10 +283,21 @@ Chunking behavior.`,
       status: "queued",
       metadata: {
         sourceUrl: "https://events.example/event",
-        enrichment: { status: "applied" },
         dateFrom: "2026-08-10",
         dateTo: "2026-08-10",
       },
+    });
+    // Prior extraction is recorded in the dedicated provenance column.
+    await documentRepository.updateMetadataForRevision({
+      documentId: document.id,
+      workspaceId: "workspace-clear-enrichment",
+      revision: document.revision,
+      metadata: {
+        sourceUrl: "https://events.example/event",
+        dateFrom: "2026-08-10",
+        dateTo: "2026-08-10",
+      },
+      enrichment: { status: "applied" },
     });
     const service = new DocumentProcessingService(
       documentRepository,

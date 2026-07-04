@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import {
@@ -41,7 +43,10 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
 
 export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
   status: "applied" | "failed";
+  // Flat user-facing tags only; provenance travels separately because document
+  // metadata is a flat scalar contract owned by the caller.
   documentMetadata: Record<string, unknown>;
+  provenance: DocumentEnrichmentProvenance;
   chunks: TChunk[];
   factCount: number;
   appliedChunkCount: number;
@@ -79,7 +84,7 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
 
     return {
       model: this.pipeline.metadata.model,
-      output: JSON.parse(result.text) as unknown,
+      output: JSON.parse(stripJsonFence(result.text)) as unknown,
     };
   }
 }
@@ -137,29 +142,25 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
 
       return {
         status: "applied",
-        documentMetadata: {
-          ...strategyResult.documentMetadata,
-          enrichment: provenance,
-        },
+        documentMetadata: strategyResult.documentMetadata,
+        provenance,
         chunks: strategyResult.chunks,
         factCount: parsed.facts.length,
         appliedChunkCount: strategyResult.appliedChunkCount,
       };
-    } catch {
+    } catch (error) {
       return {
         status: "failed",
-        documentMetadata: {
-          ...input.document.metadata,
-          enrichment: buildProvenance({
-            status: "failed",
-            enrichedAt: this.now().toISOString(),
-            anchorDate: input.anchor.date,
-            anchorSource: input.anchor.source,
-            factCount: 0,
-            appliedChunkCount: 0,
-            failureReason: "invalid_output",
-          }),
-        },
+        documentMetadata: input.document.metadata,
+        provenance: buildProvenance({
+          status: "failed",
+          enrichedAt: this.now().toISOString(),
+          anchorDate: input.anchor.date,
+          anchorSource: input.anchor.source,
+          factCount: 0,
+          appliedChunkCount: 0,
+          failureReason: describeEnrichmentFailure(error),
+        }),
         chunks: input.chunks,
         factCount: 0,
         appliedChunkCount: 0,
@@ -167,6 +168,29 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     }
   }
 }
+
+// Failure reasons stay content-free: zod issue paths and error names only,
+// never model output or document text.
+const describeEnrichmentFailure = (error: unknown): string => {
+  if (error instanceof ZodError) {
+    const paths = [...new Set(error.issues.map((issue) => issue.path.join(".") || "root"))].slice(0, 5);
+    return `invalid_output: ${paths.join(", ")}`;
+  }
+  if (error instanceof SyntaxError) {
+    return "invalid_output: not_json";
+  }
+  if (error instanceof Error && error.message === "enrichment_fact_range_out_of_bounds") {
+    return "invalid_output: fact_range_out_of_bounds";
+  }
+  return "provider_error";
+};
+
+const stripJsonFence = (value: string): string =>
+  value
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
 
 const MAX_DOCUMENT_REPRESENTATION_CHARS = 48_000;
 

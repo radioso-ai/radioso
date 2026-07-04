@@ -44,15 +44,20 @@ const sourceRangeSchema = z.object({
   message: "sourceRange.start must be less than sourceRange.end",
 });
 
+// Models routinely emit `null` for fields they were told are optional, and an
+// empty string where they had nothing to say. Both mean "absent" here; date
+// values themselves stay strictly validated.
+const absentToUndefined = (value: unknown): unknown => (value === null || value === "" ? undefined : value);
+
 const baseTemporalFactShape = {
   id: z.string().min(1),
   label: z.string().min(1),
-  dateFrom: isoDateSchema.optional(),
-  dateTo: isoDateSchema.optional(),
-  unresolvedText: z.string().min(1).optional(),
+  dateFrom: z.preprocess(absentToUndefined, isoDateSchema.optional()),
+  dateTo: z.preprocess(absentToUndefined, isoDateSchema.optional()),
+  unresolvedText: z.preprocess(absentToUndefined, z.string().min(1).optional()),
   sourceRange: sourceRangeSchema,
-  anchorSource: z.enum(enrichmentAnchorSources).optional(),
-  anchorDate: isoDateSchema.optional(),
+  anchorSource: z.preprocess(absentToUndefined, z.enum(enrichmentAnchorSources).optional()),
+  anchorDate: z.preprocess(absentToUndefined, isoDateSchema.optional()),
 };
 
 const withTemporalFactRules = <T extends z.AnyZodObject>(schema: T) => schema.refine((fact) => fact.dateFrom || fact.unresolvedText, {
@@ -69,9 +74,31 @@ export const temporalFactSchema = z.union([
 export type TemporalFact = z.infer<typeof temporalFactSchema>;
 
 export const documentEnrichmentOutputSchema = z.object({
-  shape: z.enum(documentShapes),
-  confidence: z.number().min(0).max(1),
-  facts: z.array(temporalFactSchema).default([]),
+  // Unknown shape labels degrade to generic (no extraction) instead of failing
+  // the whole run; confidence clamps into range with a low default.
+  shape: z.preprocess(
+    (value) => (typeof value === "string" && documentShapes.includes(value as DocumentShape) ? value : "generic"),
+    z.enum(documentShapes),
+  ),
+  confidence: z.preprocess(
+    (value) => (typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5),
+    z.number().min(0).max(1),
+  ),
+  facts: z.preprocess(
+    // A degenerate fact (no resolved date and no unresolved text) is the model
+    // saying "nothing here" badly — drop it rather than reject the document.
+    (value) =>
+      Array.isArray(value)
+        ? value.filter(
+            (fact) =>
+              Boolean(fact) &&
+              typeof fact === "object" &&
+              (Boolean((fact as { dateFrom?: unknown }).dateFrom) ||
+                Boolean((fact as { unresolvedText?: unknown }).unresolvedText)),
+          )
+        : value ?? [],
+    z.array(temporalFactSchema).default([]),
+  ),
 });
 
 export type DocumentEnrichmentOutput = z.infer<typeof documentEnrichmentOutputSchema>;

@@ -29,6 +29,7 @@ export interface DocumentRow {
   created_at: Date;
   updated_at: Date;
   metadata: Record<string, unknown>;
+  enrichment?: unknown;
   source_kind: "inline_text" | "uploaded_file";
   source_filename: string | null;
   source_mime_type: string | null;
@@ -133,7 +134,7 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
-  enrichment: mapDocumentEnrichment(row.metadata),
+  enrichment: mapDocumentEnrichment(row.enrichment),
   sourceKind: row.source_kind,
   sourceFilename: row.source_filename,
   sourceMimeType: row.source_mime_type,
@@ -154,7 +155,7 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
   metadata: row.metadata ?? {},
-  enrichment: mapDocumentEnrichment(row.metadata),
+  enrichment: mapDocumentEnrichment(row.enrichment),
   sourceId: row.source_id,
   source: mapDocumentSourceSummary(row.source),
   externalDocumentId: row.external_document_id,
@@ -174,9 +175,8 @@ const enrichmentStatusValues = new Set<EnrichmentStatus>(["applied", "skipped", 
 const anchorSourceValues = new Set<EnrichmentAnchorSource>(["source_last_sync", "document_created_at"]);
 
 const mapDocumentEnrichment = (
-  metadata: Record<string, unknown> | null | undefined,
+  value: unknown,
 ): DocumentEnrichmentProvenance | null => {
-  const value = metadata?.enrichment;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }

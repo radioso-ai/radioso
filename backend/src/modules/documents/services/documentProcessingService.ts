@@ -93,8 +93,9 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
 
 export const stripStaleEnrichmentMetadata = (
   metadata: Record<string, unknown>,
+  hadEnrichment: boolean,
 ): Record<string, unknown> => {
-  if (!metadata.enrichment || typeof metadata.enrichment !== "object") {
+  if (!hadEnrichment) {
     return metadata;
   }
 
@@ -221,7 +222,8 @@ export class DocumentProcessingService {
         chunkCount: result.length,
       }));
       const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
-      const baseDocumentMetadata = stripStaleEnrichmentMetadata(documentWithContent.metadata ?? {});
+      const hadPriorEnrichment = Boolean(documentWithContent.enrichment);
+      const baseDocumentMetadata = stripStaleEnrichmentMetadata(documentWithContent.metadata ?? {}, hadPriorEnrichment);
       const chunkRecordsWithoutSearchText = chunks.map((chunk) => ({
         ...chunk,
         metadata: baseDocumentMetadata,
@@ -236,12 +238,13 @@ export class DocumentProcessingService {
         chunks: chunkRecordsWithoutSearchText,
       });
       const finalDocumentMetadata = enrichmentResult?.documentMetadata ?? baseDocumentMetadata;
-      if (!enrichmentResult && finalDocumentMetadata !== (documentWithContent.metadata ?? {})) {
+      if (!enrichmentResult && hadPriorEnrichment) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
           metadata: finalDocumentMetadata,
+          enrichment: null,
         });
         if (!updatedDocument) {
           return "stale";
@@ -449,6 +452,7 @@ export class DocumentProcessingService {
       workspaceId: input.job.workspaceId,
       revision: input.job.documentRevision,
       metadata: result.documentMetadata,
+      enrichment: result.provenance as unknown as Record<string, unknown>,
     });
     if (!updatedDocument) {
       return null;

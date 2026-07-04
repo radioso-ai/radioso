@@ -154,6 +154,9 @@ export interface DocumentEnrichmentMetadataUpdateInput {
   workspaceId: string;
   revision: number;
   metadata: Record<string, unknown>;
+  // Extraction provenance lives in its own column so document metadata stays a
+  // flat user-owned contract; null clears provenance from a prior run.
+  enrichment?: Record<string, unknown> | null;
 }
 
 export interface DocumentRepositoryPort {

@@ -1277,6 +1277,7 @@ CREATE TABLE public.documents (
     source_id uuid,
     content_size_bytes bigint,
     content_hash text,
+    enrichment jsonb,
     CONSTRAINT documents_content_size_bytes_check CHECK (((content_size_bytes IS NULL) OR (content_size_bytes >= 0)))
 );
 

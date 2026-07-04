@@ -2650,6 +2650,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     revision: number;
     metadata: Record<string, unknown>;
+    enrichment?: Record<string, unknown> | null;
   }): Promise<DocumentRecord | null> {
     const existing = this.items.get(input.documentId);
     if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
@@ -2659,7 +2660,9 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     const record: DocumentRecord = {
       ...existing,
       metadata: input.metadata,
-      enrichment: input.metadata.enrichment as DocumentRecord["enrichment"],
+      ...(input.enrichment !== undefined
+        ? { enrichment: input.enrichment as DocumentRecord["enrichment"] }
+        : {}),
       updatedAt: new Date(),
     };
     this.items.set(record.id, record);

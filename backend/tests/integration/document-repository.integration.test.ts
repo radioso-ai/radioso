@@ -84,28 +84,38 @@ describeIntegration("DocumentRepository (Postgres)", () => {
   });
 
   it("round-trips enrichment provenance in document records and summaries", async () => {
-    const document = await repository.create({
+    const created = await repository.create({
       ...baseCreateInput({
         metadata: {
           sourceUrl: "https://events.example/summer-workshop",
-          enrichment: {
-            status: "applied",
-            shape: "event",
-            model: "gpt-5.2",
-            enrichedAt: "2026-07-02T12:00:00.000Z",
-            anchorDate: "2026-07-02",
-            anchorSource: "source_last_sync",
-            factCount: 1,
-            appliedChunkCount: 2,
-            failureReason: null,
-          },
         },
       }),
       status: "ready",
     });
+    // Provenance lives in its own column; document metadata stays a flat
+    // user-owned contract.
+    const document = await repository.updateMetadataForRevision({
+      documentId: created.id,
+      workspaceId,
+      revision: created.revision,
+      metadata: { sourceUrl: "https://events.example/summer-workshop" },
+      enrichment: {
+        status: "applied",
+        shape: "event",
+        model: "gpt-5.2",
+        enrichedAt: "2026-07-02T12:00:00.000Z",
+        anchorDate: "2026-07-02",
+        anchorSource: "source_last_sync",
+        factCount: 1,
+        appliedChunkCount: 2,
+        failureReason: null,
+      },
+    });
+    expect(document).not.toBeNull();
+    expect(document?.metadata).toEqual({ sourceUrl: "https://events.example/summer-workshop" });
 
-    const byId = await repository.findByIdAndWorkspaceId(document.id, workspaceId);
-    const [summary] = await repository.listSummariesByIdsAndWorkspaceId(workspaceId, [document.id]);
+    const byId = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+    const [summary] = await repository.listSummariesByIdsAndWorkspaceId(workspaceId, [created.id]);
     const page = await repository.listSummaryPageByWorkspaceId(workspaceId, { limit: 10 });
 
     expect(byId?.enrichment).toEqual({
@@ -120,7 +130,7 @@ describeIntegration("DocumentRepository (Postgres)", () => {
       failureReason: null,
     });
     expect(summary?.enrichment).toEqual(byId?.enrichment);
-    expect(page.documents.find((entry) => entry.id === document.id)?.enrichment).toEqual(byId?.enrichment);
+    expect(page.documents.find((entry) => entry.id === created.id)?.enrichment).toEqual(byId?.enrichment);
   });
 
   it("createAndQueue defaults metadata to {} and source kind to inline_text", async () => {

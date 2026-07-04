@@ -894,8 +894,8 @@ describe("document ingestion", () => {
         status: "applied",
         documentMetadata: {
           sourceUrl: "https://events.example/event",
-          enrichment: { status: "applied", shape: "event", factCount: 1, appliedChunkCount: 1 },
         },
+        provenance: { status: "applied", shape: "event", factCount: 1, appliedChunkCount: 1 },
         chunks: [{
           chunkIndex: 0,
           content: "Event content",

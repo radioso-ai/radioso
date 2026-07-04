@@ -406,6 +406,7 @@ describe("createChatProcessTurnInput", () => {
         condition: { kind: "always" },
         action: "Use the saved agent tone.",
         priority: null,
+        binding: null,
         requiredCapabilities: [],
         dependsOn: [],
         excludes: [],

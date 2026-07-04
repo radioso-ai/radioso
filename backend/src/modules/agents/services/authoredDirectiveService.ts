@@ -2,6 +2,7 @@ import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radi
 
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
 import {
   authoredDirectiveInputSchema,
@@ -29,6 +30,7 @@ export interface AuthoredDirectiveServiceOptions {
   };
   coherenceChecker: DirectiveCoherenceChecker;
   registeredCapabilityNames: ReadonlySet<string>;
+  agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">;
 }
 
 const coherenceUnavailableVerdict = (): DirectiveCoherenceVerdict => ({
@@ -48,6 +50,7 @@ export class AuthoredDirectiveService {
   async create(workspaceId: string, agentId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirectiveSaveResult> {
     const agent = await this.requireAgent(workspaceId, agentId);
     const directive = this.validateInput(input);
+    await this.validateBinding(workspaceId, agentId, directive);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
     const coherence = await this.checkCoherence(agent, directive, existingDirectives);
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
@@ -80,8 +83,10 @@ export class AuthoredDirectiveService {
       tags: input.tags ?? existing.tags,
       routes: [],
       description: Object.prototype.hasOwnProperty.call(input, "description") ? input.description : existing.description,
+      binding: Object.prototype.hasOwnProperty.call(input, "binding") ? input.binding : existing.binding,
       metadata: input.metadata ?? existing.metadata,
     });
+    await this.validateBinding(workspaceId, agentId, directive);
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);
     const coherence = await this.checkCoherence(agent, directive, comparisonDirectives);
     const saved = await this.options.repository.updateDirective(agentId, workspaceId, directiveId, {
@@ -116,6 +121,31 @@ export class AuthoredDirectiveService {
       throw badRequest("Directive references unknown capabilities", { unknown: capabilityValidation.unknown });
     }
     return directive;
+  }
+
+  private async validateBinding(workspaceId: string, agentId: string, directive: NormalizedAuthoredDirectiveInput): Promise<void> {
+    const binding = directive.binding;
+    if (!binding) {
+      return;
+    }
+    const skill = await this.options.agentSkills?.findByName(workspaceId, agentId, binding.skillName);
+    if (!skill) {
+      throw badRequest(`Directive binding references unknown skill "${binding.skillName}"`);
+    }
+    if (!skill.enabled) {
+      throw badRequest(`Directive binding skill "${binding.skillName}" is disabled`);
+    }
+    if (skill.invocationMode !== "agent_selectable") {
+      throw badRequest(`Directive binding skill "${binding.skillName}" is not turn-selectable`);
+    }
+    // Only external MCP skills settle with user-facing answer text today; other
+    // kinds would dispatch and then render an empty reply (retrieve returns raw
+    // contexts by design, action kinds settle with outputs only).
+    if (skill.kind !== "external_mcp") {
+      throw badRequest(
+        `Directive binding skill "${binding.skillName}" (kind "${skill.kind}") cannot answer chat turns; only external MCP skills can be bound`,
+      );
+    }
   }
 
   private async checkCoherence(

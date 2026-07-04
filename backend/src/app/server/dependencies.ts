@@ -276,8 +276,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       ];
     },
   });
+  const agentSkillRepository = new AgentSkillRepository(infrastructure.database.kysely);
   const agentSkillsService = new AgentSkillsService({
-    repository: new AgentSkillRepository(infrastructure.database.kysely),
+    repository: agentSkillRepository,
     capabilities: skillCapabilityRegistry,
     logger,
   });
@@ -367,7 +368,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
     }),
     access.accessGrantService,
-    new AgentSkillRepository(infrastructure.database.kysely),
+    agentSkillRepository,
   );
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
@@ -504,6 +505,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       modelGateway: createConversationModelGateway(chatInferencePipeline),
     }),
     registeredCapabilityNames,
+    agentSkills: agentSkillRepository,
   });
   const routineDefinitionService = new RoutineDefinitionService({
     agentRepository: repositories.agentRepository,

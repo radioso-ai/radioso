@@ -1,11 +1,11 @@
 ---
 title: Agents and skills
-description: Configure workspace agents, author named agent skills, and inspect the read-only skills catalog exposed by the API.
+description: Configure workspace agents, directives, named agent skills, and inspect the read-only skills catalog exposed by the API.
 ---
 
 # Agents and skills
 
-Agents are the user-facing conversational agents in a workspace. Agent skills are named capability instances an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts.
+Agents are the user-facing conversational agents in a workspace. Directives are matched steering rules for an agent. Agent skills are named capability instances an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts.
 
 The key point is that authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
@@ -20,6 +20,11 @@ POST   /api/v1/agents/{agentId}/assistant-logo
 DELETE /api/v1/agents/{agentId}/assistant-logo
 POST   /api/v1/agents/{agentId}/default
 GET    /api/v1/agents/{agentId}/skill-capabilities
+GET    /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives/draft
+PATCH  /api/v1/agents/{agentId}/directives/{directiveId}
+DELETE /api/v1/agents/{agentId}/directives/{directiveId}
 GET    /api/v1/agents/{agentId}/skills
 POST   /api/v1/agents/{agentId}/skills
 PATCH  /api/v1/agents/{agentId}/skills/{skillId}
@@ -57,6 +62,62 @@ Retrieval answer configuration lives on the agent's default-answer `retrieve` sk
 The read-only `GET /api/v1/settings/retrieval-defaults` endpoint returns those inherited retrieval defaults plus workspace metadata field suggestions for the Skills tab. It does not update retrieval behavior.
 
 If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
+
+## Directives
+
+Directives add steering to matching turns. A directive has a `condition`, an
+`action`, optional priority and relationship fields, and optional scope tags.
+
+Create a directive with `POST /api/v1/agents/{agentId}/directives`:
+
+```json
+{
+  "name": "order-status",
+  "condition": {
+    "kind": "contextual",
+    "description": "the visitor asks about an order status"
+  },
+  "action": "Look up the order before answering. Do not guess order state.",
+  "priority": 80,
+  "binding": {
+    "kind": "skill",
+    "skillName": "order_lookup"
+  }
+}
+```
+
+`binding` is optional and may be `null`. In this slice, the only supported
+binding kind is `skill`. The named skill must exist on the agent, be enabled,
+use `agent_selectable` invocation mode, and be an external MCP skill
+(`kind: external_mcp`) — other skill kinds cannot produce a user-facing chat
+reply yet and are rejected. Invalid bindings return `400` and name the
+offending skill.
+
+When a directive with a binding matches a non-routine turn, the turn selector
+routes to the bound skill if that skill is available as a runtime turn skill.
+The directive action still steers the answer. A non-matching directive has no
+selection effect.
+
+When multiple matched directives bind skills, one binding wins:
+
+1. higher priority
+2. higher matcher confidence, with deterministic `always` matches treated as `1.0`
+3. directive name ascending
+
+If the bound skill is later disabled, removed, no longer turn-selectable, not
+registered at runtime, or blocked by the workspace capability policy (external
+skills require the `external_skills.invoke` capability), Radioso ignores the
+binding and falls through to normal selection. The directive action still
+applies. The turn trace records selected, losing, and skipped bindings with
+their reasons.
+
+Agent config export/import preserves directive bindings by skill name. Import
+does not validate that the target agent currently has the skill; runtime
+fall-through applies until the skill is added and enabled.
+
+Bindings on directives scoped with `routine:<id>` or
+`step:<routineId>:<stepId>` are accepted but inert during routine turns, because
+routine flow bypasses terminal turn selection.
 
 ## Agent skills
 

@@ -675,8 +675,8 @@ describe("agents contract", () => {
   });
 
   it("manages authored directives on an agent and returns advisory coherence verdicts", async () => {
-    const { app } = createTestApp();
-    const { token } = await issueTestToken(app, "agents-directives-crud@example.com");
+    const { app, repositories } = createTestApp();
+    const { token, workspaceId } = await issueTestToken(app, "agents-directives-crud@example.com");
     const authorization = `Bearer ${token}`;
 
     const agent = await request(app)
@@ -684,6 +684,18 @@ describe("agents contract", () => {
       .set("Authorization", authorization)
       .send({ name: "Directive authoring" })
       .expect(201);
+
+    await repositories.agentSkillRepository.create({
+      workspaceId,
+      agentId: agent.body.id,
+      skillName: "order.lookup",
+      kind: "external_mcp",
+      invocationMode: "agent_selectable",
+      enabled: true,
+      targetType: "mcp_connection",
+      targetId: null,
+      config: {},
+    });
 
     const create = await request(app)
       .post(`/api/v1/agents/${agent.body.id}/directives`)
@@ -693,6 +705,7 @@ describe("agents contract", () => {
         condition: { kind: "always" },
         action: "Use a formal register.",
         tags: ["step:contact:ask_email"],
+        binding: { kind: "skill", skillName: "order.lookup" },
       })
       .expect(201);
 
@@ -705,6 +718,7 @@ describe("agents contract", () => {
         action: "Use a formal register.",
         priority: null,
         requiredCapabilities: [],
+        binding: { kind: "skill", skillName: "order.lookup" },
         routes: [],
         tags: ["step:contact:ask_email"],
       },
@@ -725,6 +739,7 @@ describe("agents contract", () => {
       id: create.body.directive.id,
       name: "operator-formality",
       tags: ["step:contact:ask_email"],
+      binding: { kind: "skill", skillName: "order.lookup" },
     });
     expect(list.body.builtIns).toEqual(defaultAnswerDirectives.map((directive) => ({
       name: directive.name,
@@ -748,6 +763,7 @@ describe("agents contract", () => {
         id: create.body.directive.id,
         action: "Use a warm formal register.",
         tags: ["routine:contact"],
+        binding: { kind: "skill", skillName: "order.lookup" },
       },
       coherence: {
         coherent: true,

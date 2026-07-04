@@ -22,6 +22,7 @@ import {
   type NormalizedAgentInput,
   authoredDirectiveInputSchema,
   type AuthoredDirective,
+  type AuthoredDirectiveBinding,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
@@ -65,6 +66,7 @@ interface AgentDirectiveRow {
   routes: Array<AuthoredDirective["routes"][number]>;
   scope_tags: string[];
   description: string | null;
+  binding: AuthoredDirectiveBinding;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -83,6 +85,7 @@ interface LoadedDirectiveJson {
   routes?: unknown;
   tags?: unknown;
   description?: unknown;
+  binding?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -197,6 +200,7 @@ const agentColumns = sql`
           'routes', agent_directives.routes,
           'tags', agent_directives.scope_tags,
           'description', agent_directives.description,
+          'binding', agent_directives.binding,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
           'updatedAt', agent_directives.updated_at
@@ -271,6 +275,13 @@ const asMetadata = (value: unknown): Record<string, unknown> =>
     ? value as Record<string, unknown>
     : {};
 
+const asDirectiveBinding = (value: unknown): AuthoredDirectiveBinding => {
+  const record = asRecord(value);
+  return record.kind === "skill" && typeof record.skillName === "string"
+    ? { kind: "skill", skillName: record.skillName }
+    : null;
+};
+
 const readDate = (value: unknown): Date =>
   value instanceof Date ? value : new Date(String(value));
 
@@ -312,6 +323,7 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
       ? value.tags.filter((item): item is string => typeof item === "string")
       : [],
     description: typeof value.description === "string" ? value.description : null,
+    binding: asDirectiveBinding(value.binding),
     metadata: asMetadata(value.metadata),
     createdAt: readDate(value.createdAt),
     updatedAt: readDate(value.updatedAt),
@@ -340,6 +352,7 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   routes: row.routes ?? [],
   tags: row.scope_tags ?? [],
   description: row.description,
+  binding: asDirectiveBinding(row.binding),
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -737,6 +750,7 @@ export class AgentRepository implements AgentRepositoryPort {
             routes,
             scope_tags,
             description,
+            binding,
             metadata
           )
           SELECT
@@ -752,6 +766,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${sql.val(directive.routes)}::text[],
             ${sql.val(directive.tags)}::text[],
             ${directive.description},
+            ${toJsonb(directive.binding)},
             ${toJsonb(directive.metadata)}
           FROM agents
           WHERE agents.id = ${agentId}
@@ -793,6 +808,7 @@ export class AgentRepository implements AgentRepositoryPort {
       routes: input.routes ?? existing.routes,
       tags: input.tags ?? existing.tags,
       description: hasOwn(input, "description") ? input.description : existing.description,
+      binding: hasOwn(input, "binding") ? input.binding : existing.binding,
       metadata: input.metadata ?? existing.metadata,
     });
     let rows: AgentDirectiveRow[];
@@ -810,6 +826,7 @@ export class AgentRepository implements AgentRepositoryPort {
             routes = ${sql.val(directive.routes)}::text[],
             scope_tags = ${sql.val(directive.tags)}::text[],
             description = ${directive.description},
+            binding = ${toJsonb(directive.binding)},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
         FROM agents

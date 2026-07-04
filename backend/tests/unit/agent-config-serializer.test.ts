@@ -124,6 +124,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
     routes: ["retrieval"],
     tags: ["step:contact:ask_email"],
     description: "Operator-authored behavior rule.",
+    binding: { kind: "skill", skillName: "order.lookup" },
     metadata: { owner: "ops" },
     createdAt: new Date(0),
     updatedAt: new Date(0),
@@ -307,6 +308,7 @@ describe("serializeAgentConfig", () => {
       routes: ["retrieval"],
       tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
+      binding: { kind: "skill", skillName: "order.lookup" },
       metadata: { owner: "ops" },
     }]);
   });
@@ -436,6 +438,7 @@ describe("serializeAgentConfig", () => {
       routes: ["retrieval"],
       tags: ["step:contact:ask_email"],
       description: "Operator-authored behavior rule.",
+      binding: { kind: "skill", skillName: "order.lookup" },
       metadata: { owner: "ops" },
       createdAt: new Date(0),
       updatedAt: new Date(0),
@@ -517,6 +520,7 @@ describe("serializeAgentConfig", () => {
       routes: [],
       tags: ["step:onboarding:answer"],
       description: null,
+      binding: null,
       metadata: {},
       createdAt: new Date(0),
       updatedAt: new Date(0),

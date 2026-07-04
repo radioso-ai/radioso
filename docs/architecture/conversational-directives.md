@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
-description: "Rules that shape how the assistant behaves per turn by matching conditions and injecting steering instructions without executing actions."
-last_updated: 2026-05-29
+description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
+last_updated: 2026-07-03
 ---
 
 # Conversational Directives
@@ -26,13 +26,26 @@ The key point is the distinction: Skills act, Directives steer. A Directive has
 no executor and produces no output. If a rule needs to *do* something, it is a
 Skill, not a Directive.
 
+A directive can also name a skill binding:
+
+```json
+{
+  "binding": { "kind": "skill", "skillName": "order_lookup" }
+}
+```
+
+The binding does not make the directive execute. It only tells turn selection to
+route the turn to that enabled, turn-selectable skill when the directive already
+matched. The directive action is still rendered as steering for the answer.
+
 ## How it works
 
 On each turn the assistant:
 
 1. Matches the agent's standing directives against the turn.
 2. Drops any directive the agent lacks the required capability for.
-3. Renders the matched actions into the answer prompt as steering.
+3. Resolves any skill binding on the matched directives.
+4. Renders the matched actions into the answer prompt as steering.
 
 A directive condition is one of two kinds:
 
@@ -45,6 +58,41 @@ A directive condition is one of two kinds:
 
 Matching is never a keyword list, because Radioso is multilingual. The model
 judges a condition by meaning, in any language.
+
+The matcher never sees bindings. It receives directive names and conditions, so
+a binding cannot make a directive more or less likely to match.
+
+## Skill binding behavior
+
+Bindings are optional. Create and update requests validate that the named skill
+exists on the agent, is enabled, uses an agent-selectable invocation mode, and
+is an external MCP skill (`kind: external_mcp`) — the only kind whose execution
+settles with user-facing answer text. Retrieval skills return raw contexts by
+design (answer composition belongs to the turn loop), and action skills
+(webhook, Slack, email, notify) settle with outputs only, so binding either
+would render an empty reply; authoring rejects them with a descriptive error.
+Agent config import preserves the binding by name even if the target agent does
+not currently have that skill.
+
+When several matched directives have bindings, Radioso chooses one winner:
+
+1. higher directive priority wins; `null` priority ranks as `50`
+2. higher matcher confidence wins; deterministic `always` matches rank as `1.0`
+3. directive name ascending breaks the final tie
+
+If a bound skill is later disabled, removed, no longer turn-selectable, not
+registered as a runtime turn skill, or requires a capability the workspace
+policy denies (external skills require `external_skills.invoke`, enforced the
+same way routine dispatch enforces it), the binding is skipped. The turn falls
+back to normal selection, the directive action still steers the reply, and the
+trace records the skipped binding with the reason. The backend also writes a warn log
+with workspace, agent, conversation, directive name, skill name, and reason. It
+does not log message text or document content.
+
+Routine turns are different. Active routine flow bypasses terminal turn
+selection, so directive bindings do not run there. A directive with
+`routine:<id>` or `step:<routineId>:<stepId>` scope tags can still steer the
+routine step reply, but any skill binding on that scoped directive is inert.
 
 ## One steering type
 

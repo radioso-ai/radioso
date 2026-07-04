@@ -10,6 +10,11 @@ import type { RoutineDefinitionDraftInput } from "../../src/modules/routines/pub
 import { createTestApp, issueTestToken } from "../support/testApp.js";
 import { InMemoryMessageRepository } from "../support/fakes.js";
 import { retrievalFixtureDocuments } from "../support/retrievalFixtures.js";
+import {
+  SkillExecutorRegistry,
+  type SkillDispatchResult,
+  type SkillExecutorPort,
+} from "../../src/modules/skills/public.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -85,7 +90,140 @@ const supportIntakeRoutineDraft = (): RoutineDefinitionDraftInput => ({
   }],
 });
 
+const parseSseEvents = (body: string): Array<{ event: string; data: Record<string, unknown> }> =>
+  body.trim().split("\n\n").filter(Boolean).map((block) => {
+    const event = block.match(/^event: (.+)$/m)?.[1];
+    const data = block.match(/^data: (.+)$/m)?.[1];
+    if (!event || !data) {
+      throw new Error(`Malformed SSE block: ${block}`);
+    }
+    return { event, data: JSON.parse(data) as Record<string, unknown> };
+  });
+
+const bindAlwaysDirectiveToAgentSkill = async (
+  dependencies: ReturnType<typeof createTestApp>["dependencies"],
+  repositories: ReturnType<typeof createTestApp>["repositories"],
+  workspaceId: string,
+  skillName: string,
+) => {
+  const agent = await dependencies.agentService.resolve(workspaceId);
+  await repositories.agentSkillRepository.create({
+    workspaceId,
+    agentId: agent.id,
+    skillName,
+    kind: "external_mcp",
+    invocationMode: "agent_selectable",
+    enabled: true,
+    targetType: "mcp_connection",
+    targetId: "test-skill-target",
+    config: {
+      execution: { kind: "internal", adapter: "test_bound_skill" },
+    },
+  });
+  await repositories.agentRepository.createDirective(agent.id, workspaceId, {
+    name: "order-status",
+    condition: { kind: "always" },
+    action: "Look up the order.",
+    binding: { kind: "skill", skillName },
+  });
+};
+
 describe("chat integration", () => {
+  it("hydrates agent-selectable directive-bound skills for non-streaming chat turns", async () => {
+    let dispatched = false;
+    const executor: SkillExecutorPort = {
+      async dispatch(): Promise<SkillDispatchResult> {
+        dispatched = true;
+        return {
+          disposition: "settled",
+          outcome: { status: "completed", answer: "Fake skill says order 123 is in transit." },
+        };
+      },
+    };
+    const skillExecutorRegistry = new SkillExecutorRegistry([
+      { kind: "internal", adapter: "test_bound_skill", executor },
+    ]);
+    const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
+    const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-json@example.com");
+    await bindAlwaysDirectiveToAgentSkill(dependencies, repositories, workspaceId, "order_lookup");
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ message: "Where is order 123?", stream: false, includeDebug: true })
+      .expect(200);
+
+    const selected = response.body.debug.turnTrace.spine.stages.find((stage: { kind?: string }) =>
+      stage.kind === "skill_selection"
+    );
+    expect(dispatched).toBe(true);
+    expect(response.body.answer).toBe("Fake skill says order 123 is in transit.");
+    expect(response.body.skillOutcome).toBe("completed");
+    expect(selected.outputs).toMatchObject({
+      selectedSkills: ["order_lookup"],
+      reason: "directive:order-status",
+    });
+    expect(selected.outputs.candidates).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "order_lookup", selected: true })]),
+    );
+  });
+
+  it("streams directive-bound non-streamable agent skills through the fallback renderer", async () => {
+    const executor: SkillExecutorPort = {
+      async dispatch(): Promise<SkillDispatchResult> {
+        return {
+          disposition: "settled",
+          outcome: { status: "completed", answer: "Fallback streamed fake skill answer." },
+        };
+      },
+    };
+    const skillExecutorRegistry = new SkillExecutorRegistry([
+      { kind: "internal", adapter: "test_bound_skill", executor },
+    ]);
+    const { app, dependencies, repositories } = createTestApp({ skillExecutorRegistry });
+    const { token, workspaceId } = await issueTestToken(app, "bound-agent-skill-stream@example.com");
+    await bindAlwaysDirectiveToAgentSkill(dependencies, repositories, workspaceId, "order_lookup");
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => {
+          body += chunk;
+        });
+        res.on("end", () => callback(null, body));
+      })
+      .send({ message: "Where is order 123?", stream: true, includeDebug: true });
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/event-stream");
+    const events = parseSseEvents(response.body);
+    const chunks = events.filter((event) => event.event === "chunk");
+    const done = events.find((event) => event.event === "done");
+    expect(chunks).toEqual([
+      { event: "chunk", data: { text: "Fallback streamed fake skill answer." } },
+    ]);
+    expect(done?.data.answer).toBe("Fallback streamed fake skill answer.");
+    expect(done?.data.debug).toMatchObject({
+      turnTrace: {
+        spine: {
+          stages: expect.arrayContaining([
+            expect.objectContaining({
+              kind: "skill_selection",
+              outputs: expect.objectContaining({
+                selectedSkills: ["order_lookup"],
+                reason: "directive:order-status",
+              }),
+            }),
+          ]),
+        },
+      },
+    });
+  });
+
   it("activates and runs a published routine definition during a chat turn", async () => {
     const calls: Array<{ systemPrompt?: string }> = [];
     const routineGateway: ChatGateway = {

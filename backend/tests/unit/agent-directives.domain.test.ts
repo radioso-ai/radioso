@@ -107,6 +107,7 @@ describe("authored directive domain validation", () => {
       condition: { kind: "always" },
       action: "Only while this step is active.",
       priority: null,
+      binding: null,
       requiredCapabilities: [],
       dependsOn: [],
       excludes: [],

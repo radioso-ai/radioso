@@ -116,6 +116,7 @@ export {
   AUTHORED_DIRECTIVE_LIMITS,
   authoredDirectiveRouteValues,
   type AuthoredDirective,
+  type AuthoredDirectiveBinding,
   type AuthoredDirectiveCapabilityValidationResult,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,

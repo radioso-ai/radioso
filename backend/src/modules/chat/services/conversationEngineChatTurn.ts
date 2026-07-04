@@ -141,6 +141,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   input: RunPreparedChatTurnWithConversationEngineInput,
 ): AsyncIterable<RunPreparedChatTurnStreamWithConversationEngineEvent> {
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
+  const renderers = buildTurnRendererRegistry(input.turnSkills);
   const streamState: { result?: TurnStreamResult } = {};
 
   const processTurnInput = createChatProcessTurnStreamInput({
@@ -174,7 +175,26 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         }
         const turnSkill = skillsByName.get(outcome.skillName);
         if (!turnSkill?.streamRender) {
-          throw new Error("chat_no_streamable_turn_skill");
+          const finalPresentation = await renderers.resolve(outcome).render(outcome, {
+            session: input.session,
+            query: input.query,
+            userExpectedLocale: input.userExpectedLocale,
+            accountId: input.accountId,
+          });
+          streamState.result = {
+            finalPresentation,
+            suggestions: { mode: "presentation" },
+            hasStreamedAnswer: false,
+            streamedAnswer: "",
+          };
+          if (finalPresentation.answer) {
+            yield { type: "delta", text: finalPresentation.answer };
+          }
+          yield {
+            type: "final",
+            response: toRenderableTurn(finalPresentation),
+          };
+          return;
         }
         const answerStream = turnSkill.streamRender({
           session: input.session,

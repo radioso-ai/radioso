@@ -3,6 +3,7 @@ import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
 import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
 
 export interface LexicalSearchPort {
@@ -10,7 +11,7 @@ export interface LexicalSearchPort {
     workspaceId: string;
     query: string;
     topK: number;
-    metadataFilter?: Record<string, unknown>;
+    metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
     lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]>;
@@ -36,7 +37,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
     workspaceId: string;
     query: string;
     topK: number;
-    metadataFilter?: Record<string, unknown>;
+    metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
     lexicalPlan?: LexicalQueryPlan;
   }): Promise<RetrievedChunk[]> {

@@ -6,6 +6,7 @@ import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator
 import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
+import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
 export interface IngestionSettingsReaderPort {
@@ -37,6 +38,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
     const sourceFilter = input.request.sourceFilter;
+    const metadataFilter = normalizeVectorMetadataFilter(input.request.metadataFilter);
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
     // Lexical fan-out stays per-branch (cheap); distinct semantic searches are
     // capped because each costs an embedding + a concurrent pgvector search.
@@ -72,7 +74,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           topK: input.settings.vectorTopK,
           similarityThreshold: input.settings.similarityThreshold,
           embeddingModel,
-          metadataFilter: input.request.metadataFilter,
+          metadataFilter,
           sourceFilter,
         }),
       ] as const),
@@ -92,7 +94,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
             workspaceId: input.request.workspaceId,
             query: subquery.lexicalQuery,
             topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
-            metadataFilter: input.request.metadataFilter,
+            metadataFilter,
             sourceFilter,
             lexicalPlan: subquery.lexicalPlan,
           }),
@@ -141,7 +143,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     topK: number;
     similarityThreshold: number;
     embeddingModel?: string;
-    metadataFilter?: Record<string, unknown>;
+    metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     if (!this.chunkHydrator) {

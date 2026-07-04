@@ -157,7 +157,7 @@ export interface DocumentEnrichmentMetadataUpdateInput {
 }
 
 export interface DocumentRepositoryPort {
-  createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord>;
+  createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
   summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
   setStatus(input: {
@@ -348,6 +348,7 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
     source?: DocumentSourceResolverInput;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<{ documentId: string; status: string }> {
     const sanitizedContent = sanitizeInlineDocumentContent({
       title: input.title,
@@ -433,7 +434,7 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
         contentSizeBytes: indexedContent.contentSizeBytes,
         contentHash: indexedContent.contentHash,
-      });
+      }, buildDocumentProcessingOptions(input));
 
     } catch (error) {
       await usageReservation.release();

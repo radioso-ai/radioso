@@ -342,6 +342,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         metadata: req.body.metadata,
         externalDocumentId: req.body.externalDocumentId,
         source: req.body.source,
+        documentEnrichmentOverride: req.body.documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -365,6 +366,10 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       }
 
       const title = typeof req.body?.title === "string" ? req.body.title : undefined;
+      const enrichmentOverrideField =
+        typeof req.body?.documentEnrichmentOverride === "string" ? req.body.documentEnrichmentOverride : undefined;
+      const documentEnrichmentOverride =
+        enrichmentOverrideField === "on" || enrichmentOverrideField === "off" ? enrichmentOverrideField : undefined;
       const importReservation = usageReservation;
       usageReservation = null;
       const result = await dependencies.documentImportService.importDocument({
@@ -375,6 +380,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         buffer: req.file.buffer,
         title,
         usageReservation: importReservation,
+        documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {

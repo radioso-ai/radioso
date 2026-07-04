@@ -166,7 +166,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .map(([field, inferredType]) => ({ field, inferredType }));
   }
 
-  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord> {
     return this.db.transaction().execute(async (trx) => {
       const documentId = randomUUID();
       // ON CONFLICT target depends on whether the document is sourced: a sourced page keys
@@ -233,7 +233,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
 
-      await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision);
+      await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision, options);
 
       return mapDocument(documentRow);
     });

@@ -109,6 +109,8 @@ Both flows return `202` because processing is queued.
 
 Document detail responses include extraction provenance when a processing run attempted or skipped metadata extraction. The `enrichment` object reports safe operator fields such as status, detected shape, model, anchor date, fact count, applied chunk count, and failure reason. It does not include source text, prompts, completions, or chunk content.
 
+Document creation (`POST /api/v1/document/`) and file import (`POST /api/v1/document/import`) accept the same optional `documentEnrichmentOverride` field (`"on"` or `"off"`), which applies to the processing run that the request queues.
+
 Single-document reprocess accepts an optional metadata extraction override for that run:
 
 ```bash

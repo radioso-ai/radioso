@@ -63,6 +63,7 @@ export const documentSchema = z.object({
   ),
   externalDocumentId: z.string().trim().min(1).optional(),
   source: documentSourceSchema.optional(),
+  documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
 });
 
 export const documentParamsSchema = z.object({

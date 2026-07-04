@@ -67,6 +67,8 @@ export function DocumentEditorPage({
   onMetadataOpenChange,
   onDelete,
   onRetry,
+  onRunMetadataExtraction,
+  isRunningMetadataExtraction,
   onInspectChunks,
   onSubmit,
 }: {
@@ -84,6 +86,8 @@ export function DocumentEditorPage({
   availableSources: DocumentSourceListItem[]
   sourceFilterHref?: string
   onBack: () => void
+  onRunMetadataExtraction?: () => void
+  isRunningMetadataExtraction?: boolean
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
   onSourceChange: (sourceId: string) => void
@@ -364,21 +368,44 @@ export function DocumentEditorPage({
                     </p>
                   ) : null}
                 </div>
-                {enrichment ? (
+                {enrichment || onRunMetadataExtraction ? (
                   <div className="space-y-2 border-t border-border/70 pt-4">
                     <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Extracted metadata
                     </p>
-                    <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-sm">
-                      {enrichmentRows.map(([label, value]) => (
-                        <div key={label} className="contents">
-                          <dt className="text-muted-foreground">{label}</dt>
-                          <dd className="text-foreground [overflow-wrap:anywhere]">{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                    {enrichment.failureReason ? (
+                    {enrichment ? (
+                      <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-sm">
+                        {enrichmentRows.map(([label, value]) => (
+                          <div key={label} className="contents">
+                            <dt className="text-muted-foreground">{label}</dt>
+                            <dd className="text-foreground [overflow-wrap:anywhere]">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No metadata has been extracted for this document yet.
+                      </p>
+                    )}
+                    {enrichment?.failureReason ? (
                       <p className="text-sm text-destructive [overflow-wrap:anywhere]">{enrichment.failureReason}</p>
+                    ) : null}
+                    {onRunMetadataExtraction ? (
+                      <div className="space-y-1 pt-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={onRunMetadataExtraction}
+                          disabled={Boolean(isRunningMetadataExtraction)}
+                        >
+                          {isRunningMetadataExtraction ? <Spinner className="mr-2 h-3.5 w-3.5" /> : null}
+                          Run metadata extraction
+                        </Button>
+                        <p className="text-xs text-muted-foreground">
+                          Processes this document again with metadata extraction forced on for that run.
+                        </p>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}

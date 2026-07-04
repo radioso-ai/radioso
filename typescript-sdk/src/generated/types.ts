@@ -4251,6 +4251,8 @@ export interface components {
                 /** Format: uri */
                 url: string;
             };
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
         };
         DocumentSourceSummary: {
             /** Format: uuid */
@@ -4321,6 +4323,11 @@ export interface components {
             file: string;
             /** @description Optional title to use instead of the source filename. */
             title?: string;
+            /**
+             * @description Force metadata extraction on or off for this import's processing run only.
+             * @enum {string}
+             */
+            documentEnrichmentOverride?: "on" | "off";
         };
         DocumentStatus: string;
         DocumentOperationResponse: {
@@ -14720,6 +14727,8 @@ export interface operations {
                         /** Format: uri */
                         url: string;
                     };
+                    /** @enum {string} */
+                    documentEnrichmentOverride?: "on" | "off";
                 };
             };
         };

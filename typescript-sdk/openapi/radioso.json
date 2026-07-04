@@ -6730,6 +6730,13 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
           }
         },
         "required": [
@@ -6998,6 +7005,14 @@
           "title": {
             "type": "string",
             "description": "Optional title to use instead of the source filename."
+          },
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ],
+            "description": "Force metadata extraction on or off for this import's processing run only."
           }
         },
         "required": [
@@ -27582,6 +27597,13 @@
                         ],
                         "additionalProperties": false
                       }
+                    ]
+                  },
+                  "documentEnrichmentOverride": {
+                    "type": "string",
+                    "enum": [
+                      "on",
+                      "off"
                     ]
                   }
                 },

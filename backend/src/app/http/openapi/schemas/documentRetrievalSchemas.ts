@@ -98,6 +98,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       title: z.string().optional().openapi({
         description: "Optional title to use instead of the source filename.",
       }),
+      documentEnrichmentOverride: z.enum(["on", "off"]).optional().openapi({
+        description: "Force metadata extraction on or off for this import's processing run only.",
+      }),
     }),
   );
 

@@ -123,6 +123,9 @@ export function DocumentsView({
   const [formValues, setFormValues] = useState<DocumentEditorValues>(EMPTY_FORM)
   const [importTitle, setImportTitle] = useState('')
   const [importFile, setImportFile] = useState<File | null>(null)
+  const [importEnrichmentChoice, setImportEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
+  const [extractingDocumentId, setExtractingDocumentId] = useState<string | null>(null)
+  const [createEnrichmentChoice, setCreateEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
   const [importError, setImportError] = useState<string | null>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -436,12 +439,14 @@ export function DocumentsView({
     setMetadataError(null)
     setSaveError(null)
     setFormValues(EMPTY_FORM)
+    setCreateEnrichmentChoice('inherit')
     setIsSaving(false)
   }, [])
 
   const resetImportDialog = useCallback(() => {
     setImportTitle('')
     setImportFile(null)
+    setImportEnrichmentChoice('inherit')
     setImportError(null)
   }, [])
 
@@ -591,6 +596,9 @@ export function DocumentsView({
         content: formValues.content.trim(),
         ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
         ...(sourceChanged ? { source: { id: formValues.sourceId } } : {}),
+        ...(!editingDocumentId && createEnrichmentChoice !== 'inherit'
+          ? { documentEnrichmentOverride: createEnrichmentChoice }
+          : {}),
       }
 
       if (editingDocumentId) {
@@ -629,7 +637,11 @@ export function DocumentsView({
     setIsImporting(true)
 
     try {
-      await documentsApi.importDocument(importFile, importTitle)
+      await documentsApi.importDocument(
+        importFile,
+        importTitle,
+        importEnrichmentChoice !== 'inherit' ? { documentEnrichmentOverride: importEnrichmentChoice } : undefined,
+      )
       setDocumentsPage(1)
       await loadDocuments(1, { reset: true })
       setIsImportDialogOpen(false)
@@ -805,6 +817,27 @@ export function DocumentsView({
     }
   }
 
+  const handleRunMetadataExtraction = async (documentId: string) => {
+    setExtractingDocumentId(documentId)
+    setRetryErrorById((current) => {
+      const next = { ...current }
+      delete next[documentId]
+      return next
+    })
+    try {
+      await documentsApi.reprocessDocument(documentId, { documentEnrichmentOverride: 'on' })
+      await loadDocuments(currentPage, { reset: true })
+      await openDocumentPage(documentId)
+    } catch (error) {
+      setRetryErrorById((current) => ({
+        ...current,
+        [documentId]: getApiErrorMessage(error, 'Failed to run metadata extraction. Please try again.'),
+      }))
+    } finally {
+      setExtractingDocumentId(null)
+    }
+  }
+
   const handleRetry = async (documentId: string) => {
     setRetryingDocumentId(documentId)
     setRetryErrorById((current) => {
@@ -870,6 +903,8 @@ export function DocumentsView({
         open={isCreateDialogOpen}
         mode="create"
         values={formValues}
+        enrichmentChoice={createEnrichmentChoice}
+        onEnrichmentChoiceChange={setCreateEnrichmentChoice}
         metadataError={metadataError}
         saveError={saveError}
         isSaving={isSaving}
@@ -890,6 +925,8 @@ export function DocumentsView({
       <DocumentImportDialog
         open={isImportDialogOpen}
         importTitle={importTitle}
+        enrichmentChoice={importEnrichmentChoice}
+        onEnrichmentChoiceChange={setImportEnrichmentChoice}
         importError={importError}
         isImporting={isImporting}
         supportedExtensions={SUPPORTED_IMPORT_EXTENSIONS}
@@ -991,6 +1028,8 @@ export function DocumentsView({
           isEditing={isEditingDetail}
           isMetadataOpen={isMetadataSheetOpen}
           retryError={activeDetailDocument ? retryErrorById[activeDetailDocument.id] : undefined}
+          onRunMetadataExtraction={activeDetailDocument ? () => void handleRunMetadataExtraction(activeDetailDocument.id) : undefined}
+          isRunningMetadataExtraction={activeDetailDocument ? extractingDocumentId === activeDetailDocument.id : false}
           availableSources={availableSources}
           sourceFilterHref={activeDetailDocument?.sourceId
             ? buildDashboardHref(accountId, {

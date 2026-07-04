@@ -2240,7 +2240,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -2300,6 +2300,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
           documentId: updated.id,
           workspaceId: updated.workspaceId,
           documentRevision: updated.revision,
+          options,
         });
         this.items.set(updated.id, updated);
         return updated;
@@ -2310,6 +2311,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentId: record.id,
       workspaceId: record.workspaceId,
       documentRevision: record.revision,
+      options,
     });
     this.items.set(record.id, record);
     return record;

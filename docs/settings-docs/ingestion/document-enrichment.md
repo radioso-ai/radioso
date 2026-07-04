@@ -24,7 +24,7 @@ Profiles, reference pages, and generic documents are still classified, but Radio
 
 ### Control Levels
 
-The workspace setting is the default for new processing jobs. A document source can follow the workspace setting, force extraction on, or force it off. A reprocess request can also force extraction on or off for that run only. Manually added documents (pasted text and direct uploads) always follow the workspace setting.
+The workspace setting is the default for new processing jobs. A document source can follow the workspace setting, force extraction on, or force it off. A reprocess request can also force extraction on or off for that run only, and the same one-run choice is available when adding a document or importing a file. Manually added documents otherwise follow the workspace setting.
 
 ### Operational Behavior
 

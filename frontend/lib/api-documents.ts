@@ -87,11 +87,18 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async importDocument(file: File, title?: string): Promise<DocumentCreateResponse> {
+  async importDocument(
+    file: File,
+    title?: string,
+    options?: { documentEnrichmentOverride?: 'on' | 'off' },
+  ): Promise<DocumentCreateResponse> {
     const formData = new FormData()
     formData.set("file", file)
     if (title?.trim()) {
       formData.set("title", title.trim())
+    }
+    if (options?.documentEnrichmentOverride) {
+      formData.set("documentEnrichmentOverride", options.documentEnrichmentOverride)
     }
 
     return request<DocumentCreateResponse>("/document/import", {

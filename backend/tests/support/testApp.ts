@@ -1404,6 +1404,7 @@ export const createTestDependencies = (overrides: {
     agentSkillTurnSkillProvider: overrides.agentSkillTurnSkillProvider ?? new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: agentSkillRepository,
       executorRegistry: skillExecutorRegistry,
+      capabilityPolicy,
     }),
   });
   const chatBootstrapService = new ChatBootstrapService(

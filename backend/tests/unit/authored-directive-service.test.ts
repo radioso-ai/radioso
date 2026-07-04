@@ -269,6 +269,33 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.created).toHaveLength(0);
   });
 
+  it("rejects directive bindings to skill kinds that cannot answer chat turns", async () => {
+    const repository = new StubAgentRepository();
+    const agentSkills = new StubAgentSkillRepository();
+    agentSkills.skills.push(
+      agentSkill({ skillName: "grounded.search", kind: "retrieve", targetType: null, targetId: null }),
+      agentSkill({ skillName: "crm.webhook", kind: "webhook" }),
+    );
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: new CapturingChecker(),
+      registeredCapabilityNames: new Set(),
+      agentSkills,
+    });
+
+    for (const skillName of ["grounded.search", "crm.webhook"]) {
+      await expect(service.create(workspaceId, agentId, directiveInput({
+        binding: { kind: "skill", skillName },
+      }))).rejects.toMatchObject({
+        statusCode: 400,
+        code: "bad_request",
+        message: expect.stringContaining(skillName),
+      });
+    }
+
+    expect(repository.created).toHaveLength(0);
+  });
+
   it("accepts directive bindings to enabled agent-selectable skills", async () => {
     const repository = new StubAgentRepository();
     const agentSkills = new StubAgentSkillRepository();

@@ -10,6 +10,7 @@ import {
 } from "../../src/modules/skills/public.js";
 import type { AgentSkillRepositoryPort, AgentSkillSpine } from "../../src/modules/agentSkills/public.js";
 import { RepositoryAgentSkillTurnSkillProvider } from "../../src/app/composition/builtIn/agentSkillTurnSkillProvider.js";
+import { DefaultAllowCapabilityPolicy, type CapabilityCheckInput, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { ChatTurnSkillSelector } from "../../src/modules/chat/services/turnSkillSelector.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -122,6 +123,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         agentSkill({ skillName: "routine_lookup", invocationMode: "routine_named" }),
       ]),
       executorRegistry: registry,
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
     });
     const session = sessionWithBinding("order_lookup");
 
@@ -157,5 +159,50 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         conversationId,
       },
     });
+    expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
+  });
+
+  it("excludes skill kinds whose executors cannot produce a user-facing answer", async () => {
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([
+        agentSkill({ skillName: "grounded_search", kind: "retrieve", targetType: null, targetId: null }),
+        agentSkill({ skillName: "crm_webhook", kind: "webhook" }),
+        agentSkill({ skillName: "escalate", kind: "slack" }),
+      ]),
+      executorRegistry: new SkillExecutorRegistry([]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+
+    const runtime = await provider.forSession(sessionWithBinding("grounded_search"));
+
+    expect(runtime.turnSkills).toEqual([]);
+    expect(runtime.skillStates.get("grounded_search")).toEqual({ enabled: true, turnCapable: false });
+    expect(runtime.skillStates.get("crm_webhook")).toEqual({ enabled: true, turnCapable: false });
+    expect(runtime.skillStates.get("escalate")).toEqual({ enabled: true, turnCapable: false });
+  });
+
+  it("does not register bindable skills whose required capability the workspace denies", async () => {
+    const checks: CapabilityCheckInput[] = [];
+    const denyExternalSkills: CapabilityPolicy = {
+      async can(input) {
+        checks.push(input);
+        return { allowed: input.capability !== "external_skills.invoke" };
+      },
+    };
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([]),
+      capabilityPolicy: denyExternalSkills,
+    });
+
+    const runtime = await provider.forSession(sessionWithBinding("order_lookup"));
+
+    expect(runtime.turnSkills).toEqual([]);
+    expect(runtime.skillStates.get("order_lookup")).toEqual({
+      enabled: true,
+      turnCapable: true,
+      capabilityDenied: true,
+    });
+    expect(checks).toEqual([{ capability: "external_skills.invoke", workspaceId }]);
   });
 });

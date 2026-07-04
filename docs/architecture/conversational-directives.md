@@ -65,7 +65,12 @@ a binding cannot make a directive more or less likely to match.
 ## Skill binding behavior
 
 Bindings are optional. Create and update requests validate that the named skill
-exists on the agent, is enabled, and uses an agent-selectable invocation mode.
+exists on the agent, is enabled, uses an agent-selectable invocation mode, and
+is an external MCP skill (`kind: external_mcp`) — the only kind whose execution
+settles with user-facing answer text. Retrieval skills return raw contexts by
+design (answer composition belongs to the turn loop), and action skills
+(webhook, Slack, email, notify) settle with outputs only, so binding either
+would render an empty reply; authoring rejects them with a descriptive error.
 Agent config import preserves the binding by name even if the target agent does
 not currently have that skill.
 
@@ -75,10 +80,12 @@ When several matched directives have bindings, Radioso chooses one winner:
 2. higher matcher confidence wins; deterministic `always` matches rank as `1.0`
 3. directive name ascending breaks the final tie
 
-If a bound skill is later disabled, removed, no longer turn-selectable, or not
-registered as a runtime turn skill, the binding is skipped. The turn falls back
-to normal selection, the directive action still steers the reply, and the trace
-records the skipped binding with the reason. The backend also writes a warn log
+If a bound skill is later disabled, removed, no longer turn-selectable, not
+registered as a runtime turn skill, or requires a capability the workspace
+policy denies (external skills require `external_skills.invoke`, enforced the
+same way routine dispatch enforces it), the binding is skipped. The turn falls
+back to normal selection, the directive action still steers the reply, and the
+trace records the skipped binding with the reason. The backend also writes a warn log
 with workspace, agent, conversation, directive name, skill name, and reason. It
 does not log message text or document content.
 

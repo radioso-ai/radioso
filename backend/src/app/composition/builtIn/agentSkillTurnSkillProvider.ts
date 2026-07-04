@@ -19,6 +19,7 @@ import {
   type SkillExecution,
   type SkillExecutorRegistry,
 } from "../../../modules/skills/public.js";
+import { capabilityNames, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../../../modules/externalSkills/executor/mcpSkillExecutor.js";
 import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../../modules/customerEmail/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../../modules/webhookSkills/public.js";
@@ -29,9 +30,39 @@ import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js
 export interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
+  capabilityPolicy: CapabilityPolicy;
 }
 
 const AGENT_SKILL_OUTCOME_KIND = "agent_skill";
+
+/**
+ * Skill kinds a directive binding may claim a chat turn with. Only `external_mcp`
+ * executors settle with user-facing answer text; `retrieve` deliberately returns
+ * raw contexts (the chat turn loop owns answer composition — routing it through
+ * the retrieval composer is the route-steering follow-up), and the action kinds
+ * (webhook, slack, email, notify) settle with outputs only, which would render a
+ * blank reply through the generic outcome renderer.
+ */
+const TURN_BINDABLE_KINDS: ReadonlySet<AgentSkillKind> = new Set(["external_mcp"]);
+
+/**
+ * The same per-kind capability requirements the routine dispatch path enforces
+ * (each kind's routineSkillResolver); kept in sync so a workspace capability
+ * denial gates directive-bound dispatch exactly like routine dispatch.
+ */
+const requiredCapabilitiesForKind = (kind: AgentSkillKind): string[] => {
+  switch (kind) {
+    case "retrieve":
+      return [capabilityNames.retrieval.answer];
+    case "external_mcp":
+    case "customer_email":
+    case "webhook":
+    case "slack":
+      return [capabilityNames.externalSkills.invoke];
+    case "notify":
+      return [];
+  }
+};
 
 type RuntimeSkillDefinition = SkillDefinition & {
   metadata?: Record<string, unknown>;
@@ -122,7 +153,7 @@ const runtimeSkillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): Runti
   owner: "platform",
   executionClass: "interactive",
   supportedCallers: ["assistant"],
-  requiredCapabilities: [],
+  requiredCapabilities: requiredCapabilitiesForKind(agentSkill.kind),
   contractReferences: [],
   execution: executionFromConfig(agentSkill.config?.execution) ?? executionForKind(agentSkill.kind),
   diagnostics: {
@@ -195,18 +226,38 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
 
   async forSession(session: PreparedSession): Promise<AgentSkillTurnRuntime> {
     const records = await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
-    const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean }>();
+    const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean; capabilityDenied?: boolean }>();
     const turnSkills: TurnSkill[] = [];
     for (const record of records) {
-      const turnCapable = record.invocationMode === "agent_selectable";
+      const turnCapable = record.invocationMode === "agent_selectable" && TURN_BINDABLE_KINDS.has(record.kind);
+      if (!record.enabled || !turnCapable) {
+        skillStates.set(record.skillName, { enabled: record.enabled, turnCapable });
+        continue;
+      }
+      const capabilityDenied = await this.firstCapabilityDenied(session.agent.workspaceId, record.kind);
       skillStates.set(record.skillName, {
         enabled: record.enabled,
         turnCapable,
+        ...(capabilityDenied ? { capabilityDenied } : {}),
       });
-      if (record.enabled && turnCapable) {
+      if (!capabilityDenied) {
         turnSkills.push(turnSkillForAgentSkill(record, this.options.executorRegistry));
       }
     }
     return { turnSkills, skillStates };
+  }
+
+  private async firstCapabilityDenied(workspaceId: string, kind: AgentSkillKind): Promise<boolean> {
+    for (const capability of requiredCapabilitiesForKind(kind)) {
+      try {
+        const decision = await this.options.capabilityPolicy.can({ capability, workspaceId });
+        if (!decision.allowed) {
+          return true;
+        }
+      } catch {
+        return true;
+      }
+    }
+    return false;
   }
 }

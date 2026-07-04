@@ -3,7 +3,8 @@ import type { DirectiveMatch } from "@radioso/conversation-contract";
 export type DirectiveBindingSkipReason =
   | "skill_not_registered"
   | "skill_not_enabled"
-  | "skill_not_turn_capable";
+  | "skill_not_turn_capable"
+  | "skill_capability_denied";
 
 export interface DirectiveBindingOutcome {
   directiveName: string;
@@ -23,6 +24,8 @@ export interface DirectiveBindingResolution {
 export interface DirectiveBindingSkillState {
   enabled: boolean;
   turnCapable: boolean;
+  /** The workspace capability policy denies a capability this skill requires. */
+  capabilityDenied?: boolean;
 }
 
 export interface ResolveDirectiveBindingInput {
@@ -62,6 +65,9 @@ const skipReason = (
   }
   if (state && !state.turnCapable) {
     return "skill_not_turn_capable";
+  }
+  if (state?.capabilityDenied) {
+    return "skill_capability_denied";
   }
   if (!registeredTurnSkillNames.has(skillName)) {
     return "skill_not_registered";

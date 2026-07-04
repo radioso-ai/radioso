@@ -1485,6 +1485,7 @@ export const buildChatServices = (input: {
     agentSkillTurnSkillProvider: new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: new AgentSkillRepository(input.database.kysely),
       executorRegistry: input.composition.skillExecutorRegistry,
+      capabilityPolicy: input.composition.capabilityPolicy,
     }),
     ...(input.metricsRegistry
       ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>

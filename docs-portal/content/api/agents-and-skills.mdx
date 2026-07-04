@@ -88,8 +88,10 @@ Create a directive with `POST /api/v1/agents/{agentId}/directives`:
 
 `binding` is optional and may be `null`. In this slice, the only supported
 binding kind is `skill`. The named skill must exist on the agent, be enabled,
-and use `agent_selectable` invocation mode. Invalid bindings return `400` and
-name the offending skill.
+use `agent_selectable` invocation mode, and be an external MCP skill
+(`kind: external_mcp`) — other skill kinds cannot produce a user-facing chat
+reply yet and are rejected. Invalid bindings return `400` and name the
+offending skill.
 
 When a directive with a binding matches a non-routine turn, the turn selector
 routes to the bound skill if that skill is available as a runtime turn skill.
@@ -102,10 +104,12 @@ When multiple matched directives bind skills, one binding wins:
 2. higher matcher confidence, with deterministic `always` matches treated as `1.0`
 3. directive name ascending
 
-If the bound skill is later disabled, removed, no longer turn-selectable, or not
-registered at runtime, Radioso ignores the binding and falls through to normal
-selection. The directive action still applies. The turn trace records selected,
-losing, and skipped bindings with their reasons.
+If the bound skill is later disabled, removed, no longer turn-selectable, not
+registered at runtime, or blocked by the workspace capability policy (external
+skills require the `external_skills.invoke` capability), Radioso ignores the
+binding and falls through to normal selection. The directive action still
+applies. The turn trace records selected, losing, and skipped bindings with
+their reasons.
 
 Agent config export/import preserves directive bindings by skill name. Import
 does not validate that the target agent currently has the skill; runtime

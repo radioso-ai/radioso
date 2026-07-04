@@ -106,4 +106,19 @@ describe("resolveDirectiveBinding", () => {
     ]);
     expect(result.winner).toBeUndefined();
   });
+
+  it("skips bound skills whose required capability the workspace denies", () => {
+    const result = resolveDirectiveBinding({
+      matches: [match({ name: "order-status", skillName: "order_lookup" })],
+      registeredTurnSkillNames: new Set([]),
+      agentSkillStates: new Map([
+        ["order_lookup", { enabled: true, turnCapable: true, capabilityDenied: true }],
+      ]),
+    });
+
+    expect(result.skipped).toEqual([
+      { directiveName: "order-status", skillName: "order_lookup", reason: "skill_capability_denied" },
+    ]);
+    expect(result.winner).toBeUndefined();
+  });
 });

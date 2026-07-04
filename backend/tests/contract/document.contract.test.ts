@@ -69,6 +69,8 @@ describe("document contract", () => {
           contentLength: chunkAlpha.content.length,
           startOffset: 0,
           endOffset: 54,
+          dateFrom: null,
+          dateTo: null,
         },
         {
           id: chunkBravo.id,
@@ -77,6 +79,8 @@ describe("document contract", () => {
           contentLength: chunkBravo.content.length,
           startOffset: 54,
           endOffset: 93,
+          dateFrom: null,
+          dateTo: null,
         },
       ],
     });

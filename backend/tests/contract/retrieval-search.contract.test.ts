@@ -105,6 +105,30 @@ describe("retrieval search contract", () => {
     expect(response.body).not.toHaveProperty("route");
   });
 
+  it("rejects unsupported metadata filter values as a bad request", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-search-invalid-filter@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/search")
+      .set(adminSessionHeaders(session))
+      .set("content-type", "application/json")
+      .send('{"query":"advanced workshop","metadataFilter":{"rank":1e999}}');
+
+    expect(response.status).toBe(400);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "bad_request",
+        message: "Invalid request body",
+        details: {
+          fieldErrors: {
+            metadataFilter: ["Metadata filter contains unsupported values"],
+          },
+        },
+      },
+    });
+  });
+
   it("documents retrieval search in the generated schema", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
 

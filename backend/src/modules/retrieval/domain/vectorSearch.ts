@@ -1,4 +1,5 @@
 import type { RetrievalSourceFilter } from "./retrievalSourceFilter.js";
+import type { VectorMetadataFilter } from "./vectorFilter.js";
 
 export interface RetrievedChunk {
   chunkId: string;
@@ -19,7 +20,7 @@ export interface VectorSearchInput {
   topK: number;
   similarityThreshold: number;
   embeddingModel?: string;
-  metadataFilter?: Record<string, unknown>;
+  metadataFilter?: VectorMetadataFilter;
   sourceFilter?: RetrievalSourceFilter;
 }
 

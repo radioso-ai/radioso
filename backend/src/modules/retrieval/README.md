@@ -22,6 +22,12 @@ storage. pgvector is the default vector-index adapter; external vector backends
 should implement the same candidate contract rather than returning hydrated
 document rows directly.
 
+Vector filters use the backend-neutral `VectorChunkFilter` shape. Metadata
+filters are containment filters over JSON-compatible metadata values; adapters
+may push them down for performance, but hydration remains the final enforcement
+point for workspace, ready document state, source scope, metadata scope, and
+embedding model.
+
 ## Public Surfaces
 
 - `public.ts`: general retrieval-owned contracts and helpers for production code
@@ -41,6 +47,8 @@ imports from `services/` or `infra/`.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
 - `domain/vectorIndex.ts`: vector-index lifecycle/search contract for adapters
   that return ranked chunk references.
+- `domain/vectorFilter.ts`: backend-neutral source and metadata filter contract
+  shared by vector search, lexical search, and hydration.
 - `domain/vectorSearch.ts`: compatibility-only hydrated vector search contract
   for older callers.
 - `domain/retrievalSourceFilter.ts`: shared source scoping values used by

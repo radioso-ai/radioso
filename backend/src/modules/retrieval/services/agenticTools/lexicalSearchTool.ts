@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.js";
+import type { VectorMetadataFilter } from "../../domain/vectorFilter.js";
 import type { LexicalSearchPort } from "../../infra/lexicalSearch.js";
 import { fromRetrievedChunk, type ChunkRegistry } from "./chunkRegistry.js";
 import { mergeMetadataFilters } from "./semanticSearchTool.js";
@@ -16,7 +17,7 @@ export interface LexicalSearchToolDeps {
   readonly sourceFilter?: RetrievalSourceFilter;
   readonly snippetChars?: number;
   /** See SemanticSearchToolDeps.callerMetadataFilter — same contract here. */
-  readonly callerMetadataFilter?: Record<string, unknown>;
+  readonly callerMetadataFilter?: VectorMetadataFilter;
 }
 
 const inputSchema = z.object({

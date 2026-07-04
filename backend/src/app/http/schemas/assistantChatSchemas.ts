@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { metadataFilterSchema } from "./metadataFilterSchema.js";
 import { chatMessageSchema } from "./textInputLimits.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -44,10 +45,7 @@ export const assistantChatSchema = z.object({
   userExpectedLocale: localeHintSchema.optional(),
   inputMetadata: userInputMetadataSchema.optional(),
   sourceContext: sourceContextSchema,
-  metadataFilter: z.record(z.unknown()).optional().refine(
-    (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
-    { message: "Metadata filter must be 16 KB or less" },
-  ),
+  metadataFilter: metadataFilterSchema,
 }).superRefine((value, ctx) => {
   if (!value.message && !value.startConversation) {
     ctx.addIssue({

@@ -10,6 +10,7 @@ import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsag
 import type { QueryRewritePort } from "../domain/queryRewritePort.js";
 import type { ActivityTrace } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
+import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
@@ -88,6 +89,7 @@ export class AgenticRetrievalRunner {
   async run(input: AgenticRetrievalRunInput): Promise<AgenticRetrievalRunResult> {
     const registry = new InMemoryChunkRegistry();
     let finalized: FinalizedSelection | null = null;
+    const metadataFilter = normalizeVectorMetadataFilter(input.metadataFilter);
 
     const tools: AgentTool[] = [
       createSemanticSearchTool({
@@ -100,7 +102,7 @@ export class AgenticRetrievalRunner {
         embeddingModel: input.embeddingModel,
         similarityThreshold: input.similarityThreshold,
         snippetChars: input.snippetChars,
-        callerMetadataFilter: input.metadataFilter,
+        callerMetadataFilter: metadataFilter,
         usageContext: input.usageContext,
       }) as AgentTool,
       createLexicalSearchTool({
@@ -109,7 +111,7 @@ export class AgenticRetrievalRunner {
         registry,
         sourceFilter: input.sourceFilter,
         snippetChars: input.snippetChars,
-        callerMetadataFilter: input.metadataFilter,
+        callerMetadataFilter: metadataFilter,
       }) as AgentTool,
       createRewriteQueryTool({
         queryRewrite: this.deps.queryRewrite,

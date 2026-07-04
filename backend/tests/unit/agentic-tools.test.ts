@@ -97,6 +97,21 @@ describe("mergeMetadataFilters", () => {
       type: "policy",
     });
   });
+
+  it("preserves nested model narrowing when caller provides a nested scope", () => {
+    expect(
+      mergeMetadataFilters(
+        { customer: { id: "other", region: "eu" }, source: "email" },
+        { customer: { id: "acme" } },
+      ),
+    ).toEqual({
+      customer: {
+        id: "acme",
+        region: "eu",
+      },
+      source: "email",
+    });
+  });
 });
 
 describe("semantic_search tool", () => {

@@ -6,13 +6,9 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { expensiveAuthenticatedRateLimiter } from "../middleware/expensiveAuthenticatedRateLimiter.js";
+import { metadataFilterSchema } from "../schemas/metadataFilterSchema.js";
 import { retrievalQuerySchema } from "../schemas/textInputLimits.js";
 import type { RetrievalExecutionSurface } from "../../../modules/retrieval/public.js";
-
-const metadataFilterSchema = z.record(z.unknown()).optional().refine(
-  (val) => !val || Buffer.byteLength(JSON.stringify(val), "utf8") <= 16384,
-  { message: "Metadata filter must be 16 KB or less" },
-);
 
 export const retrievalSearchSchema = z.object({
   query: retrievalQuerySchema,

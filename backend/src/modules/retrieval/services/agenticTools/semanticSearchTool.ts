@@ -5,6 +5,7 @@ import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import { EMBEDDING_MODEL_DEFAULT } from "../../../settings/contracts/ingestion.js";
 import type { VectorIndexPort } from "../../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.js";
+import { mergeVectorMetadataFilters, type VectorMetadataFilter } from "../../domain/vectorFilter.js";
 import type { ChunkCandidateHydratorPort } from "../../infra/chunkCandidateHydrator.js";
 import type { EmbeddingGateway } from "../embeddingService.js";
 import { fromRetrievedChunk, type ChunkRegistry } from "./chunkRegistry.js";
@@ -31,7 +32,7 @@ export interface SemanticSearchToolDeps {
    * keys taking precedence on conflict (the model may add narrower filters but
    * cannot relax or override the caller's scope).
    */
-  readonly callerMetadataFilter?: Record<string, unknown>;
+  readonly callerMetadataFilter?: VectorMetadataFilter;
 }
 
 const inputSchema = z.object({
@@ -64,12 +65,8 @@ type SemanticSearchOutput = z.infer<typeof outputSchema>;
 export const mergeMetadataFilters = (
   modelFilter: Record<string, unknown> | undefined,
   callerFilter: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined => {
-  if (!modelFilter && !callerFilter) {
-    return undefined;
-  }
-  // Caller keys spread last so they win on conflict.
-  return { ...(modelFilter ?? {}), ...(callerFilter ?? {}) };
+): VectorMetadataFilter | undefined => {
+  return mergeVectorMetadataFilters(modelFilter, callerFilter);
 };
 
 export const createSemanticSearchTool = (

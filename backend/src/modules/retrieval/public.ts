@@ -60,6 +60,15 @@ export type {
   RetrievalSourceFilter,
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
+export type {
+  VectorChunkFilter,
+  VectorMetadataFilter,
+  VectorMetadataFilterValue,
+} from "./domain/vectorFilter.js";
+export {
+  mergeVectorMetadataFilters,
+  normalizeVectorMetadataFilter,
+} from "./domain/vectorFilter.js";
 export {
   normalizeRetrievalSkillSettingsOverride,
   parseRetrieveSkillConfig,

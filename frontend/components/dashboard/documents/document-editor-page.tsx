@@ -139,13 +139,7 @@ export function DocumentEditorPage({
   const enrichmentRows = enrichment
     ? [
         ['Status', enrichment.status],
-        ['Shape', enrichment.shape ?? null],
-        ['Model', enrichment.model ?? null],
         ['Enriched', formatDateTime(enrichment.enrichedAt)],
-        ['Anchor date', enrichment.anchorDate ?? null],
-        ['Anchor source', enrichment.anchorSource ?? null],
-        ['Facts', enrichment.factCount === undefined ? null : String(enrichment.factCount)],
-        ['Applied chunks', enrichment.appliedChunkCount === undefined ? null : String(enrichment.appliedChunkCount)],
       ].filter(([, value]) => value)
     : []
   const readOnlyExplanation = document.sourceKind === 'uploaded_file'

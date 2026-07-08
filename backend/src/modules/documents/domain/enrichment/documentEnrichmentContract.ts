@@ -38,8 +38,8 @@ const isoDateSchema = z
   .refine(isValidIsoCalendarDate, { message: "must be a valid ISO calendar date" });
 
 const sourceRangeSchema = z.object({
-  start: z.number().int().min(0),
-  end: z.number().int().min(1),
+  start: z.coerce.number().int().min(0),
+  end: z.coerce.number().int().min(1),
 }).refine((range) => range.start < range.end, {
   message: "sourceRange.start must be less than sourceRange.end",
 });

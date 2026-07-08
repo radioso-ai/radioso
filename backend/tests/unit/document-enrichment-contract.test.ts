@@ -47,6 +47,24 @@ describe("document enrichment contract", () => {
     ).toThrow();
   });
 
+  it("accepts numeric string source ranges from structured model output", () => {
+    const parsed = documentEnrichmentOutputSchema.parse({
+      shape: "event",
+      confidence: 0.8,
+      facts: [
+        {
+          id: "string-range",
+          kind: "event_date",
+          label: "string range",
+          dateFrom: "2026-07-20",
+          sourceRange: { start: "40", end: "120" },
+        },
+      ],
+    });
+
+    expect(parsed.facts[0]?.sourceRange).toEqual({ start: 40, end: 120 });
+  });
+
   it("rejects calendar-invalid dates that pass the ISO shape check", () => {
     // 2026-02-31 is shaped like an ISO date, but letting it through would later
     // fail the chunk insert inside the generated date columns (to_date raises).

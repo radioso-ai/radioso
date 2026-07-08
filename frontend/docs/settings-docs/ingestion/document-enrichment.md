@@ -1,13 +1,13 @@
 ---
 title: "Metadata Extraction"
-description: "How metadata extraction understands documents and extracts structured tags like event dates during ingestion."
-last_updated: 2026-07-03
+description: "How metadata extraction understands documents and extracts structured tags like event dates after a document becomes searchable."
+last_updated: 2026-07-08
 ---
 
 # Metadata Extraction
 
 ## Summary
-Understand each document's type and extract structured tags — like event dates — during document processing.
+Understand each document's type and extract structured tags — like event dates — after the document is indexed, without delaying when it becomes searchable.
 
 ## Details
 ### Overview
@@ -15,6 +15,14 @@ Understand each document's type and extract structured tags — like event dates
 Metadata extraction is disabled by default. When enabled, Radioso makes one model call for each processed document. The call does two things: it understands what kind of document this is (an event announcement, an article, a profile, a reference page, or something generic), and it extracts structured tags the document supports.
 
 The call reads a bounded portion of the document (up to roughly the first 48,000 characters), so very large files add a predictable, capped model cost. The call is metered like any other model usage in the workspace.
+
+### When It Runs
+
+Extraction runs asynchronously, after the document is already searchable. A document first goes through indexing — chunking and embedding — and becomes queryable as soon as that finishes. Extraction is then scheduled as a separate, lower-priority job that fills in the structured tags in place.
+
+In practice this means a document does not wait for the model call to become usable. During a large import or site crawl, every document is indexed first, and extraction drains afterward at lower priority. The extracted date tags reach retrieval when the extraction job completes; no re-indexing is needed.
+
+In the document editor, the Extracted metadata panel shows no extracted tags until the extraction job finishes; once it completes, `Status` shows `applied` (or the failure reason if the model call could not produce valid tags).
 
 ### What It Adds
 
@@ -30,4 +38,4 @@ The workspace setting is the default for new processing jobs. A document source 
 
 ### Operational Behavior
 
-Extraction adds model cost and latency to processing, so enable it where dated event retrieval is useful. If extraction fails, the document still finishes processing without extracted tags and records safe provenance for operators.
+Extraction adds model cost, so enable it where dated event retrieval is useful. Because it runs after indexing, it does not add latency to when a document becomes searchable. If extraction fails, the document stays searchable without extracted tags and records safe provenance for operators — a failed extraction never takes a document out of service.

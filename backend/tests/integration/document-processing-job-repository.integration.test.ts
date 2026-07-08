@@ -90,6 +90,63 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     expect((await repository.findById(job.id))?.options).toEqual({ documentEnrichmentOverride: "off" });
   });
 
+  it("defaults job kind to vectorize and persists an explicit enrich kind", async () => {
+    const vectorizeDocumentId = await insertDocument();
+    const enrichDocumentId = await insertDocument();
+
+    const vectorizeJob = await repository.enqueue({
+      documentId: vectorizeDocumentId,
+      workspaceId,
+      documentRevision: 1,
+    });
+    const enrichJob = await repository.enqueue({
+      documentId: enrichDocumentId,
+      workspaceId,
+      documentRevision: 1,
+      kind: "enrich",
+    });
+
+    expect(vectorizeJob.kind).toBe("vectorize");
+    expect(enrichJob.kind).toBe("enrich");
+    expect((await repository.findById(enrichJob.id))?.kind).toBe("enrich");
+  });
+
+  it("claims vectorize jobs before enrich jobs even when the enrich job was queued first", async () => {
+    const enrichDocumentId = await insertDocument();
+    const vectorizeDocumentId = await insertDocument();
+
+    // Enqueue the enrich job first so a naive created_at ordering would claim it first.
+    const enrichJob = await repository.enqueue({
+      documentId: enrichDocumentId,
+      workspaceId,
+      documentRevision: 1,
+      kind: "enrich",
+    });
+    const vectorizeJob = await repository.enqueue({
+      documentId: vectorizeDocumentId,
+      workspaceId,
+      documentRevision: 1,
+      kind: "vectorize",
+    });
+
+    const claimFirst = await repository.claimNext(new Date(Date.now() + 60_000));
+    expect(claimFirst?.id).toBe(vectorizeJob.id);
+
+    const claimSecond = await repository.claimNext(new Date(Date.now() + 60_000));
+    expect(claimSecond?.id).toBe(enrichJob.id);
+  });
+
+  it("allows a vectorize and an enrich job to coexist for the same document revision", async () => {
+    const documentId = await insertDocument();
+
+    const vectorizeJob = await repository.enqueue({ documentId, workspaceId, documentRevision: 1 });
+    const enrichJob = await repository.enqueue({ documentId, workspaceId, documentRevision: 1, kind: "enrich" });
+
+    expect(vectorizeJob.id).not.toBe(enrichJob.id);
+    expect(vectorizeJob.kind).toBe("vectorize");
+    expect(enrichJob.kind).toBe("enrich");
+  });
+
   it("maps missing and unrecognized options to null", async () => {
     const documentWithoutOptions = await insertDocument();
     const documentWithUnknownOptions = await insertDocument();

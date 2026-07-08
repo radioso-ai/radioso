@@ -2,9 +2,11 @@ import type { DocumentSourceResolverInput } from "../services/documentIngestionS
 
 export type {
   ChunkDetail,
+  ChunkMetadataRevisionPatch,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,
+  PublishedChunkRecord,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,

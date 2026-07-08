@@ -2972,6 +2972,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     return true;
   }
 
+  async listForDocumentRevision(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+        metadata: chunk.metadata ?? {},
+      }));
+  }
+
+  async updateMetadataForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    patches: Array<{ chunkIndex: number; metadata: Record<string, unknown> }>;
+  }): Promise<boolean> {
+    const document = this.documentRepository?.items.get(input.documentId);
+    if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
+      return false;
+    }
+
+    const chunks = this.items.get(input.documentId) ?? [];
+    const patchByIndex = new Map(input.patches.map((patch) => [patch.chunkIndex, patch.metadata]));
+    this.items.set(
+      input.documentId,
+      chunks.map((chunk) =>
+        patchByIndex.has(chunk.chunkIndex)
+          ? { ...chunk, metadata: patchByIndex.get(chunk.chunkIndex)! }
+          : chunk,
+      ),
+    );
+    return true;
+  }
+
   async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
     const chunks = this.items.get(input.documentId) ?? [];
     return chunks
@@ -3023,12 +3062,13 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     this.documentRepository = documentRepository;
   }
 
-  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: DocumentProcessingJobRecord["kind"]; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
     const record: DocumentProcessingJobRecord = {
       id: randomUUID(),
       documentId: input.documentId,
       workspaceId: input.workspaceId,
       documentRevision: input.documentRevision,
+      kind: input.kind ?? "vectorize",
       status: "queued",
       attemptCount: 0,
       lastError: null,
@@ -3056,14 +3096,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       .filter((item) =>
         item.documentId === input.documentId
         && item.workspaceId === input.workspaceId
-        && item.documentRevision === input.documentRevision)
+        && item.documentRevision === input.documentRevision
+        && item.kind === "vectorize")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
   }
 
   async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
     const next = [...this.items.values()]
       .filter((item) => item.status === "queued" && item.availableAt <= now)
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())[0];
+      .sort((left, right) =>
+        Number(left.kind === "enrich") - Number(right.kind === "enrich") ||
+        left.createdAt.getTime() - right.createdAt.getTime())[0];
 
     if (!next) {
       return null;
@@ -3102,7 +3145,10 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       .filter((document) => document.status === "queued")
       .filter((document) =>
         ![...this.items.values()].some(
-          (job) => job.documentId === document.id && job.documentRevision === document.revision,
+          (job) =>
+            job.documentId === document.id &&
+            job.documentRevision === document.revision &&
+            job.kind === "vectorize",
         ),
       )
       .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())

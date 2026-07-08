@@ -58,6 +58,12 @@ describe("document subject search text", () => {
         async publishForDocumentRevision(input): Promise<boolean> {
           return chunkRepository.publishForDocumentRevision(input);
         },
+        async listForDocumentRevision(input) {
+          return chunkRepository.listForDocumentRevision(input);
+        },
+        async updateMetadataForDocumentRevision(input): Promise<boolean> {
+          return chunkRepository.updateMetadataForDocumentRevision(input);
+        },
         async listSummariesForDocument(input) {
           return chunkRepository.listSummariesForDocument(input);
         },
@@ -83,6 +89,7 @@ describe("document subject search text", () => {
       documentId: document.id,
       workspaceId: "workspace-1",
       documentRevision: document.revision,
+      kind: "vectorize",
       status: "processing",
       attemptCount: 1,
       lastError: null,
@@ -141,6 +148,12 @@ describe("document subject search text", () => {
         async publishForDocumentRevision(input): Promise<boolean> {
           return chunkRepository.publishForDocumentRevision(input);
         },
+        async listForDocumentRevision(input) {
+          return chunkRepository.listForDocumentRevision(input);
+        },
+        async updateMetadataForDocumentRevision(input): Promise<boolean> {
+          return chunkRepository.updateMetadataForDocumentRevision(input);
+        },
         async listSummariesForDocument(input) {
           return chunkRepository.listSummariesForDocument(input);
         },
@@ -166,6 +179,7 @@ describe("document subject search text", () => {
       documentId: document.id,
       workspaceId: "workspace-1",
       documentRevision: document.revision,
+      kind: "vectorize",
       status: "processing",
       attemptCount: 1,
       lastError: null,
@@ -184,7 +198,7 @@ describe("document subject search text", () => {
     expect(persistedSearchTexts[0]).toContain("URL: https://corsi.ananda.it/edizione/example");
   });
 
-  it("renders search text from final per-chunk enrichment metadata before embedding", async () => {
+  it("does not fold enrichment dates into search text on the vectorize path", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
@@ -271,6 +285,7 @@ describe("document subject search text", () => {
       documentId: document.id,
       workspaceId: "workspace-1",
       documentRevision: document.revision,
+      kind: "vectorize",
       status: "processing",
       attemptCount: 1,
       lastError: null,
@@ -281,12 +296,13 @@ describe("document subject search text", () => {
       updatedAt: new Date(),
     });
 
-    expect(persistedSearchTexts[0]).toContain("Date from: 2026-07-17");
-    expect(persistedSearchTexts[0]).toContain("Date to: 2026-07-19");
+    // Enrichment now runs asynchronously as a lower-priority enrich job, so the
+    // vectorize path embeds base metadata only — no extracted dates fold into the
+    // search text, and published chunk metadata carries no extracted dates yet.
+    expect(persistedSearchTexts[0]).not.toContain("Date from: 2026-07-17");
     expect(persistedSearchTexts[1]).not.toContain("Date from: 2026-07-17");
-    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toMatchObject({
+    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).not.toMatchObject({
       dateFrom: "2026-07-17",
-      dateTo: "2026-07-19",
     });
   });
 });

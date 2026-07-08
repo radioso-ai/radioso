@@ -356,6 +356,7 @@ export interface DocumentProcessingJobs {
   document_id: string;
   document_revision: number;
   id: string;
+  kind: Generated<string>;
   last_error: string | null;
   options: Json | null;
   status: string;

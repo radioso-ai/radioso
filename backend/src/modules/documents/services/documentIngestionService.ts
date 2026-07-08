@@ -269,6 +269,19 @@ export interface ChunkDetail {
   embeddingDimensions: number | null;
 }
 
+export interface PublishedChunkRecord {
+  chunkIndex: number;
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChunkMetadataRevisionPatch {
+  chunkIndex: number;
+  metadata: Record<string, unknown>;
+}
+
 export interface ChunkRepositoryPort {
   replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
   publishForDocumentRevision(input: {
@@ -276,6 +289,20 @@ export interface ChunkRepositoryPort {
     workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
+  }): Promise<boolean>;
+  // Reads the published chunks for a document so a later, out-of-band stage
+  // (async enrichment) can re-derive per-chunk metadata without re-chunking.
+  listForDocumentRevision(input: { documentId: string; workspaceId: string }): Promise<PublishedChunkRecord[]>;
+  // Patches per-chunk metadata in place, guarded by revision so a superseded
+  // enrich job cannot clobber a newer vectorization. Returns false when the
+  // document revision no longer matches (skip, do not error). The stored
+  // generated date_from/date_to columns recompute from metadata automatically —
+  // no re-embed is performed.
+  updateMetadataForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    patches: ChunkMetadataRevisionPatch[];
   }): Promise<boolean>;
   listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
   findByIdForDocument(input: {

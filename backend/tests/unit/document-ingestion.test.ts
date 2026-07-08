@@ -875,7 +875,6 @@ describe("document ingestion", () => {
       markdownContent: "Event content",
       status: "queued",
       metadata: {
-        enrichment: { status: "applied" },
         dateFrom: "2026-07-17",
         dateTo: "2026-07-17",
         sourceUrl: "https://events.example/event",
@@ -888,6 +887,11 @@ describe("document ingestion", () => {
       sourceStorageObject: null,
       sourceStorageGeneration: null,
       sourceSizeBytes: null,
+    });
+    // Prior extraction provenance lives in the enrichment column (post-migration-120).
+    documentRepository.items.set(document.id, {
+      ...documentRepository.items.get(document.id)!,
+      enrichment: { status: "applied" } as never,
     });
     const stage = {
       enrich: vi.fn().mockResolvedValue({
@@ -926,16 +930,39 @@ describe("document ingestion", () => {
       undefined,
       stage,
       sourceRepository,
+      jobRepository,
     );
 
+    // First revision: the source override enables enrichment, so the vectorize
+    // path publishes without running the LLM and enqueues a lower-priority enrich
+    // job that carries the run's options.
     const firstJob = await jobRepository.enqueue({
       documentId: document.id,
       workspaceId: "workspace-1",
       documentRevision: document.revision,
     });
     expect(await service.process(firstJob)).toBe("completed");
-    expect(stage.enrich).toHaveBeenCalledOnce();
+    expect(stage.enrich).not.toHaveBeenCalled();
+    // Vectorization clears prior stale extracted metadata and provenance.
+    expect((await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1"))?.metadata).toEqual({
+      sourceUrl: "https://events.example/event",
+    });
+    const firstEnrichJob = [...jobRepository.items.values()].find(
+      (job) => job.kind === "enrich" && job.documentRevision === document.revision,
+    );
+    expect(firstEnrichJob).toBeDefined();
 
+    // The enrich job runs the stage and patches document + chunk metadata.
+    expect(await service.processEnrichment(firstEnrichJob!)).toBe("completed");
+    expect(stage.enrich).toHaveBeenCalledOnce();
+    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({
+      sourceUrl: "https://events.example/event",
+      dateFrom: "2026-08-01",
+      dateTo: "2026-08-01",
+    });
+
+    // Second revision with the override "off": no enrich job is enqueued and the
+    // stale extracted metadata is cleared during vectorization.
     await documentRepository.requeueAndQueue(document.id, "workspace-1", { documentEnrichmentOverride: "off" });
     const offJob = await jobRepository.findByDocumentRevision({
       documentId: document.id,
@@ -946,34 +973,40 @@ describe("document ingestion", () => {
 
     expect(await service.process(offJob!)).toBe("completed");
     expect(stage.enrich).not.toHaveBeenCalled();
+    expect([...jobRepository.items.values()].some((job) => job.kind === "enrich" && job.documentRevision === 2)).toBe(false);
     const current = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
     expect(current?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
     expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
 
+    // Third revision with override "on" but a failing extraction: provenance is
+    // recorded and the document stays queryable (never flipped to failed).
     stage.enrich.mockImplementationOnce(async (input) => ({
       status: "failed",
       documentMetadata: {
         ...input.document.metadata,
-        enrichment: { status: "failed", failureReason: "invalid_output", factCount: 0, appliedChunkCount: 0 },
       },
+      provenance: { status: "failed", shape: "unknown", failureReason: "invalid_output", factCount: 0, appliedChunkCount: 0 },
       chunks: input.chunks,
       factCount: 0,
       appliedChunkCount: 0,
     }));
     await documentRepository.requeueAndQueue(document.id, "workspace-1", { documentEnrichmentOverride: "on" });
-    const failedJob = await jobRepository.findByDocumentRevision({
+    const vectorizeJob3 = await jobRepository.findByDocumentRevision({
       documentId: document.id,
       workspaceId: "workspace-1",
       documentRevision: 3,
     });
+    expect(await service.process(vectorizeJob3!)).toBe("completed");
+    const failedEnrichJob = [...jobRepository.items.values()].find(
+      (job) => job.kind === "enrich" && job.documentRevision === 3,
+    );
+    expect(failedEnrichJob).toBeDefined();
 
-    expect(await service.process(failedJob!)).toBe("completed");
+    expect(await service.processEnrichment(failedEnrichJob!)).toBe("completed");
     const failedCurrent = await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1");
-    expect(failedCurrent?.metadata).toEqual({
-      sourceUrl: "https://events.example/event",
-      enrichment: { status: "failed", failureReason: "invalid_output", factCount: 0, appliedChunkCount: 0 },
-    });
-    expect(chunkRepository.items.get(document.id)?.[0]?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
+    expect(failedCurrent?.status).toBe("ready");
+    expect(failedCurrent?.metadata).toEqual({ sourceUrl: "https://events.example/event" });
+    expect(failedCurrent?.enrichment).toMatchObject({ status: "failed", failureReason: "invalid_output" });
   });
 
   it("returns not_found when update loses a delete race", async () => {
@@ -1139,6 +1172,12 @@ describe("document ingestion", () => {
           },
           async publishForDocumentRevision(): Promise<boolean> {
             throw new Error("chunk write failed");
+          },
+          async listForDocumentRevision() {
+            return [];
+          },
+          async updateMetadataForDocumentRevision(): Promise<boolean> {
+            return true;
           },
           async listSummariesForDocument() {
             return [];

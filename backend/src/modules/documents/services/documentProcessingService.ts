@@ -1,7 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { DocumentProcessingJobRecord } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type {
+  DocumentProcessingJobRecord,
+  DocumentProcessingJobRepositoryPort,
+} from "../../../db/repositories/documentProcessingJobRepository.js";
 import {
   deriveChunkSection,
   deriveDocumentSubject,
@@ -21,6 +24,7 @@ import {
   resolveDocumentEnrichmentEnablement,
 } from "../domain/enrichment/enrichmentEnablement.js";
 import type {
+  ChunkMetadataRevisionPatch,
   ChunkRecord,
   ChunkRepositoryPort,
   DocumentRepositoryPort,
@@ -42,6 +46,10 @@ export interface ChunkingStrategyRegistryPort {
 }
 
 export type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
+
+// The processing service only needs to enqueue the follow-up enrich job; it never
+// claims or fails jobs (the worker owns that lifecycle).
+export type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "enqueue">;
 
 export interface DocumentSourceContentServicePort {
   materialize(document: {
@@ -109,7 +117,7 @@ export const stripStaleEnrichmentMetadata = (
 };
 
 export const buildDocumentProcessingTraceAttributes = (
-  job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status">,
+  job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
   input: {
     stage?: "claim" | "materialize" | "chunking" | "enrichment" | "embedding" | "storage" | "audit" | "complete";
     outcome?: DocumentProcessingOutcome | "completed" | "published";
@@ -125,6 +133,7 @@ export const buildDocumentProcessingTraceAttributes = (
   "radioso.job_id": job.id,
   "document.revision": job.documentRevision,
   "document.job.id": job.id,
+  "document.job.kind": job.kind,
   "document.job.attempt_count": job.attemptCount,
   "document.job.status": job.status,
   "document.processing.stage": input.stage,
@@ -148,6 +157,7 @@ export class DocumentProcessingService {
     private readonly logger?: AppLogger,
     private readonly documentEnrichmentStage?: DocumentEnrichmentStagePort,
     private readonly documentSourceRepository?: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
+    private readonly jobRepository?: EnrichJobEnqueuePort,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -222,39 +232,30 @@ export class DocumentProcessingService {
         chunkCount: result.length,
       }));
       const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
+      // Enrichment (LLM metadata extraction) is no longer folded into this
+      // vectorize path — it runs afterward as a lower-priority enrich job so the
+      // document becomes queryable as soon as its embeddings are published. A
+      // fresh vectorization starts from clean base metadata (any prior extracted
+      // dates/provenance are stripped and re-derived by the follow-up enrich job).
       const hadPriorEnrichment = Boolean(documentWithContent.enrichment);
       const baseDocumentMetadata = stripStaleEnrichmentMetadata(documentWithContent.metadata ?? {}, hadPriorEnrichment);
-      const chunkRecordsWithoutSearchText = chunks.map((chunk) => ({
-        ...chunk,
-        metadata: baseDocumentMetadata,
-      }));
-      const enrichmentResult = await this.runEnrichmentStage({
-        job,
-        document: {
-          ...documentWithContent,
-          metadata: baseDocumentMetadata,
-        },
-        settings,
-        chunks: chunkRecordsWithoutSearchText,
-      });
-      const finalDocumentMetadata = enrichmentResult?.documentMetadata ?? baseDocumentMetadata;
-      if (!enrichmentResult && hadPriorEnrichment) {
+      if (hadPriorEnrichment) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
-          metadata: finalDocumentMetadata,
+          metadata: baseDocumentMetadata,
           enrichment: null,
         });
         if (!updatedDocument) {
           return "stale";
         }
       }
-      const finalChunks = enrichmentResult?.chunks ?? chunkRecordsWithoutSearchText;
-      const enrichedChunks = finalChunks.map((chunk) => {
-        const metadataSearchText = renderMetadataSearchText(chunk.metadata ?? finalDocumentMetadata);
+      const enrichedChunks = chunks.map((chunk) => {
+        const metadataSearchText = renderMetadataSearchText(baseDocumentMetadata);
         return {
           ...chunk,
+          metadata: baseDocumentMetadata,
           searchText: renderSearchText({
             title: documentWithContent.title,
             subjectLabel: documentSubject,
@@ -321,7 +322,7 @@ export class DocumentProcessingService {
         embeddingModel,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
-        metadata: chunk.metadata ?? finalDocumentMetadata,
+        metadata: chunk.metadata ?? baseDocumentMetadata,
         createdAt: new Date(),
       }));
 
@@ -344,6 +345,14 @@ export class DocumentProcessingService {
         return currentDocument ? "stale" : "deleted";
       }
 
+      // The document is now queryable. Decide whether metadata extraction should
+      // follow; the enrich job itself is enqueued last (see below).
+      const enrichmentEnabled = await this.resolveEnrichmentEnabled(job, {
+        sourceId: documentWithContent.sourceId ?? null,
+        workspaceId: job.workspaceId,
+        settings,
+      });
+
       await traceActiveSpan("document.processing.audit", buildDocumentProcessingTraceAttributes(job, {
         stage: "audit",
         outcome: "completed",
@@ -354,10 +363,19 @@ export class DocumentProcessingService {
         metadata: {
           documentId: documentWithContent.id,
           revision: job.documentRevision,
-          enrichmentStatus: enrichmentResult?.status ?? "skipped",
+          enrichmentStatus: enrichmentEnabled ? "pending" : "skipped",
         },
       }));
       await this.ingestionSettingsService.promotePendingEmbeddingModelIfReady?.(job.workspaceId);
+
+      // Enqueue the follow-up enrich job as the final step. Nothing may run after
+      // it: if a later statement threw, the vectorize job would retry, re-run
+      // process(), and hit the (document_id, revision, kind) unique constraint on
+      // a second enqueue — failing an already-ready document. Keeping it last
+      // makes the vectorize path idempotent across retries.
+      if (enrichmentEnabled) {
+        await this.enqueueEnrichJob(job);
+      }
 
       return "completed";
     }, (outcome) => buildDocumentProcessingTraceAttributes(job, {
@@ -392,99 +410,169 @@ export class DocumentProcessingService {
     };
   }
 
-  private async runEnrichmentStage(input: {
-    job: DocumentProcessingJobRecord;
-    document: {
-      id: string;
-      workspaceId: string;
-      title: string;
-      markdownContent: string;
-      metadata: Record<string, unknown>;
-      sourceId?: string | null;
-      createdAt: Date;
-    };
-    settings: IngestionSettingsRecord;
-    chunks: Array<{
-      chunkIndex: number;
-      content: string;
-      startOffset: number;
-      endOffset: number;
-      metadata: Record<string, unknown>;
-    }>;
-  }): Promise<DocumentEnrichmentStageResult<typeof input.chunks[number]> | null> {
-    const source = input.document.sourceId && this.documentSourceRepository
-      ? await this.documentSourceRepository.findByIdAndWorkspaceId(input.document.sourceId, input.document.workspaceId)
+  /**
+   * The enrich path: runs metadata extraction (LLM) for an already-published
+   * document revision and patches document + chunk metadata in place. It never
+   * re-embeds and never flips the document status — the document is already
+   * queryable, so enrichment is strictly additive and failure-tolerant.
+   */
+  async processEnrichment(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
+    return traceActiveSpan(
+      "document.processing.enrich",
+      buildDocumentProcessingTraceAttributes(job),
+      async () => {
+        const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+        if (!document) {
+          return "deleted";
+        }
+        // A newer vectorization would have enqueued its own enrich job; skip a
+        // superseded one instead of clobbering current metadata.
+        if (document.revision !== job.documentRevision || document.status !== "ready") {
+          return "stale";
+        }
+        if (!this.documentEnrichmentStage) {
+          return "completed";
+        }
+
+        const publishedChunks = await this.chunkRepository.listForDocumentRevision({
+          documentId: job.documentId,
+          workspaceId: job.workspaceId,
+        });
+
+        const baseDocumentMetadata = stripStaleEnrichmentMetadata(
+          document.metadata ?? {},
+          Boolean(document.enrichment),
+        );
+        const startedAt = Date.now();
+        const anchorDate = toIsoDate(document.createdAt);
+        const result = await traceActiveSpan(
+          "document.processing.enrichment",
+          buildDocumentProcessingTraceAttributes(job, { stage: "enrichment" }),
+          () => this.documentEnrichmentStage!.enrich({
+            document: {
+              id: document.id,
+              workspaceId: job.workspaceId,
+              title: document.title,
+              markdownContent: document.markdownContent,
+              metadata: baseDocumentMetadata,
+              createdAt: document.createdAt,
+            },
+            chunks: publishedChunks,
+            anchor: {
+              source: "document_created_at",
+              date: anchorDate,
+            },
+          }),
+          (enrichment) => buildDocumentProcessingTraceAttributes(job, {
+            stage: "enrichment",
+            enrichmentStatus: enrichment.status,
+            enrichmentFactCount: enrichment.factCount,
+            enrichmentAppliedChunkCount: enrichment.appliedChunkCount,
+          }),
+        );
+
+        const updatedDocument = await this.documentRepository.updateMetadataForRevision({
+          documentId: document.id,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          metadata: result.documentMetadata,
+          enrichment: result.provenance as unknown as Record<string, unknown>,
+        });
+        if (!updatedDocument) {
+          return "stale";
+        }
+
+        // Patch only chunks whose metadata the stage changed. Updating
+        // chunks.metadata recomputes the stored generated date columns.
+        const patches: ChunkMetadataRevisionPatch[] = result.chunks.map((chunk) => ({
+          chunkIndex: chunk.chunkIndex,
+          metadata: chunk.metadata ?? {},
+        }));
+        const chunkPatchApplied = await this.chunkRepository.updateMetadataForDocumentRevision({
+          documentId: document.id,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          patches,
+        });
+        if (!chunkPatchApplied) {
+          return "stale";
+        }
+
+        this.logger?.info(
+          {
+            role: "worker",
+            workspaceId: job.workspaceId,
+            documentId: document.id,
+            revision: job.documentRevision,
+            enrichmentStatus: result.status,
+            factCount: result.factCount,
+            appliedChunkCount: result.appliedChunkCount,
+            enrichmentDurationMs: Math.max(0, Date.now() - startedAt),
+          },
+          "Document enrichment completed",
+        );
+        await this.auditService.record({
+          workspaceId: job.workspaceId,
+          eventType: "document.enrichment",
+          eventStatus: result.status === "applied" ? "success" : "failure",
+          metadata: {
+            documentId: document.id,
+            revision: job.documentRevision,
+            status: result.status,
+            factCount: result.factCount,
+            appliedChunkCount: result.appliedChunkCount,
+          },
+        });
+
+        return "completed";
+      },
+      (outcome) => buildDocumentProcessingTraceAttributes(job, {
+        stage: "complete",
+        outcome,
+      }),
+    );
+  }
+
+  private async resolveEnrichmentEnabled(
+    job: DocumentProcessingJobRecord,
+    input: { sourceId: string | null; workspaceId: string; settings: IngestionSettingsRecord },
+  ): Promise<boolean> {
+    if (!this.documentEnrichmentStage) {
+      return false;
+    }
+    const source = input.sourceId && this.documentSourceRepository
+      ? await this.documentSourceRepository.findByIdAndWorkspaceId(input.sourceId, input.workspaceId)
       : null;
     const enablement = resolveDocumentEnrichmentEnablement({
       workspaceDefaultEnabled: input.settings.documentEnrichmentEnabled ?? false,
       sourceOverride: parseDocumentSourceEnrichmentOverride(source?.config.documentEnrichmentOverride),
-      jobOverride: parseDocumentEnrichmentOverride(input.job.options?.documentEnrichmentOverride),
+      jobOverride: parseDocumentEnrichmentOverride(job.options?.documentEnrichmentOverride),
     });
-    if (!enablement.enabled || !this.documentEnrichmentStage) {
-      return null;
+    return enablement.enabled;
+  }
+
+  private async enqueueEnrichJob(job: DocumentProcessingJobRecord): Promise<"pending" | "skipped"> {
+    if (!this.jobRepository) {
+      return "skipped";
     }
-
-    const startedAt = Date.now();
-    const anchorDate = toIsoDate(input.document.createdAt);
-    const result = await traceActiveSpan(
-      "document.processing.enrichment",
-      buildDocumentProcessingTraceAttributes(input.job, {
-        stage: "enrichment",
-      }),
-      () => this.documentEnrichmentStage!.enrich({
-        document: input.document,
-        chunks: input.chunks,
-        anchor: {
-          source: "document_created_at",
-          date: anchorDate,
-        },
-      }),
-      (enrichment) => buildDocumentProcessingTraceAttributes(input.job, {
-        stage: "enrichment",
-        enrichmentStatus: enrichment.status,
-        enrichmentFactCount: enrichment.factCount,
-        enrichmentAppliedChunkCount: enrichment.appliedChunkCount,
-      }),
-    );
-
-    const updatedDocument = await this.documentRepository.updateMetadataForRevision({
-      documentId: input.document.id,
-      workspaceId: input.job.workspaceId,
-      revision: input.job.documentRevision,
-      metadata: result.documentMetadata,
-      enrichment: result.provenance as unknown as Record<string, unknown>,
+    await this.jobRepository.enqueue({
+      documentId: job.documentId,
+      workspaceId: job.workspaceId,
+      documentRevision: job.documentRevision,
+      kind: "enrich",
+      options: job.options ?? null,
     });
-    if (!updatedDocument) {
-      return null;
-    }
-
     this.logger?.info(
       {
         role: "worker",
-        workspaceId: input.job.workspaceId,
-        documentId: input.document.id,
-        revision: input.job.documentRevision,
-        enrichmentStatus: result.status,
-        factCount: result.factCount,
-        appliedChunkCount: result.appliedChunkCount,
-        enrichmentDurationMs: Math.max(0, Date.now() - startedAt),
+        workspaceId: job.workspaceId,
+        documentId: job.documentId,
+        revision: job.documentRevision,
+        jobKind: "enrich",
       },
-      "Document enrichment completed",
+      "Enqueued document enrichment job",
     );
-    await this.auditService.record({
-      workspaceId: input.job.workspaceId,
-      eventType: "document.enrichment",
-      eventStatus: result.status === "applied" ? "success" : "failure",
-      metadata: {
-        documentId: input.document.id,
-        revision: input.job.documentRevision,
-        status: result.status,
-        factCount: result.factCount,
-        appliedChunkCount: result.appliedChunkCount,
-      },
-    });
-
-    return result;
+    return "pending";
   }
 }
 

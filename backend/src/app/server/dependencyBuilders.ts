@@ -639,6 +639,7 @@ export const buildDocumentServices = (input: {
     logger,
     documentEnrichmentService,
     documentSourceRepository,
+    repositories.documentProcessingJobRepository,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

@@ -36,7 +36,7 @@ In local mode, the worker can poll the durable queue directly. In cloud mode, th
 
 The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
 
-If metadata extraction is enabled for the run, the worker performs one extraction model call before chunk publication. The call understands the document type and may add structured tags such as `dateFrom` and `dateTo` to the relevant chunks.
+If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags such as `dateFrom` and `dateTo` onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 </Steps>
 
 ## What users will notice
@@ -44,7 +44,8 @@ If metadata extraction is enabled for the run, the worker performs one extractio
 - New documents are not searchable immediately after upload.
 - Updated documents may briefly show an in-progress state before the new revision replaces the old one.
 - Failed processing shows up as a document state problem before it becomes a chat quality problem.
-- Enrichment failures do not fail the document. The document is processed without enriched metadata and records safe provenance for operators.
+- Metadata extraction is applied asynchronously, so a document can be searchable for a short time before its extracted date tags appear.
+- Enrichment failures do not fail the document. The document stays searchable without enriched metadata and records safe provenance for operators.
 
 ## Important controls
 

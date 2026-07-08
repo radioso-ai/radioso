@@ -2,9 +2,11 @@ import type { ChunkVectorStoragePort } from "../../retrieval/public.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type {
   ChunkDetail,
+  ChunkMetadataRevisionPatch,
   ChunkRecord,
   ChunkRepositoryPort,
   ChunkSummary,
+  PublishedChunkRecord,
 } from "../contracts/index.js";
 
 const CHUNK_CONTENT_PREVIEW_MAX_CHARS = 240;
@@ -64,6 +66,75 @@ export class ChunkRepository implements ChunkRepositoryPort {
            AND revision = $3`,
         [input.documentId, input.workspaceId, input.revision],
       );
+
+      return true;
+    });
+  }
+
+  async listForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+  }): Promise<PublishedChunkRecord[]> {
+    const rows = await this.database.query<{
+      chunk_index: number;
+      content: string;
+      start_offset: number;
+      end_offset: number;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `SELECT chunk_index,
+              content,
+              start_offset,
+              end_offset,
+              metadata
+       FROM chunks
+       WHERE document_id = $1 AND workspace_id = $2
+       ORDER BY chunk_index ASC`,
+      [input.documentId, input.workspaceId],
+    );
+
+    return rows.map((row) => ({
+      chunkIndex: Number(row.chunk_index),
+      content: row.content,
+      startOffset: Number(row.start_offset),
+      endOffset: Number(row.end_offset),
+      metadata: (row.metadata ?? {}) as Record<string, unknown>,
+    }));
+  }
+
+  async updateMetadataForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    patches: ChunkMetadataRevisionPatch[];
+  }): Promise<boolean> {
+    return this.database.withTransaction(async (client) => {
+      const documentRows = await client.query<{ id: string }>(
+        `SELECT id
+         FROM documents
+         WHERE id = $1
+           AND workspace_id = $2
+           AND revision = $3
+         FOR UPDATE`,
+        [input.documentId, input.workspaceId, input.revision],
+      );
+
+      if (documentRows.rows.length === 0) {
+        return false;
+      }
+
+      // Patch each chunk's metadata by index. The stored generated
+      // date_from/date_to columns recompute from metadata automatically.
+      for (const patch of input.patches) {
+        await client.query(
+          `UPDATE chunks
+           SET metadata = $4::jsonb
+           WHERE document_id = $1
+             AND workspace_id = $2
+             AND chunk_index = $3`,
+          [input.documentId, input.workspaceId, patch.chunkIndex, JSON.stringify(patch.metadata)],
+        );
+      }
 
       return true;
     });

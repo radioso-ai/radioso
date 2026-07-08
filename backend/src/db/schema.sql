@@ -1226,7 +1226,8 @@ CREATE TABLE public.document_processing_jobs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     workspace_id uuid NOT NULL,
-    options jsonb
+    options jsonb,
+    kind text DEFAULT 'vectorize'::text NOT NULL
 );
 
 
@@ -2714,11 +2715,11 @@ ALTER TABLE ONLY public.conversations
 
 
 --
--- Name: document_processing_jobs document_processing_jobs_document_id_document_revision_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: document_processing_jobs document_processing_jobs_document_id_document_revision_kind_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.document_processing_jobs
-    ADD CONSTRAINT document_processing_jobs_document_id_document_revision_key UNIQUE (document_id, document_revision);
+    ADD CONSTRAINT document_processing_jobs_document_id_document_revision_kind_key UNIQUE (document_id, document_revision, kind);
 
 
 --
@@ -4180,7 +4181,7 @@ CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree 
 -- Name: idx_document_processing_jobs_claim; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_document_processing_jobs_claim ON public.document_processing_jobs USING btree (status, available_at, created_at);
+CREATE INDEX idx_document_processing_jobs_claim ON public.document_processing_jobs USING btree (status, available_at, kind, created_at);
 
 
 --

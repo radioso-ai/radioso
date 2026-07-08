@@ -235,14 +235,15 @@ Chunking behavior.`,
       undefined,
       undefined,
       enrichmentStage,
+      undefined,
+      jobRepository,
     );
 
-    const outcome = await service.process({
-      id: "job-enriched",
+    const baseJob = {
       documentId: document.id,
       workspaceId: document.workspaceId,
       documentRevision: document.revision,
-      status: "queued",
+      status: "queued" as const,
       attemptCount: 0,
       lastError: null,
       availableAt: new Date(),
@@ -251,15 +252,26 @@ Chunking behavior.`,
       createdAt: new Date(),
       updatedAt: new Date(),
       options: null,
-    });
+    };
 
+    // Vectorize first: the document becomes queryable with base metadata only.
+    const outcome = await service.process({ ...baseJob, id: "job-enriched", kind: "vectorize" });
     expect(outcome).toBe("completed");
+
+    const afterVectorize = chunkRepository.items.get(document.id) ?? [];
+    expect(afterVectorize.every((chunk) => !("dateFrom" in (chunk.metadata ?? {})))).toBe(true);
+
+    // A follow-up enrich job was enqueued; running it patches the overlapping chunk.
+    const enrichJob = [...jobRepository.items.values()].find((job) => job.kind === "enrich");
+    expect(enrichJob).toBeDefined();
+    const enrichOutcome = await service.processEnrichment(enrichJob!);
+    expect(enrichOutcome).toBe("completed");
+
     const stored = chunkRepository.items.get(document.id) ?? [];
     const eventChunk = stored.find((chunk) => chunk.content.includes("Summer Workshop"));
     const dateOnlyChunk = stored.find((chunk) => chunk.content.includes("August 10"));
 
     expect(eventChunk?.metadata).toMatchObject({ dateFrom: "2026-08-10", dateTo: "2026-08-10" });
-    expect(eventChunk?.searchText).toContain("Date from: 2026-08-10");
     expect(dateOnlyChunk?.metadata).not.toHaveProperty("dateFrom");
     expect((await documentRepository.findByIdAndWorkspaceId(document.id, document.workspaceId))?.enrichment).toMatchObject({
       status: "applied",
@@ -333,6 +345,7 @@ Chunking behavior.`,
       documentId: document.id,
       workspaceId: document.workspaceId,
       documentRevision: document.revision,
+      kind: "vectorize",
       status: "queued",
       attemptCount: 0,
       lastError: null,

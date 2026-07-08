@@ -4,6 +4,9 @@ import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
+// Vectorize jobs make a document queryable (chunk + embed + publish). Enrich jobs
+// run the metadata-extraction LLM afterward at lower priority.
+export type DocumentProcessingJobKind = "vectorize" | "enrich";
 export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
 
 export interface DocumentProcessingJobOptions {
@@ -15,6 +18,7 @@ export interface DocumentProcessingJobRecord {
   documentId: string;
   workspaceId: string;
   documentRevision: number;
+  kind: DocumentProcessingJobKind;
   status: DocumentProcessingJobStatus;
   attemptCount: number;
   lastError: string | null;
@@ -33,7 +37,7 @@ export interface DocumentProcessingQueueSnapshot {
 }
 
 export interface DocumentProcessingJobRepositoryPort {
-  enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
+  enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: DocumentProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord>;
   findById(jobId: string): Promise<DocumentProcessingJobRecord | null>;
   findByDocumentRevision(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord | null>;
   claimNext(now?: Date): Promise<DocumentProcessingJobRecord | null>;
@@ -60,6 +64,7 @@ interface DocumentProcessingJobRow {
   document_id: string;
   workspace_id: string;
   document_revision: number;
+  kind: DocumentProcessingJobKind;
   status: DocumentProcessingJobStatus;
   attempt_count: number;
   last_error: string | null;
@@ -76,6 +81,7 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   documentId: row.document_id,
   workspaceId: row.workspace_id,
   documentRevision: row.document_revision,
+  kind: normalizeJobKind(row.kind),
   status: row.status,
   attemptCount: row.attempt_count,
   lastError: row.last_error,
@@ -86,6 +92,9 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   updatedAt: new Date(row.updated_at),
   options: mapJobOptions(row.options),
 });
+
+const normalizeJobKind = (value: unknown): DocumentProcessingJobKind =>
+  value === "enrich" ? "enrich" : "vectorize";
 
 const mapJobOptions = (value: Record<string, unknown> | null): DocumentProcessingJobOptions | null => {
   if (!value || typeof value !== "object") {
@@ -103,6 +112,7 @@ const documentProcessingJobColumns = [
   "document_id",
   "workspace_id",
   "document_revision",
+  "kind",
   "status",
   "attempt_count",
   "last_error",
@@ -117,7 +127,7 @@ const documentProcessingJobColumns = [
 export class DocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: DocumentProcessingJobKind; options?: DocumentProcessingJobOptions | null }): Promise<DocumentProcessingJobRecord> {
     const row = await this.db
       .insertInto("document_processing_jobs")
       .values({
@@ -125,6 +135,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         document_id: input.documentId,
         workspace_id: input.workspaceId,
         document_revision: input.documentRevision,
+        kind: input.kind ?? "vectorize",
         status: "queued",
         options: input.options ? toJsonb(input.options) : null,
       })
@@ -155,6 +166,9 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .where("document_id", "=", input.documentId)
       .where("workspace_id", "=", input.workspaceId)
       .where("document_revision", "=", input.documentRevision)
+      // Callers dispatch the freshly-queued vectorize job; the follow-up enrich
+      // job is enqueued and dispatched by the processing service itself.
+      .where("kind", "=", "vectorize")
       .orderBy("created_at", "desc")
       .limit(1)
       .executeTakeFirst();
@@ -169,6 +183,10 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .select("id")
         .where("status", "=", "queued")
         .where("available_at", "<=", now)
+        // Vectorize jobs make a document queryable; drain them before the
+        // lower-priority enrich (metadata-extraction) jobs. `(kind = 'enrich')`
+        // sorts vectorize (false) ahead of enrich (true).
+        .orderBy((eb) => eb("kind", "=", "enrich"), "asc")
         .orderBy("created_at", "asc")
         .forUpdate()
         .skipLocked()
@@ -228,7 +246,11 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
                 .selectFrom("document_processing_jobs as jobs")
                 .select("jobs.id")
                 .whereRef("jobs.document_id", "=", "d.id")
-                .whereRef("jobs.document_revision", "=", "d.revision"),
+                .whereRef("jobs.document_revision", "=", "d.revision")
+                // Only the vectorize phase makes a queued document ready; an
+                // orphaned queued document missing its vectorize job must be
+                // repaired even if a stale enrich job somehow exists.
+                .where("jobs.kind", "=", "vectorize"),
             ),
           ),
         )

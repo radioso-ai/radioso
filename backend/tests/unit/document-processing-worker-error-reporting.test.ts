@@ -59,6 +59,7 @@ describe("DocumentProcessingWorker tick error reporting", () => {
       documentId: "77d89bb2-b69a-43b0-b226-62f40d160321",
       workspaceId: "e93ea86d-28ec-4d2f-aa9a-5e633a22c6df",
       documentRevision: 2,
+      kind: "vectorize",
       status: "processing",
       attemptCount: 1,
       lastError: null,

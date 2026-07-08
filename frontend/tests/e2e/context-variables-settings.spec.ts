@@ -23,14 +23,14 @@ test("agent context settings create, enable, and update surfacing", async ({ pag
   await expect(page.getByText("Compiling")).toHaveCount(0, { timeout: 15000 });
 
   await page.getByRole("button", { name: "Add variable" }).click();
-  await page.getByLabel("Name").fill("cart");
-  await page.getByLabel("Description").fill("Current visitor cart from the host backend.");
+  await page.getByLabel("Name", { exact: true }).fill("cart");
+  await page.getByLabel("Description", { exact: true }).fill("Current visitor cart from the host backend.");
   await page.getByRole("dialog", { name: "Add context variable" }).getByRole("button", { name: "Add variable" }).click();
 
   await expect(page.getByText("@cart")).toBeVisible();
   await page.getByLabel("Enable cart").click();
   await expect(page.getByLabel("Disable cart")).toBeVisible();
-  await page.getByLabel("Surfacing").click();
+  await page.getByLabel("Surfacing", { exact: true }).click();
   await page.getByRole("option", { name: "Always" }).click();
 
   await expect.poll(() =>

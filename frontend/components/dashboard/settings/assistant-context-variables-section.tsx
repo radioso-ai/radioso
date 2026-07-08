@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Braces, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { SettingFieldHeader } from '@/components/dashboard/settings/settings-flow'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,7 +16,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -86,6 +86,47 @@ const sensitivityLabels: Record<SensitivityOption, string> = {
   sensitive: 'Sensitive',
 }
 
+const fieldHelp = {
+  name: {
+    description: 'The key the agent and routines use to reference this value.',
+    tooltip:
+      'The stable identifier your directives, routines, and the host API use to read this value — for example `@cart`. Use letters, numbers, and underscores, and start with a letter. Visitors never see it.',
+  },
+  description: {
+    description: 'What this value holds. Helps the agent and operators recognise it.',
+    tooltip:
+      'A short, human description of the value. It helps operators recognise the variable in the dashboard and gives the agent a hint about what the data represents. It does not change behaviour on its own.',
+  },
+  valueType: {
+    description: 'String for plain text, JSON for structured data.',
+    tooltip:
+      '**String** — a single plain-text value, such as a plan name or an order status.\n\n**JSON** — a structured object or array, such as a full cart with line items. Choose JSON when the host sends more than one field.',
+  },
+  trustTier: {
+    description: "How much the agent trusts the value's origin.",
+    tooltip:
+      '**Unverified** — the value is accepted as sent by the page or host. Fine for low-stakes context like the current page or product.\n\n**Signed** — the value is only accepted when it carries a valid signature from your backend. Use this for identity- or account-bound data (like the logged-in customer) so a visitor cannot spoof it from the browser.',
+  },
+  sensitivity: {
+    description: 'Sensitive values get extra handling and stay out of logs.',
+    tooltip:
+      '**Normal** — standard handling.\n\n**Sensitive** — the value is treated as confidential: it is kept out of logs and diagnostics and handled more conservatively. Use it for anything private, like order details or personal information.',
+  },
+  defaultSurfacing: {
+    description: 'When the value is placed into the conversation by default.',
+    tooltip:
+      'Controls when the value reaches a turn. Each agent can override this per variable.\n\n**Always** — included in every turn.\n\n**On reference** — included only when the turn seems to need it. A good default to keep prompts lean.\n\n**Operator only** — never sent to the model; visible only to human operators in the Activity view.',
+  },
+  source: {
+    tooltip:
+      '**Pushed API** — your backend writes the value through the Radioso REST API, and Radioso stores it per session and customer. This is the delivery method available in the dashboard today.',
+  },
+  surfacing: {
+    tooltip:
+      'When this agent places the value into a turn.\n\n**Always** — every turn. **On reference** — only when relevant. **Operator only** — hidden from the model, visible to human operators.',
+  },
+} as const
+
 const isUiSource = (source: AgentContextVariableEnablement['source']): source is SourceOption =>
   source === 'pushed'
 
@@ -142,6 +183,7 @@ export function AssistantContextVariablesSection({
   const [editingVariable, setEditingVariable] = useState<ContextVariable | null>(null)
   const [deletingVariable, setDeletingVariable] = useState<ContextVariable | null>(null)
   const [form, setForm] = useState<VariableFormState>(emptyForm)
+  const [nameTouched, setNameTouched] = useState(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
 
   const enablementsByVariableId = useMemo(() => {
@@ -189,6 +231,7 @@ export function AssistantContextVariablesSection({
   const openCreateDialog = () => {
     setEditingVariable(null)
     setForm(emptyForm)
+    setNameTouched(false)
     setError(null)
     setDialogOpen(true)
   }
@@ -196,6 +239,7 @@ export function AssistantContextVariablesSection({
   const openEditDialog = (variable: ContextVariable) => {
     setEditingVariable(variable)
     setForm(variableToForm(variable))
+    setNameTouched(false)
     setError(null)
     setDialogOpen(true)
   }
@@ -205,6 +249,7 @@ export function AssistantContextVariablesSection({
     setDialogOpen(false)
     setEditingVariable(null)
     setForm(emptyForm)
+    setNameTouched(false)
   }
 
   const mergeCatalogVariable = (variable: ContextVariable) => {
@@ -236,6 +281,7 @@ export function AssistantContextVariablesSection({
       setDialogOpen(false)
       setEditingVariable(null)
       setForm(emptyForm)
+      setNameTouched(false)
       markSaved()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
@@ -332,8 +378,10 @@ export function AssistantContextVariablesSection({
         {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
 
         <p className="rounded-lg border border-border bg-muted/35 p-3 text-sm text-muted-foreground">
-          Built-in page and visitor identity context is managed by Radioso and does not appear in this catalog.
-          This section controls host-defined variables only.
+          Context variables let your site feed live visitor data — such as the current cart, order, or plan — into
+          this agent so it can ground answers in it. Built-in page and visitor-identity context is managed by Radioso
+          and isn&apos;t listed here; this section is for your own host-defined variables. Use the{' '}
+          <span className="font-medium text-foreground">?</span> on any field for a plain-language explanation.
         </p>
 
         {isLoading ? (
@@ -405,7 +453,11 @@ export function AssistantContextVariablesSection({
                   {enabled ? (
                     <div className="grid gap-4 rounded-lg border border-border/70 bg-muted/25 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
                       <div className="space-y-2">
-                        <Label htmlFor={`context-source-${variable.id}`}>Source</Label>
+                        <SettingFieldHeader
+                          htmlFor={`context-source-${variable.id}`}
+                          label="Source"
+                          tooltip={fieldHelp.source.tooltip}
+                        />
                         <Select
                           value={source}
                           onValueChange={(value) => void updateEnablement(variable, enablement, { source: value as SourceOption })}
@@ -420,7 +472,11 @@ export function AssistantContextVariablesSection({
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor={`context-surfacing-${variable.id}`}>Surfacing</Label>
+                        <SettingFieldHeader
+                          htmlFor={`context-surfacing-${variable.id}`}
+                          label="Surfacing"
+                          tooltip={fieldHelp.surfacing.tooltip}
+                        />
                         <Select
                           value={enablement?.surfacing ?? variable.defaultSurfacing}
                           onValueChange={(value) => void updateEnablement(variable, enablement, { surfacing: value as SurfacingOption })}
@@ -459,17 +515,31 @@ export function AssistantContextVariablesSection({
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="contextVariableName">Name</Label>
+              <SettingFieldHeader
+                htmlFor="contextVariableName"
+                label="Name"
+                description={fieldHelp.name.description}
+                tooltip={fieldHelp.name.tooltip}
+              />
               <Input
                 id="contextVariableName"
                 value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                onChange={(event) => {
+                  setNameTouched(true)
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }}
+                onBlur={() => setNameTouched(true)}
                 maxLength={120}
                 placeholder="cart"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="contextVariableDescription">Description</Label>
+              <SettingFieldHeader
+                htmlFor="contextVariableDescription"
+                label="Description"
+                description={fieldHelp.description.description}
+                tooltip={fieldHelp.description.tooltip}
+              />
               <Textarea
                 id="contextVariableDescription"
                 value={form.description}
@@ -480,7 +550,12 @@ export function AssistantContextVariablesSection({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="contextVariableValueType">Value type</Label>
+                <SettingFieldHeader
+                  htmlFor="contextVariableValueType"
+                  label="Value type"
+                  description={fieldHelp.valueType.description}
+                  tooltip={fieldHelp.valueType.tooltip}
+                />
                 <Select
                   value={form.valueType}
                   onValueChange={(value) => setForm((current) => ({ ...current, valueType: value as ValueTypeOption }))}
@@ -495,7 +570,12 @@ export function AssistantContextVariablesSection({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contextVariableTrustTier">Trust tier</Label>
+                <SettingFieldHeader
+                  htmlFor="contextVariableTrustTier"
+                  label="Trust tier"
+                  description={fieldHelp.trustTier.description}
+                  tooltip={fieldHelp.trustTier.tooltip}
+                />
                 <Select
                   value={form.trustTier}
                   onValueChange={(value) => setForm((current) => ({ ...current, trustTier: value as TrustTierOption }))}
@@ -510,7 +590,12 @@ export function AssistantContextVariablesSection({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contextVariableSensitivity">Sensitivity</Label>
+                <SettingFieldHeader
+                  htmlFor="contextVariableSensitivity"
+                  label="Sensitivity"
+                  description={fieldHelp.sensitivity.description}
+                  tooltip={fieldHelp.sensitivity.tooltip}
+                />
                 <Select
                   value={form.sensitivity}
                   onValueChange={(value) => setForm((current) => ({ ...current, sensitivity: value as SensitivityOption }))}
@@ -525,7 +610,12 @@ export function AssistantContextVariablesSection({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contextVariableDefaultSurfacing">Default surfacing</Label>
+                <SettingFieldHeader
+                  htmlFor="contextVariableDefaultSurfacing"
+                  label="Default surfacing"
+                  description={fieldHelp.defaultSurfacing.description}
+                  tooltip={fieldHelp.defaultSurfacing.tooltip}
+                />
                 <Select
                   value={form.defaultSurfacing}
                   onValueChange={(value) => setForm((current) => ({ ...current, defaultSurfacing: value as SurfacingOption }))}
@@ -541,7 +631,7 @@ export function AssistantContextVariablesSection({
                 </Select>
               </div>
             </div>
-            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            {nameTouched && formError ? <p className="text-sm text-destructive">{formError}</p> : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>

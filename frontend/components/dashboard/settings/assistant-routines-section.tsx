@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   Archive,
+  AlertTriangle,
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
@@ -17,15 +18,27 @@ import {
   Send,
   Sparkles,
   Trash2,
+  WandSparkles,
 } from 'lucide-react'
 
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
+import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
-import { RoutineProseEditor } from '@/components/dashboard/settings/routine-prose-editor'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -35,6 +48,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { customerEmailApi, type CustomerEmailSkillDefinition } from '@/lib/api-customer-email'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -69,6 +83,34 @@ const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   transitions: [],
   terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Confirm completion.', ordinal: 0 }],
 })
+
+function RoutineValidationStatusIcon({
+  state,
+}: {
+  state: 'checking' | 'invalid' | 'valid'
+}) {
+  const label = state === 'valid'
+    ? 'Routine valid'
+    : state === 'invalid'
+      ? 'Routine has validation issues'
+      : 'Checking routine'
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          role="status"
+          aria-label={label}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground"
+        >
+          {state === 'valid' ? <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : null}
+          {state === 'invalid' ? <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" /> : null}
+          {state === 'checking' ? <Spinner className="h-4 w-4" /> : null}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 // Author-facing reentry policy options. Order puts the safe default first.
 const REENTRY_MODE_OPTIONS: { value: RoutineReentryMode; label: string; hint: string }[] = [
@@ -171,6 +213,41 @@ const currentBrowserUrlMatches = (href: string) => {
   return `${window.location.pathname}${window.location.search}` === href
 }
 
+type NewRoutineRecovery = {
+  draft: RoutineDefinitionDraft
+  header: RoutineDraftHeader
+  viewMode: 'prose' | 'form'
+}
+
+const newRoutineRecoveryKey = (agentId: string) => `radioso:routine-new-draft:${agentId}`
+
+const readNewRoutineRecovery = (agentId: string): NewRoutineRecovery | null => {
+  if (typeof window === 'undefined') return null
+  const value = window.sessionStorage.getItem(newRoutineRecoveryKey(agentId))
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as Partial<NewRoutineRecovery>
+    if (!parsed.draft || !parsed.header || (parsed.viewMode !== 'prose' && parsed.viewMode !== 'form')) return null
+    return {
+      draft: parsed.draft,
+      header: parsed.header,
+      viewMode: parsed.viewMode,
+    }
+  } catch {
+    return null
+  }
+}
+
+const writeNewRoutineRecovery = (agentId: string, recovery: NewRoutineRecovery) => {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.setItem(newRoutineRecoveryKey(agentId), JSON.stringify(recovery))
+}
+
+const clearNewRoutineRecovery = (agentId: string) => {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(newRoutineRecoveryKey(agentId))
+}
+
 export function AssistantRoutinesSection({
   accountId,
   agentId,
@@ -216,7 +293,6 @@ function RoutineListScreen({
   const [routines, setRoutines] = useState<RoutineDefinition[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [proseOpen, setProseOpen] = useState(false)
 
   const groupedRoutines = useMemo(
     () => groupRoutineLineages(routines),
@@ -233,7 +309,7 @@ function RoutineListScreen({
       anchor: undefined,
     })
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true
     queueMicrotask(() => {
       if (!active) return
@@ -370,31 +446,14 @@ function RoutineListScreen({
     )
   }
 
-  if (proseOpen) {
-    return (
-      <RoutineProseEditor
-        agentId={agentId}
-        onClose={() => setProseOpen(false)}
-        onCreated={(routine) => {
-          setProseOpen(false)
-          router.push(buildRoutineHref(routine.id))
-        }}
-      />
-    )
-  }
-
   return (
     <SettingsCard
       id="assistant-routines-card"
       icon={<Route className="h-5 w-5 text-primary" />}
       title="Routines"
-      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough. Validate and publish before it goes live."
+      description="Multi-step procedures the agent runs to complete a task — collect details, call a skill, then finish or hand off. Reach for a routine when a single directive isn't enough."
       headerEnd={(
         <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setProseOpen(true)}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Write in prose
-          </Button>
           <Button type="button" size="sm" onClick={() => router.push(buildRoutineHref('new'))}>
             <Plus className="mr-2 h-4 w-4" />
             New routine
@@ -461,14 +520,22 @@ function RoutineEditorScreen({
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
   const [viewMode, setViewMode] = useState<'prose' | 'form'>('prose')
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
+  const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
+  const [proseLocalValidationError, setProseLocalValidationError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDraftingRoutine, setIsDraftingRoutine] = useState(false)
+  const [draftAssistDialogOpen, setDraftAssistDialogOpen] = useState(false)
+  const [draftAssistProse, setDraftAssistProse] = useState('')
   const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
   const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
+  const initializedRouteKeyRef = useRef<string | null>(null)
+  const routineEditorDirtyRef = useRef(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
 
   const listHref = buildDashboardHref(accountId, {
@@ -502,11 +569,6 @@ function RoutineEditorScreen({
     () => form?.slots.map((slot) => slot.key.trim()).filter(Boolean) ?? [],
     [form],
   )
-  const routineDiagnostics = useMemo(
-    () => (validation?.diagnostics ?? []).filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
-    [validation],
-  )
-  const validationDiagnostics = validation?.diagnostics ?? []
   const isReadOnly = editingRoutine ? editingRoutine.status !== 'draft' : false
   const versionHistory = useMemo(
     () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
@@ -515,6 +577,44 @@ function RoutineEditorScreen({
   const publishedSibling = useMemo(
     () => versionHistory.find((version) => version.status === 'published') ?? null,
     [versionHistory],
+  )
+  const activeRoutineDraft = useMemo(() => {
+    if (viewMode === 'prose' && proseDraft) return proseDraft
+    return form ? formToRoutineDraft(form, { header: draftHeader }) : null
+  }, [draftHeader, form, proseDraft, viewMode])
+  const activeRoutineDraftSignature = useMemo(
+    () => activeRoutineDraft ? JSON.stringify(activeRoutineDraft) : null,
+    [activeRoutineDraft],
+  )
+  const activeRoutineDraftError = useMemo(
+    () => {
+      if (viewMode === 'prose') {
+        if (!draftHeader.name.trim()) return 'Name is required.'
+        if (!draftHeader.activation.triggerDescription.trim()) return 'Activation trigger is required.'
+        if (proseLocalValidationError) return proseLocalValidationError
+      }
+      return activeRoutineDraft ? draftError(activeRoutineDraft) : 'Routine draft is not ready.'
+    },
+    [activeRoutineDraft, draftHeader.activation.triggerDescription, draftHeader.name, proseLocalValidationError, viewMode],
+  )
+  const nameLocalValidationError = viewMode === 'prose' && !draftHeader.name.trim() ? 'Name is required.' : null
+  const triggerLocalValidationError = viewMode === 'prose' && draftHeader.name.trim() && !draftHeader.activation.triggerDescription.trim()
+    ? 'Activation trigger is required.'
+    : null
+  const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
+  const validationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
+    ? 'invalid'
+    : isValidationCurrent && validation?.ok
+      ? 'valid'
+      : 'checking'
+  const canPublishDraft = !isReadOnly && Boolean(form && isValidationCurrent && validation?.ok)
+  const validationDiagnostics = useMemo(
+    () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
+    [isValidationCurrent, validation?.diagnostics],
+  )
+  const routineDiagnostics = useMemo(
+    () => validationDiagnostics.filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
+    [validationDiagnostics],
   )
 
   useEffect(() => {
@@ -571,30 +671,43 @@ function RoutineEditorScreen({
       }
 
       setValidation(null)
+      setValidatedDraftSignature(null)
+      setProseLocalValidationError(null)
       setError(null)
 
       if (routineRouteId === 'new') {
-        const nextDraft = emptyRoutineDraft()
-        const nextHeader = headerFromDraft(nextDraft)
+        const routeLoadKey = `${agentId}:${routineRouteId}`
+        if (initializedRouteKeyRef.current === routeLoadKey) {
+          setIsLoading(false)
+          return
+        }
+        const recovered = readNewRoutineRecovery(agentId)
+        const nextDraft = recovered?.draft ?? emptyRoutineDraft()
+        const nextHeader = recovered?.header ?? headerFromDraft(nextDraft)
         currentRoutineIdRef.current = null
+        initializedRouteKeyRef.current = routeLoadKey
+        routineEditorDirtyRef.current = false
         setEditingRoutineId(null)
         setEditingRoutine(null)
         setAllRoutines([])
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
-        setProseSource(emptyProseDraftFromHeader(nextHeader))
+        setProseSource(isBlankFormDraft(nextDraft) ? emptyProseDraftFromHeader(nextHeader) : nextDraft)
         setProseDraft(null)
+        setProseLocalValidationError(null)
         setProseKey((key) => key + 1)
-        setViewMode('prose')
+        setViewMode(recovered?.viewMode ?? 'prose')
         setIsLoading(false)
         return
       }
 
       currentRoutineIdRef.current = null
+      initializedRouteKeyRef.current = `${agentId}:${routineRouteId}`
       setEditingRoutineId(routineRouteId)
       setEditingRoutine(null)
       setForm(null)
       setProseSource(null)
+      setProseLocalValidationError(null)
       setIsLoading(true)
       void Promise.all([
         routinesApi.getRoutine(agentId, routineRouteId),
@@ -610,7 +723,10 @@ function RoutineEditorScreen({
           setForm(routineToForm(response.routine))
           setProseSource(response.routine)
           setProseDraft(null)
+          setProseLocalValidationError(null)
           setProseKey((key) => key + 1)
+          setValidatedDraftSignature(null)
+          routineEditorDirtyRef.current = false
           // Prose-representable drafts open in the prose editor; advanced routines and
           // read-only (non-draft) versions open in the strict Form tab.
           const editable = response.routine.status === 'draft'
@@ -630,13 +746,6 @@ function RoutineEditorScreen({
     }
   }, [agentId, routineRouteId])
 
-  const activeDraft = (): RoutineDefinitionDraft | null => {
-    if (viewMode === 'prose') {
-      return proseDraft
-    }
-    return form ? formToRoutineDraft(form, { header: draftHeader }) : null
-  }
-
   const synchronizeView = (nextView: 'prose' | 'form') => {
     if (nextView === viewMode) return
     if (nextView === 'form' && proseDraft && proseDraft.steps.length > 0) {
@@ -648,19 +757,22 @@ function RoutineEditorScreen({
       const formDraft = formToRoutineDraft(form, { header: draftHeader })
       setProseSource(isBlankFormDraft(formDraft) ? emptyProseDraftFromHeader(draftHeader) : formDraft)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     }
     setViewMode(nextView)
   }
 
-  const saveDraft = async (): Promise<RoutineDefinition | null> => {
-    const draft = activeDraft()
+  const saveDraft = async ({ refreshEditor = true }: { refreshEditor?: boolean } = {}): Promise<RoutineDefinition | null> => {
+    const draft = activeRoutineDraft
     if (!draft) return null
-    const errorMessage = draftError(draft)
+    const errorMessage = activeRoutineDraftError ?? draftError(draft)
     if (errorMessage) {
       setError(errorMessage)
+      setValidatedDraftSignature(null)
       return null
     }
+    const draftSignature = JSON.stringify(draft)
     const saveId = beginSave()
     const wasNew = !editingRoutineId
     setIsSaving(true)
@@ -674,21 +786,30 @@ function RoutineEditorScreen({
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
       mergeLoadedRoutine(response.routine)
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setProseSource(response.routine)
-      setProseDraft(null)
-      setProseKey((key) => key + 1)
+      if (refreshEditor) {
+        setDraftHeader(headerFromDraft(response.routine))
+        setForm(routineToForm(response.routine))
+        setProseSource(response.routine)
+        setProseDraft(null)
+        setProseLocalValidationError(null)
+        setProseKey((key) => key + 1)
+      }
       setValidation(response.validation)
+      setValidatedDraftSignature(draftSignature)
       markSaved()
       if (wasNew) {
-        replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        clearNewRoutineRecovery(agentId)
+        const newDraftHref = buildPersistedHref('new')
+        if (currentBrowserUrlMatches(newDraftHref)) {
+          replaceBrowserUrl(buildPersistedHref(response.routine.id))
+        }
       }
       return response.routine
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return null
       const message = getApiErrorMessage(saveError, 'Failed to save routine draft.')
       setError(message)
+      setValidatedDraftSignature(null)
       markError(message)
       return null
     } finally {
@@ -696,22 +817,30 @@ function RoutineEditorScreen({
     }
   }
 
-  const validateDraft = async () => {
-    const routine = await saveDraft()
-    if (!routine) return
-    setIsSaving(true)
-    setError(null)
-    try {
-      const response = await routinesApi.validateRoutine(agentId, routine.id)
-      setValidation(response.validation)
-    } catch (validateError) {
-      setError(getApiErrorMessage(validateError, 'Failed to validate routine.'))
-    } finally {
-      setIsSaving(false)
-    }
-  }
+  const saveDraftRef = useRef(saveDraft)
+  useEffect(() => {
+    saveDraftRef.current = saveDraft
+  })
+
+  useEffect(() => {
+    if (isLoading || isReadOnly || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
+    const timeoutId = window.setTimeout(() => {
+      void saveDraftRef.current({ refreshEditor: false })
+    }, 1500)
+    return () => window.clearTimeout(timeoutId)
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isReadOnly, isValidationCurrent])
+
+  useEffect(() => {
+    if (!isNewRoutine || !activeRoutineDraft) return
+    writeNewRoutineRecovery(agentId, {
+      draft: activeRoutineDraft,
+      header: draftHeader,
+      viewMode,
+    })
+  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine, viewMode])
 
   const publishDraft = async () => {
+    if (!canPublishDraft) return
     const routine = await saveDraft()
     if (!routine) return
     const saveId = beginSave()
@@ -781,8 +910,10 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
       setValidation(null)
+      setValidatedDraftSignature(null)
       markSaved()
       const persistedHref = buildPersistedHref(response.routine.id)
       if (!currentBrowserUrlMatches(persistedHref)) {
@@ -818,6 +949,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
@@ -855,6 +987,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (restoreError) {
       setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
@@ -864,226 +997,342 @@ function RoutineEditorScreen({
   }
 
   const updateForm = (updater: (current: RoutineFormState) => RoutineFormState) => {
+    routineEditorDirtyRef.current = true
     setForm((current) => current ? updater(current) : current)
   }
 
-  return (
-    <div className="space-y-5 rounded-lg border border-border bg-card/95 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Button type="button" variant="ghost" className="-ml-3 mb-2 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to routines
+  const handleProseDraftChange = useCallback((draft: RoutineDefinitionDraft | null) => {
+    routineEditorDirtyRef.current = true
+    setProseDraft(draft)
+  }, [])
+
+  const handleProseHeaderChange = useCallback((update: (header: RoutineDraftHeader) => RoutineDraftHeader) => {
+    routineEditorDirtyRef.current = true
+    setDraftHeader(update)
+  }, [])
+
+  const loadAssistedDraft = useCallback(async () => {
+    const prose = draftAssistProse.trim()
+    if (!prose || isReadOnly) return
+    setIsDraftingRoutine(true)
+    setError(null)
+    try {
+      const response = await routinesApi.draftRoutineFromProcedure(agentId, { prose })
+      const nextHeader = headerFromDraft(response.draft)
+      const nextSignature = JSON.stringify(response.draft)
+      routineEditorDirtyRef.current = true
+      setDraftHeader(nextHeader)
+      setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
+      setProseSource(response.draft)
+      setProseDraft(null)
+      setProseLocalValidationError(null)
+      setProseKey((key) => key + 1)
+      setValidation(response.validation)
+      setValidatedDraftSignature(nextSignature)
+      setViewMode(routineToChipDoc(response.draft) ? 'prose' : 'form')
+      setDraftAssistDialogOpen(false)
+    } catch (draftError) {
+      setError(getApiErrorMessage(draftError, 'Failed to draft routine from procedure.'))
+    } finally {
+      setIsDraftingRoutine(false)
+    }
+  }, [agentId, draftAssistProse, editingRoutine, isReadOnly])
+
+  const openDeleteDraftDialog = useCallback(() => setDeleteDraftDialogOpen(true), [])
+  const actionHandlersRef = useRef({
+    archiveFromDraft,
+    archivePublished,
+    loadAssistedDraft,
+    openDeleteDraftDialog,
+    publishDraft,
+    restoreArchived,
+    revisePublished,
+  })
+  useEffect(() => {
+    actionHandlersRef.current = {
+      archiveFromDraft,
+      archivePublished,
+      loadAssistedDraft,
+      openDeleteDraftDialog,
+      publishDraft,
+      restoreArchived,
+      revisePublished,
+    }
+  })
+
+  const headerActions = useMemo(() => (
+    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+      {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
+      {!isReadOnly && form ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => setDraftAssistDialogOpen(true)} disabled={isSaving || isDraftingRoutine}>
+          <WandSparkles className="mr-2 h-4 w-4" />
+          Draft with AI
+        </Button>
+      ) : null}
+      {editingRoutine?.status === 'draft' && publishedSibling ? (
+        <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archiveFromDraft()} disabled={isSaving}>
+          <Archive className="mr-2 h-4 w-4" />
+          Archive
+        </Button>
+      ) : null}
+      {editingRoutine?.status === 'published' ? (
+        <>
+          <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archivePublished()} disabled={isSaving}>
+            <Archive className="mr-2 h-4 w-4" />
+            Archive
           </Button>
-          <h3 className="text-sm font-semibold text-foreground">
-            {editingRoutine ? `${isReadOnly ? 'View' : 'Edit'} ${editingRoutine.name}` : 'Create routine'}
-          </h3>
-          {editingRoutine ? (
-            <p className="text-xs text-muted-foreground">
-              {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
-              {isReadOnly ? ' (read-only)' : ''}
-            </p>
-          ) : null}
-        </div>
-        {validation?.ok ? (
-          <p className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="h-4 w-4" />
-            Validation passed
-          </p>
-        ) : null}
-      </div>
-
-      {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
-      {isLoading || !form ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Spinner className="h-4 w-4" />
-          Loading routine...
-        </div>
-      ) : (
-        <RoutineSkillCatalogProvider agentId={agentId}>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
-            <div className="space-y-1">
-              <Label htmlFor="routineName">Name</Label>
-              <Input
-                id="routineName"
-                value={draftHeader.name}
-                onChange={(event) => setDraftHeader((current) => ({ ...current, name: event.target.value }))}
-                disabled={isReadOnly}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="routinePriority">Priority</Label>
-              <Input
-                id="routinePriority"
-                type="number"
-                value={draftHeader.activation.priority}
-                onChange={(event) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, priority: event.target.value },
-                }))}
-                disabled={isReadOnly}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="routineReentryMode">Reentry</Label>
-              <Select
-                value={draftHeader.activation.reentryMode}
-                disabled={isReadOnly}
-                onValueChange={(value) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
-                }))}
-              >
-                <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REENTRY_MODE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
-              </p>
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="routineTrigger">Activation trigger</Label>
-              <Textarea
-                id="routineTrigger"
-                value={draftHeader.activation.triggerDescription}
-                onChange={(event) => setDraftHeader((current) => ({
-                  ...current,
-                  activation: { ...current.activation, triggerDescription: event.target.value },
-                }))}
-                rows={2}
-                disabled={isReadOnly}
-              />
-            </div>
-          </div>
-          <RoutineDiagnosticList diagnostics={routineDiagnostics} />
-
-          <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
-            <TabsList aria-label="Routine editor view">
-              {/* The chip editor has no read-only mode; a published/archived routine
-                  is viewed in the (disabled) Form tab rather than an editable prose surface. */}
-              <TabsTrigger value="prose" disabled={isReadOnly}>
-                <Sparkles className="h-4 w-4" />
-                Prose
-              </TabsTrigger>
-              <TabsTrigger value="form">
-                <FormInput className="h-4 w-4" />
-                Form
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-
-          {viewMode === 'prose' && proseSource ? (
-            <RoutineProseTab
-              key={proseKey}
-              source={proseSource}
-              header={draftHeader}
-              webhookDestinations={webhookDestinations}
-              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-              webhookDestinationsError={webhookDestinationsError}
-              onDraftChange={setProseDraft}
-              onHeaderChange={setDraftHeader}
-            />
-          ) : null}
-
-          {viewMode === 'form' ? (
-            <RoutineFormEditor
-              form={form}
-              diagnostics={validationDiagnostics}
-              isPublished={isReadOnly}
-              slotKeys={slotKeys}
-              webhookDestinations={webhookDestinations}
-              isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-              webhookDestinationsError={webhookDestinationsError}
-              emailSkills={emailSkills}
-              onChange={updateForm}
-            />
-          ) : null}
-
-          {versionHistory.length > 0 ? (
-            <div className="rounded-lg border border-border p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-                <History className="h-4 w-4 text-muted-foreground" />
-                Version history
-              </div>
-              <div className="space-y-2">
-                {versionHistory.map((version) => (
-                  <button
-                    key={version.id}
-                    type="button"
-                    className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
-                    onClick={() => router.push(buildPersistedHref(version.id))}
-                  >
-                    <span className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">v{version.version}</span>
-                      <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
-                      {version.id === editingRoutine?.id ? (
-                        <span className="text-xs text-muted-foreground">current view</span>
-                      ) : null}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          <div className="flex flex-wrap justify-end gap-2">
-            {editingRoutine?.status === 'draft' ? (
-              <>
-                {publishedSibling ? (
-                  <Button type="button" variant="outline" onClick={() => void archiveFromDraft()} disabled={isSaving}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive routine
-                  </Button>
-                ) : null}
-                <Button type="button" variant="ghost" onClick={() => void deleteDraft()} disabled={isSaving} aria-label={`Delete draft ${editingRoutine.name}`}>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete draft
-                </Button>
-              </>
-            ) : null}
-            {editingRoutine?.status === 'published' ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => void archivePublished()} disabled={isSaving}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </Button>
-                <Button type="button" onClick={() => void revisePublished()} disabled={isSaving}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit revision
-                </Button>
-              </>
-            ) : null}
-            {editingRoutine?.status === 'archived' ? (
-              <Button type="button" onClick={() => void restoreArchived()} disabled={isSaving}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Restore
-              </Button>
-            ) : null}
-            {!isReadOnly ? (
-              <>
-                <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}>
-                  Save draft
-                </Button>
-                <Button type="button" variant="outline" onClick={() => void validateDraft()} disabled={isSaving}>
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  Validate
-                </Button>
-                <Button type="button" onClick={() => void publishDraft()} disabled={isSaving}>
-                  <Send className="mr-2 h-4 w-4" />
-                  Publish
-                </Button>
-              </>
-            ) : null}
-          </div>
-        </RoutineSkillCatalogProvider>
-      )}
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.revisePublished()} disabled={isSaving}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Edit revision
+          </Button>
+        </>
+      ) : null}
+      {editingRoutine?.status === 'archived' ? (
+        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
+          <RotateCcw className="mr-2 h-4 w-4" />
+          Restore
+        </Button>
+      ) : null}
+      {!isReadOnly && form ? (
+        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
+          <Send className="mr-2 h-4 w-4" />
+          Publish
+        </Button>
+      ) : null}
+      {editingRoutine?.status === 'draft' ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={() => actionHandlersRef.current.openDeleteDraftDialog()}
+          disabled={isSaving}
+          aria-label={`Delete draft ${editingRoutine.name}`}
+          title="Delete draft"
+          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
+  ), [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus])
+
+  const headerBackAction = useMemo(() => (
+    <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
+      <ArrowLeft className="mr-2 h-4 w-4" />
+      Back to routines
+    </Button>
+  ), [listHref, router])
+
+  const routineHeader = useMemo(() => ({
+    actions: headerActions,
+    backAction: headerBackAction,
+    description: editingRoutine?.name ?? (isNewRoutine ? 'New routine' : 'Loading…'),
+    title: 'Routine',
+  }), [editingRoutine?.name, headerActions, headerBackAction, isNewRoutine])
+
+  useRegisterRoutineHeader(routineHeader)
+
+  return (
+    <>
+      <RoutineDraftAssistDialog
+        isOpen={draftAssistDialogOpen}
+        isDrafting={isDraftingRoutine}
+        prose={draftAssistProse}
+        onOpenChange={setDraftAssistDialogOpen}
+        onProseChange={setDraftAssistProse}
+        onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
+      />
+      <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
+        <div className="space-y-5 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {editingRoutine ? (
+              <p className="text-xs text-muted-foreground">
+                {routineStatusLabel(editingRoutine.status)} v{editingRoutine.version}
+                {isReadOnly ? ' (read-only)' : ''}
+              </p>
+            ) : null}
+          </div>
+          {error ? <p className="text-sm text-destructive" role="alert">{error}</p> : null}
+          {isLoading || !form ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Spinner className="h-4 w-4" />
+              Loading routine...
+            </div>
+          ) : (
+            <RoutineSkillCatalogProvider agentId={agentId}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+              <div className="space-y-1">
+                <Label htmlFor="routineName">Name</Label>
+                <Input
+                  id="routineName"
+                  value={draftHeader.name}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({ ...current, name: event.target.value }))
+                  }}
+                  disabled={isReadOnly}
+                />
+                {nameLocalValidationError ? <p className="text-xs text-destructive" role="status">{nameLocalValidationError}</p> : null}
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="routinePriority">Priority</Label>
+                <Input
+                  id="routinePriority"
+                  type="number"
+                  value={draftHeader.activation.priority}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, priority: event.target.value },
+                    }))
+                  }}
+                  disabled={isReadOnly}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="routineReentryMode">Reentry</Label>
+                <Select
+                  value={draftHeader.activation.reentryMode}
+                  disabled={isReadOnly}
+                  onValueChange={(value) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, reentryMode: value as RoutineReentryMode },
+                    }))
+                  }}
+                >
+                  <SelectTrigger id="routineReentryMode" aria-label="Routine reentry policy">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REENTRY_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
+                </p>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <Label htmlFor="routineTrigger">Activation trigger</Label>
+                <Textarea
+                  id="routineTrigger"
+                  value={draftHeader.activation.triggerDescription}
+                  onChange={(event) => {
+                    routineEditorDirtyRef.current = true
+                    setDraftHeader((current) => ({
+                      ...current,
+                      activation: { ...current.activation, triggerDescription: event.target.value },
+                    }))
+                  }}
+                  rows={2}
+                  disabled={isReadOnly}
+                />
+                {triggerLocalValidationError ? <p className="text-xs text-destructive" role="status">{triggerLocalValidationError}</p> : null}
+              </div>
+            </div>
+            <RoutineDiagnosticList diagnostics={routineDiagnostics} />
+
+            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
+              <TabsList aria-label="Routine editor view">
+                {/* The chip editor has no read-only mode; a published/archived routine
+                    is viewed in the (disabled) Form tab rather than an editable prose surface. */}
+                <TabsTrigger value="prose" disabled={isReadOnly}>
+                  <Sparkles className="h-4 w-4" />
+                  Prose
+                </TabsTrigger>
+                <TabsTrigger value="form">
+                  <FormInput className="h-4 w-4" />
+                  Form
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {viewMode === 'prose' && proseSource ? (
+              <RoutineProseTab
+                key={proseKey}
+                source={proseSource}
+                header={draftHeader}
+                webhookDestinations={webhookDestinations}
+                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+                webhookDestinationsError={webhookDestinationsError}
+                onDraftChange={handleProseDraftChange}
+                onHeaderChange={handleProseHeaderChange}
+                onLocalValidationError={setProseLocalValidationError}
+              />
+            ) : null}
+
+            {viewMode === 'form' ? (
+              <RoutineFormEditor
+                form={form}
+                diagnostics={validationDiagnostics}
+                isPublished={isReadOnly}
+                slotKeys={slotKeys}
+                webhookDestinations={webhookDestinations}
+                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
+                webhookDestinationsError={webhookDestinationsError}
+                emailSkills={emailSkills}
+                onChange={updateForm}
+              />
+            ) : null}
+
+            {versionHistory.length > 0 ? (
+              <div className="rounded-lg border border-border p-4">
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  Version history
+                </div>
+                <div className="space-y-2">
+                  {versionHistory.map((version) => (
+                    <button
+                      key={version.id}
+                      type="button"
+                      className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
+                      onClick={() => router.push(buildPersistedHref(version.id))}
+                    >
+                      <span className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">v{version.version}</span>
+                        <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
+                        {version.id === editingRoutine?.id ? (
+                          <span className="text-xs text-muted-foreground">current view</span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            </RoutineSkillCatalogProvider>
+          )}
+        </div>
+      </div>
+      <AlertDialog open={deleteDraftDialogOpen} onOpenChange={setDeleteDraftDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete draft?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the draft for {editingRoutine?.name ? `"${editingRoutine.name}"` : 'this routine'}. Published or archived versions in the lineage are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={isSaving}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(event) => {
+                event.preventDefault()
+                void deleteDraft()
+              }}
+            >
+              Delete draft
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   )
 }

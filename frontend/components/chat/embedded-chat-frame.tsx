@@ -4,10 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { AlertCircle } from 'lucide-react'
 
-import { PublicChatShell } from '@/components/chat/public-chat-shell'
-import { LogoSpinner } from '@/components/ui/spinner'
+import { PublicChatShell, PublicChatThreadLoadingView } from '@/components/chat/public-chat-shell'
 import {
-  formatWebsiteEmbedStartingMessage,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
   type WebsiteEmbedCopyOverrides,
@@ -69,6 +67,10 @@ const READY_MESSAGE = 'radioso:embed:ready'
 const SESSION_MESSAGE = 'radioso:embed:session'
 const IDENTITY_MESSAGE = 'radioso:embed:identity'
 const ERROR_MESSAGE = 'radioso:embed:error'
+// Sent by the launcher when it starts the session bootstrap (on open). The
+// verification timeout is armed from this point rather than from mount, so a
+// pre-mounted-but-unopened frame does not error while it waits to be opened.
+const PREPARE_MESSAGE = 'radioso:embed:preparing'
 const HANDSHAKE_TIMEOUT_MS = 30_000
 const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
 const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
@@ -178,12 +180,34 @@ export function EmbeddedChatFrame({
       }
     }
 
+    // Armed once the launcher signals it has begun bootstrapping (PREPARE), so
+    // the "could not be verified" timeout measures bootstrap latency rather than
+    // idle time a pre-mounted frame spends waiting to be opened.
+    const armHandshakeTimeout = () => {
+      if (handshakeTimeout !== null || isBootstrappedRef.current || isDisposed) {
+        return
+      }
+      handshakeTimeout = window.setTimeout(() => {
+        if (!isBootstrappedRef.current && !isDisposed) {
+          setState({
+            status: 'error',
+            message: 'This embedded chat launch could not be verified.',
+          })
+        }
+      }, HANDSHAKE_TIMEOUT_MS)
+    }
+
     const handleMessage = (event: MessageEvent) => {
       if (event.source !== window.parent) {
         return
       }
 
       if (!event.data || typeof event.data !== 'object') {
+        return
+      }
+
+      if (event.data.type === PREPARE_MESSAGE && !isDisposed) {
+        armHandshakeTimeout()
         return
       }
 
@@ -279,14 +303,8 @@ export function EmbeddedChatFrame({
       '*',
     )
 
-    handshakeTimeout = window.setTimeout(() => {
-      if (!isBootstrappedRef.current && !isDisposed) {
-        setState({
-          status: 'error',
-          message: 'This embedded chat launch could not be verified.',
-        })
-      }
-    }, HANDSHAKE_TIMEOUT_MS)
+    // The verification timeout is armed on PREPARE (see armHandshakeTimeout), not
+    // at mount, so a pre-mounted frame can wait to be opened without erroring.
 
     return () => {
       isDisposed = true
@@ -295,20 +313,29 @@ export function EmbeddedChatFrame({
     }
   }, [copy.embeddedChatLauncherRequiredMessage, resetNonce, token])
 
+  const handleRequestCollapse = () => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: 'radioso:embed:collapse' }, '*')
+    }
+  }
+
+  const handleOpenFullScreen = () => {
+    if (typeof window !== 'undefined' && window.parent !== window) {
+      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
+    }
+  }
+
   if (state.status === 'bootstrapping') {
     return (
-      <div
-        className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
-        style={{ color: theme.panelForeground }}
-      >
-        <LogoSpinner imageClassName="h-7 w-7" />
-        <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
-          {formatWebsiteEmbedStartingMessage({
-            embeddedChatStartingMessage: copy.embeddedChatStartingMessage,
-            embeddedChatTitle: state.workspaceName?.trim() || copy.embeddedChatTitle,
-          })}
-        </p>
-      </div>
+      <PublicChatThreadLoadingView
+        copy={copy}
+        theme={theme}
+        themeOverrides={themeOverrides}
+        workspaceName={state.workspaceName?.trim() || copy.embeddedChatTitle}
+        avatarUrl={avatarUrl}
+        onRequestCollapse={handleRequestCollapse}
+        onOpenFullScreen={handleOpenFullScreen}
+      />
     )
   }
 
@@ -334,18 +361,6 @@ export function EmbeddedChatFrame({
     isBootstrappedRef.current = false
     setState({ status: 'bootstrapping', workspaceName: state.workspaceName ?? null })
     setResetNonce((current) => current + 1)
-  }
-
-  const handleRequestCollapse = () => {
-    if (typeof window !== 'undefined' && window.parent !== window) {
-      window.parent.postMessage({ type: 'radioso:embed:collapse' }, '*')
-    }
-  }
-
-  const handleOpenFullScreen = () => {
-    if (typeof window !== 'undefined' && window.parent !== window) {
-      window.parent.postMessage({ type: FULLSCREEN_MESSAGE }, '*')
-    }
   }
 
   const handleOpenNewTab = () => {

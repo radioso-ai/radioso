@@ -1,7 +1,9 @@
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
+import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
+import { hasVectorMetadataFilter } from "../domain/vectorFilter.js";
 
 export interface ChunkFilter {
-  metadataFilter?: Record<string, unknown>;
+  metadataFilter?: VectorMetadataFilter;
   sourceFilter?: RetrievalSourceFilter;
 }
 
@@ -19,9 +21,6 @@ export const compilePgChunkFilter = (
 
   return clauses.join("\n");
 };
-
-export const hasNonEmptyFilter = (filter?: Record<string, unknown>): filter is Record<string, unknown> =>
-  filter !== undefined && Object.keys(filter).length > 0;
 
 const compileSourceFilter = (
   sourceFilter: RetrievalSourceFilter | undefined,
@@ -63,14 +62,16 @@ const compileSourceFilter = (
 };
 
 const compileMetadataFilter = (
-  metadataFilter: Record<string, unknown> | undefined,
+  metadataFilter: VectorMetadataFilter | undefined,
   params: unknown[],
   chunkAlias: string,
 ): string => {
-  if (!hasNonEmptyFilter(metadataFilter)) {
+  if (!hasVectorMetadataFilter(metadataFilter)) {
     return "";
   }
 
+  // The domain contract is backend-neutral metadata containment; this adapter
+  // compiles that shape to Postgres JSON containment.
   const metadataClause = `AND ${chunkAlias}.metadata @> $${params.length + 1}::jsonb`;
   params.push(JSON.stringify(metadataFilter));
   return metadataClause;

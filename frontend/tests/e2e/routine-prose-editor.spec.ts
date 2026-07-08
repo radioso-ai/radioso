@@ -18,11 +18,10 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
 
-  await page.getByRole("button", { name: "Write in prose" }).click();
-  await expect(page.getByText("Write a routine in plain language")).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   await page.getByLabel("Name", { exact: true }).fill("Process a refund request");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund or to dispute a charge");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund or to dispute a charge");
 
   // The toolbar above the editor offers formatting + chip insertion.
   await expect(page.getByRole("button", { name: "Bold" })).toBeVisible();
@@ -67,9 +66,9 @@ test("author a routine with variable and skill chips, set a type, and save", asy
 
   await page.screenshot({ path: "demo-screenshots/routine-chip-editor-demo.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   expect(created?.body?.name).toBe("Process a refund request");
   const orderSlot = (created?.body?.slots ?? []).find((slot: { key: string; type: string; required?: boolean; mutable?: boolean }) => slot.key === "order_id");
@@ -105,9 +104,9 @@ test("completion export is configured and saved from the prose composer", async 
   await page.getByRole("combobox", { name: "Webhook destination" }).click();
   await page.getByRole("option", { name: destination.name }).click();
 
-  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   expect(created?.body?.completionExport).toMatchObject({
     enabled: true,
@@ -171,7 +170,7 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -242,9 +241,9 @@ test("a skill chip binding editor persists typed input bindings", async ({ page 
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Bind refund ports");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a refund needs typed inputs");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a refund needs typed inputs");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -273,9 +272,9 @@ test("a skill chip binding editor persists typed input bindings", async ({ page 
   await page.keyboard.press("Escape");
   await expect(catalog).toBeHidden();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const createdBody = created?.body as { steps?: Array<{ toolRef: string | null; metadata?: Record<string, unknown> }> } | undefined;
   const refundStep = (createdBody?.steps ?? []).find((step) => step.toolRef === "refund");
@@ -292,7 +291,7 @@ test("the Bold toolbar button reflects its active state", async ({ page }) => {
   await installDashboardApiMocks(page, { routineUpdates: [] });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -310,7 +309,7 @@ test("the Step toolbar button toggles a heading on/off and renders it larger", a
   await installDashboardApiMocks(page, { routineUpdates: [] });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -356,9 +355,9 @@ test("a handoff chip on its own line compiles a forking routine", async ({ page 
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Refund with handoff");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -373,9 +372,9 @@ test("a handoff chip on its own line compiles a forking routine", async ({ page 
   await page.keyboard.press("Enter");
   await editor.pressSequentially("Confirm and finish.");
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const terminals = created?.body?.terminals ?? [];
   expect(terminals.some((terminal: { kind: string }) => terminal.kind === "handoff")).toBe(true);
@@ -390,9 +389,9 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Refund with outcome");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -417,9 +416,9 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await dialog.getByRole("button", { name: "Add outcome branch" }).click();
   await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="outcome"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const steps = created?.body?.steps ?? [];
   const toolStep = steps.find((step: { kind: string; stableStepId: string }) => step.kind === "tool");
@@ -436,9 +435,9 @@ test("a condition chip compiles a decided-in-code (field) branch", async ({ page
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Refund eligibility");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -466,9 +465,9 @@ test("a condition chip compiles a decided-in-code (field) branch", async ({ page
 
   await page.screenshot({ path: "demo-screenshots/routine-decided-in-code-demo.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const transitions = created?.body?.transitions ?? [];
   const fieldBranch = transitions.find((transition: { guardKind: string; toRef: string }) => transition.toRef === "handoff");
@@ -483,9 +482,9 @@ test("toggling a rule to AI drops the comparison into the line as editable fluid
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Eligibility");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer asks about eligibility");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer asks about eligibility");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -523,9 +522,9 @@ test("toggling a rule to AI drops the comparison into the line as editable fluid
   const beforeBadge = await branchLine.evaluate((element) => getComputedStyle(element, "::before").content);
   expect(beforeBadge === "none" || beforeBadge === "" || beforeBadge === "normal").toBe(true);
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const branch = (created?.body?.transitions ?? []).find(
     (transition: { guardKind: string; toRef: string }) => transition.toRef === "done" && transition.guardKind === "llm",
@@ -541,9 +540,9 @@ test("an 'older than 6 months' check compiles a relative-date field guard", asyn
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Refund window");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -575,9 +574,9 @@ test("an 'older than 6 months' check compiles a relative-date field guard", asyn
 
   await page.screenshot({ path: "demo-screenshots/routine-older-than-demo.png", fullPage: true });
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const branch = (created?.body?.transitions ?? []).find((transition: { toRef: string }) => transition.toRef === "handoff");
   expect(branch).toMatchObject({ guardKind: "field", fieldRef: "orderdate", fieldOp: "older_than", fieldValue: 6, fieldUnit: "months" });
@@ -588,7 +587,7 @@ test("the check dialog surfaces the variable's type so type-specific checks appe
   await installDashboardApiMocks(page, { routineUpdates: [] });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -613,7 +612,7 @@ test("a name can't be claimed by a second chip kind", async ({ page }) => {
   await installDashboardApiMocks(page, { routineUpdates: [] });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -638,9 +637,9 @@ test("an action chip compiles to an action step naming the action type", async (
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Escalate to a human");
-  await page.getByLabel("Trigger", { exact: true }).fill("When the visitor asks for a person");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When the visitor asks for a person");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -652,9 +651,9 @@ test("an action chip compiles to an action step naming the action type", async (
   await dialog.getByRole("button", { name: "Add action step" }).click();
   await expect(page.locator('[data-routine-chip="action"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const actionStep = (created?.body?.steps ?? []).find((step: { kind: string }) => step.kind === "action");
   expect(actionStep).toMatchObject({ kind: "action", actionType: "contact.send" });
@@ -670,9 +669,9 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Book a meeting");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a visitor wants to book a meeting");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a visitor wants to book a meeting");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -683,9 +682,9 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   await page.getByRole("option", { name: "Skill (not in catalog): book_meeting" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const toolStep = (created?.body?.steps ?? []).find((step: { kind: string }) => step.kind === "tool");
   // The skill chip compiles to a tool step dispatched through the skill port at runtime.
@@ -699,9 +698,9 @@ test("a step jump loops back to an earlier titled step with a bounded counter", 
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Verify identity");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a caller must verify their identity");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a caller must verify their identity");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -724,9 +723,9 @@ test("a step jump loops back to an earlier titled step with a bounded counter", 
   await dialog.getByRole("button", { name: "Add jump" }).click();
   await expect(page.locator('[data-routine-chip="step"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   // Each titled step carries a stable, slug-derived id.
   const stepIds = (created?.body?.steps ?? []).map((step: { stableStepId: string }) => step.stableStepId);
@@ -745,9 +744,9 @@ test("an end chip completes the routine on a decided-in-code branch", async ({ p
   await installDashboardApiMocks(page, { routineUpdates });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "Write in prose" }).click();
+  await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Refund check");
-  await page.getByLabel("Trigger", { exact: true }).fill("When a customer wants a refund");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
 
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
@@ -770,9 +769,9 @@ test("an end chip completes the routine on a decided-in-code branch", async ({ p
   await dialog.getByRole("button", { name: "Add check" }).click();
   await expect(page.locator('[data-routine-chip="condition"]')).toBeVisible();
 
-  await page.getByRole("button", { name: "Save routine" }).click();
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length).toBeGreaterThan(0);
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
   const created = routineUpdates.find((update) => update.method === "POST");
   const completeId = (created?.body?.terminals ?? []).find((terminal: { kind: string }) => terminal.kind === "complete")?.stableStepId;
   const endBranch = (created?.body?.transitions ?? []).find((transition: { guardKind: string }) => transition.guardKind === "field");

@@ -106,6 +106,7 @@ export interface AgentContextVariables {
 export interface AgentDirectives {
   action: string;
   agent_id: string;
+  binding: Json | null;
   condition_description: string | null;
   condition_kind: string;
   created_at: Generated<Timestamp>;

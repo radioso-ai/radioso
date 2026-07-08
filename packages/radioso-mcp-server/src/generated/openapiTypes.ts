@@ -3609,6 +3609,11 @@ export interface components {
             kind: "contextual";
             description: string;
         };
+        AuthoredDirectiveBinding: {
+            /** @enum {string} */
+            kind: "skill";
+            skillName: string;
+        };
         AuthoredDirectiveCreateRequest: {
             name: string;
             condition: components["schemas"]["AuthoredDirectiveCondition"];
@@ -3619,6 +3624,7 @@ export interface components {
             excludes?: string[];
             tags?: string[];
             description?: string | null;
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3633,6 +3639,7 @@ export interface components {
             excludes?: string[];
             tags?: string[];
             description?: string | null;
+            binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3673,6 +3680,7 @@ export interface components {
             routes: string[];
             tags: string[];
             description: string | null;
+            binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
             metadata: {
                 [key: string]: unknown;
             };

@@ -54,6 +54,7 @@ activation:
 slots:
 - Candidate variables the routine must collect or reference.
 - Treat variable hints as candidate slot keys from @identifier markers in the operator procedure. Declare and reference them when the procedure says to collect, record, store, summarize, or otherwise use that value.
+- If an @identifier or named capability matches an entry in the permitted action catalog, treat it as that action/tool skill instead of a slot.
 - Use stableSlotId equal to the key.
 - key must match ^[A-Za-z_][A-Za-z0-9_]*$.
 - type must be one of "text", "number", "boolean", "email", or "date"; use "text" when not clear.
@@ -68,7 +69,7 @@ steps:
 - instruction is the human-facing instruction for that step. Use {{slot.key}} when referring to variables.
 - kind is "chat" unless the step uses a permitted action.
 - For a permitted action with kind "action", set kind to "action", actionType to the catalog type, and toolRef to null.
-- For a permitted action with kind "tool", set kind to "tool", toolRef to the catalog type, and actionType to null.
+- For a permitted action with kind "tool", set kind to "tool", toolRef to the catalog type, and actionType to null. This is how routine skills are authored.
 - Propose actions ONLY from the permitted action catalog. If no catalog action matches, keep the step as "chat" and describe the manual instruction.
 - ordinal is zero-based document order.
 - metadata must be an object.

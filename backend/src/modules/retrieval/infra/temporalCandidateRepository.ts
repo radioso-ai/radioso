@@ -7,7 +7,7 @@ import type {
   TemporalCandidateRetrievalInput,
   TemporalCandidateRetrievalPort,
 } from "../domain/temporal/temporalCandidateRetrieval.js";
-import { hasNonEmptyFilter } from "./pgChunkFilter.js";
+import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
 
 type ChunkDocumentJoin = DB & { c: DB["chunks"]; d: DB["documents"] };
 
@@ -48,8 +48,9 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
     if (sourceCondition) {
       query = query.where(sourceCondition);
     }
-    if (hasNonEmptyFilter(input.metadataFilter)) {
-      const metadataJson = JSON.stringify(input.metadataFilter);
+    const metadataFilter = normalizeVectorMetadataFilter(input.metadataFilter);
+    if (metadataFilter) {
+      const metadataJson = JSON.stringify(metadataFilter);
       query = query.where(sql<boolean>`c.metadata @> ${metadataJson}::jsonb`);
     }
 

@@ -72,6 +72,31 @@ describe("openapi contract", () => {
     expect(schema?.properties?.diagnostics?.items?.properties?.code?.enum).toEqual([...routineValidationCodes]);
   });
 
+  it("advertises portable routine markdown authoring endpoints", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+
+    expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.get).toMatchObject({
+      operationId: "getAgentRoutinePortableDocument",
+      security: [{ bearerAuth: [] }],
+    });
+    expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.put).toMatchObject({
+      operationId: "updateAgentRoutinePortableDocument",
+      responses: expect.objectContaining({ "400": expect.any(Object), "422": expect.any(Object) }),
+    });
+    expect(paths["/api/v1/agents/{agentId}/routines/portable"]?.post).toMatchObject({
+      operationId: "createAgentRoutinePortableDocument",
+      responses: expect.objectContaining({ "201": expect.any(Object), "400": expect.any(Object), "422": expect.any(Object) }),
+    });
+    expect(paths["/api/v1/routines/portable/canonicalize"]?.post).toMatchObject({
+      operationId: "canonicalizeRoutinePortableDocument",
+      security: [{ bearerAuth: [] }],
+      responses: expect.objectContaining({ "200": expect.any(Object), "400": expect.any(Object) }),
+    });
+    expect(document.components?.schemas).toHaveProperty("PortableRoutineDocumentEnvelope");
+    expect(document.components?.schemas).toHaveProperty("PortableRoutineParseDiagnosticsResponse");
+  });
+
   it("advertises the account usage trends endpoint as a session-authenticated account report", () => {
     const document = createOpenApiDocument();
     const operation = document.paths?.["/api/v1/account/usage-trends"]?.get;

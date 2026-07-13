@@ -102,6 +102,9 @@ importers:
       '@radioso/routine-definition':
         specifier: workspace:*
         version: link:../packages/routine-definition
+      '@radioso/routine-markdown':
+        specifier: workspace:*
+        version: link:../packages/routine-markdown
       '@radioso/skill-contract':
         specifier: workspace:*
         version: link:../packages/skill-contract

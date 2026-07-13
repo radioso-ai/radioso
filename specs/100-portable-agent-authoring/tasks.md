@@ -58,26 +58,26 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase C — backend portable API (TDD)
 
-- [ ] C1 (RED). `backend/tests/unit/routines/portableDocument.test.ts`:
+- [x] C1 (RED). `backend/tests/unit/routines/portableDocument.test.ts`:
       definition→markdown projection (canonical, version emitted);
       markdown→draft-input parse reusing package; grammar-error mapping to
       400-shaped diagnostics; SC-005 guard (module has no model-gateway import —
       assert via dependency shape, not grep).
-- [ ] C2 (RED). Route tests (Supertest, existing agentRoutes test patterns):
+- [x] C2 (RED). Route tests (Supertest, existing agentRoutes test patterns):
       GET portable (canonical envelope), PUT portable (update → canonical
       response, ids stable), POST portable create (201, ids injected), POST
       canonicalize (no persistence — assert repository untouched), 400
       diagnostics, 422 validator pass-through, authz parity with structured
       routine endpoints.
-- [ ] C3 (GREEN). Implement `backend/src/modules/routines/portableDocument.ts`
+- [x] C3 (GREEN). Implement `backend/src/modules/routines/portableDocument.ts`
       (pure mapper) + thin service entry points that reuse the existing
       structured save/validate path; handlers in `agentRoutes.ts` per existing
       handler-per-operation style; canonicalize route placement per research.md.
-- [ ] C4. Observability (FR-009): structured log + counter on portable
+- [x] C4. Observability (FR-009): structured log + counter on portable
       create/update/canonicalize failures (code only, never content); audit
       parity with structured routine writes if those emit audit events (match,
       don't invent).
-- [ ] C5. OpenAPI: register endpoints + envelope schemas in
+- [x] C5. OpenAPI: register endpoints + envelope schemas in
       `backend/src/app/http/openapi/document.ts`; `pnpm run generate:openapi`;
       update contract tests; `typescript-sdk` `pnpm run sync` (generated types
       only — no client wrapper methods, that is US3).

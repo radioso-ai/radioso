@@ -9,7 +9,7 @@ import {
   type ProseParagraph,
 } from "@radioso/routine-markdown";
 
-import type { RoutineDefinition, RoutineDefinitionDraftInput } from "./domain.js";
+import type { RoutineDefinition, RoutineDefinitionDraftAuthoringInput } from "./domain.js";
 
 export interface PortableRoutineDocumentEnvelope {
   grammarVersion: number;
@@ -17,7 +17,8 @@ export interface PortableRoutineDocumentEnvelope {
 }
 
 export type PortableRoutineDocumentParseResult =
-  | { ok: true; draft: RoutineDefinitionDraftInput }
+  // Pre-parse authoring shape: the service Zod-parses (applying defaults) on save.
+  | { ok: true; draft: RoutineDefinitionDraftAuthoringInput }
   | { ok: false; diagnostics: ParseDiagnostic[] };
 
 export type PortableRoutineDocumentCanonicalizeResult =

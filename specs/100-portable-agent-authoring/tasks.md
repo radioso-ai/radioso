@@ -81,9 +81,14 @@ test tasks precede implementation tasks and must fail first.
       `backend/src/app/http/openapi/document.ts`; `pnpm run generate:openapi`;
       update contract tests; `typescript-sdk` `pnpm run sync` (generated types
       only — no client wrapper methods, that is US3).
-- [ ] C6. Verify: backend `tsc --noEmit`; targeted vitest (new units + routes +
+- [x] C6. Verify: backend `tsc --noEmit`; targeted vitest (new units + routes +
       contract bucket); confirm generated openapi.yaml/json diff contains only
-      the new paths/schemas.
+      the new paths/schemas. (Verified by orchestrator on real env: backend tsc
+      clean; portable unit 5/5, portable routes+openapi contract 15/15; full
+      routines+contract regression 333/333 across 50 files; openapi/SDK diffs
+      additive-only. Orchestrator also retyped service draft-input ports to
+      RoutineDefinitionDraftAuthoringInput — the mapper emits pre-parse input,
+      the service Zod-parses; repository port keeps the parsed type.)
 
 ## Phase D — frontend swap + chip parity
 

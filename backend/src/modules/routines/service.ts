@@ -11,6 +11,7 @@ import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
+  type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
 import { compileRoutineDefinition } from "./compiler.js";
 import {
@@ -173,7 +174,7 @@ export class RoutineDefinitionService {
   async createDraft(
     workspaceId: string,
     agentId: string,
-    input: RoutineDefinitionDraftInput,
+    input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
@@ -188,7 +189,7 @@ export class RoutineDefinitionService {
     workspaceId: string,
     agentId: string,
     id: string,
-    input: RoutineDefinitionDraftInput,
+    input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const existing = await this.requireRoutine(agentId, id);
@@ -214,7 +215,7 @@ export class RoutineDefinitionService {
   async validate(
     workspaceId: string,
     agentId: string,
-    target: { id: string } | { input: RoutineDefinitionDraftInput },
+    target: { id: string } | { input: RoutineDefinitionDraftAuthoringInput },
   ): Promise<RoutineValidationResult> {
     await this.requireAgent(workspaceId, agentId);
     if ("id" in target) {
@@ -355,7 +356,7 @@ export class RoutineDefinitionService {
     }
   }
 
-  private validateInput(input: RoutineDefinitionDraftInput): RoutineDefinitionDraftInput {
+  private validateInput(input: RoutineDefinitionDraftAuthoringInput): RoutineDefinitionDraftInput {
     const parsed = routineDefinitionDraftInputSchema.safeParse(input);
     if (!parsed.success) {
       throw badRequest("Invalid routine definition input", parsed.error.flatten());

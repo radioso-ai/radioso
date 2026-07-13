@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createDefaultDocumentEnrichmentStrategyRegistry } from "../../src/modules/documents/domain/enrichment/enrichmentStrategies.js";
-import { DocumentEnrichmentService } from "../../src/modules/documents/services/documentEnrichmentService.js";
+import {
+  DocumentEnrichmentService,
+  ModelDocumentEnrichmentGateway,
+} from "../../src/modules/documents/services/documentEnrichmentService.js";
+import type { ModelInferencePipeline } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 
 describe("DocumentEnrichmentService", () => {
   it("makes exactly one structured model call and returns metadata patches", async () => {
@@ -36,6 +40,7 @@ describe("DocumentEnrichmentService", () => {
       document: {
         id: "doc-1",
         workspaceId: "workspace-1",
+        revision: 7,
         title: "Summer workshop",
         markdownContent: "Summer workshop\n\nDates: July 17-19, 2026.",
         metadata: {},
@@ -54,6 +59,10 @@ describe("DocumentEnrichmentService", () => {
     });
 
     expect(generate).toHaveBeenCalledOnce();
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      documentId: "doc-1",
+      documentRevision: 7,
+    }));
     expect(result.status).toBe("applied");
     expect(result.provenance).toMatchObject({ shape: "event", status: "applied", model: "gpt-5.2" });
     expect(result.documentMetadata).not.toHaveProperty("enrichment");
@@ -88,6 +97,7 @@ describe("DocumentEnrichmentService", () => {
       document: {
         id: "doc-1",
         workspaceId: "workspace-1",
+        revision: 2,
         title: "Bad",
         markdownContent: "Bad",
         metadata: {},
@@ -145,6 +155,7 @@ describe("DocumentEnrichmentService", () => {
       document: {
         id: "doc-1",
         workspaceId: "workspace-1",
+        revision: 3,
         title: "Corso",
         markdownContent: "Corso residenziale dal 03/07/2026 al 05/07/2026.",
         metadata: {},
@@ -159,5 +170,31 @@ describe("DocumentEnrichmentService", () => {
     expect(result.status).toBe("applied");
     expect(result.factCount).toBe(1);
     expect(result.chunks[0]?.metadata).toMatchObject({ dateFrom: "2026-07-03" });
+  });
+
+  it("scopes model usage idempotency to the document revision", async () => {
+    const complete = vi.fn().mockResolvedValue({
+      text: JSON.stringify({ shape: "generic", confidence: 1, facts: [] }),
+    });
+    const gateway = new ModelDocumentEnrichmentGateway({
+      metadata: { provider: "openai", model: "gpt-5.2" },
+      complete,
+      stream: vi.fn(),
+    } as unknown as ModelInferencePipeline);
+
+    await gateway.generate({
+      workspaceId: "workspace-1",
+      documentId: "doc-1",
+      documentRevision: 11,
+      prompt: "Extract metadata",
+      documentRepresentation: "Title: Example\n\nBody",
+    });
+
+    expect(complete).toHaveBeenCalledWith(expect.objectContaining({
+      operation: expect.objectContaining({
+        requestId: "doc-1",
+        attemptKey: "document-enrichment:doc-1:11",
+      }),
+    }));
   });
 });

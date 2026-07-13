@@ -455,6 +455,7 @@ export class DocumentProcessingService {
             document: {
               id: document.id,
               workspaceId: job.workspaceId,
+              revision: job.documentRevision,
               title: document.title,
               markdownContent: document.markdownContent,
               metadata: baseDocumentMetadata,

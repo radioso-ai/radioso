@@ -20,6 +20,7 @@ export interface DocumentEnrichmentGateway {
   generate(input: {
     workspaceId: string;
     documentId: string;
+    documentRevision: number;
     prompt: string;
     documentRepresentation: string;
   }): Promise<{ model: string; output: unknown }>;
@@ -29,6 +30,7 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
   document: {
     id: string;
     workspaceId: string;
+    revision: number;
     title: string;
     markdownContent: string;
     metadata: Record<string, unknown>;
@@ -64,6 +66,7 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
   async generate(input: {
     workspaceId: string;
     documentId: string;
+    documentRevision: number;
     prompt: string;
     documentRepresentation: string;
   }): Promise<{ model: string; output: unknown }> {
@@ -78,7 +81,7 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
         requestId: input.documentId,
         surface: "documents",
         operation: "document_enrichment",
-        attemptKey: `document-enrichment:${input.documentId}`,
+        attemptKey: `document-enrichment:${input.documentId}:${input.documentRevision}`,
       },
     });
 
@@ -113,6 +116,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       const gatewayResult = await this.deps.gateway.generate({
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
+        documentRevision: input.document.revision,
         prompt: this.prompt,
         documentRepresentation: representation.text,
       });

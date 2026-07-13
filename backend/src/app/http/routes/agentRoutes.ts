@@ -512,6 +512,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         const existing = await dependencies.routineDefinitionService.get(workspaceId, parsed.agentId, parsed.routineId);
         const portable = parsePortableRoutineDocument(req.body as PortableRoutineDocumentEnvelope, {
           existingGateRef: existing.activation.gateRef,
+          existingCompletionExport: existing.completionExport ?? null,
         });
         if (!portable.ok) {
           recordPortableRoutineFailure(dependencies, "update", portable.diagnostics);

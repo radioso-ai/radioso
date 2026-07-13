@@ -9,7 +9,7 @@ import {
   type ProseParagraph,
 } from "@radioso/routine-markdown";
 
-import type { RoutineDefinition, RoutineDefinitionDraftAuthoringInput } from "./domain.js";
+import type { RoutineCompletionExport, RoutineDefinition, RoutineDefinitionDraftAuthoringInput } from "./domain.js";
 
 export interface PortableRoutineDocumentEnvelope {
   grammarVersion: number;
@@ -88,6 +88,7 @@ export const routineToPortableDocument = (routine: RoutineDefinition): PortableR
       trigger: routine.activation.triggerDescription,
       reentryMode: routine.activation.reentryMode,
       priority: routine.activation.priority,
+      completionExport: routine.completionExport,
       variables: doc.variables,
       paragraphs: doc.paragraphs,
     }),
@@ -96,7 +97,7 @@ export const routineToPortableDocument = (routine: RoutineDefinition): PortableR
 
 export const parsePortableRoutineDocument = (
   envelope: PortableRoutineDocumentEnvelope,
-  options: { existingGateRef?: string | null } = {},
+  options: { existingGateRef?: string | null; existingCompletionExport?: RoutineCompletionExport | null } = {},
 ): PortableRoutineDocumentParseResult => {
   if (envelope.grammarVersion !== GRAMMAR_VERSION) {
     return { ok: false, diagnostics: [unsupportedEnvelopeVersion(envelope.grammarVersion)] };
@@ -114,6 +115,7 @@ export const parsePortableRoutineDocument = (
     reentryMode: parsed.doc.reentryMode,
     variables: parsed.doc.variables,
     blocks: bodyBlocksFromParagraphs(parsed.doc.paragraphs),
+    completionExport: parsed.doc.completionExport ?? options.existingCompletionExport ?? null,
   });
 
   return {

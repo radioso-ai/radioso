@@ -25,6 +25,7 @@ name: Refund check
 trigger: customer asks for a refund
 reentry: once_per_conversation
 priority: 20
+export: complete,handoff -> 55555555-5555-4555-8555-555555555555
 vars: order_id:text, amount:number:optional
 ---
 Ask for @order_id.
@@ -50,8 +51,14 @@ The frontmatter keys are:
 - `reentry` - one of `once_per_conversation`, `always`, or `semantic`.
   Omitted means `once_per_conversation`.
 - `priority` - integer activation priority. Omitted means `0`.
+- `export` - completion export configuration. Omitted means no markdown-level
+  completion export. The syntax is
+  `<triggerKinds> -> <destinationRef>`, where `triggerKinds` is `complete`,
+  `handoff`, or both separated by commas.
 
 Valid variable types are `text`, `number`, `boolean`, `email`, and `date`.
+Unknown frontmatter keys are rejected. This reserves key names for future
+grammar versions and prevents forward-compatibility drift.
 
 Canonical serialization keeps frontmatter minimal. It emits `vars` only for
 referenced variables whose declaration cannot be recovered from a bare token:
@@ -122,6 +129,14 @@ the `guardText` that the runtime asks the model to judge.
 
 Targets are written after `->`.
 
+```md
+-> end
+-> end:completed ("All set.")
+-> handoff
+-> step:manual_review
+-> step:lookup (max 3)
+```
+
 - `-> end` completes the routine at the default completion terminal.
 - `-> end:name ("Message")` completes at a named completion terminal.
 - `-> handoff` ends the routine by handing off to a person.
@@ -152,26 +167,87 @@ escaped.
 
 ## Completion Export
 
-Routine completion export is part of the routine definition, but it is not encoded
-as a markdown token in grammar v1. Hosts that edit a routine through the chip
-document carry completion export alongside the body. File-based portable-routine
-API users should treat completion export as structured routine configuration,
-not as part of the markdown body, until a later grammar version adds a token.
+Routine completion export is encoded in frontmatter with `export`.
+
+```md
+---
+grammar: 1
+name: Export results
+trigger: when the routine finishes
+export: complete,handoff -> 55555555-5555-4555-8555-555555555555
+---
+Finish the request.
+```
+
+The trigger list controls which terminal kinds emit an export. Valid trigger
+kinds are `complete` and `handoff`. `destinationRef` is the raw
+workspace-scoped destination UUID in grammar v1.
+
+The serializer emits `export` only when `completionExport.enabled` is true.
+When an API caller updates an existing routine through `PUT .../portable` and
+the document omits `export`, the API preserves the existing structured
+`completionExport` value. When the document includes `export`, that value
+replaces the existing structured value.
 
 ## Canonical Form
 
-Canonicalization parses the document and serializes it again. It normalizes:
+Canonicalization parses the document and serializes it again. A conforming
+serializer writes this exact order:
 
-- frontmatter order and the emitted `grammar: 1` key
-- default elision for `reentry`, `priority`, and simple text variables
-- variable declarations to `key:type[:optional][:mutable]`
-- skill binding suffix order: `in`, then `out`, then non-default `mode`
-- targets as `end`, `handoff`, or `step:<id>`
-- quoted action ids, approval labels, and approval descriptions
+1. Opening fence `---`
+2. `grammar: 1`
+3. `name: <name>`
+4. `trigger: <trigger>`
+5. `reentry: <mode>`, only when the mode is not `once_per_conversation`
+6. `priority: <integer>`, only when the value is not `0`
+7. `export: <triggerKinds> -> <destinationRef>`, only when completion export is
+   enabled
+8. `vars: <declarations>`, only when declarations are needed
+9. Closing fence `---`
+10. One routine paragraph per line
+
+Canonical output uses `\n` line endings and no blank line between frontmatter
+and the body. It does not add a trailing newline.
+
+Canonicalization also normalizes these details:
+
+- variable declarations use `key:type[:optional][:mutable]`
+- simple required `text` variables are elided from `vars`
+- skill binding suffixes are ordered as `in`, then `out`, then non-default
+  `mode`
+- branch targets are written as `end`, `handoff`, or `step:<id>`
+- quoted action ids, approval labels, approval descriptions, and named
+  completion messages escape quotes and backslashes
 
 Canonicalization does not run semantic validation. A document can be grammatically
 valid and still fail routine validation because of an unreachable step, missing
 terminal, dangling jump, or invalid routine shape.
+
+## Error Catalog
+
+All parse diagnostics include `line`, `code`, and `message`.
+
+- `unsupported_grammar_version`
+  - Trigger: `grammar` is present and is not integer `1`.
+  - Message: `Unsupported routine grammar version: <version>`
+- `invalid_reentry`
+  - Trigger: `reentry` is not `once_per_conversation`, `always`, or `semantic`.
+  - Message: `Unsupported routine reentry mode: <value>`
+- `invalid_priority`
+  - Trigger: `priority` is present and is not an integer.
+  - Message: `Routine priority must be an integer: <value>`
+- `unknown_frontmatter_key`
+  - Trigger: a frontmatter key is not one of the grammar v1 keys.
+  - Message: `Unknown routine frontmatter key: <key>`
+- `unknown_bracket_token`
+  - Trigger: a bracket token in a routine body is not a recognized grammar v1
+    token.
+  - Message: `Unknown routine bracket token: <token>`
+- `invalid_export`
+  - Trigger: `export` does not match
+    `<triggerKinds> -> <destinationRef>`, uses a trigger kind other than
+    `complete` or `handoff`, or omits the destination.
+  - Message: `Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff`
 
 ## Versioning
 

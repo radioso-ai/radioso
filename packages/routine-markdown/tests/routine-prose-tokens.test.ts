@@ -133,6 +133,36 @@ describe('routine prose token grammar', () => {
     })
   })
 
+  it('rejects unknown frontmatter keys in routine documents with a typed diagnostic', () => {
+    const parsed = parse('---\ngrammar: 1\nname: Greeter\ntrigger: hi\nowner: support\n---\nAsk @email.', { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 5,
+        code: 'unknown_frontmatter_key',
+        message: 'Unknown routine frontmatter key: owner',
+      }],
+    })
+  })
+
+  it('rejects unknown bracket tokens inside routine documents with a typed diagnostic', () => {
+    const parsed = parse('---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\n[foo bar] -> end', { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 6,
+        code: 'unknown_bracket_token',
+        message: 'Unknown routine bracket token: [foo bar]',
+      }],
+    })
+  })
+
+  it('does not classify pasted non-routine prose as a routine only because of unknown frontmatter', () => {
+    expect(looksLikeRoutineProse('---\nowner: support\n---\nordinary note')).toBe(false)
+  })
+
   it('passes activation frontmatter into draftFromChipDoc authoring output', () => {
     const draft = draftFromChipDoc({
       name: 'Priority',
@@ -148,6 +178,54 @@ describe('routine prose token grammar', () => {
       gateRef: null,
       reentryMode: 'semantic',
       priority: 5,
+    })
+  })
+
+  it('emits and parses completion export frontmatter only when enabled', () => {
+    const text = serializeProseDoc({
+      name: 'Export',
+      trigger: 'when export matters',
+      variables: [],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Finish.' }] }],
+      completionExport: {
+        enabled: true,
+        triggerKinds: ['complete', 'handoff'],
+        destinationRef: '55555555-5555-4555-8555-555555555555',
+      },
+    })
+
+    expect(text.split('\n').slice(0, 5)).toEqual([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Export',
+      'trigger: when export matters',
+      'export: complete,handoff -> 55555555-5555-4555-8555-555555555555',
+    ])
+
+    const parsed = parse(text, { resolveSkill: () => false })
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      doc: {
+        completionExport: {
+          enabled: true,
+          triggerKinds: ['complete', 'handoff'],
+          destinationRef: '55555555-5555-4555-8555-555555555555',
+        },
+      },
+    })
+  })
+
+  it('rejects invalid completion export frontmatter with typed diagnostics', () => {
+    const parsed = parse('---\ngrammar: 1\nname: Export\ntrigger: hi\nexport: complete,email -> \n---\nFinish.', { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 5,
+        code: 'invalid_export',
+        message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
+      }],
     })
   })
 

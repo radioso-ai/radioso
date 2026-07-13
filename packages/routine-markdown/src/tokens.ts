@@ -18,6 +18,7 @@ import type {
   RoutineInputBinding,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
+  RoutineCompletionExport,
   RoutineSlotType,
   RoutineStepMode,
 } from './types.js'
@@ -31,6 +32,7 @@ export type ParsedProseDoc = {
   trigger: string | null
   reentryMode: RoutineReentryMode
   priority: number
+  completionExport?: RoutineCompletionExport
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
   // True only when the text opened with our fenced frontmatter carrying a recognized
@@ -57,6 +59,8 @@ export type CanonicalizeResult =
   | ParseFailure
 
 export const GRAMMAR_VERSION = 1
+const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export'])
+const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
 // ChipNode project onto this, so copy (node) and serialize (segment) share one encoder.
@@ -266,6 +270,7 @@ export const serializeProseDoc = (input: {
   trigger: string
   reentryMode?: RoutineReentryMode
   priority?: number
+  completionExport?: RoutineCompletionExport | null
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
 }): string => {
@@ -283,6 +288,9 @@ export const serializeProseDoc = (input: {
   }
   if (input.priority != null && input.priority !== 0) {
     front.push(`priority: ${input.priority}`)
+  }
+  if (input.completionExport?.enabled) {
+    front.push(`export: ${input.completionExport.triggerKinds.join(',')} -> ${input.completionExport.destinationRef}`)
   }
   if (declaredVars.length > 0) {
     // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
@@ -322,6 +330,18 @@ const parseBinding = (raw: string): RoutineInputBinding => {
 
 const splitList = (raw: string): string[] =>
   raw.split(',').map((part) => part.trim()).filter((part) => part !== '')
+
+const parseExport = (value: string): RoutineCompletionExport | null => {
+  const match = /^([A-Za-z_,\s]+)\s*->\s*(\S+)$/.exec(value.trim())
+  if (!match) return null
+  const triggerKinds = splitList(match[1]!)
+  if (triggerKinds.length === 0 || triggerKinds.some((kind) => !EXPORT_TRIGGER_KINDS.has(kind))) return null
+  return {
+    enabled: true,
+    triggerKinds: triggerKinds as RoutineCompletionExport['triggerKinds'],
+    destinationRef: match[2]!,
+  }
+}
 
 // Parse a `[if ref op value unit]` condition body (the text already stripped of brackets).
 const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' }> | null => {
@@ -603,6 +623,7 @@ export const parseProseDoc = (
   let trigger: string | null = null
   let reentryMode: RoutineReentryMode = 'once_per_conversation'
   let priority = 0
+  let completionExport: RoutineCompletionExport | undefined
   let hadFrontmatter = false
   let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
@@ -634,6 +655,10 @@ export const parseProseDoc = (
             priority = parsed
             hadFrontmatter = true
           }
+        }
+        else if (key === 'export') {
+          completionExport = parseExport(value) ?? undefined
+          hadFrontmatter = true
         }
         else if (key === 'vars') {
           hadFrontmatter = true
@@ -686,7 +711,7 @@ export const parseProseDoc = (
   }))
 
   void grammarVersion
-  return { name, trigger, reentryMode, priority, variables, paragraphs, hadFrontmatter }
+  return { name, trigger, reentryMode, priority, ...(completionExport ? { completionExport } : {}), variables, paragraphs, hadFrontmatter }
 }
 
 const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnostic => ({
@@ -707,9 +732,62 @@ const invalidPriorityDiagnostic = (value: string, line: number): ParseDiagnostic
   message: `Routine priority must be an integer: ${value}`,
 })
 
-const readFrontmatterDiagnostics = (text: string): { version: number; diagnostics: ParseDiagnostic[] } => {
+const unknownFrontmatterKeyDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'unknown_frontmatter_key',
+  message: `Unknown routine frontmatter key: ${key}`,
+})
+
+const invalidExportDiagnostic = (line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_export',
+  message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
+})
+
+const unknownBracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'unknown_bracket_token',
+  message: `Unknown routine bracket token: ${token}`,
+})
+
+const bracketTokenIsKnown = (body: string): boolean => {
+  const trimmed = body.trim()
+  return trimmed.startsWith('if ')
+    || trimmed.startsWith('outcome ')
+    || trimmed.startsWith('filled ')
+    || trimmed.startsWith('action ')
+    || trimmed.startsWith('decision ')
+    || trimmed.startsWith('approval ')
+}
+
+const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  for (let lineIndex = bodyStart; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!
+    let cursor = 0
+    while (cursor < line.length) {
+      const open = line.indexOf('[', cursor)
+      if (open === -1) break
+      const previous = open > 0 ? line[open - 1] : ''
+      if (previous && /[A-Za-z0-9_.-]/.test(previous)) {
+        cursor = open + 1
+        continue
+      }
+      const close = findBracketClose(line.slice(open))
+      if (close === -1) break
+      const token = line.slice(open, open + close + 1)
+      if (!bracketTokenIsKnown(token.slice(1, -1))) {
+        diagnostics.push(unknownBracketTokenDiagnostic(token, lineIndex + 1))
+      }
+      cursor = open + close + 1
+    }
+  }
+  return diagnostics
+}
+
+const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart: number; diagnostics: ParseDiagnostic[] } => {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
-  if (lines[0]?.trim() !== FENCE) return { version: GRAMMAR_VERSION, diagnostics: [] }
+  if (lines[0]?.trim() !== FENCE) return { version: GRAMMAR_VERSION, bodyStart: 0, diagnostics: [] }
 
   let version = GRAMMAR_VERSION
   const diagnostics: ParseDiagnostic[] = []
@@ -720,7 +798,9 @@ const readFrontmatterDiagnostics = (text: string): { version: number; diagnostic
     if (sep !== -1) {
       const key = line.slice(0, sep).trim()
       const value = line.slice(sep + 1).trim()
-      if (key === 'grammar') {
+      if (!FRONTMATTER_KEYS.has(key)) {
+        diagnostics.push(unknownFrontmatterKeyDiagnostic(key, cursor + 1))
+      } else if (key === 'grammar') {
         const parsed = Number(value)
         version = Number.isInteger(parsed) ? parsed : Number.NaN
         if (version !== GRAMMAR_VERSION) diagnostics.push(grammarVersionDiagnostic(version, cursor + 1))
@@ -731,11 +811,15 @@ const readFrontmatterDiagnostics = (text: string): { version: number; diagnostic
       } else if (key === 'priority') {
         const parsed = Number(value)
         if (!Number.isInteger(parsed)) diagnostics.push(invalidPriorityDiagnostic(value, cursor + 1))
+      } else if (key === 'export') {
+        if (!parseExport(value)) diagnostics.push(invalidExportDiagnostic(cursor + 1))
       }
     }
     cursor += 1
   }
-  return { version, diagnostics }
+  const bodyStart = cursor < lines.length ? cursor + 1 : cursor
+  diagnostics.push(...readBodyBracketDiagnostics(lines, bodyStart))
+  return { version, bodyStart, diagnostics }
 }
 
 export const parse = (
@@ -767,6 +851,7 @@ export const canonicalize = (
       trigger: parsed.doc.trigger ?? '',
       reentryMode: parsed.doc.reentryMode,
       priority: parsed.doc.priority,
+      completionExport: parsed.doc.completionExport,
       variables: parsed.doc.variables,
       paragraphs: parsed.doc.paragraphs,
     }),

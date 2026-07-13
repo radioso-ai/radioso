@@ -45,6 +45,11 @@ POST /api/v1/routines/portable/canonicalize
 `PUT` updates an existing draft routine from portable markdown. It reuses the
 structured routine update path. It is only for draft routines.
 
+For completion export, `PUT` uses preserve-on-omit semantics. If the incoming
+markdown has no `export` frontmatter key, the existing routine's structured
+`completionExport` value is preserved. If the incoming markdown includes
+`export`, the parsed value replaces the existing one.
+
 `POST /agents/{agentId}/routines/portable` creates a draft routine from portable
 markdown and returns:
 
@@ -102,12 +107,11 @@ structured routine endpoints.
 ## Structured Fields Outside Markdown
 
 Portable markdown v1 covers the routine body, activation name, trigger, reentry,
-priority, slots, steps, transitions, terminals expressed in the body, skill
-bindings, actions, guards, jumps, and approval/decision gates.
+priority, completion export, slots, steps, transitions, terminals expressed in
+the body, skill bindings, actions, guards, jumps, and approval/decision gates.
 
-Some host-carried fields are not markdown tokens in v1. Completion export and
-default terminal message editor fields should be managed through the structured
-routine definition or the dashboard until a later grammar version adds explicit
-syntax.
+Some host-carried fields are not markdown tokens in v1. Default terminal message
+editor fields should be managed through the structured routine definition or the
+dashboard.
 
 See [Portable Routine Markdown](./portable-routine-markdown.md) for the grammar.

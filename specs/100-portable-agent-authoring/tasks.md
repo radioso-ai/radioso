@@ -58,22 +58,22 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase B continued — language-design rigor (user-agreed 2026-07-13)
 
-- [ ] B7a (RED->GREEN). Reserved namespaces / forward compatibility: unknown
+- [x] B7a (RED->GREEN). Reserved namespaces / forward compatibility: unknown
       frontmatter keys and unrecognized `[bracket ...]` tokens inside a routine
       document produce typed diagnostics (new codes), never prose fall-through.
       v2 can then add syntax without changing v1 document meaning.
-- [ ] B7b. Property-based round-trip tests (fast-check, dev-dep of the package
+- [x] B7b. Property-based round-trip tests (fast-check, dev-dep of the package
       only): arbitrary valid draft -> serialize -> parse -> structural equality;
       canonicalize idempotence over arbitrary parseable text; canonical output
       always re-parses. Seeded/deterministic runs.
-- [ ] B7c. Error catalog: every ParseDiagnostic code enumerated in the
+- [x] B7c. Error catalog: every ParseDiagnostic code enumerated in the
       normative doc with trigger + message template, and a test per code.
-- [ ] B7d. Canonical-form spec: a section in the normative doc precise enough
+- [x] B7d. Canonical-form spec: a section in the normative doc precise enough
       to reimplement (ordering, elision, whitespace, frontmatter emission
       rules) + golden files checked into the package tests.
-- [ ] B7e. Conformance extraction: every example block in the normative doc
+- [x] B7e. Conformance extraction: every example block in the normative doc
       becomes a package test keyed to its doc section (spec-is-checked).
-- [ ] B8. Completion-export coverage (FR-004 gap #3): add a frontmatter
+- [x] B8. Completion-export coverage (FR-004 gap #3): add a frontmatter
       encoding (e.g. `export: complete,handoff -> <destinationRef UUID>`)
       emitted only when enabled; parser maps to completionExport. v1 carries
       the raw workspace-scoped UUID (US2 placeholders will generalize).

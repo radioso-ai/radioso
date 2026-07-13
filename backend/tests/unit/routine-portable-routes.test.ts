@@ -25,6 +25,12 @@ const markdown = [
   "Ask for @topic.",
 ].join("\n");
 
+const existingCompletionExport = {
+  enabled: true as const,
+  triggerKinds: ["complete" as const],
+  destinationRef: "55555555-5555-4555-8555-555555555555",
+};
+
 const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefinition => ({
   id: routineId,
   agentId,
@@ -94,7 +100,10 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
       get: vi.fn().mockResolvedValue(baseRoutine),
       validate: vi.fn().mockResolvedValue({ ok: true, diagnostics: [] }),
       createDraft: vi.fn().mockResolvedValue({ routine: { ...baseRoutine, activation: { ...baseRoutine.activation, gateRef: null } }, validation: { ok: true, diagnostics: [] } }),
-      updateDraft: vi.fn().mockResolvedValue({ routine: baseRoutine, validation: { ok: true, diagnostics: [] } }),
+      updateDraft: vi.fn().mockImplementation(async (_workspaceId, _agentId, _routineId, input) => ({
+        routine: { ...baseRoutine, ...input },
+        validation: { ok: true, diagnostics: [] },
+      })),
     },
     logger: {
       warn: vi.fn(),
@@ -277,6 +286,81 @@ describe("portable routine routes", () => {
     );
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ grammarVersion: GRAMMAR_VERSION, content: markdown });
+  });
+
+  it("preserves existing completionExport on portable update when export frontmatter is omitted", async () => {
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        get: vi.fn().mockResolvedValue(routine({ completionExport: existingCompletionExport })),
+        updateDraft: vi.fn().mockResolvedValue({
+          routine: routine({ completionExport: existingCompletionExport }),
+          validation: { ok: true, diagnostics: [] },
+        }),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "PUT",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+      body: { grammarVersion: GRAMMAR_VERSION, content: markdown },
+    });
+
+    expect(dependencies.routineDefinitionService.updateDraft).toHaveBeenCalledWith(
+      workspaceId,
+      agentId,
+      routineId,
+      expect.objectContaining({
+        completionExport: existingCompletionExport,
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("overrides completionExport on portable update when export frontmatter is present", async () => {
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        get: vi.fn().mockResolvedValue(routine({ completionExport: existingCompletionExport })),
+        updateDraft: vi.fn().mockImplementation(async (_workspaceId, _agentId, _routineId, input) => ({
+          routine: routine(input),
+          validation: { ok: true, diagnostics: [] },
+        })),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+    const content = [
+      "---",
+      `grammar: ${GRAMMAR_VERSION}`,
+      "name: support-intake",
+      "trigger: When the user needs support",
+      "priority: 3",
+      "export: complete,handoff -> 66666666-6666-4666-8666-666666666666",
+      "---",
+      "# collect_topic",
+      "Ask for @topic.",
+    ].join("\n");
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "PUT",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+      body: { grammarVersion: GRAMMAR_VERSION, content },
+    });
+
+    expect(dependencies.routineDefinitionService.updateDraft).toHaveBeenCalledWith(
+      workspaceId,
+      agentId,
+      routineId,
+      expect.objectContaining({
+        completionExport: {
+          enabled: true,
+          triggerKinds: ["complete", "handoff"],
+          destinationRef: "66666666-6666-4666-8666-666666666666",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
   });
 
   it("canonicalizes markdown without touching routine persistence", async () => {

@@ -48,7 +48,7 @@ test tasks precede implementation tasks and must fail first.
       canonicalize tests; tsc + dist build clean after read/produce type split —
       `RoutineDefinitionDraft` = parsed z.infer for readers,
       `RoutineDefinitionDraftAuthoring` = z.input for `draftFromChipDoc`.)
-- [ ] B6 (FR-004 completeness addendum). The grammar does not yet cover two
+- [x] B6 (FR-004 completeness addendum). The grammar does not yet cover two
       authorable activation fields — `reentryMode` and `priority` ride outside
       the text form ("the host carries it alongside"). Add optional frontmatter
       keys `reentry: once|always|semantic` and `priority: <int>`: serializer

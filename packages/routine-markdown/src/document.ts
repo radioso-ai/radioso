@@ -329,6 +329,8 @@ export const createEmptyRoutineProseDraft = (input: {
 export function draftFromChipDoc(input: {
   name: string
   trigger: string
+  priority?: number
+  reentryMode?: RoutineReentryMode
   blocks: RoutineDocBlock[]
   variables: ChipDocVariable[]
   // The terminal ids + messages to emit. The chip body only references the canonical
@@ -758,7 +760,8 @@ export function draftFromChipDoc(input: {
     activation: {
       triggerDescription: input.trigger.trim() || 'When this routine applies.',
       gateRef: null,
-      priority: 0,
+      priority: input.priority ?? 0,
+      ...(input.reentryMode ? { reentryMode: input.reentryMode } : {}),
     },
     slots,
     steps,

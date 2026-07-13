@@ -22,12 +22,15 @@ import type {
   RoutineStepMode,
 } from './types.js'
 import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
+import type { RoutineReentryMode } from '@radioso/routine-definition'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
 export type ParsedProseDoc = {
   name: string | null
   trigger: string | null
+  reentryMode: RoutineReentryMode
+  priority: number
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
   // True only when the text opened with our fenced frontmatter carrying a recognized
@@ -261,6 +264,8 @@ const referencedVariableIds = (paragraphs: ProseParagraph[]): Set<string> => {
 export const serializeProseDoc = (input: {
   name: string
   trigger: string
+  reentryMode?: RoutineReentryMode
+  priority?: number
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
 }): string => {
@@ -273,6 +278,12 @@ export const serializeProseDoc = (input: {
     && (variable.type !== 'text' || variable.required === false || variable.mutable === true))
 
   const front = [FENCE, `grammar: ${GRAMMAR_VERSION}`, `name: ${input.name}`, `trigger: ${input.trigger}`]
+  if (input.reentryMode && input.reentryMode !== 'once_per_conversation') {
+    front.push(`reentry: ${input.reentryMode}`)
+  }
+  if (input.priority != null && input.priority !== 0) {
+    front.push(`priority: ${input.priority}`)
+  }
   if (declaredVars.length > 0) {
     // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
     front.push(`vars: ${declaredVars.map((variable) => {
@@ -590,6 +601,8 @@ export const parseProseDoc = (
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   let name: string | null = null
   let trigger: string | null = null
+  let reentryMode: RoutineReentryMode = 'once_per_conversation'
+  let priority = 0
   let hadFrontmatter = false
   let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
@@ -611,6 +624,17 @@ export const parseProseDoc = (
           if (Number.isInteger(parsed)) grammarVersion = parsed
         } else if (key === 'name') { name = value; hadFrontmatter = true }
         else if (key === 'trigger') { trigger = value; hadFrontmatter = true }
+        else if (key === 'reentry' && (value === 'once_per_conversation' || value === 'always' || value === 'semantic')) {
+          reentryMode = value
+          hadFrontmatter = true
+        }
+        else if (key === 'priority') {
+          const parsed = Number(value)
+          if (Number.isInteger(parsed)) {
+            priority = parsed
+            hadFrontmatter = true
+          }
+        }
         else if (key === 'vars') {
           hadFrontmatter = true
           for (const declaration of splitList(value)) {
@@ -662,7 +686,7 @@ export const parseProseDoc = (
   }))
 
   void grammarVersion
-  return { name, trigger, variables, paragraphs, hadFrontmatter }
+  return { name, trigger, reentryMode, priority, variables, paragraphs, hadFrontmatter }
 }
 
 const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnostic => ({
@@ -671,10 +695,24 @@ const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnosti
   message: `Unsupported routine grammar version: ${version}`,
 })
 
-const readGrammarVersion = (text: string): { version: number; diagnostics: ParseDiagnostic[] } => {
+const invalidReentryDiagnostic = (value: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_reentry',
+  message: `Unsupported routine reentry mode: ${value}`,
+})
+
+const invalidPriorityDiagnostic = (value: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_priority',
+  message: `Routine priority must be an integer: ${value}`,
+})
+
+const readFrontmatterDiagnostics = (text: string): { version: number; diagnostics: ParseDiagnostic[] } => {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   if (lines[0]?.trim() !== FENCE) return { version: GRAMMAR_VERSION, diagnostics: [] }
 
+  let version = GRAMMAR_VERSION
+  const diagnostics: ParseDiagnostic[] = []
   let cursor = 1
   while (cursor < lines.length && lines[cursor]!.trim() !== FENCE) {
     const line = lines[cursor]!
@@ -683,21 +721,28 @@ const readGrammarVersion = (text: string): { version: number; diagnostics: Parse
       const key = line.slice(0, sep).trim()
       const value = line.slice(sep + 1).trim()
       if (key === 'grammar') {
-        const version = Number(value)
-        if (Number.isInteger(version) && version === GRAMMAR_VERSION) return { version, diagnostics: [] }
-        return { version: Number.isInteger(version) ? version : Number.NaN, diagnostics: [grammarVersionDiagnostic(Number.isInteger(version) ? version : Number.NaN, cursor + 1)] }
+        const parsed = Number(value)
+        version = Number.isInteger(parsed) ? parsed : Number.NaN
+        if (version !== GRAMMAR_VERSION) diagnostics.push(grammarVersionDiagnostic(version, cursor + 1))
+      } else if (key === 'reentry') {
+        if (value !== 'once_per_conversation' && value !== 'always' && value !== 'semantic') {
+          diagnostics.push(invalidReentryDiagnostic(value, cursor + 1))
+        }
+      } else if (key === 'priority') {
+        const parsed = Number(value)
+        if (!Number.isInteger(parsed)) diagnostics.push(invalidPriorityDiagnostic(value, cursor + 1))
       }
     }
     cursor += 1
   }
-  return { version: GRAMMAR_VERSION, diagnostics: [] }
+  return { version, diagnostics }
 }
 
 export const parse = (
   content: string,
   options: { resolveSkill?: (name: string) => boolean } = {},
 ): ParseResult => {
-  const version = readGrammarVersion(content)
+  const version = readFrontmatterDiagnostics(content)
   if (version.diagnostics.length > 0) return { ok: false, diagnostics: version.diagnostics }
   return {
     ok: true,
@@ -720,6 +765,8 @@ export const canonicalize = (
     content: serializeProseDoc({
       name: parsed.doc.name ?? '',
       trigger: parsed.doc.trigger ?? '',
+      reentryMode: parsed.doc.reentryMode,
+      priority: parsed.doc.priority,
       variables: parsed.doc.variables,
       paragraphs: parsed.doc.paragraphs,
     }),

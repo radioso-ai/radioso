@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   GRAMMAR_VERSION,
   canonicalize,
+  draftFromChipDoc,
   looksLikeRoutineProse,
   parse,
   parseProseDoc,
@@ -60,6 +61,94 @@ describe('routine prose token grammar', () => {
       'name: Versioned',
       'trigger: when versioning matters',
     ])
+  })
+
+  it('elides default activation frontmatter from serialize', () => {
+    const text = serializeProseDoc({
+      name: 'Defaults',
+      trigger: 'when defaults apply',
+      variables: [],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Say hello.' }] }],
+      reentryMode: 'once_per_conversation',
+      priority: 0,
+    })
+
+    expect(text).not.toContain('\nreentry:')
+    expect(text).not.toContain('\npriority:')
+    expect(parse(text, { resolveSkill: () => false })).toMatchObject({
+      ok: true,
+      doc: {
+        reentryMode: 'once_per_conversation',
+        priority: 0,
+      },
+    })
+  })
+
+  it('preserves non-default activation frontmatter through parse and canonicalize', () => {
+    const text = serializeProseDoc({
+      name: 'Priority',
+      trigger: 'when priority matters',
+      variables: [],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Escalate.' }] }],
+      reentryMode: 'always',
+      priority: 10,
+    })
+
+    expect(text.split('\n').slice(0, 6)).toEqual([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Priority',
+      'trigger: when priority matters',
+      'reentry: always',
+      'priority: 10',
+    ])
+
+    const parsed = parse(text, { resolveSkill: () => false })
+    expect(parsed).toMatchObject({
+      ok: true,
+      doc: {
+        reentryMode: 'always',
+        priority: 10,
+      },
+    })
+
+    const canonical = canonicalize(text, { resolveSkill: () => false })
+    expect(canonical).toEqual({
+      ok: true,
+      grammarVersion: GRAMMAR_VERSION,
+      content: text,
+    })
+  })
+
+  it('rejects invalid reentry frontmatter with a typed diagnostic', () => {
+    const parsed = parse('---\ngrammar: 1\nname: Greeter\ntrigger: hi\nreentry: later\n---\nAsk @email.', { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 5,
+        code: 'invalid_reentry',
+        message: 'Unsupported routine reentry mode: later',
+      }],
+    })
+  })
+
+  it('passes activation frontmatter into draftFromChipDoc authoring output', () => {
+    const draft = draftFromChipDoc({
+      name: 'Priority',
+      trigger: 'when priority matters',
+      variables: [],
+      blocks: [{ text: 'Escalate.', chips: [] }],
+      reentryMode: 'semantic',
+      priority: 5,
+    })
+
+    expect(draft.activation).toMatchObject({
+      triggerDescription: 'when priority matters',
+      gateRef: null,
+      reentryMode: 'semantic',
+      priority: 5,
+    })
   })
 
   it('parses missing grammar version as v1', () => {

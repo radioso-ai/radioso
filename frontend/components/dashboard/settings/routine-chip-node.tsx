@@ -435,7 +435,12 @@ function EndDialog({
 }) {
   const [name, setName] = useState(initialName)
   const [message, setMessage] = useState(initialMessage)
+  // A named ending becomes a terminal id, so it can't reuse the reserved `done`/`handoff` refs —
+  // that would collide with the default completion or the handoff terminal. (The backend
+  // validator also rejects any id shared by two nodes, covering collisions with step ids.)
+  const reservedCollision = name.trim().length > 0 && (slugifyVariableKey(name.trim()) === 'done' || slugifyVariableKey(name.trim()) === 'handoff')
   const confirm = () => {
+    if (reservedCollision) return
     onConfirm(name, message)
     onOpenChange(false)
   }
@@ -450,6 +455,9 @@ function EndDialog({
           <div className="space-y-1.5">
             <Label htmlFor="endName">Ending name (optional)</Label>
             <Input id="endName" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. ineligible" />
+            {reservedCollision ? (
+              <p className="text-xs text-destructive">That name is reserved — pick a different name for this ending.</p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="endMessage">Completion message (optional)</Label>
@@ -457,7 +465,7 @@ function EndDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" onClick={confirm}>Save ending</Button>
+          <Button type="button" onClick={confirm} disabled={reservedCollision}>Save ending</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -451,12 +451,13 @@ The form exposes:
 - terminal kind and message: `complete` or `handoff`
 - completion export through a `webhook_call` skill
 
-A routine that uses any of these advanced shapes - a slot-filled branch, more than
-one completion or handoff, or an activation gate - opens in **Form**
-automatically. The **Prose** tab shows a short note pointing you to **Form** for
-that routine. (Optional and editable-after-completion slots, custom completion or
-handoff messages, custom terminal ids, outcome branches, action steps, and
-completion export are all authored in **Prose** too.)
+A routine that uses a shape the **Prose** view can't express yet - more than one
+handoff, or an activation gate - opens in **Form** automatically. The **Prose**
+tab shows a short note pointing you to **Form** for that routine. (Optional and
+editable-after-completion slots, custom completion or handoff messages, custom
+terminal ids, slot-filled branches, outcome branches, named approval gates,
+more than one completion, named endings with their own messages, action steps,
+and completion export are all authored in **Prose** too.)
 
 ### Completion export
 

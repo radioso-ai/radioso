@@ -1,5 +1,6 @@
 import type {
   RoutineDefinitionDraft,
+  RoutineDefinitionDraftAuthoring,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineInputBinding,
@@ -336,7 +337,7 @@ export function draftFromChipDoc(input: {
   // Completion export config carried alongside the body (not encoded in chips). Included on
   // the draft only when enabled.
   completionExport?: RoutineCompletionExport | null
-}): RoutineDefinitionDraft {
+}): RoutineDefinitionDraftAuthoring {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
 

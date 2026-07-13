@@ -279,4 +279,8 @@ export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;
 export type RoutineStepMetadata = z.infer<typeof routineStepMetadataSchema>;
 export type RoutineCompletionExport = z.infer<typeof routineCompletionExportSchema>;
 export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftInputSchema>;
+// Pre-parse authoring shape: what callers may submit before Zod applies defaults
+// (e.g. activation.reentryMode is optional here, required post-parse). Authoring
+// surfaces that construct drafts by hand must target this, not the parsed type.
+export type RoutineDefinitionDraftAuthoringInput = z.input<typeof routineDefinitionDraftInputSchema>;
 export type RoutineDefinition = z.infer<typeof routineDefinitionSchema>;

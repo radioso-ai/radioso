@@ -3,6 +3,7 @@ import type {
   RoutineFieldGuardUnit,
   RoutineInputBinding,
   RoutineDefinitionDraftInput,
+  RoutineDefinitionDraftAuthoringInput,
   RoutineSlotType,
   RoutineStepMode,
 } from "@radioso/routine-definition";
@@ -15,12 +16,16 @@ export type {
   RoutineStepMode,
 };
 
+// Read side: loaded drafts are complete (Zod defaults applied).
 export type RoutineDefinitionDraft = RoutineDefinitionDraftInput;
-export type RoutineSlot = RoutineDefinitionDraftInput["slots"][number];
-export type RoutineStep = RoutineDefinitionDraftInput["steps"][number];
-export type RoutineTransition = RoutineDefinitionDraftInput["transitions"][number];
-export type RoutineTerminal = RoutineDefinitionDraftInput["terminals"][number];
-export type RoutineCompletionExport = NonNullable<RoutineDefinitionDraftInput["completionExport"]>;
+// Produce side: what the grammar emits toward a save is pre-parse authoring
+// input — Zod-defaulted fields (e.g. activation.reentryMode) may be absent.
+export type RoutineDefinitionDraftAuthoring = RoutineDefinitionDraftAuthoringInput;
+export type RoutineSlot = RoutineDefinitionDraft["slots"][number];
+export type RoutineStep = RoutineDefinitionDraft["steps"][number];
+export type RoutineTransition = RoutineDefinitionDraft["transitions"][number];
+export type RoutineTerminal = RoutineDefinitionDraft["terminals"][number];
+export type RoutineCompletionExport = NonNullable<RoutineDefinitionDraft["completionExport"]>;
 
 export type RoutineFieldGuardValue = string | number | boolean;
 

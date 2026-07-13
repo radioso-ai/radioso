@@ -18,9 +18,10 @@ test tasks precede implementation tasks and must fail first.
 - [x] A4. Add package-level schema tests (happy path + one rejection per
       schema family) in `packages/routine-definition/tests/`; keep the three
       existing backend test files referencing the old path green unchanged.
-- [ ] A5. Verify: package `tsc --noEmit`, backend `tsc --noEmit`,
+- [x] A5. Verify: package `tsc --noEmit`, backend `tsc --noEmit`,
       `pnpm exec vitest run tests/unit/routines tests/unit/routine-approval-authoring.test.ts`
-      (backend), package vitest.
+      (backend), package vitest. (Verified by orchestrator: def pkg 7/7,
+      backend routines 39/39, both tsc clean after workspace dist builds.)
 
 ## Phase B — `@radioso/routine-markdown` (grammar package)
 
@@ -40,9 +41,20 @@ test tasks precede implementation tasks and must fail first.
       definition-level halves) from `frontend/lib/routine-prose.ts` into the
       package as `draftToDoc`/`docToDraftInput` typed against
       `@radioso/routine-definition`; chip-specific UI state stays in frontend.
-- [ ] B5. Package exports: `parse`, `serialize`, `canonicalize`,
+- [x] B5. Package exports: `parse`, `serialize`, `canonicalize`,
       `GRAMMAR_VERSION`, `looksLikeRoutineProse`, doc/draft mapping, diagnostic
-      types. Verify: package tsc + vitest (full corpus green).
+      types. Verify: package tsc + vitest (full corpus green). (Verified by
+      orchestrator: 23/23 incl. moved 18-test corpus + version/ctx-binding/
+      canonicalize tests; tsc + dist build clean after read/produce type split —
+      `RoutineDefinitionDraft` = parsed z.infer for readers,
+      `RoutineDefinitionDraftAuthoring` = z.input for `draftFromChipDoc`.)
+- [ ] B6 (FR-004 completeness addendum). The grammar does not yet cover two
+      authorable activation fields — `reentryMode` and `priority` ride outside
+      the text form ("the host carries it alongside"). Add optional frontmatter
+      keys `reentry: once|always|semantic` and `priority: <int>`: serializer
+      emits them only when non-default (canonical minimalism); parser maps them
+      into `activation`; `draftFromChipDoc` accepts them via its input;
+      round-trip tests for default-elision and non-default preservation. TDD.
 
 ## Phase C — backend portable API (TDD)
 

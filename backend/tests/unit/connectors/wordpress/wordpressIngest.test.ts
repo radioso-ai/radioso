@@ -19,6 +19,7 @@ const baseWebhookPost: WebhookPostPayload = {
   excerpt_rendered: "Hello",
   link: "https://example.com/about",
   modified_gmt: "2026-05-16T12:00:00",
+  date_gmt: "2026-05-10T08:30:00",
   author: { id: 1, name: "Alice" },
 };
 
@@ -67,6 +68,22 @@ describe("mapWebhookPostToIngestInput", () => {
     expect(metadata).not.toHaveProperty("url");
   });
 
+  it("captures the publish date so the post is findable and filterable by date", () => {
+    const { metadata } = mapWebhookPostToIngestInput("ws-1", baseWebhookPost);
+    // Raw timestamp for provenance/display, plus the platform date-metadata key
+    // (ISO day) so retrieval search text and metadata date rules pick it up.
+    expect(metadata).toMatchObject({
+      published_at: "2026-05-10T08:30:00",
+      dateFrom: "2026-05-10",
+    });
+  });
+
+  it("omits publish-date metadata when the post has no publish date", () => {
+    const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, date_gmt: undefined });
+    expect(metadata).not.toHaveProperty("published_at");
+    expect(metadata).not.toHaveProperty("dateFrom");
+  });
+
   it("omits author metadata when not provided", () => {
     const { metadata } = mapWebhookPostToIngestInput("ws-1", { ...baseWebhookPost, author: undefined });
     expect(metadata).not.toHaveProperty("author");
@@ -81,6 +98,7 @@ describe("mapRestPostToIngestInput", () => {
     slug: "hello-world",
     link: "https://example.com/hello-world",
     modified_gmt: "2026-05-15T09:00:00",
+    date_gmt: "2026-05-07T14:00:00",
     title: { rendered: "Hello World" },
     content: { rendered: "<p>From REST</p>" },
   };
@@ -105,6 +123,20 @@ describe("mapRestPostToIngestInput", () => {
       content: { rendered: "", raw: "<p>raw body</p>" },
     });
     expect(result.content).toBe("<p>raw body</p>");
+  });
+
+  it("captures the publish date from the REST post into date metadata", () => {
+    const { metadata } = mapRestPostToIngestInput("ws-1", restPost);
+    expect(metadata).toMatchObject({
+      published_at: "2026-05-07T14:00:00",
+      dateFrom: "2026-05-07",
+    });
+  });
+
+  it("omits publish-date metadata when the REST post has no publish date", () => {
+    const { metadata } = mapRestPostToIngestInput("ws-1", { ...restPost, date_gmt: undefined });
+    expect(metadata).not.toHaveProperty("published_at");
+    expect(metadata).not.toHaveProperty("dateFrom");
   });
 
   it("captures the embedded author name into metadata so the post is findable by author", () => {

@@ -310,22 +310,30 @@ const fetchText = async (
   };
 };
 
-const DEFAULT_NON_CONTENT_SELECTOR = [
+// Structural chrome that is never article content, regardless of placement.
+const ALWAYS_NON_CONTENT_SELECTOR = [
   "script",
   "style",
   "noscript",
   "svg",
   "nav",
-  "header",
-  "footer",
-  "aside",
   "form",
   "button",
   "[role='navigation']",
-  "[role='banner']",
-  "[role='contentinfo']",
   "[aria-label*='menu' i]",
   "[aria-label*='navigation' i]"
+].join(", ");
+
+// Landmark regions that are usually page furniture, but when a theme nests them
+// inside the primary content container they carry real content — e.g. a
+// WordPress entry-header holding the post title, publish date and author byline.
+// These are removed only when they sit outside the primary content.
+const CONTEXTUAL_NON_CONTENT_SELECTOR = [
+  "header",
+  "footer",
+  "aside",
+  "[role='banner']",
+  "[role='contentinfo']"
 ].join(", ");
 
 const NON_CONTENT_ATTRIBUTE_BASE_TOKENS = new Set([
@@ -527,8 +535,22 @@ const removeAttributeMarkedPageChrome = ($: any): void => {
   });
 };
 
+const removeContextualPageChrome = ($: any): void => {
+  $(CONTEXTUAL_NON_CONTENT_SELECTOR).each((_index: number, element: unknown) => {
+    const block = $(element);
+    if (
+      block.closest(PRIMARY_CONTENT_SELECTOR).length > 0 ||
+      block.find(PRIMARY_CONTENT_SUBTREE_SELECTOR).length > 0
+    ) {
+      return;
+    }
+    block.remove();
+  });
+};
+
 const removePageChrome = ($: any): void => {
-  $(DEFAULT_NON_CONTENT_SELECTOR).remove();
+  $(ALWAYS_NON_CONTENT_SELECTOR).remove();
+  removeContextualPageChrome($);
   removeAttributeMarkedPageChrome($);
   $(LINK_DENSE_BLOCK_SELECTOR).each((_index: number, element: unknown) => {
     const block = $(element);

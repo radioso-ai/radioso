@@ -23,6 +23,7 @@ export interface WebhookPostPayload {
   excerpt_rendered?: string;
   link: string;
   modified_gmt: string;
+  date_gmt?: string;
   author?: { id: number; name: string };
 }
 
@@ -62,6 +63,25 @@ const extractRestAuthorName = (post: WordpressRestPost): string | undefined => {
   return typeof name === "string" && name.trim().length > 0 ? name.trim() : undefined;
 };
 
+const ISO_DAY_PREFIX = /^(\d{4}-\d{2}-\d{2})/;
+
+// The publish date is theme-rendered chrome (a byline/date line the post body
+// never contains) so we surface it as metadata. We keep the raw WordPress GMT
+// timestamp under `published_at` for provenance/display and derive the ISO day
+// into `dateFrom` — the platform's date-metadata key that retrieval search text
+// and operator date rules already understand.
+const buildPublishDateMetadata = (dateGmt: string | undefined): Record<string, string> => {
+  const raw = dateGmt?.trim();
+  if (!raw) {
+    return {};
+  }
+  const isoDay = ISO_DAY_PREFIX.exec(raw)?.[1];
+  return {
+    published_at: raw,
+    ...(isoDay ? { dateFrom: isoDay } : {}),
+  };
+};
+
 export const mapWebhookPostToIngestInput = (
   workspaceId: string,
   post: WebhookPostPayload,
@@ -80,6 +100,7 @@ export const mapWebhookPostToIngestInput = (
       wp_slug: post.slug,
       sourceUrl: post.link,
       modified_at: post.modified_gmt,
+      ...buildPublishDateMetadata(post.date_gmt),
       ...(post.author?.name ? { author: post.author.name } : {}),
     },
   };
@@ -104,6 +125,7 @@ export const mapRestPostToIngestInput = (
       wp_slug: post.slug,
       sourceUrl: post.link,
       modified_at: post.modified_gmt,
+      ...buildPublishDateMetadata(post.date_gmt),
       ...(authorName ? { author: authorName } : {}),
     },
   };

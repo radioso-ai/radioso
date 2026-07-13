@@ -9,6 +9,7 @@ import { createRoutinePortableRoutes } from "../../src/app/http/routes/routinePo
 import { createErrorHandler } from "../../src/app/http/middleware/errorHandler.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
+import { conflict } from "../../src/shared/domain/errors.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -262,6 +263,32 @@ describe("portable routine routes", () => {
       routineId,
       grammarVersion: GRAMMAR_VERSION,
       content: markdown,
+    });
+  });
+
+  it("returns a clear 409 when portable create duplicates an existing routine name and version", async () => {
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        createDraft: vi.fn().mockRejectedValue(
+          conflict("A routine definition with this name and version already exists for this agent"),
+        ),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "POST",
+      url: `/api/v1/agents/${agentId}/routines/portable`,
+      token: "token",
+      body: { grammarVersion: GRAMMAR_VERSION, content: markdown },
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: {
+        code: "conflict",
+        message: "A routine definition with this name and version already exists for this agent",
+      },
     });
   });
 

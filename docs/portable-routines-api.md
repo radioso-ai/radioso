@@ -100,6 +100,8 @@ this distinction to decide whether to fix the text syntax or the routine graph.
 - `400` means the markdown cannot be parsed as portable routine markdown.
 - `422` means the markdown parsed, but the resulting routine definition is
   invalid.
+- `409` means the create request conflicts with an existing routine definition,
+  such as the same routine name and version for the agent.
 
 Authentication and lookup failures use the same `401` and `404` shapes as the
 structured routine endpoints.

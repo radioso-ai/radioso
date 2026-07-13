@@ -55,6 +55,9 @@ diagnostics.
 routine validation. The response uses the same validation diagnostics as the
 structured routine endpoints.
 
+`409` means the create request conflicts with an existing routine definition,
+such as the same routine name and version for the agent.
+
 ## Grammar
 
 Portable markdown v1 includes frontmatter (`grammar`, `name`, `trigger`, `vars`,

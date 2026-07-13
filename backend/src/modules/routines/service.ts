@@ -142,6 +142,18 @@ const isRoutineCompletionExportDestinationConstraintError = (error: unknown): bo
     );
 };
 
+const isRoutineDefinitionNameVersionConstraintError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const record = error as { code?: unknown; constraint?: unknown; message?: unknown };
+  return record.code === "23505" &&
+    (
+      record.constraint === "routine_definition_agent_id_name_version_key" ||
+      (typeof record.message === "string" && record.message.includes("routine_definition_agent_id_name_version_key"))
+    );
+};
+
 const missingWebhookDestinationRefFromConstraintError = (error: unknown): string | null => {
   if (!error || typeof error !== "object") {
     return null;
@@ -178,7 +190,15 @@ export class RoutineDefinitionService {
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
-    const saved = await this.options.repository.createDraft(agentId, draft);
+    let saved: RoutineDefinition;
+    try {
+      saved = await this.options.repository.createDraft(agentId, draft);
+    } catch (error) {
+      if (isRoutineDefinitionNameVersionConstraintError(error)) {
+        throw conflict("A routine definition with this name and version already exists for this agent");
+      }
+      throw error;
+    }
     return {
       routine: saved,
       validation: validateRoutineDefinition(saved),

@@ -23,7 +23,7 @@ const markdown = [
   "---",
   "# collect_topic",
   "Ask for @topic.",
-].join("\n");
+].join("\n") + "\n";
 
 const existingCompletionExport = {
   enabled: true as const,
@@ -382,7 +382,7 @@ describe("portable routine routes", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       grammarVersion: GRAMMAR_VERSION,
-      content: "---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\nAsk @email.",
+      content: "---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\nAsk @email.\n",
     });
   });
 

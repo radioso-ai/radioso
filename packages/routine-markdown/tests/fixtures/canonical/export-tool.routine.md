@@ -8,5 +8,5 @@ vars: amount:number
 ---
 # Check eligibility
 Call the refund tool #refund.check[in amount=@amount, locale=ctx.page_locale; out status=@refund_status]
-[if refund_status = approved] -> end
-[outcome failed] -> handoff
+[if refund_status = approved]-> end
+[outcome failed]-> handoff

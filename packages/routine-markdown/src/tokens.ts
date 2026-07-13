@@ -304,7 +304,7 @@ export const serializeProseDoc = (input: {
   }
   front.push(FENCE)
 
-  return [...front, ...input.paragraphs.map(formatParagraph)].join('\n')
+  return `${[...front, ...input.paragraphs.map(formatParagraph)].join('\n')}\n`
 }
 
 // ---------------------------------------------------------------------------
@@ -341,6 +341,12 @@ const parseExport = (value: string): RoutineCompletionExport | null => {
     triggerKinds: triggerKinds as RoutineCompletionExport['triggerKinds'],
     destinationRef: match[2]!,
   }
+}
+
+const parseReentryMode = (value: string): RoutineReentryMode | null => {
+  if (value === 'once') return 'once_per_conversation'
+  if (value === 'once_per_conversation' || value === 'always' || value === 'semantic') return value
+  return null
 }
 
 // Parse a `[if ref op value unit]` condition body (the text already stripped of brackets).
@@ -645,8 +651,10 @@ export const parseProseDoc = (
           if (Number.isInteger(parsed)) grammarVersion = parsed
         } else if (key === 'name') { name = value; hadFrontmatter = true }
         else if (key === 'trigger') { trigger = value; hadFrontmatter = true }
-        else if (key === 'reentry' && (value === 'once_per_conversation' || value === 'always' || value === 'semantic')) {
-          reentryMode = value
+        else if (key === 'reentry') {
+          const parsed = parseReentryMode(value)
+          if (!parsed) continue
+          reentryMode = parsed
           hadFrontmatter = true
         }
         else if (key === 'priority') {
@@ -805,7 +813,7 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
         version = Number.isInteger(parsed) ? parsed : Number.NaN
         if (version !== GRAMMAR_VERSION) diagnostics.push(grammarVersionDiagnostic(version, cursor + 1))
       } else if (key === 'reentry') {
-        if (value !== 'once_per_conversation' && value !== 'always' && value !== 'semantic') {
+        if (!parseReentryMode(value)) {
           diagnostics.push(invalidReentryDiagnostic(value, cursor + 1))
         }
       } else if (key === 'priority') {

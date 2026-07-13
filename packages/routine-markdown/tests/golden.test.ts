@@ -122,6 +122,14 @@ describe('canonical golden documents', () => {
       transitions: [{
         fromStep: 'check_eligibility',
         toRef: 'done',
+        guardKind: 'default',
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: 0,
+      }, {
+        fromStep: 'check_eligibility',
+        toRef: 'done',
         guardKind: 'field',
         guardText: null,
         outcomeStatus: null,
@@ -131,7 +139,7 @@ describe('canonical golden documents', () => {
         fieldValue: 'approved',
         fieldValues: null,
         fieldUnit: null,
-        ordinal: 0,
+        ordinal: 1,
       }, {
         fromStep: 'check_eligibility',
         toRef: 'handoff',
@@ -139,7 +147,7 @@ describe('canonical golden documents', () => {
         guardText: null,
         outcomeStatus: 'failed',
         counterLimit: null,
-        ordinal: 1,
+        ordinal: 2,
       }],
       terminals: [{
         stableStepId: 'done',

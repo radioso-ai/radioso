@@ -49,7 +49,8 @@ The frontmatter keys are:
 - `vars` - comma-separated slot declarations. Each item is
   `key:type[:optional][:mutable]`.
 - `reentry` - one of `once_per_conversation`, `always`, or `semantic`.
-  Omitted means `once_per_conversation`.
+  `once` is accepted as an alias for `once_per_conversation`. Omitted means
+  `once_per_conversation`.
 - `priority` - integer activation priority. Omitted means `0`.
 - `export` - completion export configuration. Omitted means no markdown-level
   completion export. The syntax is
@@ -206,8 +207,8 @@ serializer writes this exact order:
 9. Closing fence `---`
 10. One routine paragraph per line
 
-Canonical output uses `\n` line endings and no blank line between frontmatter
-and the body. It does not add a trailing newline.
+Canonical output uses `\n` line endings, no blank line between frontmatter and
+the body, and exactly one trailing newline.
 
 Canonicalization also normalizes these details:
 
@@ -231,7 +232,8 @@ All parse diagnostics include `line`, `code`, and `message`.
   - Trigger: `grammar` is present and is not integer `1`.
   - Message: `Unsupported routine grammar version: <version>`
 - `invalid_reentry`
-  - Trigger: `reentry` is not `once_per_conversation`, `always`, or `semantic`.
+  - Trigger: `reentry` is not `once`, `once_per_conversation`, `always`, or
+    `semantic`.
   - Message: `Unsupported routine reentry mode: <value>`
 - `invalid_priority`
   - Trigger: `priority` is present and is not an integer.

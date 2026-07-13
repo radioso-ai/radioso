@@ -78,7 +78,7 @@ describe("portable routine document mapper", () => {
         "---",
         "# collect_topic",
         "Ask for @topic.",
-      ].join("\n"),
+      ].join("\n") + "\n",
     });
   });
 
@@ -140,7 +140,7 @@ describe("portable routine document mapper", () => {
       ok: true,
       envelope: {
         grammarVersion: GRAMMAR_VERSION,
-        content: "---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\nAsk @email.",
+        content: "---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\nAsk @email.\n",
       },
     });
   });

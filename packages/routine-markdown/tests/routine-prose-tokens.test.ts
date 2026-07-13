@@ -120,6 +120,26 @@ describe('routine prose token grammar', () => {
     })
   })
 
+  it('accepts once as a default reentry alias and canonicalizes it away', () => {
+    const input = '---\ngrammar: 1\nname: Greeter\ntrigger: hi\nreentry: once\n---\nAsk @email.'
+    const parsed = parse(input, { resolveSkill: () => false })
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      doc: {
+        reentryMode: 'once_per_conversation',
+      },
+    })
+
+    const canonical = canonicalize(input, { resolveSkill: () => false })
+
+    expect(canonical).toEqual({
+      ok: true,
+      grammarVersion: GRAMMAR_VERSION,
+      content: '---\ngrammar: 1\nname: Greeter\ntrigger: hi\n---\nAsk @email.\n',
+    })
+  })
+
   it('rejects invalid reentry frontmatter with a typed diagnostic', () => {
     const parsed = parse('---\ngrammar: 1\nname: Greeter\ntrigger: hi\nreentry: later\n---\nAsk @email.', { resolveSkill: () => false })
 

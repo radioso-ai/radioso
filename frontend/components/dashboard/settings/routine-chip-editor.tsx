@@ -585,14 +585,14 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   }
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
+    <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1 border-b border-input px-1.5 py-1">
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
         <Bold className="h-4 w-4" />
       </Button>
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.italic && ACTIVE_TOOLBAR_BUTTON)} aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
         <Italic className="h-4 w-4" />
       </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertVariableTrigger}>
         <AtSign className="h-4 w-4" />
         Variable
@@ -631,7 +631,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Send className="h-4 w-4" />
         Action
       </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />
         Condition
@@ -644,7 +644,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <ListChecks className="h-4 w-4" />
         When filled
       </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End
@@ -653,7 +653,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <Gavel className="h-4 w-4" />
         Approval
       </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
         <Heading1 className="h-4 w-4" />
         Step

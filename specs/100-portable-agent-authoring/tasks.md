@@ -24,19 +24,19 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase B — `@radioso/routine-markdown` (grammar package)
 
-- [ ] B1. Scaffold `packages/routine-markdown` (same convention; dep:
+- [x] B1. Scaffold `packages/routine-markdown` (same convention; dep:
       `@radioso/routine-definition` only).
-- [ ] B2 (RED). Move `frontend/tests/unit/routine-prose-tokens.test.ts` corpus
+- [x] B2 (RED). Move `frontend/tests/unit/routine-prose-tokens.test.ts` corpus
       into the package test suite; add failing tests for: (a) frontmatter
       `grammar: 1` always emitted by serialize; (b) parse of missing version =
       v1; (c) parse of unsupported version → typed diagnostic, no partial doc;
       (d) `contextVariableRef` binding token round-trip (serialize→parse→equal);
       (e) `canonicalize()` idempotence (canonicalize∘canonicalize = canonicalize).
-- [ ] B3 (GREEN). Move `frontend/lib/routine-prose-tokens.ts` into the package;
+- [x] B3 (GREEN). Move `frontend/lib/routine-prose-tokens.ts` into the package;
       implement version frontmatter, `contextVariableRef` token, `canonicalize`,
       typed `ParseDiagnostic { line, code, message }` (grammar errors must carry
       line info — upgrade silent-skip paths in the parser where needed).
-- [ ] B4. Move the doc⇄draft mapping (`routineToChipDoc`/`draftFromChipDoc`
+- [x] B4. Move the doc⇄draft mapping (`routineToChipDoc`/`draftFromChipDoc`
       definition-level halves) from `frontend/lib/routine-prose.ts` into the
       package as `draftToDoc`/`docToDraftInput` typed against
       `@radioso/routine-definition`; chip-specific UI state stays in frontend.

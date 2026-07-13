@@ -37,6 +37,11 @@ export const routineValidationCodes = [
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
 
+const formatKnownStepList = (stepIds: ReadonlySet<string>): string => {
+  const ids = [...stepIds].slice(0, 10);
+  return ids.length > 0 ? ids.join(", ") : "none";
+};
+
 export interface RoutineValidationDiagnostic {
   code: RoutineValidationCode;
   location: string;
@@ -410,14 +415,14 @@ export const validateRoutineDefinition = (
       diagnostics.push({
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
-        message: `dangling step reference: transition starts at unknown step "${transition.fromStep}".`,
+        message: `dangling step reference: transition starts at unknown step "${transition.fromStep}" - steps in this routine: ${formatKnownStepList(stepIds)}.`,
       });
     }
     if (!nodeIds.has(transition.toRef)) {
       diagnostics.push({
         code: "dangling_step_reference",
         location: `transition:${transition.fromStep}->${transition.toRef}`,
-        message: `dangling step reference: transition points to unknown step or terminal "${transition.toRef}".`,
+        message: `dangling step reference: transition points to unknown step or terminal "${transition.toRef}" - steps in this routine: ${formatKnownStepList(stepIds)}.`,
       });
     }
     // Conservative v1 loop safety: the bound must be on the back-edge itself,

@@ -80,6 +80,11 @@ test tasks precede implementation tasks and must fail first.
       Safety net regardless: portable PUT preserves an existing definition's
       completionExport when the incoming document does not express one
       (mirror gateRef). Update the normative doc + API docs accordingly.
+- [x] B9. Golden-test and surface-design follow-up: canonical serialized
+      markdown ends with exactly one trailing newline; the export/tool golden
+      fixture is structurally valid with an implicit default continuation;
+      `reentry: once` parses as the default alias and canonicalizes away; and
+      dangling step-reference diagnostics list up to 10 available step ids.
 
 ## Phase C — backend portable API (TDD)
 

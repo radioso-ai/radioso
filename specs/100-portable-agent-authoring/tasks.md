@@ -164,10 +164,22 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase F — verification & delivery gates
 
-- [ ] F1. Independent end-to-end verification (orchestrator, not Codex):
-      run the real backend, author a routine via portable POST covering every
-      grammar element, publish, GET portable, PUT a mutation, verify chip
-      editor renders it; confirm zero model-provider calls on the path.
+- [x] F1. Independent end-to-end verification (orchestrator, not Codex):
+      DONE against a live worktree backend (:8091, scratch DB, NO OpenAI key —
+      clean run = SC-005 proof). Verified: portable POST (422 diagnostics on
+      invalid graph, then 201), reentry/priority persisted, GET canonical
+      (trailing newline, elision, stable slugged ids), PUT mutation + publish,
+      canonicalize (reentry `once` alias elided; export/ctx/bindings
+      preserved), reserved-namespace 400s with line numbers, observability
+      counters fired with codes only. Chip rendering covered by D2 unit +
+      D3 Playwright (route-mocked). THREE LIVE FINDINGS -> F1-fix batch:
+      (1) duplicate routine name on portable create surfaces as raw 500
+      (unique constraint) instead of 409; (2) a declared-but-unreferenced
+      `vars:` entry is SILENTLY DROPPED at parse (never becomes a slot, no
+      diagnostic — violates no-silent-loss; validator's declared_unused_slot
+      never gets a chance); (3) canonical spacing inconsistent between
+      projection paths: routine GET emits `[filled @email]-> end` (no space
+      before ->) while canonicalize emits `[outcome failed] -> handoff`.
 - [ ] F2. Senior engineer review loop (≤3 passes), then one EM pass.
 - [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
       DB; grep the real exit code); push; PR with validation evidence and

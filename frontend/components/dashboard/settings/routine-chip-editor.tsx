@@ -627,6 +627,11 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
+        <Send className="h-4 w-4" />
+        Action
+      </Button>
+      <Separator orientation="vertical" className="mx-1 h-5" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />
         Condition
@@ -639,10 +644,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <ListChecks className="h-4 w-4" />
         When filled
       </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
-        <Send className="h-4 w-4" />
-        Action
-      </Button>
+      <Separator orientation="vertical" className="mx-1 h-5" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End

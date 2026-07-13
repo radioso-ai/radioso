@@ -44,7 +44,7 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await expect(editor).not.toContainText("{{");
 
   // The same @ menu is kind-aware: pick a skill instead of a variable.
-  await editor.pressSequentially("then @refund");
+  await editor.pressSequentially("then #refund");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
@@ -175,9 +175,9 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
   await editor.pressSequentially("Check whether ");
-  await editor.pressSequentially("@refu");
-  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+  await editor.pressSequentially("#refu");
+  await expect(page.getByRole("option", { name: "Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Issue refund" }).click();
   const refundChip = page.locator('[data-routine-chip="skill"]').first();
   await expect(refundChip).toContainText("Issue refund");
   await expect(refundChip).not.toContainText("unknown skill");
@@ -209,7 +209,7 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   await expect(catalog).toBeHidden();
 
   await editor.click();
-  await editor.pressSequentially(" then @made_up_skill");
+  await editor.pressSequentially(" then #made_up_skill");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" }).click();
   const unknownChip = page.locator('[data-routine-chip="skill"]').filter({ hasText: "made_up_skill" });
@@ -252,9 +252,9 @@ test("a skill chip binding editor persists typed input bindings", async ({ page 
   await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await editor.pressSequentially(" to run ");
-  await editor.pressSequentially("@refund");
-  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+  await editor.pressSequentially("#refund");
+  await expect(page.getByRole("option", { name: "Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Issue refund" }).click();
 
   await page.locator('[data-routine-chip="skill"]').click();
   const catalog = page.getByRole("dialog", { name: "Skill catalog for Issue refund" });
@@ -397,7 +397,7 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await editor.click();
   // A skill step: its result is what the outcome branch keys on.
   await editor.pressSequentially("Issue the ");
-  await editor.pressSequentially("@refund");
+  await editor.pressSequentially("#refund");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
@@ -410,7 +410,8 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
 
   // Author the outcome guard via the toolbar dialog.
-  await page.getByRole("button", { name: "Outcome" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Outcome" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Outcome status").fill("failed");
   await dialog.getByRole("button", { name: "Add outcome branch" }).click();
@@ -426,6 +427,50 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   const transitions = created?.body?.transitions ?? [];
   const outcomeEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "outcome");
   expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep.stableStepId });
+});
+
+test("a 'when filled' chip compiles a slot_filled branch on the collected slots", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Verify then continue");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer needs verification");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  // A chat step that collects a slot the branch will wait on.
+  await editor.pressSequentially("Ask for their ");
+  await editor.pressSequentially("@email");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // new line for the branch
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+
+  // Author the slot-filled guard via the toolbar dialog: gate on the email slot.
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "When filled" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("switch", { name: "email" }).click();
+  await dialog.getByRole("button", { name: "Add slot-filled branch" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="slot-filled"]')).toBeVisible();
+
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const transitions = created?.body?.transitions ?? [];
+  const slotFilledEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "slot_filled");
+  expect(slotFilledEdge).toMatchObject({ guardKind: "slot_filled", toRef: "handoff" });
+  expect(slotFilledEdge.guardText).toContain("{{slot.email}}");
 });
 
 test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
@@ -645,7 +690,8 @@ test("an action chip compiles to an action step naming the action type", async (
   await editor.click();
   await editor.pressSequentially("Email the team the request ");
   // The action step emits an outbox action named by its type.
-  await page.getByRole("button", { name: "Action" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Action" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Action type").fill("contact.send");
   await dialog.getByRole("button", { name: "Add action step" }).click();
@@ -677,7 +723,7 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   await editor.click();
   await editor.pressSequentially("Check availability ");
   // The skill is defined elsewhere; the routine references it by name with a skill chip.
-  await editor.pressSequentially("@book_meeting");
+  await editor.pressSequentially("#book_meeting");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): book_meeting" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): book_meeting" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
@@ -777,4 +823,55 @@ test("an end chip completes the routine on a decided-in-code branch", async ({ p
   const endBranch = (created?.body?.transitions ?? []).find((transition: { guardKind: string }) => transition.guardKind === "field");
   // The end branch is a decided-in-code transition to the complete terminal.
   expect(endBranch).toMatchObject({ toRef: completeId, guardKind: "field", fieldRef: "status", fieldOp: "equals" });
+});
+
+test("a named ending gives a branch its own second completion message", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund check");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Look up the ");
+  await editor.pressSequentially("@status");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // a branch line
+
+  // Decide the branch in code first (keeps the caret on the branch line).
+  await page.getByRole("button", { name: "Condition" }).click();
+  const conditionDialog = page.getByRole("dialog");
+  await conditionDialog.getByLabel("Variable").selectOption({ label: "status" });
+  await conditionDialog.getByLabel("Check").selectOption("equals");
+  await conditionDialog.getByLabel("Value").fill("ineligible");
+  await conditionDialog.getByRole("button", { name: "Add check" }).click();
+  await expect(page.locator('[data-routine-chip="condition"]')).toBeVisible();
+
+  // End the branch, then name that ending and give it its own completion message.
+  await page.getByRole("button", { name: "End" }).click();
+  await expect(page.locator('[data-routine-chip="end"]')).toBeVisible();
+  await page.locator('[data-routine-chip="end"]').click();
+  await page.getByRole("menuitem", { name: /Name & message/ }).click();
+  const endDialog = page.getByRole("dialog");
+  await endDialog.getByLabel("Ending name (optional)").fill("ineligible");
+  await endDialog.getByLabel("Completion message (optional)").fill("Sorry, this order is not eligible.");
+  await endDialog.getByRole("button", { name: "Save ending" }).click();
+  await expect(page.locator('[data-routine-chip="end"][data-end-named="true"]')).toBeVisible();
+
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const completes = (created?.body?.terminals ?? []).filter((terminal: { kind: string }) => terminal.kind === "complete");
+  // Two completions: the default fall-through plus the named ending with its own copy.
+  expect(completes.length).toBe(2);
+  const named = completes.find((terminal: { stableStepId: string }) => terminal.stableStepId === "ineligible");
+  expect(named?.instruction).toBe("Sorry, this order is not eligible.");
+  expect((created?.body?.transitions ?? []).some((transition: { toRef: string }) => transition.toRef === "ineligible")).toBe(true);
 });

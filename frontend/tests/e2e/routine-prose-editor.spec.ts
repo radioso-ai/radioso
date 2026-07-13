@@ -410,7 +410,8 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
 
   // Author the outcome guard via the toolbar dialog.
-  await page.getByRole("button", { name: "Outcome" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Outcome" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Outcome status").fill("failed");
   await dialog.getByRole("button", { name: "Add outcome branch" }).click();
@@ -455,7 +456,8 @@ test("a 'when filled' chip compiles a slot_filled branch on the collected slots"
   await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
 
   // Author the slot-filled guard via the toolbar dialog: gate on the email slot.
-  await page.getByRole("button", { name: "When filled" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "When filled" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("switch", { name: "email" }).click();
   await dialog.getByRole("button", { name: "Add slot-filled branch" }).click();
@@ -688,7 +690,8 @@ test("an action chip compiles to an action step naming the action type", async (
   await editor.click();
   await editor.pressSequentially("Email the team the request ");
   // The action step emits an outbox action named by its type.
-  await page.getByRole("button", { name: "Action" }).click();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("menuitem", { name: "Action" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Action type").fill("contact.send");
   await dialog.getByRole("button", { name: "Add action step" }).click();

@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, ListChecks, Send, Workflow } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, ListChecks, MoreHorizontal, Send, Workflow } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -627,31 +627,15 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
-        <Send className="h-4 w-4" />
-        Action
-      </Button>
       <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />
         Condition
       </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setOutcomeOpen(true)}>
-        <Workflow className="h-4 w-4" />
-        Outcome
-      </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setSlotFilledOpen(true)} disabled={variables.length === 0}>
-        <ListChecks className="h-4 w-4" />
-        When filled
-      </Button>
       <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End
-      </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openApproval}>
-        <Gavel className="h-4 w-4" />
-        Approval
       </Button>
       <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
@@ -662,6 +646,35 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <CornerUpRight className="h-4 w-4" />
         Jump
       </Button>
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
+      {/* Less-common branch/gate builders live behind one overflow so the toolbar stays scannable. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
+            <MoreHorizontal className="h-4 w-4" />
+            More
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuLabel>Advanced</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => setOutcomeOpen(true)}>
+            <Workflow className="mr-2 h-4 w-4" />
+            Outcome
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setSlotFilledOpen(true)} disabled={variables.length === 0}>
+            <ListChecks className="mr-2 h-4 w-4" />
+            When filled
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setActionOpen(true)}>
+            <Send className="mr-2 h-4 w-4" />
+            Action
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => openApproval()}>
+            <Gavel className="mr-2 h-4 w-4" />
+            Approval
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
       <OutcomeDialog open={outcomeOpen} onOpenChange={setOutcomeOpen} statuses={outcomeStatuses} onConfirm={insertOutcome} />
       <SlotFilledDialog open={slotFilledOpen} onOpenChange={setSlotFilledOpen} variables={variables} onConfirm={insertSlotFilled} />

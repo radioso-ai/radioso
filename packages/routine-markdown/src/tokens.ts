@@ -225,9 +225,14 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
 }
 
 const formatParagraph = (paragraph: ProseParagraph): string => {
-  const body = paragraph.segments
-    .map((segment) => (segment.kind === 'text' ? segment.text : tokenForChip(segment)))
-    .join('')
+  let body = ''
+  for (const segment of paragraph.segments) {
+    const token = segment.kind === 'text' ? segment.text : tokenForChip(segment)
+    if (token.startsWith('->') && body !== '' && !/\s$/.test(body)) {
+      body += ' '
+    }
+    body += token
+  }
   return paragraph.headingLevel === 1 ? `# ${body}` : body
 }
 
@@ -275,12 +280,14 @@ export const serializeProseDoc = (input: {
   paragraphs: ProseParagraph[]
 }): string => {
   const referenced = referencedVariableIds(input.paragraphs)
-  // A variable needs a declaration only when it carries something a bare `@name` can't —
-  // a non-text type, or an optional/mutable flag. The common case (required, non-mutable,
-  // text) round-trips as plain text, so the header stays uncluttered.
+  // A variable needs a declaration when it carries something a bare `@name` can't, or when
+  // it is not referenced in the body. Unreferenced variables must stay in frontmatter or they
+  // disappear on the next parse.
   const declaredVars = input.variables.filter((variable) =>
-    referenced.has(variable.id)
-    && (variable.type !== 'text' || variable.required === false || variable.mutable === true))
+    !referenced.has(variable.id)
+    || variable.type !== 'text'
+    || variable.required === false
+    || variable.mutable === true)
 
   const front = [FENCE, `grammar: ${GRAMMAR_VERSION}`, `name: ${input.name}`, `trigger: ${input.trigger}`]
   if (input.reentryMode && input.reentryMode !== 'once_per_conversation') {
@@ -480,6 +487,13 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     if (buffer) segments.push({ kind: 'text', text: buffer })
     buffer = ''
   }
+  const flushBeforeTarget = () => {
+    if (/^\s+$/.test(buffer)) {
+      buffer = ''
+      return
+    }
+    flush()
+  }
   while (index < line.length) {
     const rest = line.slice(index)
 
@@ -487,18 +501,18 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
       // `-> end` (default ending) or `-> end:<id> ("message")` (a named ending with its own copy).
       const named = /^-> end:([A-Za-z_][A-Za-z0-9_]*)(?:\s+\("((?:[^"\\]|\\.)*)"\))?/.exec(rest)
       if (named) {
-        flush()
+        flushBeforeTarget()
         segments.push({ kind: 'chip', chipKind: 'end', refId: named[1]!, label: named[1]!, value: named[2] != null ? unescapeQuoted(named[2]) : null })
         index += named[0].length
         continue
       }
-      flush(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+      flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
     }
-    if (rest.startsWith('-> handoff')) { flush(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
+    if (rest.startsWith('-> handoff')) { flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
 
     const stepMatch = /^-> step:([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*\(max (\d+)\))?/.exec(rest)
     if (stepMatch) {
-      flush()
+      flushBeforeTarget()
       segments.push({ kind: 'chip', chipKind: 'step', refId: stepMatch[1]!, label: stepMatch[1]!, counterLimit: stepMatch[2] ? Number(stepMatch[2]) : null })
       index += stepMatch[0].length
       continue
@@ -633,6 +647,7 @@ export const parseProseDoc = (
   let hadFrontmatter = false
   let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
+  const declaredOrder: string[] = []
   // Slot flags declared alongside the type (`key:type:optional:mutable`). Absent = default
   // (required, non-mutable), so we only record the non-default flags we actually saw.
   const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean }>()
@@ -673,6 +688,7 @@ export const parseProseDoc = (
           for (const declaration of splitList(value)) {
             const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
             if (varKey && varType && (SLOT_TYPES as readonly string[]).includes(varType)) {
+              if (!declaredTypes.has(varKey)) declaredOrder.push(varKey)
               declaredTypes.set(varKey, varType as RoutineSlotType)
               const required = flags.includes('optional') ? false : undefined
               const mutable = flags.includes('mutable') ? true : undefined
@@ -709,9 +725,14 @@ export const parseProseDoc = (
     paragraphs.pop()
   }
 
-  // Variables = everything referenced, typed from the `vars:` declaration (default text).
+  // Variables = declared variables first, then anything referenced only in the body. This
+  // preserves declared-but-unused slots so backend validation can decide the policy.
   const referenced = referencedVariableIds(paragraphs)
-  const variables: ChipDocVariable[] = [...referenced].map((id) => ({
+  const variableIds = [...declaredOrder]
+  for (const id of referenced) {
+    if (!declaredTypes.has(id)) variableIds.push(id)
+  }
+  const variables: ChipDocVariable[] = variableIds.map((id) => ({
     id,
     name: id,
     type: declaredTypes.get(id) ?? 'text',

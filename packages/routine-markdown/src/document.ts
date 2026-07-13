@@ -388,33 +388,7 @@ export function draftFromChipDoc(input: {
     }
   }
 
-  // Used slots come from any block — step instructions and branch conditions both count.
-  const usedSlotIds = new Set<string>()
-  for (const block of blocks) {
-    for (const match of block.text.matchAll(SLOT_REFERENCE)) {
-      usedSlotIds.add(match[1]!)
-    }
-    // A condition chip branches on a variable — that's a slot reference too. A condition on a
-    // decision is not a slot (the capture key isn't a declared variable), and an outcome guard
-    // branches on a step result, not a slot, so skip both.
-    for (const chip of block.chips) {
-      if (chip.kind === 'condition' && chip.refId === SLOT_FILLED_GUARD_REF) {
-        // A slot-filled guard's refId is the sentinel, not a slot; its real slot keys live in
-        // `values`. Count those (the guardText will hold {{slot.x}} for each) so a slot that is
-        // referenced only by a slot-filled chip still gets declared.
-        for (const value of chip.values ?? []) if (typeof value === 'string') usedSlotIds.add(value)
-      } else if (chip.kind === 'condition' && !decisionOptions.has(chip.refId) && chip.refId !== OUTCOME_GUARD_REF) {
-        usedSlotIds.add(chip.refId)
-      }
-      if (chip.kind === 'skill') {
-        for (const binding of Object.values(chip.inputBindings ?? {})) {
-          if (binding.kind === 'variableRef') usedSlotIds.add(binding.ref)
-        }
-      }
-    }
-  }
   const slots = input.variables
-    .filter((variable) => usedSlotIds.has(variable.id))
     .map((variable, index) => ({
       stableSlotId: variable.id,
       key: variable.id,

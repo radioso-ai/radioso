@@ -213,10 +213,14 @@ the body, and exactly one trailing newline.
 Canonicalization also normalizes these details:
 
 - variable declarations use `key:type[:optional][:mutable]`
-- simple required `text` variables are elided from `vars`
+- simple required `text` variables are elided from `vars` only when the body
+  references them as a bare `@key`
+- declared variables that are not referenced in the body are always emitted in
+  `vars`, including simple required `text` variables
 - skill binding suffixes are ordered as `in`, then `out`, then non-default
   `mode`
 - branch targets are written as `end`, `handoff`, or `step:<id>`
+- branch lines use exactly one space before `->`
 - quoted action ids, approval labels, approval descriptions, and named
   completion messages escape quotes and backslashes
 

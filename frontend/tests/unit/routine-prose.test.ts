@@ -180,7 +180,7 @@ describe('routine prose helpers', () => {
     expect(draft.steps.map((step) => step.stableStepId)).toEqual(['step_1', 'step_2'])
     expect(draft.transitions.map((transition) => transition.toRef)).toEqual(['step_2', 'done'])
     expect(draft.terminals.map((terminal) => terminal.kind)).toEqual(['complete'])
-    expect(draft.slots.map((slot) => slot.key)).toEqual(['order_id'])
+    expect(draft.slots.map((slot) => slot.key)).toEqual(['order_id', 'unused'])
   })
 
   it('compiles a handoff block (no condition) into an AI-decided (llm) branch', () => {

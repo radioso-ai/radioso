@@ -428,6 +428,64 @@ describe('routine prose token grammar', () => {
     expect(parsed.variables).toContainEqual({ id: 'name', name: 'name', type: 'text' })
   })
 
+  it('round-trips a declared but unreferenced variable through vars', () => {
+    const source = [
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Intake',
+      'trigger: when collecting details',
+      'vars: email:email:optional:mutable, internal_note:text',
+      '---',
+      'Ask for the order number.',
+    ].join('\n')
+
+    const parsed = parseProseDoc(source, () => false)
+    const serialized = serializeProseDoc({
+      name: parsed.name ?? '',
+      trigger: parsed.trigger ?? '',
+      variables: parsed.variables,
+      paragraphs: parsed.paragraphs,
+    })
+    const reparsed = parseProseDoc(serialized, () => false)
+
+    expect(parsed.variables).toEqual([
+      { id: 'email', name: 'email', type: 'email', required: false, mutable: true },
+      { id: 'internal_note', name: 'internal_note', type: 'text' },
+    ])
+    expect(draftFromChipDoc({
+      name: parsed.name ?? '',
+      trigger: parsed.trigger ?? '',
+      variables: parsed.variables,
+      blocks: parsed.paragraphs.map((paragraph) => ({
+        text: paragraph.segments.map((segment) => segment.kind === 'text' ? segment.text : '').join(''),
+        chips: [],
+      })),
+    }).slots).toEqual([
+      expect.objectContaining({ key: 'email', type: 'email', required: false, mutable: true, ordinal: 0 }),
+      expect.objectContaining({ key: 'internal_note', type: 'text', required: true, ordinal: 1 }),
+    ])
+    expect(serialized).toContain('vars: email:email:optional:mutable, internal_note:text')
+    expect(reparsed.variables).toEqual(parsed.variables)
+  })
+
+  it('canonicalizes branch targets with one space before the arrow', () => {
+    const result = canonicalize([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Branches',
+      'trigger: when branching',
+      'vars: email:email',
+      '---',
+      '[filled @email]-> end',
+      '[outcome failed]-> handoff',
+    ].join('\n'))
+
+    expect(result).toMatchObject({ ok: true })
+    if (!result.ok) throw new Error('expected canonicalize to succeed')
+    expect(result.content).toContain('[filled @email] -> end')
+    expect(result.content).toContain('[outcome failed] -> handoff')
+  })
+
   it('round-trips a capped backward jump', () => {
     const input = {
       name: 'retry',

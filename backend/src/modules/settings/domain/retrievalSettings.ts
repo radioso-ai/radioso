@@ -104,6 +104,9 @@ interface LegacyMetadataRule {
 export interface RetrievalSettingsRecord {
   workspaceId: string;
   queryRewriteEnabled: boolean;
+  temporalStructuredLookupEnabled?: boolean;
+  temporalBoostUpcomingEnabled?: boolean;
+  temporalDeterministicSortEnabled?: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
   suggestedQuestionsEnabled: boolean;
@@ -121,6 +124,9 @@ export interface RetrievalSettingsRecord {
 
 export interface RetrievalSettingsInput {
   queryRewriteEnabled: boolean;
+  temporalStructuredLookupEnabled?: boolean;
+  temporalBoostUpcomingEnabled?: boolean;
+  temporalDeterministicSortEnabled?: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
   suggestedQuestionsEnabled: boolean;
@@ -153,6 +159,9 @@ export const defaultRetrievalSettings = (workspaceId: string): RetrievalSettings
   // default: it adds a reranker model call to every retrieval, and operators
   // opt in per agent when ordering quality is worth that latency.
   queryRewriteEnabled: true,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: DEFAULT_SEMANTIC_REWRITE_INSTRUCTIONS,
   lexicalRewriteInstructions: DEFAULT_LEXICAL_REWRITE_INSTRUCTIONS,
   suggestedQuestionsEnabled: DEFAULT_SUGGESTED_QUESTIONS_ENABLED,
@@ -345,6 +354,15 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
   if (typeof input.semanticRewriteInstructions !== "string") {
     throw badRequest("semanticRewriteInstructions must be a string");
   }
+  if (input.temporalStructuredLookupEnabled !== undefined && typeof input.temporalStructuredLookupEnabled !== "boolean") {
+    throw badRequest("temporalStructuredLookupEnabled must be a boolean");
+  }
+  if (input.temporalBoostUpcomingEnabled !== undefined && typeof input.temporalBoostUpcomingEnabled !== "boolean") {
+    throw badRequest("temporalBoostUpcomingEnabled must be a boolean");
+  }
+  if (input.temporalDeterministicSortEnabled !== undefined && typeof input.temporalDeterministicSortEnabled !== "boolean") {
+    throw badRequest("temporalDeterministicSortEnabled must be a boolean");
+  }
   if (typeof input.lexicalRewriteInstructions !== "string") {
     throw badRequest("lexicalRewriteInstructions must be a string");
   }
@@ -472,6 +490,9 @@ export const validateRetrievalSettings = (input: RetrievalSettingsInput): Retrie
 
   return {
     ...input,
+    temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? true,
+    temporalBoostUpcomingEnabled: input.temporalBoostUpcomingEnabled ?? true,
+    temporalDeterministicSortEnabled: input.temporalDeterministicSortEnabled ?? true,
     retrievalStrategy:
       resolveRetrievalStrategyPreference(input.retrievalStrategy) ??
       DEFAULT_RETRIEVAL_STRATEGY_PREFERENCE,

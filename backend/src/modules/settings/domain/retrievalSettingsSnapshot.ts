@@ -17,6 +17,9 @@ import type {
  */
 export interface RetrievalSettingsSnapshot {
   queryRewriteEnabled: boolean;
+  temporalStructuredLookupEnabled: boolean;
+  temporalBoostUpcomingEnabled: boolean;
+  temporalDeterministicSortEnabled: boolean;
   semanticRewriteInstructions: string;
   lexicalRewriteInstructions: string;
   suggestedQuestionsEnabled: boolean;
@@ -34,6 +37,9 @@ export const freezeRetrievalSettings = (
   record: RetrievalSettingsRecord,
 ): RetrievalSettingsSnapshot => ({
   queryRewriteEnabled: record.queryRewriteEnabled,
+  temporalStructuredLookupEnabled: record.temporalStructuredLookupEnabled ?? true,
+  temporalBoostUpcomingEnabled: record.temporalBoostUpcomingEnabled ?? true,
+  temporalDeterministicSortEnabled: record.temporalDeterministicSortEnabled ?? true,
   semanticRewriteInstructions: record.semanticRewriteInstructions,
   lexicalRewriteInstructions: record.lexicalRewriteInstructions,
   suggestedQuestionsEnabled: record.suggestedQuestionsEnabled,

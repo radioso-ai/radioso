@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
 description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
-last_updated: 2026-06-09
+last_updated: 2026-07-02
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -87,6 +87,7 @@ client.documents.search(...)
 client.documents.listHistory(...)
 client.documents.getHistory(...)
 client.documents.reprocess(...)
+client.documents.reprocessSource(...)
 
 client.history.list(...)
 client.history.listChats(...)

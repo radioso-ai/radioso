@@ -2079,6 +2079,7 @@ describe("chat service streaming", () => {
         candidateCounts: {
           semantic: 1,
           lexical: 1,
+          temporal: 0,
           merged: 1,
           final: 1,
         },
@@ -3356,6 +3357,7 @@ describe("chat service streaming", () => {
         candidateCounts: {
           semantic: 1,
           lexical: 1,
+          temporal: 0,
           merged: 1,
           final: 1,
         },
@@ -3473,6 +3475,7 @@ describe("chat service streaming", () => {
         candidateCounts: {
           semantic: 1,
           lexical: 1,
+          temporal: 0,
           merged: 1,
           final: 1,
         },

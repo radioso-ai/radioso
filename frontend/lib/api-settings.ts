@@ -65,13 +65,17 @@ export const settingsApi = {
         fixedWindowChunkOverlap: data.fixedWindowChunkOverlap,
         structuredMinChunkSize: data.structuredMinChunkSize,
         structuredMaxChunkSize: data.structuredMaxChunkSize,
+        documentEnrichmentEnabled: data.documentEnrichmentEnabled,
       }),
     }, { withApiToken: true })
   },
 
-  async reprocessWorkspaceIngestion(): Promise<WorkspaceIngestionReprocessResponse> {
+  async reprocessWorkspaceIngestion(input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<WorkspaceIngestionReprocessResponse> {
     return request<WorkspaceIngestionReprocessResponse>("/settings/ingestion/reprocess", {
       method: "POST",
+      ...(input?.documentEnrichmentOverride
+        ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
+        : {}),
     }, { withApiToken: true })
   },
 

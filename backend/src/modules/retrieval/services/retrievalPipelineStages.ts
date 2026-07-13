@@ -10,6 +10,7 @@ import type {
   RewrittenRetrievalQuery,
   RetrievalAnswerShapeSelection,
   RetrievalExecutionMetadata,
+  TemporalQueryMode,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
 } from "../domain/retrievalPipelineTypes.js";
@@ -82,6 +83,9 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  temporalContexts?: RetrievedChunk[];
+  temporalQueryMode?: TemporalQueryMode;
+  temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
 }
@@ -98,6 +102,10 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
 export interface ContextSelectionStageResult extends CandidatePreparationStageResult {
   rerankedContexts: import("../domain/retrievalPipelineTypes.js").RerankedCandidate[];
   rerankStatus: import("../domain/retrievalPipelineTypes.js").RerankStatus;
+  temporalDeterministicSortEnabled?: boolean;
+  temporalDeterministicSortApplied?: boolean;
+  temporalDeterministicSortToday?: string;
+  temporalDeterministicSortDatedContextCount?: number;
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
 }
 
@@ -186,6 +194,9 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   originalContexts?: Array<unknown>;
   rewrittenContexts?: Array<unknown>;
   lexicalContexts?: Array<unknown>;
+  temporalContexts?: Array<unknown>;
+  temporalQueryMode?: TemporalQueryMode;
+  temporalStructuredLookupEnabled?: boolean;
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
   vectorFallbackApplied?: unknown;
@@ -202,6 +213,9 @@ type TraceCandidatePreparationInput = TraceCandidateRetrievalInput & {
 type TraceContextSelectionInput = TraceCandidatePreparationInput & {
   rerankStatus?: unknown;
   rerankedContexts?: Array<unknown>;
+  temporalDeterministicSortEnabled?: boolean;
+  temporalDeterministicSortApplied?: boolean;
+  temporalDeterministicSortDatedContextCount?: number;
   contexts?: Array<unknown>;
 };
 
@@ -282,6 +296,9 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.semantic_original.count": boundedTraceCount(result.originalContexts?.length),
     "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(result.rewrittenContexts?.length),
     "retrieval.candidates.lexical.count": boundedTraceCount(result.lexicalContexts?.length),
+    "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
+    "retrieval.temporal.mode": result.temporalQueryMode,
+    "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,
@@ -302,6 +319,9 @@ export const buildContextSelectionTraceAttributes = (result: TraceContextSelecti
     ...buildCandidatePreparationTraceAttributes(result),
     "retrieval.rerank.status": result.rerankStatus,
     "retrieval.candidates.reranked.count": boundedTraceCount(result.rerankedContexts?.length),
+    "retrieval.temporal.deterministic_sort.enabled": result.temporalDeterministicSortEnabled,
+    "retrieval.temporal.deterministic_sort.applied": result.temporalDeterministicSortApplied,
+    "retrieval.temporal.deterministic_sort.dated_context.count": boundedTraceCount(result.temporalDeterministicSortDatedContextCount),
     "retrieval.context.final.count": boundedTraceCount(result.contexts?.length),
   });
 

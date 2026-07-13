@@ -9,6 +9,7 @@ import { CandidatePreparationService } from "./services/candidatePreparationServ
 import { ConversationContextService } from "./services/conversationContextService.js";
 import { EmbeddingService } from "./services/embeddingService.js";
 import { PgLexicalSearch } from "./infra/lexicalSearch.js";
+import { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 import { PgVectorIndex, PgVectorSearch } from "./infra/vectorSearch.js";
 import { PostgresChunkCandidateHydrator } from "./infra/chunkCandidateHydrator.js";
 import { PromptBuilder } from "./services/promptBuilder.js";
@@ -49,6 +50,7 @@ export {
   PgLexicalSearch,
   type LexicalSearchPort,
 } from "./infra/lexicalSearch.js";
+export { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 export {
   PgVectorSearch,
   PgVectorIndex,
@@ -147,6 +149,7 @@ export const createDefaultRetrievalServices = (input: {
     input.ingestionSettingsService,
     input.skillSettingsResolver,
     new PostgresChunkCandidateHydrator(input.database.kysely),
+    new PgTemporalCandidateRepository(input.database),
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);
 

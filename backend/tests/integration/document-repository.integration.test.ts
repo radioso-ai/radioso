@@ -83,6 +83,56 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(await countProcessingJobs(document.id)).toBe(1);
   });
 
+  it("round-trips enrichment provenance in document records and summaries", async () => {
+    const created = await repository.create({
+      ...baseCreateInput({
+        metadata: {
+          sourceUrl: "https://events.example/summer-workshop",
+        },
+      }),
+      status: "ready",
+    });
+    // Provenance lives in its own column; document metadata stays a flat
+    // user-owned contract.
+    const document = await repository.updateMetadataForRevision({
+      documentId: created.id,
+      workspaceId,
+      revision: created.revision,
+      metadata: { sourceUrl: "https://events.example/summer-workshop" },
+      enrichment: {
+        status: "applied",
+        shape: "event",
+        model: "gpt-5.2",
+        enrichedAt: "2026-07-02T12:00:00.000Z",
+        anchorDate: "2026-07-02",
+        anchorSource: "source_last_sync",
+        factCount: 1,
+        appliedChunkCount: 2,
+        failureReason: null,
+      },
+    });
+    expect(document).not.toBeNull();
+    expect(document?.metadata).toEqual({ sourceUrl: "https://events.example/summer-workshop" });
+
+    const byId = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+    const [summary] = await repository.listSummariesByIdsAndWorkspaceId(workspaceId, [created.id]);
+    const page = await repository.listSummaryPageByWorkspaceId(workspaceId, { limit: 10 });
+
+    expect(byId?.enrichment).toEqual({
+      status: "applied",
+      shape: "event",
+      model: "gpt-5.2",
+      enrichedAt: "2026-07-02T12:00:00.000Z",
+      anchorDate: "2026-07-02",
+      anchorSource: "source_last_sync",
+      factCount: 1,
+      appliedChunkCount: 2,
+      failureReason: null,
+    });
+    expect(summary?.enrichment).toEqual(byId?.enrichment);
+    expect(page.documents.find((entry) => entry.id === created.id)?.enrichment).toEqual(byId?.enrichment);
+  });
+
   it("createAndQueue defaults metadata to {} and source kind to inline_text", async () => {
     const document = await repository.createAndQueue({
       workspaceId,
@@ -411,6 +461,26 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     }
   });
 
+  it("requeueAllEligibleAndQueue stores enrichment override options on queued jobs", async () => {
+    const ready = await repository.create({ ...baseCreateInput(), status: "ready" });
+    await repository.create({ ...baseCreateInput(), status: "processing" });
+
+    const result = await repository.requeueAllEligibleAndQueue(workspaceId, {
+      documentEnrichmentOverride: "off",
+    });
+
+    expect(result.queuedDocumentCount).toBe(1);
+    expect(result.queuedDocuments).toEqual([{ documentId: ready.id, revision: ready.revision + 1 }]);
+
+    const [job] = await database.query<{ options: Record<string, unknown> | null }>(
+      `SELECT options
+       FROM document_processing_jobs
+       WHERE document_id = $1 AND document_revision = $2`,
+      [ready.id, ready.revision + 1],
+    );
+    expect(job?.options).toEqual({ documentEnrichmentOverride: "off" });
+  });
+
   it("setStatus sets failed_at and failure_reason only for the failed status", async () => {
     const created = await repository.create({ ...baseCreateInput(), status: "queued" });
 
@@ -515,6 +585,55 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(result.count).toBe(2);
     expect(result.storageRefs).toEqual([
       { bucket: "bucket-a", objectPath: "path/a.pdf", generation: "gen-1" },
+    ]);
+  });
+
+  it("requeueSourceEligibleAndQueue queues only that source and stores enrichment override options", async () => {
+    const otherSourceId = randomUUID();
+    await database.query(
+      `INSERT INTO document_sources (id, workspace_id, kind, name, external_id, config, metadata)
+       VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, '{}'::jsonb)`,
+      [otherSourceId, workspaceId, "website", "Other Docs Site", "site-ext-2"],
+    );
+
+    const ready = await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "source-requeue-ready" }),
+      status: "ready",
+    });
+    const failed = await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "source-requeue-failed" }),
+      status: "failed",
+    });
+    await repository.create({
+      ...baseCreateInput({ sourceId, externalDocumentId: "source-requeue-processing" }),
+      status: "processing",
+    });
+    const otherSource = await repository.create({
+      ...baseCreateInput({ sourceId: otherSourceId, externalDocumentId: "source-requeue-other" }),
+      status: "ready",
+    });
+
+    const result = await repository.requeueSourceEligibleAndQueue({
+      workspaceId,
+      sourceId,
+      options: { documentEnrichmentOverride: "on" },
+    });
+
+    expect(result.queuedDocumentCount).toBe(2);
+    expect(result.skippedDocumentCount).toBe(1);
+    expect(result.queuedDocuments.map((entry) => entry.documentId).sort()).toEqual([failed.id, ready.id].sort());
+
+    const jobRows = await database.query<{ document_id: string; options: Record<string, unknown> | null }>(
+      `SELECT document_id, options
+       FROM document_processing_jobs
+       WHERE document_id = ANY($1::uuid[])
+       ORDER BY document_id ASC`,
+      [[ready.id, failed.id, otherSource.id]],
+    );
+    expect(jobRows).toHaveLength(2);
+    expect(jobRows.map((row) => row.options)).toEqual([
+      { documentEnrichmentOverride: "on" },
+      { documentEnrichmentOverride: "on" },
     ]);
   });
 

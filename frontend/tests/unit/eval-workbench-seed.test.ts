@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildEvalSeedTurn } from '@/lib/eval-workbench-seed'
+import { buildEvalSeedTurn, eventRetrievalWorkbenchSeedCases } from '@/lib/eval-workbench-seed'
 import type { EvalSnapshot } from '@/lib/api-eval'
 
 const snapshot = (overrides: Partial<EvalSnapshot>): EvalSnapshot => ({
@@ -36,6 +36,24 @@ const message = (
 })
 
 describe('eval workbench seed', () => {
+  it('exposes event retrieval seed cases with evidence and order assertions', () => {
+    expect(eventRetrievalWorkbenchSeedCases.map((evalCase) => evalCase.id)).toEqual([
+      'event-date-cross-paragraph',
+      'event-next-events-listing',
+      'event-actuality-sort',
+    ])
+    expect(eventRetrievalWorkbenchSeedCases[0]?.assertions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'retrieval_chunk_metadata' }),
+      ]),
+    )
+    expect(eventRetrievalWorkbenchSeedCases[1]?.assertions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'retrieval_document_order' }),
+      ]),
+    )
+  })
+
   it('uses a user-only replay target instead of falling back to the last assistant turn', () => {
     const seed = buildEvalSeedTurn(snapshot({
       sourceMessageId: null,

@@ -31,6 +31,9 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
   settings: {
     workspaceId: "workspace-1",
     queryRewriteEnabled: true,
+    temporalStructuredLookupEnabled: true,
+    temporalBoostUpcomingEnabled: true,
+    temporalDeterministicSortEnabled: true,
     semanticRewriteInstructions: "",
     lexicalRewriteInstructions: "",
     suggestedQuestionsEnabled: true,
@@ -126,6 +129,9 @@ const buildInput = (rewrittenContexts: RetrievedChunk[]): CandidateRetrievalStag
   originalContexts: [],
   rewrittenContexts,
   lexicalContexts: [],
+  temporalContexts: [],
+  temporalQueryMode: "none",
+  temporalStructuredLookupEnabled: true,
   retrievalBranches: [],
   vectorFallbackApplied: false,
 });
@@ -224,6 +230,58 @@ describe("candidate preparation stage", () => {
 
     expect(result.scoredCandidates[0]?.chunkId).toBe("lexical-definition");
     expect(result.scoredCandidates.some((candidate) => candidate.chunkId === "lexical-definition")).toBe(true);
+  });
+
+  it("applies built-in upcoming event boost only for temporal event lookups when enabled", async () => {
+    // Fixed clock: the fixture event date must stay "upcoming" regardless of
+    // when the suite runs.
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+      () => new Date("2026-07-01T12:00:00.000Z"),
+    );
+    const datedCandidate = semanticChunk(1, {
+      chunkId: "future-event",
+      similarity: 0.4,
+      metadata: { dateFrom: "2026-07-03" },
+    });
+
+    const boosted = await stage.execute({
+      ...buildInput([datedCandidate]),
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [],
+        temporalBoostUpcomingEnabled: true,
+      },
+      rewrittenQuery: {
+        ...buildInput([]).rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "upcoming events",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      },
+      temporalQueryMode: "listing",
+    });
+
+    const unboosted = await stage.execute({
+      ...buildInput([datedCandidate]),
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [],
+        temporalBoostUpcomingEnabled: false,
+      },
+      rewrittenQuery: boosted.rewrittenQuery,
+      temporalQueryMode: "listing",
+    });
+
+    expect(boosted.scoredCandidates[0]?.attributeMatchScore).toBeGreaterThan(0);
+    expect(boosted.scoredCandidates[0]?.similarity).toBeGreaterThan(unboosted.scoredCandidates[0]?.similarity ?? 0);
+    expect(unboosted.scoredCandidates[0]?.attributeMatchScore).toBe(0);
   });
 
   it("enacts only matched trigger rules and records backoff for empty hard filters", async () => {

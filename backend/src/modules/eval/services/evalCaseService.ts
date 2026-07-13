@@ -33,6 +33,22 @@ const validateAssertion = (assertion: EvalAssertion): void => {
         throw badRequest("k must be a positive integer for retrieval_top_k_includes_document assertion");
       }
       return;
+    case "retrieval_document_order":
+      if (!Array.isArray(assertion.documentIds) || assertion.documentIds.length === 0) {
+        throw badRequest("documentIds must include at least one document for retrieval_document_order assertion");
+      }
+      if (assertion.documentIds.some((documentId) => !documentId.trim())) {
+        throw badRequest("documentIds cannot be empty for retrieval_document_order assertion");
+      }
+      return;
+    case "retrieval_chunk_metadata":
+      if (!assertion.documentId.trim()) {
+        throw badRequest("documentId is required for retrieval_chunk_metadata assertion");
+      }
+      if (Object.keys(assertion.metadata).length === 0) {
+        throw badRequest("metadata must include at least one expected field for retrieval_chunk_metadata assertion");
+      }
+      return;
     case "answer_contains":
     case "answer_does_not_contain":
       if (!assertion.pattern.trim()) {

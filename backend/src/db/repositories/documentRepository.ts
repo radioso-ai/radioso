@@ -3,8 +3,12 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import type {
+  DocumentProcessingJobOptions,
+} from "./documentProcessingJobRepository.js";
+import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
+  DocumentEnrichmentMetadataUpdateInput,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
@@ -71,6 +75,7 @@ const documentSelectColumns = [
   "created_at",
   "updated_at",
   "metadata",
+  "enrichment",
   "source_kind",
   "source_filename",
   "source_mime_type",
@@ -91,6 +96,7 @@ const documentSummarySelectColumns = [
   "created_at",
   "updated_at",
   "metadata",
+  "enrichment",
   "source_id",
   sourceSummaryExpression.as("source"),
   "external_document_id",
@@ -162,7 +168,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .map(([field, inferredType]) => ({ field, inferredType }));
   }
 
-  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord> {
     return this.db.transaction().execute(async (trx) => {
       const documentId = randomUUID();
       // ON CONFLICT target depends on whether the document is sourced: a sourced page keys
@@ -229,7 +235,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         throw conflict("Imported documents cannot be updated through the inline document API");
       }
 
-      await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision);
+      await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision, options);
 
       return mapDocument(documentRow);
     });
@@ -504,6 +510,25 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
+  async updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null> {
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        metadata: toJsonb(input.metadata),
+        ...(input.enrichment !== undefined
+          ? { enrichment: input.enrichment === null ? null : toJsonb(input.enrichment) }
+          : {}),
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
+      .where("revision", "=", input.revision)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
+
+    return row ? mapDocument(row) : null;
+  }
+
   async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
     const row = (await this.db
       .updateTable("documents")
@@ -522,7 +547,11 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return mapDocument(row!);
   }
 
-  async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
+  async requeueAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<DocumentRecord> {
     return this.db.transaction().execute(async (trx) => {
       const documentRow = (await trx
         .updateTable("documents")
@@ -542,13 +571,13 @@ export class DocumentRepository implements DocumentRepositoryPort {
         throw notFound("Document not found");
       }
 
-      await this.insertProcessingJob(trx, documentId, workspaceId, documentRow.revision);
+      await this.insertProcessingJob(trx, documentId, workspaceId, documentRow.revision, options);
 
       return mapDocument(documentRow);
     });
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+  async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -578,7 +607,60 @@ export class DocumentRepository implements DocumentRepositoryPort {
         .execute()) as QueuedDocumentRow[];
 
       for (const documentRow of queuedRows) {
-        await this.insertProcessingJob(trx, documentRow.id, workspaceId, documentRow.revision);
+        await this.insertProcessingJob(trx, documentRow.id, workspaceId, documentRow.revision, options);
+      }
+
+      const totalCount = Number(counts?.total_count ?? "0");
+      const skippedByStatus = Number(counts?.skipped_count ?? "0");
+
+      return {
+        queuedDocumentCount: queuedRows.length,
+        skippedDocumentCount: Math.max(skippedByStatus, totalCount - queuedRows.length),
+        queuedDocuments: queuedRows.map((documentRow) => ({
+          documentId: documentRow.id,
+          revision: documentRow.revision,
+        })),
+      };
+    });
+  }
+
+  async requeueSourceEligibleAndQueue(input: {
+    workspaceId: string;
+    sourceId: string;
+    options?: DocumentProcessingJobOptions | null;
+  }): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }> {
+    return this.db.transaction().execute(async (trx) => {
+      const counts = await trx
+        .selectFrom("documents")
+        .select([
+          sql<string>`COUNT(*)::text`.as("total_count"),
+          sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("skipped_count"),
+        ])
+        .where("workspace_id", "=", input.workspaceId)
+        .where("source_id", "=", input.sourceId)
+        .executeTakeFirst();
+
+      const queuedRows = (await trx
+        .updateTable("documents")
+        .set({
+          status: "queued",
+          revision: sql<number>`revision + 1`,
+          failed_at: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("workspace_id", "=", input.workspaceId)
+        .where("source_id", "=", input.sourceId)
+        .where("status", "in", ["ready", "failed"])
+        .returning(["id", "revision"])
+        .execute()) as QueuedDocumentRow[];
+
+      for (const documentRow of queuedRows) {
+        await this.insertProcessingJob(trx, documentRow.id, input.workspaceId, documentRow.revision, input.options);
       }
 
       const totalCount = Number(counts?.total_count ?? "0");
@@ -823,6 +905,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     documentId: string,
     workspaceId: string,
     documentRevision: number,
+    options?: DocumentProcessingJobOptions | null,
   ): Promise<void> {
     await db
       .insertInto("document_processing_jobs")
@@ -832,6 +915,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         workspace_id: workspaceId,
         document_revision: documentRevision,
         status: "queued",
+        options: options ? toJsonb(options) : null,
       })
       .execute();
   }

@@ -52,6 +52,10 @@ const seededConversation = {
 const installWorkbenchMocks = async (
   page: Page,
   requestBodies: unknown[],
+  options: {
+    cases?: unknown[]
+    caseDetail?: unknown
+  } = {},
 ) => {
   await page.route("**/backend/api/v1/assistant/chat", async (route) => {
     const body = route.request().postDataJSON() as { message?: string; startConversation?: boolean };
@@ -199,7 +203,7 @@ const installWorkbenchMocks = async (
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ cases: [] }),
+        body: JSON.stringify({ cases: options.cases ?? [] }),
       });
       return;
     }
@@ -251,21 +255,33 @@ const installWorkbenchMocks = async (
           completedAt: nowIso,
         },
         case: {
-          id: evalCaseId,
-          workspaceId,
-          snapshotId,
-          name: "Workbench replay regression",
-          assertions: [],
-          status: "recorded",
-          lastRunId: "case-run-1",
-          createdAt: nowIso,
-          updatedAt: nowIso,
+          ...(options.caseDetail && typeof options.caseDetail === "object"
+            ? options.caseDetail
+            : {
+                id: evalCaseId,
+                workspaceId,
+                snapshotId,
+                name: "Workbench replay regression",
+                assertions: [],
+                status: "recorded",
+                lastRunId: "case-run-1",
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              }),
         },
       }),
     });
   });
 
   await page.route(`**/backend/api/v1/evals/cases/${evalCaseId}`, async (route) => {
+    if (options.caseDetail) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(options.caseDetail),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -375,4 +391,116 @@ test("quality turn creates and opens an eval case", async ({ page }) => {
       assertions: [],
     }),
   ]));
+});
+
+test("event retrieval eval case shows dated assertions and records a run", async ({ page }) => {
+  const requestBodies: unknown[] = [];
+  const eventCase = {
+    id: evalCaseId,
+    workspaceId,
+    snapshotId,
+    name: "Anchorless next events listing",
+    assertions: [
+      {
+        type: "retrieval_document_order",
+        documentIds: [
+          "11111111-1111-4111-8111-111111111102",
+          "11111111-1111-4111-8111-111111111101",
+          "11111111-1111-4111-8111-111111111103",
+        ],
+      },
+      {
+        type: "retrieval_chunk_metadata",
+        documentId: "11111111-1111-4111-8111-111111111101",
+        metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+      },
+    ],
+    status: "recorded",
+    lastRunId: "event-run-1",
+    createdAt: nowIso,
+    updatedAt: nowIso,
+    runs: [
+      {
+        id: "event-run-1",
+        workspaceId,
+        snapshotId,
+        caseId: evalCaseId,
+        mode: "full_assistant",
+        overrides: {},
+        resolvedConfig: { modelProvider: "openai", modelId: "gpt-5.2" },
+        observedOutput: {
+          retrievedChunks: [
+            {
+              documentId: "11111111-1111-4111-8111-111111111102",
+              chunkId: "chunk-102",
+              title: "Morning Retreat",
+              content: "Morning Retreat happens on July 5, 2026.",
+              metadata: { dateFrom: "2026-07-05", dateTo: "2026-07-05" },
+            },
+            {
+              documentId: "11111111-1111-4111-8111-111111111101",
+              chunkId: "chunk-101",
+              title: "Summer Workshop",
+              content: "Summer Workshop happens on August 10, 2026.",
+              metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+            },
+          ],
+          answer: "Morning Retreat is first, then Summer Workshop.",
+          citations: [],
+          answerSegments: [{ text: "Morning Retreat is first, then Summer Workshop." }],
+        },
+        assertionVerdicts: [
+          {
+            assertion: {
+              type: "retrieval_document_order",
+              documentIds: [
+                "11111111-1111-4111-8111-111111111102",
+                "11111111-1111-4111-8111-111111111101",
+                "11111111-1111-4111-8111-111111111103",
+              ],
+            },
+            passed: true,
+            reason: "Retrieved evidence matched the expected event order.",
+          },
+          {
+            assertion: {
+              type: "retrieval_chunk_metadata",
+              documentId: "11111111-1111-4111-8111-111111111101",
+              metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+            },
+            passed: true,
+            reason: "Summer Workshop chunk included the normalized date metadata.",
+          },
+        ],
+        status: "passed",
+        outcomeReason: null,
+        startedAt: nowIso,
+        completedAt: nowIso,
+      },
+    ],
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installWorkbenchMocks(page, requestBodies, {
+    cases: [eventCase],
+    caseDetail: eventCase,
+  });
+
+  await page.goto(`/w/${workspaceKey}/eval/${evalCaseId}`);
+
+  await expect(page.getByRole("heading", { name: "Anchorless next events listing" })).toBeVisible();
+  await expect(page.getByText("Documents should appear in order")).toBeVisible();
+  await expect(page.getByText("Retrieved chunk should have metadata")).toBeVisible();
+  await expect(page.getByText("Retrieved evidence matched the expected event order.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Run case" }).click();
+  await expect.poll(() =>
+    requestBodies.some((body) =>
+      Boolean(body) &&
+      typeof body === "object" &&
+      "mode" in body &&
+      (body as { mode?: unknown }).mode === "full_assistant",
+    ),
+  ).toBe(true);
 });

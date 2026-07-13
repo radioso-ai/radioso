@@ -397,6 +397,9 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Rerank enabled', value: settings.rerankEnabled as boolean | undefined },
               { label: 'Rerank top K', value: settings.rerankTopK as number | undefined },
               { label: 'Rewrite enabled', value: settings.queryRewriteEnabled as boolean | undefined },
+              { label: 'Temporal lookup', value: settings.temporalStructuredLookupEnabled as boolean | undefined },
+              { label: 'Upcoming boost', value: settings.temporalBoostUpcomingEnabled as boolean | undefined },
+              { label: 'Deterministic temporal sort', value: settings.temporalDeterministicSortEnabled as boolean | undefined },
             ]}
           />
         </CollapsibleSection>
@@ -419,6 +422,7 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Rewrite eligible', value: outputs.rewriteEligible as boolean | undefined },
               { label: 'Rewrite ran', value: outputs.rewriteRan as boolean | undefined },
               { label: 'Continuity decision', value: outputs.continuityDecision as string | undefined },
+              { label: 'Temporal query mode', value: outputs.temporalQueryMode as string | undefined },
               { label: 'Rewrite confidence', value: metrics.rewriteConfidence as number | undefined },
             ]}
           />
@@ -535,11 +539,29 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Normalized', value: metrics.normalizedCount as number | undefined },
               { label: 'Merged', value: metrics.mergedCount as number | undefined },
               { label: 'Scored', value: metrics.scoredCount as number | undefined },
+              { label: 'Temporal candidates', value: metrics.temporalCandidateCount as number | undefined },
             ]}
           />
           <StringList values={asStringList(outputs.appliedConstraintSummaries)} />
         </Section>
         <ChunkList label="Top prepared candidates" chunks={asChunkList(outputs.topCandidates)} />
+      </>
+    )
+  }
+
+  if (stage.kind === 'temporal_retrieval') {
+    return (
+      <>
+        <Section title="Temporal retrieval">
+          <KeyValueList
+            rows={[
+              { label: 'Structured lookup', value: settings.temporalStructuredLookupEnabled as boolean | undefined },
+              { label: 'Temporal mode', value: settings.temporalQueryMode as string | undefined },
+              { label: 'Candidate count', value: metrics.candidateCount as number | undefined },
+            ]}
+          />
+        </Section>
+        <ChunkList label="Temporal chunks" chunks={asChunkList(outputs.chunks)} />
       </>
     )
   }

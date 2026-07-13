@@ -14,6 +14,11 @@ import type {
   EvalRun,
   EvalRunStatus,
 } from "../../src/modules/eval/domain/types.js";
+import { evaluateAssertion } from "../../src/modules/eval/domain/outcomes.js";
+import {
+  eventRetrievalEvalCases,
+  eventRetrievalFixtureDocuments,
+} from "../fixtures/event-retrieval/event-eval-cases.js";
 
 const fixedDate = "2026-06-28T12:00:00.000Z";
 
@@ -85,6 +90,96 @@ describe("summarizeSuite", () => {
       pending: 0,
       unscored: 0,
     });
+  });
+});
+
+describe("event retrieval eval fixtures", () => {
+  it("defines deterministic event cases against enriched fixture evidence", () => {
+    expect(eventRetrievalFixtureDocuments.some((document) => document.shape === "profile")).toBe(true);
+    expect(eventRetrievalFixtureDocuments.some((document) => document.shape === "generic")).toBe(true);
+    expect(eventRetrievalEvalCases.map((evalCase) => evalCase.id)).toEqual([
+      "event-date-cross-paragraph",
+      "event-next-events-listing",
+      "event-actuality-sort",
+    ]);
+    expect(eventRetrievalEvalCases[0]?.assertions).toEqual(
+      expect.arrayContaining([
+        {
+          type: "retrieval_chunk_metadata",
+          documentId: "11111111-1111-4111-8111-111111111101",
+          metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+        },
+      ]),
+    );
+    expect(eventRetrievalEvalCases[1]?.assertions).toEqual(
+      expect.arrayContaining([
+        {
+          type: "retrieval_document_order",
+          documentIds: [
+            "11111111-1111-4111-8111-111111111102",
+            "11111111-1111-4111-8111-111111111101",
+            "11111111-1111-4111-8111-111111111103",
+          ],
+        },
+      ]),
+    );
+  });
+
+  it("evaluates retrieved evidence metadata and document order without answer prose", () => {
+    const observedOutput = {
+      retrievedChunks: [
+        {
+          chunkId: "chunk-next",
+          documentId: "11111111-1111-4111-8111-111111111102",
+          title: "July Community Clinic",
+          rank: 0,
+          metadata: { dateFrom: "2026-07-05", dateTo: "2026-07-05" },
+        },
+        {
+          chunkId: "chunk-workshop",
+          documentId: "11111111-1111-4111-8111-111111111101",
+          title: "Summer Workshop",
+          rank: 1,
+          metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+        },
+      ],
+    };
+
+    expect(evaluateAssertion({
+      type: "retrieval_chunk_metadata",
+      documentId: "11111111-1111-4111-8111-111111111101",
+      metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+    }, observedOutput)).toMatchObject({ status: "pass" });
+    // Enrichment attaches dates only to the chunks overlapping the fact's source
+    // range, so the dated chunk may not be the document's first retrieved chunk.
+    expect(evaluateAssertion({
+      type: "retrieval_chunk_metadata",
+      documentId: "11111111-1111-4111-8111-111111111101",
+      metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
+    }, {
+      retrievedChunks: [
+        {
+          chunkId: "chunk-workshop-intro",
+          documentId: "11111111-1111-4111-8111-111111111101",
+          title: "Summer Workshop",
+          rank: 0,
+          metadata: {},
+        },
+        ...observedOutput.retrievedChunks,
+      ],
+    })).toMatchObject({ status: "pass" });
+    expect(evaluateAssertion({
+      type: "retrieval_chunk_metadata",
+      documentId: "11111111-1111-4111-8111-111111111101",
+      metadata: { dateFrom: "2027-01-01" },
+    }, observedOutput)).toMatchObject({ status: "fail" });
+    expect(evaluateAssertion({
+      type: "retrieval_document_order",
+      documentIds: [
+        "11111111-1111-4111-8111-111111111102",
+        "11111111-1111-4111-8111-111111111101",
+      ],
+    }, observedOutput)).toMatchObject({ status: "pass" });
   });
 });
 

@@ -43,12 +43,19 @@ export class ActivitySummaryPresenter {
       candidateCounts: {
         semantic: input.originalCandidateCount + input.rewrittenCandidateCount,
         lexical: input.lexicalCandidateCount ?? 0,
+        temporal: input.temporalCandidateCount ?? 0,
         merged: input.normalizedCandidateCount,
         final: input.finalContextCount,
       },
       appliedConstraints: input.appliedConstraints?.length ? input.appliedConstraints : undefined,
       fallbackApplied: input.fallbackApplied,
       rerankStatus: input.rerankStatus,
+      temporalDeterministicSort: {
+        enabled: input.temporalDeterministicSortEnabled ?? true,
+        applied: input.temporalDeterministicSortApplied ?? false,
+        today: input.temporalDeterministicSortToday,
+        datedContextCount: input.temporalDeterministicSortDatedContextCount ?? 0,
+      },
       rewrite: {
         status: input.rewriteStatus,
         eligible: input.rewriteEligible ?? false,

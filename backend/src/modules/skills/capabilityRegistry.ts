@@ -36,13 +36,16 @@ export interface SkillCapabilitySettingsField {
   label: string;
   type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
   help?: string;
-  defaultValue?: boolean | number | string;
   dependsOnKey?: string;
   options?: SkillCapabilitySettingsFieldOption[];
   min?: number;
   max?: number;
   group?: string;
   advanced?: boolean;
+  // Effective value when the agent leaves the field unset (the system-layer
+  // default). Editors use it to render the real behavior instead of showing an
+  // unset toggle as "off" when the behavior is actually on.
+  defaultValue?: string | number | boolean;
 }
 
 export interface SkillCapabilityDescriptor<

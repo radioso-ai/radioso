@@ -127,6 +127,9 @@ describe("settings contract", () => {
       retrievalStrategy: "fixed",
       customInstruction: "",
       metadataRules: [],
+      temporalStructuredLookupEnabled: true,
+      temporalBoostUpcomingEnabled: true,
+      temporalDeterministicSortEnabled: true,
     });
     expect(response.body).not.toHaveProperty("workspaceId");
     expect(response.body).not.toHaveProperty("similarityThreshold");
@@ -157,6 +160,7 @@ describe("settings contract", () => {
       fixedWindowChunkOverlap: 120,
       structuredMinChunkSize: 24,
       structuredMaxChunkSize: 220,
+      documentEnrichmentEnabled: false,
     });
   });
 
@@ -174,6 +178,7 @@ describe("settings contract", () => {
         structuredMinChunkSize: 30,
         structuredMaxChunkSize: 260,
         embeddingModel: "text-embedding-3-large",
+        documentEnrichmentEnabled: true,
       });
 
     expect(response.status).toBe(200);
@@ -185,6 +190,7 @@ describe("settings contract", () => {
       fixedWindowChunkOverlap: 90,
       structuredMinChunkSize: 30,
       structuredMaxChunkSize: 260,
+      documentEnrichmentEnabled: true,
       supportedEmbeddingModels: expect.arrayContaining(["text-embedding-3-small", "text-embedding-3-large"]),
     });
   });
@@ -231,7 +237,8 @@ describe("settings contract", () => {
 
     const response = await request(app)
       .post("/api/v1/settings/ingestion/reprocess")
-      .set(adminSessionHeaders(session));
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on" });
 
     expect(response.status).toBe(202);
     expect(response.body).toMatchObject({
@@ -264,20 +271,30 @@ describe("settings contract", () => {
     expect(retrievalDefaultsSchema).toContain("customInstruction:");
     expect(retrievalDefaultsSchema).toContain("metadataRules:");
     expect(retrievalDefaultsSchema).toContain("metadataFieldSuggestions:");
+    expect(retrievalDefaultsSchema).toContain("temporalStructuredLookupEnabled:");
+    expect(retrievalDefaultsSchema).toContain("temporalBoostUpcomingEnabled:");
+    expect(retrievalDefaultsSchema).toContain("temporalDeterministicSortEnabled:");
     expect(retrievalDefaultsSchema).not.toContain("workspaceId:");
     expect(retrievalDefaultsSchema).not.toContain("similarityThreshold:");
     expect(retrievalOverrideSchema).toContain("metadataRules:");
     expect(retrievalOverrideSchema).toContain("semanticRewriteInstructions:");
     expect(retrievalOverrideSchema).toContain("suggestedQuestionsEnabled:");
     expect(retrievalOverrideSchema).toContain("lexicalRewriteInstructions:");
+    expect(retrievalOverrideSchema).toContain("temporalStructuredLookupEnabled:");
+    expect(retrievalOverrideSchema).toContain("temporalBoostUpcomingEnabled:");
+    expect(retrievalOverrideSchema).toContain("temporalDeterministicSortEnabled:");
     expect(retrievalOverrideSchema).not.toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("embeddingModel:");
     expect(ingestionSettingsSchema).toContain("pendingEmbeddingModel:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
+    expect(ingestionSettingsSchema).toContain("documentEnrichmentEnabled:");
     expect(ingestionUpdateSchema).toContain("embeddingModel:");
     expect(ingestionUpdateSchema).toContain("fixedWindowChunkOverlap:");
     expect(ingestionUpdateSchema).toContain("structuredMinChunkSize:");
+    expect(ingestionUpdateSchema).toContain("documentEnrichmentEnabled:");
+    expect(spec).toContain("ReprocessIngestionRequest:");
+    expect(spec).toContain("documentEnrichmentOverride:");
     expect(spec).toContain("/api/v1/settings:");
     expect(spec).toContain("/api/v1/settings/retrieval-defaults:");
     expect(spec).toContain("PlatformSettingsResponse:");

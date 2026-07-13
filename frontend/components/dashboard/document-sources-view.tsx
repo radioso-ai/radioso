@@ -26,6 +26,13 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import {
   DashboardTable,
@@ -40,6 +47,7 @@ import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
   documentsApi,
+  settingsApi,
   type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
   type WebsiteCrawlJobSummary,
@@ -82,6 +90,10 @@ const formatDate = (value: string | null) => {
 // rendering "Never" for them reads like an error.
 const SYNCING_SOURCE_KINDS = new Set<DocumentSourceListItem['kind']>(['website', 'connector'])
 const sourceHasSyncConcept = (kind: DocumentSourceListItem['kind']) => SYNCING_SOURCE_KINDS.has(kind)
+type DocumentEnrichmentOverride = 'inherit' | 'on' | 'off'
+type EnrichmentSourceListItem = DocumentSourceListItem & {
+  documentEnrichmentOverride?: DocumentEnrichmentOverride
+}
 
 const connectorIdFromExternalId = (externalId: string | null): string | null => {
   if (!externalId) return null
@@ -210,6 +222,8 @@ function SourceExpandedPanel({
   onOpenCrawlLog,
   onOpenConnectorSettings,
   onSettingsSaved,
+  onSourceUpdated,
+  workspaceEnrichmentEnabled,
 }: {
   source: DocumentSourceListItem
   crawlStatusVersion: number
@@ -218,9 +232,15 @@ function SourceExpandedPanel({
   onOpenCrawlLog: () => void
   onOpenConnectorSettings: () => void
   onSettingsSaved: (settings: DocumentSourceCrawlSettings) => void
+  onSourceUpdated: (source: DocumentSourceListItem) => void
+  workspaceEnrichmentEnabled?: boolean
 }) {
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
   const [isLoading, setIsLoading] = useState(source.kind === 'website')
+  const [isSavingEnrichmentOverride, setIsSavingEnrichmentOverride] = useState(false)
+  const [isReprocessingSource, setIsReprocessingSource] = useState(false)
+  const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null)
+  const [sourceActionError, setSourceActionError] = useState<string | null>(null)
 
   useEffect(() => {
     if (source.kind !== 'website') {
@@ -254,6 +274,37 @@ function SourceExpandedPanel({
   const crawlFailed = crawlJob?.status === 'failed'
   const pageIssueSummaries = getCrawlPageIssueSummaries(crawlJob)
   const hasCrawlLog = source.kind === 'website' && Boolean(crawlJob)
+  const enrichmentOverride = ((source as EnrichmentSourceListItem).documentEnrichmentOverride ?? 'inherit')
+
+  const handleEnrichmentOverrideChange = async (value: DocumentEnrichmentOverride) => {
+    setIsSavingEnrichmentOverride(true)
+    setSourceActionError(null)
+    setSourceActionMessage(null)
+    try {
+      const updated = await documentsApi.updateSourceEnrichmentOverride(source.id, value)
+      onSourceUpdated(updated)
+    } catch (error) {
+      setSourceActionError(getApiErrorMessage(error, 'Failed to save enrichment override.'))
+    } finally {
+      setIsSavingEnrichmentOverride(false)
+    }
+  }
+
+  const handleReprocessSource = async () => {
+    setIsReprocessingSource(true)
+    setSourceActionError(null)
+    setSourceActionMessage(null)
+    try {
+      const response = await documentsApi.reprocessSource(source.id)
+      setSourceActionMessage(
+        `Queued ${response.queuedDocumentCount} document${response.queuedDocumentCount === 1 ? '' : 's'} for reprocessing. Skipped ${response.skippedDocumentCount}.`,
+      )
+    } catch (error) {
+      setSourceActionError(getApiErrorMessage(error, 'Failed to reprocess source.'))
+    } finally {
+      setIsReprocessingSource(false)
+    }
+  }
 
   return (
     <div className="space-y-3 px-4 py-3">
@@ -322,6 +373,56 @@ function SourceExpandedPanel({
           </CollapsibleContent>
         ) : null}
       </Collapsible>
+      {source.id === MANUALLY_ADDED_SOURCE_ID ? (
+        <div className="rounded-md border border-border bg-background/40 p-3">
+          <p className="text-sm font-medium text-foreground">Metadata extraction</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Manually added documents follow the workspace setting (Knowledge → Ingestion → Metadata extraction)
+            {workspaceEnrichmentEnabled === undefined ? '' : ` — currently ${workspaceEnrichmentEnabled ? 'on' : 'off'}`}.
+          </p>
+        </div>
+      ) : (
+      <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0 max-w-xl">
+            <p className="text-sm font-medium text-foreground">Metadata extraction</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Understands each document&apos;s type and extracts structured tags like event dates during processing
+              (one extra AI call per document), so the agent can answer date and event questions from this source.
+            </p>
+          </div>
+          <Select
+            value={enrichmentOverride}
+            onValueChange={(value) => void handleEnrichmentOverrideChange(value as DocumentEnrichmentOverride)}
+            disabled={isSavingEnrichmentOverride}
+          >
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inherit">
+                {workspaceEnrichmentEnabled === undefined
+                  ? 'Use workspace setting'
+                  : `Use workspace setting (${workspaceEnrichmentEnabled ? 'on' : 'off'})`}
+              </SelectItem>
+              <SelectItem value="on">Always on for this source</SelectItem>
+              <SelectItem value="off">Always off for this source</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" variant="outline" size="sm" disabled={isReprocessingSource} onClick={() => void handleReprocessSource()}>
+            {isReprocessingSource ? <Spinner className="mr-2 h-3.5 w-3.5" /> : <RefreshCw className="mr-2 h-3.5 w-3.5" />}
+            Reprocess source
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Applies setting changes to documents already in this source by processing them again.
+          </p>
+          {sourceActionMessage ? <p className="text-xs text-muted-foreground">{sourceActionMessage}</p> : null}
+          {sourceActionError ? <p className="text-xs text-destructive">{sourceActionError}</p> : null}
+        </div>
+      </div>
+      )}
     </div>
   )
 }
@@ -345,7 +446,25 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
   const [pausedSourceIds, setPausedSourceIds] = useState<Set<string>>(new Set())
   const [pendingResumeSourceIds, setPendingResumeSourceIds] = useState<Set<string>>(new Set())
   const [crawlStatusVersion, setCrawlStatusVersion] = useState(0)
+  const [workspaceEnrichmentEnabled, setWorkspaceEnrichmentEnabled] = useState<boolean | undefined>(undefined)
   const sectionShellClassName = 'w-full'
+
+  useEffect(() => {
+    let cancelled = false
+    settingsApi
+      .getIngestionSettings()
+      .then((settings) => {
+        if (!cancelled) {
+          setWorkspaceEnrichmentEnabled(settings.documentEnrichmentEnabled)
+        }
+      })
+      .catch(() => {
+        // Best-effort label context only; the override select works without it.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspaceId])
 
   const refreshCrawlingStatus = useCallback((pendingResumeSourceIdsOverride?: ReadonlySet<string>) => {
     void Promise.all([
@@ -754,6 +873,11 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
                         onViewDocuments={() => onViewDocumentsForSource(source.id)}
                         onOpenCrawlLog={() => setCrawlLogSource(source)}
                         onOpenConnectorSettings={() => setConnectorSetupSource(source)}
+                        onSourceUpdated={(updated) => {
+                          setSources((current) =>
+                            current.map((entry) => (entry.id === updated.id ? updated : entry)),
+                          )
+                        }}
                         onSettingsSaved={(settings) => {
                           setSources((current) =>
                             current.map((entry) =>
@@ -761,6 +885,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
                             ),
                           )
                         }}
+                        workspaceEnrichmentEnabled={workspaceEnrichmentEnabled}
                       />
                     </div>
                   ) : null}

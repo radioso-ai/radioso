@@ -58,6 +58,7 @@ export interface WorkbenchReplayResolvedConfig {
     title: string;
     rank: number;
     similarity?: number;
+    metadata?: Record<string, unknown>;
   }>;
 }
 
@@ -310,6 +311,7 @@ export class WorkbenchReplayRunner {
           title: ctx.title,
           rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
           similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+          metadata: ctx.metadata,
         })),
       },
     };

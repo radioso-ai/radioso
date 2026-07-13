@@ -14,7 +14,7 @@ export interface IngestionSettingsRepositoryPort {
 }
 
 export interface WorkspaceReprocessPort {
-  reprocessWorkspace(workspaceId: string): Promise<unknown>;
+  reprocessWorkspace(workspaceId: string, options?: { documentEnrichmentOverride?: "on" | "off" } | null): Promise<unknown>;
 }
 
 /**

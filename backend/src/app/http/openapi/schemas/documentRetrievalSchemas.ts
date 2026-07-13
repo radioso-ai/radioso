@@ -2,8 +2,11 @@ import { z } from "zod";
 import {
   documentParamsSchema,
   documentSchema,
+  reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
+  sourceParamsSchema,
+  sourceUpdateSchema,
 } from "../../routes/documentRouteSchemas.js";
 import { crawlBodySchema } from "../../../../modules/websiteCrawler/routes.js";
 import {
@@ -49,6 +52,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncStatus: z.string().nullable(),
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
+      documentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
       crawlSettings: DocumentSourceCrawlSettingsSchema.optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
@@ -57,15 +61,22 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
 
   const DocumentSourceUpdateRequestSchema = registry.register(
     "DocumentSourceUpdateRequest",
+    sourceUpdateSchema,
+  );
+
+  const DocumentReprocessRequestSchema = registry.register(
+    "DocumentReprocessRequest",
+    reprocessDocumentBodySchema,
+  );
+
+  const SourceReprocessResponseSchema = registry.register(
+    "SourceReprocessResponse",
     z.object({
-      crawlSettings: z
-        .object({
-          limit: z.number().int().min(1).optional(),
-          includeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
-          excludeUrlPatterns: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
-          preserveContentLinks: z.boolean().optional(),
-        })
-        .optional(),
+      sourceId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      queuedDocumentCount: z.number().int().min(0),
+      skippedDocumentCount: z.number().int().min(0),
+      status: z.enum(["queued", "noop"]),
     }),
   );
 
@@ -87,6 +98,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       title: z.string().optional().openapi({
         description: "Optional title to use instead of the source filename.",
       }),
+      documentEnrichmentOverride: z.enum(["on", "off"]).optional().openapi({
+        description: "Force metadata extraction on or off for this import's processing run only.",
+      }),
     }),
   );
 
@@ -95,6 +109,20 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     z.object({
       documentId: z.string().uuid(),
       status: DocumentStatusSchema,
+    }),
+  );
+  const DocumentEnrichmentSchema = registry.register(
+    "DocumentEnrichment",
+    z.object({
+      status: z.enum(["applied", "skipped", "failed"]),
+      shape: z.enum(["event", "article", "profile", "reference", "generic"]).optional(),
+      model: z.string().nullable().optional(),
+      enrichedAt: z.string().datetime().nullable().optional(),
+      anchorDate: z.string().nullable().optional(),
+      anchorSource: z.enum(["source_last_sync", "document_created_at"]).nullable().optional(),
+      factCount: z.number().int().min(0).optional(),
+      appliedChunkCount: z.number().int().min(0).optional(),
+      failureReason: z.string().nullable().optional(),
     }),
   );
 
@@ -109,6 +137,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+      enrichment: DocumentEnrichmentSchema.nullable().optional(),
       sourceId: z.string().uuid().nullable().optional(),
       source: DocumentSourceSummarySchema.nullable().optional(),
       externalDocumentId: z.string().nullable().optional(),
@@ -537,9 +566,12 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSourceCrawlSettingsSchema,
     DocumentSourceListItemSchema,
     DocumentSourceUpdateRequestSchema,
+    DocumentReprocessRequestSchema,
+    SourceReprocessResponseSchema,
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,
     DocumentOperationResponseSchema,
+    DocumentEnrichmentSchema,
     DocumentSummarySchema,
     DocumentDetailsSchema,
     DocumentListResponseSchema,

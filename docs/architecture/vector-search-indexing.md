@@ -45,6 +45,7 @@ PostgreSQL remains authoritative for:
 - workspace and source ownership
 - document processing state
 - embedding model settings and processing decisions
+- chunk temporal metadata and generated date columns used for event-date lookup
 
 PostgreSQL does not have to remain authoritative for embedding vector bytes if a
 dedicated vector index is added later. In that model, the vector store is a
@@ -86,6 +87,12 @@ default implementation.
 `compilePgChunkFilter` owns PostgreSQL filter SQL for chunk retrieval. It keeps
 source and metadata filter handling consistent between vector and lexical
 search.
+
+Temporal event lookup is a retrieval-owned PostgreSQL read path over canonical
+chunk metadata. Ingestion enrichment may add `dateFrom` and `dateTo` to chunk
+metadata, and generated date columns make upcoming-event lookup and ordering
+indexable. Retrieval consumes those fields only as metadata; it does not import
+ingestion enrichment contracts.
 
 A future external vector backend should not replace these contracts by leaking
 backend-specific query details into document processing or retrieval pipeline
@@ -171,6 +178,8 @@ default and verify:
 - vector retrieval still respects workspace, source, metadata, model, and
   dimension filters
 - lexical retrieval uses the same source and metadata filter semantics
+- temporal candidate retrieval respects workspace, source, and chunk date
+  semantics when enriched chunks are present
 - existing persistence integration tests still pass
 
 Before enabling an external vector backend, add focused tests for:

@@ -12,6 +12,7 @@ import type {
   DocumentSourceListResponse,
   DocumentSearchHistoryListResponse,
   DocumentSearchResponse,
+  SourceReprocessResponse,
   WebsiteCrawlEnqueueResponse,
   WebsiteCrawlJobListResponse,
   WebsiteCrawlJobStatus,
@@ -71,9 +72,12 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async reprocessDocument(documentId: string): Promise<DocumentCreateResponse> {
+  async reprocessDocument(documentId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<DocumentCreateResponse> {
     return request<DocumentCreateResponse>(`/document/${documentId}/reprocess`, {
       method: "POST",
+      ...(input?.documentEnrichmentOverride
+        ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
+        : {}),
     }, { withApiToken: true })
   },
 
@@ -83,11 +87,18 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
-  async importDocument(file: File, title?: string): Promise<DocumentCreateResponse> {
+  async importDocument(
+    file: File,
+    title?: string,
+    options?: { documentEnrichmentOverride?: 'on' | 'off' },
+  ): Promise<DocumentCreateResponse> {
     const formData = new FormData()
     formData.set("file", file)
     if (title?.trim()) {
       formData.set("title", title.trim())
+    }
+    if (options?.documentEnrichmentOverride) {
+      formData.set("documentEnrichmentOverride", options.documentEnrichmentOverride)
     }
 
     return request<DocumentCreateResponse>("/document/import", {
@@ -148,6 +159,15 @@ export const documentsApi = {
     }, { withApiToken: true })
   },
 
+  async reprocessSource(sourceId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<SourceReprocessResponse> {
+    return request<SourceReprocessResponse>(`/document/sources/${encodeURIComponent(sourceId)}/reprocess`, {
+      method: "POST",
+      ...(input?.documentEnrichmentOverride
+        ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
+        : {}),
+    }, { withApiToken: true })
+  },
+
   async pauseSourceCrawl(sourceId: string): Promise<{ pausedJobCount: number }> {
     return request<{ pausedJobCount: number }>(`/document/sources/${encodeURIComponent(sourceId)}/pause-crawl`, {
       method: "POST",
@@ -173,6 +193,16 @@ export const documentsApi = {
     return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
       method: 'PATCH',
       body: JSON.stringify({ crawlSettings }),
+    }, { withApiToken: true })
+  },
+
+  async updateSourceEnrichmentOverride(
+    sourceId: string,
+    documentEnrichmentOverride: 'inherit' | 'on' | 'off',
+  ): Promise<DocumentSourceListItem> {
+    return request<DocumentSourceListItem>(`/document/sources/${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ documentEnrichmentOverride }),
     }, { withApiToken: true })
   },
 

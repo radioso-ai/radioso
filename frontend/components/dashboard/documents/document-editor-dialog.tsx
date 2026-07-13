@@ -7,8 +7,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import type { DocumentDialogEnrichmentChoice } from './document-import-dialog'
 
 type EditorMode = 'create' | 'edit' | 'view'
 
@@ -26,6 +28,8 @@ export function DocumentEditorDialog({
   saveError,
   isSaving,
   isLoading,
+  enrichmentChoice,
+  onEnrichmentChoiceChange,
   onOpenChange,
   onChange,
   onMetadataChange,
@@ -38,6 +42,10 @@ export function DocumentEditorDialog({
   saveError?: string | null
   isSaving: boolean
   isLoading: boolean
+  // Only surfaced for mode "create": the override rides on the processing run
+  // this submission queues, so it has no meaning in view/edit.
+  enrichmentChoice?: DocumentDialogEnrichmentChoice
+  onEnrichmentChoiceChange?: (value: DocumentDialogEnrichmentChoice) => void
   onOpenChange: (open: boolean) => void
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
@@ -118,6 +126,28 @@ export function DocumentEditorDialog({
                 />
                 {metadataError ? <p className="text-sm text-destructive">{metadataError}</p> : null}
               </div>
+              {mode === 'create' && enrichmentChoice !== undefined && onEnrichmentChoiceChange ? (
+                <div className="space-y-2 flex-shrink-0">
+                  <Label htmlFor="createEnrichment">Metadata extraction</Label>
+                  <Select
+                    value={enrichmentChoice}
+                    onValueChange={(value) => onEnrichmentChoiceChange(value as DocumentDialogEnrichmentChoice)}
+                    disabled={isSaving}
+                  >
+                    <SelectTrigger id="createEnrichment">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="inherit">Use workspace setting</SelectItem>
+                      <SelectItem value="on">On for this document</SelectItem>
+                      <SelectItem value="off">Off for this document</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Understands the document type and extracts structured tags like event dates (one extra AI call).
+                  </p>
+                </div>
+              ) : null}
             </div>
             {saveError && !isReadOnly ? (
               <p className="mt-4 flex-shrink-0 text-sm text-destructive">{saveError}</p>

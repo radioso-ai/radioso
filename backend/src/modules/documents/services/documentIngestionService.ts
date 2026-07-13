@@ -5,7 +5,9 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
+  DocumentProcessingJobOptions,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
@@ -85,6 +87,7 @@ export interface DocumentRecord extends DocumentSourceRecord {
   createdAt: Date;
   updatedAt: Date;
   metadata: Record<string, unknown>;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export interface DocumentCreateInput extends DocumentSourceInput {
@@ -146,8 +149,18 @@ export interface ChunkRecord {
   createdAt: Date;
 }
 
+export interface DocumentEnrichmentMetadataUpdateInput {
+  documentId: string;
+  workspaceId: string;
+  revision: number;
+  metadata: Record<string, unknown>;
+  // Extraction provenance lives in its own column so document metadata stays a
+  // flat user-owned contract; null clears provenance from a prior run.
+  enrichment?: Record<string, unknown> | null;
+}
+
 export interface DocumentRepositoryPort {
-  createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord>;
+  createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
   summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
   setStatus(input: {
@@ -177,9 +190,19 @@ export interface DocumentRepositoryPort {
   update(input: DocumentUpdateInput): Promise<DocumentRecord>;
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
+  updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+  requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
+  requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }>;
+  requeueSourceEligibleAndQueue(input: {
+    workspaceId: string;
+    sourceId: string;
+    options?: DocumentProcessingJobOptions | null;
+  }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -226,6 +249,8 @@ export interface ChunkSummary {
   contentLength: number;
   startOffset: number;
   endOffset: number;
+  dateFrom: string | null;
+  dateTo: string | null;
 }
 
 export interface ChunkDetail {
@@ -238,8 +263,23 @@ export interface ChunkDetail {
   startOffset: number;
   endOffset: number;
   metadata: Record<string, unknown>;
+  dateFrom?: string | null;
+  dateTo?: string | null;
   createdAt: Date;
   embeddingDimensions: number | null;
+}
+
+export interface PublishedChunkRecord {
+  chunkIndex: number;
+  content: string;
+  startOffset: number;
+  endOffset: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChunkMetadataRevisionPatch {
+  chunkIndex: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface ChunkRepositoryPort {
@@ -249,6 +289,20 @@ export interface ChunkRepositoryPort {
     workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
+  }): Promise<boolean>;
+  // Reads the published chunks for a document so a later, out-of-band stage
+  // (async enrichment) can re-derive per-chunk metadata without re-chunking.
+  listForDocumentRevision(input: { documentId: string; workspaceId: string }): Promise<PublishedChunkRecord[]>;
+  // Patches per-chunk metadata in place, guarded by revision so a superseded
+  // enrich job cannot clobber a newer vectorization. Returns false when the
+  // document revision no longer matches (skip, do not error). The stored
+  // generated date_from/date_to columns recompute from metadata automatically —
+  // no re-embed is performed.
+  updateMetadataForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    patches: ChunkMetadataRevisionPatch[];
   }): Promise<boolean>;
   listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
   findByIdForDocument(input: {
@@ -275,6 +329,7 @@ export interface DocumentSummary {
   sourceMimeType?: string | null;
   contentSize?: number | null;
   contentSizeBytes?: number | null;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export interface DocumentListPage {
@@ -302,6 +357,7 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   externalDocumentId?: string | null;
   contentSize?: number | null;
   contentSizeBytes?: number | null;
+  enrichment?: DocumentEnrichmentProvenance | null;
 }
 
 export class DocumentIngestionService {
@@ -324,6 +380,7 @@ export class DocumentIngestionService {
     metadata?: Record<string, unknown>;
     externalDocumentId?: string | null;
     source?: DocumentSourceResolverInput;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
   }): Promise<{ documentId: string; status: string }> {
     const sanitizedContent = sanitizeInlineDocumentContent({
       title: input.title,
@@ -409,7 +466,7 @@ export class DocumentIngestionService {
         sourceSizeBytes: null,
         contentSizeBytes: indexedContent.contentSizeBytes,
         contentHash: indexedContent.contentHash,
-      });
+      }, buildDocumentProcessingOptions(input));
 
     } catch (error) {
       await usageReservation.release();
@@ -618,7 +675,11 @@ export class DocumentIngestionService {
     };
   }
 
-  async reprocess(input: { workspaceId: string; documentId: string }): Promise<{ documentId: string; status: string }> {
+  async reprocess(input: {
+    workspaceId: string;
+    documentId: string;
+    documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+  }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
     let document:
@@ -630,7 +691,11 @@ export class DocumentIngestionService {
       | undefined;
 
     try {
-      document = await this.documentRepository.requeueAndQueue(input.documentId, input.workspaceId);
+      document = await this.documentRepository.requeueAndQueue(
+        input.documentId,
+        input.workspaceId,
+        buildDocumentProcessingOptions(input),
+      );
     } catch (error) {
       await this.auditService.record({
         workspaceId: input.workspaceId,
@@ -652,6 +717,7 @@ export class DocumentIngestionService {
         documentId: document.id,
         revision: document.revision,
         status: document.status,
+        documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
         ...(await this.queueSnapshotMetadata()),
       },
     });
@@ -755,6 +821,7 @@ export class DocumentIngestionService {
       sourceMimeType: document.sourceMimeType ?? null,
       contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
       contentSizeBytes: document.contentSizeBytes ?? null,
+      enrichment: document.enrichment ?? null,
     };
   }
 
@@ -945,7 +1012,7 @@ const describeIndexedContent = (
   // content-only so storage quota accounting is unaffected.
   const metadataSearchText = renderMetadataSearchText(metadata ?? {});
   const fingerprint = metadataSearchText
-    ? `${normalizedMarkdown} ${metadataSearchText}`
+    ? `${normalizedMarkdown}\u0000${metadataSearchText}`
     : normalizedMarkdown;
   return {
     markdownContent: normalizedMarkdown,
@@ -959,3 +1026,10 @@ const deriveWebsiteSourceName = (url: string): string => {
   const path = parsed.pathname.replace(/^\/+/, "");
   return path ? `${parsed.hostname}/${path}` : parsed.hostname;
 };
+
+export const buildDocumentProcessingOptions = (input: {
+  documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+}): DocumentProcessingJobOptions | null =>
+  input.documentEnrichmentOverride
+    ? { documentEnrichmentOverride: input.documentEnrichmentOverride }
+    : null;

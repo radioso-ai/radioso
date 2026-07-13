@@ -2,6 +2,7 @@ import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.j
 import type {
   RewriteTurnKind,
   StructuredRewriteResult,
+  TemporalQueryMode,
   TriggerAnalysisResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
@@ -18,6 +19,10 @@ const stripJsonFence = (value: string): string =>
 
 export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => {
   const parsed = JSON.parse(stripJsonFence(raw)) as Partial<StructuredRewriteResult>;
+  const temporalQueryMode: TemporalQueryMode =
+    parsed.temporalQueryMode === "listing" || parsed.temporalQueryMode === "topic_refinement"
+      ? parsed.temporalQueryMode
+      : "none";
   const parsedSubqueries = Array.isArray(parsed.retrievalSubqueries)
     ? parsed.retrievalSubqueries
         .filter((entry) => Boolean(entry) && typeof entry === "object")
@@ -67,6 +72,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
       )
         ? parsed.queryShape
         : undefined,
+    temporalQueryMode,
     retrievalSubqueries: parsedSubqueries,
     turnKind:
       typeof parsed.turnKind === "string" ? (parsed.turnKind as RewriteTurnKind) : REWRITE_TURN_KIND.AMBIGUOUS,

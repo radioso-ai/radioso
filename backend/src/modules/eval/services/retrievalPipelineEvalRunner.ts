@@ -101,6 +101,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         title: ctx.title,
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+        metadata: ctx.metadata,
       })),
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,
@@ -202,6 +203,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         title: ctx.title,
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+        metadata: ctx.metadata,
       })),
       answer: presented.answer,
       citations: citationArtifacts.citations,

@@ -172,6 +172,9 @@ const extractRetrievedChunks = (
       title: typeof c.title === "string" ? c.title : "",
       rank: typeof c.rank === "number" ? c.rank : index,
       similarity: typeof c.similarity === "number" ? c.similarity : undefined,
+      metadata: c.metadata && typeof c.metadata === "object" && !Array.isArray(c.metadata)
+        ? c.metadata as Record<string, unknown>
+        : undefined,
     });
   }
   return mapped.length > 0 ? mapped : null;

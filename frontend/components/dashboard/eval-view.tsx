@@ -122,6 +122,12 @@ const assertionSummary = (a: EvalAssertion, titleFor: (id: string) => string | u
       if (a.type === 'retrieval_excludes_document') return `Retrieval should NOT include ${docLabel}`
       return `${docLabel} should rank in the top ${a.k}`
     }
+    case 'retrieval_document_order':
+      return `Retrieval order: ${a.documentIds.map((id) => titleFor(id) ?? `document ${id.slice(0, 8)}`).join(' -> ')}`
+    case 'retrieval_chunk_metadata': {
+      const docLabel = titleFor(a.documentId) ?? `document ${a.documentId.slice(0, 8)}`
+      return `${docLabel} should include metadata ${JSON.stringify(a.metadata)}`
+    }
     case 'answer_cites_document': {
       const docLabel = titleFor(a.documentId) ?? `document ${a.documentId.slice(0, 8)}`
       return `Answer should cite ${docLabel}`

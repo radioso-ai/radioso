@@ -16,6 +16,30 @@ describe("ingestion settings", () => {
     expect(defaults.structuredMaxChunkSize).toBe(220);
     expect(defaults.embeddingModel).toBe("text-embedding-3-small");
     expect(defaults.pendingEmbeddingModel).toBeNull();
+    expect(defaults.documentEnrichmentEnabled).toBe(false);
+  });
+
+  it("defaults document enrichment to off when omitted and preserves explicit updates", () => {
+    expect(
+      validateIngestionSettings({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+      }).documentEnrichmentEnabled,
+    ).toBe(false);
+
+    expect(
+      validateIngestionSettings({
+        chunkingStrategy: "fixed_window",
+        fixedWindowChunkSize: 800,
+        fixedWindowChunkOverlap: 120,
+        structuredMinChunkSize: 24,
+        structuredMaxChunkSize: 220,
+        documentEnrichmentEnabled: true,
+      }).documentEnrichmentEnabled,
+    ).toBe(true);
   });
 
   it.each([

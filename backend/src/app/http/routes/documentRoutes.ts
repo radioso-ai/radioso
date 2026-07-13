@@ -11,6 +11,7 @@ import { createWebsiteCrawlerRoutes } from "../../../modules/websiteCrawler/rout
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
+  applyDocumentEnrichmentOverridePatch,
   applyWebsiteCrawlSettingsPatch,
   buildWebsiteRecrawlRequest,
   presentDocumentSource,
@@ -21,6 +22,7 @@ import {
   documentListQuerySchema,
   documentParamsSchema,
   documentSchema,
+  reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
   sourceParamsSchema,
@@ -36,6 +38,7 @@ type DocumentRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "documentDeletionService"
   | "documentImportService"
   | "documentIngestionService"
+  | "documentSourceReprocessService"
   | "documentSourceRepository"
   | "documentSearchHistoryService"
   | "documentSearchService"
@@ -211,23 +214,48 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       if (!source) {
         throw notFound("Source not found");
       }
-      if (source.kind !== "website") {
+      const body = req.body as {
+        crawlSettings?: Record<string, unknown>;
+        documentEnrichmentOverride?: "inherit" | "on" | "off";
+      };
+      if (body.crawlSettings && source.kind !== "website") {
         throw badRequest("Only website sources have editable crawl settings");
       }
 
-      const crawlInput = (req.body as { crawlSettings?: Record<string, unknown> }).crawlSettings;
-      if (!crawlInput) {
-        res.status(200).json(presentDocumentSource(source));
-        return;
+      let nextConfig = source.config;
+      if (body.crawlSettings) {
+        nextConfig = applyWebsiteCrawlSettingsPatch(nextConfig, body.crawlSettings);
+      }
+      if (body.documentEnrichmentOverride !== undefined) {
+        nextConfig = applyDocumentEnrichmentOverridePatch(nextConfig, body.documentEnrichmentOverride);
       }
 
       const updated = await dependencies.documentSourceRepository.updateConfigByIdAndWorkspaceId({
         sourceId,
         workspaceId,
-        config: applyWebsiteCrawlSettingsPatch(source.config, crawlInput),
+        config: nextConfig,
       });
 
       res.status(200).json(presentDocumentSource(updated));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/sources/:sourceId/reprocess", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { sourceId } = sourceParamsSchema.parse(req.params);
+      if (sourceId === MANUALLY_ADDED_DOCUMENTS_SOURCE_ID) {
+        throw badRequest("The manually added documents source cannot be reprocessed as a source");
+      }
+      const body = reprocessDocumentBodySchema.parse(req.body ?? {});
+      const result = await dependencies.documentSourceReprocessService.reprocessSource({
+        workspaceId,
+        sourceId,
+        documentEnrichmentOverride: body.documentEnrichmentOverride,
+      });
+      res.status(202).json(result);
     } catch (error) {
       next(error);
     }
@@ -314,6 +342,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         metadata: req.body.metadata,
         externalDocumentId: req.body.externalDocumentId,
         source: req.body.source,
+        documentEnrichmentOverride: req.body.documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -337,6 +366,10 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
       }
 
       const title = typeof req.body?.title === "string" ? req.body.title : undefined;
+      const enrichmentOverrideField =
+        typeof req.body?.documentEnrichmentOverride === "string" ? req.body.documentEnrichmentOverride : undefined;
+      const documentEnrichmentOverride =
+        enrichmentOverrideField === "on" || enrichmentOverrideField === "off" ? enrichmentOverrideField : undefined;
       const importReservation = usageReservation;
       usageReservation = null;
       const result = await dependencies.documentImportService.importDocument({
@@ -347,6 +380,7 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         buffer: req.file.buffer,
         title,
         usageReservation: importReservation,
+        documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {
@@ -437,9 +471,11 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
+      const body = reprocessDocumentBodySchema.parse(req.body ?? {});
       const result = await dependencies.documentIngestionService.reprocess({
         workspaceId,
         documentId,
+        documentEnrichmentOverride: body.documentEnrichmentOverride,
       });
       res.status(202).json(result);
     } catch (error) {

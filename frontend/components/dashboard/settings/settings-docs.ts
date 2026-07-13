@@ -1,4 +1,5 @@
 import chunkingStrategySource from '../../../docs/settings-docs/ingestion/chunking-strategy.md'
+import documentEnrichmentSource from '../../../docs/settings-docs/ingestion/document-enrichment.md'
 import embeddingModelSource from '../../../docs/settings-docs/ingestion/embedding-model.md'
 import fixedWindowChunkOverlapSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-overlap.md'
 import fixedWindowChunkSizeSource from '../../../docs/settings-docs/ingestion/fixed-window-chunk-size.md'
@@ -26,6 +27,7 @@ import sourceScopeSource from '../../../docs/settings-docs/retrieval/source-scop
 import suggestedQuestionsCountSource from '../../../docs/settings-docs/retrieval/suggested-questions-count.md'
 import suggestedQuestionsEnabledSource from '../../../docs/settings-docs/retrieval/suggested-questions-enabled.md'
 import similarityThresholdSource from '../../../docs/settings-docs/retrieval/similarity-threshold.md'
+import temporalStructuredLookupSource from '../../../docs/settings-docs/retrieval/temporal-structured-lookup.md'
 import vectorTopKSource from '../../../docs/settings-docs/retrieval/vector-top-k.md'
 
 export interface SettingDoc {
@@ -77,6 +79,7 @@ export const ingestionSettingDocs = {
   fixedWindowChunkOverlap: parseSettingDoc(fixedWindowChunkOverlapSource),
   structuredMinChunkSize: parseSettingDoc(structuredMinChunkSizeSource),
   structuredMaxChunkSize: parseSettingDoc(structuredMaxChunkSizeSource),
+  documentEnrichment: parseSettingDoc(documentEnrichmentSource),
   reprocess: parseSettingDoc(reprocessSource),
 } satisfies Record<string, SettingDoc>
 
@@ -103,4 +106,5 @@ export const retrievalSettingDocs = {
   metadataDynamicDate: parseSettingDoc(metadataDynamicDateSource),
   metadataTriggerMode: parseSettingDoc(metadataTriggerModeSource),
   metadataTriggerInstruction: parseSettingDoc(metadataTriggerInstructionSource),
+  temporalStructuredLookup: parseSettingDoc(temporalStructuredLookupSource),
 } satisfies Record<string, SettingDoc>

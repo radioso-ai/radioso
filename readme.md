@@ -165,7 +165,7 @@ curl -sS -b cookies.txt \
 
 Each workspace payload includes both `id` and `publicRouteKey`. Use `id` for API calls that require a workspace identifier. Use `publicRouteKey` when you need to inspect or build the canonical dashboard URL. If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable-and-re-enable toggles.
 
-**Agents, assistant, and retrieval.** Use agents to configure agent identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
+**Agents, assistant, and retrieval.** Use agents to configure agent identity, instructions, source scope, retrieval participation, per-skill settings, and public surface settings. Chat calls use the workspace default agent unless `agentId` is provided. Retrieval configuration lives on the agent `retrieval.answer` skill through `skillSettings["retrieval.answer"]`; omitted fields inherit system/model defaults. Date-aware event behavior is also configured there through temporal structured lookup, upcoming boost, and deterministic temporal sort settings. Multi-step **routines** are authored per agent under `/api/v1/agents/<agentId>/routines` — create or edit a draft, `POST .../validate`, then `POST .../publish`; see [Authoring routines](./docs/authoring-routines.md).
 
 ```bash
 curl -sS \
@@ -211,6 +211,8 @@ The catalog describes product-facing work and points to stable contracts. It doe
 
 **History, settings, feedback, quality, and usage trends.** Assistant conversations are listed from `GET /api/v1/history/chat` and fetched from `GET /api/v1/history/chat/<conversation-id>`. `GET /api/v1/history` returns merged chat and document-search history. Shared workspace settings are read and merge-updated through `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings stay under the settings API. Retrieval defaults are read-only at `GET /api/v1/settings/retrieval-defaults`; per-agent retrieval behavior is configured on the agent Skills tab. Signed-in account members can read aggregate account usage trends from `GET /api/v1/account/usage-trends`, bucketed by UTC day, week, or month and optionally filtered by workspace or agent.
 
+Metadata extraction is an ingestion setting and is disabled by default. Operators can enable it at workspace level, override it per document source, or force it on or off for a single document, source, or workspace reprocess request. Extraction uses one model call per processed document to understand the document type and extract structured tags such as event dates, which improves event-date retrieval when the corpus contains dated events.
+
 Persisted assistant answers can receive thumbs up or thumbs down feedback in the dashboard, public chat, and website embed. Authenticated callers use `PUT /api/v1/answer-feedback/messages/<assistant-message-id>` and `DELETE /api/v1/answer-feedback/messages/<assistant-message-id>`. Public chat sessions use `PUT /api/v1/answer-feedback/public/chat/<token>/messages/<assistant-message-id>` and the matching `DELETE` route. A thumbs down request may include an optional `comment` up to 2000 characters.
 
 Operators can review assistant-answer quality with `GET /api/v1/quality/turns`. Admins and owners can update an answer's triage state with `PUT /api/v1/quality/turns/<assistant-message-id>/triage`, using one of `open`, `acknowledged`, `resolved`, or `dismissed`.
@@ -246,6 +248,10 @@ await client.documents.importFile({
   filename: "handbook.pdf",
   title: "Support handbook",
   mimeType: "application/pdf",
+});
+
+await client.documents.reprocessSource("source-id", {
+  documentEnrichmentOverride: "on",
 });
 
 const response = await client.chat.create({

@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
-last_updated: 2026-06-28
+last_updated: 2026-07-02
 ---
 
 # MCP Client Setup
@@ -179,6 +179,21 @@ Migration note: direct REST and SDK clients no longer receive retrieval diagnost
 For debugging, MCP grounded-answer calls request diagnostic metadata from the retrieval API and are marked as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
 
 Grounded-answer diagnostics also include retrieval shape metadata in `debug.activityTrace` and `debug.activitySummary`. Look for the `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. These fields explain which resolved retrieval shape and step overrides were applied.
+
+## Reprocess Documents
+
+The workspace document tools include `reprocess_document`. It requeues an existing document through the backend document processing path.
+
+The tool accepts an optional `documentEnrichmentOverride` argument:
+
+```json
+{
+  "documentId": "document-id",
+  "documentEnrichmentOverride": "on"
+}
+```
+
+Values are `on` and `off`. The override applies only to the processing job created by this tool call. It does not change the workspace ingestion setting or the source-level enrichment override.
 
 ## Skills Catalog
 

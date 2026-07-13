@@ -35,6 +35,8 @@ In local mode, the worker can poll the durable queue directly. In cloud mode, th
 ### The worker parses, chunks, and embeds
 
 The worker materializes the source content, applies workspace ingestion settings, generates embeddings, and publishes chunks for the latest revision only.
+
+If metadata extraction is enabled for the run, the worker queues a separate, lower-priority enrich job after publishing the chunks. That job makes one extraction model call and patches structured tags such as `dateFrom` and `dateTo` onto the document and its chunks. The document is searchable before this job runs, and the worker drains `vectorize` jobs before `enrich` jobs.
 </Steps>
 
 ## What users will notice
@@ -42,14 +44,21 @@ The worker materializes the source content, applies workspace ingestion settings
 - New documents are not searchable immediately after upload.
 - Updated documents may briefly show an in-progress state before the new revision replaces the old one.
 - Failed processing shows up as a document state problem before it becomes a chat quality problem.
+- Metadata extraction is applied asynchronously, so a document can be searchable for a short time before its extracted date tags appear.
+- Enrichment failures do not fail the document. The document stays searchable without enriched metadata and records safe provenance for operators.
 
 ## Important controls
 
 - `DOCUMENT_STORAGE_DRIVER` selects local filesystem or GCS storage for uploaded source files.
 - `DOCUMENT_UPLOAD_MAX_BYTES` limits accepted upload size.
 - workspace ingestion settings control chunking strategy and chunk sizes.
+- `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
 - `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
 - `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
+
+Reprocessing can target a single document, a single source, or the whole workspace. Source reprocessing queues eligible documents for that source only and reports queued and skipped counts.
+
+Queue-backed deployments keep the same dispatch contract for extraction reprocesses. The Cloud Tasks or AMQP message wakes a worker by job id; the extraction override is loaded from the durable processing job row.
 
 ## First checks during incidents
 

@@ -52,7 +52,9 @@ Pages whose content exceeds 500,000 characters are skipped during ingestion with
 
 Cookie-session requests select the workspace with `x-workspace-id`. Bearer-token requests use the workspace already bound to the workspace API token and authorize through the crawler's document-management permission. Public chat and website embed launch credentials are not accepted as crawler bearer tokens.
 
-Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, retrieval, and citations remain owned by the standard document worker.
+Accepted pages are published as documents with stable external document IDs and a workspace-local website source. Repeated crawls of the same normalized URL reuse that source, so recrawl logic can find the related documents through `sourceId`. Chunking, embeddings, metadata extraction, retrieval, and citations remain owned by the standard document worker.
+
+Website sources can also carry a metadata extraction override. The override is `inherit`, `on`, or `off`; `inherit` uses the workspace ingestion setting. When extraction is on, the standard document worker classifies each processed page and may attach date tags to event-shaped chunks.
 
 The bundled `radioso-crawler` provider seeds its crawl from the requested URL and from same-origin sitemaps listed in `robots.txt`. It still applies the request `limit`, same-origin scope checks, duplicate removal, and asset filtering before fetching pages. Before each outbound fetch hop, including redirects, Radioso rejects URLs that resolve to localhost or private network addresses. If URL allow patterns are configured and the requested seed URL does not match them, the crawler may fetch that seed page for link discovery, but marks it discovery-only so it is not published as a document.
 
@@ -99,6 +101,8 @@ Run-level and origin-level fields live on `document_sources.metadata` (one row p
 | `provider` | The crawler provider name (e.g. `radioso-crawler`). |
 
 The `documents.list` API joins `document_sources` so each `DocumentSummary` exposes `source.kind = "website"` and `source.externalId = <baseUrl>` for UI grouping or filtering.
+
+The source response also exposes `documentEnrichmentOverride`, so operators can enable enrichment for an events source without changing unrelated uploads or crawled sites.
 
 ### Listing recent crawl jobs
 
@@ -181,6 +185,24 @@ POST /api/v1/document/sources/{sourceId}/recrawl
 Enqueues a new crawl job using the URL and limit stored in the source's `config`. Only works for sources with `kind: "website"`. Returns the same `202` response as `POST /api/v1/document/crawl`.
 
 Duplicate pages are handled by the existing `externalDocumentId` upsert — unchanged pages update the existing document rather than creating a new one.
+
+### Reprocessing a source
+
+```text
+POST /api/v1/document/sources/{sourceId}/reprocess
+```
+
+Requeues eligible documents that already belong to the source. This does not crawl the site again. Use it after changing chunking settings or a source metadata extraction override when the existing documents should be rebuilt.
+
+The optional body can force metadata extraction for this run:
+
+```json
+{
+  "documentEnrichmentOverride": "on"
+}
+```
+
+Values are `on` and `off`. The response reports queued and skipped document counts.
 
 ### Pausing and resuming a website source crawl
 

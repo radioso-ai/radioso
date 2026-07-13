@@ -38,6 +38,9 @@ export const retrievalMetadataRuleOverrideSchema = z.object({
 
 const retrievalSkillSettingsOverrideShape = {
   queryRewriteEnabled: z.boolean().optional(),
+  temporalStructuredLookupEnabled: z.boolean().optional(),
+  temporalBoostUpcomingEnabled: z.boolean().optional(),
+  temporalDeterministicSortEnabled: z.boolean().optional(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
@@ -69,6 +72,9 @@ export const retrieveSkillConfigSchema = z.object({
   rerankEnabled: retrievalSkillSettingsOverrideShape.rerankEnabled,
   rerankTopK: retrievalSkillSettingsOverrideShape.rerankTopK,
   queryRewriteEnabled: retrievalSkillSettingsOverrideShape.queryRewriteEnabled,
+  temporalStructuredLookupEnabled: retrievalSkillSettingsOverrideShape.temporalStructuredLookupEnabled,
+  temporalBoostUpcomingEnabled: retrievalSkillSettingsOverrideShape.temporalBoostUpcomingEnabled,
+  temporalDeterministicSortEnabled: retrievalSkillSettingsOverrideShape.temporalDeterministicSortEnabled,
   semanticRewriteInstructions: retrievalSkillSettingsOverrideShape.semanticRewriteInstructions,
   lexicalRewriteInstructions: retrievalSkillSettingsOverrideShape.lexicalRewriteInstructions,
   suggestedQuestionsEnabled: retrievalSkillSettingsOverrideShape.suggestedQuestionsEnabled,

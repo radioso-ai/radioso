@@ -68,6 +68,7 @@ export type SkillCapabilitySettingsField = {
   max?: number
   group?: string
   advanced?: boolean
+  defaultValue?: string | number | boolean
 }
 
 export type SkillCapabilityDescriptor = {

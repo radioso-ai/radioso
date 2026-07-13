@@ -211,6 +211,8 @@ export interface Chunks {
   chunk_index: number;
   content: string;
   created_at: Generated<Timestamp>;
+  date_from: Generated<Timestamp | null>;
+  date_to: Generated<Timestamp | null>;
   document_id: string;
   embedding: string | null;
   embedding_model: Generated<string>;
@@ -355,7 +357,9 @@ export interface DocumentProcessingJobs {
   document_id: string;
   document_revision: number;
   id: string;
+  kind: Generated<string>;
   last_error: string | null;
+  options: Json | null;
   status: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
@@ -365,6 +369,7 @@ export interface Documents {
   content_hash: string | null;
   content_size_bytes: Int8 | null;
   created_at: Generated<Timestamp>;
+  enrichment: Json | null;
   external_document_id: string | null;
   failed_at: Timestamp | null;
   failure_reason: string | null;
@@ -490,6 +495,7 @@ export interface EvalSnapshots {
 export interface IngestionSettings {
   chunking_strategy: Generated<string>;
   created_at: Generated<Timestamp>;
+  document_enrichment_enabled: Generated<boolean>;
   embedding_model: Generated<string>;
   fixed_window_chunk_overlap: Generated<number>;
   fixed_window_chunk_size: Generated<number>;

@@ -7,6 +7,7 @@ import {
   AmqpDocumentJobDispatcher,
   type AmqpConnect,
 } from "../../src/modules/documents/infra/amqpDocumentJobQueue.js";
+import { parseDocumentJobQueueMessage } from "../../src/modules/documents/services/documentJobMessage.js";
 
 const createLogger = () => ({
   info: vi.fn(),
@@ -76,6 +77,15 @@ describe("AMQP document job queue", () => {
       workspaceId: "e93ea86d-28ec-4d2f-aa9a-5e633a22c6df",
       revision: 2,
     });
+  });
+
+  it("keeps enrichment options out of the queue message contract", () => {
+    expect(() =>
+      parseDocumentJobQueueMessage({
+        jobId: "33cc6be4-1a3a-4b43-9714-e87e9f9a60ab",
+        options: { documentEnrichmentOverride: "on" },
+      }),
+    ).toThrow();
   });
 
   it("asserts the dead-letter queue and wires it onto the main queue when configured", async () => {

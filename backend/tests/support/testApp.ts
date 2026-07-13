@@ -48,6 +48,7 @@ import { DocumentSearchService } from "../../src/modules/documents/services/docu
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import { DocumentProcessingWorker } from "../../src/modules/documents/services/documentProcessingWorker.js";
 import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
+import { DocumentSourceReprocessService } from "../../src/modules/documents/services/documentSourceReprocessService.js";
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import { FixedWindowChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/fixedWindowChunkingStrategy.js";
@@ -750,6 +751,11 @@ export const createTestDependencies = (overrides: {
   };
   const rerankGateway = overrides.rerankGateway ?? defaultRerankGateway;
   const workspaceIngestionReprocessService = new WorkspaceIngestionReprocessService(documentRepository, auditService);
+  const documentSourceReprocessService = new DocumentSourceReprocessService(
+    documentRepository,
+    documentSourceRepository,
+    auditService,
+  );
   const ingestionSettingsService = new IngestionSettingsService(
     ingestionSettingsRepository,
     auditService,
@@ -1559,6 +1565,7 @@ export const createTestDependencies = (overrides: {
     documentSearchService,
     documentSearchHistoryService,
     workspaceIngestionReprocessService,
+    documentSourceReprocessService,
     documentProcessingWorker,
     websiteCrawlJobService: {
       enqueue: async () => ({

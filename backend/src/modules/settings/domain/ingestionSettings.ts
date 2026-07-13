@@ -24,6 +24,7 @@ export interface IngestionSettingsRecord {
   structuredMaxChunkSize: number;
   embeddingModel: EmbeddingModelId;
   pendingEmbeddingModel: EmbeddingModelId | null;
+  documentEnrichmentEnabled?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -36,6 +37,7 @@ export interface IngestionSettingsInput {
   structuredMaxChunkSize: number;
   embeddingModel?: EmbeddingModelId;
   pendingEmbeddingModel?: EmbeddingModelId | null;
+  documentEnrichmentEnabled?: boolean;
 }
 
 export interface ValidatedIngestionSettingsInput extends IngestionSettingsInput {
@@ -52,6 +54,7 @@ export const defaultIngestionSettings = (workspaceId: string): IngestionSettings
   structuredMaxChunkSize: STRUCTURED_MAX_CHUNK_SIZE_DEFAULT,
   embeddingModel: EMBEDDING_MODEL_DEFAULT,
   pendingEmbeddingModel: null,
+  documentEnrichmentEnabled: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -115,5 +118,6 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Valida
     ...input,
     embeddingModel,
     pendingEmbeddingModel,
+    documentEnrichmentEnabled: input.documentEnrichmentEnabled ?? false,
   };
 };

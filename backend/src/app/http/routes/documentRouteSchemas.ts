@@ -4,6 +4,11 @@ const MAX_DOCUMENT_LIST_LIMIT = 100;
 const MAX_DOCUMENT_METADATA_BYTES = 16384;
 
 const crawlPatternSchema = z.array(z.string().trim().min(1).max(200)).max(50);
+export const documentEnrichmentOverrideSchema = z.enum(["on", "off"]);
+export const documentSourceEnrichmentOverrideSchema = z.enum(["inherit", "on", "off"]);
+export const reprocessDocumentBodySchema = z.object({
+  documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
+}).strict();
 
 const documentSourceSchema = z.union([
   z.object({
@@ -27,6 +32,7 @@ export const sourceParamsSchema = z.object({
 });
 
 export const sourceUpdateSchema = z.object({
+  documentEnrichmentOverride: documentSourceEnrichmentOverrideSchema.optional(),
   crawlSettings: z
     .object({
       limit: z.number().int().min(1).optional(),
@@ -43,7 +49,10 @@ export const sourceUpdateSchema = z.object({
       { message: "crawlSettings must include at least one field" },
     )
     .optional(),
-});
+}).refine(
+  (value) => value.crawlSettings !== undefined || value.documentEnrichmentOverride !== undefined,
+  { message: "source update must include at least one field" },
+);
 
 export const documentSchema = z.object({
   title: z.string().min(1),
@@ -54,6 +63,7 @@ export const documentSchema = z.object({
   ),
   externalDocumentId: z.string().trim().min(1).optional(),
   source: documentSourceSchema.optional(),
+  documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
 });
 
 export const documentParamsSchema = z.object({

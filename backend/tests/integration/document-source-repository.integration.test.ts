@@ -63,6 +63,47 @@ describeIntegration("DocumentSourceRepository (Postgres)", () => {
     expect(second.metadata).toEqual({ keep: true, added: 1 }); // jsonb || merge
   });
 
+  it("persists document enrichment source override in config across insert, upsert, and update", async () => {
+    const inserted = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "website",
+      name: "Events",
+      externalId: "events",
+      config: { url: "https://events.example", documentEnrichmentOverride: "on" },
+    });
+
+    expect(inserted.config).toMatchObject({
+      url: "https://events.example",
+      documentEnrichmentOverride: "on",
+    });
+
+    const upserted = await repository.upsertByExternalId({
+      workspaceId,
+      kind: "website",
+      name: "Events renamed",
+      externalId: "events",
+      config: { url: "https://events.example/v2", documentEnrichmentOverride: "off" },
+    });
+
+    expect(upserted.id).toBe(inserted.id);
+    expect(upserted.config).toMatchObject({
+      url: "https://events.example/v2",
+      documentEnrichmentOverride: "off",
+    });
+
+    const updated = await repository.updateConfigByIdAndWorkspaceId({
+      sourceId: inserted.id,
+      workspaceId,
+      config: { url: "https://events.example/v3", documentEnrichmentOverride: "inherit" },
+    });
+
+    expect(updated.config).toMatchObject({
+      url: "https://events.example/v3",
+      documentEnrichmentOverride: "inherit",
+    });
+    expect((await repository.findByIdAndWorkspaceId(inserted.id, workspaceId))?.config).toEqual(updated.config);
+  });
+
   it("finds by id, existing ids, and lists with document counts", async () => {
     const a = await repository.upsertByExternalId({ workspaceId, kind: "api", name: "A", externalId: "a" });
     const b = await repository.upsertByExternalId({ workspaceId, kind: "api", name: "B", externalId: "b" });

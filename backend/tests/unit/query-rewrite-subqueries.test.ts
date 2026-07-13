@@ -340,3 +340,67 @@ describe("query rewrite subqueries", () => {
     expect(result.retrievalSubqueries).toBeUndefined();
   });
 });
+
+describe("query rewrite temporal mode propagation", () => {
+  it("preserves the gateway's temporalQueryMode in the structured result", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "upcoming events schedule",
+          semanticQuery: "upcoming events schedule",
+          lexicalQuery: "events schedule",
+          responseLanguagePolicy: "match_user_question",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.94,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "what are the next events?",
+      contextWindow: {
+        selectedMessages: [],
+        truncated: false,
+        selectionReason: "no-history",
+      },
+      enabled: true,
+    });
+
+    // The temporal candidate lookup, upcoming boost, and deterministic sort all
+    // gate on this field; dropping it during normalization silently disables
+    // every temporal retrieval behavior.
+    expect(result.structuredResult?.queryShape).toBe("event_date_lookup");
+    expect(result.structuredResult?.temporalQueryMode).toBe("listing");
+  });
+
+  it("normalizes unknown temporal modes to none", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: "next events",
+          semanticQuery: "next events",
+          lexicalQuery: "next events",
+          responseLanguagePolicy: "match_user_question",
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "whenever" as never,
+          turnKind: "fresh_subject",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: "events",
+      contextWindow: { selectedMessages: [], truncated: false, selectionReason: "no-history" },
+      enabled: true,
+    });
+
+    expect(result.structuredResult?.temporalQueryMode).toBe("none");
+  });
+});

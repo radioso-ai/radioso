@@ -33,7 +33,7 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
   ) as TraceAttributes;
 
 export const buildDocumentWorkerJobTraceAttributes = (
-  job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status">,
+  job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
   input: { outcome?: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed" | "failed_permanent" | "processed" | "noop" | "busy" } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
@@ -41,6 +41,7 @@ export const buildDocumentWorkerJobTraceAttributes = (
   "radioso.job_id": job.id,
   "document.revision": job.documentRevision,
   "document.job.id": job.id,
+  "document.job.kind": job.kind,
   "document.job.attempt_count": job.attemptCount,
   "document.job.status": job.status,
   "document.worker.outcome": input.outcome,
@@ -80,6 +81,14 @@ export class DocumentProcessingWorker {
 
       if (document.revision !== job.documentRevision) {
         await this.jobRepository.markSkipped(job.id, "stale_revision");
+        return;
+      }
+
+      // Enrich jobs run against an already-ready document, so readiness is not
+      // proof the enrichment ran. Release the job to run again on restart, and
+      // never touch the document status — the vectorize path owns readiness.
+      if (job.kind === "enrich") {
+        await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
         return;
       }
 
@@ -238,7 +247,9 @@ export class DocumentProcessingWorker {
       const startedAt = Date.now();
 
       try {
-        const outcome = await this.processingService.process(job);
+        const outcome = job.kind === "enrich"
+          ? await this.processingService.processEnrichment(job)
+          : await this.processingService.process(job);
         if (outcome === "completed") {
           await this.jobRepository.markCompleted(job.id);
           await this.emitJobTelemetry("document.worker.job_completed", job, {
@@ -269,13 +280,17 @@ export class DocumentProcessingWorker {
           RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
         const nextAttemptAt = new Date(Date.now() + delayMs);
         await this.jobRepository.reschedule(job.id, nextAttemptAt, message);
-        await this.documentRepository.setStatusIfRevisionMatches({
-          documentId: job.documentId,
-          workspaceId: job.workspaceId,
-          revision: job.documentRevision,
-          status: "queued",
-          failureReason: null,
-        });
+        // Enrich jobs run against an already-ready document; a retry must never
+        // knock it back to "queued" — only the vectorize path owns document status.
+        if (job.kind !== "enrich") {
+          await this.documentRepository.setStatusIfRevisionMatches({
+            documentId: job.documentId,
+            workspaceId: job.workspaceId,
+            revision: job.documentRevision,
+            status: "queued",
+            failureReason: null,
+          });
+        }
         await this.jobDispatcher.dispatch({
           jobId: job.id,
           documentId: job.documentId,
@@ -303,16 +318,22 @@ export class DocumentProcessingWorker {
         return;
       }
 
-      const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
-        jobId: job.id,
-        documentId: job.documentId,
-        workspaceId: job.workspaceId,
-        revision: job.documentRevision,
-        errorMessage: message,
-      });
-      if (!markedFailed) {
-        const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
-        await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+      if (job.kind === "enrich") {
+        // The document is already queryable; a failed enrich job must never flip
+        // it to "failed". Mark only the job failed and leave the document ready.
+        await this.jobRepository.markFailed(job.id, message);
+      } else {
+        const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
+          jobId: job.id,
+          documentId: job.documentId,
+          workspaceId: job.workspaceId,
+          revision: job.documentRevision,
+          errorMessage: message,
+        });
+        if (!markedFailed) {
+          const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+          await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
+        }
       }
       await this.auditService.record({
         workspaceId: job.workspaceId,

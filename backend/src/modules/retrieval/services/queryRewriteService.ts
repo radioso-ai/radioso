@@ -17,7 +17,7 @@ import type {
   RewriteTurnKind,
   StructuredRewriteResult,
 } from "../domain/retrievalPipelineTypes.js";
-import { REWRITE_STATUS, REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
+import { REWRITE_STATUS, REWRITE_TURN_KIND, type TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
@@ -328,6 +328,7 @@ export class QueryRewriteService {
         lexicalQuery,
         responseLanguagePolicy,
         queryShape: this.normalizeQueryShape(result.queryShape),
+        temporalQueryMode: this.normalizeTemporalQueryMode(result.temporalQueryMode),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: this.normalizeClassifierLabel(result.proposedActiveSubject),
@@ -343,6 +344,7 @@ export class QueryRewriteService {
       lexicalQuery: this.normalizeLexicalRewrite(result?.lexicalQuery ?? result?.rewrittenQuery ?? originalQuery),
       responseLanguagePolicy: DEFAULT_RESPONSE_LANGUAGE_POLICY,
       queryShape: undefined,
+      temporalQueryMode: "none",
       retrievalSubqueries: undefined,
       turnKind: REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
       proposedActiveSubject: undefined,
@@ -350,6 +352,16 @@ export class QueryRewriteService {
       unresolved: false,
       confidence: result?.confidence ?? 0.5,
     };
+  }
+
+  private normalizeTemporalQueryMode(temporalQueryMode?: string): TemporalQueryMode {
+    switch (temporalQueryMode) {
+      case "listing":
+      case "topic_refinement":
+        return temporalQueryMode;
+      default:
+        return "none";
+    }
   }
 
   private normalizeTurnKind(turnKind?: string): RewriteTurnKind {

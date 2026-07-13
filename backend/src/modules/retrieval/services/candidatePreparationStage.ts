@@ -1,6 +1,9 @@
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { mergeTemporalCandidates } from "./temporal/temporalCandidateMergeService.js";
+import { applyUpcomingEventBoost } from "./temporal/upcomingBoostService.js";
 import type {
   CandidatePreparationStage as CandidatePreparationStageContract,
   CandidatePreparationStageResult,
@@ -13,6 +16,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
   constructor(
     private readonly candidatePreparationService: CandidatePreparationService,
     private readonly metadataRuleScoringService: MetadataRuleScoringService,
+    private readonly clock: Clock = systemClock,
   ) {}
 
   async execute(input: CandidateRetrievalStageResult): Promise<CandidatePreparationStageResult> {
@@ -116,8 +120,18 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     const relaxedConstraints = matchedTriggeredRules
       .filter((rule) => relaxedRuleIdSet.has(rule.id))
       .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
-    const orderedCandidates = this.applyResolvedCandidateOrdering(input, selectedCandidates.candidates);
-    const mergedCandidates = orderedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    const boostedCandidates = applyUpcomingEventBoost({
+      candidates: selectedCandidates.candidates,
+      enabled: (input.settings.temporalBoostUpcomingEnabled ?? true) && (input.temporalQueryMode ?? "none") !== "none",
+      today: formatIsoDateUtc(this.clock()),
+    });
+    const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
+    const temporallyMergedCandidates = mergeTemporalCandidates({
+      mode: (input.settings.temporalStructuredLookupEnabled ?? true) ? (input.temporalQueryMode ?? "none") : "none",
+      temporalCandidates: input.temporalContexts ?? [],
+      rankedCandidates: orderedCandidates,
+    });
+    const mergedCandidates = temporallyMergedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
     const triggerBackoffApplied = relaxedRuleIds.length > 0;
 
     return {
@@ -160,3 +174,4 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
     });
   }
 }
+

@@ -115,7 +115,7 @@ const retrievalResult = (request: RetrievalPipelineRequest): RetrievalPipelineRe
       content: "Refunds take five days.",
       promptPosition: 0,
       similarity: 0.8,
-      metadata: {},
+      metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
     }],
     systemPrompt: `system:${request.responseBehavior?.customInstruction ?? ""}`,
     prompt: "prompt",
@@ -248,6 +248,7 @@ describe("WorkbenchReplayRunner", () => {
         title: "Refund Policy",
         rank: 0,
         similarity: 0.8,
+        metadata: { dateFrom: "2026-08-10", dateTo: "2026-08-10" },
       }],
     });
     expect(capturedRequests[0]?.history).toEqual([]);

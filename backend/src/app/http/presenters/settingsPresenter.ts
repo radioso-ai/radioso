@@ -43,6 +43,9 @@ export const presentRetrievalDefaults = (
   metadataFieldSuggestions: MetadataFieldSuggestion[],
 ) => ({
   queryRewriteEnabled: settings.queryRewriteEnabled,
+  temporalStructuredLookupEnabled: settings.temporalStructuredLookupEnabled ?? true,
+  temporalBoostUpcomingEnabled: settings.temporalBoostUpcomingEnabled ?? true,
+  temporalDeterministicSortEnabled: settings.temporalDeterministicSortEnabled ?? true,
   semanticRewriteInstructions: settings.semanticRewriteInstructions,
   lexicalRewriteInstructions: settings.lexicalRewriteInstructions,
   suggestedQuestionsEnabled: settings.suggestedQuestionsEnabled,

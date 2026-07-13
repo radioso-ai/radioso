@@ -318,6 +318,7 @@ export const buildTurnTraceForPresentation = (
         title: ctx.title,
         rank: typeof ctx.promptPosition === "number" ? ctx.promptPosition : index,
         similarity: typeof ctx.similarity === "number" ? ctx.similarity : undefined,
+        metadata: ctx.metadata,
       })),
       composedInstructions: retrieval.systemPrompt,
       // Best-effort: agent-level chat model override is what we know at

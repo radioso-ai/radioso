@@ -1,3 +1,4 @@
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { EmbeddingService } from "./embeddingService.js";
 import { EMBEDDING_MODEL_DEFAULT, type IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -6,6 +7,8 @@ import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator
 import type { VectorIndexPort } from "../domain/vectorIndex.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
+import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
+import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
@@ -19,6 +22,8 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     vectorSearch: VectorSearchPort,
     lexicalSearch: LexicalSearchPort,
     ingestionSettingsService?: IngestionSettingsReaderPort,
+    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    clock?: Clock,
   );
   constructor(
     embeddingService: EmbeddingService,
@@ -26,14 +31,35 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     lexicalSearch: LexicalSearchPort,
     ingestionSettingsService: IngestionSettingsReaderPort | undefined,
     chunkHydrator: ChunkCandidateHydratorPort,
+    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    clock?: Clock,
   );
   constructor(
     private readonly embeddingService: EmbeddingService,
     private readonly vectorSearch: VectorSearchPort | VectorIndexPort,
     private readonly lexicalSearch: LexicalSearchPort,
     private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
-    private readonly chunkHydrator?: ChunkCandidateHydratorPort,
-  ) {}
+    chunkHydratorOrTemporal?: ChunkCandidateHydratorPort | TemporalCandidateRetrievalPort,
+    temporalOrClock?: TemporalCandidateRetrievalPort | Clock,
+    clock?: Clock,
+  ) {
+    // The overloads put the optional clock last in both call shapes, so at the
+    // shared implementation position it can be either the temporal port (long
+    // form) or the clock (short form). A Clock is a bare function; ports are
+    // objects — disambiguate on that.
+    const temporalCandidateRetrieval = typeof temporalOrClock === "function" ? undefined : temporalOrClock;
+    this.clock = (typeof temporalOrClock === "function" ? temporalOrClock : clock) ?? systemClock;
+    if (chunkHydratorOrTemporal && "hydrate" in chunkHydratorOrTemporal) {
+      this.chunkHydrator = chunkHydratorOrTemporal;
+      this.temporalCandidateRetrieval = temporalCandidateRetrieval;
+    } else {
+      this.temporalCandidateRetrieval = chunkHydratorOrTemporal ?? temporalCandidateRetrieval;
+    }
+  }
+
+  private readonly chunkHydrator?: ChunkCandidateHydratorPort;
+  private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort;
+  private readonly clock: Clock;
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
@@ -123,6 +149,17 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ? retrievalBranches.flatMap((branch) => branch.semanticContexts)
       : [];
     const lexicalContexts = retrievalBranches.flatMap((branch) => branch.lexicalContexts);
+    const temporalQueryMode = resolveTemporalQueryMode(input);
+    const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
+    const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
+      ? await this.temporalCandidateRetrieval.findUpcoming({
+          workspaceId: input.request.workspaceId,
+          today: formatIsoDateUtc(this.clock()),
+          topK: input.settings.vectorTopK,
+          metadataFilter,
+          sourceFilter,
+        })
+      : [];
 
     return {
       ...input,
@@ -131,6 +168,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       originalContexts,
       rewrittenContexts,
       lexicalContexts,
+      temporalContexts,
+      temporalQueryMode,
+      temporalStructuredLookupEnabled,
       retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
     };
@@ -182,3 +222,12 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     };
   }
 }
+
+const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
+  const structured = input.rewrittenQuery.structuredResult;
+  if (structured?.queryShape !== "event_date_lookup") {
+    return "none";
+  }
+  return structured.temporalQueryMode ?? "none";
+};
+

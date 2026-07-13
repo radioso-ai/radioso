@@ -217,6 +217,8 @@ curl -s http://127.0.0.1:8787/mcp \
   }'
 ```
 
+`reprocess_document` accepts an optional `documentEnrichmentOverride` argument with `on` or `off`. The override applies only to the reprocess job created by that tool call and is stored by the backend on the durable processing job row.
+
 ## Stdio Compatibility
 
 The package still supports a local stdio path for existing workflows:

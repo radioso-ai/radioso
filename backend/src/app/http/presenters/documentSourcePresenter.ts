@@ -2,6 +2,7 @@ import type {
   DocumentSourceListRecord,
   DocumentSourceRecord,
 } from "../../../db/repositories/documentSourceRepository.js";
+import { parseDocumentSourceEnrichmentOverride } from "../../../modules/documents/domain/enrichment/enrichmentEnablement.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../../modules/documents/domain/sourceConstants.js";
 import { resolveWebsiteCrawlerConfig } from "../../../modules/websiteCrawler/config.js";
 
@@ -67,6 +68,7 @@ export const presentDocumentSource = (
   createdAt: source.createdAt.toISOString(),
   updatedAt: source.updatedAt.toISOString(),
   documentCount,
+  documentEnrichmentOverride: parseDocumentSourceEnrichmentOverride(source.config.documentEnrichmentOverride),
   ...(source.kind === "website" ? { crawlSettings: toCrawlSettings(source.config) } : {}),
 });
 
@@ -83,6 +85,14 @@ export const presentDocumentSourceList = (
     sources: allSources.map((source) => presentDocumentSource(source, source.documentCount)),
   };
 };
+
+export const applyDocumentEnrichmentOverridePatch = (
+  currentConfig: Record<string, unknown>,
+  documentEnrichmentOverride: unknown,
+): Record<string, unknown> => ({
+  ...currentConfig,
+  documentEnrichmentOverride: parseDocumentSourceEnrichmentOverride(documentEnrichmentOverride),
+});
 
 export const buildWebsiteRecrawlRequest = (config: Record<string, unknown>) => {
   const url = typeof config.url === "string" ? config.url : null;

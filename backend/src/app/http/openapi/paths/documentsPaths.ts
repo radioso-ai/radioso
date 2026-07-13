@@ -761,6 +761,14 @@ export const registerDocumentsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       params: schemas.documentParamsSchema,
+      body: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: schemas.DocumentReprocessRequestSchema,
+          },
+        },
+      },
     },
     responses: {
       200: {
@@ -781,6 +789,60 @@ export const registerDocumentsPaths = (
       },
       404: {
         description: "Document not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/document/sources/{sourceId}/reprocess",
+    tags: ["Documents"],
+    summary: "Queue eligible source documents for reprocessing",
+    operationId: "reprocessDocumentSource",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.sourceParamsSchema,
+      body: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: schemas.DocumentReprocessRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      202: {
+        description: "Source documents accepted for reprocessing",
+        content: {
+          "application/json": {
+            schema: schemas.SourceReprocessResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Source not found",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

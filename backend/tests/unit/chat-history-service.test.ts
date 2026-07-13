@@ -681,6 +681,7 @@ describe("chat history service", () => {
     expect(debug?.activitySummary?.candidateCounts).toEqual({
       semantic: 63,
       lexical: 0,
+      temporal: 0,
       merged: 50,
       final: 5,
     });

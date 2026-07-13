@@ -6,6 +6,9 @@ export type RetrievalStrategy = 'fixed' | 'reasoning' | 'auto'
 
 export interface RetrievalSkillSettingsOverride {
   queryRewriteEnabled?: boolean
+  temporalStructuredLookupEnabled?: boolean
+  temporalBoostUpcomingEnabled?: boolean
+  temporalDeterministicSortEnabled?: boolean
   semanticRewriteInstructions?: string
   lexicalRewriteInstructions?: string
   suggestedQuestionsEnabled?: boolean
@@ -22,6 +25,9 @@ export type AgentSkillSettingsMap = Record<string, unknown>
 
 const knownRetrievalSkillFields = [
   'queryRewriteEnabled',
+  'temporalStructuredLookupEnabled',
+  'temporalBoostUpcomingEnabled',
+  'temporalDeterministicSortEnabled',
   'semanticRewriteInstructions',
   'lexicalRewriteInstructions',
   'suggestedQuestionsEnabled',
@@ -49,6 +55,15 @@ export const readRetrievalSkillSettingsOverride = (
 
   const next: RetrievalSkillSettingsOverride = {}
   if (typeof raw.queryRewriteEnabled === 'boolean') next.queryRewriteEnabled = raw.queryRewriteEnabled
+  if (typeof raw.temporalStructuredLookupEnabled === 'boolean') {
+    next.temporalStructuredLookupEnabled = raw.temporalStructuredLookupEnabled
+  }
+  if (typeof raw.temporalBoostUpcomingEnabled === 'boolean') {
+    next.temporalBoostUpcomingEnabled = raw.temporalBoostUpcomingEnabled
+  }
+  if (typeof raw.temporalDeterministicSortEnabled === 'boolean') {
+    next.temporalDeterministicSortEnabled = raw.temporalDeterministicSortEnabled
+  }
   if (typeof raw.semanticRewriteInstructions === 'string') next.semanticRewriteInstructions = raw.semanticRewriteInstructions
   if (typeof raw.lexicalRewriteInstructions === 'string') next.lexicalRewriteInstructions = raw.lexicalRewriteInstructions
   if (typeof raw.suggestedQuestionsEnabled === 'boolean') next.suggestedQuestionsEnabled = raw.suggestedQuestionsEnabled

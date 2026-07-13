@@ -411,3 +411,53 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     ]));
   });
 });
+
+describe("validateRoutineDefinition node id uniqueness", () => {
+  it("flags an id shared by a step and a terminal", () => {
+    const definition: RoutineDefinition = {
+      ...definitionWithTool("crm_lookup"),
+      steps: [
+        { stableStepId: "resolve", kind: "chat", instruction: "Resolve it.", toolRef: null, ordinal: 0, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "resolve", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 },
+        { stableStepId: "resolve", kind: "complete", instruction: "Also done.", ordinal: 1 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition, { availableSkillNames: new Set(["crm_lookup"]) });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "node_id_collision", location: "node:resolve" }),
+    ]));
+  });
+
+  it("flags a named completion whose id collides with the handoff terminal", () => {
+    const definition: RoutineDefinition = {
+      ...definitionWithTool("crm_lookup"),
+      steps: [
+        { stableStepId: "check", kind: "chat", instruction: "Check it.", toolRef: null, ordinal: 0, metadata: {} },
+      ],
+      transitions: [
+        { fromStep: "check", toRef: "done", guardKind: "default", guardText: null, ordinal: 0 },
+        { fromStep: "check", toRef: "handoff", guardKind: "llm", guardText: "if stuck", ordinal: 1 },
+      ],
+      terminals: [
+        { stableStepId: "done", kind: "complete", instruction: "Done.", ordinal: 0 },
+        { stableStepId: "handoff", kind: "handoff", instruction: "Escalating.", ordinal: 1 },
+        { stableStepId: "handoff", kind: "complete", instruction: "Named ending that collides.", ordinal: 2 },
+      ],
+    };
+
+    const result = validateRoutineDefinition(definition, { availableSkillNames: new Set(["crm_lookup"]) });
+
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "node_id_collision", location: "node:handoff" }),
+    ]));
+  });
+});

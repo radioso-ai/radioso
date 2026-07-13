@@ -246,6 +246,20 @@ step.
 In practice: issue a refund, then branch on `failed` to hand off to a person and
 let the default path continue when it succeeds.
 
+## Continue once slots are provided
+
+A **slot-filled** branch fires once the slots it names are present. It is a
+rule - decided in code, before the model is consulted - that gates the routine on
+having collected the values it needs.
+
+In **Prose**, put the branch on its own line, click the **When filled** toolbar
+button, pick the slots that must be present, and add a target on the same line
+(End, Handoff, or a step) the way you would for any branch. It shows as a
+**when … provided** chip. Routines that use one edit in **Prose** as well as in
+the **Form** view, so you no longer have to leave Prose to work on the rest of the
+routine. When you copy a routine as text, the branch is written as
+`[filled @slot_a, @slot_b]`.
+
 ## Branch rows
 
 A branch row sends the routine from the current step to another step or end.
@@ -304,6 +318,10 @@ Author an approval gate in either editor:
   a label and a **continue to** target. The form synthesizes the decision guards
   from those targets.
 
+To **name** a gate, put a **Step** heading on the line above it (for example
+"Manager approval"). The heading titles the gate itself - it does not add an extra
+step - so the gate reads clearly and another branch can **Jump** to it by name.
+
 When a conversation reaches the approval gate, the routine is suspended. The
 assistant replies with the approval-step message, and Radioso creates a pending
 decision that surfaces in the **Needs attention** inbox, where it shows one
@@ -345,14 +363,24 @@ The default flow ends at a normal completion, so a simple linear routine needs
 no end chip. Use end and handoff chips on branch lines when a condition should
 finish or escalate early.
 
-The **Completion message** field below the editor sets what the agent says when
-the routine finishes; leave it blank to use the default. When the routine can
-hand off, a **Handoff message** field sets what it says as it escalates. The Form
-view edits the same messages in its terminal rows.
+The **Completion message** field below the editor sets what the agent says at the
+routine's default (fall-through) ending; leave it blank to use the default. When
+the routine can hand off, a **Handoff message** field sets what it says as it
+escalates. The Form view edits the same messages in its terminal rows.
 
-The key point: routines that branch to several distinct endings — more than one
-completion or more than one handoff — are still authored in the **Form** view.
-Prose collapses to one completion and at most one handoff.
+### More than one ending
+
+A branch can finish at its own **named ending** with its own completion message —
+for example an eligible refund finishes one way and an ineligible one finishes
+with a different explanation. Click an **End** chip and choose **Name & message…**
+to give that ending a name and its own copy; the chip then reads as a named
+ending. Leave the name blank to reset it to the routine's default ending.
+
+Copied as text, a named ending is written `-> end:<name> ("its message")`; the
+plain `-> end` is the default ending.
+
+Routines with **more than one handoff** are still authored in the **Form** view;
+prose supports at most one handoff.
 
 ## Validate and publish
 

@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
-import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
+import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
@@ -417,6 +417,53 @@ export function approvalChipTargets(stepTargets: ApprovalChipTarget[]): Approval
   return [...stepTargets, { id: 'done', label: 'End (complete)' }, { id: 'handoff', label: 'Handoff' }]
 }
 
+// Name an ending and give it its own completion message. A blank name is the default ending
+// (the primary complete terminal, whose message is the header field); a name makes it an
+// additional completion whose message is carried here, so a branch can finish with its own copy.
+function EndDialog({
+  open,
+  onOpenChange,
+  initialName,
+  initialMessage,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initialName: string
+  initialMessage: string
+  onConfirm: (name: string, message: string) => void
+}) {
+  const [name, setName] = useState(initialName)
+  const [message, setMessage] = useState(initialMessage)
+  const confirm = () => {
+    onConfirm(name, message)
+    onOpenChange(false)
+  }
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Ending</DialogTitle>
+          <DialogDescription>Leave the name blank for the routine&apos;s default ending. Give it a name to add a separate ending with its own completion message.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="endName">Ending name (optional)</Label>
+            <Input id="endName" value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. ineligible" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="endMessage">Completion message (optional)</Label>
+            <Input id="endMessage" value={message} onChange={(event) => setMessage(event.target.value)} placeholder="What the agent says at this ending" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm}>Save ending</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
   const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables } = useRoutineVariables()
@@ -500,6 +547,34 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     editor.update(() => {
       const node = $getNodeByKey(nodeKey)
       node?.remove()
+    })
+  }
+
+  const [isEndOpen, setIsEndOpen] = useState(false)
+  // The current ending's completion message — a named end carries its own copy in `value`.
+  const readEndMessage = (): string => {
+    let message = ''
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey)
+      if ($isChipNode(node)) {
+        const value = node.getChipValue()
+        if (typeof value === 'string') message = value
+      }
+    })
+    return message
+  }
+  // Replace this end chip per the dialog. A blank name resets it to the default ending (the
+  // primary complete, refId `done`, message in the header); a name makes it a separate ending
+  // whose message rides on the chip.
+  const applyEnding = (name: string, message: string) => {
+    const trimmedName = name.trim()
+    const trimmedMessage = message.trim()
+    const nextRefId = trimmedName ? slugifyVariableKey(trimmedName) : 'done'
+    const nextLabel = trimmedName ? nextRefId : 'end'
+    const value = nextRefId !== 'done' && trimmedMessage ? trimmedMessage : null
+    editor.update(() => {
+      const node = $getNodeByKey(nodeKey)
+      node?.replace($createEndChipNode(nextRefId, value, nextLabel))
     })
   }
 
@@ -666,6 +741,33 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
     )
   }
 
+  if (kind === 'condition' && refId === SLOT_FILLED_GUARD_REF) {
+    // A slot-filled guard continues once the named slots are present. Like the outcome guard it
+    // is neither a decided-in-code rule nor an AI phrase, so it shows its own badge and only
+    // offers Remove.
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" contentEditable={false} data-routine-chip={kind} data-guard-mode="slot-filled" className="mx-0.5 cursor-pointer align-baseline outline-none">
+            <ChipBadge
+              kind={kind}
+              label={label}
+              type={null}
+              icon={Workflow}
+              suffix="when filled"
+              className="border-emerald-300 bg-emerald-100 text-emerald-900"
+            />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          <DropdownMenuLabel>Continue once slots are provided</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    )
+  }
+
   if (kind === 'condition') {
     // A condition shows its decision mode and can be switched either way: decided-in-code
     // (a structured rule, op set) ⇄ decided-by-AI (a free phrase, no op). The mode is read
@@ -713,13 +815,20 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
   }
 
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" contentEditable={false} data-routine-chip={kind} className="mx-0.5 cursor-pointer align-baseline outline-none">
-          <ChipBadge kind={kind} label={label} type={type} />
+        <button type="button" contentEditable={false} data-routine-chip={kind} data-end-named={kind === 'end' && refId !== 'done' ? 'true' : undefined} className="mx-0.5 cursor-pointer align-baseline outline-none">
+          <ChipBadge kind={kind} label={label} type={type} suffix={kind === 'end' && refId !== 'done' ? 'ending' : undefined} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
+        {kind === 'end' ? (
+          <>
+            <DropdownMenuItem onClick={() => setIsEndOpen(true)}>Name &amp; message…</DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {kind === 'variable' ? (
           <>
             <DropdownMenuLabel>Variable type</DropdownMenuLabel>
@@ -751,6 +860,16 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         <DropdownMenuItem onClick={removeSelf}>Remove</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+    {kind === 'end' ? (
+      <EndDialog
+        open={isEndOpen}
+        onOpenChange={setIsEndOpen}
+        initialName={refId !== 'done' ? refId : ''}
+        initialMessage={readEndMessage()}
+        onConfirm={applyEnding}
+      />
+    ) : null}
+    </>
   )
 }
 
@@ -1032,12 +1151,26 @@ export function $createAiConditionChipNode(): ChipNode {
   return new ChipNode('condition', '', '', undefined, null, null)
 }
 
+// An `end` chip completes the routine. The default ending targets the primary complete terminal
+// (its message is the header field). A named ending (a distinct id) is an additional completion
+// whose message rides on the chip's `value`, so the extra ending survives the prose round-trip.
+export function $createEndChipNode(refId: string, message: string | null, label: string): ChipNode {
+  return new ChipNode('end', refId, label, undefined, null, message)
+}
+
 // An outcome guard chip: a condition that branches on the preceding tool step's result
 // status (held in `value`). The sentinel refId marks it as a step-result branch rather than
 // a variable comparison; it compiles to an `outcome` guard.
 export function $createOutcomeConditionChipNode(status: string): ChipNode {
   const trimmed = status.trim()
   return new ChipNode('condition', OUTCOME_GUARD_REF, `outcome is ${trimmed}`, undefined, null, trimmed)
+}
+
+// A slot-filled guard chip: a condition that continues once the named slots are present. The
+// sentinel refId marks it as a slot-presence gate; the slot keys ride in `values`. Compiles to
+// a `slot_filled` guard.
+export function $createSlotFilledConditionChipNode(keys: string[], label: string): ChipNode {
+  return new ChipNode('condition', SLOT_FILLED_GUARD_REF, label, undefined, null, null, keys, null)
 }
 
 export function $isChipNode(node: LexicalNode | null | undefined): node is ChipNode {

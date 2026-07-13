@@ -428,6 +428,49 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep.stableStepId });
 });
 
+test("a 'when filled' chip compiles a slot_filled branch on the collected slots", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Verify then continue");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer needs verification");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  // A chat step that collects a slot the branch will wait on.
+  await editor.pressSequentially("Ask for their ");
+  await editor.pressSequentially("@email");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // new line for the branch
+
+  // Add a handoff target on the branch line.
+  await page.keyboard.type("@human");
+  await expect(page.getByRole("option", { name: "Handoff: human" })).toBeVisible();
+  await page.getByRole("option", { name: "Handoff: human" }).click();
+  await expect(page.locator('[data-routine-chip="handoff"]')).toBeVisible();
+
+  // Author the slot-filled guard via the toolbar dialog: gate on the email slot.
+  await page.getByRole("button", { name: "When filled" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("switch", { name: "email" }).click();
+  await dialog.getByRole("button", { name: "Add slot-filled branch" }).click();
+  await expect(page.locator('[data-routine-chip="condition"][data-guard-mode="slot-filled"]')).toBeVisible();
+
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const transitions = created?.body?.transitions ?? [];
+  const slotFilledEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "slot_filled");
+  expect(slotFilledEdge).toMatchObject({ guardKind: "slot_filled", toRef: "handoff" });
+  expect(slotFilledEdge.guardText).toContain("{{slot.email}}");
+});
+
 test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
@@ -777,4 +820,55 @@ test("an end chip completes the routine on a decided-in-code branch", async ({ p
   const endBranch = (created?.body?.transitions ?? []).find((transition: { guardKind: string }) => transition.guardKind === "field");
   // The end branch is a decided-in-code transition to the complete terminal.
   expect(endBranch).toMatchObject({ toRef: completeId, guardKind: "field", fieldRef: "status", fieldOp: "equals" });
+});
+
+test("a named ending gives a branch its own second completion message", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Refund check");
+  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer wants a refund");
+
+  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  await editor.click();
+  await editor.pressSequentially("Look up the ");
+  await editor.pressSequentially("@status");
+  await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter"); // a branch line
+
+  // Decide the branch in code first (keeps the caret on the branch line).
+  await page.getByRole("button", { name: "Condition" }).click();
+  const conditionDialog = page.getByRole("dialog");
+  await conditionDialog.getByLabel("Variable").selectOption({ label: "status" });
+  await conditionDialog.getByLabel("Check").selectOption("equals");
+  await conditionDialog.getByLabel("Value").fill("ineligible");
+  await conditionDialog.getByRole("button", { name: "Add check" }).click();
+  await expect(page.locator('[data-routine-chip="condition"]')).toBeVisible();
+
+  // End the branch, then name that ending and give it its own completion message.
+  await page.getByRole("button", { name: "End" }).click();
+  await expect(page.locator('[data-routine-chip="end"]')).toBeVisible();
+  await page.locator('[data-routine-chip="end"]').click();
+  await page.getByRole("menuitem", { name: /Name & message/ }).click();
+  const endDialog = page.getByRole("dialog");
+  await endDialog.getByLabel("Ending name (optional)").fill("ineligible");
+  await endDialog.getByLabel("Completion message (optional)").fill("Sorry, this order is not eligible.");
+  await endDialog.getByRole("button", { name: "Save ending" }).click();
+  await expect(page.locator('[data-routine-chip="end"][data-end-named="true"]')).toBeVisible();
+
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
+
+  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  const created = routineUpdates.find((update) => update.method === "POST");
+  const completes = (created?.body?.terminals ?? []).filter((terminal: { kind: string }) => terminal.kind === "complete");
+  // Two completions: the default fall-through plus the named ending with its own copy.
+  expect(completes.length).toBe(2);
+  const named = completes.find((terminal: { stableStepId: string }) => terminal.stableStepId === "ineligible");
+  expect(named?.instruction).toBe("Sorry, this order is not eligible.");
+  expect((created?.body?.transitions ?? []).some((transition: { toRef: string }) => transition.toRef === "ineligible")).toBe(true);
 });

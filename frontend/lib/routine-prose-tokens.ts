@@ -8,7 +8,7 @@
 // (`backend/.../routines/document`) so the two surfaces stay one grammar: `@ref` mentions,
 // `-> #step` / end targets, and bracketed guards. Keep them in sync when either moves.
 
-import { OUTCOME_GUARD_REF } from './routine-prose'
+import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './routine-prose'
 import type {
   ApprovalDocOption,
   ChipDocVariable,
@@ -123,6 +123,8 @@ const formatSkillSuffix = (chip: ChipTokenInput): string => {
 const formatConditionToken = (chip: ChipTokenInput): string => {
   // An outcome guard is a condition chip with the sentinel ref; its status rides in `value`.
   if (chip.refId === OUTCOME_GUARD_REF) return `[outcome ${formatLiteral(chip.value ?? '')}]`
+  // A slot-filled guard is a condition chip with the sentinel ref; its slot keys ride in `values`.
+  if (chip.refId === SLOT_FILLED_GUARD_REF) return `[filled ${(chip.values ?? []).map((value) => `@${value}`).join(', ')}]`
   const op = chip.op
   // A bare AI⇄code selector (empty ref, no operator) is a marker only; the decided-by-AI phrase
   // rides in the adjacent prose text, so the chip itself contributes no token.
@@ -167,7 +169,10 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
     case 'skill':
       return `@${chip.refId}${formatSkillSuffix(chip)}`
     case 'end':
-      return '-> end'
+      // The default ending is `-> end`; a named ending carries its id and (optional) message.
+      return chip.refId && chip.refId !== 'done'
+        ? `-> end:${chip.refId}${typeof chip.value === 'string' && chip.value ? ` ("${escapeQuoted(chip.value)}")` : ''}`
+        : '-> end'
     case 'handoff':
       return '-> handoff'
     case 'step':
@@ -208,7 +213,13 @@ const referencedVariableIds = (paragraphs: ProseParagraph[]): Set<string> => {
     for (const segment of paragraph.segments) {
       if (segment.kind !== 'chip') continue
       if (segment.chipKind === 'variable') ids.add(segment.refId)
-      if (segment.chipKind === 'condition' && segment.refId !== OUTCOME_GUARD_REF && !captureKeys.has(segment.refId)) ids.add(segment.refId)
+      // A slot-filled guard's refId is the sentinel (not a variable), but its `values` name real
+      // slots — count those so they survive in the frontmatter even if nothing else references them.
+      if (segment.chipKind === 'condition' && segment.refId === SLOT_FILLED_GUARD_REF) {
+        for (const value of segment.values ?? []) if (typeof value === 'string') ids.add(value)
+      } else if (segment.chipKind === 'condition' && segment.refId !== OUTCOME_GUARD_REF && !captureKeys.has(segment.refId)) {
+        ids.add(segment.refId)
+      }
       if (segment.chipKind === 'skill') {
         for (const binding of Object.values(segment.inputBindings ?? {})) {
           if (binding.kind === 'variableRef') ids.add(binding.ref)
@@ -407,7 +418,17 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
   while (index < line.length) {
     const rest = line.slice(index)
 
-    if (rest.startsWith('-> end')) { flush(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue }
+    if (rest.startsWith('-> end')) {
+      // `-> end` (default ending) or `-> end:<id> ("message")` (a named ending with its own copy).
+      const named = /^-> end:([A-Za-z_][A-Za-z0-9_]*)(?:\s+\("((?:[^"\\]|\\.)*)"\))?/.exec(rest)
+      if (named) {
+        flush()
+        segments.push({ kind: 'chip', chipKind: 'end', refId: named[1]!, label: named[1]!, value: named[2] != null ? unescapeQuoted(named[2]) : null })
+        index += named[0].length
+        continue
+      }
+      flush(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+    }
     if (rest.startsWith('-> handoff')) { flush(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
 
     const stepMatch = /^-> step:([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*\(max (\d+)\))?/.exec(rest)
@@ -431,6 +452,18 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
       if (close !== -1) {
         const status = rest.slice('[outcome '.length, close).trim()
         if (status) { flush(); segments.push({ kind: 'chip', chipKind: 'condition', refId: OUTCOME_GUARD_REF, value: status, label: `outcome is ${status}` }); index += close + 1; continue }
+      }
+    }
+
+    if (rest.startsWith('[filled ')) {
+      const close = findBracketClose(rest)
+      if (close !== -1) {
+        // `[filled @x, @y]` → a slot-filled guard: the slot keys ride in `values`.
+        const keys = rest.slice('[filled '.length, close)
+          .split(',')
+          .map((part) => part.trim().replace(/^@/, ''))
+          .filter((key) => key.length > 0)
+        if (keys.length > 0) { flush(); segments.push({ kind: 'chip', chipKind: 'condition', refId: SLOT_FILLED_GUARD_REF, values: keys, label: `when ${keys.join(', ')} provided` }); index += close + 1; continue }
       }
     }
 
@@ -491,7 +524,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
 export const looksLikeRoutineProse = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.startsWith(`${FENCE}\nname:`) || trimmed.startsWith(`${FENCE}\r\nname:`)) return true
-  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|action|decision|approval) )/.test(text) || /(^|\s)@[A-Za-z_]/.test(text)
+  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|filled|action|decision|approval) )/.test(text) || /(^|\s)@[A-Za-z_]/.test(text)
 }
 
 export const parseProseDoc = (

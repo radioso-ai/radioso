@@ -122,6 +122,9 @@ const formatLastUsed = (value: string | null | undefined) => {
 
 const fallbackRetrievalDefaults: RetrievalDefaults = {
   queryRewriteEnabled: false,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: '',
   lexicalRewriteInstructions: '',
   suggestedQuestionsEnabled: true,

@@ -21,6 +21,8 @@ DELETE /api/v1/document/{documentId}
 POST   /api/v1/document/{documentId}/reprocess
 GET    /api/v1/document/sources
 GET    /api/v1/document/sources/{sourceId}/documents
+PATCH  /api/v1/document/sources/{sourceId}
+POST   /api/v1/document/sources/{sourceId}/reprocess
 POST   /api/v1/document/sources/{sourceId}/recrawl
 POST   /api/v1/document/sources/{sourceId}/pause-crawl
 POST   /api/v1/document/sources/{sourceId}/resume-crawl
@@ -104,6 +106,45 @@ Use `PUT /api/v1/document/{documentId}` when the content changed.
 Use `POST /api/v1/document/{documentId}/reprocess` when you want to run the current stored content through the latest processing path again.
 
 Both flows return `202` because processing is queued.
+
+Document detail responses include extraction provenance when a processing run attempted or skipped metadata extraction. The `enrichment` object reports safe operator fields such as status, detected shape, model, anchor date, fact count, applied chunk count, and failure reason. It does not include source text, prompts, completions, or chunk content.
+
+Document creation (`POST /api/v1/document/`) and file import (`POST /api/v1/document/import`) accept the same optional `documentEnrichmentOverride` field (`"on"` or `"off"`), which applies to the processing run that the request queues.
+
+Single-document reprocess accepts an optional metadata extraction override for that run:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/document-id/reprocess \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"documentEnrichmentOverride":"on"}'
+```
+
+`documentEnrichmentOverride` can be `on` or `off`. It is stored on the processing job, not on the queue message, and it does not change the saved workspace or source setting.
+
+## Source metadata extraction and reprocessing
+
+Sources expose `documentEnrichmentOverride` as `inherit`, `on`, or `off`. `inherit` uses the workspace ingestion setting.
+
+Update a source override:
+
+```bash
+curl -sS -X PATCH http://localhost:8080/api/v1/document/sources/source-id \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"documentEnrichmentOverride":"on"}'
+```
+
+Reprocess only one source:
+
+```bash
+curl -sS -X POST http://localhost:8080/api/v1/document/sources/source-id/reprocess \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"documentEnrichmentOverride":"on"}'
+```
+
+The response reports `queuedDocumentCount`, `skippedDocumentCount`, and a status of `queued` or `noop`. Documents already queued or processing are skipped rather than duplicated.
 
 ## Search documents
 

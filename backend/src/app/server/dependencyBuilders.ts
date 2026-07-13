@@ -98,12 +98,15 @@ import {
   ChunkRepository,
   type DocumentJobDispatcherPort,
   DocumentDeletionService,
+  DocumentEnrichmentService,
   DocumentImportService,
   DocumentIngestionService,
+  ModelDocumentEnrichmentGateway,
   DocumentProcessingService,
   DocumentProcessingWorker,
   DocumentSearchHistoryService,
   DocumentSearchService,
+  DocumentSourceReprocessService,
   DocumentSourceContentService,
   WorkspaceIngestionReprocessService,
   AgentConverseResourceService,
@@ -623,6 +626,9 @@ export const buildDocumentServices = (input: {
     embeddingService,
     composition.chunkingProvider,
   );
+  const documentEnrichmentService = new DocumentEnrichmentService({
+    gateway: new ModelDocumentEnrichmentGateway(llmRegistry.createChatInferencePipeline(usageEventRecorder)),
+  });
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
     repositories.chunkRepository,
@@ -632,6 +638,10 @@ export const buildDocumentServices = (input: {
     chunkingStrategyRegistry,
     documentSourceContentService,
     logger,
+    documentEnrichmentService,
+    documentSourceRepository,
+    repositories.documentProcessingJobRepository,
+    documentJobDispatcher,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
@@ -699,6 +709,13 @@ export const buildDocumentServices = (input: {
       documentJobDispatcher,
       repositories,
     });
+  const documentSourceReprocessService = new DocumentSourceReprocessService(
+    repositories.documentRepository,
+    documentSourceRepository,
+    auditService,
+    repositories.documentProcessingJobRepository,
+    documentJobDispatcher,
+  );
   const documentSearchHistoryService = new DocumentSearchHistoryService(
     input.auditEventRepository,
     repositories.documentRepository,
@@ -711,6 +728,7 @@ export const buildDocumentServices = (input: {
     documentJobConsumer,
     documentProcessingWorker,
     documentSearchHistoryService,
+    documentSourceReprocessService,
     documentStorage,
     websiteCrawlJobConsumer,
     websiteCrawlJobService,

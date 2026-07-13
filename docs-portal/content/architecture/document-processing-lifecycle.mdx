@@ -32,11 +32,19 @@ Fixed-window chunking always uses fixed-size overlapping text windows. Semantic 
 
 ### Embed and publish chunks
 
-Each chunk gets search text and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
+Each chunk gets search text from its base document metadata and an embedding. Chunks are then published for the specific document revision so stale work does not overwrite newer content.
 
 ### Mark the document ready for retrieval
 
-Once the worker publishes the chunks, the document becomes usable in document search and grounded chat.
+Once the worker publishes the chunks, the document becomes usable in document search and grounded chat. This happens without waiting for metadata extraction.
+
+### Extract metadata asynchronously when enabled
+
+Metadata extraction is optional and disabled by default. When enabled by the workspace setting, a source override, or a reprocess override, the worker queues a separate, lower-priority job after the document is already searchable.
+
+That enrich job makes one model call for the document. The call understands the document type and extracts supported structured tags such as event dates. Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level.
+
+Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. No re-embedding is needed, because those columns are structured and not part of the vector. If validation or the provider call fails, the document stays searchable without extracted tags — a failed enrich job never changes the document's ready status.
 </Steps>
 
 ## Why revisions matter
@@ -47,6 +55,15 @@ Document processing is revision-aware. If a document is updated while an older j
 
 - Inline text documents store their source content directly in the document record.
 - Uploaded files store source file details and are materialized during processing before chunking begins.
+- Website and connector sources can carry a source-level metadata extraction override. That override can inherit the workspace default, force extraction on, or force it off.
+
+## Queue payloads
+
+Document processing jobs are durable PostgreSQL rows. Queue dispatch, including AMQP and Cloud Tasks, sends only the job identity needed to wake a worker. The worker reads the row to learn what to do, so the queue message shape does not change.
+
+Each job row carries a `kind`: `vectorize` for the indexing pass that makes a document searchable, and `enrich` for the follow-up metadata extraction. The worker claims `vectorize` jobs before `enrich` jobs, so a large import indexes everything first and extraction drains afterward at lower priority.
+
+Reprocess options such as `documentEnrichmentOverride` live on the processing job row and are copied onto the enrich job. Retries and reschedules preserve the same row options.
 
 ## Failure and verification
 

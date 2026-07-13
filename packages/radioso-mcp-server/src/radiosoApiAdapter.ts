@@ -47,7 +47,7 @@ export interface RadiosoApiAdapter {
     },
   ): Promise<unknown>;
   deleteDocument(documentId: string): Promise<void>;
-  reprocessDocument(documentId: string): Promise<unknown>;
+  reprocessDocument(documentId: string, body?: { documentEnrichmentOverride?: "on" | "off" }): Promise<unknown>;
 }
 
 type FetchLike = typeof fetch;
@@ -156,8 +156,11 @@ export const createRadiosoApiAdapter = (
       const suffix = searchParams.size > 0 ? `?${searchParams.toString()}` : "";
       return request(`/api/v1/document${suffix}`);
     },
-    reprocessDocument: (documentId) =>
+    reprocessDocument: (documentId, body) =>
       request(`/api/v1/document/${documentId}/reprocess`, {
+        ...(body?.documentEnrichmentOverride
+          ? { body: JSON.stringify({ documentEnrichmentOverride: body.documentEnrichmentOverride }) }
+          : {}),
         method: "POST",
       }),
     searchDocuments: (body) =>

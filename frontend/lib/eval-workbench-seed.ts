@@ -1,6 +1,66 @@
 import type { ChatConversationDetail, ChatConversationTurn } from './api'
-import type { EvalSnapshot } from './api-eval'
+import type { EvalAssertion, EvalSnapshot } from './api-eval'
 import type { WorkbenchSeedTurn } from '@/components/dashboard/workbench/use-workbench-state'
+
+export interface EventRetrievalWorkbenchSeedCase {
+  id: string
+  name: string
+  query: string
+  assertions: EvalAssertion[]
+}
+
+export const eventRetrievalWorkbenchSeedCases: EventRetrievalWorkbenchSeedCase[] = [
+  {
+    id: 'event-date-cross-paragraph',
+    name: 'Named event date from a later paragraph',
+    query: 'When does the Summer Workshop take place?',
+    assertions: [
+      {
+        type: 'retrieval_includes_document',
+        documentId: '11111111-1111-4111-8111-111111111101',
+      },
+      {
+        type: 'retrieval_chunk_metadata',
+        documentId: '11111111-1111-4111-8111-111111111101',
+        metadata: { dateFrom: '2026-08-10', dateTo: '2026-08-10' },
+      },
+    ],
+  },
+  {
+    id: 'event-next-events-listing',
+    name: 'Anchorless next events listing',
+    query: 'What are the next events?',
+    assertions: [
+      {
+        type: 'retrieval_document_order',
+        documentIds: [
+          '11111111-1111-4111-8111-111111111102',
+          '11111111-1111-4111-8111-111111111101',
+          '11111111-1111-4111-8111-111111111103',
+        ],
+      },
+      {
+        type: 'retrieval_excludes_document',
+        documentId: '11111111-1111-4111-8111-111111111104',
+      },
+    ],
+  },
+  {
+    id: 'event-actuality-sort',
+    name: 'Sort events by actuality',
+    query: 'Sort events by actuality.',
+    assertions: [
+      {
+        type: 'retrieval_document_order',
+        documentIds: [
+          '11111111-1111-4111-8111-111111111102',
+          '11111111-1111-4111-8111-111111111101',
+          '11111111-1111-4111-8111-111111111103',
+        ],
+      },
+    ],
+  },
+]
 
 const snapshotMessageToTurn = (
   snapshot: EvalSnapshot,

@@ -18,6 +18,11 @@ const documentIdSchema = z.object({
   documentId: z.string().min(1),
 });
 
+const reprocessDocumentSchema = z.object({
+  documentId: z.string().min(1),
+  documentEnrichmentOverride: z.enum(["on", "off"]).optional(),
+});
+
 export const createWriteToolDefinitions = (): GenericToolDefinition[] => [
   {
     accessMode: "write",
@@ -78,14 +83,16 @@ export const createWriteToolDefinitions = (): GenericToolDefinition[] => [
     accessMode: "write",
     description: "Queue an existing workspace document for reprocessing.",
     execute: async (args: unknown, context) => {
-      const parsed = documentIdSchema.parse(args);
-      const data = await context.adapter.reprocessDocument(parsed.documentId);
+      const parsed = reprocessDocumentSchema.parse(args);
+      const data = await context.adapter.reprocessDocument(parsed.documentId, {
+        documentEnrichmentOverride: parsed.documentEnrichmentOverride,
+      });
       return {
         data,
         summary: `Document ${parsed.documentId} queued for reprocessing.`,
       };
     },
-    inputSchema: documentIdSchema,
+    inputSchema: reprocessDocumentSchema,
     name: "reprocess_document",
     requiresApproval: true,
   },

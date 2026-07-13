@@ -100,6 +100,7 @@ import type {
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
+  DocumentProcessingJobOptions,
   DocumentProcessingJobRepositoryPort,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
@@ -1703,6 +1704,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       chunkingStrategy: input.chunkingStrategy,
       embeddingModel: input.embeddingModel,
       pendingEmbeddingModel: input.pendingEmbeddingModel,
+      documentEnrichmentEnabled: input.documentEnrichmentEnabled ?? false,
       fixedWindowChunkSize: input.fixedWindowChunkSize,
       fixedWindowChunkOverlap: input.fixedWindowChunkOverlap,
       structuredMinChunkSize: input.structuredMinChunkSize,
@@ -2239,7 +2241,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     };
   }
 
-  async createAndQueue(input: DocumentCreateInput): Promise<DocumentRecord> {
+  async createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord> {
     const record: DocumentRecord = {
       id: randomUUID(),
       workspaceId: input.workspaceId,
@@ -2299,6 +2301,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
           documentId: updated.id,
           workspaceId: updated.workspaceId,
           documentRevision: updated.revision,
+          options,
         });
         this.items.set(updated.id, updated);
         return updated;
@@ -2309,6 +2312,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentId: record.id,
       workspaceId: record.workspaceId,
       documentRevision: record.revision,
+      options,
     });
     this.items.set(record.id, record);
     return record;
@@ -2382,6 +2386,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         metadata: item.metadata,
+        enrichment: item.enrichment ?? null,
         sourceId: item.sourceId ?? null,
         source: item.source ?? null,
         externalDocumentId: item.externalDocumentId ?? null,
@@ -2596,7 +2601,11 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAndQueue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
+  async requeueAndQueue(
+    documentId: string,
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<DocumentRecord> {
     const existing = this.items.get(documentId);
     if (!existing || existing.workspaceId !== workspaceId) {
       throw notFound("Document not found");
@@ -2615,6 +2624,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentId: record.id,
       workspaceId: record.workspaceId,
       documentRevision: record.revision,
+      options,
     });
     this.items.set(record.id, record);
     return record;
@@ -2636,7 +2646,31 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
     return record;
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string): Promise<{
+  async updateMetadataForRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    metadata: Record<string, unknown>;
+    enrichment?: Record<string, unknown> | null;
+  }): Promise<DocumentRecord | null> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.workspaceId !== input.workspaceId || existing.revision !== input.revision) {
+      return null;
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      metadata: input.metadata,
+      ...(input.enrichment !== undefined
+        ? { enrichment: input.enrichment as DocumentRecord["enrichment"] }
+        : {}),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -2665,6 +2699,59 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         documentId: record.id,
         workspaceId: record.workspaceId,
         documentRevision: record.revision,
+        options,
+      });
+      this.items.set(record.id, record);
+      queuedDocumentCount += 1;
+      queuedDocuments.push({
+        documentId: record.id,
+        revision: record.revision,
+      });
+    }
+
+    return {
+      queuedDocumentCount,
+      skippedDocumentCount,
+      queuedDocuments,
+    };
+  }
+
+  async requeueSourceEligibleAndQueue(input: {
+    workspaceId: string;
+    sourceId: string;
+    options?: DocumentProcessingJobOptions | null;
+  }): Promise<{
+    queuedDocumentCount: number;
+    skippedDocumentCount: number;
+    queuedDocuments: Array<{ documentId: string; revision: number }>;
+  }> {
+    const documents = [...this.items.values()].filter(
+      (item) => item.workspaceId === input.workspaceId && item.sourceId === input.sourceId,
+    );
+    let queuedDocumentCount = 0;
+    let skippedDocumentCount = 0;
+    const queuedDocuments: Array<{ documentId: string; revision: number }> = [];
+
+    for (const document of documents) {
+      if (document.status !== "ready" && document.status !== "failed") {
+        skippedDocumentCount += 1;
+        continue;
+      }
+
+      const record: DocumentRecord = {
+        ...document,
+        status: "queued",
+        metadata: document.metadata ?? {},
+        revision: document.revision + 1,
+        failureReason: null,
+        updatedAt: new Date(),
+      };
+
+      await this.jobRepository?.enqueue({
+        documentId: record.id,
+        workspaceId: record.workspaceId,
+        documentRevision: record.revision,
+        options: input.options,
       });
       this.items.set(record.id, record);
       queuedDocumentCount += 1;
@@ -2886,6 +2973,45 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     return true;
   }
 
+  async listForDocumentRevision(input: { documentId: string; workspaceId: string }) {
+    const chunks = this.items.get(input.documentId) ?? [];
+    return chunks
+      .filter((chunk) => chunk.workspaceId === input.workspaceId)
+      .slice()
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map((chunk) => ({
+        chunkIndex: chunk.chunkIndex,
+        content: chunk.content,
+        startOffset: chunk.startOffset,
+        endOffset: chunk.endOffset,
+        metadata: chunk.metadata ?? {},
+      }));
+  }
+
+  async updateMetadataForDocumentRevision(input: {
+    documentId: string;
+    workspaceId: string;
+    revision: number;
+    patches: Array<{ chunkIndex: number; metadata: Record<string, unknown> }>;
+  }): Promise<boolean> {
+    const document = this.documentRepository?.items.get(input.documentId);
+    if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
+      return false;
+    }
+
+    const chunks = this.items.get(input.documentId) ?? [];
+    const patchByIndex = new Map(input.patches.map((patch) => [patch.chunkIndex, patch.metadata]));
+    this.items.set(
+      input.documentId,
+      chunks.map((chunk) =>
+        patchByIndex.has(chunk.chunkIndex)
+          ? { ...chunk, metadata: patchByIndex.get(chunk.chunkIndex)! }
+          : chunk,
+      ),
+    );
+    return true;
+  }
+
   async listSummariesForDocument(input: { documentId: string; workspaceId: string }) {
     const chunks = this.items.get(input.documentId) ?? [];
     return chunks
@@ -2899,6 +3025,8 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
         contentLength: chunk.content.length,
         startOffset: chunk.startOffset,
         endOffset: chunk.endOffset,
+        dateFrom: typeof chunk.metadata?.dateFrom === "string" ? chunk.metadata.dateFrom : null,
+        dateTo: typeof chunk.metadata?.dateTo === "string" ? chunk.metadata.dateTo : null,
       }));
   }
 
@@ -2935,12 +3063,13 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     this.documentRepository = documentRepository;
   }
 
-  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number }): Promise<DocumentProcessingJobRecord> {
+  async enqueue(input: { documentId: string; workspaceId: string; documentRevision: number; kind?: DocumentProcessingJobRecord["kind"]; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
     const record: DocumentProcessingJobRecord = {
       id: randomUUID(),
       documentId: input.documentId,
       workspaceId: input.workspaceId,
       documentRevision: input.documentRevision,
+      kind: input.kind ?? "vectorize",
       status: "queued",
       attemptCount: 0,
       lastError: null,
@@ -2949,9 +3078,23 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       completedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
+      options: input.options ?? null,
     };
     this.items.set(record.id, record);
     return record;
+  }
+
+  async ensureEnrichJob(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
+    const existing = [...this.items.values()].find(
+      (item) =>
+        item.documentId === input.documentId &&
+        item.documentRevision === input.documentRevision &&
+        item.kind === "enrich",
+    );
+    if (existing) {
+      return existing;
+    }
+    return this.enqueue({ ...input, kind: "enrich" });
   }
 
   async findById(jobId: string): Promise<DocumentProcessingJobRecord | null> {
@@ -2967,14 +3110,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       .filter((item) =>
         item.documentId === input.documentId
         && item.workspaceId === input.workspaceId
-        && item.documentRevision === input.documentRevision)
+        && item.documentRevision === input.documentRevision
+        && item.kind === "vectorize")
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
   }
 
   async claimNext(now: Date = new Date()): Promise<DocumentProcessingJobRecord | null> {
     const next = [...this.items.values()]
       .filter((item) => item.status === "queued" && item.availableAt <= now)
-      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())[0];
+      .sort((left, right) =>
+        Number(left.kind === "enrich") - Number(right.kind === "enrich") ||
+        left.createdAt.getTime() - right.createdAt.getTime())[0];
 
     if (!next) {
       return null;
@@ -3013,7 +3159,10 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
       .filter((document) => document.status === "queued")
       .filter((document) =>
         ![...this.items.values()].some(
-          (job) => job.documentId === document.id && job.documentRevision === document.revision,
+          (job) =>
+            job.documentId === document.id &&
+            job.documentRevision === document.revision &&
+            job.kind === "vectorize",
         ),
       )
       .sort((left, right) => left.updatedAt.getTime() - right.updatedAt.getTime())

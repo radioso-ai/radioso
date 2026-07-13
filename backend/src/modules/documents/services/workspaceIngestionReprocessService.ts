@@ -1,5 +1,5 @@
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { DocumentProcessingJobOptions, DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
@@ -18,14 +18,20 @@ export class WorkspaceIngestionReprocessService {
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
   ) {}
 
-  async reprocessWorkspace(workspaceId: string): Promise<WorkspaceIngestionReprocessResult> {
-    const result = await this.documentRepository.requeueAllEligibleAndQueue(workspaceId);
+  async reprocessWorkspace(
+    workspaceId: string,
+    options?: DocumentProcessingJobOptions | null,
+  ): Promise<WorkspaceIngestionReprocessResult> {
+    const result = await this.documentRepository.requeueAllEligibleAndQueue(workspaceId, options);
     await this.dispatchQueuedJobs(workspaceId, result.queuedDocuments);
     await this.auditService.record({
       workspaceId,
       eventType: "document.reprocess_workspace",
       eventStatus: "success",
-      metadata: result,
+      metadata: {
+        ...result,
+        documentEnrichmentOverride: options?.documentEnrichmentOverride ?? null,
+      },
     });
 
     return {

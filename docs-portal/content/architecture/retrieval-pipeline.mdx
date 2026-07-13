@@ -24,15 +24,21 @@ Radioso parses the original query, applies rewrite logic when enabled, and can s
 
 ### Candidate retrieval
 
-The system runs both semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
+The system runs semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
+
+For listing-style event date questions, the pipeline can also ask a retrieval-owned temporal candidate port for ongoing and upcoming chunks with `dateFrom` and `dateTo` metadata. This path is controlled by the agent's temporal structured lookup setting.
 
 ### Candidate preparation
 
 Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit metadata filters narrow or boost the candidate set here.
 
+When upcoming-event boost is enabled, dated event evidence can receive a temporal boost during event date lookups. Topic relevance still applies; the temporal signal refines the candidate set rather than replacing it.
+
 ### Context selection
 
 The system reranks candidates when reranking is enabled, then selects the final prompt contexts. `vectorTopK`, `similarityThreshold`, `rerankEnabled`, and `rerankTopK` all influence this stage.
+
+When deterministic temporal sort is enabled, selected dated event contexts can be ordered by extracted dates before prompt assembly. This makes "next events" and "sort by actuality" evidence order stable.
 
 ### Prompt assembly and diagnostics
 
@@ -53,6 +59,7 @@ Retrieval behavior is configured per agent through the `retrieval.answer` skill.
 - `suggestedQuestionsEnabled` controls whether follow-up question suggestions are offered after each answer.
 - `suggestedQuestionsCount` controls how many follow-up questions to suggest.
 - `metadataRules` constrain the candidate set before prompt assembly for the agent.
+- `temporalStructuredLookupEnabled`, `temporalBoostUpcomingEnabled`, and `temporalDeterministicSortEnabled` control date-aware event lookup, boosting, and ordering for the agent.
 - Per-request `metadataFilter` constrains retrieval API calls without changing saved agent settings.
 - `customInstruction` influences how the final answer is written, but it cannot rescue bad retrieval.
 

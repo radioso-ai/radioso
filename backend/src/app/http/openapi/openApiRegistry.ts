@@ -130,6 +130,7 @@ export interface OpenApiSchemaCatalog {
   CreateAccountInvitationResponseSchema: z.ZodTypeAny;
   DocumentCreateRequestSchema: z.ZodTypeAny;
   DocumentDetailsSchema: z.ZodTypeAny;
+  DocumentEnrichmentSchema: z.ZodTypeAny;
   DocumentImportRequestSchema: z.ZodTypeAny;
   DocumentListResponseSchema: z.ZodTypeAny;
   DocumentOperationResponseSchema: z.ZodTypeAny;
@@ -147,6 +148,8 @@ export interface OpenApiSchemaCatalog {
   DocumentSourceCrawlSettingsSchema: z.ZodTypeAny;
   DocumentSourceListItemSchema: z.ZodTypeAny;
   DocumentSourceUpdateRequestSchema: z.ZodTypeAny;
+  DocumentReprocessRequestSchema: z.ZodTypeAny;
+  SourceReprocessResponseSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;
   DocumentStatusSchema: z.ZodTypeAny;
   sourceParamsSchema: RouteParameterSchema;
@@ -173,6 +176,7 @@ export interface OpenApiSchemaCatalog {
   UsageTrendsQuerySchema: RouteParameterSchema;
   UsageTrendsResponseSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
+  ReprocessIngestionRequestSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;
   invitationTokenParamsSchema: RouteParameterSchema;

@@ -6,7 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+
+export type DocumentDialogEnrichmentChoice = 'inherit' | 'on' | 'off'
 
 export function DocumentImportDialog({
   open,
@@ -14,6 +17,8 @@ export function DocumentImportDialog({
   importError,
   isImporting,
   supportedExtensions,
+  enrichmentChoice,
+  onEnrichmentChoiceChange,
   onOpenChange,
   onSubmit,
   onTitleChange,
@@ -25,6 +30,8 @@ export function DocumentImportDialog({
   importError: string | null
   isImporting: boolean
   supportedExtensions: string
+  enrichmentChoice: DocumentDialogEnrichmentChoice
+  onEnrichmentChoiceChange: (value: DocumentDialogEnrichmentChoice) => void
   onOpenChange: (open: boolean) => void
   onSubmit: (event: FormEvent) => void
   onTitleChange: (value: string) => void
@@ -60,6 +67,26 @@ export function DocumentImportDialog({
               placeholder="Use the filename by default"
               disabled={isImporting}
             />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="importEnrichment">Metadata extraction</Label>
+            <Select
+              value={enrichmentChoice}
+              onValueChange={(value) => onEnrichmentChoiceChange(value as DocumentDialogEnrichmentChoice)}
+              disabled={isImporting}
+            >
+              <SelectTrigger id="importEnrichment">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="inherit">Use workspace setting</SelectItem>
+                <SelectItem value="on">On for this document</SelectItem>
+                <SelectItem value="off">Off for this document</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Understands the document type and extracts structured tags like event dates (one extra AI call).
+            </p>
           </div>
           {importError ? (
             <p className="text-sm text-destructive" role="alert">

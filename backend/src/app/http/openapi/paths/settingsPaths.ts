@@ -352,6 +352,16 @@ export const registerSettingsPaths = (
     summary: "Queue eligible workspace documents for reprocessing using current ingestion settings",
     operationId: "reprocessWorkspaceIngestion",
     security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: false,
+        content: {
+          "application/json": {
+            schema: schemas.ReprocessIngestionRequestSchema,
+          },
+        },
+      },
+    },
     responses: {
       202: {
         description: "Workspace documents accepted for reprocessing",

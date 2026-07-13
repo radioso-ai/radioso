@@ -82,6 +82,9 @@ const retrievalSettingsSnapshot = (
   overrides: Partial<RetrievalSettingsSnapshot> = {},
 ): RetrievalSettingsSnapshot => ({
   queryRewriteEnabled: true,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: "captured semantic rewrite",
   lexicalRewriteInstructions: "captured lexical rewrite",
   suggestedQuestionsEnabled: true,

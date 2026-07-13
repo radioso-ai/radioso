@@ -5,6 +5,8 @@ import {
   type ChatCreateRequest,
   type ChatStreamRequest,
   type DocumentOperationResponse,
+  type SourceReprocessResponse,
+  type WorkspaceIngestionReprocessResponse,
 } from "./generated/client.js";
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
 
@@ -45,6 +47,8 @@ export type {
   UpdateIngestionSettingsRequest,
   WorkspaceSummaryResponse,
   WorkspaceIngestionReprocessResponse,
+  DocumentReprocessRequest,
+  SourceReprocessResponse,
   WebsiteCrawlRequest,
   WebsiteCrawlJobResponse,
   WebsiteCrawlJobStatus,
@@ -60,6 +64,10 @@ export interface DocumentImportFileRequest {
   filename?: string;
   title?: string;
   mimeType?: string;
+}
+
+export interface DocumentReprocessOptions {
+  documentEnrichmentOverride?: "on" | "off";
 }
 
 const createUploadBlob = ({ file, mimeType }: DocumentImportFileRequest): Blob => {
@@ -102,7 +110,12 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       getIngestion: () => generated.getIngestionSettings(),
       updateIngestion: (body: Parameters<GeneratedRadiosoClient["updateIngestionSettings"]>[0]) =>
         generated.updateIngestionSettings(body),
-      reprocessIngestion: () => generated.reprocessWorkspaceIngestion(),
+      reprocessIngestion: (body?: DocumentReprocessOptions) =>
+        requestJson<WorkspaceIngestionReprocessResponse>(config, {
+          method: "POST",
+          path: "/api/v1/settings/ingestion/reprocess",
+          body,
+        }),
       getGeneral: () => generated.getGeneralSettings(),
       updateGeneral: (body: Parameters<GeneratedRadiosoClient["updateGeneralSettings"]>[0]) =>
         generated.updateGeneralSettings(body),
@@ -146,7 +159,18 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       listHistory: (query?: Parameters<GeneratedRadiosoClient["listDocumentSearchHistory"]>[0]) =>
         generated.listDocumentSearchHistory(query),
       getHistory: (searchId: string) => generated.getDocumentSearchHistory(searchId),
-      reprocess: (documentId: string) => generated.reprocessDocument(documentId),
+      reprocess: (documentId: string, body?: DocumentReprocessOptions) =>
+        requestJson<DocumentOperationResponse>(config, {
+          method: "POST",
+          path: `/api/v1/document/${encodeURIComponent(documentId)}/reprocess`,
+          body,
+        }),
+      reprocessSource: (sourceId: string, body?: DocumentReprocessOptions) =>
+        requestJson<SourceReprocessResponse>(config, {
+          method: "POST",
+          path: `/api/v1/document/sources/${encodeURIComponent(sourceId)}/reprocess`,
+          body,
+        }),
     },
     history: {
       list: (query?: Parameters<GeneratedRadiosoClient["listHistory"]>[0]) => generated.listHistory(query),

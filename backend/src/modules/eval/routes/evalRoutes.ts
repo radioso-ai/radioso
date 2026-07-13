@@ -41,6 +41,18 @@ const assertionSchema = z.discriminatedUnion("type", [
     k: z.number().int().min(1).max(100),
   }),
   z.object({
+    type: z.literal("retrieval_document_order"),
+    documentIds: z.array(z.string().uuid()).min(1).max(100),
+  }),
+  z.object({
+    type: z.literal("retrieval_chunk_metadata"),
+    documentId: z.string().uuid(),
+    metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).refine(
+      (metadata) => Object.keys(metadata).length > 0,
+      "metadata must include at least one expected field",
+    ),
+  }),
+  z.object({
     type: z.literal("answer_cites_document"),
     documentId: z.string().uuid(),
   }),

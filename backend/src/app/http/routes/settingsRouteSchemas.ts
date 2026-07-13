@@ -16,6 +16,9 @@ import { assistantThemeSchema } from "../shared/assistantIdentity.js";
 
 export const updateSettingsSchema = z.object({
   queryRewriteEnabled: z.boolean(),
+  temporalStructuredLookupEnabled: z.boolean().optional(),
+  temporalBoostUpcomingEnabled: z.boolean().optional(),
+  temporalDeterministicSortEnabled: z.boolean().optional(),
   semanticRewriteInstructions: z.string().max(2000).optional(),
   lexicalRewriteInstructions: z.string().max(2000).optional(),
   suggestedQuestionsEnabled: z.boolean().optional(),
@@ -104,4 +107,9 @@ export const updateIngestionSettingsSchema = z.object({
     .min(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin)
     .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
   embeddingModel: z.enum(embeddingModelIds).optional(),
+  documentEnrichmentEnabled: z.boolean().optional(),
 });
+
+export const reprocessIngestionBodySchema = z.object({
+  documentEnrichmentOverride: z.enum(["on", "off"]).optional(),
+}).strict();

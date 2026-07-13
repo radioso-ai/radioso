@@ -218,6 +218,9 @@ export type PlatformSettingsFixture = ReturnType<typeof basePlatformSettings>;
 
 export const baseRetrievalDefaults = (): ApiSchemas["RetrievalDefaultsResponse"] => ({
   queryRewriteEnabled: false,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: "Keep semantic rewrites standalone.",
   lexicalRewriteInstructions: "Prefer exact phrases.",
   suggestedQuestionsEnabled: true,
@@ -245,6 +248,7 @@ export const baseIngestionSettings = (): ApiSchemas["IngestionSettings"] => ({
   structuredMaxChunkSize: 1200,
   embeddingModel: "text-embedding-3-small",
   pendingEmbeddingModel: null,
+  documentEnrichmentEnabled: false,
   supportedEmbeddingModels: [
     "text-embedding-3-small",
     "text-embedding-3-large",
@@ -542,6 +546,9 @@ export const baseSkillCapabilities = (): SkillCapabilityFixture[] => [
       { key: "vectorTopK", label: "Vector top K", type: "number", help: "How many chunks are fetched from the vector index before filtering and reranking.", defaultValue: 15, min: 1, max: 300, group: "Retrieval tuning", advanced: true },
       { key: "rerankEnabled", label: "Rerank results", type: "boolean", help: "Re-score the fetched chunks with a reranker model to improve ordering.", defaultValue: false, group: "Retrieval tuning", advanced: true },
       { key: "rerankTopK", label: "Rerank top K", type: "number", help: "How many chunks survive reranking and are passed to the answer.", defaultValue: 5, dependsOnKey: "rerankEnabled", min: 1, max: 100, group: "Retrieval tuning", advanced: true },
+      { key: "temporalStructuredLookupEnabled", label: "Temporal structured lookup", type: "boolean", help: "When someone asks for upcoming events without naming one, also fetch documents by their extracted event dates instead of relying on text similarity alone. Needs metadata extraction enabled on the knowledge base.", defaultValue: true, group: "Temporal retrieval", advanced: true },
+      { key: "temporalBoostUpcomingEnabled", label: "Upcoming event boost", type: "boolean", help: "Rank documents about ongoing or upcoming events above past ones when the question is about event dates.", defaultValue: true, group: "Temporal retrieval", advanced: true },
+      { key: "temporalDeterministicSortEnabled", label: "Deterministic temporal sort", type: "boolean", help: "Present event evidence in date order (soonest first) for event-date questions, instead of relying on the model to order them.", defaultValue: true, group: "Temporal retrieval", advanced: true },
       { key: "queryRewriteEnabled", label: "Query rewrite", type: "boolean", help: "Rewrite the user message into search queries before retrieval.", defaultValue: true, group: "Query rewrite", advanced: true },
       { key: "semanticRewriteInstructions", label: "Semantic rewrite instructions", type: "textarea", help: "Instructions used to rewrite the user message into the semantic (vector) search query. Replaces the default; leave empty to keep the default shown.", defaultValue: "Rewrite for semantic retrieval with the same meaning.", dependsOnKey: "queryRewriteEnabled", group: "Query rewrite", advanced: true },
       { key: "lexicalRewriteInstructions", label: "Lexical rewrite instructions", type: "textarea", help: "Instructions used to rewrite the user message into the lexical (keyword) search query. Replaces the default; leave empty to keep the default shown.", defaultValue: "Produce a concise keyword-style query.", dependsOnKey: "queryRewriteEnabled", group: "Query rewrite", advanced: true },

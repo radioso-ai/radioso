@@ -4,11 +4,12 @@ import { detectDocumentType, DocumentParserError } from "@radioso/document-parse
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
+  DocumentProcessingJobOptions,
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
-import type { DocumentRepositoryPort } from "./documentIngestionService.js";
+import { buildDocumentProcessingOptions, type DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import {
@@ -30,6 +31,7 @@ export interface DocumentImportInput {
   buffer: Buffer;
   title?: string;
   usageReservation?: UsageLimitReservation;
+  documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
 }
 
 // Capitalize the first character of each whitespace-delimited word so a derived
@@ -144,7 +146,7 @@ export class DocumentImportService {
         sourceStorageGeneration: storedObject.generation ?? null,
         sourceSizeBytes: storedObject.sizeBytes,
         contentSizeBytes: storedObject.sizeBytes,
-      });
+      }, buildDocumentProcessingOptions(input));
 
     } catch (error) {
       await usageReservation.release();

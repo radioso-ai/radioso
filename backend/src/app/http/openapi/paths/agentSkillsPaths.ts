@@ -56,7 +56,6 @@ const CapabilitySettingsFieldSchema = z.object({
   label: z.string(),
   type: z.enum(["boolean", "number", "text", "textarea", "select", "string_list", "source_scope"]),
   help: z.string().optional(),
-  defaultValue: z.union([z.boolean(), z.number(), z.string()]).optional(),
   dependsOnKey: z.string().optional(),
   options: z.array(z.object({
     value: z.string(),
@@ -66,6 +65,7 @@ const CapabilitySettingsFieldSchema = z.object({
   max: z.number().optional(),
   group: z.string().optional(),
   advanced: z.boolean().optional(),
+  defaultValue: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
 const CapabilitySchema = z.object({

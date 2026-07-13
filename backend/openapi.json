@@ -924,6 +924,15 @@
           "queryRewriteEnabled": {
             "type": "boolean"
           },
+          "temporalStructuredLookupEnabled": {
+            "type": "boolean"
+          },
+          "temporalBoostUpcomingEnabled": {
+            "type": "boolean"
+          },
+          "temporalDeterministicSortEnabled": {
+            "type": "boolean"
+          },
           "semanticRewriteInstructions": {
             "type": "string"
           },
@@ -1108,6 +1117,9 @@
         },
         "required": [
           "queryRewriteEnabled",
+          "temporalStructuredLookupEnabled",
+          "temporalBoostUpcomingEnabled",
+          "temporalDeterministicSortEnabled",
           "semanticRewriteInstructions",
           "lexicalRewriteInstructions",
           "suggestedQuestionsEnabled",
@@ -1124,6 +1136,15 @@
         "type": "object",
         "properties": {
           "queryRewriteEnabled": {
+            "type": "boolean"
+          },
+          "temporalStructuredLookupEnabled": {
+            "type": "boolean"
+          },
+          "temporalBoostUpcomingEnabled": {
+            "type": "boolean"
+          },
+          "temporalDeterministicSortEnabled": {
             "type": "boolean"
           },
           "semanticRewriteInstructions": {
@@ -1352,6 +1373,9 @@
           "structuredMaxChunkSize": {
             "type": "integer"
           },
+          "documentEnrichmentEnabled": {
+            "type": "boolean"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -1371,6 +1395,7 @@
           "fixedWindowChunkOverlap",
           "structuredMinChunkSize",
           "structuredMaxChunkSize",
+          "documentEnrichmentEnabled",
           "createdAt",
           "updatedAt"
         ]
@@ -1414,6 +1439,9 @@
               "text-embedding-ada-002",
               "gemini-embedding-001"
             ]
+          },
+          "documentEnrichmentEnabled": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1423,6 +1451,19 @@
           "structuredMinChunkSize",
           "structuredMaxChunkSize"
         ]
+      },
+      "ReprocessIngestionRequest": {
+        "type": "object",
+        "properties": {
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "RetrievalMetadataRule": {
         "type": "object",
@@ -6750,6 +6791,13 @@
                 "additionalProperties": false
               }
             ]
+          },
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
           }
         },
         "required": [
@@ -6869,6 +6917,14 @@
             "type": "integer",
             "minimum": 0
           },
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "on",
+              "off"
+            ]
+          },
           "crawlSettings": {
             "$ref": "#/components/schemas/DocumentSourceCrawlSettings"
           },
@@ -6889,6 +6945,7 @@
           "lastSyncStatus",
           "lastSyncedAt",
           "documentCount",
+          "documentEnrichmentOverride",
           "createdAt",
           "updatedAt"
         ]
@@ -6896,6 +6953,14 @@
       "DocumentSourceUpdateRequest": {
         "type": "object",
         "properties": {
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "inherit",
+              "on",
+              "off"
+            ]
+          },
           "crawlSettings": {
             "type": "object",
             "properties": {
@@ -6928,6 +6993,54 @@
           }
         }
       },
+      "DocumentReprocessRequest": {
+        "type": "object",
+        "properties": {
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "SourceReprocessResponse": {
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "queuedDocumentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skippedDocumentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "noop"
+            ]
+          }
+        },
+        "required": [
+          "sourceId",
+          "workspaceId",
+          "queuedDocumentCount",
+          "skippedDocumentCount",
+          "status"
+        ]
+      },
       "DocumentSourceListResponse": {
         "type": "object",
         "properties": {
@@ -6953,6 +7066,14 @@
           "title": {
             "type": "string",
             "description": "Optional title to use instead of the source filename."
+          },
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ],
+            "description": "Force metadata extraction on or off for this import's processing run only."
           }
         },
         "required": [
@@ -6975,6 +7096,75 @@
         },
         "required": [
           "documentId",
+          "status"
+        ]
+      },
+      "DocumentEnrichment": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "skipped",
+              "failed"
+            ]
+          },
+          "shape": {
+            "type": "string",
+            "enum": [
+              "event",
+              "article",
+              "profile",
+              "reference",
+              "generic"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enrichedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "anchorDate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "anchorSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "source_last_sync",
+              "document_created_at"
+            ]
+          },
+          "factCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "appliedChunkCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failureReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
           "status"
         ]
       },
@@ -7033,6 +7223,19 @@
               ]
             },
             "default": {}
+          },
+          "enrichment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DocumentEnrichment"
+              },
+              {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            ]
           },
           "sourceId": {
             "type": [
@@ -14722,6 +14925,16 @@
             "bearerAuth": []
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReprocessIngestionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Workspace documents accepted for reprocessing",
@@ -25189,19 +25402,6 @@
                                 "help": {
                                   "type": "string"
                                 },
-                                "defaultValue": {
-                                  "anyOf": [
-                                    {
-                                      "type": "boolean"
-                                    },
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "string"
-                                    }
-                                  ]
-                                },
                                 "dependsOnKey": {
                                   "type": "string"
                                 },
@@ -25234,6 +25434,19 @@
                                 },
                                 "advanced": {
                                   "type": "boolean"
+                                },
+                                "defaultValue": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "boolean"
+                                    }
+                                  ]
                                 }
                               },
                               "required": [
@@ -27304,6 +27517,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReprocessRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Document returned",
@@ -27436,6 +27659,13 @@
                         "additionalProperties": false
                       }
                     ]
+                  },
+                  "documentEnrichmentOverride": {
+                    "type": "string",
+                    "enum": [
+                      "on",
+                      "off"
+                    ]
                   }
                 },
                 "required": [
@@ -27527,6 +27757,83 @@
           },
           "404": {
             "description": "Document not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/document/sources/{sourceId}/reprocess": {
+      "post": {
+        "tags": [
+          "Documents"
+        ],
+        "summary": "Queue eligible source documents for reprocessing",
+        "operationId": "reprocessDocumentSource",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sourceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentReprocessRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Source documents accepted for reprocessing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceReprocessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Source not found",
             "content": {
               "application/json": {
                 "schema": {

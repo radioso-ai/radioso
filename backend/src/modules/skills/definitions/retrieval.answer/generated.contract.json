@@ -91,6 +91,15 @@
         "queryRewriteEnabled": {
           "type": "boolean"
         },
+        "temporalStructuredLookupEnabled": {
+          "type": "boolean"
+        },
+        "temporalBoostUpcomingEnabled": {
+          "type": "boolean"
+        },
+        "temporalDeterministicSortEnabled": {
+          "type": "boolean"
+        },
         "semanticRewriteInstructions": {
           "type": "string",
           "maxLength": 2000

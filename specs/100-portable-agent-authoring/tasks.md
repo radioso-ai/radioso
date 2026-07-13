@@ -6,16 +6,16 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase A — `@radioso/routine-definition` (FR-016 stage 1)
 
-- [ ] A1. Scaffold `packages/routine-definition` (compiled-dist convention per
+- [x] A1. Scaffold `packages/routine-definition` (compiled-dist convention per
       research.md: package.json, tsconfig, vitest config; dep: zod only).
-- [ ] A2. Move the full contents of `backend/src/modules/routines/domain.ts`
+- [x] A2. Move the full contents of `backend/src/modules/routines/domain.ts`
       into `packages/routine-definition/src/index.ts` (limits, enums, schemas,
       inferred types, `routineGuardProvenance`). No semantic edits.
-- [ ] A3. Replace `backend/src/modules/routines/domain.ts` with a pure
+- [x] A3. Replace `backend/src/modules/routines/domain.ts` with a pure
       re-export of the package; add `@radioso/routine-definition: workspace:*`
       to backend deps; wire package build into backend `build:workspace-deps`
       and `predev:*` chains.
-- [ ] A4. Add package-level schema tests (happy path + one rejection per
+- [x] A4. Add package-level schema tests (happy path + one rejection per
       schema family) in `packages/routine-definition/tests/`; keep the three
       existing backend test files referencing the old path green unchanged.
 - [ ] A5. Verify: package `tsc --noEmit`, backend `tsc --noEmit`,

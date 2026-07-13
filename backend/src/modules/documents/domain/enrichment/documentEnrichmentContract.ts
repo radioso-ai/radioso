@@ -22,7 +22,7 @@ export interface DocumentEnrichmentProvenance {
 
 // Shape alone is not enough: a model can emit a well-formed but calendar-invalid
 // date such as 2026-02-31, which would later make the chunk insert fail inside the
-// generated date columns. The UTC round-trip rejects any date the calendar
+// stored date columns. The UTC round-trip rejects any date the calendar
 // normalizes or refuses.
 const isValidIsoCalendarDate = (value: string): boolean => {
   const timestamp = Date.parse(`${value}T00:00:00.000Z`);

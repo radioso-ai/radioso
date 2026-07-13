@@ -76,6 +76,7 @@ function radioso_dispatch($event, $post) {
             'excerpt_rendered' => apply_filters('the_excerpt', $post->post_excerpt),
             'link'             => get_permalink($post),
             'modified_gmt'     => $post->post_modified_gmt,
+            'date_gmt'         => $post->post_date_gmt,
             'author'           => [
                 'id'   => (int) $post->post_author,
                 'name' => get_the_author_meta('display_name', $post->post_author),

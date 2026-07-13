@@ -40,6 +40,7 @@ const WordpressEventSchema = z.object({
     excerpt_rendered: z.string().optional(),
     link: z.string().url(),
     modified_gmt: z.string(),
+    date_gmt: z.string().optional(),
     author: z
       .object({ id: z.number().int().positive(), name: z.string() })
       .optional(),

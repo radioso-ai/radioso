@@ -492,6 +492,50 @@ describe("default Crawlee fetcher", () => {
     expect(pages[0].text).not.toContain("Menu");
   });
 
+  it("keeps an article header carrying date and author when it lives inside the primary content", async () => {
+    // Some themes (e.g. the WordPress X/Pro theme) render the post title, date
+    // and author byline in a <header> landmark nested inside <main>, while the
+    // site masthead lives in a <header> outside it. The in-content header holds
+    // real content and must survive chrome removal; the masthead must not.
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(`
+          <html>
+            <head><title>Ninna nanna</title></head>
+            <body>
+              <header class="masthead"><nav><a href="/about">About</a></nav></header>
+              <main>
+                <header class="entry-header">
+                  <h1>Ninna nanna</h1>
+                  <div class="post-meta">Luglio 7, 2026 by Darshan Lotichius</div>
+                </header>
+                <article>
+                  <p>The lullaby body copy that readers actually came for.</p>
+                </article>
+              </main>
+            </body>
+          </html>
+        `);
+    });
+    servers.push(server);
+
+    const pages = await crawlSite({
+      baseUrl,
+      pageLimit: 1
+    });
+
+    expect(pages[0].text).toContain("Luglio 7, 2026");
+    expect(pages[0].text).toContain("Darshan Lotichius");
+    expect(pages[0].text).toContain("The lullaby body copy that readers actually came for.");
+    // Site masthead nav outside the primary content is still stripped.
+    expect(pages[0].text).not.toContain("About");
+  });
+
   it("can render content links as plain text while still dropping share and tracking links", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {

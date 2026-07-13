@@ -180,6 +180,17 @@ test tasks precede implementation tasks and must fail first.
       never gets a chance); (3) canonical spacing inconsistent between
       projection paths: routine GET emits `[filled @email]-> end` (no space
       before ->) while canonicalize emits `[outcome failed] -> handoff`.
+- [x] F1-fix-1 (RED->GREEN). Backend duplicate create: service maps
+      `routine_definition_agent_id_name_version_key` unique violations to a
+      409 conflict for both structured and portable create paths; portable
+      route covers the response body.
+- [x] F1-fix-2 (RED->GREEN). Package variable preservation: declared
+      unreferenced `vars:` entries parse into slots, survive doc-to-draft, and
+      serialize back into `vars:` so backend `declared_unused_slot` validation
+      owns the policy.
+- [x] F1-fix-3 (RED->GREEN). Package canonical branch spacing: branch target
+      serialization uses one space before `->` across definition projection and
+      canonicalize paths; golden fixtures and canonical-form docs updated.
 - [ ] F2. Senior engineer review loop (≤3 passes), then one EM pass.
 - [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
       DB; grep the real exit code); push; PR with validation evidence and

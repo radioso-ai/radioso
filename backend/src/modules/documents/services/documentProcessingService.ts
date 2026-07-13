@@ -33,6 +33,7 @@ import type {
   DocumentEnrichmentStagePort,
   DocumentEnrichmentStageResult,
 } from "./documentEnrichmentService.js";
+import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 
@@ -47,9 +48,10 @@ export interface ChunkingStrategyRegistryPort {
 
 export type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
 
-// The processing service only needs to enqueue the follow-up enrich job; it never
-// claims or fails jobs (the worker owns that lifecycle).
-export type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "enqueue">;
+// The processing service only needs to create the follow-up enrich job; it never
+// claims or fails jobs (the worker owns that lifecycle). ensureEnrichJob is
+// idempotent so a vectorize retry cannot double-insert.
+export type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "ensureEnrichJob">;
 
 export interface DocumentSourceContentServicePort {
   materialize(document: {
@@ -158,6 +160,7 @@ export class DocumentProcessingService {
     private readonly documentEnrichmentStage?: DocumentEnrichmentStagePort,
     private readonly documentSourceRepository?: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
     private readonly jobRepository?: EnrichJobEnqueuePort,
+    private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -374,7 +377,7 @@ export class DocumentProcessingService {
       // a second enqueue — failing an already-ready document. Keeping it last
       // makes the vectorize path idempotent across retries.
       if (enrichmentEnabled) {
-        await this.enqueueEnrichJob(job);
+        await this.scheduleEnrichJob(job);
       }
 
       return "completed";
@@ -551,17 +554,41 @@ export class DocumentProcessingService {
     return enablement.enabled;
   }
 
-  private async enqueueEnrichJob(job: DocumentProcessingJobRecord): Promise<"pending" | "skipped"> {
+  private async scheduleEnrichJob(job: DocumentProcessingJobRecord): Promise<"pending" | "skipped"> {
     if (!this.jobRepository) {
       return "skipped";
     }
-    await this.jobRepository.enqueue({
+    const enrichJob = await this.jobRepository.ensureEnrichJob({
       documentId: job.documentId,
       workspaceId: job.workspaceId,
       documentRevision: job.documentRevision,
-      kind: "enrich",
       options: job.options ?? null,
     });
+    // Dispatch so task-server (Cloud Tasks) deployments, which do not run the
+    // continuous DB poll loop, run enrichment right after vectorization instead
+    // of waiting for periodic recovery. Dispatch failure is non-fatal: the poll
+    // loop / recovery backstop still picks the row up, and it must never fail the
+    // already-completed vectorize job.
+    try {
+      await this.jobDispatcher.dispatch({
+        jobId: enrichJob.id,
+        documentId: enrichJob.documentId,
+        workspaceId: enrichJob.workspaceId,
+        revision: enrichJob.documentRevision,
+      });
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: job.workspaceId,
+        eventType: "document.dispatch",
+        eventStatus: "failure",
+        metadata: {
+          documentId: job.documentId,
+          revision: job.documentRevision,
+          jobKind: "enrich",
+          reason: error instanceof Error ? error.message : "Failed to dispatch enrich job",
+        },
+      });
+    }
     this.logger?.info(
       {
         role: "worker",
@@ -570,7 +597,7 @@ export class DocumentProcessingService {
         revision: job.documentRevision,
         jobKind: "enrich",
       },
-      "Enqueued document enrichment job",
+      "Scheduled document enrichment job",
     );
     return "pending";
   }

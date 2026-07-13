@@ -147,6 +147,24 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     expect(enrichJob.kind).toBe("enrich");
   });
 
+  it("ensureEnrichJob is idempotent for a revision and never violates the unique constraint", async () => {
+    const documentId = await insertDocument();
+
+    const first = await repository.ensureEnrichJob({
+      documentId,
+      workspaceId,
+      documentRevision: 1,
+      options: { documentEnrichmentOverride: "on" },
+    });
+    // A vectorize retry re-runs the follow-up creation; it must return the same
+    // row rather than throwing on (document_id, document_revision, kind='enrich').
+    const second = await repository.ensureEnrichJob({ documentId, workspaceId, documentRevision: 1 });
+
+    expect(first.kind).toBe("enrich");
+    expect(second.id).toBe(first.id);
+    expect(second.options).toEqual({ documentEnrichmentOverride: "on" });
+  });
+
   it("maps missing and unrecognized options to null", async () => {
     const documentWithoutOptions = await insertDocument();
     const documentWithUnknownOptions = await insertDocument();

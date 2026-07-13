@@ -3084,6 +3084,19 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return record;
   }
 
+  async ensureEnrichJob(input: { documentId: string; workspaceId: string; documentRevision: number; options?: DocumentProcessingJobRecord["options"] | null }): Promise<DocumentProcessingJobRecord> {
+    const existing = [...this.items.values()].find(
+      (item) =>
+        item.documentId === input.documentId &&
+        item.documentRevision === input.documentRevision &&
+        item.kind === "enrich",
+    );
+    if (existing) {
+      return existing;
+    }
+    return this.enqueue({ ...input, kind: "enrich" });
+  }
+
   async findById(jobId: string): Promise<DocumentProcessingJobRecord | null> {
     return this.items.get(jobId) ?? null;
   }

@@ -337,4 +337,121 @@ describe("document processing enrichment split", () => {
     expect(markFailedIfDocumentMatches).not.toHaveBeenCalled();
     expect(jobRepository.items.get(enrichJob.id)?.status).toBe("failed");
   });
+
+  it("dispatches the enrich job so task-server deployments run it promptly", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const { stage } = buildCountingStage();
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      status: "queued",
+    });
+
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService([]),
+      createAuditService(),
+      settingsReader(true),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      undefined,
+      stage,
+      undefined,
+      jobRepository,
+      { dispatch, dispatchMany: vi.fn() },
+    );
+
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    const enrichJobs = [...jobRepository.items.values()].filter((job) => job.kind === "enrich");
+    expect(enrichJobs).toHaveLength(1);
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ jobId: enrichJobs[0]!.id }));
+  });
+
+  it("vectorize retry after enrich enqueue is idempotent and never duplicates the enrich job", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const { stage } = buildCountingStage();
+
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      status: "queued",
+    });
+
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService([]),
+      createAuditService(),
+      settingsReader(true),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      undefined,
+      stage,
+      undefined,
+      jobRepository,
+    );
+
+    const job = buildVectorizeJob(document.id, document.revision);
+    await service.process(job);
+    // Simulate a transient failure after enqueue (e.g. markCompleted failed) that
+    // re-runs the same vectorize job; the second run must not throw or duplicate.
+    await expect(service.process(job)).resolves.toBe("completed");
+
+    const enrichJobs = [...jobRepository.items.values()].filter((j) => j.kind === "enrich");
+    expect(enrichJobs).toHaveLength(1);
+  });
+
+  it("on restart, an in-flight enrich job for a ready document is rescheduled, not completed", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "content",
+      markdownContent: "content",
+      status: "ready",
+    });
+    const enrichJob = await jobRepository.enqueue({
+      documentId: document.id,
+      workspaceId: document.workspaceId,
+      documentRevision: document.revision,
+      kind: "enrich",
+    });
+    // Worker died mid-enrichment: the job is in flight ("processing").
+    jobRepository.items.set(enrichJob.id, { ...jobRepository.items.get(enrichJob.id)!, status: "processing" });
+
+    const worker = new DocumentProcessingWorker(
+      documentRepository,
+      jobRepository,
+      { process: vi.fn(), processEnrichment: vi.fn() } as never,
+      createAuditService(),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    );
+
+    await worker.start();
+    await worker.stop();
+
+    // Readiness is not proof the enrichment ran: the job must run again, and the
+    // document must stay ready.
+    expect(jobRepository.items.get(enrichJob.id)?.status).toBe("queued");
+    expect(jobRepository.items.get(enrichJob.id)?.completedAt).toBeNull();
+    expect(documentRepository.items.get(document.id)?.status).toBe("ready");
+  });
 });

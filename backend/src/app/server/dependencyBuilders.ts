@@ -641,6 +641,7 @@ export const buildDocumentServices = (input: {
     documentEnrichmentService,
     documentSourceRepository,
     repositories.documentProcessingJobRepository,
+    documentJobDispatcher,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

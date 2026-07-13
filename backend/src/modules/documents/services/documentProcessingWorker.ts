@@ -84,6 +84,14 @@ export class DocumentProcessingWorker {
         return;
       }
 
+      // Enrich jobs run against an already-ready document, so readiness is not
+      // proof the enrichment ran. Release the job to run again on restart, and
+      // never touch the document status — the vectorize path owns readiness.
+      if (job.kind === "enrich") {
+        await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
+        return;
+      }
+
       if (document.status === "ready") {
         await this.jobRepository.markCompleted(job.id);
         return;

@@ -44,7 +44,7 @@ Metadata extraction is optional and disabled by default. When enabled by the wor
 
 That enrich job makes one model call for the document. The call understands the document type and extracts supported structured tags such as event dates. Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`. Article publication dates can be attached at document level.
 
-Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. No re-embedding is needed, because those columns are structured and not part of the vector. If validation or the provider call fails, the document stays searchable without extracted tags — a failed enrich job never changes the document's ready status.
+Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. No re-embedding is needed, because those columns are structured and not part of the vector. If validation or the provider call fails, the document stays searchable without extracted tags; a failed enrich job never changes the document's ready status.
 </Steps>
 
 ## Why revisions matter

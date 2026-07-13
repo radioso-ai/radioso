@@ -67,7 +67,7 @@ describe("document enrichment contract", () => {
 
   it("rejects calendar-invalid dates that pass the ISO shape check", () => {
     // 2026-02-31 is shaped like an ISO date, but letting it through would later
-    // fail the chunk insert inside the generated date columns (to_date raises).
+    // fail the chunk insert inside the stored date columns (to_date raises).
     expect(() =>
       documentEnrichmentOutputSchema.parse({
         shape: "event",

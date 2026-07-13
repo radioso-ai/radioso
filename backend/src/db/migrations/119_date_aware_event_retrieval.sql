@@ -36,16 +36,31 @@ END;
 $$;
 
 ALTER TABLE chunks
-  ADD COLUMN IF NOT EXISTS date_from date GENERATED ALWAYS AS (
-    chunk_metadata_iso_date(metadata ->> 'dateFrom')
-  ) STORED,
-  ADD COLUMN IF NOT EXISTS date_to date GENERATED ALWAYS AS (
-    COALESCE(
-      chunk_metadata_iso_date(metadata ->> 'dateTo'),
-      chunk_metadata_iso_date(metadata ->> 'dateFrom')
-    )
-  ) STORED;
+  ADD COLUMN IF NOT EXISTS date_from date,
+  ADD COLUMN IF NOT EXISTS date_to date;
 
-CREATE INDEX IF NOT EXISTS idx_chunks_workspace_temporal_dates
-  ON chunks (workspace_id, date_from, date_to)
-  WHERE date_from IS NOT NULL OR date_to IS NOT NULL;
+-- Do not backfill historical chunks during application startup. Staging and
+-- production can have enough chunks that a generated-column table rewrite or
+-- index build prevents Cloud Run from binding its port before the startup
+-- probe times out. Enrichment updates chunk metadata for the current document
+-- revision, and this trigger keeps the structured date columns current for
+-- new or updated chunks without scanning the existing table.
+CREATE OR REPLACE FUNCTION set_chunk_temporal_dates()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.date_from := chunk_metadata_iso_date(NEW.metadata ->> 'dateFrom');
+  NEW.date_to := COALESCE(
+    chunk_metadata_iso_date(NEW.metadata ->> 'dateTo'),
+    chunk_metadata_iso_date(NEW.metadata ->> 'dateFrom')
+  );
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_chunks_temporal_dates ON chunks;
+CREATE TRIGGER trg_chunks_temporal_dates
+  BEFORE INSERT OR UPDATE OF metadata ON chunks
+  FOR EACH ROW
+  EXECUTE FUNCTION set_chunk_temporal_dates();

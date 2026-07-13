@@ -363,7 +363,7 @@ Chunking behavior.`,
   });
 });
 
-describeIntegration("chunk temporal generated columns (Postgres)", () => {
+describeIntegration("chunk temporal trigger columns (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -381,7 +381,7 @@ describeIntegration("chunk temporal generated columns (Postgres)", () => {
     await database.query(
       `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, metadata)
        VALUES ($1, $2, $3, $4, $4, 'ready', '{}'::jsonb)`,
-      [documentId, workspaceId, "Generated Date Document", "Generated date content"],
+      [documentId, workspaceId, "Temporal Date Document", "Temporal date content"],
     );
   });
 
@@ -428,7 +428,7 @@ describeIntegration("chunk temporal generated columns (Postgres)", () => {
   });
 
   it("resolves ISO-shaped but calendar-invalid dates to NULL instead of failing the insert", async () => {
-    // to_date raises on 2026-02-31; the generated columns must swallow that so
+    // to_date raises on 2026-02-31; the temporal columns must swallow that so
     // caller-supplied metadata can never fail chunk persistence.
     const impossibleDateChunkId = randomUUID();
 

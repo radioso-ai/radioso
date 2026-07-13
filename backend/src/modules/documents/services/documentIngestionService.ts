@@ -296,7 +296,7 @@ export interface ChunkRepositoryPort {
   // Patches per-chunk metadata in place, guarded by revision so a superseded
   // enrich job cannot clobber a newer vectorization. Returns false when the
   // document revision no longer matches (skip, do not error). The stored
-  // generated date_from/date_to columns recompute from metadata automatically —
+  // date_from/date_to columns recompute from metadata automatically —
   // no re-embed is performed.
   updateMetadataForDocumentRevision(input: {
     documentId: string;

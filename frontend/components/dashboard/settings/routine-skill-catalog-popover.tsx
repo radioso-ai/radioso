@@ -99,11 +99,12 @@ function RequiredMarker({ required }: { required: boolean }) {
   )
 }
 
-type BindingMode = 'unset' | 'literal' | 'variable'
+type BindingMode = 'unset' | 'literal' | 'variable' | 'context'
 
 const modeForBinding = (binding: RoutineInputBinding | undefined): BindingMode => {
   if (!binding) return 'unset'
-  return binding.kind === 'literal' ? 'literal' : 'variable'
+  if (binding.kind === 'literal') return 'literal'
+  return binding.kind === 'contextVariableRef' ? 'context' : 'variable'
 }
 
 const defaultLiteralValue = (input: SkillAuthoringInput): string | number | boolean => {
@@ -212,6 +213,8 @@ function SkillCatalogDetails({
                             setInputBinding(input, undefined)
                           } else if (value === 'literal') {
                             setInputBinding(input, { kind: 'literal', value: defaultLiteralValue(input) })
+                          } else if (value === 'context') {
+                            return
                           } else {
                             setInputBinding(input, { kind: 'variableRef', ref: availableVariables[0] ?? '' })
                           }
@@ -224,6 +227,9 @@ function SkillCatalogDetails({
                           <SelectItem value="unset">Unset</SelectItem>
                           <SelectItem value="literal">Literal</SelectItem>
                           <SelectItem value="variable">Variable</SelectItem>
+                          {binding?.kind === 'contextVariableRef' ? (
+                            <SelectItem value="context">Context variable</SelectItem>
+                          ) : null}
                         </SelectContent>
                       </Select>
                     </div>
@@ -275,6 +281,11 @@ function SkillCatalogDetails({
                           ))}
                         </SelectContent>
                       </Select>
+                    ) : null}
+                    {binding?.kind === 'contextVariableRef' ? (
+                      <div className="rounded-md border border-border bg-background px-2 py-1.5 text-xs text-muted-foreground">
+                        ctx.{binding.contextVariable}
+                      </div>
                     ) : null}
                   </div>
                 </div>

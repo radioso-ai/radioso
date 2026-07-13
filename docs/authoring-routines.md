@@ -411,31 +411,38 @@ Paste it into a note, a document, or a message — anywhere you keep text.
 (Copying only part of the prose copies that selection as ordinary text, the way
 any editor does.)
 
-In practice the text is the routine written with simple markers instead of
-chips:
+In practice the text is portable routine markdown: the same deterministic format
+accepted by the portable routines API. It uses frontmatter for routine-level
+fields and simple markers instead of chips:
 
 - a variable or skill is `@name`
 - a step title is a line starting with `# `
 - an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
 - a decided-in-code check is `[if amount >= 100]`
 - a skill-outcome branch is `[outcome failed]`
+- a slot-filled branch is `[filled @email, @order_id]`
 - an action step is `[action contact.send]`
 - an approval gate is `[approval key: approve="Approve" -> end, deny="Deny" -> handoff]`,
   and the inline decision form is `[decision key: approve="Approve", deny="Deny"]`
+- a skill binding can be `#lookup[in email=@email, locale=ctx.page_locale]`
 
 Every element a routine can use has a marker, so any routine the prose editor can
 open copies as portable text.
 
 To restore the routine, paste the text back into the prose editor. The markers
 become chips again, and the name and trigger fill in from the text. The text
-carries the body, the name, the trigger, and each variable's type and flags, but
-not routine-level settings such as priority, reentry, the completion and handoff
-messages, or completion export — set those again after pasting.
+carries the body, the name, the trigger, priority, reentry, and each variable's
+type and flags. Completion export and the default completion/handoff message
+fields are structured routine settings, not markdown tokens in grammar v1 — set
+or verify those after pasting.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced
 skill leaves that step's skill marked **unknown skill**, the same as typing a
 skill the agent lacks — point it at a skill the agent has, then validate.
+
+For the exact format, see [Portable Routine Markdown](./portable-routine-markdown.md).
+For repository-based workflows, see [Portable Routines API](./portable-routines-api.md).
 
 ## Form view
 

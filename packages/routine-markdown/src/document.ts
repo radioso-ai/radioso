@@ -1,6 +1,11 @@
 import type {
   RoutineDefinitionDraft,
   RoutineDefinitionDraftAuthoring,
+  RoutineDefinitionDraftAuthored,
+  RoutineDraftSource,
+  RoutineDraftSourceStep,
+  RoutineDraftSourceTerminal,
+  RoutineDraftSourceTransition,
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineInputBinding,
@@ -190,7 +195,7 @@ const PRESERVED_TOOL_METADATA_KEYS = new Set(['inputBindings', 'outputAssignment
 const OUTLINE_LABEL_ONLY = new Set(['outlineLabel'])
 
 // True when a step's metadata round-trips through the chip document without loss or renaming.
-function stepMetadataIsRepresentable(step: RoutineDefinitionDraft['steps'][number]): boolean {
+function stepMetadataIsRepresentable(step: RoutineDraftSourceStep): boolean {
   const metadata = (step.metadata ?? {}) as Record<string, unknown>
   const allowed = step.kind === 'tool' ? PRESERVED_TOOL_METADATA_KEYS : OUTLINE_LABEL_ONLY
   if (Object.keys(metadata).some((key) => !allowed.has(key))) return false
@@ -273,12 +278,14 @@ export type ProseTerminalConfig = { complete?: ProseTerminal | null; handoff?: P
 // messages and re-emit the same ids. Returns the *primary* complete (the fall-through end a
 // default edge targets, else the first) for the header panel; additional named completions carry
 // their own message on their end chip. At most one handoff; other shapes fall back to Form.
-export function readProseTerminals(routine: RoutineDefinitionDraft): { complete: ProseTerminal; handoff: ProseTerminal | null } {
-  const completes = routine.terminals.filter((terminal) => terminal.kind === 'complete')
+export function readProseTerminals(routine: RoutineDraftSource): { complete: ProseTerminal; handoff: ProseTerminal | null } {
+  const terminals = routine.terminals ?? []
+  const transitions = routine.transitions ?? []
+  const completes = terminals.filter((terminal) => terminal.kind === 'complete')
   const complete = completes.find((terminal) =>
-    routine.transitions.some((transition) => transition.guardKind === 'default' && transition.toRef === terminal.stableStepId))
+    transitions.some((transition) => transition.guardKind === 'default' && transition.toRef === terminal.stableStepId))
     ?? completes[0]
-  const handoff = routine.terminals.find((terminal) => terminal.kind === 'handoff')
+  const handoff = terminals.find((terminal) => terminal.kind === 'handoff')
   return {
     complete: {
       id: complete?.stableStepId ?? DONE_TERMINAL_ID,
@@ -291,8 +298,14 @@ export function readProseTerminals(routine: RoutineDefinitionDraft): { complete:
 // Read the completion-export config off a routine so the prose host can edit it and re-emit
 // it. Returns null when export is absent or disabled — the prose body does not encode it, so
 // the host carries it alongside (like the terminal messages and priority/reentry).
-export function readProseCompletionExport(routine: RoutineDefinitionDraft): RoutineCompletionExport | null {
-  return routine.completionExport?.enabled ? routine.completionExport : null
+export function readProseCompletionExport(routine: RoutineDraftSource): RoutineCompletionExport | null {
+  const source = routine.completionExport
+  if (!source?.enabled) return null
+  return {
+    enabled: true,
+    triggerKinds: source.triggerKinds ?? [],
+    destinationRef: source.destinationRef ?? '',
+  }
 }
 
 export const createEmptyRoutineProseDraft = (input: {
@@ -339,7 +352,7 @@ export function draftFromChipDoc(input: {
   // Completion export config carried alongside the body (not encoded in chips). Included on
   // the draft only when enabled.
   completionExport?: RoutineCompletionExport | null
-}): RoutineDefinitionDraftAuthoring {
+}): RoutineDefinitionDraftAuthored {
   // Keep blocks with prose or chips (a branch can be pure chips: a condition + target).
   const blocks = input.blocks.filter((block) => block.text.trim().length > 0 || block.chips.length > 0)
 
@@ -821,7 +834,7 @@ function parseInstructionSegments(instruction: string, nameByRef: Map<string, st
 // The guard prefix of a branch paragraph: a condition chip (decided-in-code), or the
 // AI-decided prose. A counter-bounded loop has no prose prefix — the bound rides on the
 // trailing step chip — so it returns nothing here.
-function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, string>): ProseSegment[] {
+function branchGuardSegments(edge: RoutineDraftSourceTransition, nameByRef: Map<string, string>): ProseSegment[] {
   if (edge.guardKind === 'field' && edge.fieldRef && edge.fieldOp) {
     const name = nameByRef.get(edge.fieldRef) ?? edge.fieldRef
     return [{
@@ -865,7 +878,7 @@ function branchGuardSegments(edge: RoutineTransition, nameByRef: Map<string, str
 
 // A branch paragraph = the guard prefix followed by the target chip (handoff/end terminal
 // or a `step` jump chip).
-function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>, trailing: ProseSegment): ProseParagraph {
+function branchParagraph(edge: RoutineDraftSourceTransition, nameByRef: Map<string, string>, trailing: ProseSegment): ProseParagraph {
   return { segments: [...branchGuardSegments(edge, nameByRef), trailing] }
 }
 
@@ -881,10 +894,11 @@ function branchParagraph(edge: RoutineTransition, nameByRef: Map<string, string>
 // dropped: the host reads it with readProseTerminals / readProseCompletionExport and feeds it
 // back to draftFromChipDoc, so it round-trips even though the body only references the
 // canonical `done`/`handoff`.
-export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | null {
+export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
   if (routine.activation.gateRef) return null
 
-  const steps = [...routine.steps].sort((left, right) => left.ordinal - right.ordinal)
+  const transitions = routine.transitions ?? []
+  const steps = [...(routine.steps ?? [])].sort((left, right) => left.ordinal - right.ordinal)
   if (steps.some((step) => step.kind !== 'chat' && step.kind !== 'tool' && step.kind !== 'approval' && step.kind !== 'action')) return null
   if (steps.some((step) => step.kind === 'tool' && !step.toolRef)) return null
   // An action step with no action type can't be shown as an action chip.
@@ -899,14 +913,15 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   // complete (the fall-through end whose id + message live in the header panel) is the one a
   // default edge targets, else the first by ordinal; every other complete is a named ending
   // whose message rides on its end chip. More than one handoff is still Form-only.
-  const completeTerminals = routine.terminals.filter((terminal) => terminal.kind === 'complete')
-  const handoffTerminals = routine.terminals.filter((terminal) => terminal.kind === 'handoff')
+  const terminals = routine.terminals ?? []
+  const completeTerminals = terminals.filter((terminal) => terminal.kind === 'complete')
+  const handoffTerminals = terminals.filter((terminal) => terminal.kind === 'handoff')
   if (completeTerminals.length < 1) return null
   if (handoffTerminals.length > 1) return null
-  if (routine.terminals.length !== completeTerminals.length + handoffTerminals.length) return null
+  if (terminals.length !== completeTerminals.length + handoffTerminals.length) return null
 
   const primaryComplete = completeTerminals.find((terminal) =>
-    routine.transitions.some((transition) => transition.guardKind === 'default' && transition.toRef === terminal.stableStepId))
+    transitions.some((transition) => transition.guardKind === 'default' && transition.toRef === terminal.stableStepId))
     ?? completeTerminals[0]!
   const completeById = new Map(completeTerminals.map((terminal) => [terminal.stableStepId, terminal] as const))
   const handoff = handoffTerminals[0]
@@ -915,18 +930,18 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   // A handoff terminal is rendered only as the target of a handoff branch. One that no
   // transition targets would be silently dropped on a round-trip (draftFromChipDoc only emits
   // the handoff terminal when a handoff chip is present), so fall back to Form.
-  if (handoff && !routine.transitions.some((transition) => transition.toRef === handoff.stableStepId)) return null
+  if (handoff && !transitions.some((transition) => transition.toRef === handoff.stableStepId)) return null
   // A named ending is rendered only as the target of an end branch. One that no transition
   // reaches (or that only a default fall-through reaches — that's the primary) would be dropped
   // on a round-trip, so fall back to Form. The primary complete needs no incoming branch (it is
   // the fall-through), so it is exempt.
-  const namedCompleteReachable = (terminal: RoutineDefinitionDraft['terminals'][number]): boolean =>
-    routine.transitions.some((transition) => transition.guardKind !== 'default' && transition.toRef === terminal.stableStepId)
+  const namedCompleteReachable = (terminal: RoutineDraftSourceTerminal): boolean =>
+    transitions.some((transition) => transition.guardKind !== 'default' && transition.toRef === terminal.stableStepId)
   if (completeTerminals.some((terminal) => terminal.stableStepId !== completeId && !namedCompleteReachable(terminal))) return null
   const stepIds = new Set(steps.map((step) => step.stableStepId))
-  if (routine.transitions.some((transition) => !stepIds.has(transition.fromStep))) return null
+  if (transitions.some((transition) => !stepIds.has(transition.fromStep))) return null
 
-  const variables: ChipDocVariable[] = [...routine.slots]
+  const variables: ChipDocVariable[] = [...(routine.slots ?? [])]
     .sort((left, right) => left.ordinal - right.ordinal)
     .map((slot) => ({
       id: slot.key,
@@ -939,14 +954,14 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     }))
   const nameByRef = new Map(variables.map((variable) => [variable.id, variable.name]))
 
-  const outgoing = new Map<string, RoutineTransition[]>()
-  for (const transition of routine.transitions) {
+  const outgoing = new Map<string, RoutineDraftSourceTransition[]>()
+  for (const transition of transitions) {
     const list = outgoing.get(transition.fromStep) ?? []
     list.push(transition)
     outgoing.set(transition.fromStep, list)
   }
 
-  const titleOf = (step: RoutineDefinitionDraft['steps'][number]): string | null => {
+  const titleOf = (step: RoutineDraftSourceStep): string | null => {
     const label = (step.metadata as Record<string, unknown> | undefined)?.outlineLabel
     return typeof label === 'string' && label.trim() ? label.trim() : null
   }
@@ -954,7 +969,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
   // Steps a non-default edge points at (a jump, a conditional/outcome branch, an approval
   // option) need a stable name so the prose `step` chip and its heading can target them.
   const jumpTargetIds = new Set<string>()
-  for (const transition of routine.transitions) {
+  for (const transition of transitions) {
     if (transition.guardKind !== 'default' && stepIds.has(transition.toRef)) jumpTargetIds.add(transition.toRef)
   }
   // A readable heading synthesized from a step id (`resolve_billing` -> "Resolve Billing").
@@ -1110,7 +1125,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
     // different condition (an empty `""` already round-trips to `""`, so it stays); a field
     // guard needs ref+operator; an outcome guard a status. Otherwise the prose would
     // round-trip to a different guard, so it falls back.
-    const guardRenders = (edge: RoutineTransition): boolean =>
+    const guardRenders = (edge: RoutineDraftSourceTransition): boolean =>
       (edge.guardKind === 'llm' && edge.guardText != null)
       || (edge.guardKind === 'field' && Boolean(edge.fieldRef) && Boolean(edge.fieldOp))
       || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus ?? edge.guardText))
@@ -1119,7 +1134,7 @@ export function routineToChipDoc(routine: RoutineDefinitionDraft): ProseDoc | nu
       || (edge.guardKind === 'slot_filled' && collectGuardSlotKeys(edge.guardText).length > 0)
     // A counter jump's bound rides on the step chip's counterLimit; one whose limit lives only
     // in guardText would round-trip to an unbounded (llm) jump, so require the explicit limit.
-    const counterRenders = (edge: RoutineTransition): boolean =>
+    const counterRenders = (edge: RoutineDraftSourceTransition): boolean =>
       edge.guardKind === 'counter' && edge.counterLimit != null
     let sawChain = false
     for (const edge of [...(outgoing.get(step.stableStepId) ?? [])].sort((left, right) => left.ordinal - right.ordinal)) {

@@ -64,7 +64,10 @@ import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
   formatSlotFilledLabel,
+  looksLikeRoutineProse,
   OUTCOME_GUARD_REF,
+  parseProseDoc,
+  serializeProseDoc,
   SLOT_FILLED_GUARD_REF,
   slugifyVariableKey,
   type ApprovalDocOption,
@@ -73,7 +76,6 @@ import {
   type ProseSegment,
   type RoutineDocBlock,
 } from '@/lib/routine-prose'
-import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
 
 export type RoutineEditorVariable = { id: string; name: string }
 

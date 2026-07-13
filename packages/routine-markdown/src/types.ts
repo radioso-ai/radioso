@@ -18,9 +18,29 @@ export type {
 
 // Read side: loaded drafts are complete (Zod defaults applied).
 export type RoutineDefinitionDraft = RoutineDefinitionDraftInput;
+// Loose read-side source: consumers hold API-typed or authoring-shaped drafts
+// where Zod-defaulted fields may be absent. Readers normalize internally
+// instead of demanding the parsed shape (liberal in, canonical out).
+export type RoutineDraftSource = RoutineDefinitionDraftAuthoringInput;
+export type RoutineDraftSourceTerminal = NonNullable<RoutineDraftSource["terminals"]>[number];
+export type RoutineDraftSourceSlot = NonNullable<RoutineDraftSource["slots"]>[number];
+export type RoutineDraftSourceStep = NonNullable<RoutineDraftSource["steps"]>[number];
+export type RoutineDraftSourceTransition = NonNullable<RoutineDraftSource["transitions"]>[number];
 // Produce side: what the grammar emits toward a save is pre-parse authoring
 // input — Zod-defaulted fields (e.g. activation.reentryMode) may be absent.
 export type RoutineDefinitionDraftAuthoring = RoutineDefinitionDraftAuthoringInput;
+// What draftFromChipDoc actually constructs: authoring input, but the arrays and
+// gateRef are always present (reentryMode/priority remain host-carried headers).
+// Emitted elements are complete (every field explicit), so they carry the
+// parsed element types even though top-level defaulted headers stay optional.
+export type RoutineDefinitionDraftAuthored = Omit<RoutineDefinitionDraftAuthoring, "activation" | "slots" | "steps" | "transitions" | "terminals" | "completionExport"> & {
+  activation: RoutineDefinitionDraftAuthoring["activation"] & { gateRef: string | null };
+  slots: RoutineSlot[];
+  steps: RoutineStep[];
+  transitions: RoutineTransition[];
+  terminals: RoutineTerminal[];
+  completionExport?: RoutineCompletionExport;
+};
 export type RoutineSlot = RoutineDefinitionDraft["slots"][number];
 export type RoutineStep = RoutineDefinitionDraft["steps"][number];
 export type RoutineTransition = RoutineDefinitionDraft["transitions"][number];

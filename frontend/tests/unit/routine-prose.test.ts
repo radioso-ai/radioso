@@ -13,6 +13,7 @@ import {
   slugifyVariableKey,
   type ChipDocVariable,
   type ProseParagraph,
+  type RoutineInputBinding,
   type RoutineDocBlock,
 } from '@/lib/routine-prose'
 
@@ -30,7 +31,20 @@ function paragraphsToBlocks(paragraphs: ProseParagraph[]): RoutineDocBlock[] {
       .join(''),
     chips: paragraph.segments.flatMap((segment) =>
       segment.kind === 'chip'
-        ? [{ kind: segment.chipKind, refId: segment.refId, op: segment.op ?? null, value: segment.value ?? null, values: segment.values ?? null, unit: segment.unit ?? null, counterLimit: segment.counterLimit ?? null, captureKey: segment.captureKey ?? null, options: segment.options }]
+        ? [{
+            kind: segment.chipKind,
+            refId: segment.refId,
+            op: segment.op ?? null,
+            value: segment.value ?? null,
+            values: segment.values ?? null,
+            unit: segment.unit ?? null,
+            counterLimit: segment.counterLimit ?? null,
+            inputBindings: segment.inputBindings,
+            outputAssignments: segment.outputAssignments,
+            mode: segment.mode,
+            captureKey: segment.captureKey ?? null,
+            options: segment.options,
+          }]
         : [],
     ),
   }))
@@ -42,6 +56,38 @@ function roundTrip(name: string, trigger: string, blocks: RoutineDocBlock[], var
   expect(doc).not.toBeNull()
   const redraft = draftFromChipDoc({ name, trigger, blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
   return { draft, redraft }
+}
+
+function openEditSaveBinding(binding: RoutineInputBinding): RoutineInputBinding | undefined {
+  const opened = routineToChipDoc(draftFromChipDoc({
+    name: 'Lookup',
+    trigger: 'needs account help',
+    variables: [{ id: 'email', name: 'email', type: 'email' }],
+    blocks: [{
+      text: 'Look up the account for {{slot.email}}.',
+      chips: [{
+        kind: 'skill',
+        refId: 'crm.lookup_account',
+        inputBindings: { email: binding },
+        outputAssignments: { account_id: 'account_id' },
+        mode: 'typed',
+      }],
+    }],
+  }))
+  expect(opened).not.toBeNull()
+
+  const editedParagraphs = opened!.paragraphs.map((paragraph, index) =>
+    index === 0
+      ? { ...paragraph, segments: [...paragraph.segments, { kind: 'text' as const, text: ' Then confirm the match.' }] }
+      : paragraph,
+  )
+  const saved = draftFromChipDoc({
+    name: 'Lookup',
+    trigger: 'needs account help',
+    blocks: paragraphsToBlocks(editedParagraphs),
+    variables: opened!.variables,
+  })
+  return saved.steps.find((step) => step.kind === 'tool')?.metadata.inputBindings?.email
 }
 
 describe('routine prose helpers', () => {
@@ -80,6 +126,21 @@ describe('routine prose helpers', () => {
     expect(formatConditionLabel('status', 'in', null, ['final_sale', 'void'])).toBe('status is one of final_sale, void')
     expect(formatConditionLabel('budget', 'gt', 5000, null)).toBe('budget is greater than 5000')
     expect(formatConditionLabel('order_date', 'older_than', 6, null, 'months')).toBe('order_date is older than 6 months')
+  })
+
+  it('preserves literal skill input bindings through open, edit, and save', () => {
+    expect(openEditSaveBinding({ kind: 'literal', value: 'gold' })).toEqual({ kind: 'literal', value: 'gold' })
+  })
+
+  it('preserves variableRef skill input bindings through open, edit, and save', () => {
+    expect(openEditSaveBinding({ kind: 'variableRef', ref: 'email' })).toEqual({ kind: 'variableRef', ref: 'email' })
+  })
+
+  it('preserves contextVariableRef skill input bindings through open, edit, and save', () => {
+    expect(openEditSaveBinding({ kind: 'contextVariableRef', contextVariable: 'page_locale' })).toEqual({
+      kind: 'contextVariableRef',
+      contextVariable: 'page_locale',
+    })
   })
 
   it('compiles an older_than condition into a field guard with a duration unit', () => {

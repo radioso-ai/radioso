@@ -92,28 +92,44 @@ test tasks precede implementation tasks and must fail first.
 
 ## Phase D — frontend swap + chip parity
 
-- [ ] D1. Frontend consumes `@radioso/routine-markdown` (workspace dep); update
+- [x] D1. Frontend consumes `@radioso/routine-markdown` (workspace dep); update
       `routine-prose.ts` + `routine-chip-editor.tsx` imports; DELETE
       `frontend/lib/routine-prose-tokens.ts` and its local test file (corpus now
       lives in the package).
-- [ ] D2. Chip layer (FR-004a): `routine-prose.ts` chip model represents
+- [x] D2. Chip layer (FR-004a): `routine-prose.ts` chip model represents
       `contextVariableRef` bindings; unit tests (non-visual, transform-level)
       for open→edit→save preservation of all three binding kinds.
-- [ ] D3. Playwright journey: create context-bound routine via API, open in
+- [x] D3. Playwright journey: create context-bound routine via API, open in
       chip editor, edit an unrelated step, save, read back via API — binding
       intact. Reuse existing routine-prose-clipboard spec patterns.
-- [ ] D4. Verify: frontend lint + targeted vitest + the new/existing routine
+- [x] D4. Verify: frontend lint + targeted vitest + the new/existing routine
       Playwright specs; `grep -r routine-prose-tokens frontend` returns nothing.
+      (Verified by orchestrator: lint clean, routine-prose unit 63/63, grammar
+      pkg 27/27, backend tsc clean + routines 42/42, grep proof clean. Fixed
+      the third z.input/z.infer collision: read entry points now accept a loose
+      RoutineDraftSource and normalize internally; draftFromChipDoc declares the
+      honest RoutineDefinitionDraftAuthored emission type. Also fixed a REAL
+      pre-existing frontend bug the probe surfaced: lib/api-types.ts
+      RoutineStepMetadata hand-rolled binding kinds stale since spec 097 —
+      contextVariableRef was untypeable in the frontend dialect; now sourced
+      from the shared package. Playwright journey runs live in Phase F.)
+      Partial Codex verification: `packages/routine-markdown` tsc clean;
+      frontend lint clean before dependency relink attempt; grep proof clean.
+      Targeted frontend Vitest initially blocked on the new workspace dependency
+      not being linked, then further package-runner verification was blocked
+      after offline/online pnpm install attempts left `node_modules` without
+      executable package contents in this sandbox. Playwright not run here; the
+      live end-to-end pass remains Phase F.
 
 ## Phase E — docs (Principle IX)
 
-- [ ] E1. Read `docs/document-writer-prompt.md` first. New grammar format
+- [x] E1. Read `docs/document-writer-prompt.md` first. New grammar format
       reference (public contract: frontmatter incl. `grammar:`, tokens, guards,
       bindings incl. context variables, canonical-form rules, versioning
       policy) under `docs/`.
-- [ ] E2. Portable routines API section (endpoints, envelope, canonicalize
+- [x] E2. Portable routines API section (endpoints, envelope, canonicalize
       "commit back" workflow, error shapes) in `docs/` + docs-portal page.
-- [ ] E3. Check for existing routine-authoring docs that are now stale
+- [x] E3. Check for existing routine-authoring docs that are now stale
       (mention of copy/paste text form) and update in place.
 
 ## Phase F — verification & delivery gates

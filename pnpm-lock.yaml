@@ -424,6 +424,9 @@ importers:
       '@lexical/utils':
         specifier: ^0.45.0
         version: 0.45.0
+      '@radioso/routine-markdown':
+        specifier: workspace:*
+        version: link:../packages/routine-markdown
       '@radioso/ui':
         specifier: workspace:*
         version: link:../packages/ui

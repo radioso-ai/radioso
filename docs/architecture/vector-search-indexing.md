@@ -1,7 +1,7 @@
 ---
 title: "Vector Search Indexing"
 description: "Design for isolating vector storage behind adapters while keeping PostgreSQL as the canonical source, with a future backend evaluation path."
-last_updated: 2026-05-28
+last_updated: 2026-07-13
 ---
 
 # Vector Search Indexing
@@ -45,7 +45,7 @@ PostgreSQL remains authoritative for:
 - workspace and source ownership
 - document processing state
 - embedding model settings and processing decisions
-- chunk temporal metadata and generated date columns used for event-date lookup
+- chunk temporal metadata and stored date columns used for event-date lookup
 
 PostgreSQL does not have to remain authoritative for embedding vector bytes if a
 dedicated vector index is added later. In that model, the vector store is a
@@ -90,7 +90,7 @@ search.
 
 Temporal event lookup is a retrieval-owned PostgreSQL read path over canonical
 chunk metadata. Ingestion enrichment may add `dateFrom` and `dateTo` to chunk
-metadata, and generated date columns make upcoming-event lookup and ordering
+metadata, and stored date columns make upcoming-event lookup and ordering
 indexable. Retrieval consumes those fields only as metadata; it does not import
 ingestion enrichment contracts.
 

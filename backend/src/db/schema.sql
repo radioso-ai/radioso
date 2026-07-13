@@ -338,6 +338,24 @@ END;
 $$;
 
 
+--
+-- Name: set_chunk_temporal_dates(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_chunk_temporal_dates() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.date_from := chunk_metadata_iso_date(NEW.metadata ->> 'dateFrom');
+  NEW.date_to := COALESCE(
+    chunk_metadata_iso_date(NEW.metadata ->> 'dateTo'),
+    chunk_metadata_iso_date(NEW.metadata ->> 'dateFrom')
+  );
+  RETURN NEW;
+END;
+$$;
+
+
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
@@ -636,8 +654,8 @@ CREATE TABLE public.chunks (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 )
 PARTITION BY HASH (workspace_id);
 
@@ -661,8 +679,8 @@ CREATE TABLE public.chunks_p0 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -685,8 +703,8 @@ CREATE TABLE public.chunks_p1 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -709,8 +727,8 @@ CREATE TABLE public.chunks_p10 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -733,8 +751,8 @@ CREATE TABLE public.chunks_p11 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -757,8 +775,8 @@ CREATE TABLE public.chunks_p12 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -781,8 +799,8 @@ CREATE TABLE public.chunks_p13 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -805,8 +823,8 @@ CREATE TABLE public.chunks_p14 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -829,8 +847,8 @@ CREATE TABLE public.chunks_p15 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -853,8 +871,8 @@ CREATE TABLE public.chunks_p2 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -877,8 +895,8 @@ CREATE TABLE public.chunks_p3 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -901,8 +919,8 @@ CREATE TABLE public.chunks_p4 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -925,8 +943,8 @@ CREATE TABLE public.chunks_p5 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -949,8 +967,8 @@ CREATE TABLE public.chunks_p6 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -973,8 +991,8 @@ CREATE TABLE public.chunks_p7 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -997,8 +1015,8 @@ CREATE TABLE public.chunks_p8 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -1021,8 +1039,8 @@ CREATE TABLE public.chunks_p9 (
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     embedding_unbounded public.vector,
-    date_from date GENERATED ALWAYS AS (public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text))) STORED,
-    date_to date GENERATED ALWAYS AS (COALESCE(public.chunk_metadata_iso_date((metadata ->> 'dateTo'::text)), public.chunk_metadata_iso_date((metadata ->> 'dateFrom'::text)))) STORED
+    date_from date,
+    date_to date
 );
 
 
@@ -3262,20 +3280,6 @@ CREATE INDEX chunks_p0_to_tsvector_idx ON public.chunks_p0 USING gin (to_tsvecto
 
 
 --
--- Name: idx_chunks_workspace_temporal_dates; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_chunks_workspace_temporal_dates ON ONLY public.chunks USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
--- Name: chunks_p0_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p0_workspace_id_date_from_date_to_idx ON public.chunks_p0 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: idx_chunks_workspace_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3318,13 +3322,6 @@ CREATE INDEX chunks_p10_to_tsvector_idx ON public.chunks_p10 USING gin (to_tsvec
 
 
 --
--- Name: chunks_p10_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p10_workspace_id_date_from_date_to_idx ON public.chunks_p10 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p10_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3357,13 +3354,6 @@ CREATE INDEX chunks_p11_metadata_idx ON public.chunks_p11 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p11_to_tsvector_idx ON public.chunks_p11 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p11_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p11_workspace_id_date_from_date_to_idx ON public.chunks_p11 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3402,13 +3392,6 @@ CREATE INDEX chunks_p12_to_tsvector_idx ON public.chunks_p12 USING gin (to_tsvec
 
 
 --
--- Name: chunks_p12_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p12_workspace_id_date_from_date_to_idx ON public.chunks_p12 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p12_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3441,13 +3424,6 @@ CREATE INDEX chunks_p13_metadata_idx ON public.chunks_p13 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p13_to_tsvector_idx ON public.chunks_p13 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p13_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p13_workspace_id_date_from_date_to_idx ON public.chunks_p13 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3486,13 +3462,6 @@ CREATE INDEX chunks_p14_to_tsvector_idx ON public.chunks_p14 USING gin (to_tsvec
 
 
 --
--- Name: chunks_p14_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p14_workspace_id_date_from_date_to_idx ON public.chunks_p14 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p14_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3525,13 +3494,6 @@ CREATE INDEX chunks_p15_metadata_idx ON public.chunks_p15 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p15_to_tsvector_idx ON public.chunks_p15 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p15_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p15_workspace_id_date_from_date_to_idx ON public.chunks_p15 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3570,13 +3532,6 @@ CREATE INDEX chunks_p1_to_tsvector_idx ON public.chunks_p1 USING gin (to_tsvecto
 
 
 --
--- Name: chunks_p1_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p1_workspace_id_date_from_date_to_idx ON public.chunks_p1 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p1_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3609,13 +3564,6 @@ CREATE INDEX chunks_p2_metadata_idx ON public.chunks_p2 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p2_to_tsvector_idx ON public.chunks_p2 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p2_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p2_workspace_id_date_from_date_to_idx ON public.chunks_p2 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3654,13 +3602,6 @@ CREATE INDEX chunks_p3_to_tsvector_idx ON public.chunks_p3 USING gin (to_tsvecto
 
 
 --
--- Name: chunks_p3_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p3_workspace_id_date_from_date_to_idx ON public.chunks_p3 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p3_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3693,13 +3634,6 @@ CREATE INDEX chunks_p4_metadata_idx ON public.chunks_p4 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p4_to_tsvector_idx ON public.chunks_p4 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p4_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p4_workspace_id_date_from_date_to_idx ON public.chunks_p4 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3738,13 +3672,6 @@ CREATE INDEX chunks_p5_to_tsvector_idx ON public.chunks_p5 USING gin (to_tsvecto
 
 
 --
--- Name: chunks_p5_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p5_workspace_id_date_from_date_to_idx ON public.chunks_p5 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p5_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3777,13 +3704,6 @@ CREATE INDEX chunks_p6_metadata_idx ON public.chunks_p6 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p6_to_tsvector_idx ON public.chunks_p6 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p6_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p6_workspace_id_date_from_date_to_idx ON public.chunks_p6 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -3822,13 +3742,6 @@ CREATE INDEX chunks_p7_to_tsvector_idx ON public.chunks_p7 USING gin (to_tsvecto
 
 
 --
--- Name: chunks_p7_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p7_workspace_id_date_from_date_to_idx ON public.chunks_p7 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p7_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3864,13 +3777,6 @@ CREATE INDEX chunks_p8_to_tsvector_idx ON public.chunks_p8 USING gin (to_tsvecto
 
 
 --
--- Name: chunks_p8_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p8_workspace_id_date_from_date_to_idx ON public.chunks_p8 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
-
-
---
 -- Name: chunks_p8_workspace_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3903,13 +3809,6 @@ CREATE INDEX chunks_p9_metadata_idx ON public.chunks_p9 USING gin (metadata);
 --
 
 CREATE INDEX chunks_p9_to_tsvector_idx ON public.chunks_p9 USING gin (to_tsvector('simple'::regconfig, COALESCE(search_text, ''::text)));
-
-
---
--- Name: chunks_p9_workspace_id_date_from_date_to_idx; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX chunks_p9_workspace_id_date_from_date_to_idx ON public.chunks_p9 USING btree (workspace_id, date_from, date_to) WHERE ((date_from IS NOT NULL) OR (date_to IS NOT NULL));
 
 
 --
@@ -4774,13 +4673,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p0_
 
 
 --
--- Name: chunks_p0_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p0_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p0_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -4827,13 +4719,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p10_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p10_to_tsvector_idx;
-
-
---
--- Name: chunks_p10_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p10_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -4886,13 +4771,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p11
 
 
 --
--- Name: chunks_p11_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p11_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p11_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -4939,13 +4817,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p12_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p12_to_tsvector_idx;
-
-
---
--- Name: chunks_p12_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p12_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -4998,13 +4869,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p13
 
 
 --
--- Name: chunks_p13_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p13_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p13_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5051,13 +4915,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p14_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p14_to_tsvector_idx;
-
-
---
--- Name: chunks_p14_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p14_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -5110,13 +4967,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p15
 
 
 --
--- Name: chunks_p15_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p15_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p15_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5163,13 +5013,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p1_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p1_to_tsvector_idx;
-
-
---
--- Name: chunks_p1_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p1_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -5222,13 +5065,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p2_
 
 
 --
--- Name: chunks_p2_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p2_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p2_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5275,13 +5111,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p3_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p3_to_tsvector_idx;
-
-
---
--- Name: chunks_p3_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p3_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -5334,13 +5163,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p4_
 
 
 --
--- Name: chunks_p4_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p4_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p4_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5387,13 +5209,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p5_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p5_to_tsvector_idx;
-
-
---
--- Name: chunks_p5_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p5_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -5446,13 +5261,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p6_
 
 
 --
--- Name: chunks_p6_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p6_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p6_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5499,13 +5307,6 @@ ALTER INDEX public.chunks_pkey ATTACH PARTITION public.chunks_p7_pkey;
 --
 
 ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p7_to_tsvector_idx;
-
-
---
--- Name: chunks_p7_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p7_workspace_id_date_from_date_to_idx;
 
 
 --
@@ -5558,13 +5359,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p8_
 
 
 --
--- Name: chunks_p8_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p8_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p8_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5614,13 +5408,6 @@ ALTER INDEX public.chunks_search_text_fts_idx ATTACH PARTITION public.chunks_p9_
 
 
 --
--- Name: chunks_p9_workspace_id_date_from_date_to_idx; Type: INDEX ATTACH; Schema: public; Owner: -
---
-
-ALTER INDEX public.idx_chunks_workspace_temporal_dates ATTACH PARTITION public.chunks_p9_workspace_id_date_from_date_to_idx;
-
-
---
 -- Name: chunks_p9_workspace_id_document_id_chunk_index_key; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -5639,6 +5426,13 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 --
 
 CREATE TRIGGER trg_agent_skills_target_reference BEFORE INSERT OR UPDATE OF kind, agent_id, workspace_id, target_type, target_id ON public.agent_skills FOR EACH ROW EXECUTE FUNCTION public.enforce_agent_skill_target_reference();
+
+
+--
+-- Name: chunks trg_chunks_temporal_dates; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER trg_chunks_temporal_dates BEFORE INSERT OR UPDATE OF metadata ON public.chunks FOR EACH ROW EXECUTE FUNCTION public.set_chunk_temporal_dates();
 
 
 --

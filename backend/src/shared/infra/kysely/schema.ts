@@ -211,8 +211,8 @@ export interface Chunks {
   chunk_index: number;
   content: string;
   created_at: Generated<Timestamp>;
-  date_from: Generated<Timestamp | null>;
-  date_to: Generated<Timestamp | null>;
+  date_from: Timestamp | null;
+  date_to: Timestamp | null;
   document_id: string;
   embedding: string | null;
   embedding_model: Generated<string>;

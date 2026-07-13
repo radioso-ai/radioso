@@ -487,7 +487,7 @@ export class DocumentProcessingService {
         }
 
         // Patch only chunks whose metadata the stage changed. Updating
-        // chunks.metadata recomputes the stored generated date columns.
+        // chunks.metadata recomputes the stored date columns.
         const patches: ChunkMetadataRevisionPatch[] = result.chunks.map((chunk) => ({
           chunkIndex: chunk.chunkIndex,
           metadata: chunk.metadata ?? {},

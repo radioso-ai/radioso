@@ -123,8 +123,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
         return false;
       }
 
-      // Patch each chunk's metadata by index. The stored generated
-      // date_from/date_to columns recompute from metadata automatically.
+      // Patch each chunk's metadata by index. The stored date_from/date_to
+      // columns recompute from metadata automatically.
       for (const patch of input.patches) {
         await client.query(
           `UPDATE chunks

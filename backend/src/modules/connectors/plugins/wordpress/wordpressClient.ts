@@ -25,7 +25,7 @@ const restBaseFor = (postType: string): string => REST_BASE_BY_POST_TYPE[postTyp
 // `_embedded.author` carries the author's display name (the post object only has
 // a numeric id). `_links.author` must survive `_fields` for `_embed` to resolve.
 const POST_FIELDS =
-  "id,type,status,slug,link,modified_gmt,title,content,excerpt,author,_links.author,_embedded.author";
+  "id,type,status,slug,link,modified_gmt,date_gmt,title,content,excerpt,author,_links.author,_embedded.author";
 
 export interface WordpressClientConfig {
   siteUrl: string;
@@ -42,6 +42,8 @@ export interface WordpressRestPost {
   slug: string;
   link: string;
   modified_gmt: string;
+  /** Publish date in site GMT (`Y-m-d\TH:i:s`); surfaced as document date metadata. */
+  date_gmt?: string;
   title: { rendered: string };
   content: { rendered: string; raw?: string };
   excerpt?: { rendered: string };

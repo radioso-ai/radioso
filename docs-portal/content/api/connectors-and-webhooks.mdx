@@ -37,7 +37,7 @@ Radioso ships with these connector types:
 - `wordpress`: syncs WordPress pages and posts into workspace documents. It supports push webhooks and optional manual sync.
 - `whatsapp`: receives WhatsApp Business Cloud API messages, sends them through assistant chat, and replies through WhatsApp. It does not support manual sync.
 
-For WordPress, each post is ingested from its rendered content. The author's display name is stored as document metadata (`author`) — drawn from the embedded author on REST sync and from the push payload on webhooks — and included in the searchable text, so assistants can find a post by its author even though WordPress never returns the byline as part of the post body. Existing documents only pick up the author after a re-sync.
+For WordPress, each post is ingested from its rendered content. The author's display name is stored as document metadata (`author`) — drawn from the embedded author on REST sync and from the push payload on webhooks — and included in the searchable text, so assistants can find a post by its author even though WordPress never returns the byline as part of the post body. The publish date is stored the same way: the raw timestamp under `published_at` and its day under `dateFrom`, so posts are searchable by date and usable in date metadata rules. Existing documents only pick up the author and publish date after a re-sync.
 
 For WhatsApp, configure the phone number ID, access token, app secret, business account ID, and generated webhook verify token. Use the connector detail's `webhookUrl` as the Meta webhook callback URL. Radioso verifies `X-Hub-Signature-256`, ignores duplicate message IDs, and stores message logs for retry and recovery.
 

@@ -3459,6 +3459,7 @@ components:
                   - unknown_variable_ref
                   - unknown_context_variable
                   - variable_name_collision
+                  - node_id_collision
               location:
                 type: string
               message:

@@ -2,7 +2,7 @@
 
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
-import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, Send, Workflow } from 'lucide-react'
+import { AtSign, BadgeCheck, Bold, CornerUpRight, Database, Flag, Gavel, Heading1, Italic, ListChecks, MoreHorizontal, Send, Workflow } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -33,7 +33,7 @@ import {
 
 import { $createHeadingNode, $isHeadingNode, HeadingNode } from '@lexical/rich-text'
 
-import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createOutcomeConditionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
+import { $createAiConditionChipNode, $createApprovalChipNode, $createChipNode, $createConditionChipNode, $createDecisionChipNode, $createEndChipNode, $createOutcomeConditionChipNode, $createSlotFilledConditionChipNode, $createStepChipNode, $isChipNode, ApprovalChipDialog, approvalChipTargets, ChipNode, type ApprovalChipState, type ApprovalChipTarget, type RoutineChipKind } from '@/components/dashboard/settings/routine-chip-node'
 import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashboard/settings/routine-condition-builder-dialog'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
@@ -58,11 +58,14 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Switch } from '@/components/ui/switch'
 import type { RoutineSkillCategory, SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
 import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
+  formatSlotFilledLabel,
   OUTCOME_GUARD_REF,
+  SLOT_FILLED_GUARD_REF,
   slugifyVariableKey,
   type ApprovalDocOption,
   type ChipDocVariable,
@@ -236,6 +239,63 @@ function OutcomeDialog({
   )
 }
 
+// Author a slot-filled branch: the branch continues once the selected slots are present. It
+// is a rule (decided in code) that gates the routine on having collected the values it needs.
+function SlotFilledDialog({
+  open,
+  onOpenChange,
+  variables,
+  onConfirm,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  variables: ChipDocVariable[]
+  onConfirm: (keys: string[]) => void
+}) {
+  const [selected, setSelected] = useState<string[]>([])
+  const reset = () => setSelected([])
+  const toggle = (id: string, on: boolean) =>
+    setSelected((current) => (on ? [...current, id] : current.filter((key) => key !== id)))
+  const confirm = () => {
+    // Keep the routine's slot order so the label and tokens read consistently.
+    const ordered = variables.filter((variable) => selected.includes(variable.id)).map((variable) => variable.id)
+    if (ordered.length === 0) return
+    onConfirm(ordered)
+    reset()
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { if (!next) reset(); onOpenChange(next) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Continue once slots are provided</DialogTitle>
+          <DialogDescription>The branch is a rule — decided in code — that fires once every slot you pick has been collected. Add a target on the same line.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {variables.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Add a variable first — a slot-filled branch waits on the slots the routine collects.</p>
+          ) : (
+            variables.map((variable) => (
+              <div key={variable.id} className="flex items-center gap-2">
+                <Switch
+                  id={`slotFilled_${variable.id}`}
+                  checked={selected.includes(variable.id)}
+                  onCheckedChange={(checked) => toggle(variable.id, checked)}
+                />
+                <Label htmlFor={`slotFilled_${variable.id}`} className="text-sm font-normal">{variable.name}</Label>
+              </div>
+            ))
+          )}
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={confirm} disabled={selected.length === 0}>Add slot-filled branch</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // Author an action step: a step that emits an outbox action (an email to a teammate, a
 // webhook, a Slack post) named by its action type. The action type is a free identifier the
 // runtime resolves to a registered handler, the same as the Form view's action field.
@@ -310,6 +370,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
   const [outcomeOpen, setOutcomeOpen] = useState(false)
+  const [slotFilledOpen, setSlotFilledOpen] = useState(false)
   const [actionOpen, setActionOpen] = useState(false)
   const [jumpOpen, setJumpOpen] = useState(false)
   const [jumpTargets, setJumpTargets] = useState<{ id: string; title: string }[]>([])
@@ -429,6 +490,23 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
     })
   }
 
+  // Insert a slot-filled chip — a branch guard that continues once the named slots are present.
+  // Like a condition chip, it pairs with a target chip (end/handoff/step) on the line.
+  const insertSlotFilled = (keys: string[]) => {
+    const nameByRef = new Map(variables.map((variable) => [variable.id, variable.name]))
+    editor.focus(() => {
+      editor.update(() => {
+        const selection = $getSelection()
+        if (!$isRangeSelection(selection)) return
+        const chip = $createSlotFilledConditionChipNode(keys, formatSlotFilledLabel(keys, nameByRef))
+        selection.insertNodes([chip])
+        const trailing = $createTextNode(' ')
+        chip.insertAfter(trailing)
+        trailing.select()
+      })
+    })
+  }
+
   // Toggle the current line between a step title (h1) and ordinary prose. A titled step
   // gets a stable id, so a jump can target it by name; toggling it off turns it back into
   // body text. Mirrors how Bold/Italic toggle.
@@ -507,14 +585,14 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
   }
 
   return (
-    <div className="flex items-center gap-0.5 border-b border-input px-1.5 py-1">
+    <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1 border-b border-input px-1.5 py-1">
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
         <Bold className="h-4 w-4" />
       </Button>
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.italic && ACTIVE_TOOLBAR_BUTTON)} aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
         <Italic className="h-4 w-4" />
       </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertVariableTrigger}>
         <AtSign className="h-4 w-4" />
         Variable
@@ -549,27 +627,17 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />
         Condition
       </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setOutcomeOpen(true)}>
-        <Workflow className="h-4 w-4" />
-        Outcome
-      </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setActionOpen(true)}>
-        <Send className="h-4 w-4" />
-        Action
-      </Button>
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertEnd}>
         <Flag className="h-4 w-4" />
         End
       </Button>
-      <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={openApproval}>
-        <Gavel className="h-4 w-4" />
-        Approval
-      </Button>
-      <Separator orientation="vertical" className="mx-1 h-5" />
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className={cn('h-7 gap-1 px-2', formats.step && ACTIVE_TOOLBAR_BUTTON)} aria-pressed={formats.step} onClick={toggleLineStep}>
         <Heading1 className="h-4 w-4" />
         Step
@@ -578,8 +646,38 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <CornerUpRight className="h-4 w-4" />
         Jump
       </Button>
+      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
+      {/* Less-common branch/gate builders live behind one overflow so the toolbar stays scannable. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
+            <MoreHorizontal className="h-4 w-4" />
+            More
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuLabel>Advanced</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => setOutcomeOpen(true)}>
+            <Workflow className="mr-2 h-4 w-4" />
+            Outcome
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setSlotFilledOpen(true)} disabled={variables.length === 0}>
+            <ListChecks className="mr-2 h-4 w-4" />
+            When filled
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => setActionOpen(true)}>
+            <Send className="mr-2 h-4 w-4" />
+            Action
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => openApproval()}>
+            <Gavel className="mr-2 h-4 w-4" />
+            Approval
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ConditionBuilderDialog open={conditionOpen} onOpenChange={setConditionOpen} variables={variables} onConfirm={insertCondition} onSetVariableType={onSetVariableType} />
       <OutcomeDialog open={outcomeOpen} onOpenChange={setOutcomeOpen} statuses={outcomeStatuses} onConfirm={insertOutcome} />
+      <SlotFilledDialog open={slotFilledOpen} onOpenChange={setSlotFilledOpen} variables={variables} onConfirm={insertSlotFilled} />
       <ActionDialog open={actionOpen} onOpenChange={setActionOpen} onConfirm={insertAction} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
       <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
@@ -599,17 +697,21 @@ function ChipTypeaheadPlugin({
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [query, setQuery] = useState<string | null>(null)
-  // Custom trigger so variable names with underscores keep the menu open (the default
-  // matcher treats "_" as a word boundary and cancels the popover).
+  // Which prefix opened the menu: `@` inserts a variable or a flow target, `#` inserts a skill.
+  const [trigger, setTrigger] = useState<'@' | '#'>('@')
+  // Custom trigger so names with underscores keep the menu open (the default matcher treats "_"
+  // as a word boundary and cancels the popover), and so both `@` and `#` open it.
   const triggerFn = useCallback((text: string) => {
-    const match = /(^|\s|\()@([A-Za-z0-9_-]*)$/.exec(text)
+    const match = /(^|\s|\()([@#])([A-Za-z0-9_-]*)$/.exec(text)
     if (match === null) return null
     const leading = match[1] ?? ''
-    const matchingString = match[2] ?? ''
+    const prefix = (match[2] ?? '@') as '@' | '#'
+    const matchingString = match[3] ?? ''
+    setTrigger((current) => (current === prefix ? current : prefix))
     return {
       leadOffset: match.index + leading.length,
       matchingString,
-      replaceableString: `@${matchingString}`,
+      replaceableString: `${prefix}${matchingString}`,
     }
   }, [])
 
@@ -621,6 +723,33 @@ function ChipTypeaheadPlugin({
       const reservedKind = reservedKindForRef(refId)
       return !reservedKind || reservedKind === kind
     }
+    // `#` opens a skills-only menu (a capability); `@` opens variables + flow targets (a value
+    // or a branch). Splitting them keeps skills from crowding the variable menu.
+    if (trigger === '#') {
+      const skills = skillCatalog.skills
+        .filter((skill) => {
+          const catalogName = normalizeSkillName(skill.skillName)
+          const displayName = normalizeSkillName(skill.displayName)
+          return (!lowered || catalogName.includes(lowered) || displayName.includes(lowered)) && canCreateRef('skill', skill.skillName)
+        })
+        .map((skill) => new ChipMenuOption(`skill-${skill.skillName}`, {
+          display: skill.displayName,
+          kind: 'skill',
+          isNew: false,
+          refId: skill.skillName,
+          name: skill.displayName,
+        }))
+      if (raw && !findRoutineSkillDescriptor(skillCatalog.skills, raw, raw) && (!reservedRefKinds[slugifyVariableKey(raw)] || reservedRefKinds[slugifyVariableKey(raw)] === 'skill')) {
+        skills.push(new ChipMenuOption(`new-skill-${lowered}`, {
+          display: `Skill (not in catalog): ${raw}`,
+          kind: 'skill',
+          isNew: true,
+          refId: slugifyVariableKey(raw),
+          name: raw,
+        }))
+      }
+      return skills.slice(0, 8)
+    }
     const result: ChipMenuOption[] = variables
       .filter((variable) => !lowered || variable.name.toLowerCase().includes(lowered))
       .map((variable) => new ChipMenuOption(`var-${variable.id}`, {
@@ -630,20 +759,6 @@ function ChipTypeaheadPlugin({
         refId: variable.id,
         name: variable.name,
       }))
-    const catalogMatches = skillCatalog.skills
-      .filter((skill) => {
-        const catalogName = normalizeSkillName(skill.skillName)
-        const displayName = normalizeSkillName(skill.displayName)
-        return (!lowered || catalogName.includes(lowered) || displayName.includes(lowered)) && canCreateRef('skill', skill.skillName)
-      })
-      .map((skill) => new ChipMenuOption(`skill-${skill.skillName}`, {
-        display: `Skill: ${skill.displayName}`,
-        kind: 'skill',
-        isNew: false,
-        refId: skill.skillName,
-        name: skill.displayName,
-      }))
-    result.push(...catalogMatches)
     if (raw) {
       // A name identifies one thing: once it's used by a chip, don't offer to
       // create a different kind with the same name (so a variable and an action
@@ -655,15 +770,6 @@ function ChipTypeaheadPlugin({
         result.push(new ChipMenuOption(`new-variable-${lowered}`, {
           display: `Create variable “${raw}”`,
           kind: 'variable',
-          isNew: true,
-          refId,
-          name: raw,
-        }))
-      }
-      if (!findRoutineSkillDescriptor(skillCatalog.skills, raw, raw) && canCreate('skill')) {
-        result.push(new ChipMenuOption(`new-skill-${lowered}`, {
-          display: `Skill (not in catalog): ${raw}`,
-          kind: 'skill',
           isNew: true,
           refId,
           name: raw,
@@ -733,7 +839,7 @@ function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -842,6 +948,11 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       // An outcome guard (branches on the preceding tool step's result): the status rides in
       // `value`. Recreated via its own node so the sentinel refId survives the round-trip.
       node.append($createOutcomeConditionChipNode(typeof segment.value === 'string' ? segment.value : segment.label))
+    } else if (segment.chipKind === 'condition' && segment.refId === SLOT_FILLED_GUARD_REF) {
+      // A slot-filled guard (continues once the named slots are present): the slot keys ride in
+      // `values`. Recreated via its own node so the sentinel refId + slot set survive the round-trip.
+      const keys = (segment.values ?? []).map((value) => String(value)).filter((key) => key.length > 0)
+      node.append($createSlotFilledConditionChipNode(keys, segment.label))
     } else if (segment.chipKind === 'condition' && segment.op) {
       node.append($createConditionChipNode(segment.refId, segment.op, segment.label, segment.value ?? null, segment.values ?? null, segment.unit ?? null))
     } else if (segment.chipKind === 'condition') {
@@ -854,6 +965,10 @@ function $proseParagraphToNode(paragraph: ProseParagraph): LexicalNode {
       node.append($createApprovalChipNode(segment.captureKey ?? '', segment.options ?? []))
     } else if (segment.chipKind === 'decision') {
       node.append($createDecisionChipNode(segment.captureKey ?? '', segment.options ?? []))
+    } else if (segment.chipKind === 'end') {
+      // A named ending carries its own completion message in `value`; recreated via its own node
+      // so the message survives the round-trip (the generic chip path drops it).
+      node.append($createEndChipNode(segment.refId, typeof segment.value === 'string' ? segment.value : null, segment.label))
     } else {
       node.append($createChipNode(segment.chipKind, segment.refId, segment.label, {
         inputBindings: segment.inputBindings,
@@ -1065,14 +1180,15 @@ function $branchDecisionKind(block: LexicalNode): 'rule' | 'ai' | 'ai-chip' | nu
     if (chip.getChipKind() === 'step') return chip.getChipCounterLimit() != null
     if (chip.getChipKind() !== 'condition') return false
     // A condition chip is decided in code only when it's a structured comparison (an operator)
-    // or an outcome guard; a bare AI selector (no operator) is decided by the AI from its prose.
-    return chip.getChipOp() != null || chip.getRefId() === OUTCOME_GUARD_REF
+    // or an outcome / slot-filled guard; a bare AI selector (no operator) is decided by the AI
+    // from its prose.
+    return chip.getChipOp() != null || chip.getRefId() === OUTCOME_GUARD_REF || chip.getRefId() === SLOT_FILLED_GUARD_REF
   })
   if (deterministic) return 'rule'
   // A bare AI⇄code selector chip (condition, no operator, not an outcome guard) already shows
   // the "AI decides" badge, so its line skips the ::before badge to avoid a duplicate.
   const hasSelectorChip = chips.some(
-    (chip) => chip.getChipKind() === 'condition' && chip.getChipOp() == null && chip.getRefId() !== OUTCOME_GUARD_REF,
+    (chip) => chip.getChipKind() === 'condition' && chip.getChipOp() == null && chip.getRefId() !== OUTCOME_GUARD_REF && chip.getRefId() !== SLOT_FILLED_GUARD_REF,
   )
   return hasSelectorChip ? 'ai-chip' : 'ai'
 }

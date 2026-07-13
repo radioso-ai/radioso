@@ -32,6 +32,7 @@ export const routineValidationCodes = [
   "unknown_variable_ref",
   "unknown_context_variable",
   "variable_name_collision",
+  "node_id_collision",
 ] as const;
 
 export type RoutineValidationCode = (typeof routineValidationCodes)[number];
@@ -144,6 +145,24 @@ export const validateRoutineDefinition = (
   const stepOrdinalById = new Map(steps.map((step) => [step.stableStepId, step.ordinal]));
   const terminalIds = new Set(terminals.map((terminal) => terminal.stableStepId));
   const nodeIds = new Set([...stepIds, ...terminalIds]);
+  // Every step and terminal shares one id namespace: a duplicate would make transitions to that
+  // id ambiguous and the compiler emit two nodes with the same id. The Sets above silently
+  // collapse duplicates, so detect them from the raw id lists before anything relies on the Sets.
+  const seenNodeIds = new Set<string>();
+  const collidedNodeIds = new Set<string>();
+  for (const id of [...steps.map((step) => step.stableStepId), ...terminals.map((terminal) => terminal.stableStepId)]) {
+    if (seenNodeIds.has(id)) {
+      collidedNodeIds.add(id);
+    }
+    seenNodeIds.add(id);
+  }
+  for (const id of collidedNodeIds) {
+    diagnostics.push({
+      code: "node_id_collision",
+      location: `node:${id}`,
+      message: `node id collision: id "${id}" is used by more than one step or terminal; each step and terminal must have a unique id.`,
+    });
+  }
   const availableSkillNames = context.availableSkillNames ?? (
     context.skillDescriptors ? new Set(context.skillDescriptors.keys()) : undefined
   );

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
-import { OUTCOME_GUARD_REF, type ChipDocVariable, type ProseParagraph } from '@/lib/routine-prose'
+import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF, type ChipDocVariable, type ProseParagraph } from '@/lib/routine-prose'
 
 // A round-trip projects through text and back. The token grammar carries a variable's
 // key + type but not its display description, so reconstructed variables key off the id;
@@ -201,7 +201,8 @@ describe('routine prose token grammar', () => {
       ],
     }
     const { text, parsed } = roundTrip(input, ['order_lookup'])
-    expect(text).toContain('@order_lookup[in email=@email, includeHistory=true; out status=@order_status]')
+    // A skill mention uses `#`; the bindings still reference `@` variables.
+    expect(text).toContain('#order_lookup[in email=@email, includeHistory=true; out status=@order_status]')
     expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
   })
 
@@ -216,9 +217,23 @@ describe('routine prose token grammar', () => {
       ],
     }
     const { text, parsed } = roundTrip(input, ['retrieval_context'])
-    expect(text).toContain('@retrieval_context')
+    expect(text).toContain('#retrieval_context')
     expect(text).not.toContain('[')
     expect(parsed.paragraphs[1]!.segments[0]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })
+  })
+
+  it('parses a #mention as a skill without needing the catalog', () => {
+    const parsed = parseProseDoc('Run #retrieval_context now.', () => false)
+    expect(parsed.paragraphs[0]!.segments).toEqual([
+      { kind: 'text', text: 'Run ' },
+      { kind: 'chip', chipKind: 'skill', refId: 'retrieval_context', label: 'retrieval_context' },
+      { kind: 'text', text: ' now.' },
+    ])
+  })
+
+  it('still parses a legacy @mention skill via the catalog (back-compat)', () => {
+    const parsed = parseProseDoc('Run @retrieval_context now.', (name) => name === 'retrieval_context')
+    expect(parsed.paragraphs[0]!.segments[1]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })
   })
 
   it('treats an unknown @mention as a variable when it is not a known skill', () => {
@@ -272,6 +287,57 @@ describe('routine prose token grammar', () => {
     // The action ref isn't mistaken for a variable.
     expect(parsed.variables).toEqual([])
     expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('round-trips a slot-filled guard as a [filled] text token', () => {
+    const input = {
+      name: 'Verify',
+      trigger: 'needs verification',
+      variables: [
+        { id: 'email', name: 'email', type: 'email' as const },
+        { id: 'order_id', name: 'order id', type: 'text' as const },
+      ],
+      paragraphs: [
+        { segments: [
+          { kind: 'text' as const, text: 'Ask for ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'email', label: '@email' },
+          { kind: 'text' as const, text: ' and ' },
+          { kind: 'chip' as const, chipKind: 'variable' as const, refId: 'order_id', label: '@order_id' },
+          { kind: 'text' as const, text: '.' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: SLOT_FILLED_GUARD_REF, values: ['email', 'order_id'], label: 'when email and order id are provided' },
+          { kind: 'chip' as const, chipKind: 'handoff' as const, refId: 'handoff', label: 'handoff' },
+        ] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('[filled @email, @order_id]')
+    const filled = parsed.paragraphs.flatMap((paragraph) => paragraph.segments)
+      .find((segment) => segment.kind === 'chip' && segment.refId === SLOT_FILLED_GUARD_REF)
+    expect(filled).toMatchObject({ chipKind: 'condition', values: ['email', 'order_id'] })
+  })
+
+  it('round-trips a named ending with its message as a -> end:id token', () => {
+    const input = {
+      name: 'Refund',
+      trigger: 'wants a refund',
+      variables: [],
+      paragraphs: [
+        { segments: [{ kind: 'text' as const, text: 'Check eligibility.' }] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'condition' as const, refId: '', label: '' },
+          { kind: 'text' as const, text: 'If not eligible' },
+          { kind: 'chip' as const, chipKind: 'end' as const, refId: 'ineligible', label: 'ineligible', value: 'Sorry, not eligible.' },
+        ] },
+        { segments: [{ kind: 'text' as const, text: 'Refund and finish.' }] },
+      ],
+    }
+    const { text, parsed } = roundTrip(input)
+    expect(text).toContain('-> end:ineligible ("Sorry, not eligible.")')
+    const endChip = parsed.paragraphs.flatMap((paragraph) => paragraph.segments)
+      .find((segment) => segment.kind === 'chip' && segment.chipKind === 'end' && segment.refId === 'ineligible')
+    expect(endChip).toMatchObject({ refId: 'ineligible', value: 'Sorry, not eligible.' })
   })
 
   it('quotes action types that do not fit the bare token grammar', () => {

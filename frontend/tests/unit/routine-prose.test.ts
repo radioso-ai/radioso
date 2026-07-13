@@ -6,6 +6,7 @@ import {
   draftFromChipDoc,
   formatConditionLabel,
   OUTCOME_GUARD_REF,
+  SLOT_FILLED_GUARD_REF,
   readProseCompletionExport,
   readProseTerminals,
   routineToChipDoc,
@@ -768,6 +769,107 @@ describe('routineToChipDoc (inverse serializer)', () => {
     expect(routineToChipDoc(stripped)).toBeNull()
   })
 
+  it('authors a slot_filled branch from a "when provided" sentinel chip', () => {
+    const draft = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'needs verification',
+      blocks: [
+        { text: 'Ask for their {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: SLOT_FILLED_GUARD_REF, values: ['email'] },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+        { text: 'Continue.', chips: [] },
+      ],
+      variables: [{ id: 'email', name: 'email', type: 'email' }],
+    })
+    const edge = draft.transitions.find((transition) => transition.guardKind === 'slot_filled')
+    expect(edge).toMatchObject({ toRef: 'handoff', guardKind: 'slot_filled' })
+    // The referenced slots are carried as {{slot.x}} tokens so the compiler can extract them.
+    expect(edge!.guardText).toContain('{{slot.email}}')
+    // The sentinel is not itself collected as a slot.
+    expect(draft.slots.map((slot) => slot.key)).toEqual(['email'])
+  })
+
+  it('renders and round-trips a slot_filled branch to a titled jump target', () => {
+    const draft = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'needs verification',
+      blocks: [
+        { text: 'Ask for their {{slot.email}} and {{slot.order_id}}.', chips: [
+          { kind: 'variable', refId: 'email' },
+          { kind: 'variable', refId: 'order_id' },
+        ] },
+        { text: '', chips: [
+          { kind: 'condition', refId: SLOT_FILLED_GUARD_REF, values: ['email', 'order_id'] },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+        { text: 'Continue.', chips: [] },
+      ],
+      variables: [
+        { id: 'email', name: 'email', type: 'email' },
+        { id: 'order_id', name: 'order id', type: 'text' },
+      ],
+    })
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const chip = doc!.paragraphs.flatMap((paragraph) => paragraph.segments)
+      .find((segment) => segment.kind === 'chip' && segment.refId === SLOT_FILLED_GUARD_REF)
+    expect(chip).toMatchObject({ chipKind: 'condition', values: ['email', 'order_id'] })
+    const redraft = draftFromChipDoc({ name: 'Verify', trigger: 'needs verification', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    const edge = redraft.transitions.find((transition) => transition.guardKind === 'slot_filled')
+    expect(edge).toMatchObject({ guardKind: 'slot_filled' })
+    expect(edge!.guardText).toContain('{{slot.email}}')
+    expect(edge!.guardText).toContain('{{slot.order_id}}')
+  })
+
+  it('falls back to Form for a slot_filled guard that references no slots', () => {
+    const base = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'needs verification',
+      blocks: [
+        { text: 'Ask for their {{slot.email}}.', chips: [{ kind: 'variable', refId: 'email' }] },
+        { text: '', chips: [
+          { kind: 'condition', refId: SLOT_FILLED_GUARD_REF, values: ['email'] },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+        { text: 'Continue.', chips: [] },
+      ],
+      variables: [{ id: 'email', name: 'email', type: 'email' }],
+    })
+    expect(routineToChipDoc(base)).not.toBeNull()
+    // A slot_filled guard whose guardText names no slots can't render as a "when provided" chip.
+    const stripped = {
+      ...base,
+      transitions: base.transitions.map((transition) =>
+        transition.guardKind === 'slot_filled' ? { ...transition, guardText: 'when ready' } : transition),
+    }
+    expect(routineToChipDoc(stripped)).toBeNull()
+  })
+
+  it('declares a slot that is only referenced by a slot-filled guard chip', () => {
+    // The slot-filled chip is the sole Prose reference to `email` — no step text, no other
+    // condition mentions it. Its slot keys must still be collected so the guardText token
+    // ({{slot.email}}) points at a declared slot (else the backend flags referenced_undeclared_slot).
+    const draft = draftFromChipDoc({
+      name: 'Verify',
+      trigger: 'needs verification',
+      blocks: [
+        { text: 'Run the check.', chips: [] },
+        { text: '', chips: [
+          { kind: 'condition', refId: SLOT_FILLED_GUARD_REF, values: ['email'] },
+          { kind: 'handoff', refId: 'handoff' },
+        ] },
+        { text: 'Continue.', chips: [] },
+      ],
+      variables: [{ id: 'email', name: 'email', type: 'email' }],
+    })
+    expect(draft.slots.map((slot) => slot.key)).toContain('email')
+    // The sentinel is never itself treated as a slot.
+    expect(draft.slots.map((slot) => slot.key)).not.toContain(SLOT_FILLED_GUARD_REF)
+    expect(draft.transitions.find((transition) => transition.guardKind === 'slot_filled')!.guardText).toContain('{{slot.email}}')
+  })
+
   it('reads and round-trips a custom completion message and terminal id', () => {
     const draft = draftFromChipDoc({
       name: 'x',
@@ -795,6 +897,37 @@ describe('routineToChipDoc (inverse serializer)', () => {
       terminals: config,
     })
     expect(redraft.terminals).toEqual(draft.terminals)
+  })
+
+  it('round-trips a second, named completion whose message rides on the end chip', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund',
+      trigger: 'wants a refund',
+      variables: [],
+      blocks: [
+        { text: 'Check refund eligibility.', chips: [] },
+        { text: 'If the order is not eligible,', chips: [{ kind: 'end', refId: 'ineligible', value: 'Sorry, this order is not eligible.' }] },
+        { text: 'Process the refund and finish.', chips: [] },
+      ],
+    })
+    // Two complete terminals: the default fall-through (done) plus the named ending.
+    const completes = draft.terminals.filter((terminal) => terminal.kind === 'complete')
+    expect(completes.map((terminal) => terminal.stableStepId).sort()).toEqual(['done', 'ineligible'])
+    const ineligible = completes.find((terminal) => terminal.stableStepId === 'ineligible')
+    expect(ineligible?.instruction).toBe('Sorry, this order is not eligible.')
+    // The eligibility branch ends at the named terminal, not the default one.
+    expect(draft.transitions.some((transition) => transition.toRef === 'ineligible')).toBe(true)
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const endChip = doc!.paragraphs.flatMap((paragraph) => paragraph.segments)
+      .find((segment) => segment.kind === 'chip' && segment.chipKind === 'end' && segment.refId === 'ineligible')
+    expect(endChip).toMatchObject({ refId: 'ineligible', value: 'Sorry, this order is not eligible.' })
+
+    const redraft = draftFromChipDoc({ name: 'Refund', trigger: 'wants a refund', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    const redraftIneligible = redraft.terminals.find((terminal) => terminal.stableStepId === 'ineligible')
+    expect(redraftIneligible).toMatchObject({ kind: 'complete', instruction: 'Sorry, this order is not eligible.' })
+    expect(redraft.terminals.filter((terminal) => terminal.kind === 'complete')).toHaveLength(2)
   })
 
   it('reads and round-trips a custom handoff message and terminal id', () => {
@@ -955,6 +1088,78 @@ describe('routineToChipDoc (inverse serializer)', () => {
     // An approval step routes only through its options — never a default edge.
     expect(edges.some((edge) => edge.guardKind === 'default')).toBe(false)
     expect(draft.terminals.map((terminal) => terminal.kind).sort()).toEqual(['complete', 'handoff'])
+  })
+
+  it('titles an approval gate with a preceding heading and round-trips it', () => {
+    const draft = draftFromChipDoc({
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      blocks: [
+        { headingLevel: 1, text: 'Manager approval', chips: [] },
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'approval',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [
+              { id: 'approve', label: 'Approve', target: 'done' },
+              { id: 'deny', label: 'Deny', target: 'handoff' },
+            ],
+          }],
+        },
+      ],
+      variables: [],
+    })
+    // The heading names the gate itself — one approval step, not a chat step plus a gate.
+    expect(draft.steps.filter((step) => step.kind === 'chat')).toHaveLength(0)
+    const approval = draft.steps.find((step) => step.kind === 'approval')
+    expect(approval).toMatchObject({ stableStepId: 'manager_approval', kind: 'approval', captureKey: 'refund_decision', instruction: 'Get a manager decision.' })
+    expect((approval!.metadata as Record<string, unknown>).outlineLabel).toBe('Manager approval')
+
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    // The gate renders under its h1 heading.
+    expect(doc!.paragraphs.some((paragraph) => paragraph.headingLevel === 1
+      && paragraph.segments.some((segment) => segment.kind === 'text' && segment.text === 'Manager approval'))).toBe(true)
+    const redraft = draftFromChipDoc({ name: 'Refund approval', trigger: 'wants a large refund', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    const redraftApproval = redraft.steps.find((step) => step.kind === 'approval')
+    expect(redraftApproval).toMatchObject({ stableStepId: 'manager_approval', captureKey: 'refund_decision' })
+    expect((redraftApproval!.metadata as Record<string, unknown>).outlineLabel).toBe('Manager approval')
+    expect(redraft.steps.filter((step) => step.kind === 'approval')).toHaveLength(1)
+  })
+
+  it('lets a branch jump to a titled approval gate by name', () => {
+    const draft = draftFromChipDoc({
+      name: 'Support',
+      trigger: 'needs help',
+      blocks: [
+        { text: 'Greet the customer.', chips: [] },
+        { text: 'If they want a refund,', chips: [{ kind: 'step', refId: 'manager_approval' }] },
+        { headingLevel: 1, text: 'Manager approval', chips: [] },
+        {
+          text: 'Get a manager decision.',
+          chips: [{
+            kind: 'approval',
+            refId: 'refund_decision',
+            captureKey: 'refund_decision',
+            options: [
+              { id: 'approve', label: 'Approve', target: 'done' },
+              { id: 'deny', label: 'Deny', target: 'handoff' },
+            ],
+          }],
+        },
+      ],
+      variables: [],
+    })
+    const jump = draft.transitions.find((transition) => transition.toRef === 'manager_approval' && transition.guardKind === 'llm')
+    expect(jump).toBeDefined()
+    // routineToChipDoc must render (not bail) and keep the jump targeting the titled gate.
+    const doc = routineToChipDoc(draft)
+    expect(doc).not.toBeNull()
+    const redraft = draftFromChipDoc({ name: 'Support', trigger: 'needs help', blocks: paragraphsToBlocks(doc!.paragraphs), variables: doc!.variables })
+    expect(redraft.transitions.some((transition) => transition.toRef === 'manager_approval' && transition.guardKind === 'llm')).toBe(true)
+    expect(redraft.steps.find((step) => step.stableStepId === 'manager_approval')?.kind).toBe('approval')
   })
 
   // RFC: author an approval as a `@decision` declaration (choices + labels) plus ordinary

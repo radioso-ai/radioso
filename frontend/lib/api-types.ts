@@ -105,6 +105,7 @@ export type RoutineValidationCode =
   | 'unknown_input_binding'
   | 'unknown_variable_ref'
   | 'variable_name_collision'
+  | 'node_id_collision'
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode

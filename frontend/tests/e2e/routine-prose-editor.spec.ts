@@ -44,7 +44,7 @@ test("author a routine with variable and skill chips, set a type, and save", asy
   await expect(editor).not.toContainText("{{");
 
   // The same @ menu is kind-aware: pick a skill instead of a variable.
-  await editor.pressSequentially("then @refund");
+  await editor.pressSequentially("then #refund");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
@@ -175,9 +175,9 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
   await editor.pressSequentially("Check whether ");
-  await editor.pressSequentially("@refu");
-  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+  await editor.pressSequentially("#refu");
+  await expect(page.getByRole("option", { name: "Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Issue refund" }).click();
   const refundChip = page.locator('[data-routine-chip="skill"]').first();
   await expect(refundChip).toContainText("Issue refund");
   await expect(refundChip).not.toContainText("unknown skill");
@@ -209,7 +209,7 @@ test("a skill chip opens an authoring catalog popover with typed ports and outco
   await expect(catalog).toBeHidden();
 
   await editor.click();
-  await editor.pressSequentially(" then @made_up_skill");
+  await editor.pressSequentially(" then #made_up_skill");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): made_up_skill" }).click();
   const unknownChip = page.locator('[data-routine-chip="skill"]').filter({ hasText: "made_up_skill" });
@@ -252,9 +252,9 @@ test("a skill chip binding editor persists typed input bindings", async ({ page 
   await expect(page.getByRole("option", { name: /Create variable/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await editor.pressSequentially(" to run ");
-  await editor.pressSequentially("@refund");
-  await expect(page.getByRole("option", { name: "Skill: Issue refund" })).toBeVisible();
-  await page.getByRole("option", { name: "Skill: Issue refund" }).click();
+  await editor.pressSequentially("#refund");
+  await expect(page.getByRole("option", { name: "Issue refund" })).toBeVisible();
+  await page.getByRole("option", { name: "Issue refund" }).click();
 
   await page.locator('[data-routine-chip="skill"]').click();
   const catalog = page.getByRole("dialog", { name: "Skill catalog for Issue refund" });
@@ -397,7 +397,7 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   await editor.click();
   // A skill step: its result is what the outcome branch keys on.
   await editor.pressSequentially("Issue the ");
-  await editor.pressSequentially("@refund");
+  await editor.pressSequentially("#refund");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): refund" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): refund" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();
@@ -723,7 +723,7 @@ test("a skill chip compiles to a tool step naming the skill", async ({ page }) =
   await editor.click();
   await editor.pressSequentially("Check availability ");
   // The skill is defined elsewhere; the routine references it by name with a skill chip.
-  await editor.pressSequentially("@book_meeting");
+  await editor.pressSequentially("#book_meeting");
   await expect(page.getByRole("option", { name: "Skill (not in catalog): book_meeting" })).toBeVisible();
   await page.getByRole("option", { name: "Skill (not in catalog): book_meeting" }).click();
   await expect(page.locator('[data-routine-chip="skill"]')).toBeVisible();

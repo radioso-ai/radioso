@@ -103,7 +103,7 @@ const formatBinding = (binding: RoutineInputBinding): string =>
 
 // A skill chip carries optional typed bindings (spec 090). They have no inline form in
 // prose, so they ride in a bracket suffix that only appears when non-default — an unbound
-// skill stays a clean `@skill_name`.
+// skill stays a clean `#skill_name`.
 const formatSkillSuffix = (chip: ChipTokenInput): string => {
   const sections: string[] = []
   const inputs = Object.entries(chip.inputBindings ?? {})
@@ -167,7 +167,8 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
     case 'variable':
       return `@${chip.refId}`
     case 'skill':
-      return `@${chip.refId}${formatSkillSuffix(chip)}`
+      // Skills use `#` (a capability) to stay distinct from `@` variables (a value).
+      return `#${chip.refId}${formatSkillSuffix(chip)}`
     case 'end':
       // The default ending is `-> end`; a named ending carries its id and (optional) message.
       return chip.refId && chip.refId !== 'done'
@@ -484,6 +485,30 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
       }
     }
 
+    if (rest.startsWith('#')) {
+      // A skill: `#skill_name` with an optional `[bindings]` suffix. The `#` prefix marks a
+      // capability unambiguously (a heading is `# ` with a space, handled a level up).
+      const idMatch = IDENTIFIER.exec(rest.slice(1))
+      if (idMatch) {
+        const refId = idMatch[0]
+        const consumed = 1 + refId.length
+        if (rest[consumed] === '[') {
+          const close = rest.indexOf(']', consumed)
+          if (close !== -1) {
+            const bindings = parseSkillSuffix(rest.slice(consumed + 1, close))
+            flush()
+            segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings })
+            index += close + 1
+            continue
+          }
+        }
+        flush()
+        segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId })
+        index += consumed
+        continue
+      }
+    }
+
     if (rest.startsWith('@')) {
       const idMatch = IDENTIFIER.exec(rest.slice(1))
       if (idMatch) {
@@ -524,7 +549,10 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
 export const looksLikeRoutineProse = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.startsWith(`${FENCE}\nname:`) || trimmed.startsWith(`${FENCE}\r\nname:`)) return true
-  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|filled|action|decision|approval) )/.test(text) || /(^|\s)@[A-Za-z_]/.test(text)
+  return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|filled|action|decision|approval) )/.test(text)
+    || /(^|\s)@[A-Za-z_]/.test(text)
+    // A skill mention `#name` (but not a `# ` heading, which has a space after the hash).
+    || /(^|\s)#[A-Za-z_]/.test(text)
 }
 
 export const parseProseDoc = (

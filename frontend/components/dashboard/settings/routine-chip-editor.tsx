@@ -697,17 +697,21 @@ function ChipTypeaheadPlugin({
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [query, setQuery] = useState<string | null>(null)
-  // Custom trigger so variable names with underscores keep the menu open (the default
-  // matcher treats "_" as a word boundary and cancels the popover).
+  // Which prefix opened the menu: `@` inserts a variable or a flow target, `#` inserts a skill.
+  const [trigger, setTrigger] = useState<'@' | '#'>('@')
+  // Custom trigger so names with underscores keep the menu open (the default matcher treats "_"
+  // as a word boundary and cancels the popover), and so both `@` and `#` open it.
   const triggerFn = useCallback((text: string) => {
-    const match = /(^|\s|\()@([A-Za-z0-9_-]*)$/.exec(text)
+    const match = /(^|\s|\()([@#])([A-Za-z0-9_-]*)$/.exec(text)
     if (match === null) return null
     const leading = match[1] ?? ''
-    const matchingString = match[2] ?? ''
+    const prefix = (match[2] ?? '@') as '@' | '#'
+    const matchingString = match[3] ?? ''
+    setTrigger((current) => (current === prefix ? current : prefix))
     return {
       leadOffset: match.index + leading.length,
       matchingString,
-      replaceableString: `@${matchingString}`,
+      replaceableString: `${prefix}${matchingString}`,
     }
   }, [])
 
@@ -719,6 +723,33 @@ function ChipTypeaheadPlugin({
       const reservedKind = reservedKindForRef(refId)
       return !reservedKind || reservedKind === kind
     }
+    // `#` opens a skills-only menu (a capability); `@` opens variables + flow targets (a value
+    // or a branch). Splitting them keeps skills from crowding the variable menu.
+    if (trigger === '#') {
+      const skills = skillCatalog.skills
+        .filter((skill) => {
+          const catalogName = normalizeSkillName(skill.skillName)
+          const displayName = normalizeSkillName(skill.displayName)
+          return (!lowered || catalogName.includes(lowered) || displayName.includes(lowered)) && canCreateRef('skill', skill.skillName)
+        })
+        .map((skill) => new ChipMenuOption(`skill-${skill.skillName}`, {
+          display: skill.displayName,
+          kind: 'skill',
+          isNew: false,
+          refId: skill.skillName,
+          name: skill.displayName,
+        }))
+      if (raw && !findRoutineSkillDescriptor(skillCatalog.skills, raw, raw) && (!reservedRefKinds[slugifyVariableKey(raw)] || reservedRefKinds[slugifyVariableKey(raw)] === 'skill')) {
+        skills.push(new ChipMenuOption(`new-skill-${lowered}`, {
+          display: `Skill (not in catalog): ${raw}`,
+          kind: 'skill',
+          isNew: true,
+          refId: slugifyVariableKey(raw),
+          name: raw,
+        }))
+      }
+      return skills.slice(0, 8)
+    }
     const result: ChipMenuOption[] = variables
       .filter((variable) => !lowered || variable.name.toLowerCase().includes(lowered))
       .map((variable) => new ChipMenuOption(`var-${variable.id}`, {
@@ -728,20 +759,6 @@ function ChipTypeaheadPlugin({
         refId: variable.id,
         name: variable.name,
       }))
-    const catalogMatches = skillCatalog.skills
-      .filter((skill) => {
-        const catalogName = normalizeSkillName(skill.skillName)
-        const displayName = normalizeSkillName(skill.displayName)
-        return (!lowered || catalogName.includes(lowered) || displayName.includes(lowered)) && canCreateRef('skill', skill.skillName)
-      })
-      .map((skill) => new ChipMenuOption(`skill-${skill.skillName}`, {
-        display: `Skill: ${skill.displayName}`,
-        kind: 'skill',
-        isNew: false,
-        refId: skill.skillName,
-        name: skill.displayName,
-      }))
-    result.push(...catalogMatches)
     if (raw) {
       // A name identifies one thing: once it's used by a chip, don't offer to
       // create a different kind with the same name (so a variable and an action
@@ -753,15 +770,6 @@ function ChipTypeaheadPlugin({
         result.push(new ChipMenuOption(`new-variable-${lowered}`, {
           display: `Create variable “${raw}”`,
           kind: 'variable',
-          isNew: true,
-          refId,
-          name: raw,
-        }))
-      }
-      if (!findRoutineSkillDescriptor(skillCatalog.skills, raw, raw) && canCreate('skill')) {
-        result.push(new ChipMenuOption(`new-skill-${lowered}`, {
-          display: `Skill (not in catalog): ${raw}`,
-          kind: 'skill',
           isNew: true,
           refId,
           name: raw,
@@ -831,7 +839,7 @@ function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {

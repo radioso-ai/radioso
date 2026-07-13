@@ -72,17 +72,19 @@ In the **Prose** view, write the routine the way you would explain it to a
 teammate. Each line is one step. The default flow runs the steps in order and
 finishes at the end.
 
-To add structure, type `@` or use the toolbar to insert a chip. A chip is an
-inline reference, not raw syntax. Each kind has its own colour:
+To add structure, type `@` (a variable) or `#` (a skill), or use the toolbar to
+insert a chip. A chip is an inline reference, not raw syntax. Each kind has its
+own colour:
 
 - **Variable** (`@name`) - a value the routine collects, such as `@email` or
-  `@order_id`. It compiles to a typed slot. The variable name is the slot key,
-  so `@email` in a step is stored as a structured reference, not literal text.
-  When a step asks for a variable, the routine waits on that step until the user
-  provides it, then stores the answer under that name before moving on. You do
-  not need a branch to make a collection step wait.
-- **Skill** - a skill the routine calls. Type `@` and the menu lists the skills
-  the agent actually has, so you pick one instead of guessing its name. The skill
+  `@order_id`. Type `@` to insert one. It compiles to a typed slot. The variable
+  name is the slot key, so `@email` in a step is stored as a structured
+  reference, not literal text. When a step asks for a variable, the routine waits
+  on that step until the user provides it, then stores the answer under that name
+  before moving on. You do not need a branch to make a collection step wait.
+- **Skill** (`#name`) - a skill the routine calls. Type `#` and the menu lists the
+  skills the agent actually has, so you pick one instead of guessing its name.
+  (`@` is for values, `#` is for capabilities.) The skill
   is still defined for the agent elsewhere; here you choose it and decide how its
   inputs are filled. A skill chip whose name the agent does not have is shown as
   **unknown skill**, so a typo or a forward reference is easy to spot. A step that
@@ -92,17 +94,17 @@ inline reference, not raw syntax. Each kind has its own colour:
 - **Handoff** - a branch target that ends the routine by escalating to a person.
 - **End** - a branch target that completes the routine.
 - **Approval** - a gate that pauses for a human to choose one of several options,
-  then continues down the matching branch. Insert it from the **Approval** toolbar
-  button (see [Approval gates](#approval-gates)).
+  then continues down the matching branch. Insert it from **More → Approval** in
+  the toolbar (see [Approval gates](#approval-gates)).
 - **Condition** - a decided-in-code comparison on a variable. Build it from the
   **Condition** toolbar button (see below).
 - **Outcome** - a branch on the result of the skill step before it. Insert it from
-  the **Outcome** toolbar button on a branch line after a skill step, and give the
+  **More → Outcome** in the toolbar on a branch line after a skill step, and give the
   result status (for example `succeeded` or `failed`); the branch fires when the
   skill returns that status (see [Branch on a skill outcome](#branch-on-a-skill-outcome)).
 - **Action** - turns the line into an action step that emits an outbox action (an
   email to a teammate, a webhook, a Slack post) when the routine reaches it, then
-  continues. Insert it from the **Action** toolbar button and name the action type
+  continues. Insert it from **More → Action** in the toolbar and name the action type
   (for example `contact.send`). The line's prose is the step instruction.
 - **Step title** - names a step so a jump can target it. Use the **Step** toolbar
   button to turn the current line into a titled step; its title becomes a stable
@@ -252,8 +254,7 @@ A **slot-filled** branch fires once the slots it names are present. It is a
 rule - decided in code, before the model is consulted - that gates the routine on
 having collected the values it needs.
 
-In **Prose**, put the branch on its own line, click the **When filled** toolbar
-button, pick the slots that must be present, and add a target on the same line
+In **Prose**, put the branch on its own line, click **More → When filled** in the toolbar, pick the slots that must be present, and add a target on the same line
 (End, Handoff, or a step) the way you would for any branch. It shows as a
 **when … provided** chip. Routines that use one edit in **Prose** as well as in
 the **Form** view, so you no longer have to leave Prose to work on the rest of the
@@ -310,7 +311,7 @@ receipt") that routes to a step which requests it and loops back to the gate.
 
 Author an approval gate in either editor:
 
-- **Prose** - click the **Approval** toolbar button. In the dialog, set each
+- **Prose** - click **More → Approval** in the toolbar. In the dialog, set each
   choice's label and where it continues (a titled step, **End**, or **Handoff**).
   The chip carries the whole gate, so the routing lives on the chip rather than
   on separate branch lines.

@@ -201,7 +201,8 @@ describe('routine prose token grammar', () => {
       ],
     }
     const { text, parsed } = roundTrip(input, ['order_lookup'])
-    expect(text).toContain('@order_lookup[in email=@email, includeHistory=true; out status=@order_status]')
+    // A skill mention uses `#`; the bindings still reference `@` variables.
+    expect(text).toContain('#order_lookup[in email=@email, includeHistory=true; out status=@order_status]')
     expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
   })
 
@@ -216,9 +217,23 @@ describe('routine prose token grammar', () => {
       ],
     }
     const { text, parsed } = roundTrip(input, ['retrieval_context'])
-    expect(text).toContain('@retrieval_context')
+    expect(text).toContain('#retrieval_context')
     expect(text).not.toContain('[')
     expect(parsed.paragraphs[1]!.segments[0]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })
+  })
+
+  it('parses a #mention as a skill without needing the catalog', () => {
+    const parsed = parseProseDoc('Run #retrieval_context now.', () => false)
+    expect(parsed.paragraphs[0]!.segments).toEqual([
+      { kind: 'text', text: 'Run ' },
+      { kind: 'chip', chipKind: 'skill', refId: 'retrieval_context', label: 'retrieval_context' },
+      { kind: 'text', text: ' now.' },
+    ])
+  })
+
+  it('still parses a legacy @mention skill via the catalog (back-compat)', () => {
+    const parsed = parseProseDoc('Run @retrieval_context now.', (name) => name === 'retrieval_context')
+    expect(parsed.paragraphs[0]!.segments[1]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })
   })
 
   it('treats an unknown @mention as a variable when it is not a known skill', () => {

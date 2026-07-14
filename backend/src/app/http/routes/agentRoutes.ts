@@ -10,7 +10,7 @@ import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import {
   parsePortableRoutineDocument,
-  routineToPortableDocument,
+  projectRoutineToPortableDocument,
   type PortableRoutineDocumentEnvelope,
 } from "../../../modules/routines/portableDocument.js";
 import {
@@ -458,7 +458,13 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentRoutineParamsSchema.parse(req.params);
       const routine = await dependencies.routineDefinitionService.get(workspaceId, parsed.agentId, parsed.routineId);
-      res.status(200).json(routineToPortableDocument(routine));
+      const portable = projectRoutineToPortableDocument(routine);
+      if (!portable.ok) {
+        recordPortableRoutineFailure(dependencies, "read", portable.diagnostics);
+        sendPortableDiagnostics(res, portable.diagnostics, 422);
+        return;
+      }
+      res.status(200).json(portable.envelope);
     } catch (error) {
       next(error);
     }
@@ -490,9 +496,15 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           return;
         }
         const result = await dependencies.routineDefinitionService.createDraft(workspaceId, parsed.agentId, portable.draft);
+        const projected = projectRoutineToPortableDocument(result.routine);
+        if (!projected.ok) {
+          recordPortableRoutineFailure(dependencies, "create", projected.diagnostics);
+          sendPortableDiagnostics(res, projected.diagnostics, 422);
+          return;
+        }
         res.status(201).json({
           routineId: result.routine.id,
-          ...routineToPortableDocument(result.routine),
+          ...projected.envelope,
         });
       } catch (error) {
         next(error);
@@ -535,7 +547,13 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           parsed.routineId,
           portable.draft,
         );
-        res.status(200).json(routineToPortableDocument(result.routine));
+        const projected = projectRoutineToPortableDocument(result.routine);
+        if (!projected.ok) {
+          recordPortableRoutineFailure(dependencies, "update", projected.diagnostics);
+          sendPortableDiagnostics(res, projected.diagnostics, 422);
+          return;
+        }
+        res.status(200).json(projected.envelope);
       } catch (error) {
         next(error);
       }

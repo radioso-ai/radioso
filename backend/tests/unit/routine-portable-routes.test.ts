@@ -235,6 +235,36 @@ describe("portable routine routes", () => {
     });
   });
 
+  it("returns 422 diagnostics when an existing routine cannot be represented as portable markdown", async () => {
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        get: vi.fn().mockResolvedValue(routine({
+          terminals: [
+            { stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 },
+            { stableStepId: "handoff_sales", kind: "handoff", instruction: null, ordinal: 1 },
+            { stableStepId: "handoff_support", kind: "handoff", instruction: null, ordinal: 2 },
+          ],
+        })),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "GET",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+    });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 can represent at most one handoff terminal.",
+      }],
+    });
+  });
+
   it("creates a routine from portable markdown and returns canonical content", async () => {
     const dependencies = createDependencies();
 
@@ -313,6 +343,40 @@ describe("portable routine routes", () => {
     );
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ grammarVersion: GRAMMAR_VERSION, content: markdown });
+  });
+
+  it("returns 422 diagnostics when a portable update result cannot be projected back to markdown", async () => {
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        updateDraft: vi.fn().mockResolvedValue({
+          routine: routine({
+            terminals: [
+              { stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 },
+              { stableStepId: "handoff_sales", kind: "handoff", instruction: null, ordinal: 1 },
+              { stableStepId: "handoff_support", kind: "handoff", instruction: null, ordinal: 2 },
+            ],
+          }),
+          validation: { ok: true, diagnostics: [] },
+        }),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "PUT",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+      body: { grammarVersion: GRAMMAR_VERSION, content: markdown },
+    });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 can represent at most one handoff terminal.",
+      }],
+    });
   });
 
   it("preserves existing completionExport on portable update when export frontmatter is omitted", async () => {

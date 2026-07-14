@@ -25,11 +25,32 @@ export type PortableRoutineDocumentCanonicalizeResult =
   | { ok: true; envelope: PortableRoutineDocumentEnvelope }
   | { ok: false; diagnostics: ParseDiagnostic[] };
 
+export type PortableRoutineDocumentProjectionResult =
+  | { ok: true; envelope: PortableRoutineDocumentEnvelope }
+  | { ok: false; diagnostics: ParseDiagnostic[] };
+
 const unsupportedEnvelopeVersion = (version: number): ParseDiagnostic => ({
   line: 1,
   code: "unsupported_grammar_version",
   message: `Unsupported routine grammar version: ${version}`,
 });
+
+const routineNotPortable = (message: string): ParseDiagnostic => ({
+  line: 1,
+  code: "routine_not_portable",
+  message,
+});
+
+const routineNotPortableDiagnostic = (routine: RoutineDefinition): ParseDiagnostic => {
+  const handoffTerminals = (routine.terminals ?? []).filter((terminal) => terminal.kind === "handoff");
+  if (handoffTerminals.length > 1) {
+    return routineNotPortable("Routine portable markdown v1 can represent at most one handoff terminal.");
+  }
+
+  return routineNotPortable(
+    "Routine portable markdown v1 cannot represent this routine shape. Use the structured routine API or form editor.",
+  );
+};
 
 const paragraphText = (paragraph: ProseParagraph): string =>
   paragraph.segments.map((segment) => {
@@ -67,7 +88,7 @@ const bodyBlocksFromParagraphs = (paragraphs: ProseParagraph[]) =>
     ...(paragraph.headingLevel ? { headingLevel: paragraph.headingLevel } : {}),
   }));
 
-export const routineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentEnvelope => {
+export const projectRoutineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentProjectionResult => {
   const doc = routineToChipDoc({
     ...routine,
     activation: {
@@ -78,21 +99,32 @@ export const routineToPortableDocument = (routine: RoutineDefinition): PortableR
     },
   });
   if (!doc) {
-    throw new Error("Routine definition cannot be represented as portable markdown");
+    return { ok: false, diagnostics: [routineNotPortableDiagnostic(routine)] };
   }
 
   return {
-    grammarVersion: GRAMMAR_VERSION,
-    content: serializeProseDoc({
-      name: routine.name,
-      trigger: routine.activation.triggerDescription,
-      reentryMode: routine.activation.reentryMode,
-      priority: routine.activation.priority,
-      completionExport: routine.completionExport,
-      variables: doc.variables,
-      paragraphs: doc.paragraphs,
-    }),
+    ok: true,
+    envelope: {
+      grammarVersion: GRAMMAR_VERSION,
+      content: serializeProseDoc({
+        name: routine.name,
+        trigger: routine.activation.triggerDescription,
+        reentryMode: routine.activation.reentryMode,
+        priority: routine.activation.priority,
+        completionExport: routine.completionExport,
+        variables: doc.variables,
+        paragraphs: doc.paragraphs,
+      }),
+    },
   };
+};
+
+export const routineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentEnvelope => {
+  const result = projectRoutineToPortableDocument(routine);
+  if (!result.ok) {
+    throw new Error(result.diagnostics[0]?.message ?? "Routine definition cannot be represented as portable markdown");
+  }
+  return result.envelope;
 };
 
 export const parsePortableRoutineDocument = (

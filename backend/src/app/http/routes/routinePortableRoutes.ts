@@ -16,7 +16,7 @@ export const portableRoutineDocumentEnvelopeSchema = z.object({
   content: z.string(),
 }).strict();
 
-export type PortableRoutineOperation = "create" | "update" | "canonicalize";
+export type PortableRoutineOperation = "read" | "create" | "update" | "canonicalize";
 
 type PortableRoutineRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
@@ -41,8 +41,9 @@ export const recordPortableRoutineFailure = (
 export const sendPortableDiagnostics = (
   res: Response,
   diagnostics: ParseDiagnostic[],
+  status = 400,
 ): void => {
-  res.status(400).json({ diagnostics });
+  res.status(status).json({ diagnostics });
 };
 
 export const portableValidationRejectedResponse = (validation: unknown) => ({

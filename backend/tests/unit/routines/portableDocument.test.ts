@@ -8,6 +8,7 @@ import { GRAMMAR_VERSION } from "@radioso/routine-markdown";
 import {
   canonicalizePortableRoutineDocument,
   parsePortableRoutineDocument,
+  projectRoutineToPortableDocument,
   routineToPortableDocument,
 } from "../../../src/modules/routines/portableDocument.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
@@ -79,6 +80,51 @@ describe("portable routine document mapper", () => {
         "# collect_topic",
         "Ask for @topic.",
       ].join("\n") + "\n",
+    });
+  });
+
+  it("returns a typed diagnostic when a valid routine is not portable markdown representable", () => {
+    const projected = projectRoutineToPortableDocument(routine({
+      transitions: [
+        {
+          fromStep: "collect_topic",
+          toRef: "handoff_sales",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 0,
+        },
+      ],
+      terminals: [
+        {
+          stableStepId: "done",
+          kind: "complete",
+          instruction: null,
+          ordinal: 0,
+        },
+        {
+          stableStepId: "handoff_sales",
+          kind: "handoff",
+          instruction: null,
+          ordinal: 1,
+        },
+        {
+          stableStepId: "handoff_support",
+          kind: "handoff",
+          instruction: null,
+          ordinal: 2,
+        },
+      ],
+    }));
+
+    expect(projected).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 can represent at most one handoff terminal.",
+      }],
     });
   });
 

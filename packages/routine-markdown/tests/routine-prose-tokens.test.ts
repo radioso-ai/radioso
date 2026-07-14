@@ -249,6 +249,141 @@ describe('routine prose token grammar', () => {
     })
   })
 
+  it('rejects malformed vars declarations with typed diagnostics on the vars line', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Intake',
+      'trigger: hi',
+      'vars: tracking-id:text, status:text:sticky',
+      '---',
+      'Ask for it.',
+    ].join('\n'), { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [
+        {
+          line: 5,
+          code: 'invalid_var_declaration',
+          message: 'Invalid vars declaration "tracking-id:text": invalid slot key "tracking-id"',
+        },
+        {
+          line: 5,
+          code: 'invalid_var_declaration',
+          message: 'Invalid vars declaration "status:text:sticky": invalid flag "sticky"',
+        },
+      ],
+    })
+  })
+
+  it('rejects duplicate vars declarations with typed diagnostics on the vars line', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Intake',
+      'trigger: hi',
+      'vars: tracking_id:text, tracking_id:number',
+      '---',
+      'Ask for it.',
+    ].join('\n'), { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 5,
+        code: 'duplicate_var_declaration',
+        message: 'Duplicate vars declaration for "tracking_id"',
+      }],
+    })
+  })
+
+  it('rejects recognized bracket tokens whose bodies fail their grammar', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Branch',
+      'trigger: hi',
+      '---',
+      '[if status ~~ paid] -> end',
+      '[filled ] -> end',
+      '[action ]',
+      '[decision route: yes]',
+      '[approval route: yes="Yes"]',
+    ].join('\n'), { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [
+        {
+          line: 6,
+          code: 'invalid_guard_token',
+          message: 'Invalid guard token: [if status ~~ paid]',
+        },
+        {
+          line: 7,
+          code: 'invalid_guard_token',
+          message: 'Invalid guard token: [filled ]',
+        },
+        {
+          line: 8,
+          code: 'invalid_action_token',
+          message: 'Invalid action token: [action ]',
+        },
+        {
+          line: 9,
+          code: 'invalid_gate_token',
+          message: 'Invalid gate token: [decision route: yes]',
+        },
+        {
+          line: 10,
+          code: 'invalid_gate_token',
+          message: 'Invalid gate token: [approval route: yes="Yes"]',
+        },
+      ],
+    })
+  })
+
+  it('rejects invalid skill binding suffixes instead of parsing them as prose', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Skill',
+      'trigger: hi',
+      '---',
+      '#lookup[in email]',
+    ].join('\n'), { resolveSkill: () => true })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 6,
+        code: 'invalid_skill_binding_suffix',
+        message: 'Invalid skill binding suffix for "#lookup": [in email]',
+      }],
+    })
+  })
+
+  it('rejects branch lines that combine a guard token with a counter suffix', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Loop',
+      'trigger: hi',
+      '---',
+      '[if amount >= 100] -> step:earlier_step (max 2)',
+    ].join('\n'), { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 6,
+        code: 'conflicting_guard_and_counter',
+        message: 'Branch line combines a guard token with a counter limit; use "-> step:earlier_step (max 2)" without another guard for a bounded loop',
+      }],
+    })
+  })
+
   it('parses missing grammar version as v1', () => {
     const parsed = parse('---\nname: Greeter\ntrigger: hi\n---\nAsk @email.', { resolveSkill: () => false })
 

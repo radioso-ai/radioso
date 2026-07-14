@@ -42,6 +42,48 @@ const diagnosticCases = [
     line: 5,
     message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
   },
+  {
+    code: 'invalid_var_declaration',
+    content: '---\ngrammar: 1\nname: Intake\ntrigger: hi\nvars: tracking_id:numbre:optional\n---\nAsk for it.',
+    line: 5,
+    message: 'Invalid vars declaration "tracking_id:numbre:optional": unknown slot type "numbre"',
+  },
+  {
+    code: 'duplicate_var_declaration',
+    content: '---\ngrammar: 1\nname: Intake\ntrigger: hi\nvars: tracking_id:text, tracking_id:number\n---\nAsk for it.',
+    line: 5,
+    message: 'Duplicate vars declaration for "tracking_id"',
+  },
+  {
+    code: 'invalid_guard_token',
+    content: '---\ngrammar: 1\nname: Branch\ntrigger: hi\n---\n[if status ~~ paid] -> end',
+    line: 6,
+    message: 'Invalid guard token: [if status ~~ paid]',
+  },
+  {
+    code: 'invalid_action_token',
+    content: '---\ngrammar: 1\nname: Action\ntrigger: hi\n---\n[action ]',
+    line: 6,
+    message: 'Invalid action token: [action ]',
+  },
+  {
+    code: 'invalid_gate_token',
+    content: '---\ngrammar: 1\nname: Gate\ntrigger: hi\n---\n[decision route: yes]',
+    line: 6,
+    message: 'Invalid gate token: [decision route: yes]',
+  },
+  {
+    code: 'invalid_skill_binding_suffix',
+    content: '---\ngrammar: 1\nname: Skill\ntrigger: hi\n---\n#lookup[in email]',
+    line: 6,
+    message: 'Invalid skill binding suffix for "#lookup": [in email]',
+  },
+  {
+    code: 'conflicting_guard_and_counter',
+    content: '---\ngrammar: 1\nname: Loop\ntrigger: hi\n---\n[if amount >= 100] -> step:earlier_step (max 2)',
+    line: 6,
+    message: 'Branch line combines a guard token with a counter limit; use "-> step:earlier_step (max 2)" without another guard for a bounded loop',
+  },
 ] as const
 
 describe('parse diagnostic catalog', () => {

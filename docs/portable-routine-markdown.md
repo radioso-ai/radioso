@@ -58,6 +58,9 @@ The frontmatter keys are:
   `handoff`, or both separated by commas.
 
 Valid variable types are `text`, `number`, `boolean`, `email`, and `date`.
+Variable keys use the same slot-key grammar as structured routines:
+`[A-Za-z_][A-Za-z0-9_]*`. A declaration may use only the `optional` and
+`mutable` flags, and each key may be declared once.
 Unknown frontmatter keys are rejected. This reserves key names for future
 grammar versions and prevents forward-compatibility drift.
 
@@ -83,6 +86,10 @@ Input bindings are:
 - `input=value` - literal string, number, or boolean
 - `input=@slot_name` - a routine variable reference
 - `input=ctx.context_name` - a context variable reference
+
+Each `in` and `out` entry must be a `name=value` pair. Output assignments must
+target a slot with `@slot_name`. The optional `mode` section accepts only
+`typed` or `untyped`.
 
 The `ctx.<name>` binding is preserved by the parser, serializer, and dashboard
 chip editor. The editor may render it as read-only; saving must not rewrite it as
@@ -144,6 +151,9 @@ Targets are written after `->`.
 - `-> step:step_id` jumps to a titled step.
 - `-> step:step_id (max 3)` is a bounded loop.
 
+A bounded loop is its own guard kind. Do not combine `(max N)` with `[if ...]`,
+`[outcome ...]`, or `[filled ...]` on the same branch line.
+
 The serializer writes terminal ids and named completion messages that are present
 in the chip document. Completion and handoff settings outside the body, such as
 the default completion message and handoff message fields in the dashboard, are
@@ -164,7 +174,7 @@ Approval gates use the same option syntax and include route targets:
 ```
 
 Labels and descriptions are quoted. Quotes and backslashes inside them are
-escaped.
+escaped. Decision options do not need route targets. Approval options do.
 
 ## Completion Export
 
@@ -258,6 +268,33 @@ All parse diagnostics include `line`, `code`, and `message`.
     `<triggerKinds> -> <destinationRef>`, uses a trigger kind other than
     `complete` or `handoff`, or omits the destination.
   - Message: `Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff`
+- `invalid_var_declaration`
+  - Trigger: a `vars` declaration has an invalid slot key, unknown slot type, or
+    flag other than `optional` or `mutable`.
+  - Message: `Invalid vars declaration "<declaration>": <reason>`
+- `duplicate_var_declaration`
+  - Trigger: a `vars` line declares the same slot key more than once.
+  - Message: `Duplicate vars declaration for "<key>"`
+- `invalid_guard_token`
+  - Trigger: a recognized guard token (`[if ...]`, `[outcome ...]`, or
+    `[filled ...]`) is present but its body does not match the grammar.
+  - Message: `Invalid guard token: <token>`
+- `invalid_action_token`
+  - Trigger: `[action ...]` is present but the body is empty or is not a valid
+    bare or quoted action id.
+  - Message: `Invalid action token: <token>`
+- `invalid_gate_token`
+  - Trigger: `[decision ...]` or `[approval ...]` is present but the body does
+    not match the gate grammar, has no options, or an approval option omits its
+    route target.
+  - Message: `Invalid gate token: <token>`
+- `invalid_skill_binding_suffix`
+  - Trigger: a skill binding suffix is present but a section is unknown,
+    malformed, or has an invalid `mode`, input binding, or output assignment.
+  - Message: `Invalid skill binding suffix for "#<skill>": [<suffix>]`
+- `conflicting_guard_and_counter`
+  - Trigger: a branch line combines a guard token with `-> step:<id> (max N)`.
+  - Message: `Branch line combines a guard token with a counter limit; use "-> step:<id> (max N)" without another guard for a bounded loop`
 
 ## Versioning
 

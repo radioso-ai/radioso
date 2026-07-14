@@ -202,6 +202,16 @@ test tasks precede implementation tasks and must fail first.
       and routine-markdown package tsc clean; focused portable mapper/routes
       and OpenAPI contract tests pass. Full backend routines+contract Vitest is
       blocked in this sandbox by Supertest `listen EPERM` on `0.0.0.0`.
+      Review-pass-2 parser hardening addressed 2026-07-14: recognized bracket
+      tokens with malformed bodies now emit typed diagnostics instead of
+      degrading to prose; invalid/duplicate `vars` declarations fail on the
+      frontmatter line; guard+counter branch composites fail at parse time; and
+      invalid skill binding suffixes fail before chip/prose degradation.
+      Red evidence: focused package Vitest first failed 13 assertions across the
+      new diagnostic tests. Green verification: `packages/routine-markdown`
+      Vitest 70/70, `pnpm exec tsc -p tsconfig.json` clean, backend
+      `pnpm exec tsc --noEmit` clean, backend requested routine Vitest 50/50,
+      frontend routine-prose Vitest 63/63.
 - [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
       DB; grep the real exit code); push; PR with validation evidence and
       artifact links.

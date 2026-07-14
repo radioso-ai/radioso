@@ -24,6 +24,7 @@ import type {
 } from './types.js'
 import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
 import type { RoutineReentryMode } from '@radioso/routine-definition'
+import { ROUTINE_DEFINITION_LIMITS } from '@radioso/routine-definition'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
@@ -86,6 +87,8 @@ export type ChipTokenInput = {
 const FENCE = '---'
 const SLOT_TYPES: readonly RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const GUARD_UNITS: readonly RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
+const SLOT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const SKILL_SECTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
 
 const OP_TOKENS: Record<RoutineFieldGuardOp, string> = {
   is_true: 'is true',
@@ -453,25 +456,36 @@ const parseGateBody = (chipKind: 'decision' | 'approval', body: string): Extract
   }
 }
 
-const parseSkillSuffix = (suffix: string): Pick<Extract<ProseSegment, { kind: 'chip' }>, 'inputBindings' | 'outputAssignments' | 'mode'> => {
+const parseSkillSuffix = (suffix: string): Pick<Extract<ProseSegment, { kind: 'chip' }>, 'inputBindings' | 'outputAssignments' | 'mode'> | null => {
   const inputBindings: Record<string, RoutineInputBinding> = {}
   const outputAssignments: Record<string, string> = {}
   let mode: RoutineStepMode | undefined
   for (const section of suffix.split(';')) {
     const trimmed = section.trim()
+    if (!trimmed) return null
     if (trimmed.startsWith('in ')) {
       for (const pair of splitList(trimmed.slice(3))) {
         const eq = pair.indexOf('=')
-        if (eq > 0) inputBindings[pair.slice(0, eq).trim()] = parseBinding(pair.slice(eq + 1))
+        const key = eq > 0 ? pair.slice(0, eq).trim() : ''
+        const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
+        if (!key || !SKILL_SECTION_KEY.test(key) || !value) return null
+        inputBindings[key] = parseBinding(value)
       }
     } else if (trimmed.startsWith('out ')) {
       for (const pair of splitList(trimmed.slice(4))) {
         const eq = pair.indexOf('=')
-        if (eq > 0) outputAssignments[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim().replace(/^@/, '')
+        const key = eq > 0 ? pair.slice(0, eq).trim() : ''
+        const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
+        const ref = value.replace(/^@/, '')
+        if (!key || !SKILL_SECTION_KEY.test(key) || !value.startsWith('@') || !SLOT_KEY.test(ref)) return null
+        outputAssignments[key] = ref
       }
     } else if (trimmed.startsWith('mode ')) {
       const value = trimmed.slice(5).trim()
       if (value === 'typed' || value === 'untyped') mode = value
+      else return null
+    } else {
+      return null
     }
   }
   return { inputBindings, outputAssignments, mode }
@@ -574,6 +588,11 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
           const close = rest.indexOf(']', consumed)
           if (close !== -1) {
             const bindings = parseSkillSuffix(rest.slice(consumed + 1, close))
+            if (!bindings) {
+              buffer += line[index]
+              index += 1
+              continue
+            }
             flush()
             segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings })
             index += close + 1
@@ -600,6 +619,11 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
           const close = rest.indexOf(']', consumed)
           if (close !== -1) {
             const bindings = parseSkillSuffix(rest.slice(consumed + 1, close))
+            if (!bindings) {
+              buffer += line[index]
+              index += 1
+              continue
+            }
             flush()
             segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings })
             index += close + 1
@@ -773,26 +797,178 @@ const invalidExportDiagnostic = (line: number): ParseDiagnostic => ({
   message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
 })
 
+const invalidVarDeclarationDiagnostic = (declaration: string, reason: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_var_declaration',
+  message: `Invalid vars declaration "${declaration}": ${reason}`,
+})
+
+const duplicateVarDeclarationDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'duplicate_var_declaration',
+  message: `Duplicate vars declaration for "${key}"`,
+})
+
 const unknownBracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
   line,
   code: 'unknown_bracket_token',
   message: `Unknown routine bracket token: ${token}`,
 })
 
-const bracketTokenIsKnown = (body: string): boolean => {
-  const trimmed = body.trim()
-  return trimmed.startsWith('if ')
-    || trimmed.startsWith('outcome ')
-    || trimmed.startsWith('filled ')
-    || trimmed.startsWith('action ')
-    || trimmed.startsWith('decision ')
-    || trimmed.startsWith('approval ')
+const invalidGuardTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_guard_token',
+  message: `Invalid guard token: ${token}`,
+})
+
+const invalidActionTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_action_token',
+  message: `Invalid action token: ${token}`,
+})
+
+const invalidGateTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_gate_token',
+  message: `Invalid gate token: ${token}`,
+})
+
+const invalidSkillBindingSuffixDiagnostic = (refId: string, suffix: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_skill_binding_suffix',
+  message: `Invalid skill binding suffix for "#${refId}": [${suffix}]`,
+})
+
+const conflictingGuardAndCounterDiagnostic = (target: string, limit: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'conflicting_guard_and_counter',
+  message: `Branch line combines a guard token with a counter limit; use "-> step:${target} (max ${limit})" without another guard for a bounded loop`,
+})
+
+type BracketTokenFamily = 'if' | 'outcome' | 'filled' | 'action' | 'decision' | 'approval'
+
+const bracketTokenFamily = (body: string): BracketTokenFamily | null => {
+  const keyword = /^([A-Za-z]+)(?:\s|$)/.exec(body)?.[1]
+  if (
+    keyword === 'if'
+    || keyword === 'outcome'
+    || keyword === 'filled'
+    || keyword === 'action'
+    || keyword === 'decision'
+    || keyword === 'approval'
+  ) {
+    return keyword
+  }
+  return null
+}
+
+const gateOptionsConsumeBody = (body: string): boolean => {
+  let cursor = 0
+  GATE_OPTION.lastIndex = 0
+  for (const match of body.matchAll(GATE_OPTION)) {
+    const between = body.slice(cursor, match.index)
+    if (!/^\s*,?\s*$/.test(between)) return false
+    cursor = match.index + match[0].length
+  }
+  return /^\s*$/.test(body.slice(cursor))
+}
+
+const bracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic | null => {
+  const body = token.slice(1, -1)
+  const family = bracketTokenFamily(body)
+  if (!family) return unknownBracketTokenDiagnostic(token, line)
+
+  if (family === 'if') {
+    return parseConditionBody(body.slice('if'.length)) ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'outcome') {
+    return body.slice('outcome'.length).trim() ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'filled') {
+    const keys = splitList(body.slice('filled'.length)).map((part) => part.replace(/^@/, ''))
+    return keys.length > 0 && keys.every((key) => SLOT_KEY.test(key)) ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'action') {
+    return parseActionBody(body.slice('action'.length)) ? null : invalidActionTokenDiagnostic(token, line)
+  }
+
+  const gateBody = body.slice(family.length)
+  const colon = gateBody.indexOf(':')
+  const optionsBody = colon === -1 ? '' : gateBody.slice(colon + 1)
+  const gate = parseGateBody(family, gateBody)
+  const options = gate?.options ?? []
+  const valid = Boolean(gate)
+    && options.length > 0
+    && gateOptionsConsumeBody(optionsBody)
+    && (family === 'decision' || options.every((option) => option.target))
+  return valid ? null : invalidGateTokenDiagnostic(token, line)
+}
+
+const readVarDeclarationDiagnostics = (value: string, line: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  const seen = new Set<string>()
+  for (const declaration of splitList(value)) {
+    const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
+    if (!varKey || !SLOT_KEY.test(varKey) || varKey.length > ROUTINE_DEFINITION_LIMITS.slotKey) {
+      diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `invalid slot key "${varKey ?? ''}"`, line))
+      continue
+    }
+    if (seen.has(varKey)) {
+      diagnostics.push(duplicateVarDeclarationDiagnostic(varKey, line))
+      continue
+    }
+    seen.add(varKey)
+    if (!varType || !(SLOT_TYPES as readonly string[]).includes(varType)) {
+      diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `unknown slot type "${varType ?? ''}"`, line))
+      continue
+    }
+    for (const flag of flags) {
+      if (flag !== 'optional' && flag !== 'mutable') {
+        diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `invalid flag "${flag}"`, line))
+        break
+      }
+    }
+  }
+  return diagnostics
+}
+
+const readSkillSuffixDiagnostics = (line: string, lineNumber: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  const skill = /(^|[^A-Za-z0-9_.-])#([A-Za-z_][A-Za-z0-9_.-]*)\[/g
+  for (const match of line.matchAll(skill)) {
+    const suffixStart = (match.index ?? 0) + match[0].length - 1
+    const close = findBracketClose(line.slice(suffixStart))
+    if (close === -1) continue
+    const suffix = line.slice(suffixStart + 1, suffixStart + close)
+    if (!parseSkillSuffix(suffix)) {
+      diagnostics.push(invalidSkillBindingSuffixDiagnostic(match[2]!, suffix, lineNumber))
+    }
+  }
+  return diagnostics
 }
 
 const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDiagnostic[] => {
   const diagnostics: ParseDiagnostic[] = []
   for (let lineIndex = bodyStart; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]!
+    diagnostics.push(...readSkillSuffixDiagnostics(line, lineIndex + 1))
+    const counterBranch = /->\s*step:([A-Za-z_][A-Za-z0-9_.-]*)\s*\(max\s+\d+\)/.exec(line)
+    if (counterBranch) {
+      const prefix = line.slice(0, counterBranch.index)
+      let prefixCursor = 0
+      let hasGuard = false
+      while (prefixCursor < prefix.length) {
+        const open = prefix.indexOf('[', prefixCursor)
+        if (open === -1) break
+        const close = findBracketClose(prefix.slice(open))
+        if (close === -1) break
+        const token = prefix.slice(open, open + close + 1)
+        const diagnostic = bracketTokenDiagnostic(token, lineIndex + 1)
+        if (!diagnostic && bracketTokenFamily(token.slice(1, -1)) !== 'action') hasGuard = true
+        prefixCursor = open + close + 1
+      }
+      if (hasGuard) diagnostics.push(conflictingGuardAndCounterDiagnostic(counterBranch[1]!, /\(max\s+(\d+)\)/.exec(counterBranch[0])?.[1] ?? 'N', lineIndex + 1))
+    }
     let cursor = 0
     while (cursor < line.length) {
       const open = line.indexOf('[', cursor)
@@ -805,9 +981,8 @@ const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDi
       const close = findBracketClose(line.slice(open))
       if (close === -1) break
       const token = line.slice(open, open + close + 1)
-      if (!bracketTokenIsKnown(token.slice(1, -1))) {
-        diagnostics.push(unknownBracketTokenDiagnostic(token, lineIndex + 1))
-      }
+      const diagnostic = bracketTokenDiagnostic(token, lineIndex + 1)
+      if (diagnostic) diagnostics.push(diagnostic)
       cursor = open + close + 1
     }
   }
@@ -842,6 +1017,8 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
         if (!Number.isInteger(parsed)) diagnostics.push(invalidPriorityDiagnostic(value, cursor + 1))
       } else if (key === 'export') {
         if (!parseExport(value)) diagnostics.push(invalidExportDiagnostic(cursor + 1))
+      } else if (key === 'vars') {
+        diagnostics.push(...readVarDeclarationDiagnostics(value, cursor + 1))
       }
     }
     cursor += 1

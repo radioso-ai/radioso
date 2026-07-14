@@ -108,7 +108,7 @@ function CapabilityPicker({
   onOpenChange: (open: boolean) => void
   onSelect: (capabilityId: AgentSkillCapabilityId) => void
 }) {
-  const visibleCapabilities = capabilities.filter((capability) => capability.id !== 'notify')
+  const visibleCapabilities = capabilities
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

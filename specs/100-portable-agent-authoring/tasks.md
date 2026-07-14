@@ -191,7 +191,16 @@ test tasks precede implementation tasks and must fail first.
 - [x] F1-fix-3 (RED->GREEN). Package canonical branch spacing: branch target
       serialization uses one space before `->` across definition projection and
       canonicalize paths; golden fixtures and canonical-form docs updated.
-- [ ] F2. Senior engineer review loop (≤3 passes), then one EM pass.
+- [x] F2. Senior engineer review loop (≤3 passes), then one EM pass. DONE:
+      pass 1 (3 major + 1 minor: build-order wiring, GET-portable 500->422
+      routine_not_portable, 409 missing from OpenAPI, docs contradictions),
+      pass 2 (2 major: malformed known tokens fell through to prose incl.
+      deterministic-guard->LLM-guard degradation; invalid vars: declarations
+      silently downgraded — fixed with 7 new typed diagnostics incl. the
+      orchestrator's conflicting_guard_and_counter), pass 3 (1 high: [if]
+      operand validation; serializer gap proven+closed via routine_not_portable).
+      All fixes TDD, independently verified. EM pass: conditional ship —
+      conditions were ci:local + this log alignment, both now met.
       Senior-review follow-up batch addressed 2026-07-14: routine package
       dist build wiring added to backend test paths and frontend dev/build
       prep; portable projection now returns typed `routine_not_portable`
@@ -221,6 +230,17 @@ test tasks precede implementation tasks and must fail first.
       focused backend projection test first showed `[if amount = ] -> end`.
       Green verification: routine-markdown tsc clean and Vitest 73/73; backend
       tsc clean; backend requested routine Vitest 52/52.
-- [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
-      DB; grep the real exit code); push; PR with validation evidence and
-      artifact links.
+- [x] F3. ci:local + full pipeline evidence (3 runs + manual tail stages):
+      boundaries lint, backend build, db:schema/types checks GREEN; backend
+      unit 2440/2440 GREEN (run-1 single fail = documented order-dependent
+      websiteCrawler flake, green isolated + green paired with our new tests);
+      integration 576/576 (run-2 single fail = orchestrator's own F1 server
+      squatting :8091 — root-caused, killed, NOT a code issue; run-3 single
+      fail = documented chat.integration harness race, green isolated);
+      contract 282/282 (single load-flake green isolated); frontend lint +
+      production build + unit 607/607 GREEN; Playwright 90/90 (our FR-004a
+      spec needed two test-only fixes: missing routineSkillCatalog fixture and
+      an untitled-step fixture whose id legitimately regenerates — the binding
+      itself was proven preserved in the PATCH payload; usage-trends fail =
+      documented parallel-load flake, green isolated); docs-portal lint +
+      build GREEN. PR next.

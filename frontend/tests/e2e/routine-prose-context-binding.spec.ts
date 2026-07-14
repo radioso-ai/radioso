@@ -39,6 +39,9 @@ const contextBoundRoutine: RoutineFixture = {
     actionType: null,
     ordinal: 0,
     metadata: {
+      // Titled step: only a heading pins the stable id across a prose round-trip,
+      // so the save-payload assertion below can key on stableStepId.
+      outlineLabel: "Lookup locale",
       inputBindings: {
         locale: { kind: "contextVariableRef", contextVariable: "page_locale" },
       },
@@ -74,6 +77,18 @@ test("saving an unrelated prose edit preserves context variable skill bindings",
   await installDashboardApiMocks(page, {
     routineUpdates,
     routines: [contextBoundRoutine],
+    // The popover renders binding rows against the skill's declared input ports;
+    // without this catalog entry the ctx binding has no row to appear in.
+    routineSkillCatalog: [
+      {
+        skillName: "web.lookup_locale",
+        displayName: "Lookup locale",
+        category: "external_mcp",
+        inputs: [{ key: "locale", type: "text", required: true }],
+        outcomes: [],
+        hasDataOutputs: false,
+      },
+    ],
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${contextBoundRoutine.id}`);

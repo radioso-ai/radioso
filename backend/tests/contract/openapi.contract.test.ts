@@ -79,6 +79,7 @@ describe("openapi contract", () => {
     expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.get).toMatchObject({
       operationId: "getAgentRoutinePortableDocument",
       security: [{ bearerAuth: [] }],
+      responses: expect.objectContaining({ "200": expect.any(Object), "422": expect.any(Object) }),
     });
     expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.put).toMatchObject({
       operationId: "updateAgentRoutinePortableDocument",
@@ -86,8 +87,12 @@ describe("openapi contract", () => {
     });
     expect(paths["/api/v1/agents/{agentId}/routines/portable"]?.post).toMatchObject({
       operationId: "createAgentRoutinePortableDocument",
-      responses: expect.objectContaining({ "201": expect.any(Object), "400": expect.any(Object), "422": expect.any(Object) }),
+      responses: expect.objectContaining({ "201": expect.any(Object), "400": expect.any(Object), "409": expect.any(Object), "422": expect.any(Object) }),
     });
+    expect(paths["/api/v1/agents/{agentId}/routines"]?.post?.responses).toEqual(expect.objectContaining({
+      "201": expect.any(Object),
+      "409": expect.any(Object),
+    }));
     expect(paths["/api/v1/routines/portable/canonicalize"]?.post).toMatchObject({
       operationId: "canonicalizeRoutinePortableDocument",
       security: [{ bearerAuth: [] }],

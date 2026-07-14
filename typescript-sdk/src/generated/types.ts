@@ -8792,6 +8792,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Routine name and version already exist for this agent */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     getAgentRoutine: {
@@ -8967,6 +8976,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Routine definition cannot be represented as portable markdown */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
+                };
+            };
         };
     };
     updateAgentRoutinePortableDocument: {
@@ -9138,6 +9156,15 @@ export interface operations {
             };
             /** @description Agent not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Routine name and version already exist for this agent */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

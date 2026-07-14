@@ -16697,6 +16697,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Routine name and version already exist for this agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -16970,6 +16980,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Routine definition cannot be represented as portable markdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -17221,6 +17241,16 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Routine name and version already exist for this agent",
             "content": {
               "application/json": {
                 "schema": {

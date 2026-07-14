@@ -50,11 +50,13 @@ const optionalAuthoringParamText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable();
 
 const stableIdSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.stableId).regex(identifierPattern);
+// captureKey lives in the slot-key namespace (no dots/dashes): approval field
+// refs are built as `<captureKey>.id`, so a dotted key would be ambiguous.
 const optionalCaptureKeySchema = z.string()
   .trim()
   .min(1)
   .max(ROUTINE_DEFINITION_LIMITS.slotKey)
-  .regex(identifierPattern)
+  .regex(slotKeyPattern)
   .optional()
   .nullable();
 

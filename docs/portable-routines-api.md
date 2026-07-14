@@ -1,7 +1,7 @@
 ---
 title: "Portable Routines API"
 description: "How to create, read, update, and canonicalize deterministic routine markdown through the API."
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 ---
 
 # Portable Routines API
@@ -94,12 +94,16 @@ Grammar errors return `400` with parse diagnostics:
 }
 ```
 
-Validation errors return `422` with the normal routine validation response. Use
-this distinction to decide whether to fix the text syntax or the routine graph.
+Validation errors return `422` with the normal routine validation response. A
+stored routine can also return `422` from `GET` or after a successful `PUT` when
+the structured routine is valid but cannot be represented by portable markdown
+v1. That response uses the same line-based diagnostics envelope as grammar
+errors, with code `routine_not_portable`.
 
 - `400` means the markdown cannot be parsed as portable routine markdown.
 - `422` means the markdown parsed, but the resulting routine definition is
-  invalid.
+  invalid, or an existing structured routine cannot be projected to portable
+  markdown v1.
 - `409` means the create request conflicts with an existing routine definition,
   such as the same routine name and version for the agent.
 
@@ -114,6 +118,7 @@ the body, skill bindings, actions, guards, jumps, and approval/decision gates.
 
 Some host-carried fields are not markdown tokens in v1. Default terminal message
 editor fields should be managed through the structured routine definition or the
-dashboard.
+dashboard. Portable markdown v1 can represent at most one handoff terminal; use
+the structured routine API for routines that need multiple handoff terminals.
 
 See [Portable Routine Markdown](./portable-routine-markdown.md) for the grammar.

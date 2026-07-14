@@ -192,6 +192,16 @@ test tasks precede implementation tasks and must fail first.
       serialization uses one space before `->` across definition projection and
       canonicalize paths; golden fixtures and canonical-form docs updated.
 - [ ] F2. Senior engineer review loop (≤3 passes), then one EM pass.
+      Senior-review follow-up batch addressed 2026-07-14: routine package
+      dist build wiring added to backend test paths and frontend dev/build
+      prep; portable projection now returns typed `routine_not_portable`
+      diagnostics instead of throwing for unrepresentable structured routines;
+      OpenAPI advertises duplicate-create `409` responses and portable GET
+      `422`; docs portal completion-export grammar text and canonical `vars`
+      example are current. Verification: backend tsc clean; routine-definition
+      and routine-markdown package tsc clean; focused portable mapper/routes
+      and OpenAPI contract tests pass. Full backend routines+contract Vitest is
+      blocked in this sandbox by Supertest `listen EPERM` on `0.0.0.0`.
 - [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
       DB; grep the real exit code); push; PR with validation evidence and
       artifact links.

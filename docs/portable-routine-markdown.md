@@ -1,7 +1,7 @@
 ---
 title: "Portable Routine Markdown"
 description: "The normative markdown format for deterministic routine authoring and API round trips."
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 ---
 
 # Portable Routine Markdown
@@ -223,6 +223,10 @@ Canonicalization also normalizes these details:
 - branch lines use exactly one space before `->`
 - quoted action ids, approval labels, approval descriptions, and named
   completion messages escape quotes and backslashes
+
+For example, a document with `vars: tracking_id:text` and no `@tracking_id`
+reference keeps `vars: tracking_id:text` in canonical output. Dropping it would
+lose the declared slot.
 
 Canonicalization does not run semantic validation. A document can be grammatically
 valid and still fail routine validation because of an unreachable step, missing

@@ -52,8 +52,9 @@ routine validator.
 diagnostics.
 
 `422` means the markdown parsed, but the resulting routine definition failed
-routine validation. The response uses the same validation diagnostics as the
-structured routine endpoints.
+routine validation. `GET` and `PUT` can also return `422` when a valid structured
+routine cannot be represented as portable markdown v1, such as a routine with
+multiple handoff terminals.
 
 `409` means the create request conflicts with an existing routine definition,
 such as the same routine name and version for the agent.
@@ -61,12 +62,10 @@ such as the same routine name and version for the agent.
 ## Grammar
 
 Portable markdown v1 includes frontmatter (`grammar`, `name`, `trigger`, `vars`,
-`reentry`, `priority`), variable tokens (`@email`), skill tokens (`#lookup`),
-skill bindings (`in email=@email`, `in locale=ctx.page_locale`), guards,
-jumps, terminals, actions, and decision or approval gates.
-
-Completion export is structured routine configuration, not a markdown token in
-grammar v1.
+`reentry`, `priority`, `export`), variable tokens (`@email`), skill tokens
+(`#lookup`), skill bindings (`in email=@email`, `in locale=ctx.page_locale`),
+guards, jumps, terminals, actions, completion export, and decision or approval
+gates.
 
 For the normative grammar, see `docs/portable-routine-markdown.md` in the
 repository. The OpenAPI reference is generated from `backend/openapi.json`.

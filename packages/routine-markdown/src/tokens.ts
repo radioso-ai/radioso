@@ -24,7 +24,7 @@ import type {
 } from './types.js'
 import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
 import type { RoutineReentryMode } from '@radioso/routine-definition'
-import { ROUTINE_DEFINITION_LIMITS } from '@radioso/routine-definition'
+import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern } from '@radioso/routine-definition'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
@@ -321,7 +321,11 @@ export const serializeProseDoc = (input: {
 // Parse
 // ---------------------------------------------------------------------------
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_.-]*/
+const stableIdentifierSource = routineIdentifierPattern.source.replace(/^\^/, '').replace(/\$$/, '')
+const IDENTIFIER = new RegExp(`^${stableIdentifierSource}`, 'u')
+const STABLE_IDENTIFIER = new RegExp(`^${stableIdentifierSource}$`, 'u')
+const TARGET_END_DELIMITER = '(?=$|\\s)'
+const TARGET_ID_DELIMITER = '(?=$|\\s|\\()'
 
 const coerceLiteral = (raw: string): RoutineFieldGuardValue => {
   const trimmed = raw.trim()
@@ -405,7 +409,8 @@ const parseTarget = (token: string | undefined): string | undefined => {
 // Parse a gate's option list: `id="Label" ("Description") -> target, ...`. Description and
 // target are optional; whitespace and the comma separators are tolerated.
 const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
-const GATE_OPTION = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(end|handoff|step:[A-Za-z_][A-Za-z0-9_.-]*))?`, 'g')
+const GATE_TARGET = `(?:end|handoff|step:${stableIdentifierSource})`
+const GATE_OPTION = new RegExp(`(${stableIdentifierSource})\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(${GATE_TARGET}))?`, 'gu')
 const parseGateOptions = (body: string): ApprovalDocOption[] => {
   const options: ApprovalDocOption[] = []
   for (const match of body.matchAll(GATE_OPTION)) {
@@ -451,7 +456,7 @@ const parseGateBody = (chipKind: 'decision' | 'approval', body: string): Extract
   const colon = body.indexOf(':')
   if (colon === -1) return null
   const captureKey = body.slice(0, colon).trim()
-  if (!captureKey) return null
+  if (!STABLE_IDENTIFIER.test(captureKey)) return null
   return {
     kind: 'chip',
     chipKind,
@@ -519,18 +524,20 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
 
     if (rest.startsWith('-> end')) {
       // `-> end` (default ending) or `-> end:<id> ("message")` (a named ending with its own copy).
-      const named = /^-> end:([A-Za-z_][A-Za-z0-9_]*)(?:\s+\("((?:[^"\\]|\\.)*)"\))?/.exec(rest)
+      const named = new RegExp(`^-> end:(${stableIdentifierSource})(?:\\s*\\("((?:[^"\\\\]|\\\\.)*)"\\))?${TARGET_END_DELIMITER}`, 'u').exec(rest)
       if (named) {
         flushBeforeTarget()
         segments.push({ kind: 'chip', chipKind: 'end', refId: named[1]!, label: named[1]!, value: named[2] != null ? unescapeQuoted(named[2]) : null })
         index += named[0].length
         continue
       }
-      flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+      if (/^-> end(?=$|\s)/u.test(rest)) {
+        flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+      }
     }
-    if (rest.startsWith('-> handoff')) { flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
+    if (/^-> handoff(?=$|\s)/u.test(rest)) { flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
 
-    const stepMatch = /^-> step:([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*\(max (\d+)\))?/.exec(rest)
+    const stepMatch = new RegExp(`^-> step:(${stableIdentifierSource})(?:\\s*\\(max (\\d+)\\))?${TARGET_ID_DELIMITER}`, 'u').exec(rest)
     if (stepMatch) {
       flushBeforeTarget()
       segments.push({ kind: 'chip', chipKind: 'step', refId: stepMatch[1]!, label: stepMatch[1]!, counterLimit: stepMatch[2] ? Number(stepMatch[2]) : null })
@@ -839,6 +846,12 @@ const invalidGateTokenDiagnostic = (token: string, line: number): ParseDiagnosti
   message: `Invalid gate token: ${token}`,
 })
 
+const invalidTargetTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_target_token',
+  message: `Invalid target token: ${token}`,
+})
+
 const invalidSkillBindingSuffixDiagnostic = (refId: string, suffix: string, line: number): ParseDiagnostic => ({
   line,
   code: 'invalid_skill_binding_suffix',
@@ -877,6 +890,28 @@ const gateOptionsConsumeBody = (body: string): boolean => {
     cursor = match.index + match[0].length
   }
   return /^\s*$/.test(body.slice(cursor))
+}
+
+const TARGET_CANDIDATE = /->\s*(?:end(?::[^\s(]+)?|handoff[^\s(]*|step:[^\s(]+(?:\s*\(max\s+\d+\))?)/gu
+const VALID_TARGET_TOKEN = new RegExp(`^->\\s*(?:end(?::${stableIdentifierSource})?|handoff|step:${stableIdentifierSource}(?:\\s*\\(max\\s+\\d+\\))?)$`, 'u')
+
+const isInsideBracketToken = (line: string, index: number): boolean => {
+  const lastOpen = line.lastIndexOf('[', index)
+  if (lastOpen === -1) return false
+  const lastClose = line.lastIndexOf(']', index)
+  return lastClose < lastOpen
+}
+
+const readTargetDiagnostics = (line: string, lineNumber: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  for (const match of line.matchAll(TARGET_CANDIDATE)) {
+    if (isInsideBracketToken(line, match.index ?? 0)) continue
+    const token = match[0]
+    if (!VALID_TARGET_TOKEN.test(token)) {
+      diagnostics.push(invalidTargetTokenDiagnostic(token, lineNumber))
+    }
+  }
+  return diagnostics
 }
 
 const bracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic | null => {
@@ -957,8 +992,9 @@ const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDi
   const diagnostics: ParseDiagnostic[] = []
   for (let lineIndex = bodyStart; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex]!
+    diagnostics.push(...readTargetDiagnostics(line, lineIndex + 1))
     diagnostics.push(...readSkillSuffixDiagnostics(line, lineIndex + 1))
-    const counterBranch = /->\s*step:([A-Za-z_][A-Za-z0-9_.-]*)\s*\(max\s+\d+\)/.exec(line)
+    const counterBranch = new RegExp(`->\\s*step:(${stableIdentifierSource})\\s*\\(max\\s+\\d+\\)`, 'u').exec(line)
     if (counterBranch) {
       const prefix = line.slice(0, counterBranch.index)
       let prefixCursor = 0

@@ -16,6 +16,8 @@ const seed = 100_713
 
 const firstKeyChars = [...'abcdefghijklmnopqrstuvwxyz']
 const keyChars = [...'abcdefghijklmnopqrstuvwxyz0123456789_']
+const firstStableIdChars = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_']
+const stableIdChars = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-']
 
 const keyArb = fc
   .tuple(
@@ -26,7 +28,13 @@ const keyArb = fc
   .filter((value) => !['ctx', 'in', 'out', 'mode', 'done', 'handoff'].includes(value))
 
 const slugStableKeyArb = keyArb.filter((value) => !value.endsWith('_') && !value.includes('__'))
-
+const stableIdArb = fc
+  .tuple(
+    fc.constantFrom(...firstStableIdChars),
+    fc.array(fc.constantFrom(...stableIdChars), { minLength: 0, maxLength: 8 }),
+  )
+  .map(([first, rest]) => `${first}${rest.join('')}`)
+  .filter((value) => !['ctx', 'in', 'out', 'mode', 'done', 'handoff'].includes(value))
 const textArb = fc
   .array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '.split('')), { minLength: 1, maxLength: 30 })
   .map((chars) => chars.join('').replace(/\s+/g, ' ').trim())
@@ -61,7 +69,7 @@ const draftArb = fc.record({
   name: textArb,
   trigger: textArb,
   slotKey: keyArb,
-  stepId: keyArb,
+  stepId: slugStableKeyArb,
   instruction: textArb,
 }).map(({ name, trigger, slotKey, stepId, instruction }): RoutineDraftSource => ({
   name,
@@ -195,6 +203,64 @@ const structuralShape = (paragraphs: ProseParagraph[]) =>
   }))
 
 describe('routine markdown properties', () => {
+  it('round-trips route and approval tokens with stable-id punctuation', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          endId: stableIdArb,
+          stepId: stableIdArb,
+          captureKey: stableIdArb,
+          firstOptionId: stableIdArb,
+          secondOptionId: stableIdArb,
+          targetId: stableIdArb,
+        }).filter((value) => value.firstOptionId !== value.secondOptionId),
+        ({ endId, stepId, captureKey, firstOptionId, secondOptionId, targetId }) => {
+          const serialized = serializeProseDoc({
+            name: 'Route ids',
+            trigger: 'route by id',
+            variables: [],
+            paragraphs: [
+              { segments: [{ kind: 'chip', chipKind: 'end', refId: endId, label: endId }] },
+              { segments: [{ kind: 'chip', chipKind: 'step', refId: stepId, label: stepId, counterLimit: 3 }] },
+              { segments: [{
+                kind: 'chip',
+                chipKind: 'approval',
+                refId: captureKey,
+                captureKey,
+                label: 'approval',
+                options: [
+                  { id: firstOptionId, label: 'Approve', target: targetId },
+                  { id: secondOptionId, label: 'Deny', target: 'handoff' },
+                ],
+              }] },
+            ],
+          })
+
+          const parsed = parse(serialized)
+          expect(parsed.ok).toBe(true)
+          if (!parsed.ok) return
+
+          const chips = parsed.doc.paragraphs.flatMap((paragraph) => paragraph.segments)
+            .filter((segment): segment is Extract<ProseParagraph['segments'][number], { kind: 'chip' }> => segment.kind === 'chip')
+          expect(chips).toEqual([
+            expect.objectContaining({ chipKind: 'end', refId: endId }),
+            expect.objectContaining({ chipKind: 'step', refId: stepId, counterLimit: 3 }),
+            expect.objectContaining({
+              chipKind: 'approval',
+              refId: captureKey,
+              captureKey,
+              options: [
+                { id: firstOptionId, label: 'Approve', target: targetId },
+                { id: secondOptionId, label: 'Deny', target: 'handoff' },
+              ],
+            }),
+          ])
+        },
+      ),
+      { seed, numRuns: 75 },
+    )
+  })
+
   it('round-trips arbitrary valid drafts through serialize and parse', () => {
     fc.assert(
       fc.property(draftArb, (draft) => {

@@ -288,6 +288,11 @@ All parse diagnostics include `line`, `code`, and `message`.
     not match the gate grammar, has no options, or an approval option omits its
     route target.
   - Message: `Invalid gate token: <token>`
+- `invalid_target_token`
+  - Trigger: `-> end`, `-> end:<id>`, `-> handoff`, or `-> step:<id>` is
+    present but the target id does not match the stable-id grammar or is
+    followed by an illegal delimiter.
+  - Message: `Invalid target token: <token>`
 - `invalid_skill_binding_suffix`
   - Trigger: a skill binding suffix is present but a section is unknown,
     malformed, or has an invalid `mode`, input binding, or output assignment.

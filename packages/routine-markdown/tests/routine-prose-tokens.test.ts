@@ -849,6 +849,41 @@ describe('routine prose token grammar', () => {
     expect(endChip).toMatchObject({ refId: 'ineligible', value: 'Sorry, not eligible.' })
   })
 
+  it('round-trips stable ids with dashes and dots in route target tokens', () => {
+    const input = {
+      name: 'Eligibility',
+      trigger: 'needs routing',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'end' as const, refId: 'ineligible-case', label: 'ineligible-case' },
+        ] },
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'step' as const, refId: 'v2.flow-check', label: 'v2.flow-check', counterLimit: 3 },
+        ] },
+      ],
+    }
+
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('-> end:ineligible-case')
+    expect(text).toContain('-> step:v2.flow-check (max 3)')
+    expect(chipShape(parsed.paragraphs)).toEqual(chipShape(input.paragraphs))
+  })
+
+  it('rejects route target tokens followed by illegal id delimiters', () => {
+    const parsed = parse('---\ngrammar: 1\nname: Bad target\ntrigger: route\n---\n-> step:review/order\n', { resolveSkill: () => false })
+
+    expect(parsed).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 6,
+        code: 'invalid_target_token',
+        message: 'Invalid target token: -> step:review/order',
+      }],
+    })
+  })
+
   it('quotes action types that do not fit the bare token grammar', () => {
     const input = {
       name: 'Escalate',
@@ -947,6 +982,33 @@ describe('routine prose token grammar', () => {
       options: [
         { id: 'approve', label: 'Approve', target: 'done' },
         { id: 'deny', label: 'Deny', target: 'handoff' },
+      ],
+    })
+  })
+
+  it('round-trips approval option ids and targets with stable-id punctuation', () => {
+    const input = {
+      name: 'Refund approval',
+      trigger: 'wants a large refund',
+      variables: [],
+      paragraphs: [
+        { segments: [
+          { kind: 'chip' as const, chipKind: 'approval' as const, refId: 'refund_decision', captureKey: 'refund_decision', label: 'approval', options: [
+            { id: 'approve-fast', label: 'Approve', target: 'v2.flow-check' },
+            { id: 'deny.case', label: 'Deny', target: 'handoff' },
+          ] },
+        ] },
+      ],
+    }
+
+    const { text, parsed } = roundTrip(input)
+
+    expect(text).toContain('[approval refund_decision: approve-fast="Approve" -> step:v2.flow-check, deny.case="Deny" -> handoff]')
+    const approval = parsed.paragraphs.flatMap((p) => p.segments).find((s) => s.kind === 'chip' && s.chipKind === 'approval')
+    expect(approval).toMatchObject({
+      options: [
+        { id: 'approve-fast', label: 'Approve', target: 'v2.flow-check' },
+        { id: 'deny.case', label: 'Deny', target: 'handoff' },
       ],
     })
   })

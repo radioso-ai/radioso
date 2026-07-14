@@ -33,7 +33,8 @@ export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as co
 export const routineTerminalKinds = ["complete", "handoff"] as const;
 export const routineCompletionExportTriggerKinds = routineTerminalKinds;
 
-const identifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
+export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
+const identifierPattern = routineIdentifierPattern;
 const slotKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 
 const trimmedText = (maxLength: number) =>
@@ -53,7 +54,7 @@ const optionalCaptureKeySchema = z.string()
   .trim()
   .min(1)
   .max(ROUTINE_DEFINITION_LIMITS.slotKey)
-  .regex(slotKeyPattern)
+  .regex(identifierPattern)
   .optional()
   .nullable();
 

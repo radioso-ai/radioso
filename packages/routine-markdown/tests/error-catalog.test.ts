@@ -73,6 +73,12 @@ const diagnosticCases = [
     message: 'Invalid gate token: [decision route: yes]',
   },
   {
+    code: 'invalid_target_token',
+    content: '---\ngrammar: 1\nname: Target\ntrigger: hi\n---\n-> step:review/order',
+    line: 6,
+    message: 'Invalid target token: -> step:review/order',
+  },
+  {
     code: 'invalid_skill_binding_suffix',
     content: '---\ngrammar: 1\nname: Skill\ntrigger: hi\n---\n#lookup[in email]',
     line: 6,

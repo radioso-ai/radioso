@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  routineIdentifierPattern,
   routineDefinitionDraftInputSchema,
   routineGuardProvenance,
   routineInputBindingSchema,
@@ -45,6 +46,12 @@ const validTerminal = {
 } as const;
 
 describe("routine definition schemas", () => {
+  it("exports the stable identifier grammar used by route ids", () => {
+    expect(routineIdentifierPattern.test("ineligible-case")).toBe(true);
+    expect(routineIdentifierPattern.test("v2.flow-check")).toBe(true);
+    expect(routineIdentifierPattern.test("-bad")).toBe(false);
+  });
+
   it("accepts a complete draft input with context variable bindings", () => {
     const result = routineDefinitionDraftInputSchema.safeParse({
       name: "Order support",

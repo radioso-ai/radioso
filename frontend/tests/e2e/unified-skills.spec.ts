@@ -31,7 +31,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
   await expect(page.getByRole("button", { name: /MCP Tool/i })).toBeDisabled();
   await expect(page.getByRole("button", { name: /Slack Post/i })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /Notify Human/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Notify Human/i })).toBeEnabled();
   await page.getByRole("button", { name: /Email/i }).click();
   await expect(page.getByRole("dialog", { name: "Configure Email" })).toBeVisible();
   await expect(page.getByLabel("Skill name")).toHaveValue("send_support_outbound_email");
@@ -85,7 +85,12 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.getByText("@retrieve_events")).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
-  await expect(page.getByRole("button", { name: /Notify Human/i })).toHaveCount(0);
+  await page.getByRole("button", { name: /Notify Human/i }).click();
+  await expect(page.getByRole("dialog", { name: "Configure Notify Human" })).toBeVisible();
+  // Re-adding a deleted "contact human" skill must default to the canonical name the
+  // contact-request gate keys on, or "Talk to a human" stays disconnected.
+  await expect(page.getByLabel("Skill name")).toHaveValue("contact_human");
+  await page.keyboard.press("Escape");
 
   await expect.poll(() =>
     agentSkillRequests.filter((request) =>

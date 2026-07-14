@@ -17,7 +17,9 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
+    "pretest": "pnpm run build:workspace-deps",
     "test": "vitest run",
+    "pretest:e2e": "pnpm run build:workspace-deps",
     "test:e2e": "playwright test"
   },
   "dependencies": {

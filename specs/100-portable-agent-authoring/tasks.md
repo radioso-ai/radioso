@@ -230,6 +230,14 @@ test tasks precede implementation tasks and must fail first.
       focused backend projection test first showed `[if amount = ] -> end`.
       Green verification: routine-markdown tsc clean and Vitest 73/73; backend
       tsc clean; backend requested routine Vitest 52/52.
+      Post-PR review follow-up addressed 2026-07-14: portable parser target
+      tokens now use the shared `@radioso/routine-definition` stable-id grammar,
+      including dashed/dotted named endings, step jumps with counters, approval
+      option ids, approval route targets, and gate capture keys; malformed
+      target delimiters now fail as `invalid_target_token` instead of parsing a
+      shorter id plus prose. Frontend `test` now prebuilds routine workspace
+      deps for fresh checkouts; backend `test`, `test:unit`, `test:integration`,
+      and `test:contract` were audited and already build the routine packages.
 - [x] F3. ci:local + full pipeline evidence (3 runs + manual tail stages):
       boundaries lint, backend build, db:schema/types checks GREEN; backend
       unit 2440/2440 GREEN (run-1 single fail = documented order-dependent

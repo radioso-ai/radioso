@@ -267,7 +267,10 @@ const suggestSkillNameBase = (capabilityId: AgentSkillCapabilityId, targetLabel?
     return targetSlug ? `call_${targetSlug}` : 'call_webhook'
   }
   if (capabilityId === 'notify') {
-    return 'notify_human'
+    // Canonical name the contact-request gate and built-in contact routine key on
+    // (see backend agentService.resolve / contactSendActionHandler). Naming a fresh
+    // notify skill anything else leaves "Talk to a human" disconnected.
+    return 'contact_human'
   }
   if (capabilityId === 'retrieve') {
     return targetSlug && targetSlug !== 'all_sources' ? `retrieve_${targetSlug}` : 'retrieve_answer'

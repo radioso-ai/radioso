@@ -44,12 +44,12 @@
     "start:crawler-worker": "node ./dist/src/crawlerWorker.js",
     "start:crawler-worker-server": "node ./dist/src/crawlerWorkerServer.js",
     "typecheck": "pnpm run build:workspace-deps && tsc -p tsconfig.json --noEmit",
-    "test": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run",
-    "test:unit": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit",
-    "test:composition": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",
-    "test:integration": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/integration --no-file-parallelism --testTimeout=30000",
-    "test:contract": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm --dir .. run check:prompts && pnpm run generate:skills -- --check && vitest run tests/contract",
-    "test:persistence": "pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/integration/persistence.integration.test.ts",
+    "test": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run",
+    "test:unit": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit",
+    "test:composition": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/unit/capability-policy.test.ts tests/unit/application-modules.test.ts tests/unit/default-composition.test.ts tests/unit/document-capability-policy.test.ts",
+    "test:integration": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/integration --no-file-parallelism --testTimeout=30000",
+    "test:contract": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && pnpm run generate:openapi && node ../scripts/check-api-contracts.mjs && pnpm --dir .. run check:prompts && pnpm run generate:skills -- --check && vitest run tests/contract",
+    "test:persistence": "pnpm run build:routine-definition && pnpm run build:routine-markdown && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:mcp && vitest run tests/integration/persistence.integration.test.ts",
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },
   "dependencies": {

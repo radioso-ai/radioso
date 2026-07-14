@@ -25,6 +25,8 @@ const keyArb = fc
   .map(([first, rest]) => `${first}${rest.join('')}`)
   .filter((value) => !['ctx', 'in', 'out', 'mode', 'done', 'handoff'].includes(value))
 
+const slugStableKeyArb = keyArb.filter((value) => !value.endsWith('_') && !value.includes('__'))
+
 const textArb = fc
   .array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '.split('')), { minLength: 1, maxLength: 30 })
   .map((chars) => chars.join('').replace(/\s+/g, ' ').trim())
@@ -95,6 +97,75 @@ const draftArb = fc.record({
     counterLimit: null,
     ordinal: 0,
   }],
+  terminals: [{
+    stableStepId: 'done',
+    kind: 'complete',
+    instruction: null,
+    ordinal: 0,
+  }],
+}))
+
+const fieldGuardDraftArb = fc.record({
+  name: textArb,
+  trigger: textArb,
+  stepId: slugStableKeyArb,
+  slotKey: keyArb,
+  guard: fc.constantFrom(
+    { op: 'equals' as const, fieldValue: 'paid', fieldValues: null, fieldUnit: null },
+    { op: 'in' as const, fieldValue: null, fieldValues: ['paid', 'pending'], fieldUnit: null },
+    { op: 'older_than' as const, fieldValue: 30, fieldValues: null, fieldUnit: 'days' as const },
+    { op: 'is_present' as const, fieldValue: null, fieldValues: null, fieldUnit: null },
+  ),
+}).map(({ name, trigger, stepId, slotKey, guard }): RoutineDraftSource => ({
+  name,
+  activation: {
+    triggerDescription: trigger,
+    gateRef: null,
+    priority: 0,
+    reentryMode: 'once_per_conversation',
+  },
+  slots: [{
+    stableSlotId: slotKey,
+    key: slotKey,
+    type: guard.op === 'older_than' ? 'date' : guard.op === 'equals' ? 'text' : 'text',
+    required: true,
+    description: slotKey,
+    ordinal: 0,
+  }],
+  steps: [{
+    stableStepId: stepId,
+    kind: 'chat',
+    instruction: `Check {{slot.${slotKey}}}.`,
+    toolRef: null,
+    actionType: null,
+    ordinal: 0,
+    metadata: { outlineLabel: stepId },
+  }],
+  transitions: [
+    {
+      fromStep: stepId,
+      toRef: 'done',
+      guardKind: 'field',
+      guardText: null,
+      outcomeStatus: null,
+      counterLimit: null,
+      fieldRef: slotKey,
+      fieldOp: guard.op,
+      fieldValue: guard.fieldValue,
+      fieldValues: guard.fieldValues,
+      fieldUnit: guard.fieldUnit,
+      ordinal: 0,
+    },
+    {
+      fromStep: stepId,
+      toRef: 'done',
+      guardKind: 'default',
+      guardText: null,
+      outcomeStatus: null,
+      counterLimit: null,
+      ordinal: 1,
+    },
+  ],
   terminals: [{
     stableStepId: 'done',
     kind: 'complete',
@@ -182,6 +253,88 @@ describe('routine markdown properties', () => {
       }),
       { seed, numRuns: 75 },
     )
+  })
+
+  it('serializes valid field-guard drafts to markdown that re-parses', () => {
+    fc.assert(
+      fc.property(fieldGuardDraftArb, (draft) => {
+        const doc = draftToDoc(draft)
+        expect(doc).not.toBeNull()
+        if (!doc) return
+
+        const serialized = serializeProseDoc({
+          name: draft.name,
+          trigger: draft.activation.triggerDescription,
+          variables: doc.variables,
+          paragraphs: doc.paragraphs,
+        })
+
+        expect(parse(serialized).ok).toBe(true)
+      }),
+      { seed, numRuns: 75 },
+    )
+  })
+
+  it('does not project field-guard drafts with missing required operands', () => {
+    const draft: RoutineDraftSource = {
+      name: 'missing operand',
+      activation: {
+        triggerDescription: 'when checking',
+        gateRef: null,
+        priority: 0,
+        reentryMode: 'once_per_conversation',
+      },
+      slots: [{
+        stableSlotId: 'amount',
+        key: 'amount',
+        type: 'number',
+        required: true,
+        description: 'amount',
+        ordinal: 0,
+      }],
+      steps: [{
+        stableStepId: 'check',
+        kind: 'chat',
+        instruction: 'Check {{slot.amount}}.',
+        toolRef: null,
+        actionType: null,
+        ordinal: 0,
+        metadata: { outlineLabel: 'check' },
+      }],
+      transitions: [
+        {
+          fromStep: 'check',
+          toRef: 'done',
+          guardKind: 'field',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          fieldRef: 'amount',
+          fieldOp: 'equals',
+          fieldValue: null,
+          fieldValues: null,
+          fieldUnit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: 'check',
+          toRef: 'done',
+          guardKind: 'default',
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+      terminals: [{
+        stableStepId: 'done',
+        kind: 'complete',
+        instruction: null,
+        ordinal: 0,
+      }],
+    }
+
+    expect(draftToDoc(draft)).toBeNull()
   })
 
   it('round-trips arbitrary valid authored documents through serialize and parse', () => {

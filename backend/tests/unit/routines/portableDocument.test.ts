@@ -128,6 +128,109 @@ describe("portable routine document mapper", () => {
     });
   });
 
+  it("treats field guards with missing required operands as unrepresentable", () => {
+    const projected = projectRoutineToPortableDocument(routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: null,
+        priority: 7,
+        reentryMode: "always",
+      },
+      slots: [
+        {
+          stableSlotId: "slot_topic",
+          key: "topic",
+          type: "text",
+          required: true,
+          description: "topic",
+          ordinal: 0,
+        },
+        {
+          stableSlotId: "slot_amount",
+          key: "amount",
+          type: "number",
+          required: true,
+          description: "amount",
+          ordinal: 1,
+        },
+      ],
+      transitions: [
+        {
+          fromStep: "collect_topic",
+          toRef: "done",
+          guardKind: "field",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          fieldRef: "amount",
+          fieldOp: "equals",
+          fieldValue: null,
+          fieldValues: null,
+          fieldUnit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: "collect_topic",
+          toRef: "done",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+    }));
+
+    expect(projected).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 cannot represent this routine shape. Use the structured routine API or form editor.",
+      }],
+    });
+  });
+
+  it("projects field guards with complete operands to markdown that re-parses", () => {
+    const projected = projectRoutineToPortableDocument(routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: null,
+        priority: 7,
+        reentryMode: "always",
+      },
+      transitions: [
+        {
+          fromStep: "collect_topic",
+          toRef: "done",
+          guardKind: "field",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          fieldRef: "topic",
+          fieldOp: "equals",
+          fieldValue: "billing",
+          fieldValues: null,
+          fieldUnit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: "collect_topic",
+          toRef: "done",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+    }));
+
+    expect(projected.ok).toBe(true);
+    if (!projected.ok) return;
+    expect(parsePortableRoutineDocument(projected.envelope)).toMatchObject({ ok: true });
+  });
+
   it("parses markdown into draft authoring input and preserves an existing gate on update", () => {
     const parsed = parsePortableRoutineDocument({
       grammarVersion: GRAMMAR_VERSION,

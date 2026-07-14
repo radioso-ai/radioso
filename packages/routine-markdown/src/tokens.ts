@@ -375,15 +375,21 @@ const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' 
   if (!opNeedsValue(op)) {
     return { kind: 'chip', chipKind: 'condition', refId, op, label: `${refId} ${token}` }
   }
+  if (tail === '') return null
   if (op === 'in') {
-    return { kind: 'chip', chipKind: 'condition', refId, op, values: splitList(tail).map(coerceLiteral), label: `${refId} in ${tail}` }
+    const values = splitList(tail).map(coerceLiteral)
+    if (values.length === 0) return null
+    return { kind: 'chip', chipKind: 'condition', refId, op, values, label: `${refId} in ${tail}` }
   }
   if (opNeedsUnit(op)) {
     const parts = tail.split(/\s+/)
     const unit = parts.length > 1 && (GUARD_UNITS as readonly string[]).includes(parts[parts.length - 1]!)
       ? (parts.pop() as RoutineFieldGuardUnit)
       : null
-    return { kind: 'chip', chipKind: 'condition', refId, op, value: coerceLiteral(parts.join(' ')), unit, label: `${refId} ${token} ${tail}` }
+    if (!unit) return null
+    const value = coerceLiteral(parts.join(' '))
+    if (typeof value !== 'number') return null
+    return { kind: 'chip', chipKind: 'condition', refId, op, value, unit, label: `${refId} ${token} ${tail}` }
   }
   return { kind: 'chip', chipKind: 'condition', refId, op, value: coerceLiteral(tail), label: `${refId} ${token} ${tail}` }
 }

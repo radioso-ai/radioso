@@ -310,6 +310,9 @@ describe('routine prose token grammar', () => {
       '[action ]',
       '[decision route: yes]',
       '[approval route: yes="Yes"]',
+      '[if amount >=] -> end',
+      '[if country in ] -> end',
+      '[if order_date older than 30] -> end',
     ].join('\n'), { resolveSkill: () => false })
 
     expect(parsed).toEqual({
@@ -340,7 +343,54 @@ describe('routine prose token grammar', () => {
           code: 'invalid_gate_token',
           message: 'Invalid gate token: [approval route: yes="Yes"]',
         },
+        {
+          line: 11,
+          code: 'invalid_guard_token',
+          message: 'Invalid guard token: [if amount >=]',
+        },
+        {
+          line: 12,
+          code: 'invalid_guard_token',
+          message: 'Invalid guard token: [if country in ]',
+        },
+        {
+          line: 13,
+          code: 'invalid_guard_token',
+          message: 'Invalid guard token: [if order_date older than 30]',
+        },
       ],
+    })
+  })
+
+  it('accepts operandless presence guards and complete relative-date guards', () => {
+    const parsed = parse([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Branch',
+      'trigger: hi',
+      '---',
+      '[if email is present] -> end',
+      '[if order_date older than 30 days] -> end',
+    ].join('\n'), { resolveSkill: () => false })
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      doc: {
+        paragraphs: [
+          {
+            segments: [
+              { kind: 'chip', chipKind: 'condition', refId: 'email', op: 'is_present' },
+              { kind: 'chip', chipKind: 'end', refId: 'done' },
+            ],
+          },
+          {
+            segments: [
+              { kind: 'chip', chipKind: 'condition', refId: 'order_date', op: 'older_than', value: 30, unit: 'days' },
+              { kind: 'chip', chipKind: 'end', refId: 'done' },
+            ],
+          },
+        ],
+      },
     })
   })
 

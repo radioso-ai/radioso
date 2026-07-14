@@ -212,6 +212,15 @@ test tasks precede implementation tasks and must fail first.
       Vitest 70/70, `pnpm exec tsc -p tsconfig.json` clean, backend
       `pnpm exec tsc --noEmit` clean, backend requested routine Vitest 50/50,
       frontend routine-prose Vitest 63/63.
+      Review-pass-3 micro-fix addressed 2026-07-14: malformed field guard
+      operands now fail as `invalid_guard_token`; operandless presence guards
+      and complete relative-date guards remain valid; portable projection treats
+      structured field guards with missing required operands as
+      `routine_not_portable` instead of emitting rejected markdown. Red
+      evidence: focused package parser test first failed 3 missing diagnostics;
+      focused backend projection test first showed `[if amount = ] -> end`.
+      Green verification: routine-markdown tsc clean and Vitest 73/73; backend
+      tsc clean; backend requested routine Vitest 52/52.
 - [ ] F3. `pnpm run ci:local -- origin/main` (with vector-enabled integration
       DB; grep the real exit code); push; PR with validation evidence and
       artifact links.

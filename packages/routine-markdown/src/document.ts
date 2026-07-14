@@ -805,6 +805,16 @@ function parseInstructionSegments(instruction: string, nameByRef: Map<string, st
   return segments.length > 0 ? segments : [{ kind: 'text', text: instruction }]
 }
 
+function fieldGuardIsRepresentable(edge: RoutineDraftSourceTransition): boolean {
+  if (edge.guardKind !== 'field' || !edge.fieldRef || !edge.fieldOp) return false
+  if (!fieldGuardOpNeedsValue(edge.fieldOp)) return true
+  if (edge.fieldOp === 'in') return Array.isArray(edge.fieldValues) && edge.fieldValues.length > 0
+  if (fieldGuardOpNeedsUnit(edge.fieldOp)) {
+    return typeof edge.fieldValue === 'number' && edge.fieldUnit != null
+  }
+  return edge.fieldValue !== null && edge.fieldValue !== undefined
+}
+
 // The guard prefix of a branch paragraph: a condition chip (decided-in-code), or the
 // AI-decided prose. A counter-bounded loop has no prose prefix — the bound rides on the
 // trailing step chip — so it returns nothing here.
@@ -1097,11 +1107,11 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
     // requires its defining field: an llm guard needs a non-null guardText — a `null` one
     // compiles to the condition `"llm"` but a bare prose round-trip would emit `""`, a
     // different condition (an empty `""` already round-trips to `""`, so it stays); a field
-    // guard needs ref+operator; an outcome guard a status. Otherwise the prose would
+    // guard needs every operand the operator requires; an outcome guard a status. Otherwise the prose would
     // round-trip to a different guard, so it falls back.
     const guardRenders = (edge: RoutineDraftSourceTransition): boolean =>
       (edge.guardKind === 'llm' && edge.guardText != null)
-      || (edge.guardKind === 'field' && Boolean(edge.fieldRef) && Boolean(edge.fieldOp))
+      || fieldGuardIsRepresentable(edge)
       || (edge.guardKind === 'outcome' && Boolean(edge.outcomeStatus ?? edge.guardText))
       // A slot-filled guard renders only when guardText names at least one slot — one that names
       // none can't become a "when provided" chip, so it falls back to Form.

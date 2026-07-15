@@ -1,7 +1,5 @@
 export * from "./types.js";
 export type {
-  ProseTerminal,
-  ProseTerminalConfig,
   RoutineDocBlock,
   RoutineDocChip,
   RoutineSkillBindingState,

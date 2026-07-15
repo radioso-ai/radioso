@@ -47,6 +47,10 @@ export function RoutineProseTab({
   // them from the loaded routine so a custom id or message round-trips; the message inputs
   // edit the copy, the ids ride along untouched.
   const initialTerminals = useMemo(() => readProseTerminals(source), [source])
+  const [terminalIds, setTerminalIds] = useState({
+    complete: initialTerminals.complete.id,
+    handoff: initialTerminals.handoff?.id,
+  })
   const [completionMessage, setCompletionMessage] = useState(initialTerminals.complete.instruction ?? '')
   const [handoffMessage, setHandoffMessage] = useState(initialTerminals.handoff?.instruction ?? '')
 
@@ -103,8 +107,8 @@ export function RoutineProseTab({
       blocks,
       variables,
       terminals: {
-        complete: { id: initialTerminals.complete.id, instruction: completionMessage },
-        handoff: { id: initialTerminals.handoff?.id, instruction: handoffMessage },
+        complete: { id: terminalIds.complete, instruction: completionMessage },
+        handoff: { id: terminalIds.handoff, instruction: handoffMessage },
       },
       completionExport,
     })
@@ -118,7 +122,7 @@ export function RoutineProseTab({
         reentryMode: header.activation.reentryMode,
       },
     })
-  }, [loaded, blocks, variables, header, initialTerminals, completionMessage, handoffMessage, completionExport, onDraftChange])
+  }, [loaded, blocks, variables, header, terminalIds, completionMessage, handoffMessage, completionExport, onDraftChange])
 
   const addVariable = (variable: RoutineEditorVariable) => {
     setVariables((current) =>
@@ -156,12 +160,24 @@ export function RoutineProseTab({
         initialContent={loaded.paragraphs}
         name={header.name}
         trigger={header.activation.triggerDescription}
+        terminals={{
+          complete: { id: terminalIds.complete, instruction: completionMessage },
+          handoff: { id: terminalIds.handoff, instruction: handoffMessage },
+        }}
         onCreateVariable={addVariable}
         onDocChange={setBlocks}
         onSetVariableType={setVariableType}
         onSetVariableRequired={setVariableRequired}
         onSetVariableMutable={setVariableMutable}
-        onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
+        onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger, terminals }) => {
+          if (terminals?.complete) {
+            setTerminalIds((current) => ({ ...current, complete: terminals.complete?.id ?? current.complete }))
+            if (terminals.complete.instruction !== undefined) setCompletionMessage(terminals.complete.instruction ?? '')
+          }
+          if (terminals?.handoff) {
+            setTerminalIds((current) => ({ ...current, handoff: terminals.handoff?.id }))
+            if (terminals.handoff.instruction !== undefined) setHandoffMessage(terminals.handoff.instruction ?? '')
+          }
           if (!onHeaderChange) return
           onHeaderChange((current) => ({
             ...current,

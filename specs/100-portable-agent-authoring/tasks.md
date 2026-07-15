@@ -238,6 +238,27 @@ test tasks precede implementation tasks and must fail first.
       shorter id plus prose. Frontend `test` now prebuilds routine workspace
       deps for fresh checkouts; backend `test`, `test:unit`, `test:integration`,
       and `test:contract` were audited and already build the routine packages.
+      Post-PR review follow-up addressed 2026-07-15: portable markdown is now
+      self-contained for primary completion and handoff terminal ids/messages
+      via optional `end: <id> ("message")` and `handoff: <id> ("message")`
+      frontmatter, emitted only when non-default or when a message is set.
+      Parser diagnostics cover malformed terminal frontmatter as
+      `invalid_frontmatter`; backend PUT preserves existing terminal config when
+      keys are omitted; the property generator now covers custom terminal ids
+      and messages. GET portable now rejects gated routines with a
+      gate-specific `routine_not_portable`, while PUT preserves an existing
+      gate and projects the response without exporting the gate. Portable
+      create/update 422 OpenAPI responses now use a `oneOf` union of validation
+      rejection and parse-diagnostics envelopes, with SDK types regenerated.
+      Red evidence: package terminal-frontmatter tests initially failed 2
+      assertions, docs conformance failed on the new example, and backend
+      portable tests initially failed 8 assertions around gated fixtures,
+      omitted terminals, and stale package dist. Green verification:
+      routine-definition tsc clean and Vitest 8/8; routine-markdown tsc clean
+      and Vitest 84/84; backend tsc clean; requested backend routines/routes/
+      OpenAPI Vitest 65/65; frontend routine-prose Vitest 63/63. OpenAPI/SDK
+      diff is limited to the portable save 422 union component and affected
+      operation response refs/descriptions.
 - [x] F3. ci:local + full pipeline evidence (3 runs + manual tail stages):
       boundaries lint, backend build, db:schema/types checks GREEN; backend
       unit 2440/2440 GREEN (run-1 single fail = documented order-dependent

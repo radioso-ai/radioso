@@ -42,6 +42,10 @@ POST /api/v1/routines/portable/canonicalize
 
 `GET` returns an existing routine as canonical portable markdown.
 
+If the routine has a structured activation gate (`activation.gateRef`), `GET`
+returns `422` with `routine_not_portable`. Portable markdown v1 is
+self-contained and does not encode activation gates.
+
 `PUT` updates an existing draft routine from portable markdown. It reuses the
 structured routine update path. It is only for draft routines.
 
@@ -49,6 +53,16 @@ For completion export, `PUT` uses preserve-on-omit semantics. If the incoming
 markdown has no `export` frontmatter key, the existing routine's structured
 `completionExport` value is preserved. If the incoming markdown includes
 `export`, the parsed value replaces the existing one.
+
+For terminal configuration, `PUT` also uses preserve-on-omit semantics. If the
+incoming markdown has no `end` or `handoff` frontmatter key, the existing
+primary completion or handoff terminal id and message are preserved. If the
+document includes either key, the parsed value replaces that terminal config.
+
+`PUT` can update a draft routine that already has `activation.gateRef` set. The
+gate is preserved on the structured routine even though `GET .../portable` for
+that same routine returns `422`. This is the only gate asymmetry: writes preserve
+the host-carried gate, reads refuse to export a document that would omit it.
 
 `POST /agents/{agentId}/routines/portable` creates a draft routine from portable
 markdown and returns:
@@ -116,9 +130,12 @@ Portable markdown v1 covers the routine body, activation name, trigger, reentry,
 priority, completion export, slots, steps, transitions, terminals expressed in
 the body, skill bindings, actions, guards, jumps, and approval/decision gates.
 
-Some host-carried fields are not markdown tokens in v1. Default terminal message
-editor fields should be managed through the structured routine definition or the
-dashboard. Portable markdown v1 can represent at most one handoff terminal; use
-the structured routine API for routines that need multiple handoff terminals.
+Primary completion and handoff terminal ids and messages are encoded in
+frontmatter with `end` and `handoff`. Portable markdown v1 can represent at most
+one handoff terminal; use the structured routine API for routines that need
+multiple handoff terminals.
+
+Activation gates are host-carried in v1. They are preserved by `PUT` and rejected
+by `GET`, as described above.
 
 See [Portable Routine Markdown](./portable-routine-markdown.md) for the grammar.

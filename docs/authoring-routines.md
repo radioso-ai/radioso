@@ -431,10 +431,9 @@ open copies as portable text.
 
 To restore the routine, paste the text back into the prose editor. The markers
 become chips again, and the name and trigger fill in from the text. The text
-carries the body, the name, the trigger, priority, reentry, and each variable's
-type and flags. Completion export and the default completion/handoff message
-fields are structured routine settings, not markdown tokens in grammar v1 — set
-or verify those after pasting.
+carries the body, the name, the trigger, priority, reentry, completion export,
+primary completion and handoff terminal ids and messages, and each variable's
+type and flags.
 
 The text carries names, not internal ids. Pasting into the same agent resolves
 every skill cleanly. Pasting into a different agent that does not have a referenced

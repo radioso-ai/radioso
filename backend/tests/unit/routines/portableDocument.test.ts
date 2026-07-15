@@ -65,7 +65,14 @@ const routine = (overrides: Partial<RoutineDefinition> = {}): RoutineDefinition 
 
 describe("portable routine document mapper", () => {
   it("projects a definition to a canonical versioned markdown envelope", () => {
-    const envelope = routineToPortableDocument(routine());
+    const envelope = routineToPortableDocument(routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: null,
+        priority: 7,
+        reentryMode: "always",
+      },
+    }));
 
     expect(envelope).toEqual({
       grammarVersion: GRAMMAR_VERSION,
@@ -85,6 +92,12 @@ describe("portable routine document mapper", () => {
 
   it("returns a typed diagnostic when a valid routine is not portable markdown representable", () => {
     const projected = projectRoutineToPortableDocument(routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: null,
+        priority: 7,
+        reentryMode: "always",
+      },
       transitions: [
         {
           fromStep: "collect_topic",
@@ -231,6 +244,92 @@ describe("portable routine document mapper", () => {
     expect(parsePortableRoutineDocument(projected.envelope)).toMatchObject({ ok: true });
   });
 
+  it("round-trips custom primary completion and handoff terminal ids and messages byte-stably", () => {
+    const source = routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: null,
+        priority: 7,
+        reentryMode: "always",
+      },
+      transitions: [
+        {
+          fromStep: "collect_topic",
+          toRef: "complete_support",
+          guardKind: "default",
+          guardText: null,
+          outcomeStatus: null,
+          counterLimit: null,
+          ordinal: 0,
+        },
+        {
+          fromStep: "collect_topic",
+          toRef: "human_support",
+          guardKind: "outcome",
+          guardText: null,
+          outcomeStatus: "failed",
+          counterLimit: null,
+          ordinal: 1,
+        },
+      ],
+      terminals: [
+        {
+          stableStepId: "complete_support",
+          kind: "complete",
+          instruction: "Close with the support summary.",
+          ordinal: 0,
+        },
+        {
+          stableStepId: "human_support",
+          kind: "handoff",
+          instruction: "Route this to support.",
+          ordinal: 1,
+        },
+      ],
+    });
+
+    const projected = projectRoutineToPortableDocument(source);
+    expect(projected.ok).toBe(true);
+    if (!projected.ok) return;
+    expect(projected.envelope.content).toContain('end: complete_support ("Close with the support summary.")\n');
+    expect(projected.envelope.content).toContain('handoff: human_support ("Route this to support.")\n');
+
+    const parsed = parsePortableRoutineDocument(projected.envelope);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.draft.transitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toRef: "complete_support", guardKind: "default" }),
+      expect.objectContaining({ toRef: "human_support", guardKind: "outcome" }),
+    ]));
+    expect(parsed.draft.terminals).toEqual([
+      expect.objectContaining({ stableStepId: "complete_support", kind: "complete", instruction: "Close with the support summary." }),
+      expect.objectContaining({ stableStepId: "human_support", kind: "handoff", instruction: "Route this to support." }),
+    ]);
+
+    const projectedAgain = projectRoutineToPortableDocument(routine(parsed.draft as Partial<RoutineDefinition>));
+    expect(projectedAgain).toEqual(projected);
+  });
+
+  it("returns a gate-specific diagnostic instead of projecting a gated routine", () => {
+    const projected = projectRoutineToPortableDocument(routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: "retrieval.answer",
+        priority: 7,
+        reentryMode: "always",
+      },
+    }));
+
+    expect(projected).toEqual({
+      ok: false,
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 cannot represent activation gate retrieval.answer.",
+      }],
+    });
+  });
+
   it("parses markdown into draft authoring input and preserves an existing gate on update", () => {
     const parsed = parsePortableRoutineDocument({
       grammarVersion: GRAMMAR_VERSION,
@@ -259,6 +358,41 @@ describe("portable routine document mapper", () => {
         },
         slots: [{ key: "topic" }],
         steps: [{ stableStepId: "collect_topic" }],
+      },
+    });
+  });
+
+  it("preserves existing primary and handoff terminal config on update when frontmatter is omitted", () => {
+    const parsed = parsePortableRoutineDocument({
+      grammarVersion: GRAMMAR_VERSION,
+      content: [
+        "---",
+        `grammar: ${GRAMMAR_VERSION}`,
+        "name: support-intake",
+        "trigger: When the user needs support",
+        "---",
+        "# collect_topic",
+        "[outcome failed] -> handoff",
+        "Ask for @topic.",
+      ].join("\n"),
+    }, {
+      existingTerminals: {
+        complete: { id: "complete_support", instruction: "Close with the support summary." },
+        handoff: { id: "human_support", instruction: "Route this to support." },
+      },
+    });
+
+    expect(parsed).toMatchObject({
+      ok: true,
+      draft: {
+        transitions: expect.arrayContaining([
+          expect.objectContaining({ toRef: "complete_support", guardKind: "default" }),
+          expect.objectContaining({ toRef: "human_support", guardKind: "outcome" }),
+        ]),
+        terminals: [
+          expect.objectContaining({ stableStepId: "complete_support", kind: "complete", instruction: "Close with the support summary." }),
+          expect.objectContaining({ stableStepId: "human_support", kind: "handoff", instruction: "Route this to support." }),
+        ],
       },
     });
   });

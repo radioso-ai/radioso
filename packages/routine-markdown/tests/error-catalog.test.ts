@@ -43,6 +43,18 @@ const diagnosticCases = [
     message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
   },
   {
+    code: 'invalid_frontmatter',
+    content: '---\ngrammar: 1\nname: End\ntrigger: hi\nend: done/bad\n---\nFinish.',
+    line: 5,
+    message: 'Invalid end frontmatter: expected "<id>" or "<id> (\\"message\\")"',
+  },
+  {
+    code: 'invalid_frontmatter',
+    content: '---\ngrammar: 1\nname: Handoff\ntrigger: hi\nhandoff: bad id\n---\nFinish.',
+    line: 5,
+    message: 'Invalid handoff frontmatter: expected "<id>" or "<id> (\\"message\\")"',
+  },
+  {
     code: 'invalid_var_declaration',
     content: '---\ngrammar: 1\nname: Intake\ntrigger: hi\nvars: tracking_id:numbre:optional\n---\nAsk for it.',
     line: 5,

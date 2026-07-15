@@ -26,6 +26,8 @@ trigger: customer asks for a refund
 reentry: once_per_conversation
 priority: 20
 export: complete,handoff -> 55555555-5555-4555-8555-555555555555
+end: completed ("Refund closed.")
+handoff: refund_handoff ("Bring in a refund specialist.")
 vars: order_id:text, amount:number:optional
 ---
 Ask for @order_id.
@@ -56,6 +58,11 @@ The frontmatter keys are:
   completion export. The syntax is
   `<triggerKinds> -> <destinationRef>`, where `triggerKinds` is `complete`,
   `handoff`, or both separated by commas.
+- `end` - primary completion terminal configuration. The syntax is
+  `<id>` or `<id> ("message")`. Omitted means `done` with no message.
+- `handoff` - handoff terminal configuration. The syntax is
+  `<id>` or `<id> ("message")`. Omitted means `handoff` with the default handoff
+  copy.
 
 Valid variable types are `text`, `number`, `boolean`, `email`, and `date`.
 Variable keys use the same slot-key grammar as structured routines:
@@ -155,9 +162,25 @@ A bounded loop is its own guard kind. Do not combine `(max N)` with `[if ...]`,
 `[outcome ...]`, or `[filled ...]` on the same branch line.
 
 The serializer writes terminal ids and named completion messages that are present
-in the chip document. Completion and handoff settings outside the body, such as
-the default completion message and handoff message fields in the dashboard, are
-host-carried fields, not markdown tokens.
+in the chip document. The primary completion terminal and the handoff terminal
+are configured in frontmatter:
+
+```md
+---
+grammar: 1
+name: Terminal copy
+trigger: when terminal copy matters
+end: completed ("Close this out.")
+handoff: human_support ("Bring in support.")
+---
+Finish the request.
+[outcome failed] -> handoff
+```
+
+The body still uses canonical targets: `-> end` points to the configured
+primary completion terminal, and `-> handoff` points to the configured handoff
+terminal. Additional named completion terminals are still expressed on body
+tokens with `-> end:name ("Message")`.
 
 ## Decision And Approval Gates
 
@@ -213,9 +236,13 @@ serializer writes this exact order:
 6. `priority: <integer>`, only when the value is not `0`
 7. `export: <triggerKinds> -> <destinationRef>`, only when completion export is
    enabled
-8. `vars: <declarations>`, only when declarations are needed
-9. Closing fence `---`
-10. One routine paragraph per line
+8. `end: <id> ("<message>")`, only when the primary completion id is not `done`
+   or a primary completion message is set
+9. `handoff: <id> ("<message>")`, only when the handoff id is not `handoff` or
+   a handoff message is set
+10. `vars: <declarations>`, only when declarations are needed
+11. Closing fence `---`
+12. One routine paragraph per line
 
 Canonical output uses `\n` line endings, no blank line between frontmatter and
 the body, and exactly one trailing newline.
@@ -233,6 +260,9 @@ Canonicalization also normalizes these details:
 - branch lines use exactly one space before `->`
 - quoted action ids, approval labels, approval descriptions, and named
   completion messages escape quotes and backslashes
+- `end` and `handoff` frontmatter use the same stable-id grammar as step and
+  terminal targets, and use the same quoted-message escaping as named
+  completion tokens
 
 For example, a document with `vars: tracking_id:text` and no `@tracking_id`
 reference keeps `vars: tracking_id:text` in canonical output. Dropping it would
@@ -241,6 +271,15 @@ lose the declared slot.
 Canonicalization does not run semantic validation. A document can be grammatically
 valid and still fail routine validation because of an unreachable step, missing
 terminal, dangling jump, or invalid routine shape.
+
+## Limitations
+
+Portable markdown v1 cannot represent activation gates. `GET .../portable`
+returns `routine_not_portable` for a routine whose structured
+`activation.gateRef` is set. `PUT .../portable` can still update such a draft:
+the API preserves the existing gate while applying the markdown body.
+
+Portable markdown v1 can represent at most one handoff terminal.
 
 ## Error Catalog
 
@@ -268,6 +307,10 @@ All parse diagnostics include `line`, `code`, and `message`.
     `<triggerKinds> -> <destinationRef>`, uses a trigger kind other than
     `complete` or `handoff`, or omits the destination.
   - Message: `Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff`
+- `invalid_frontmatter`
+  - Trigger: `end` or `handoff` is present but does not match
+    `<id>` or `<id> ("message")`.
+  - Message: `Invalid <key> frontmatter: expected "<id>" or "<id> (\"message\")"`
 - `invalid_var_declaration`
   - Trigger: a `vars` declaration has an invalid slot key, unknown slot type, or
     flag other than `optional` or `mutable`.

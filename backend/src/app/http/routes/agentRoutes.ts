@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
+import { readProseTerminals } from "@radioso/routine-markdown";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
@@ -525,6 +526,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         const portable = parsePortableRoutineDocument(req.body as PortableRoutineDocumentEnvelope, {
           existingGateRef: existing.activation.gateRef,
           existingCompletionExport: existing.completionExport ?? null,
+          existingTerminals: readProseTerminals(existing),
         });
         if (!portable.ok) {
           recordPortableRoutineFailure(dependencies, "update", portable.diagnostics);
@@ -547,7 +549,13 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
           parsed.routineId,
           portable.draft,
         );
-        const projected = projectRoutineToPortableDocument(result.routine);
+        const projected = projectRoutineToPortableDocument({
+          ...result.routine,
+          activation: {
+            ...result.routine.activation,
+            gateRef: null,
+          },
+        });
         if (!projected.ok) {
           recordPortableRoutineFailure(dependencies, "update", projected.diagnostics);
           sendPortableDiagnostics(res, projected.diagnostics, 422);

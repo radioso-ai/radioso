@@ -219,7 +219,19 @@ const dispatch = async (
 
 describe("portable routine routes", () => {
   it("returns the canonical portable document for a routine", async () => {
-    const dependencies = createDependencies();
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        get: vi.fn().mockResolvedValue(routine({
+          activation: {
+            triggerDescription: "When the user needs support",
+            gateRef: null,
+            priority: 3,
+            reentryMode: "once_per_conversation",
+          },
+        })),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
 
     const response = await dispatch(createApp(dependencies), {
       method: "GET",
@@ -240,6 +252,12 @@ describe("portable routine routes", () => {
       routineDefinitionService: {
         ...createDependencies().routineDefinitionService,
         get: vi.fn().mockResolvedValue(routine({
+          activation: {
+            triggerDescription: "When the user needs support",
+            gateRef: null,
+            priority: 3,
+            reentryMode: "once_per_conversation",
+          },
           terminals: [
             { stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 },
             { stableStepId: "handoff_sales", kind: "handoff", instruction: null, ordinal: 1 },
@@ -261,6 +279,25 @@ describe("portable routine routes", () => {
         line: 1,
         code: "routine_not_portable",
         message: "Routine portable markdown v1 can represent at most one handoff terminal.",
+      }],
+    });
+  });
+
+  it("returns 422 diagnostics when GET portable is requested for a gated routine", async () => {
+    const dependencies = createDependencies();
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "GET",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+    });
+
+    expect(response.status).toBe(422);
+    expect(response.body).toEqual({
+      diagnostics: [{
+        line: 1,
+        code: "routine_not_portable",
+        message: "Routine portable markdown v1 cannot represent activation gate gate-preserved.",
       }],
     });
   });
@@ -343,6 +380,64 @@ describe("portable routine routes", () => {
     );
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ grammarVersion: GRAMMAR_VERSION, content: markdown });
+  });
+
+  it("preserves existing terminal config on portable update when terminal frontmatter is omitted", async () => {
+    const existing = routine({
+      activation: {
+        triggerDescription: "When the user needs support",
+        gateRef: "gate-preserved",
+        priority: 3,
+        reentryMode: "once_per_conversation",
+      },
+      transitions: [{
+        fromStep: "collect_topic",
+        toRef: "complete_support",
+        guardKind: "default",
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        ordinal: 0,
+      }],
+      terminals: [{
+        stableStepId: "complete_support",
+        kind: "complete",
+        instruction: "Close with the support summary.",
+        ordinal: 0,
+      }],
+    });
+    const dependencies = createDependencies({
+      routineDefinitionService: {
+        ...createDependencies().routineDefinitionService,
+        get: vi.fn().mockResolvedValue(existing),
+        updateDraft: vi.fn().mockImplementation(async (_workspaceId, _agentId, _routineId, input) => ({
+          routine: { ...existing, ...input, activation: { ...input.activation, gateRef: null } },
+          validation: { ok: true, diagnostics: [] },
+        })),
+      } as unknown as AppDependencies["routineDefinitionService"],
+    });
+
+    const response = await dispatch(createApp(dependencies), {
+      method: "PUT",
+      url: `/api/v1/agents/${agentId}/routines/${routineId}/portable`,
+      token: "token",
+      body: { grammarVersion: GRAMMAR_VERSION, content: markdown },
+    });
+
+    expect(dependencies.routineDefinitionService.updateDraft).toHaveBeenCalledWith(
+      workspaceId,
+      agentId,
+      routineId,
+      expect.objectContaining({
+        transitions: [expect.objectContaining({ toRef: "complete_support", guardKind: "default" })],
+        terminals: [expect.objectContaining({
+          stableStepId: "complete_support",
+          kind: "complete",
+          instruction: "Close with the support summary.",
+        })],
+      }),
+    );
+    expect(response.status).toBe(200);
   });
 
   it("returns 422 diagnostics when a portable update result cannot be projected back to markdown", async () => {

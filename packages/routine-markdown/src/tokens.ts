@@ -19,6 +19,7 @@ import type {
   RoutineFieldGuardOp,
   RoutineFieldGuardUnit,
   RoutineCompletionExport,
+  ProseTerminalConfig,
   RoutineSlotType,
   RoutineStepMode,
 } from './types.js'
@@ -34,6 +35,7 @@ export type ParsedProseDoc = {
   reentryMode: RoutineReentryMode
   priority: number
   completionExport?: RoutineCompletionExport
+  terminals?: ProseTerminalConfig
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
   // True only when the text opened with our fenced frontmatter carrying a recognized
@@ -60,7 +62,7 @@ export type CanonicalizeResult =
   | ParseFailure
 
 export const GRAMMAR_VERSION = 1
-const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export'])
+const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export', 'end', 'handoff'])
 const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
@@ -89,6 +91,7 @@ const SLOT_TYPES: readonly RoutineSlotType[] = ['text', 'number', 'boolean', 'em
 const GUARD_UNITS: readonly RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
 const SLOT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
 const SKILL_SECTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
 
 const OP_TOKENS: Record<RoutineFieldGuardOp, string> = {
   is_true: 'is true',
@@ -279,6 +282,7 @@ export const serializeProseDoc = (input: {
   reentryMode?: RoutineReentryMode
   priority?: number
   completionExport?: RoutineCompletionExport | null
+  terminals?: ProseTerminalConfig | null
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
 }): string => {
@@ -301,6 +305,18 @@ export const serializeProseDoc = (input: {
   }
   if (input.completionExport?.enabled) {
     front.push(`export: ${input.completionExport.triggerKinds.join(',')} -> ${input.completionExport.destinationRef}`)
+  }
+  const complete = input.terminals?.complete
+  const completeId = complete?.id?.trim()
+  const completeInstruction = complete?.instruction?.trim() || null
+  if ((completeId && completeId !== 'done') || completeInstruction) {
+    front.push(`end: ${completeId || 'done'}${completeInstruction ? ` ("${escapeQuoted(completeInstruction)}")` : ''}`)
+  }
+  const handoff = input.terminals?.handoff
+  const handoffId = handoff?.id?.trim()
+  const handoffInstruction = handoff?.instruction?.trim() || null
+  if ((handoffId && handoffId !== 'handoff') || handoffInstruction) {
+    front.push(`handoff: ${handoffId || 'handoff'}${handoffInstruction ? ` ("${escapeQuoted(handoffInstruction)}")` : ''}`)
   }
   if (declaredVars.length > 0) {
     // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
@@ -357,6 +373,17 @@ const parseExport = (value: string): RoutineCompletionExport | null => {
   }
 }
 
+const TERMINAL_FRONTMATTER = new RegExp(`^(${stableIdentifierSource})(?:\\s*\\(${QUOTED_VALUE}\\))?$`, 'u')
+
+const parseTerminalFrontmatter = (value: string): { id: string; instruction?: string | null } | null => {
+  const match = TERMINAL_FRONTMATTER.exec(value.trim())
+  if (!match) return null
+  return {
+    id: match[1]!,
+    ...(match[2] != null ? { instruction: unescapeQuoted(match[2]) } : {}),
+  }
+}
+
 const parseReentryMode = (value: string): RoutineReentryMode | null => {
   if (value === 'once') return 'once_per_conversation'
   if (value === 'once_per_conversation' || value === 'always' || value === 'semantic') return value
@@ -408,7 +435,6 @@ const parseTarget = (token: string | undefined): string | undefined => {
 
 // Parse a gate's option list: `id="Label" ("Description") -> target, ...`. Description and
 // target are optional; whitespace and the comma separators are tolerated.
-const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
 const GATE_TARGET = `(?:end|handoff|step:${stableIdentifierSource})`
 const GATE_OPTION = new RegExp(`(${stableIdentifierSource})\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(${GATE_TARGET}))?`, 'gu')
 const parseGateOptions = (body: string): ApprovalDocOption[] => {
@@ -681,6 +707,7 @@ export const parseProseDoc = (
   let reentryMode: RoutineReentryMode = 'once_per_conversation'
   let priority = 0
   let completionExport: RoutineCompletionExport | undefined
+  let terminals: ProseTerminalConfig | undefined
   let hadFrontmatter = false
   let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
@@ -719,6 +746,20 @@ export const parseProseDoc = (
         else if (key === 'export') {
           completionExport = parseExport(value) ?? undefined
           hadFrontmatter = true
+        }
+        else if (key === 'end') {
+          const terminal = parseTerminalFrontmatter(value)
+          if (terminal) {
+            terminals = { ...(terminals ?? {}), complete: terminal }
+            hadFrontmatter = true
+          }
+        }
+        else if (key === 'handoff') {
+          const terminal = parseTerminalFrontmatter(value)
+          if (terminal) {
+            terminals = { ...(terminals ?? {}), handoff: terminal }
+            hadFrontmatter = true
+          }
         }
         else if (key === 'vars') {
           hadFrontmatter = true
@@ -777,7 +818,7 @@ export const parseProseDoc = (
   }))
 
   void grammarVersion
-  return { name, trigger, reentryMode, priority, ...(completionExport ? { completionExport } : {}), variables, paragraphs, hadFrontmatter }
+  return { name, trigger, reentryMode, priority, ...(completionExport ? { completionExport } : {}), ...(terminals ? { terminals } : {}), variables, paragraphs, hadFrontmatter }
 }
 
 const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnostic => ({
@@ -808,6 +849,12 @@ const invalidExportDiagnostic = (line: number): ParseDiagnostic => ({
   line,
   code: 'invalid_export',
   message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
+})
+
+const invalidFrontmatterDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_frontmatter',
+  message: `Invalid ${key} frontmatter: expected "<id>" or "<id> (\\"message\\")"`,
 })
 
 const invalidVarDeclarationDiagnostic = (declaration: string, reason: string, line: number): ParseDiagnostic => ({
@@ -1059,6 +1106,8 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
         if (!Number.isInteger(parsed)) diagnostics.push(invalidPriorityDiagnostic(value, cursor + 1))
       } else if (key === 'export') {
         if (!parseExport(value)) diagnostics.push(invalidExportDiagnostic(cursor + 1))
+      } else if (key === 'end' || key === 'handoff') {
+        if (!parseTerminalFrontmatter(value)) diagnostics.push(invalidFrontmatterDiagnostic(key, cursor + 1))
       } else if (key === 'vars') {
         diagnostics.push(...readVarDeclarationDiagnostics(value, cursor + 1))
       }
@@ -1100,6 +1149,7 @@ export const canonicalize = (
       reentryMode: parsed.doc.reentryMode,
       priority: parsed.doc.priority,
       completionExport: parsed.doc.completionExport,
+      terminals: parsed.doc.terminals,
       variables: parsed.doc.variables,
       paragraphs: parsed.doc.paragraphs,
     }),

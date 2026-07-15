@@ -101,6 +101,9 @@ export type ProseDoc = {
   paragraphs: ProseParagraph[];
 };
 
+export type ProseTerminal = { id?: string; instruction?: string | null };
+export type ProseTerminalConfig = { complete?: ProseTerminal | null; handoff?: ProseTerminal | null };
+
 export type ParseDiagnostic = {
   line: number;
   code: string;

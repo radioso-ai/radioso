@@ -30,6 +30,7 @@ export function RoutineProseEditor({
   const [trigger, setTrigger] = useState('')
   const [variables, setVariables] = useState<ChipDocVariable[]>([])
   const [blocks, setBlocks] = useState<RoutineDocBlock[]>([])
+  const [terminalIds, setTerminalIds] = useState<{ complete?: string; handoff?: string }>({})
   const [completionMessage, setCompletionMessage] = useState('')
   const [handoffMessage, setHandoffMessage] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -85,8 +86,8 @@ export function RoutineProseEditor({
         blocks,
         variables,
         terminals: {
-          complete: { instruction: completionMessage },
-          handoff: { instruction: handoffMessage },
+          complete: { id: terminalIds.complete, instruction: completionMessage },
+          handoff: { id: terminalIds.handoff, instruction: handoffMessage },
         },
       })
       const response = await routinesApi.createRoutine(agentId, draft)
@@ -138,14 +139,26 @@ export function RoutineProseEditor({
             reservedRefKinds={reservedRefKinds}
             name={name}
             trigger={trigger}
+            terminals={{
+              complete: { id: terminalIds.complete, instruction: completionMessage },
+              handoff: { id: terminalIds.handoff, instruction: handoffMessage },
+            }}
             onCreateVariable={addVariable}
             onDocChange={setBlocks}
             onSetVariableType={setVariableType}
             onSetVariableRequired={setVariableRequired}
             onSetVariableMutable={setVariableMutable}
-            onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger }) => {
+            onPasteFrontmatter={({ name: pastedName, trigger: pastedTrigger, terminals }) => {
               if (pastedName !== null) setName(pastedName)
               if (pastedTrigger !== null) setTrigger(pastedTrigger)
+              if (terminals?.complete) {
+                setTerminalIds((current) => ({ ...current, complete: terminals.complete?.id }))
+                if (terminals.complete.instruction !== undefined) setCompletionMessage(terminals.complete.instruction ?? '')
+              }
+              if (terminals?.handoff) {
+                setTerminalIds((current) => ({ ...current, handoff: terminals.handoff?.id }))
+                if (terminals.handoff.instruction !== undefined) setHandoffMessage(terminals.handoff.instruction ?? '')
+              }
             }}
           />
           <p className="text-xs text-muted-foreground">

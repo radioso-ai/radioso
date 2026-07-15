@@ -10,6 +10,8 @@ import type {
   RoutineFieldGuardUnit,
   RoutineInputBinding,
   RoutineCompletionExport,
+  ProseTerminal,
+  ProseTerminalConfig,
   RoutineSlotType,
   RoutineTransition,
 } from './types.js'
@@ -271,9 +273,6 @@ export function formatSlotFilledLabel(keys: string[], nameByRef: Map<string, str
 // references the canonical `done`/`handoff`). Fields are optional: an omitted id defaults to
 // the canonical terminal id, and an omitted completion message defaults to null / the handoff
 // message to the default copy.
-export type ProseTerminal = { id?: string; instruction?: string | null }
-export type ProseTerminalConfig = { complete?: ProseTerminal | null; handoff?: ProseTerminal | null }
-
 // Read the complete/handoff terminal config off a routine so the prose host can edit the
 // messages and re-emit the same ids. Returns the *primary* complete (the fall-through end a
 // default edge targets, else the first) for the header panel; additional named completions carry

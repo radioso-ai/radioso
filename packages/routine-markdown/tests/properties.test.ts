@@ -39,6 +39,14 @@ const textArb = fc
   .array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '.split('')), { minLength: 1, maxLength: 30 })
   .map((chars) => chars.join('').replace(/\s+/g, ' ').trim())
   .filter((value) => value.length > 0)
+const optionalTerminalMessageArb = fc.option(textArb, { nil: null })
+const terminalConfigArb = fc.record({
+  completeId: fc.oneof(fc.constant('done'), stableIdArb),
+  completeInstruction: optionalTerminalMessageArb,
+  handoffId: fc.oneof(fc.constant('handoff'), stableIdArb),
+  handoffInstruction: textArb,
+})
+  .filter(({ completeId, handoffId }) => completeId !== handoffId)
 
 const variableArb = keyArb.map((id): ChipDocVariable => ({
   id,
@@ -71,7 +79,8 @@ const draftArb = fc.record({
   slotKey: keyArb,
   stepId: slugStableKeyArb,
   instruction: textArb,
-}).map(({ name, trigger, slotKey, stepId, instruction }): RoutineDraftSource => ({
+  terminals: terminalConfigArb,
+}).map(({ name, trigger, slotKey, stepId, instruction, terminals }): RoutineDraftSource => ({
   name,
   activation: {
     triggerDescription: trigger,
@@ -98,18 +107,31 @@ const draftArb = fc.record({
   }],
   transitions: [{
     fromStep: stepId,
-    toRef: 'done',
+    toRef: terminals.completeId,
     guardKind: 'default',
     guardText: null,
     outcomeStatus: null,
     counterLimit: null,
     ordinal: 0,
+  }, {
+    fromStep: stepId,
+    toRef: terminals.handoffId,
+    guardKind: 'outcome',
+    guardText: null,
+    outcomeStatus: 'failed',
+    counterLimit: null,
+    ordinal: 1,
   }],
   terminals: [{
-    stableStepId: 'done',
+    stableStepId: terminals.completeId,
     kind: 'complete',
-    instruction: null,
+    instruction: terminals.completeInstruction,
     ordinal: 0,
+  }, {
+    stableStepId: terminals.handoffId,
+    kind: 'handoff',
+    instruction: terminals.handoffInstruction,
+    ordinal: 1,
   }],
 }))
 
@@ -273,6 +295,16 @@ describe('routine markdown properties', () => {
           trigger: draft.activation.triggerDescription,
           reentryMode: draft.activation.reentryMode,
           priority: draft.activation.priority,
+          terminals: {
+            complete: {
+              id: draft.terminals?.find((terminal) => terminal.kind === 'complete')?.stableStepId,
+              instruction: draft.terminals?.find((terminal) => terminal.kind === 'complete')?.instruction,
+            },
+            handoff: {
+              id: draft.terminals?.find((terminal) => terminal.kind === 'handoff')?.stableStepId,
+              instruction: draft.terminals?.find((terminal) => terminal.kind === 'handoff')?.instruction,
+            },
+          },
           variables: doc.variables,
           paragraphs: doc.paragraphs,
         })
@@ -285,6 +317,7 @@ describe('routine markdown properties', () => {
           trigger: parsed.doc.trigger ?? '',
           reentryMode: parsed.doc.reentryMode,
           priority: parsed.doc.priority,
+          terminals: parsed.doc.terminals,
           variables: parsed.doc.variables,
           blocks: parsed.doc.paragraphs.map((paragraph) => ({
             text: paragraph.segments.map((segment) =>
@@ -316,6 +349,7 @@ describe('routine markdown properties', () => {
         expect(roundTripped.activation.triggerDescription).toBe(draft.activation.triggerDescription)
         expect(roundTripped.slots.map((slot) => slot.key)).toEqual(draft.slots?.map((slot) => slot.key))
         expect(roundTripped.steps.map((step) => step.stableStepId)).toEqual(draft.steps?.map((step) => step.stableStepId))
+        expect(roundTripped.terminals).toEqual(draft.terminals)
       }),
       { seed, numRuns: 75 },
     )

@@ -65,6 +65,7 @@ describe('portable routine markdown docs conformance', () => {
       'Guards #2 [md]',
       'Guards #3 [md]',
       'Jumps And Terminals #1 [md]',
+      'Jumps And Terminals #2 [md]',
       'Decision And Approval Gates #1 [md]',
       'Decision And Approval Gates #2 [md]',
       'Completion Export #1 [md]',

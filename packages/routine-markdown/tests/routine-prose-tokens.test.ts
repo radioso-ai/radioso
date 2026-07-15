@@ -201,6 +201,87 @@ describe('routine prose token grammar', () => {
     })
   })
 
+  it('emits and parses non-default terminal frontmatter', () => {
+    const text = serializeProseDoc({
+      name: 'Terminal copy',
+      trigger: 'when terminal copy matters',
+      variables: [],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Finish.' }] }],
+      terminals: {
+        complete: { id: 'completed_custom', instruction: 'Close this out.' },
+        handoff: { id: 'handoff_support', instruction: 'Bring in support.' },
+      },
+    })
+
+    expect(text.split('\n').slice(0, 6)).toEqual([
+      '---',
+      `grammar: ${GRAMMAR_VERSION}`,
+      'name: Terminal copy',
+      'trigger: when terminal copy matters',
+      'end: completed_custom ("Close this out.")',
+      'handoff: handoff_support ("Bring in support.")',
+    ])
+
+    const parsed = parse(text, { resolveSkill: () => false })
+    expect(parsed).toMatchObject({
+      ok: true,
+      doc: {
+        terminals: {
+          complete: { id: 'completed_custom', instruction: 'Close this out.' },
+          handoff: { id: 'handoff_support', instruction: 'Bring in support.' },
+        },
+      },
+    })
+  })
+
+  it('elides default terminal frontmatter when no message is set', () => {
+    const text = serializeProseDoc({
+      name: 'Terminal defaults',
+      trigger: 'when defaults apply',
+      variables: [],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Finish.' }] }],
+      terminals: {
+        complete: { id: 'done', instruction: null },
+        handoff: { id: 'handoff', instruction: null },
+      },
+    })
+
+    expect(text).not.toContain('\nend:')
+    expect(text).not.toContain('\nhandoff:')
+    const parsed = parse(text, { resolveSkill: () => false })
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect('terminals' in parsed.doc).toBe(false)
+  })
+
+  it('passes terminal frontmatter into draftFromChipDoc authoring output', () => {
+    const draft = draftFromChipDoc({
+      name: 'Terminal copy',
+      trigger: 'when terminal copy matters',
+      variables: [],
+      blocks: [
+        { text: 'Finish.', chips: [] },
+        {
+          text: 'Escalate.',
+          chips: [{ kind: 'handoff', refId: 'handoff', label: 'handoff' }],
+        },
+      ],
+      terminals: {
+        complete: { id: 'completed_custom', instruction: 'Close this out.' },
+        handoff: { id: 'handoff_support', instruction: 'Bring in support.' },
+      },
+    })
+
+    expect(draft.transitions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toRef: 'completed_custom', guardKind: 'default' }),
+      expect.objectContaining({ toRef: 'handoff_support', guardKind: 'llm' }),
+    ]))
+    expect(draft.terminals).toEqual([
+      expect.objectContaining({ stableStepId: 'completed_custom', kind: 'complete', instruction: 'Close this out.' }),
+      expect.objectContaining({ stableStepId: 'handoff_support', kind: 'handoff', instruction: 'Bring in support.' }),
+    ])
+  })
+
   it('emits and parses completion export frontmatter only when enabled', () => {
     const text = serializeProseDoc({
       name: 'Export',

@@ -3,9 +3,11 @@ import {
   canonicalize,
   draftFromChipDoc,
   parse,
+  readProseTerminals,
   routineToChipDoc,
   serializeProseDoc,
   type ParseDiagnostic,
+  type ProseTerminalConfig,
   type ProseParagraph,
 } from "@radioso/routine-markdown";
 
@@ -42,6 +44,10 @@ const routineNotPortable = (message: string): ParseDiagnostic => ({
 });
 
 const routineNotPortableDiagnostic = (routine: RoutineDefinition): ParseDiagnostic => {
+  if (routine.activation.gateRef) {
+    return routineNotPortable(`Routine portable markdown v1 cannot represent activation gate ${routine.activation.gateRef}.`);
+  }
+
   const handoffTerminals = (routine.terminals ?? []).filter((terminal) => terminal.kind === "handoff");
   if (handoffTerminals.length > 1) {
     return routineNotPortable("Routine portable markdown v1 can represent at most one handoff terminal.");
@@ -89,15 +95,7 @@ const bodyBlocksFromParagraphs = (paragraphs: ProseParagraph[]) =>
   }));
 
 export const projectRoutineToPortableDocument = (routine: RoutineDefinition): PortableRoutineDocumentProjectionResult => {
-  const doc = routineToChipDoc({
-    ...routine,
-    activation: {
-      ...routine.activation,
-      // gateRef is not encoded in the portable grammar. It is preserved on PUT by merging
-      // the parsed document with the existing routine, but it must not make projection fail.
-      gateRef: null,
-    },
-  });
+  const doc = routineToChipDoc(routine);
   if (!doc) {
     return { ok: false, diagnostics: [routineNotPortableDiagnostic(routine)] };
   }
@@ -112,6 +110,7 @@ export const projectRoutineToPortableDocument = (routine: RoutineDefinition): Po
         reentryMode: routine.activation.reentryMode,
         priority: routine.activation.priority,
         completionExport: routine.completionExport,
+        terminals: readProseTerminals(routine),
         variables: doc.variables,
         paragraphs: doc.paragraphs,
       }),
@@ -129,7 +128,11 @@ export const routineToPortableDocument = (routine: RoutineDefinition): PortableR
 
 export const parsePortableRoutineDocument = (
   envelope: PortableRoutineDocumentEnvelope,
-  options: { existingGateRef?: string | null; existingCompletionExport?: RoutineCompletionExport | null } = {},
+  options: {
+    existingGateRef?: string | null;
+    existingCompletionExport?: RoutineCompletionExport | null;
+    existingTerminals?: ProseTerminalConfig | null;
+  } = {},
 ): PortableRoutineDocumentParseResult => {
   if (envelope.grammarVersion !== GRAMMAR_VERSION) {
     return { ok: false, diagnostics: [unsupportedEnvelopeVersion(envelope.grammarVersion)] };
@@ -140,6 +143,13 @@ export const parsePortableRoutineDocument = (
     return { ok: false, diagnostics: parsed.diagnostics };
   }
 
+  const terminals: ProseTerminalConfig | undefined = parsed.doc.terminals || options.existingTerminals
+    ? {
+        complete: parsed.doc.terminals?.complete ?? options.existingTerminals?.complete ?? null,
+        handoff: parsed.doc.terminals?.handoff ?? options.existingTerminals?.handoff ?? null,
+      }
+    : undefined;
+
   const draft = draftFromChipDoc({
     name: parsed.doc.name ?? "",
     trigger: parsed.doc.trigger ?? "",
@@ -147,6 +157,7 @@ export const parsePortableRoutineDocument = (
     reentryMode: parsed.doc.reentryMode,
     variables: parsed.doc.variables,
     blocks: bodyBlocksFromParagraphs(parsed.doc.paragraphs),
+    terminals,
     completionExport: parsed.doc.completionExport ?? options.existingCompletionExport ?? null,
   });
 

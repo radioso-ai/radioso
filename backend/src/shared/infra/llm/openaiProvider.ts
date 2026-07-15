@@ -71,6 +71,18 @@ export interface ChatSamplingParams {
   reasoning_effort?: ReasoningEffort;
 }
 
+// The installed OpenAI SDK types (v5) predate "none" as a reasoning_effort value,
+// though the API accepts it. Produce spread-ready sampling with reasoning_effort
+// coerced to the SDK's param type — and omitted entirely when unset, so the
+// reasoning-fallback retry keeps sending no reasoning_effort at all (rather than an
+// explicit undefined). The shared fallback handles any model that rejects a value
+// at runtime.
+type OpenAIChatReasoningEffort = OpenAI.Chat.Completions.ChatCompletionCreateParams["reasoning_effort"];
+const toSdkSampling = ({ reasoning_effort, ...rest }: ChatSamplingParams) =>
+  reasoning_effort === undefined
+    ? rest
+    : { ...rest, reasoning_effort: reasoning_effort as OpenAIChatReasoningEffort };
+
 /**
  * Shapes the sampling/limit params for a chat.completions call. For the first-party
  * OpenAI provider (gpt-5 family reasoning models), a requested reasoning effort is
@@ -151,7 +163,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       (sampling) =>
         this.client.chat.completions.create({
           model: this.config.model,
-          ...sampling,
+          ...toSdkSampling(sampling),
           messages,
         }),
     );
@@ -176,7 +188,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
             stream: true,
             // Ask OpenAI to append a final usage-only chunk after the content chunks.
             ...buildStreamUsageOptions(config.provider),
-            ...sampling,
+            ...toSdkSampling(sampling),
             messages,
           }),
       );

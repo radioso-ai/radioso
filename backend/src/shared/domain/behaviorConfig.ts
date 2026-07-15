@@ -18,12 +18,13 @@ export const CHAT_BEHAVIOR = {
     // gpt-5 family reasoning models otherwise default to medium effort and burn
     // thousands of hidden reasoning tokens before any visible text, which
     // dominates answer latency (and, on streamed turns, time-to-first-token).
-    // "low" rather than "minimal": minimal was observed declining answerable
-    // grounded questions (the model failed to synthesize/cite retrieved context),
-    // so grounded synthesis needs a little reasoning headroom. Still far cheaper
-    // than the medium default. Ignored by non-reasoning models and non-OpenAI
-    // providers.
-    reasoningEffort: "low",
+    // "none" skips the hidden reasoning pass entirely: on the default chat model
+    // (gpt-5.4-mini) it roughly halves time-to-first-token vs "low" while still
+    // grounding, citing, and inline-linking retrieved context reliably in testing.
+    // (Note "minimal" is NOT a valid value for the gpt-5.4 family — it 400s with
+    // unsupported_value; "none" is the correct floor. Supported: none/low/medium/
+    // high/xhigh.) Ignored by non-reasoning models and non-OpenAI providers.
+    reasoningEffort: "none",
     // Dedicated chat-answer ceiling — deliberately NOT the generic 1536 default.
     // On gpt-5-family reasoning models this maps to max_completion_tokens, the
     // TOTAL budget covering hidden reasoning + visible text. At "low" effort the

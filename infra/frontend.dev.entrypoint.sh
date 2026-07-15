@@ -221,6 +221,12 @@ install_frontend_dependencies() {
   SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
 }
 
+build_frontend_workspace_dependencies() {
+  if pnpm --dir frontend run | grep -q '^  build:workspace-deps'; then
+    pnpm --dir frontend run build:workspace-deps
+  fi
+}
+
 if [ ! -f "$INSTALL_STATE_FILE" ] && frontend_modules_ready; then
   printf '%s' "$CURRENT_INSTALL_STATE" > "$INSTALL_STATE_FILE"
   SAVED_INSTALL_STATE="$CURRENT_INSTALL_STATE"
@@ -237,6 +243,8 @@ if ! frontend_dependencies_ready; then
     fi
   fi
 fi
+
+build_frontend_workspace_dependencies
 
 if ! next_cache_ready; then
   clear_next_cache

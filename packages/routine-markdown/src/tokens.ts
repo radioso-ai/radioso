@@ -8,23 +8,34 @@
 // (`backend/.../routines/document`) so the two surfaces stay one grammar: `@ref` mentions,
 // `-> #step` / end targets, and bracketed guards. Keep them in sync when either moves.
 
-import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './routine-prose'
 import type {
   ApprovalDocOption,
   ChipDocVariable,
+  ParseDiagnostic,
   ProseChipKind,
   ProseParagraph,
   ProseSegment,
   RoutineInputBinding,
+  RoutineFieldGuardOp,
+  RoutineFieldGuardUnit,
+  RoutineCompletionExport,
+  ProseTerminalConfig,
+  RoutineSlotType,
   RoutineStepMode,
-} from './routine-prose'
-import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from './api-types'
+} from './types.js'
+import { OUTCOME_GUARD_REF, SLOT_FILLED_GUARD_REF } from './types.js'
+import type { RoutineReentryMode } from '@radioso/routine-definition'
+import { ROUTINE_DEFINITION_LIMITS, routineIdentifierPattern } from '@radioso/routine-definition'
 
 export type RoutineFieldGuardValue = string | number | boolean
 
 export type ParsedProseDoc = {
   name: string | null
   trigger: string | null
+  reentryMode: RoutineReentryMode
+  priority: number
+  completionExport?: RoutineCompletionExport
+  terminals?: ProseTerminalConfig
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
   // True only when the text opened with our fenced frontmatter carrying a recognized
@@ -32,6 +43,27 @@ export type ParsedProseDoc = {
   // and may replace the document — a bare leading `---` (e.g. a markdown doc) is not.
   hadFrontmatter: boolean
 }
+
+export type ParseSuccess = {
+  ok: true
+  grammarVersion: typeof GRAMMAR_VERSION
+  doc: ParsedProseDoc
+}
+
+export type ParseFailure = {
+  ok: false
+  diagnostics: ParseDiagnostic[]
+}
+
+export type ParseResult = ParseSuccess | ParseFailure
+
+export type CanonicalizeResult =
+  | { ok: true; grammarVersion: typeof GRAMMAR_VERSION; content: string }
+  | ParseFailure
+
+export const GRAMMAR_VERSION = 1
+const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export', 'end', 'handoff'])
+const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
 // ChipNode project onto this, so copy (node) and serialize (segment) share one encoder.
@@ -57,6 +89,9 @@ export type ChipTokenInput = {
 const FENCE = '---'
 const SLOT_TYPES: readonly RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const GUARD_UNITS: readonly RoutineFieldGuardUnit[] = ['days', 'weeks', 'months', 'years']
+const SLOT_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const SKILL_SECTION_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/u
+const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
 
 const OP_TOKENS: Record<RoutineFieldGuardOp, string> = {
   is_true: 'is true',
@@ -99,7 +134,11 @@ const unescapeQuoted = (value: string): string =>
 const BARE_ACTION_REF = /^[A-Za-z_][A-Za-z0-9_.-]*$/
 
 const formatBinding = (binding: RoutineInputBinding): string =>
-  binding.kind === 'variableRef' ? `@${binding.ref}` : formatLiteral(binding.value)
+  binding.kind === 'variableRef'
+    ? `@${binding.ref}`
+    : binding.kind === 'contextVariableRef'
+      ? `ctx.${binding.contextVariable}`
+      : formatLiteral(binding.value)
 
 // A skill chip carries optional typed bindings (spec 090). They have no inline form in
 // prose, so they ride in a bracket suffix that only appears when non-default — an unbound
@@ -192,9 +231,14 @@ export const tokenForChip = (chip: ChipTokenInput): string => {
 }
 
 const formatParagraph = (paragraph: ProseParagraph): string => {
-  const body = paragraph.segments
-    .map((segment) => (segment.kind === 'text' ? segment.text : tokenForChip(segment)))
-    .join('')
+  let body = ''
+  for (const segment of paragraph.segments) {
+    const token = segment.kind === 'text' ? segment.text : tokenForChip(segment)
+    if (token.startsWith('->') && body !== '' && !/\s$/.test(body)) {
+      body += ' '
+    }
+    body += token
+  }
   return paragraph.headingLevel === 1 ? `# ${body}` : body
 }
 
@@ -235,18 +279,45 @@ const referencedVariableIds = (paragraphs: ProseParagraph[]): Set<string> => {
 export const serializeProseDoc = (input: {
   name: string
   trigger: string
+  reentryMode?: RoutineReentryMode
+  priority?: number
+  completionExport?: RoutineCompletionExport | null
+  terminals?: ProseTerminalConfig | null
   variables: ChipDocVariable[]
   paragraphs: ProseParagraph[]
 }): string => {
   const referenced = referencedVariableIds(input.paragraphs)
-  // A variable needs a declaration only when it carries something a bare `@name` can't —
-  // a non-text type, or an optional/mutable flag. The common case (required, non-mutable,
-  // text) round-trips as plain text, so the header stays uncluttered.
+  // A variable needs a declaration when it carries something a bare `@name` can't, or when
+  // it is not referenced in the body. Unreferenced variables must stay in frontmatter or they
+  // disappear on the next parse.
   const declaredVars = input.variables.filter((variable) =>
-    referenced.has(variable.id)
-    && (variable.type !== 'text' || variable.required === false || variable.mutable === true))
+    !referenced.has(variable.id)
+    || variable.type !== 'text'
+    || variable.required === false
+    || variable.mutable === true)
 
-  const front = [FENCE, `name: ${input.name}`, `trigger: ${input.trigger}`]
+  const front = [FENCE, `grammar: ${GRAMMAR_VERSION}`, `name: ${input.name}`, `trigger: ${input.trigger}`]
+  if (input.reentryMode && input.reentryMode !== 'once_per_conversation') {
+    front.push(`reentry: ${input.reentryMode}`)
+  }
+  if (input.priority != null && input.priority !== 0) {
+    front.push(`priority: ${input.priority}`)
+  }
+  if (input.completionExport?.enabled) {
+    front.push(`export: ${input.completionExport.triggerKinds.join(',')} -> ${input.completionExport.destinationRef}`)
+  }
+  const complete = input.terminals?.complete
+  const completeId = complete?.id?.trim()
+  const completeInstruction = complete?.instruction?.trim() || null
+  if ((completeId && completeId !== 'done') || completeInstruction) {
+    front.push(`end: ${completeId || 'done'}${completeInstruction ? ` ("${escapeQuoted(completeInstruction)}")` : ''}`)
+  }
+  const handoff = input.terminals?.handoff
+  const handoffId = handoff?.id?.trim()
+  const handoffInstruction = handoff?.instruction?.trim() || null
+  if ((handoffId && handoffId !== 'handoff') || handoffInstruction) {
+    front.push(`handoff: ${handoffId || 'handoff'}${handoffInstruction ? ` ("${escapeQuoted(handoffInstruction)}")` : ''}`)
+  }
   if (declaredVars.length > 0) {
     // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
     front.push(`vars: ${declaredVars.map((variable) => {
@@ -259,14 +330,18 @@ export const serializeProseDoc = (input: {
   }
   front.push(FENCE)
 
-  return [...front, ...input.paragraphs.map(formatParagraph)].join('\n')
+  return `${[...front, ...input.paragraphs.map(formatParagraph)].join('\n')}\n`
 }
 
 // ---------------------------------------------------------------------------
 // Parse
 // ---------------------------------------------------------------------------
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_.-]*/
+const stableIdentifierSource = routineIdentifierPattern.source.replace(/^\^/, '').replace(/\$$/, '')
+const IDENTIFIER = new RegExp(`^${stableIdentifierSource}`, 'u')
+const STABLE_IDENTIFIER = new RegExp(`^${stableIdentifierSource}$`, 'u')
+const TARGET_END_DELIMITER = '(?=$|\\s)'
+const TARGET_ID_DELIMITER = '(?=$|\\s|\\()'
 
 const coerceLiteral = (raw: string): RoutineFieldGuardValue => {
   const trimmed = raw.trim()
@@ -279,11 +354,41 @@ const coerceLiteral = (raw: string): RoutineFieldGuardValue => {
 const parseBinding = (raw: string): RoutineInputBinding => {
   const trimmed = raw.trim()
   if (trimmed.startsWith('@')) return { kind: 'variableRef', ref: trimmed.slice(1) }
+  if (trimmed.startsWith('ctx.')) return { kind: 'contextVariableRef', contextVariable: trimmed.slice(4) }
   return { kind: 'literal', value: coerceLiteral(trimmed) }
 }
 
 const splitList = (raw: string): string[] =>
   raw.split(',').map((part) => part.trim()).filter((part) => part !== '')
+
+const parseExport = (value: string): RoutineCompletionExport | null => {
+  const match = /^([A-Za-z_,\s]+)\s*->\s*(\S+)$/.exec(value.trim())
+  if (!match) return null
+  const triggerKinds = splitList(match[1]!)
+  if (triggerKinds.length === 0 || triggerKinds.some((kind) => !EXPORT_TRIGGER_KINDS.has(kind))) return null
+  return {
+    enabled: true,
+    triggerKinds: triggerKinds as RoutineCompletionExport['triggerKinds'],
+    destinationRef: match[2]!,
+  }
+}
+
+const TERMINAL_FRONTMATTER = new RegExp(`^(${stableIdentifierSource})(?:\\s*\\(${QUOTED_VALUE}\\))?$`, 'u')
+
+const parseTerminalFrontmatter = (value: string): { id: string; instruction?: string | null } | null => {
+  const match = TERMINAL_FRONTMATTER.exec(value.trim())
+  if (!match) return null
+  return {
+    id: match[1]!,
+    ...(match[2] != null ? { instruction: unescapeQuoted(match[2]) } : {}),
+  }
+}
+
+const parseReentryMode = (value: string): RoutineReentryMode | null => {
+  if (value === 'once') return 'once_per_conversation'
+  if (value === 'once_per_conversation' || value === 'always' || value === 'semantic') return value
+  return null
+}
 
 // Parse a `[if ref op value unit]` condition body (the text already stripped of brackets).
 const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' }> | null => {
@@ -301,15 +406,21 @@ const parseConditionBody = (body: string): Extract<ProseSegment, { kind: 'chip' 
   if (!opNeedsValue(op)) {
     return { kind: 'chip', chipKind: 'condition', refId, op, label: `${refId} ${token}` }
   }
+  if (tail === '') return null
   if (op === 'in') {
-    return { kind: 'chip', chipKind: 'condition', refId, op, values: splitList(tail).map(coerceLiteral), label: `${refId} in ${tail}` }
+    const values = splitList(tail).map(coerceLiteral)
+    if (values.length === 0) return null
+    return { kind: 'chip', chipKind: 'condition', refId, op, values, label: `${refId} in ${tail}` }
   }
   if (opNeedsUnit(op)) {
     const parts = tail.split(/\s+/)
     const unit = parts.length > 1 && (GUARD_UNITS as readonly string[]).includes(parts[parts.length - 1]!)
       ? (parts.pop() as RoutineFieldGuardUnit)
       : null
-    return { kind: 'chip', chipKind: 'condition', refId, op, value: coerceLiteral(parts.join(' ')), unit, label: `${refId} ${token} ${tail}` }
+    if (!unit) return null
+    const value = coerceLiteral(parts.join(' '))
+    if (typeof value !== 'number') return null
+    return { kind: 'chip', chipKind: 'condition', refId, op, value, unit, label: `${refId} ${token} ${tail}` }
   }
   return { kind: 'chip', chipKind: 'condition', refId, op, value: coerceLiteral(tail), label: `${refId} ${token} ${tail}` }
 }
@@ -324,8 +435,8 @@ const parseTarget = (token: string | undefined): string | undefined => {
 
 // Parse a gate's option list: `id="Label" ("Description") -> target, ...`. Description and
 // target are optional; whitespace and the comma separators are tolerated.
-const QUOTED_VALUE = '"((?:\\\\.|[^"\\\\])*)"'
-const GATE_OPTION = new RegExp(`([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(end|handoff|step:[A-Za-z_][A-Za-z0-9_.-]*))?`, 'g')
+const GATE_TARGET = `(?:end|handoff|step:${stableIdentifierSource})`
+const GATE_OPTION = new RegExp(`(${stableIdentifierSource})\\s*=\\s*${QUOTED_VALUE}(?:\\s*\\(${QUOTED_VALUE}\\))?(?:\\s*->\\s*(${GATE_TARGET}))?`, 'gu')
 const parseGateOptions = (body: string): ApprovalDocOption[] => {
   const options: ApprovalDocOption[] = []
   for (const match of body.matchAll(GATE_OPTION)) {
@@ -371,7 +482,7 @@ const parseGateBody = (chipKind: 'decision' | 'approval', body: string): Extract
   const colon = body.indexOf(':')
   if (colon === -1) return null
   const captureKey = body.slice(0, colon).trim()
-  if (!captureKey) return null
+  if (!STABLE_IDENTIFIER.test(captureKey)) return null
   return {
     kind: 'chip',
     chipKind,
@@ -382,25 +493,36 @@ const parseGateBody = (chipKind: 'decision' | 'approval', body: string): Extract
   }
 }
 
-const parseSkillSuffix = (suffix: string): Pick<Extract<ProseSegment, { kind: 'chip' }>, 'inputBindings' | 'outputAssignments' | 'mode'> => {
+const parseSkillSuffix = (suffix: string): Pick<Extract<ProseSegment, { kind: 'chip' }>, 'inputBindings' | 'outputAssignments' | 'mode'> | null => {
   const inputBindings: Record<string, RoutineInputBinding> = {}
   const outputAssignments: Record<string, string> = {}
   let mode: RoutineStepMode | undefined
   for (const section of suffix.split(';')) {
     const trimmed = section.trim()
+    if (!trimmed) return null
     if (trimmed.startsWith('in ')) {
       for (const pair of splitList(trimmed.slice(3))) {
         const eq = pair.indexOf('=')
-        if (eq > 0) inputBindings[pair.slice(0, eq).trim()] = parseBinding(pair.slice(eq + 1))
+        const key = eq > 0 ? pair.slice(0, eq).trim() : ''
+        const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
+        if (!key || !SKILL_SECTION_KEY.test(key) || !value) return null
+        inputBindings[key] = parseBinding(value)
       }
     } else if (trimmed.startsWith('out ')) {
       for (const pair of splitList(trimmed.slice(4))) {
         const eq = pair.indexOf('=')
-        if (eq > 0) outputAssignments[pair.slice(0, eq).trim()] = pair.slice(eq + 1).trim().replace(/^@/, '')
+        const key = eq > 0 ? pair.slice(0, eq).trim() : ''
+        const value = eq > 0 ? pair.slice(eq + 1).trim() : ''
+        const ref = value.replace(/^@/, '')
+        if (!key || !SKILL_SECTION_KEY.test(key) || !value.startsWith('@') || !SLOT_KEY.test(ref)) return null
+        outputAssignments[key] = ref
       }
     } else if (trimmed.startsWith('mode ')) {
       const value = trimmed.slice(5).trim()
       if (value === 'typed' || value === 'untyped') mode = value
+      else return null
+    } else {
+      return null
     }
   }
   return { inputBindings, outputAssignments, mode }
@@ -416,25 +538,34 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     if (buffer) segments.push({ kind: 'text', text: buffer })
     buffer = ''
   }
+  const flushBeforeTarget = () => {
+    if (/^\s+$/.test(buffer)) {
+      buffer = ''
+      return
+    }
+    flush()
+  }
   while (index < line.length) {
     const rest = line.slice(index)
 
     if (rest.startsWith('-> end')) {
       // `-> end` (default ending) or `-> end:<id> ("message")` (a named ending with its own copy).
-      const named = /^-> end:([A-Za-z_][A-Za-z0-9_]*)(?:\s+\("((?:[^"\\]|\\.)*)"\))?/.exec(rest)
+      const named = new RegExp(`^-> end:(${stableIdentifierSource})(?:\\s*\\("((?:[^"\\\\]|\\\\.)*)"\\))?${TARGET_END_DELIMITER}`, 'u').exec(rest)
       if (named) {
-        flush()
+        flushBeforeTarget()
         segments.push({ kind: 'chip', chipKind: 'end', refId: named[1]!, label: named[1]!, value: named[2] != null ? unescapeQuoted(named[2]) : null })
         index += named[0].length
         continue
       }
-      flush(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+      if (/^-> end(?=$|\s)/u.test(rest)) {
+        flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'end', refId: 'done', label: 'end' }); index += '-> end'.length; continue
+      }
     }
-    if (rest.startsWith('-> handoff')) { flush(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
+    if (/^-> handoff(?=$|\s)/u.test(rest)) { flushBeforeTarget(); segments.push({ kind: 'chip', chipKind: 'handoff', refId: 'handoff', label: 'handoff' }); index += '-> handoff'.length; continue }
 
-    const stepMatch = /^-> step:([A-Za-z_][A-Za-z0-9_.-]*)(?:\s*\(max (\d+)\))?/.exec(rest)
+    const stepMatch = new RegExp(`^-> step:(${stableIdentifierSource})(?:\\s*\\(max (\\d+)\\))?${TARGET_ID_DELIMITER}`, 'u').exec(rest)
     if (stepMatch) {
-      flush()
+      flushBeforeTarget()
       segments.push({ kind: 'chip', chipKind: 'step', refId: stepMatch[1]!, label: stepMatch[1]!, counterLimit: stepMatch[2] ? Number(stepMatch[2]) : null })
       index += stepMatch[0].length
       continue
@@ -496,6 +627,11 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
           const close = rest.indexOf(']', consumed)
           if (close !== -1) {
             const bindings = parseSkillSuffix(rest.slice(consumed + 1, close))
+            if (!bindings) {
+              buffer += line[index]
+              index += 1
+              continue
+            }
             flush()
             segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings })
             index += close + 1
@@ -522,6 +658,11 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
           const close = rest.indexOf(']', consumed)
           if (close !== -1) {
             const bindings = parseSkillSuffix(rest.slice(consumed + 1, close))
+            if (!bindings) {
+              buffer += line[index]
+              index += 1
+              continue
+            }
             flush()
             segments.push({ kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings })
             index += close + 1
@@ -549,6 +690,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
 export const looksLikeRoutineProse = (text: string): boolean => {
   const trimmed = text.trim()
   if (trimmed.startsWith(`${FENCE}\nname:`) || trimmed.startsWith(`${FENCE}\r\nname:`)) return true
+  if (trimmed.startsWith(`${FENCE}\ngrammar:`) || trimmed.startsWith(`${FENCE}\r\ngrammar:`)) return true
   return /(^|\s)(-> (end|handoff|step:)|\[(if|outcome|filled|action|decision|approval) )/.test(text)
     || /(^|\s)@[A-Za-z_]/.test(text)
     // A skill mention `#name` (but not a `# ` heading, which has a space after the hash).
@@ -562,8 +704,14 @@ export const parseProseDoc = (
   const lines = text.replace(/\r\n/g, '\n').split('\n')
   let name: string | null = null
   let trigger: string | null = null
+  let reentryMode: RoutineReentryMode = 'once_per_conversation'
+  let priority = 0
+  let completionExport: RoutineCompletionExport | undefined
+  let terminals: ProseTerminalConfig | undefined
   let hadFrontmatter = false
+  let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
+  const declaredOrder: string[] = []
   // Slot flags declared alongside the type (`key:type:optional:mutable`). Absent = default
   // (required, non-mutable), so we only record the non-default flags we actually saw.
   const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean }>()
@@ -577,13 +725,48 @@ export const parseProseDoc = (
       if (sep !== -1) {
         const key = line.slice(0, sep).trim()
         const value = line.slice(sep + 1).trim()
-        if (key === 'name') { name = value; hadFrontmatter = true }
+        if (key === 'grammar') {
+          const parsed = Number(value)
+          if (Number.isInteger(parsed)) grammarVersion = parsed
+        } else if (key === 'name') { name = value; hadFrontmatter = true }
         else if (key === 'trigger') { trigger = value; hadFrontmatter = true }
+        else if (key === 'reentry') {
+          const parsed = parseReentryMode(value)
+          if (!parsed) continue
+          reentryMode = parsed
+          hadFrontmatter = true
+        }
+        else if (key === 'priority') {
+          const parsed = Number(value)
+          if (Number.isInteger(parsed)) {
+            priority = parsed
+            hadFrontmatter = true
+          }
+        }
+        else if (key === 'export') {
+          completionExport = parseExport(value) ?? undefined
+          hadFrontmatter = true
+        }
+        else if (key === 'end') {
+          const terminal = parseTerminalFrontmatter(value)
+          if (terminal) {
+            terminals = { ...(terminals ?? {}), complete: terminal }
+            hadFrontmatter = true
+          }
+        }
+        else if (key === 'handoff') {
+          const terminal = parseTerminalFrontmatter(value)
+          if (terminal) {
+            terminals = { ...(terminals ?? {}), handoff: terminal }
+            hadFrontmatter = true
+          }
+        }
         else if (key === 'vars') {
           hadFrontmatter = true
           for (const declaration of splitList(value)) {
             const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
             if (varKey && varType && (SLOT_TYPES as readonly string[]).includes(varType)) {
+              if (!declaredTypes.has(varKey)) declaredOrder.push(varKey)
               declaredTypes.set(varKey, varType as RoutineSlotType)
               const required = flags.includes('optional') ? false : undefined
               const mutable = flags.includes('mutable') ? true : undefined
@@ -620,14 +803,355 @@ export const parseProseDoc = (
     paragraphs.pop()
   }
 
-  // Variables = everything referenced, typed from the `vars:` declaration (default text).
+  // Variables = declared variables first, then anything referenced only in the body. This
+  // preserves declared-but-unused slots so backend validation can decide the policy.
   const referenced = referencedVariableIds(paragraphs)
-  const variables: ChipDocVariable[] = [...referenced].map((id) => ({
+  const variableIds = [...declaredOrder]
+  for (const id of referenced) {
+    if (!declaredTypes.has(id)) variableIds.push(id)
+  }
+  const variables: ChipDocVariable[] = variableIds.map((id) => ({
     id,
     name: id,
     type: declaredTypes.get(id) ?? 'text',
     ...declaredFlags.get(id),
   }))
 
-  return { name, trigger, variables, paragraphs, hadFrontmatter }
+  void grammarVersion
+  return { name, trigger, reentryMode, priority, ...(completionExport ? { completionExport } : {}), ...(terminals ? { terminals } : {}), variables, paragraphs, hadFrontmatter }
+}
+
+const grammarVersionDiagnostic = (version: number, line: number): ParseDiagnostic => ({
+  line,
+  code: 'unsupported_grammar_version',
+  message: `Unsupported routine grammar version: ${version}`,
+})
+
+const invalidReentryDiagnostic = (value: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_reentry',
+  message: `Unsupported routine reentry mode: ${value}`,
+})
+
+const invalidPriorityDiagnostic = (value: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_priority',
+  message: `Routine priority must be an integer: ${value}`,
+})
+
+const unknownFrontmatterKeyDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'unknown_frontmatter_key',
+  message: `Unknown routine frontmatter key: ${key}`,
+})
+
+const invalidExportDiagnostic = (line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_export',
+  message: 'Routine export must be "<triggerKinds> -> <destinationRef>" with trigger kinds complete and/or handoff',
+})
+
+const invalidFrontmatterDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_frontmatter',
+  message: `Invalid ${key} frontmatter: expected "<id>" or "<id> (\\"message\\")"`,
+})
+
+const invalidVarDeclarationDiagnostic = (declaration: string, reason: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_var_declaration',
+  message: `Invalid vars declaration "${declaration}": ${reason}`,
+})
+
+const duplicateVarDeclarationDiagnostic = (key: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'duplicate_var_declaration',
+  message: `Duplicate vars declaration for "${key}"`,
+})
+
+const unknownBracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'unknown_bracket_token',
+  message: `Unknown routine bracket token: ${token}`,
+})
+
+const invalidGuardTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_guard_token',
+  message: `Invalid guard token: ${token}`,
+})
+
+const invalidActionTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_action_token',
+  message: `Invalid action token: ${token}`,
+})
+
+const invalidGateTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_gate_token',
+  message: `Invalid gate token: ${token}`,
+})
+
+const invalidTargetTokenDiagnostic = (token: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_target_token',
+  message: `Invalid target token: ${token}`,
+})
+
+const invalidSkillBindingSuffixDiagnostic = (refId: string, suffix: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'invalid_skill_binding_suffix',
+  message: `Invalid skill binding suffix for "#${refId}": [${suffix}]`,
+})
+
+const conflictingGuardAndCounterDiagnostic = (target: string, limit: string, line: number): ParseDiagnostic => ({
+  line,
+  code: 'conflicting_guard_and_counter',
+  message: `Branch line combines a guard token with a counter limit; use "-> step:${target} (max ${limit})" without another guard for a bounded loop`,
+})
+
+type BracketTokenFamily = 'if' | 'outcome' | 'filled' | 'action' | 'decision' | 'approval'
+
+const bracketTokenFamily = (body: string): BracketTokenFamily | null => {
+  const keyword = /^([A-Za-z]+)(?:\s|$)/.exec(body)?.[1]
+  if (
+    keyword === 'if'
+    || keyword === 'outcome'
+    || keyword === 'filled'
+    || keyword === 'action'
+    || keyword === 'decision'
+    || keyword === 'approval'
+  ) {
+    return keyword
+  }
+  return null
+}
+
+const gateOptionsConsumeBody = (body: string): boolean => {
+  let cursor = 0
+  GATE_OPTION.lastIndex = 0
+  for (const match of body.matchAll(GATE_OPTION)) {
+    const between = body.slice(cursor, match.index)
+    if (!/^\s*,?\s*$/.test(between)) return false
+    cursor = match.index + match[0].length
+  }
+  return /^\s*$/.test(body.slice(cursor))
+}
+
+const TARGET_CANDIDATE = /->\s*(?:end(?::[^\s(]+)?|handoff[^\s(]*|step:[^\s(]+(?:\s*\(max\s+\d+\))?)/gu
+const VALID_TARGET_TOKEN = new RegExp(`^->\\s*(?:end(?::${stableIdentifierSource})?|handoff|step:${stableIdentifierSource}(?:\\s*\\(max\\s+\\d+\\))?)$`, 'u')
+
+const isInsideBracketToken = (line: string, index: number): boolean => {
+  const lastOpen = line.lastIndexOf('[', index)
+  if (lastOpen === -1) return false
+  const lastClose = line.lastIndexOf(']', index)
+  return lastClose < lastOpen
+}
+
+const readTargetDiagnostics = (line: string, lineNumber: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  for (const match of line.matchAll(TARGET_CANDIDATE)) {
+    if (isInsideBracketToken(line, match.index ?? 0)) continue
+    const token = match[0]
+    if (!VALID_TARGET_TOKEN.test(token)) {
+      diagnostics.push(invalidTargetTokenDiagnostic(token, lineNumber))
+    }
+  }
+  return diagnostics
+}
+
+const bracketTokenDiagnostic = (token: string, line: number): ParseDiagnostic | null => {
+  const body = token.slice(1, -1)
+  const family = bracketTokenFamily(body)
+  if (!family) return unknownBracketTokenDiagnostic(token, line)
+
+  if (family === 'if') {
+    return parseConditionBody(body.slice('if'.length)) ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'outcome') {
+    return body.slice('outcome'.length).trim() ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'filled') {
+    const keys = splitList(body.slice('filled'.length)).map((part) => part.replace(/^@/, ''))
+    return keys.length > 0 && keys.every((key) => SLOT_KEY.test(key)) ? null : invalidGuardTokenDiagnostic(token, line)
+  }
+  if (family === 'action') {
+    return parseActionBody(body.slice('action'.length)) ? null : invalidActionTokenDiagnostic(token, line)
+  }
+
+  const gateBody = body.slice(family.length)
+  const colon = gateBody.indexOf(':')
+  const optionsBody = colon === -1 ? '' : gateBody.slice(colon + 1)
+  const gate = parseGateBody(family, gateBody)
+  const options = gate?.options ?? []
+  const valid = Boolean(gate)
+    && options.length > 0
+    && gateOptionsConsumeBody(optionsBody)
+    && (family === 'decision' || options.every((option) => option.target))
+  return valid ? null : invalidGateTokenDiagnostic(token, line)
+}
+
+const readVarDeclarationDiagnostics = (value: string, line: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  const seen = new Set<string>()
+  for (const declaration of splitList(value)) {
+    const [varKey, varType, ...flags] = declaration.split(':').map((part) => part.trim())
+    if (!varKey || !SLOT_KEY.test(varKey) || varKey.length > ROUTINE_DEFINITION_LIMITS.slotKey) {
+      diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `invalid slot key "${varKey ?? ''}"`, line))
+      continue
+    }
+    if (seen.has(varKey)) {
+      diagnostics.push(duplicateVarDeclarationDiagnostic(varKey, line))
+      continue
+    }
+    seen.add(varKey)
+    if (!varType || !(SLOT_TYPES as readonly string[]).includes(varType)) {
+      diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `unknown slot type "${varType ?? ''}"`, line))
+      continue
+    }
+    for (const flag of flags) {
+      if (flag !== 'optional' && flag !== 'mutable') {
+        diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `invalid flag "${flag}"`, line))
+        break
+      }
+    }
+  }
+  return diagnostics
+}
+
+const readSkillSuffixDiagnostics = (line: string, lineNumber: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  const skill = /(^|[^A-Za-z0-9_.-])#([A-Za-z_][A-Za-z0-9_.-]*)\[/g
+  for (const match of line.matchAll(skill)) {
+    const suffixStart = (match.index ?? 0) + match[0].length - 1
+    const close = findBracketClose(line.slice(suffixStart))
+    if (close === -1) continue
+    const suffix = line.slice(suffixStart + 1, suffixStart + close)
+    if (!parseSkillSuffix(suffix)) {
+      diagnostics.push(invalidSkillBindingSuffixDiagnostic(match[2]!, suffix, lineNumber))
+    }
+  }
+  return diagnostics
+}
+
+const readBodyBracketDiagnostics = (lines: string[], bodyStart: number): ParseDiagnostic[] => {
+  const diagnostics: ParseDiagnostic[] = []
+  for (let lineIndex = bodyStart; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex]!
+    diagnostics.push(...readTargetDiagnostics(line, lineIndex + 1))
+    diagnostics.push(...readSkillSuffixDiagnostics(line, lineIndex + 1))
+    const counterBranch = new RegExp(`->\\s*step:(${stableIdentifierSource})\\s*\\(max\\s+\\d+\\)`, 'u').exec(line)
+    if (counterBranch) {
+      const prefix = line.slice(0, counterBranch.index)
+      let prefixCursor = 0
+      let hasGuard = false
+      while (prefixCursor < prefix.length) {
+        const open = prefix.indexOf('[', prefixCursor)
+        if (open === -1) break
+        const close = findBracketClose(prefix.slice(open))
+        if (close === -1) break
+        const token = prefix.slice(open, open + close + 1)
+        const diagnostic = bracketTokenDiagnostic(token, lineIndex + 1)
+        if (!diagnostic && bracketTokenFamily(token.slice(1, -1)) !== 'action') hasGuard = true
+        prefixCursor = open + close + 1
+      }
+      if (hasGuard) diagnostics.push(conflictingGuardAndCounterDiagnostic(counterBranch[1]!, /\(max\s+(\d+)\)/.exec(counterBranch[0])?.[1] ?? 'N', lineIndex + 1))
+    }
+    let cursor = 0
+    while (cursor < line.length) {
+      const open = line.indexOf('[', cursor)
+      if (open === -1) break
+      const previous = open > 0 ? line[open - 1] : ''
+      if (previous && /[A-Za-z0-9_.-]/.test(previous)) {
+        cursor = open + 1
+        continue
+      }
+      const close = findBracketClose(line.slice(open))
+      if (close === -1) break
+      const token = line.slice(open, open + close + 1)
+      const diagnostic = bracketTokenDiagnostic(token, lineIndex + 1)
+      if (diagnostic) diagnostics.push(diagnostic)
+      cursor = open + close + 1
+    }
+  }
+  return diagnostics
+}
+
+const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart: number; diagnostics: ParseDiagnostic[] } => {
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  if (lines[0]?.trim() !== FENCE) return { version: GRAMMAR_VERSION, bodyStart: 0, diagnostics: [] }
+
+  let version = GRAMMAR_VERSION
+  const diagnostics: ParseDiagnostic[] = []
+  let cursor = 1
+  while (cursor < lines.length && lines[cursor]!.trim() !== FENCE) {
+    const line = lines[cursor]!
+    const sep = line.indexOf(':')
+    if (sep !== -1) {
+      const key = line.slice(0, sep).trim()
+      const value = line.slice(sep + 1).trim()
+      if (!FRONTMATTER_KEYS.has(key)) {
+        diagnostics.push(unknownFrontmatterKeyDiagnostic(key, cursor + 1))
+      } else if (key === 'grammar') {
+        const parsed = Number(value)
+        version = Number.isInteger(parsed) ? parsed : Number.NaN
+        if (version !== GRAMMAR_VERSION) diagnostics.push(grammarVersionDiagnostic(version, cursor + 1))
+      } else if (key === 'reentry') {
+        if (!parseReentryMode(value)) {
+          diagnostics.push(invalidReentryDiagnostic(value, cursor + 1))
+        }
+      } else if (key === 'priority') {
+        const parsed = Number(value)
+        if (!Number.isInteger(parsed)) diagnostics.push(invalidPriorityDiagnostic(value, cursor + 1))
+      } else if (key === 'export') {
+        if (!parseExport(value)) diagnostics.push(invalidExportDiagnostic(cursor + 1))
+      } else if (key === 'end' || key === 'handoff') {
+        if (!parseTerminalFrontmatter(value)) diagnostics.push(invalidFrontmatterDiagnostic(key, cursor + 1))
+      } else if (key === 'vars') {
+        diagnostics.push(...readVarDeclarationDiagnostics(value, cursor + 1))
+      }
+    }
+    cursor += 1
+  }
+  const bodyStart = cursor < lines.length ? cursor + 1 : cursor
+  diagnostics.push(...readBodyBracketDiagnostics(lines, bodyStart))
+  return { version, bodyStart, diagnostics }
+}
+
+export const parse = (
+  content: string,
+  options: { resolveSkill?: (name: string) => boolean } = {},
+): ParseResult => {
+  const version = readFrontmatterDiagnostics(content)
+  if (version.diagnostics.length > 0) return { ok: false, diagnostics: version.diagnostics }
+  return {
+    ok: true,
+    grammarVersion: GRAMMAR_VERSION,
+    doc: parseProseDoc(content, options.resolveSkill ?? (() => false)),
+  }
+}
+
+export const serialize = serializeProseDoc
+
+export const canonicalize = (
+  content: string,
+  options: { resolveSkill?: (name: string) => boolean } = {},
+): CanonicalizeResult => {
+  const parsed = parse(content, options)
+  if (!parsed.ok) return parsed
+  return {
+    ok: true,
+    grammarVersion: GRAMMAR_VERSION,
+    content: serializeProseDoc({
+      name: parsed.doc.name ?? '',
+      trigger: parsed.doc.trigger ?? '',
+      reentryMode: parsed.doc.reentryMode,
+      priority: parsed.doc.priority,
+      completionExport: parsed.doc.completionExport,
+      terminals: parsed.doc.terminals,
+      variables: parsed.doc.variables,
+      paragraphs: parsed.doc.paragraphs,
+    }),
+  }
 }

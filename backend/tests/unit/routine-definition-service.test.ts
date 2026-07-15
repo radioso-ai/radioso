@@ -22,6 +22,7 @@ const missingDestinationId = "44444444-4444-4444-8444-444444444444";
 
 class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort {
   readonly items = new Map<string, RoutineDefinition>();
+  createDraftError: unknown = undefined;
   publishError: unknown = undefined;
   restoreError: unknown = undefined;
 
@@ -41,6 +42,9 @@ class FakeRoutineDefinitionRepository implements RoutineDefinitionRepositoryPort
   }
 
   async createDraft(inputAgentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {
+    if (this.createDraftError) {
+      throw this.createDraftError;
+    }
     const now = new Date();
     const routine: RoutineDefinition = {
       id: randomUUID(),
@@ -416,6 +420,20 @@ describe("RoutineDefinitionService", () => {
       expect.objectContaining({ code: "referenced_undeclared_slot", location: "slot:topic" }),
       expect.objectContaining({ code: "dangling_step_reference" }),
     ]));
+  });
+
+  it("maps duplicate routine name and version create conflicts to a domain conflict", async () => {
+    const { repository, service } = createService();
+    repository.createDraftError = {
+      code: "23505",
+      constraint: "routine_definition_agent_id_name_version_key",
+    };
+
+    await expect(service.createDraft(workspaceId, agentId, validDraft())).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: "A routine definition with this name and version already exists for this agent",
+    });
   });
 
   it("rejects invalid publishes with diagnostics before calling repository publish", async () => {

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type {
   AttemptRoutineInput,
   ConversationEvent,
+  ConversationTraceStage,
   ConversationRoutineSlotCorrection,
   RoutineSlotCorrectionCandidate,
   RoutineState,
@@ -194,7 +195,7 @@ describeIfDatabase("post-completion slot correction (real routine_states)", () =
     );
 
     expect(result?.response.answer).toBe("That doesn't look like a valid email — what should I use?");
-    const correctionStage = result?.trace.stages.find((stage) => stage.kind === "routine_slot_correction");
+    const correctionStage = result?.trace.stages.find((stage: ConversationTraceStage) => stage.kind === "routine_slot_correction");
     expect(correctionStage?.status).toBe("rejected");
     const row = await database.queryOne<{ variables: Record<string, unknown> }>(
       `SELECT variables FROM routine_states WHERE session_id = $1`,

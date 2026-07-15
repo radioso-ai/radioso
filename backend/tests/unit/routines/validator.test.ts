@@ -93,6 +93,52 @@ describe("validateRoutineDefinition authoring catalog context", () => {
     });
   });
 
+  it("lists available step ids when a transition targets an unknown node", () => {
+    const result = validateRoutineDefinition(definitionWithSteps([
+      { stableStepId: "check_eligibility", kind: "chat", instruction: "Check.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+      { stableStepId: "lookup", kind: "chat", instruction: "Lookup.", toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+    ], [
+      { fromStep: "check_eligibility", toRef: "lookup", guardKind: "default", guardText: null, ordinal: 0 },
+      { fromStep: "lookup", toRef: "check_elig", guardKind: "llm", guardText: "Needs another check.", ordinal: 1 },
+    ]));
+
+    expect(result.diagnostics).toContainEqual({
+      code: "dangling_step_reference",
+      location: "transition:lookup->check_elig",
+      message: 'dangling step reference: transition points to unknown step or terminal "check_elig" - steps in this routine: check_eligibility, lookup.',
+    });
+  });
+
+  it("caps available step ids in dangling transition diagnostics", () => {
+    const steps = Array.from({ length: 12 }, (_, index) => ({
+      stableStepId: `step_${index + 1}`,
+      kind: "chat" as const,
+      instruction: `Step ${index + 1}.`,
+      toolRef: null,
+      actionType: null,
+      ordinal: index,
+      metadata: {},
+    }));
+    const transitions = steps.slice(0, -1).map((step, index) => ({
+      fromStep: step.stableStepId,
+      toRef: steps[index + 1]!.stableStepId,
+      guardKind: "default" as const,
+      guardText: null,
+      ordinal: index,
+    }));
+
+    const result = validateRoutineDefinition(definitionWithSteps(steps, [
+      ...transitions,
+      { fromStep: "missing_start", toRef: "done", guardKind: "default", guardText: null, ordinal: transitions.length },
+    ]));
+
+    expect(result.diagnostics).toContainEqual({
+      code: "dangling_step_reference",
+      location: "transition:missing_start->done",
+      message: 'dangling step reference: transition starts at unknown step "missing_start" - steps in this routine: step_1, step_2, step_3, step_4, step_5, step_6, step_7, step_8, step_9, step_10.',
+    });
+  });
+
   it("flags a required variable binding that is not guaranteed across all branches", () => {
     const result = validateRoutineDefinition(definitionWithSteps([
       { stableStepId: "start", kind: "chat", instruction: "Start.", toolRef: null, actionType: null, ordinal: 0, metadata: {} },

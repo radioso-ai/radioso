@@ -60,6 +60,14 @@ export {
   type RoutineDefinitionServiceOptions,
 } from "./service.js";
 export {
+  canonicalizePortableRoutineDocument,
+  parsePortableRoutineDocument,
+  routineToPortableDocument,
+  type PortableRoutineDocumentCanonicalizeResult,
+  type PortableRoutineDocumentEnvelope,
+  type PortableRoutineDocumentParseResult,
+} from "./portableDocument.js";
+export {
   RoutineDraftAssistService,
   routineDraftAssistActionCatalogEntrySchema,
   routineDraftAssistRequestSchema,

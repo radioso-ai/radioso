@@ -526,7 +526,9 @@ and are gated by a per-action capability.
 Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
-- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
+- `packages/routine-definition` (shared definition schemas and types)
+- `packages/routine-markdown` (portable markdown parser, serializer, and chip-document mapping)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore and portable markdown sub-resources)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
@@ -548,7 +550,7 @@ Focused checks:
 
 Related docs and specs:
 
-- [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md)
+- [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md), [Portable Routine Markdown](../portable-routine-markdown.md), [Portable Routines API](../portable-routines-api.md)
 - `specs/082-routines-as-data/`, `specs/069-conversation-routines/`
 
 ## Settings

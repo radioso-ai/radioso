@@ -4,8 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
 // The completion (and, when the routine hands off, handoff) message the agent says when the
-// routine ends. These are terminal-level fields the prose body does not encode, so the prose
-// editors render them here; the Form editor edits the same terminals in its own terminal rows.
+// routine ends. The prose document carries these in frontmatter for copy/paste; the editors
+// render them here as header fields. The Form editor edits the same terminals in terminal rows.
 export function RoutineTerminalMessages({
   idPrefix,
   completionMessage,

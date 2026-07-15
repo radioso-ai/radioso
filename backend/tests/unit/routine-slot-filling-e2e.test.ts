@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ConversationModelGateway,
   ConversationRoutineStepRenderer,
+  RoutineTraceStepEntry,
   RoutineState,
   TurnContext,
 } from "@radioso/conversation-contract";
@@ -114,7 +115,7 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
     expect(gateway.complete).toHaveBeenCalledTimes(1); // proves the edge is selector-gated
     expect(t1.response.answer).toContain("ask_email");
     expect(t1.nextState?.variables).toEqual({});
-    expect(t1.trace?.steps.map((s) => `${s.stepId}:${s.event}`)).toEqual(["ask_email:reasked"]);
+    expect(t1.trace?.steps.map((s: RoutineTraceStepEntry) => `${s.stepId}:${s.event}`)).toEqual(["ask_email:reasked"]);
     state = t1.nextState!;
 
     // Turn 2 — user provides their email → captured and persisted, advance to ask_message.
@@ -208,7 +209,7 @@ describe("routine slot filling (authoring → compile → runtime)", () => {
       state: { sessionId: "s1", routineId: compiled.id, path: ["ack"], variables: {}, status: "active" },
     });
 
-    const events = r.trace?.steps.map((s) => `${s.stepId}:${s.event}`);
+    const events = r.trace?.steps.map((s: RoutineTraceStepEntry) => `${s.stepId}:${s.event}`);
     expect(events).toContain("ack:advanced"); // captured name, advanced
     expect(events).toContain("redirect:rendered"); // the redirection message is delivered
     expect(events).not.toContain("redirect:fast_forwarded"); // NOT skipped

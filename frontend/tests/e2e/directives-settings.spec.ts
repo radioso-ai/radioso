@@ -96,8 +96,13 @@ test("agent directives settings can replace and restore a built-in directive", a
   await page.getByLabel("Priority (optional)").fill("95");
   await page.getByRole("button", { name: "Save directive" }).click();
 
+  // The override is contextual, so the built-in is only superseded when the
+  // condition fires — the UI must say so instead of implying a permanent replace.
   await expect(page.getByText("Replaced by Override: inline-supported-links")).toBeVisible();
-  await expect(page.getByText("Replaces: inline-supported-links")).toBeVisible();
+  await expect(
+    page.getByText("only when: answering legal policy questions", { exact: false }),
+  ).toBeVisible();
+  await expect(page.getByText("Replaces inline-supported-links when active")).toBeVisible();
   await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toHaveCount(0);
   await expect.poll(() => directiveUpdates.length).toBe(1);
   expect(directiveUpdates[0]).toMatchObject({
@@ -115,7 +120,7 @@ test("agent directives settings can replace and restore a built-in directive", a
   await page.getByRole("button", { name: "Delete directive" }).click();
 
   await expect(page.getByText("Replaced by Override: inline-supported-links")).toBeHidden();
-  await expect(page.getByText("Replaces: inline-supported-links")).toBeHidden();
+  await expect(page.getByText("Replaces inline-supported-links when active")).toBeHidden();
   await expect(page.getByRole("button", { name: "Replace inline-supported-links for this agent" })).toBeVisible();
   await expect.poll(() => directiveUpdates.length).toBe(2);
   expect(directiveUpdates[1]).toMatchObject({ method: "DELETE" });

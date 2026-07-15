@@ -25,6 +25,8 @@ ARG RADIOSO_EDITION=oss
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
+COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
+COPY packages/routine-markdown/package.json ./packages/routine-markdown/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 COPY ee/package.json ./ee/package.json
 COPY ee/packages/operator-console/package.json ./ee/packages/operator-console/package.json
@@ -49,6 +51,8 @@ ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY frontend ./frontend
+COPY packages/routine-definition ./packages/routine-definition
+COPY packages/routine-markdown ./packages/routine-markdown
 COPY packages/ui ./packages/ui
 COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
 COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
@@ -80,6 +84,8 @@ ENV NEXT_PUBLIC_RADIOSO_EDITION=$RADIOSO_EDITION
 COPY --chown=node:node --from=builder /app/node_modules ./node_modules
 COPY --chown=node:node --from=builder /app/ee ./ee
 COPY --chown=node:node --from=builder /app/frontend ./frontend
+COPY --chown=node:node --from=builder /app/packages/routine-definition ./packages/routine-definition
+COPY --chown=node:node --from=builder /app/packages/routine-markdown ./packages/routine-markdown
 COPY --chown=node:node --from=builder /app/packages/ui ./packages/ui
 USER node
 WORKDIR /app/frontend

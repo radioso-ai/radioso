@@ -40,6 +40,8 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
+COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
+COPY packages/routine-markdown/package.json ./packages/routine-markdown/package.json
 COPY packages/conversation-contract/package.json ./packages/conversation-contract/package.json
 COPY packages/conversation-contract/*.d.ts ./packages/conversation-contract/
 COPY packages/conversation-engine/package.json ./packages/conversation-engine/package.json
@@ -47,7 +49,7 @@ COPY packages/conversation-defaults/package.json ./packages/conversation-default
 COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
+    pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-markdown... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./backend/node_modules/@radioso && \
       ln -s ../../../ee/packages/backend-module ./backend/node_modules/@radioso/enterprise-backend-module; \
@@ -67,6 +69,8 @@ COPY packages/usage-contract ./packages/usage-contract
 COPY packages/crawler ./packages/crawler
 COPY packages/document-parser ./packages/document-parser
 COPY packages/radioso-mcp-server ./packages/radioso-mcp-server
+COPY packages/routine-definition ./packages/routine-definition
+COPY packages/routine-markdown ./packages/routine-markdown
 COPY packages/conversation-contract ./packages/conversation-contract
 COPY packages/conversation-engine ./packages/conversation-engine
 COPY packages/conversation-defaults ./packages/conversation-defaults
@@ -100,6 +104,8 @@ COPY packages/document-parser/*.d.ts ./packages/document-parser/
 COPY packages/document-parser/*.js ./packages/document-parser/
 COPY packages/document-parser/parsers ./packages/document-parser/parsers
 COPY packages/radioso-mcp-server/package.json ./packages/radioso-mcp-server/package.json
+COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
+COPY packages/routine-markdown/package.json ./packages/routine-markdown/package.json
 COPY packages/conversation-contract/package.json ./packages/conversation-contract/package.json
 COPY packages/conversation-contract/*.d.ts ./packages/conversation-contract/
 COPY packages/conversation-engine/package.json ./packages/conversation-engine/package.json
@@ -107,7 +113,7 @@ COPY packages/conversation-defaults/package.json ./packages/conversation-default
 COPY packages/conversation-tools/package.json ./packages/conversation-tools/package.json
 COPY --from=ee-backend-build /app/ee/packages/backend-module ./ee/packages/backend-module
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
+    pnpm install --prod --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler... --filter @radioso/mcp-server... --filter @radioso/routine-definition... --filter @radioso/routine-markdown... --filter @radioso/conversation-engine... --filter @radioso/conversation-defaults... --filter @radioso/conversation-tools...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./backend/node_modules/@radioso && \
       ln -s ../../../ee/packages/backend-module ./backend/node_modules/@radioso/enterprise-backend-module; \
@@ -116,6 +122,8 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 COPY --chown=node:node --from=build /app/backend/dist ./backend/dist
 COPY --chown=node:node --from=build /app/packages/crawler/dist ./packages/crawler/dist
 COPY --chown=node:node --from=build /app/packages/radioso-mcp-server/dist ./packages/radioso-mcp-server/dist
+COPY --chown=node:node --from=build /app/packages/routine-definition/dist ./packages/routine-definition/dist
+COPY --chown=node:node --from=build /app/packages/routine-markdown/dist ./packages/routine-markdown/dist
 COPY --chown=node:node --from=build /app/packages/conversation-engine/dist ./packages/conversation-engine/dist
 COPY --chown=node:node --from=build /app/packages/conversation-defaults/dist ./packages/conversation-defaults/dist
 COPY --chown=node:node --from=build /app/packages/conversation-tools/dist ./packages/conversation-tools/dist

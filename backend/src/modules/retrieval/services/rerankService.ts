@@ -32,7 +32,10 @@ export interface RerankGateway {
 const buildRerankPrompt = (input: { query: string; candidates: string; today: string }): string =>
   renderPromptTemplate("retrieval/rerank.md", input);
 
-type RerankSamplingParams = { temperature?: number; reasoning?: { effort: ReasoningEffort } };
+// The Responses rerank path never uses "none"; keep its effort on the SDK-supported
+// set so the real OpenAI client stays assignable to the structural client type below.
+type RerankReasoningEffort = Exclude<ReasoningEffort, "none">;
+type RerankSamplingParams = { temperature?: number; reasoning?: { effort: RerankReasoningEffort } };
 
 // OpenAI's Responses API takes a nested `reasoning.effort` rather than
 // chat.completions' flat `reasoning_effort`. gpt-5 family reasoning models reject
@@ -46,7 +49,9 @@ const buildRerankResponsesSamplingParams = (model: string): RerankSamplingParams
     return { temperature: RETRIEVAL_BEHAVIOR.rerank.temperature };
   }
   const effort = RETRIEVAL_BEHAVIOR.rerank.reasoningEffort;
-  return isReasoningEffortKnownUnsupported(model, effort) ? {} : { reasoning: { effort } };
+  return isReasoningEffortKnownUnsupported(model, effort)
+    ? {}
+    : { reasoning: { effort: effort as RerankReasoningEffort } };
 };
 
 export class ModelRerankGateway implements RerankGateway {
@@ -117,7 +122,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
         create(input: {
           model: string;
           temperature?: number;
-          reasoning?: { effort: ReasoningEffort };
+          reasoning?: { effort: RerankReasoningEffort };
           max_output_tokens?: number;
           instructions?: string;
           input?: string;

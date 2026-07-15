@@ -7,7 +7,7 @@ export interface LlmProviderMetadata {
   model: string;
 }
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 export interface TextGenerationRequest {
   prompt: string;

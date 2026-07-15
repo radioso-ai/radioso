@@ -31,9 +31,9 @@ const usageContext = {
 
 describe("ModelChatGateway", () => {
   it("uses a dedicated chat-answer output cap that is a real ceiling but larger than the generic LLM default", () => {
-    // The chat answer runs at "low" reasoning effort: on gpt-5-family models the
-    // cap maps to max_completion_tokens (total = hidden reasoning + visible text),
-    // so reusing the generic 1536 default truncates real answers / yields blanks.
+    // On gpt-5-family models the answer cap maps to max_completion_tokens (total =
+    // hidden reasoning + visible text), so reusing the generic 1536 default
+    // truncates real answers / yields blanks.
     expect(CHAT_BEHAVIOR.answer.maxOutputTokens).toBeGreaterThan(LLM_DEFAULTS.textGenerationMaxOutputTokens);
     expect(Number.isFinite(CHAT_BEHAVIOR.answer.maxOutputTokens)).toBe(true);
   });
@@ -64,7 +64,7 @@ describe("ModelChatGateway", () => {
         systemPrompt: "System instructions",
         prompt: "User prompt",
         maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
-        reasoningEffort: "low",
+        reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
       },
     ]);
   });
@@ -99,7 +99,7 @@ describe("ModelChatGateway", () => {
         systemPrompt: "System instructions",
         prompt: "User prompt",
         maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
-        reasoningEffort: "low",
+        reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
       },
     ]);
   });

@@ -11,7 +11,7 @@ type ProviderEnv = Partial<Env> & Record<string, string | number | boolean | und
 
 const PROVIDERS: LlmProviderName[] = ["openai", "openai-compatible", "gemini", "claude"];
 const DEFAULT_PROVIDER: LlmProviderName = "openai";
-const DEFAULT_CHAT_MODEL = "gpt-5.2";
+const DEFAULT_CHAT_MODEL = "gpt-5.4-mini";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
 const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";

@@ -100,12 +100,14 @@ The net rule: a slot-collection step always extracts before it advances. A step
 that does not collect a slot and is deliberately shaped (a structured or `llm`
 exit) is left exactly as authored.
 
-## Engineer fixture notation
+## Text routine formats
 
-Routine document fixtures use a compact text notation for golden tests,
-debugging, and diffs. This notation is **not an authoring surface**. Operators
-author routines in the dashboard prose editor, or the form view for shapes the
-prose editor does not cover.
+Portable routine markdown is the public deterministic text format for authoring
+and API round trips. See [Portable Routine Markdown](../portable-routine-markdown.md).
+
+Some older routine document fixtures still use a compact internal notation for
+golden tests, debugging, and diffs. That fixture notation is not the public
+authoring contract.
 
 The fixture serializer is canonical, so reflowing text on serialize is expected.
 The format uses grammar tokens, not localized product copy.

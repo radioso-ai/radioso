@@ -64,16 +64,19 @@ import { cn } from '@/lib/utils'
 import type { RoutineFieldGuardOp, RoutineSlotType } from '@/lib/api-types'
 import {
   formatSlotFilledLabel,
+  looksLikeRoutineProse,
   OUTCOME_GUARD_REF,
+  parseProseDoc,
+  serializeProseDoc,
   SLOT_FILLED_GUARD_REF,
   slugifyVariableKey,
   type ApprovalDocOption,
   type ChipDocVariable,
   type ProseParagraph,
   type ProseSegment,
+  type ProseTerminalConfig,
   type RoutineDocBlock,
 } from '@/lib/routine-prose'
-import { looksLikeRoutineProse, parseProseDoc, serializeProseDoc } from '@/lib/routine-prose-tokens'
 
 export type RoutineEditorVariable = { id: string; name: string }
 
@@ -1047,6 +1050,7 @@ function $selectionSpansDocument(): boolean {
 function ClipboardRoundTripPlugin({
   name,
   trigger,
+  terminals,
   variables,
   onCreateVariable,
   onSetVariableType,
@@ -1056,12 +1060,13 @@ function ClipboardRoundTripPlugin({
 }: {
   name: string
   trigger: string
+  terminals?: ProseTerminalConfig | null
   variables: ChipDocVariable[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
   onSetVariableRequired?: (refId: string, required: boolean) => void
   onSetVariableMutable?: (refId: string, mutable: boolean) => void
-  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
+  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null; terminals?: ProseTerminalConfig }) => void
 }) {
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
@@ -1070,11 +1075,12 @@ function ClipboardRoundTripPlugin({
   // header, variables, skill catalog, and the paste callbacks — through this ref so they
   // always see fresh values without re-registering on every render. The ref is synced after
   // each render (not during).
-  const stateRef = useRef({ name, trigger, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter })
+  const stateRef = useRef({ name, trigger, terminals, variables, skillNames: new Set<string>(), onCreateVariable, onSetVariableType, onSetVariableRequired, onSetVariableMutable, onPasteFrontmatter })
   useEffect(() => {
     stateRef.current = {
       name,
       trigger,
+      terminals,
       variables,
       skillNames: new Set(skillCatalog.skills.map((skill) => skill.skillName)),
       onCreateVariable,
@@ -1095,9 +1101,9 @@ function ClipboardRoundTripPlugin({
         // Only the whole routine is exported as tokens; a partial selection is a snippet —
         // let Lexical's native copy handle it so in-editor fidelity is preserved.
         if (!state.read($selectionSpansDocument)) return false
-        const { name: currentName, trigger: currentTrigger, variables: currentVariables } = stateRef.current
+        const { name: currentName, trigger: currentTrigger, terminals: currentTerminals, variables: currentVariables } = stateRef.current
         const paragraphs = state.read($readProseParagraphs)
-        const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, variables: currentVariables, paragraphs })
+        const text = serializeProseDoc({ name: currentName, trigger: currentTrigger, terminals: currentTerminals, variables: currentVariables, paragraphs })
         event.preventDefault()
         clipboardData.setData('text/plain', text)
         clipboardData.setData('text/html', `<pre>${escapeHtml(text)}</pre>`)
@@ -1127,8 +1133,8 @@ function ClipboardRoundTripPlugin({
           if (variable.required === false) onSetVariableRequired?.(variable.id, false)
           if (variable.mutable === true) onSetVariableMutable?.(variable.id, true)
         }
-        if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null)) {
-          onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger })
+        if (onPasteFrontmatter && (parsed.name !== null || parsed.trigger !== null || parsed.terminals)) {
+          onPasteFrontmatter({ name: parsed.name, trigger: parsed.trigger, terminals: parsed.terminals })
         }
 
         // A pasted whole routine (our frontmatter was actually parsed) replaces the
@@ -1231,6 +1237,7 @@ export function RoutineChipEditor({
   initialContent,
   name = '',
   trigger = '',
+  terminals,
   onCreateVariable,
   onDocChange,
   onSetVariableType,
@@ -1245,12 +1252,13 @@ export function RoutineChipEditor({
   // the routine's frontmatter and a paste can lift it back out.
   name?: string
   trigger?: string
+  terminals?: ProseTerminalConfig | null
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onDocChange: (blocks: RoutineDocBlock[]) => void
   onSetVariableType: (refId: string, type: RoutineSlotType) => void
   onSetVariableRequired?: (refId: string, required: boolean) => void
   onSetVariableMutable?: (refId: string, mutable: boolean) => void
-  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null }) => void
+  onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null; terminals?: ProseTerminalConfig }) => void
 }): JSX.Element {
   const variablesContext = useMemo(
     () => ({
@@ -1305,6 +1313,7 @@ export function RoutineChipEditor({
           <ClipboardRoundTripPlugin
             name={name}
             trigger={trigger}
+            terminals={terminals}
             variables={variables}
             onCreateVariable={onCreateVariable}
             onSetVariableType={onSetVariableType}

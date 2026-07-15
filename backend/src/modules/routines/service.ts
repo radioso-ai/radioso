@@ -11,6 +11,7 @@ import {
   routineDefinitionDraftInputSchema,
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
+  type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
 import { compileRoutineDefinition } from "./compiler.js";
 import {
@@ -141,6 +142,18 @@ const isRoutineCompletionExportDestinationConstraintError = (error: unknown): bo
     );
 };
 
+const isRoutineDefinitionNameVersionConstraintError = (error: unknown): boolean => {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const record = error as { code?: unknown; constraint?: unknown; message?: unknown };
+  return record.code === "23505" &&
+    (
+      record.constraint === "routine_definition_agent_id_name_version_key" ||
+      (typeof record.message === "string" && record.message.includes("routine_definition_agent_id_name_version_key"))
+    );
+};
+
 const missingWebhookDestinationRefFromConstraintError = (error: unknown): string | null => {
   if (!error || typeof error !== "object") {
     return null;
@@ -173,11 +186,19 @@ export class RoutineDefinitionService {
   async createDraft(
     workspaceId: string,
     agentId: string,
-    input: RoutineDefinitionDraftInput,
+    input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const draft = this.validateInput(input);
-    const saved = await this.options.repository.createDraft(agentId, draft);
+    let saved: RoutineDefinition;
+    try {
+      saved = await this.options.repository.createDraft(agentId, draft);
+    } catch (error) {
+      if (isRoutineDefinitionNameVersionConstraintError(error)) {
+        throw conflict("A routine definition with this name and version already exists for this agent");
+      }
+      throw error;
+    }
     return {
       routine: saved,
       validation: validateRoutineDefinition(saved),
@@ -188,7 +209,7 @@ export class RoutineDefinitionService {
     workspaceId: string,
     agentId: string,
     id: string,
-    input: RoutineDefinitionDraftInput,
+    input: RoutineDefinitionDraftAuthoringInput,
   ): Promise<RoutineDefinitionSaveResult> {
     await this.requireAgent(workspaceId, agentId);
     const existing = await this.requireRoutine(agentId, id);
@@ -214,7 +235,7 @@ export class RoutineDefinitionService {
   async validate(
     workspaceId: string,
     agentId: string,
-    target: { id: string } | { input: RoutineDefinitionDraftInput },
+    target: { id: string } | { input: RoutineDefinitionDraftAuthoringInput },
   ): Promise<RoutineValidationResult> {
     await this.requireAgent(workspaceId, agentId);
     if ("id" in target) {
@@ -355,7 +376,7 @@ export class RoutineDefinitionService {
     }
   }
 
-  private validateInput(input: RoutineDefinitionDraftInput): RoutineDefinitionDraftInput {
+  private validateInput(input: RoutineDefinitionDraftAuthoringInput): RoutineDefinitionDraftInput {
     const parsed = routineDefinitionDraftInputSchema.safeParse(input);
     if (!parsed.success) {
       throw badRequest("Invalid routine definition input", parsed.error.flatten());

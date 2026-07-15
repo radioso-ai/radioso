@@ -84,4 +84,24 @@ const value = 1
     expect(html).not.toContain('<ul')
     expect(html).toContain('Hours: 9 - 5 - weekdays only')
   })
+
+  it('keeps a link whose label contains " - " intact instead of breaking it into a list', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent
+        content={
+          'For the specific course title, you can look at [RESIDENTIAL COURSE: ARYTT - Raja Yoga Teaching 3 - How to be a Spiritual Teacher: Methodology](https://corsi.ananda.it/en/course/0006334-x) or [RESIDENTIAL COURSE: LTS - Raja Yoga Teaching 3 - How to be a Spiritual Teacher: Methodology](https://corsi.ananda.it/en/course/0007850-x).'
+        }
+      />,
+    )
+
+    // Both links render as intact anchors, not shattered into bullet markup.
+    expect(html).toContain('href="https://corsi.ananda.it/en/course/0006334-x"')
+    expect(html).toContain('href="https://corsi.ananda.it/en/course/0007850-x"')
+    expect(html).not.toContain('<ul')
+    expect(html).not.toContain('<li')
+    // The full title survives as the link label (no injected line breaks).
+    expect(html).toMatch(
+      /RESIDENTIAL COURSE: ARYTT - Raja Yoga Teaching 3 - How to be a Spiritual Teacher: Methodology/,
+    )
+  })
 })

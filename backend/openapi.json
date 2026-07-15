@@ -6426,6 +6426,16 @@
           "validation"
         ]
       },
+      "PortableRoutineSaveRejectedResponse": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+          },
+          {
+            "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
+          }
+        ]
+      },
       "SkillAuthoringInput": {
         "type": "object",
         "properties": {
@@ -17076,11 +17086,11 @@
             }
           },
           "422": {
-            "description": "Routine definition is invalid",
+            "description": "Routine definition is invalid or cannot be represented as portable markdown",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                  "$ref": "#/components/schemas/PortableRoutineSaveRejectedResponse"
                 }
               }
             }
@@ -17260,11 +17270,11 @@
             }
           },
           "422": {
-            "description": "Routine definition is invalid",
+            "description": "Routine definition is invalid or cannot be represented as portable markdown",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                  "$ref": "#/components/schemas/PortableRoutineSaveRejectedResponse"
                 }
               }
             }

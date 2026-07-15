@@ -81,13 +81,22 @@ describe("openapi contract", () => {
       security: [{ bearerAuth: [] }],
       responses: expect.objectContaining({ "200": expect.any(Object), "422": expect.any(Object) }),
     });
+    expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.get?.responses?.["422"]?.content?.["application/json"]?.schema).toEqual({
+      $ref: "#/components/schemas/PortableRoutineParseDiagnosticsResponse",
+    });
     expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.put).toMatchObject({
       operationId: "updateAgentRoutinePortableDocument",
       responses: expect.objectContaining({ "400": expect.any(Object), "422": expect.any(Object) }),
     });
+    expect(paths["/api/v1/agents/{agentId}/routines/{routineId}/portable"]?.put?.responses?.["422"]?.content?.["application/json"]?.schema).toEqual({
+      $ref: "#/components/schemas/PortableRoutineSaveRejectedResponse",
+    });
     expect(paths["/api/v1/agents/{agentId}/routines/portable"]?.post).toMatchObject({
       operationId: "createAgentRoutinePortableDocument",
       responses: expect.objectContaining({ "201": expect.any(Object), "400": expect.any(Object), "409": expect.any(Object), "422": expect.any(Object) }),
+    });
+    expect(paths["/api/v1/agents/{agentId}/routines/portable"]?.post?.responses?.["422"]?.content?.["application/json"]?.schema).toEqual({
+      $ref: "#/components/schemas/PortableRoutineSaveRejectedResponse",
     });
     expect(paths["/api/v1/agents/{agentId}/routines"]?.post?.responses).toEqual(expect.objectContaining({
       "201": expect.any(Object),
@@ -100,6 +109,12 @@ describe("openapi contract", () => {
     });
     expect(document.components?.schemas).toHaveProperty("PortableRoutineDocumentEnvelope");
     expect(document.components?.schemas).toHaveProperty("PortableRoutineParseDiagnosticsResponse");
+    expect(document.components?.schemas?.PortableRoutineSaveRejectedResponse).toEqual({
+      oneOf: [
+        { $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse" },
+        { $ref: "#/components/schemas/PortableRoutineParseDiagnosticsResponse" },
+      ],
+    });
   });
 
   it("advertises the account usage trends endpoint as a session-authenticated account report", () => {

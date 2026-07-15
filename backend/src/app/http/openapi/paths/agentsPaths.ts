@@ -357,7 +357,7 @@ export const registerAgentsPaths = (
       400: { description: "Portable markdown grammar validation failed", content: { "application/json": { schema: schemas.PortableRoutineParseDiagnosticsResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
+      422: { description: "Routine definition is invalid or cannot be represented as portable markdown", content: { "application/json": { schema: schemas.PortableRoutineSaveRejectedResponseSchema } } },
     },
   });
 
@@ -404,7 +404,7 @@ export const registerAgentsPaths = (
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       409: { description: "Routine name and version already exist for this agent", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
-      422: { description: "Routine definition is invalid", content: { "application/json": { schema: schemas.RoutineDefinitionPublishRejectedResponseSchema } } },
+      422: { description: "Routine definition is invalid or cannot be represented as portable markdown", content: { "application/json": { schema: schemas.PortableRoutineSaveRejectedResponseSchema } } },
     },
   });
 

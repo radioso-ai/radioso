@@ -4221,6 +4221,7 @@ export interface components {
             error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
         };
+        PortableRoutineSaveRejectedResponse: components["schemas"]["RoutineDefinitionPublishRejectedResponse"] | components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
         SkillAuthoringInput: {
             key: string;
             /** @enum {string} */
@@ -9039,13 +9040,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Routine definition is invalid */
+            /** @description Routine definition is invalid or cannot be represented as portable markdown */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                    "application/json": components["schemas"]["PortableRoutineSaveRejectedResponse"];
                 };
             };
         };
@@ -9172,13 +9173,13 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Routine definition is invalid */
+            /** @description Routine definition is invalid or cannot be represented as portable markdown */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RoutineDefinitionPublishRejectedResponse"];
+                    "application/json": components["schemas"]["PortableRoutineSaveRejectedResponse"];
                 };
             };
         };

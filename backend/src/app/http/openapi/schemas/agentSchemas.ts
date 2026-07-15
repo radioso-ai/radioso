@@ -568,6 +568,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const PortableRoutineSaveRejectedResponseSchema = registry.register(
+    "PortableRoutineSaveRejectedResponse",
+    z.union([
+      RoutineDefinitionPublishRejectedResponseSchema,
+      PortableRoutineParseDiagnosticsResponseSchema,
+    ]),
+  );
+
   const SkillAuthoringInputSchema = registry.register(
     "SkillAuthoringInput",
     z.object({
@@ -697,6 +705,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionLifecycleResponseSchema,
     RoutineDefinitionPublishResponseSchema,
     RoutineDefinitionPublishRejectedResponseSchema,
+    PortableRoutineSaveRejectedResponseSchema,
     PortableRoutineDocumentEnvelopeSchema,
     PortableRoutineDocumentCreateResponseSchema,
     PortableRoutineParseDiagnosticSchema,

@@ -4306,6 +4306,10 @@ components:
       required:
         - error
         - validation
+    PortableRoutineSaveRejectedResponse:
+      oneOf:
+        - $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+        - $ref: "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
     SkillAuthoringInput:
       type: object
       properties:
@@ -11224,11 +11228,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: Routine definition is invalid
+          description: Routine definition is invalid or cannot be represented as portable markdown
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                $ref: "#/components/schemas/PortableRoutineSaveRejectedResponse"
   /api/v1/agents/{agentId}/routines/draft-assist:
     post:
       tags:
@@ -11334,11 +11338,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "422":
-          description: Routine definition is invalid
+          description: Routine definition is invalid or cannot be represented as portable markdown
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
+                $ref: "#/components/schemas/PortableRoutineSaveRejectedResponse"
   /api/v1/routines/portable/canonicalize:
     post:
       tags:

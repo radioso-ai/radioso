@@ -24,6 +24,8 @@ on:
       - packages/conversation-engine/**
       - packages/conversation-tools/**
       - packages/document-parser/**
+      - packages/routine-definition/**
+      - packages/routine-markdown/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
 

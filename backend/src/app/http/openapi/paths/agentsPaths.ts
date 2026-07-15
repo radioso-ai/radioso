@@ -323,6 +323,45 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/portable",
+    tags: ["Agents"],
+    summary: "Get a routine definition as portable markdown",
+    operationId: "getAgentRoutinePortableDocument",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.RoutineDefinitionParamsSchema },
+    responses: {
+      200: { description: "Portable routine document returned", content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "Routine definition cannot be represented as portable markdown", content: { "application/json": { schema: schemas.PortableRoutineParseDiagnosticsResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/agents/{agentId}/routines/{routineId}/portable",
+    tags: ["Agents"],
+    summary: "Update a draft routine definition from portable markdown",
+    operationId: "updateAgentRoutinePortableDocument",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.RoutineDefinitionParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Portable routine document updated and returned in canonical form", content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } } },
+      400: { description: "Portable markdown grammar validation failed", content: { "application/json": { schema: schemas.PortableRoutineParseDiagnosticsResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent or routine definition not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "Routine definition is invalid or cannot be represented as portable markdown", content: { "application/json": { schema: schemas.PortableRoutineSaveRejectedResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/routines/draft-assist",
     tags: ["Agents"],
@@ -347,6 +386,30 @@ export const registerAgentsPaths = (
 
   registry.registerPath({
     method: "post",
+    path: "/api/v1/agents/{agentId}/routines/portable",
+    tags: ["Agents"],
+    summary: "Create a draft routine definition from portable markdown",
+    operationId: "createAgentRoutinePortableDocument",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.AgentParamsSchema,
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } },
+      },
+    },
+    responses: {
+      201: { description: "Draft routine definition created from portable markdown", content: { "application/json": { schema: schemas.PortableRoutineDocumentCreateResponseSchema } } },
+      400: { description: "Portable markdown grammar validation failed", content: { "application/json": { schema: schemas.PortableRoutineParseDiagnosticsResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "Routine name and version already exist for this agent", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      422: { description: "Routine definition is invalid or cannot be represented as portable markdown", content: { "application/json": { schema: schemas.PortableRoutineSaveRejectedResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
     path: "/api/v1/agents/{agentId}/routines",
     tags: ["Agents"],
     summary: "Create a draft routine definition for an agent",
@@ -364,6 +427,27 @@ export const registerAgentsPaths = (
       400: { description: "Request validation failed", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      409: { description: "Routine name and version already exist for this agent", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/routines/portable/canonicalize",
+    tags: ["Agents"],
+    summary: "Canonicalize portable routine markdown without persistence",
+    operationId: "canonicalizeRoutinePortableDocument",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } },
+      },
+    },
+    responses: {
+      200: { description: "Portable routine document returned in canonical form", content: { "application/json": { schema: schemas.PortableRoutineDocumentEnvelopeSchema } } },
+      400: { description: "Portable markdown grammar validation failed", content: { "application/json": { schema: schemas.PortableRoutineParseDiagnosticsResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },
   });
 

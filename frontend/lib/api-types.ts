@@ -1,4 +1,5 @@
 import type { components, operations } from '../../typescript-sdk/src/generated/types'
+import type { RoutineInputBinding } from '@radioso/routine-markdown'
 import { API_BASE } from './api-client'
 import {
   readRetrievalSkillSettingsOverride,
@@ -71,8 +72,11 @@ export type RoutineFieldGuardOp =
   | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
 export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
 export type RoutineTerminalKind = 'complete' | 'handoff'
+// Binding kinds come from the shared definition package so the frontend dialect
+// cannot drift from the wire contract again (this type was stale after spec 097
+// added contextVariableRef, which silently excluded context-bound routines).
 export type RoutineStepMetadata = {
-  inputBindings?: Record<string, { kind: 'literal'; value: string | number | boolean } | { kind: 'variableRef'; ref: string }>
+  inputBindings?: Record<string, RoutineInputBinding>
   outputAssignments?: Record<string, string>
   mode?: 'typed' | 'untyped'
 } & Record<string, unknown>

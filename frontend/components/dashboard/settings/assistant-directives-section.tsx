@@ -251,16 +251,22 @@ function DirectiveRow({
   onOverride?: () => void
   onFocusReplacement?: () => void
 }) {
+  // A contextual replacer only supersedes this built-in when its condition
+  // fires, so the built-in still applies normally the rest of the time. Only an
+  // unconditional (always) replacer fully retires it — that's the one we fade
+  // out and strike through.
+  const isConditionalReplacement = replacedBy?.condition.kind === 'contextual'
+  const isFullyReplaced = replacedBy != null && !isConditionalReplacement
   return (
     <div
       id={id}
       tabIndex={id ? -1 : undefined}
-      className={`space-y-3 rounded-lg border border-border p-4 ${replacedBy ? 'bg-muted/40 text-muted-foreground' : ''}`}
+      className={`space-y-3 rounded-lg border border-border p-4 ${isFullyReplaced ? 'bg-muted/40 text-muted-foreground' : ''}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className={`text-sm font-medium text-foreground ${replacedBy ? 'line-through decoration-muted-foreground/70' : ''}`}>
+            <p className={`text-sm font-medium text-foreground ${isFullyReplaced ? 'line-through decoration-muted-foreground/70' : ''}`}>
               {directive.name}
             </p>
             {readOnly ? (
@@ -275,7 +281,7 @@ function DirectiveRow({
             ) : null}
             {replaces?.map((name) => (
               <span key={name} className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                Replaces: {name}
+                {directive.condition.kind === 'contextual' ? `Replaces ${name} when active` : `Replaces: ${name}`}
               </span>
             ))}
           </div>
@@ -292,6 +298,9 @@ function DirectiveRow({
               >
                 {replacedBy.name}
               </button>
+              {replacedBy.condition.kind === 'contextual' ? (
+                <> only when: {replacedBy.condition.description}. Otherwise this default still applies.</>
+              ) : null}
             </p>
           ) : null}
           {'description' in directive && directive.description ? (

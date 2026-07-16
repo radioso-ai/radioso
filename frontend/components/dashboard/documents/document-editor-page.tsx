@@ -4,7 +4,7 @@ import type { FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
-import { DocumentStatus } from '@/components/dashboard/document-status'
+import { DocumentRetrievalBadge, DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,9 +16,16 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { DocumentSourceListItem, DocumentSummary } from '@/lib/api'
+import {
+  endOfDayIsoFromDateInput,
+  isRetrievable,
+  toDateInputValue,
+  todayDateInputValue,
+} from '@/lib/document-retrieval'
 import { cn } from '@/lib/utils'
 
 // Synthetic source created automatically for inline documents that the user
@@ -70,6 +77,10 @@ export function DocumentEditorPage({
   onRunMetadataExtraction,
   isRunningMetadataExtraction,
   onInspectChunks,
+  onRetrievalEnabledChange,
+  onRetrievalExpiresAtChange,
+  isUpdatingRetrieval,
+  retrievalError,
   onSubmit,
 }: {
   document: DocumentSummary | null
@@ -96,6 +107,10 @@ export function DocumentEditorPage({
   onDelete: () => void
   onRetry: () => void
   onInspectChunks: () => void
+  onRetrievalEnabledChange: (enabled: boolean) => void
+  onRetrievalExpiresAtChange: (expiresAt: string | null) => void
+  isUpdatingRetrieval?: boolean
+  retrievalError?: string | null
   onSubmit: (event: FormEvent) => void
 }) {
   if (isLoading) {
@@ -361,6 +376,62 @@ export function DocumentEditorPage({
                       Source is locked because this document came from a crawl or import.
                     </p>
                   ) : null}
+                </div>
+                <div className="space-y-3 border-t border-border/70 pt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <label
+                        htmlFor="document-retrieval-toggle"
+                        className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                      >
+                        Retrieval
+                      </label>
+                      <p className="text-sm text-foreground">Available for retrieval</p>
+                    </div>
+                    <Switch
+                      id="document-retrieval-toggle"
+                      checked={isRetrievable(document)}
+                      onCheckedChange={(checked) => onRetrievalEnabledChange(checked)}
+                      disabled={Boolean(isUpdatingRetrieval)}
+                      aria-label="Available for retrieval"
+                    />
+                  </div>
+                  <DocumentRetrievalBadge document={document} />
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="document-retrieval-expiry"
+                      className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                    >
+                      Auto-exclude on
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id="document-retrieval-expiry"
+                        type="date"
+                        min={todayDateInputValue()}
+                        value={toDateInputValue(document.retrievalExpiresAt)}
+                        onChange={(event) => onRetrievalExpiresAtChange(endOfDayIsoFromDateInput(event.target.value))}
+                        disabled={Boolean(isUpdatingRetrieval)}
+                        className="w-auto"
+                      />
+                      {document.retrievalExpiresAt ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => onRetrievalExpiresAtChange(null)}
+                          disabled={Boolean(isUpdatingRetrieval)}
+                        >
+                          Clear
+                        </Button>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      The document stops being retrievable after this date. Turning retrieval back on clears a date that
+                      has already passed.
+                    </p>
+                    {retrievalError ? <p className="text-sm text-destructive">{retrievalError}</p> : null}
+                  </div>
                 </div>
                 {enrichment || onRunMetadataExtraction ? (
                   <div className="space-y-2 border-t border-border/70 pt-4">

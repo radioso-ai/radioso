@@ -88,6 +88,12 @@ export interface DocumentRecord extends DocumentSourceRecord {
   updatedAt: Date;
   metadata: Record<string, unknown>;
   enrichment?: DocumentEnrichmentProvenance | null;
+  // Retrieval eligibility, orthogonal to processing `status`. Disabled or
+  // expired documents stay 'ready' and visible; they are only kept out of
+  // retrieval. See DocumentRetrievalEligibilityInput and the retrieval filter
+  // in modules/retrieval/infra/documentRetrievalEligibility.ts.
+  retrievalEnabled: boolean;
+  retrievalExpiresAt: Date | null;
 }
 
 export interface DocumentCreateInput extends DocumentSourceInput {
@@ -132,6 +138,16 @@ export interface DocumentDerivedContentUpdateInput {
   revision: number;
   sourceContent: string;
   markdownContent: string;
+}
+
+// Absolute retrieval-eligibility state written to a document without re-queuing
+// or re-processing it. The service resolves partial API input into these
+// explicit values (see DocumentIngestionService.updateRetrievalEligibility).
+export interface DocumentRetrievalEligibilityInput {
+  documentId: string;
+  workspaceId: string;
+  retrievalEnabled: boolean;
+  retrievalExpiresAt: Date | null;
 }
 
 export interface ChunkRecord {
@@ -191,6 +207,9 @@ export interface DocumentRepositoryPort {
   updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
   updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
   updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
+  // Targeted retrieval-eligibility write that does not touch content, status, or
+  // revision and does not re-queue processing. Returns null when no row matches.
+  setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null>;
   requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
   requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
   requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
@@ -330,6 +349,8 @@ export interface DocumentSummary {
   contentSize?: number | null;
   contentSizeBytes?: number | null;
   enrichment?: DocumentEnrichmentProvenance | null;
+  retrievalEnabled: boolean;
+  retrievalExpiresAt: Date | null;
 }
 
 export interface DocumentListPage {
@@ -358,6 +379,8 @@ export interface DocumentSummaryRecord extends DocumentSourceRecord {
   contentSize?: number | null;
   contentSizeBytes?: number | null;
   enrichment?: DocumentEnrichmentProvenance | null;
+  retrievalEnabled: boolean;
+  retrievalExpiresAt: Date | null;
 }
 
 export class DocumentIngestionService {
@@ -675,6 +698,69 @@ export class DocumentIngestionService {
     };
   }
 
+  // Toggle a document's retrieval eligibility without re-processing it. Partial:
+  // an absent field is left unchanged. Re-enabling a document
+  // (`retrievalEnabled: true`) also clears an already-elapsed expiry, so the
+  // "auto-exclude after a date, unless the user re-enables it" contract holds —
+  // a passed expiry cannot immediately re-exclude a document the user just
+  // switched back on.
+  async updateRetrievalEligibility(input: {
+    workspaceId: string;
+    documentId: string;
+    retrievalEnabled?: boolean;
+    retrievalExpiresAt?: Date | null;
+  }): Promise<DocumentDetails> {
+    const existing = await this.documentRepository.findByIdAndWorkspaceId(input.documentId, input.workspaceId);
+    if (!existing) {
+      throw notFound("Document not found");
+    }
+
+    const nextEnabled = input.retrievalEnabled ?? existing.retrievalEnabled;
+    let nextExpiresAt =
+      input.retrievalExpiresAt !== undefined ? input.retrievalExpiresAt : existing.retrievalExpiresAt;
+    if (input.retrievalEnabled === true && nextExpiresAt !== null && nextExpiresAt.getTime() <= Date.now()) {
+      nextExpiresAt = null;
+    }
+
+    let updated: DocumentRecord | null;
+    try {
+      updated = await this.documentRepository.setRetrievalEligibility({
+        documentId: input.documentId,
+        workspaceId: input.workspaceId,
+        retrievalEnabled: nextEnabled,
+        retrievalExpiresAt: nextExpiresAt,
+      });
+    } catch (error) {
+      await this.auditService.record({
+        workspaceId: input.workspaceId,
+        eventType: "document.retrieval.update",
+        eventStatus: "failure",
+        metadata: {
+          documentId: input.documentId,
+          reason: error instanceof Error ? error.message : "Failed to update retrieval eligibility",
+        },
+      });
+      throw error;
+    }
+
+    if (!updated) {
+      throw notFound("Document not found");
+    }
+
+    await this.auditService.record({
+      workspaceId: input.workspaceId,
+      eventType: "document.retrieval.update",
+      eventStatus: "success",
+      metadata: {
+        documentId: updated.id,
+        retrievalEnabled: updated.retrievalEnabled,
+        retrievalExpiresAt: updated.retrievalExpiresAt ? updated.retrievalExpiresAt.toISOString() : null,
+      },
+    });
+
+    return this.toDetails(updated);
+  }
+
   async reprocess(input: {
     workspaceId: string;
     documentId: string;
@@ -822,6 +908,8 @@ export class DocumentIngestionService {
       contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
       contentSizeBytes: document.contentSizeBytes ?? null,
       enrichment: document.enrichment ?? null,
+      retrievalEnabled: document.retrievalEnabled,
+      retrievalExpiresAt: document.retrievalExpiresAt,
     };
   }
 

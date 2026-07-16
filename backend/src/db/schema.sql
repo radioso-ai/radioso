@@ -1298,6 +1298,8 @@ CREATE TABLE public.documents (
     content_size_bytes bigint,
     content_hash text,
     enrichment jsonb,
+    retrieval_enabled boolean DEFAULT true NOT NULL,
+    retrieval_expires_at timestamp with time zone,
     CONSTRAINT documents_content_size_bytes_check CHECK (((content_size_bytes IS NULL) OR (content_size_bytes >= 0)))
 );
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   documentParamsSchema,
+  documentRetrievalUpdateSchema,
   documentSchema,
   reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
@@ -145,7 +146,18 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       sourceFilename: z.string().nullable().optional(),
       sourceMimeType: z.string().nullable().optional(),
       contentSize: z.number().int().min(0).nullable().optional(),
+      retrievalEnabled: z.boolean().openapi({
+        description: "When false, the document is excluded from retrieval regardless of processing status.",
+      }),
+      retrievalExpiresAt: z.string().datetime().nullable().openapi({
+        description: "Instant after which the document is auto-excluded from retrieval. Null when no expiry is set.",
+      }),
     }),
+  );
+
+  const DocumentRetrievalUpdateRequestSchema = registry.register(
+    "DocumentRetrievalUpdateRequest",
+    documentRetrievalUpdateSchema,
   );
 
   const DocumentDetailsSchema = registry.register(
@@ -573,6 +585,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentOperationResponseSchema,
     DocumentEnrichmentSchema,
     DocumentSummarySchema,
+    DocumentRetrievalUpdateRequestSchema,
     DocumentDetailsSchema,
     DocumentListResponseSchema,
     DocumentSearchActionSchema,

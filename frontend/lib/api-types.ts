@@ -244,6 +244,7 @@ export type SourceReprocessResponse = 'SourceReprocessResponse' extends keyof Ap
     }
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
+export type DocumentRetrievalUpdateRequest = ApiSchemas['DocumentRetrievalUpdateRequest']
 export type DocumentListResponse = ApiSchemas['DocumentListResponse']
 
 export interface DocumentChunkSummary {

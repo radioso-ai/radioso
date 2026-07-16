@@ -66,6 +66,19 @@ export const documentSchema = z.object({
   documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
 });
 
+export const documentRetrievalUpdateSchema = z
+  .object({
+    retrievalEnabled: z.boolean().optional(),
+    // `null` clears the expiry; an ISO 8601 timestamp sets it. Absent leaves the
+    // stored value unchanged.
+    retrievalExpiresAt: z.string().datetime({ offset: true }).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) => value.retrievalEnabled !== undefined || value.retrievalExpiresAt !== undefined,
+    { message: "Provide retrievalEnabled and/or retrievalExpiresAt" },
+  );
+
 export const documentParamsSchema = z.object({
   documentId: z.string().uuid(),
 });

@@ -1389,6 +1389,103 @@ describe("document ingestion", () => {
   });
 });
 
+describe("document retrieval eligibility", () => {
+  const createReadyDocument = async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService);
+    const record = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+    });
+    return { documentRepository, auditService, service, documentId: record.id };
+  };
+
+  it("disables a document for retrieval and records an audit event", async () => {
+    const { service, auditService, documentId } = await createReadyDocument();
+
+    const updated = await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId,
+      retrievalEnabled: false,
+    });
+
+    expect(updated.retrievalEnabled).toBe(false);
+    expect(updated.retrievalExpiresAt).toBeNull();
+    expect(auditService.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "document.retrieval.update",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ documentId, retrievalEnabled: false }),
+      }),
+    );
+  });
+
+  it("sets an expiry without touching the enable flag", async () => {
+    const { service, documentId } = await createReadyDocument();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+    const updated = await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId,
+      retrievalExpiresAt: expiresAt,
+    });
+
+    expect(updated.retrievalEnabled).toBe(true);
+    expect(updated.retrievalExpiresAt).toEqual(expiresAt);
+  });
+
+  it("clears an elapsed expiry when the document is re-enabled", async () => {
+    const { service, documentId } = await createReadyDocument();
+    const elapsed = new Date(Date.now() - 60 * 60 * 1000);
+    await service.updateRetrievalEligibility({ workspaceId: "workspace-1", documentId, retrievalExpiresAt: elapsed });
+
+    const updated = await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId,
+      retrievalEnabled: true,
+    });
+
+    expect(updated.retrievalEnabled).toBe(true);
+    expect(updated.retrievalExpiresAt).toBeNull();
+  });
+
+  it("keeps a future expiry when the document is re-enabled", async () => {
+    const { service, documentId } = await createReadyDocument();
+    const future = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId,
+      retrievalEnabled: false,
+      retrievalExpiresAt: future,
+    });
+
+    const updated = await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId,
+      retrievalEnabled: true,
+    });
+
+    expect(updated.retrievalEnabled).toBe(true);
+    expect(updated.retrievalExpiresAt).toEqual(future);
+  });
+
+  it("throws when the document does not exist", async () => {
+    const { service } = await createReadyDocument();
+
+    await expect(
+      service.updateRetrievalEligibility({
+        workspaceId: "workspace-1",
+        documentId: "00000000-0000-0000-0000-000000000000",
+        retrievalEnabled: false,
+      }),
+    ).rejects.toThrow("Document not found");
+  });
+});
+
 const fixedWindowStrategy: ChunkingStrategy = {
   id: "fixed_window",
   async chunk(input) {

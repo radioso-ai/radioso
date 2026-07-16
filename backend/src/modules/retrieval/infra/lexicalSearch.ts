@@ -5,6 +5,7 @@ import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
+import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
 
 export interface LexicalSearchPort {
   search(input: {
@@ -82,7 +83,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
          FROM chunks c
          JOIN documents d ON d.id = c.document_id
          WHERE c.workspace_id = $1
-           AND d.status = 'ready'
+           AND ${retrievableDocumentPredicateSql("d")}
            ${chunkFilterClause}
        )
        SELECT c.chunk_id,

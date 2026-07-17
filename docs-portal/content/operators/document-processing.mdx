@@ -60,6 +60,21 @@ Reprocessing can target a single document, a single source, or the whole workspa
 
 Queue-backed deployments keep the same dispatch contract for extraction reprocesses. The Cloud Tasks or AMQP message wakes a worker by job id; the extraction override is loaded from the durable processing job row.
 
+## Retrieval eligibility
+
+Retrieval eligibility decides whether a processed document is a search candidate. It is separate from processing status. An excluded or expired document still shows in the document list with its normal state; it is simply left out of retrieval until it is eligible again.
+
+There are two controls, both on the document itself:
+
+- **Available for retrieval** is a manual switch. While it is off, the document is never retrieved, whatever its expiry.
+- **Auto-exclude on** is an optional date. The document stays retrievable through that day and is excluded once the date passes.
+
+Turning a document back on also clears an auto-exclude date that has already passed, so a stale date cannot immediately exclude a document the operator just re-enabled. A future date is kept.
+
+Both controls apply to every document type, including imported files and crawled pages, and take effect without re-processing. The API is `PATCH /api/v1/document/{documentId}` with `retrievalEnabled` and/or `retrievalExpiresAt`.
+
+In practice, an excluded or expired document is filtered out at candidate selection, so it will not appear in assistant answers, direct retrieval search, or the MCP grounded tools.
+
 ## First checks during incidents
 
 1. Confirm the API is still accepting uploads.

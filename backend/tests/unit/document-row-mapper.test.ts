@@ -16,6 +16,8 @@ const baseRow = (): DocumentRow => ({
   failure_reason: null,
   created_at: new Date("2026-05-20T00:00:00Z"),
   updated_at: new Date("2026-05-20T00:00:00Z"),
+  retrieval_enabled: true,
+  retrieval_expires_at: null,
   metadata: {},
   source_kind: "inline_text",
   source_filename: null,
@@ -50,5 +52,24 @@ describe("mapDocumentSummary", () => {
     expect(summary.contentSize).toBeNull();
     expect(summary.contentSizeBytes).toBeNull();
     expect(summary.sourceSizeBytes).toBeNull();
+  });
+
+  it("maps retrieval eligibility columns", () => {
+    const expiresAt = new Date("2026-08-01T12:00:00Z");
+    const summary = mapDocumentSummary({
+      ...baseRow(),
+      retrieval_enabled: false,
+      retrieval_expires_at: expiresAt,
+    });
+
+    expect(summary.retrievalEnabled).toBe(false);
+    expect(summary.retrievalExpiresAt).toEqual(expiresAt);
+  });
+
+  it("defaults retrieval eligibility to included with no expiry", () => {
+    const summary = mapDocumentSummary(baseRow());
+
+    expect(summary.retrievalEnabled).toBe(true);
+    expect(summary.retrievalExpiresAt).toBeNull();
   });
 });

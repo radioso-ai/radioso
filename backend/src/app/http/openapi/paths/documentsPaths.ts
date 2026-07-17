@@ -907,6 +907,62 @@ export const registerDocumentsPaths = (
   });
 
   registry.registerPath({
+    method: "patch",
+    path: "/api/v1/document/{documentId}",
+    tags: ["Documents"],
+    summary: "Update a document's retrieval eligibility",
+    description:
+      "Enable or disable a document for retrieval and/or set an expiry after which it is auto-excluded. Does not re-process the document. Re-enabling a document (retrievalEnabled=true) clears an already-elapsed expiry.",
+    operationId: "updateDocumentRetrieval",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.documentParamsSchema,
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.DocumentRetrievalUpdateRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Updated document details",
+        content: {
+          "application/json": {
+            schema: schemas.DocumentDetailsSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Document not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/document/{documentId}/reprocess",
     tags: ["Documents"],

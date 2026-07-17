@@ -28,6 +28,8 @@ export interface DocumentRow {
   failure_reason: string | null;
   created_at: Date;
   updated_at: Date;
+  retrieval_enabled: boolean;
+  retrieval_expires_at: Date | string | null;
   metadata: Record<string, unknown>;
   enrichment?: unknown;
   source_kind: "inline_text" | "uploaded_file";
@@ -50,6 +52,9 @@ const coerceByteCount = (value: number | string | null | undefined): number | nu
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
+
+const coerceTimestamp = (value: Date | string | null | undefined): Date | null =>
+  value === null || value === undefined ? null : new Date(value);
 
 export const documentSelect = `
   id,
@@ -74,6 +79,8 @@ export const documentSelect = `
   failure_reason,
   created_at,
   updated_at,
+  retrieval_enabled,
+  retrieval_expires_at,
   metadata,
   source_kind,
   source_filename,
@@ -94,6 +101,8 @@ export const documentSummarySelect = `
   failure_reason,
   created_at,
   updated_at,
+  retrieval_enabled,
+  retrieval_expires_at,
   metadata,
   source_id,
   (
@@ -133,6 +142,8 @@ export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   failureReason: row.failure_reason,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+  retrievalEnabled: row.retrieval_enabled ?? true,
+  retrievalExpiresAt: coerceTimestamp(row.retrieval_expires_at),
   metadata: row.metadata ?? {},
   enrichment: mapDocumentEnrichment(row.enrichment),
   sourceKind: row.source_kind,
@@ -154,6 +165,8 @@ export const mapDocumentSummary = (row: DocumentRow): DocumentSummaryRecord => (
   failureReason: row.failure_reason,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
+  retrievalEnabled: row.retrieval_enabled ?? true,
+  retrievalExpiresAt: coerceTimestamp(row.retrieval_expires_at),
   metadata: row.metadata ?? {},
   enrichment: mapDocumentEnrichment(row.enrichment),
   sourceId: row.source_id,

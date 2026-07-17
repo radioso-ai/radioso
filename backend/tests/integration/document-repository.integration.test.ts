@@ -200,6 +200,37 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(await countProcessingJobs(document.id)).toBe(0);
   });
 
+  it("defaults new documents to retrievable and round-trips setRetrievalEligibility without bumping revision", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+    expect(created.retrievalEnabled).toBe(true);
+    expect(created.retrievalExpiresAt).toBeNull();
+
+    const expiresAt = new Date("2027-01-01T00:00:00.000Z");
+    const updated = await repository.setRetrievalEligibility({
+      documentId: created.id,
+      workspaceId,
+      retrievalEnabled: false,
+      retrievalExpiresAt: expiresAt,
+    });
+
+    expect(updated?.retrievalEnabled).toBe(false);
+    expect(updated?.retrievalExpiresAt).toEqual(expiresAt);
+    expect(updated?.revision).toBe(created.revision);
+
+    const reloaded = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+    expect(reloaded?.retrievalEnabled).toBe(false);
+    expect(reloaded?.retrievalExpiresAt).toEqual(expiresAt);
+
+    expect(
+      await repository.setRetrievalEligibility({
+        documentId: randomUUID(),
+        workspaceId,
+        retrievalEnabled: false,
+        retrievalExpiresAt: null,
+      }),
+    ).toBeNull();
+  });
+
   it("findByIdAndWorkspaceId and findByExternalDocumentId resolve documents and the source summary", async () => {
     const created = await repository.createAndQueue(
       baseCreateInput({ sourceId, externalDocumentId: "ext-find-1" }),

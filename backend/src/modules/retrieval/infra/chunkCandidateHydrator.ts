@@ -7,6 +7,7 @@ import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { VectorIndexCandidate } from "../domain/vectorIndex.js";
 import type { VectorMetadataFilter } from "../domain/vectorFilter.js";
 import { hasVectorMetadataFilter } from "../domain/vectorFilter.js";
+import { retrievableDocumentWhere } from "./documentRetrievalEligibility.js";
 
 export interface ChunkCandidateHydratorPort {
   hydrate(input: {
@@ -48,7 +49,7 @@ export class PostgresChunkCandidateHydrator implements ChunkCandidateHydratorPor
         "c.metadata",
       ])
       .where("c.workspace_id", "=", input.workspaceId)
-      .where("d.status", "=", "ready")
+      .where(retrievableDocumentWhere("d"))
       .where(sql<boolean>`${sql.ref("c.id")} = any(${sql.val(chunkIds)}::uuid[])`)
       .orderBy(sql<number>`array_position(${sql.val(chunkIds)}::uuid[], ${sql.ref("c.id")})`);
 

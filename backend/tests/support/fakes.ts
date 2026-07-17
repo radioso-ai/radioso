@@ -2261,6 +2261,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceSizeBytes: input.sourceSizeBytes ?? null,
       contentSizeBytes: input.contentSizeBytes ?? null,
       contentHash: input.contentHash ?? null,
+      retrievalEnabled: true,
+      retrievalExpiresAt: null,
       status: "queued",
       revision: 1,
       failureReason: null,
@@ -2338,6 +2340,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       sourceSizeBytes: input.sourceSizeBytes ?? null,
       contentSizeBytes: input.contentSizeBytes ?? null,
       contentHash: input.contentHash ?? null,
+      retrievalEnabled: true,
+      retrievalExpiresAt: null,
       status: input.status,
       revision: 1,
       failureReason: null,
@@ -2385,6 +2389,8 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         status: item.status,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
+        retrievalEnabled: item.retrievalEnabled,
+        retrievalExpiresAt: item.retrievalExpiresAt,
         metadata: item.metadata,
         enrichment: item.enrichment ?? null,
         sourceId: item.sourceId ?? null,
@@ -2664,6 +2670,27 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       ...(input.enrichment !== undefined
         ? { enrichment: input.enrichment as DocumentRecord["enrichment"] }
         : {}),
+      updatedAt: new Date(),
+    };
+    this.items.set(record.id, record);
+    return record;
+  }
+
+  async setRetrievalEligibility(input: {
+    documentId: string;
+    workspaceId: string;
+    retrievalEnabled: boolean;
+    retrievalExpiresAt: Date | null;
+  }): Promise<DocumentRecord | null> {
+    const existing = this.items.get(input.documentId);
+    if (!existing || existing.workspaceId !== input.workspaceId) {
+      return null;
+    }
+
+    const record: DocumentRecord = {
+      ...existing,
+      retrievalEnabled: input.retrievalEnabled,
+      retrievalExpiresAt: input.retrievalExpiresAt,
       updatedAt: new Date(),
     };
     this.items.set(record.id, record);

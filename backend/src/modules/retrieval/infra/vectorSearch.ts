@@ -2,6 +2,7 @@ import type { Database } from "../../../shared/infra/database.js";
 import type { VectorIndexCandidate, VectorIndexSearchInput, VectorIndexPort } from "../domain/vectorIndex.js";
 import type { RetrievedChunk, VectorSearchInput, VectorSearchPort } from "../domain/vectorSearch.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
+import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
 
 interface VectorSearchRow {
   chunk_id: string;
@@ -56,7 +57,7 @@ export class PgVectorIndex implements VectorIndexPort {
       FROM chunks c
       JOIN documents d ON d.id = c.document_id
       WHERE c.workspace_id = $1
-        AND d.status = 'ready'
+        AND ${retrievableDocumentPredicateSql("d")}
         AND ${embeddingExpression} IS NOT NULL
         AND c.embedding_model = $5
         AND vector_dims(${embeddingExpression}) = $6
@@ -133,7 +134,7 @@ export class PgVectorSearch implements VectorSearchPort {
       FROM chunks c
       JOIN documents d ON d.id = c.document_id
       WHERE c.workspace_id = $1
-        AND d.status = 'ready'
+        AND ${retrievableDocumentPredicateSql("d")}
         AND ${embeddingExpression} IS NOT NULL
         AND c.embedding_model = $5
         AND vector_dims(${embeddingExpression}) = $6

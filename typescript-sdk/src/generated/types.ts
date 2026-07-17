@@ -2082,7 +2082,11 @@ export interface paths {
         delete: operations["deleteDocument"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a document's retrieval eligibility
+         * @description Enable or disable a document for retrieval and/or set an expiry after which it is auto-excluded. Does not re-process the document. Re-enabling a document (retrievalEnabled=true) clears an already-elapsed expiry.
+         */
+        patch: operations["updateDocumentRetrieval"];
         trace?: never;
     };
     "/api/v1/document/sources/{sourceId}/reprocess": {
@@ -4453,6 +4457,18 @@ export interface components {
             sourceFilename?: string | null;
             sourceMimeType?: string | null;
             contentSize?: number | null;
+            /** @description When false, the document is excluded from retrieval regardless of processing status. */
+            retrievalEnabled: boolean;
+            /**
+             * Format: date-time
+             * @description Instant after which the document is auto-excluded from retrieval. Null when no expiry is set.
+             */
+            retrievalExpiresAt: string | null;
+        };
+        DocumentRetrievalUpdateRequest: {
+            retrievalEnabled?: boolean;
+            /** Format: date-time */
+            retrievalExpiresAt?: string | null;
         };
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
@@ -15100,6 +15116,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateDocumentRetrieval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocumentRetrievalUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated document details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentDetails"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
             /** @description Authentication required */
             401: {

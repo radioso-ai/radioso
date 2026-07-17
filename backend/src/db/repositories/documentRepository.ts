@@ -12,6 +12,7 @@ import type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentRetrievalEligibilityInput,
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
@@ -74,6 +75,8 @@ const documentSelectColumns = [
   "failure_reason",
   "created_at",
   "updated_at",
+  "retrieval_enabled",
+  "retrieval_expires_at",
   "metadata",
   "enrichment",
   "source_kind",
@@ -95,6 +98,8 @@ const documentSummarySelectColumns = [
   "failure_reason",
   "created_at",
   "updated_at",
+  "retrieval_enabled",
+  "retrieval_expires_at",
   "metadata",
   "enrichment",
   "source_id",
@@ -523,6 +528,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .where("id", "=", input.documentId)
       .where("workspace_id", "=", input.workspaceId)
       .where("revision", "=", input.revision)
+      .returning(documentSelectColumns)
+      .executeTakeFirst()) as DocumentRow | undefined;
+
+    return row ? mapDocument(row) : null;
+  }
+
+  async setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null> {
+    const row = (await this.db
+      .updateTable("documents")
+      .set({
+        retrieval_enabled: input.retrievalEnabled,
+        retrieval_expires_at: input.retrievalExpiresAt,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", input.documentId)
+      .where("workspace_id", "=", input.workspaceId)
       .returning(documentSelectColumns)
       .executeTakeFirst()) as DocumentRow | undefined;
 

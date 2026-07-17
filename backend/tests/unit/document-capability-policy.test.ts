@@ -34,6 +34,8 @@ const createRepository = () => {
         failureReason: null,
         createdAt: new Date(),
         updatedAt: new Date(),
+        retrievalEnabled: true,
+        retrievalExpiresAt: null,
       };
     },
     async deleteByIdAndWorkspaceId() {

@@ -48,14 +48,16 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     title: string;
     chunkId?: string;
     metadata: Record<string, unknown>;
+    retrievalEnabled?: boolean;
+    retrievalExpiresAt?: string | null;
   }): Promise<string> => {
     const documentId = input.id ?? randomUUID();
     const chunkId = input.chunkId ?? randomUUID();
     const workspace = input.workspaceId ?? workspaceId;
     await database.query(
-      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, source_id, metadata)
-       VALUES ($1, $2, $3, $4, $4, 'ready', $5, '{}'::jsonb)`,
-      [documentId, workspace, input.title, `${input.title} body`, input.sourceId ?? sourceId],
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, source_id, metadata, retrieval_enabled, retrieval_expires_at)
+       VALUES ($1, $2, $3, $4, $4, 'ready', $5, '{}'::jsonb, $6, $7)`,
+      [documentId, workspace, input.title, `${input.title} body`, input.sourceId ?? sourceId, input.retrievalEnabled ?? true, input.retrievalExpiresAt ?? null],
     );
     await database.query(
       `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, metadata)
@@ -115,5 +117,53 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     });
 
     expect(scoped.map((candidate) => candidate.chunkId)).toEqual([ongoing, soon, later]);
+  });
+
+  it("omits disabled and expired documents but keeps a future expiry", async () => {
+    const excludedWorkspaceId = randomUUID();
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [excludedWorkspaceId, accountId, "Excluded Workspace", `temporal-${excludedWorkspaceId}`],
+    );
+
+    const included = await insertReadyDocumentWithChunk({
+      workspaceId: excludedWorkspaceId,
+      sourceId: null,
+      title: "Included Event",
+      metadata: { dateFrom: "2026-07-04", dateTo: "2026-07-04" },
+    });
+    const excluded = await insertReadyDocumentWithChunk({
+      workspaceId: excludedWorkspaceId,
+      sourceId: null,
+      title: "Excluded Event",
+      metadata: { dateFrom: "2026-07-04", dateTo: "2026-07-04" },
+      retrievalEnabled: false,
+    });
+    const expired = await insertReadyDocumentWithChunk({
+      workspaceId: excludedWorkspaceId,
+      sourceId: null,
+      title: "Expired Event",
+      metadata: { dateFrom: "2026-07-04", dateTo: "2026-07-04" },
+      retrievalExpiresAt: "2000-01-01T00:00:00.000Z",
+    });
+    const futureExpiry = await insertReadyDocumentWithChunk({
+      workspaceId: excludedWorkspaceId,
+      sourceId: null,
+      title: "Future Expiry Event",
+      metadata: { dateFrom: "2026-07-04", dateTo: "2026-07-04" },
+      retrievalExpiresAt: "2999-01-01T00:00:00.000Z",
+    });
+
+    const candidates = await repository.findUpcoming({
+      workspaceId: excludedWorkspaceId,
+      today: "2026-07-02",
+      topK: 10,
+    });
+    const chunkIds = candidates.map((candidate) => candidate.chunkId);
+
+    expect(chunkIds).toContain(included);
+    expect(chunkIds).toContain(futureExpiry);
+    expect(chunkIds).not.toContain(excluded);
+    expect(chunkIds).not.toContain(expired);
   });
 });

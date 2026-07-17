@@ -15,6 +15,7 @@ export type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  DocumentRetrievalEligibilityInput,
   DocumentSourceInput,
   DocumentSourceKind,
   DocumentSourceRecord,

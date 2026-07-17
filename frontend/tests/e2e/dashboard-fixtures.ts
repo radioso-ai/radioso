@@ -434,6 +434,8 @@ const documentListResponse = {
       updatedAt: nowIso,
       metadata: {},
       sourceKind: "inline_text",
+      retrievalEnabled: true,
+      retrievalExpiresAt: null,
     },
   ],
   total: 1,

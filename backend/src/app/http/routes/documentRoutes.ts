@@ -21,6 +21,7 @@ import {
   chunkParamsSchema,
   documentListQuerySchema,
   documentParamsSchema,
+  documentRetrievalUpdateSchema,
   documentSchema,
   reprocessDocumentBodySchema,
   documentSearchHistoryParamsSchema,
@@ -462,6 +463,25 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
         source: req.body.source,
       });
       res.status(202).json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.patch("/:documentId", workspaceSession, requireWorkspacePermission(dependencies, "workspace.documents.manage"), validateBody(documentRetrievalUpdateSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const { documentId } = documentParamsSchema.parse(req.params);
+      const body = req.body as { retrievalEnabled?: boolean; retrievalExpiresAt?: string | null };
+      const document = await dependencies.documentIngestionService.updateRetrievalEligibility({
+        workspaceId,
+        documentId,
+        ...(body.retrievalEnabled !== undefined ? { retrievalEnabled: body.retrievalEnabled } : {}),
+        ...(body.retrievalExpiresAt !== undefined
+          ? { retrievalExpiresAt: body.retrievalExpiresAt === null ? null : new Date(body.retrievalExpiresAt) }
+          : {}),
+      });
+      res.status(200).json(document);
     } catch (error) {
       next(error);
     }

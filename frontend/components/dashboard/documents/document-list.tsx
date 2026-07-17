@@ -4,7 +4,10 @@ import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DocumentStatus } from '@/components/dashboard/document-status'
+import { getDocumentRetrievalState } from '@/lib/document-retrieval'
+import { cn } from '@/lib/utils'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
 import { DashboardPagination } from '@/components/dashboard/shared/dashboard-pagination'
 import {
@@ -66,6 +69,16 @@ function DocumentsPagination({
   )
 }
 
+function getDocumentSourceLabel(document: DocumentSummary): string {
+  if (document.source?.kind === 'website') {
+    return document.source.externalId ?? document.source.name ?? '—'
+  }
+  if (document.sourceKind === 'uploaded_file') {
+    return document.sourceFilename ?? document.source?.name ?? '—'
+  }
+  return document.source?.name ?? 'Manually added'
+}
+
 function DocumentRow({
   document,
   deletingDocumentId,
@@ -88,10 +101,11 @@ function DocumentRow({
   formatDate: (date: string) => string
 }) {
   const isFailed = document.status.toLowerCase() === 'failed'
-  const isImported = document.sourceKind === 'uploaded_file'
   const isWebsite = document.source?.kind === 'website'
-  const websiteSourceLabel = isWebsite ? document.source?.externalId ?? document.source?.name ?? null : null
   const hasError = Boolean((isFailed && document.failureReason) || deleteError || retryError)
+  const sourceLabel = getDocumentSourceLabel(document)
+  const retrievalState = getDocumentRetrievalState(document)
+  const isDimmed = retrievalState === 'excluded' || retrievalState === 'expired'
 
   return (
     <DashboardTableRow>
@@ -108,16 +122,13 @@ function DocumentRow({
         <button
           type="button"
           onClick={() => onOpen(document.id)}
-          className="block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          className={cn(
+            'block max-w-full text-left text-sm font-medium leading-5 text-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            isDimmed && 'text-muted-foreground',
+          )}
         >
           <span className="block truncate">{document.title}</span>
         </button>
-        {isImported && document.sourceFilename ? (
-          <p className="mt-1 truncate text-xs text-muted-foreground">Imported from {document.sourceFilename}</p>
-        ) : null}
-        {isWebsite && websiteSourceLabel ? (
-          <p className="mt-1 truncate text-xs text-muted-foreground">Crawled from {websiteSourceLabel}</p>
-        ) : null}
         {hasError ? (
           <div className="mt-1 space-y-0.5">
             {isFailed && document.failureReason ? (
@@ -128,6 +139,14 @@ function DocumentRow({
           </div>
         ) : null}
       </DashboardTableCell>
+      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="block truncate">{sourceLabel}</span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-sm break-all">{sourceLabel}</TooltipContent>
+        </Tooltip>
+      </DashboardTableCell>
       <DashboardTableCell className="w-24 text-right text-sm tabular-nums text-muted-foreground">
         {typeof document.contentSize === 'number' ? formatBytes(document.contentSize) : '—'}
       </DashboardTableCell>
@@ -135,7 +154,7 @@ function DocumentRow({
         {formatDate(document.updatedAt)}
       </DashboardTableCell>
       <DashboardTableCell className="w-32">
-        <DocumentStatus status={document.status} />
+        <DocumentStatus document={document} />
       </DashboardTableCell>
       <DashboardTableCell className="w-28">
         <div className="flex items-center justify-end gap-2">
@@ -287,6 +306,7 @@ export function DocumentList({
           <DashboardTableHead>
             <DashboardTableHeader className="w-12" />
             <DashboardTableHeader>Name</DashboardTableHeader>
+            <DashboardTableHeader className="w-48">Source</DashboardTableHeader>
             <DashboardTableHeader className="w-24 text-right">Size</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>

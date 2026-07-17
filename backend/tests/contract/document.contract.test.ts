@@ -1330,4 +1330,69 @@ describe("document contract", () => {
       .send({ crawlSettings: { limit: 5 } })
       .expect(400);
   });
+
+  it("toggles document retrieval eligibility and expiry via PATCH", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-eligibility@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Excludable", content: "Body" })
+      .expect(202);
+    const documentId = createResponse.body.documentId as string;
+
+    const initial = await request(app)
+      .get(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .expect(200);
+    expect(initial.body).toMatchObject({ retrievalEnabled: true, retrievalExpiresAt: null });
+
+    const disabled = await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ retrievalEnabled: false })
+      .expect(200);
+    expect(disabled.body).toMatchObject({ retrievalEnabled: false });
+    expect(repositories.documentRepository.items.get(documentId)?.retrievalEnabled).toBe(false);
+
+    const past = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ retrievalExpiresAt: past })
+      .expect(200);
+
+    // Re-enabling a document clears an already-elapsed expiry.
+    const reenabled = await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ retrievalEnabled: true })
+      .expect(200);
+    expect(reenabled.body).toMatchObject({ retrievalEnabled: true, retrievalExpiresAt: null });
+  });
+
+  it("rejects an empty retrieval eligibility PATCH and unknown documents", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-eligibility-invalid@example.com");
+
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Doc", content: "Body" })
+      .expect(202);
+    const documentId = createResponse.body.documentId as string;
+
+    await request(app)
+      .patch(`/api/v1/document/${documentId}`)
+      .set(adminSessionHeaders(session))
+      .send({})
+      .expect(400);
+
+    await request(app)
+      .patch(`/api/v1/document/${randomUUID()}`)
+      .set(adminSessionHeaders(session))
+      .send({ retrievalEnabled: false })
+      .expect(404);
+  });
 });

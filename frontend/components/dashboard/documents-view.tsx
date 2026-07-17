@@ -125,6 +125,8 @@ export function DocumentsView({
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importEnrichmentChoice, setImportEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
   const [extractingDocumentId, setExtractingDocumentId] = useState<string | null>(null)
+  const [isUpdatingRetrieval, setIsUpdatingRetrieval] = useState(false)
+  const [retrievalError, setRetrievalError] = useState<string | null>(null)
   const [createEnrichmentChoice, setCreateEnrichmentChoice] = useState<'inherit' | 'on' | 'off'>('inherit')
   const [importError, setImportError] = useState<string | null>(null)
   const [metadataError, setMetadataError] = useState<string | null>(null)
@@ -516,6 +518,7 @@ export function DocumentsView({
       }
       setIsEditingDetail(false)
       setMetadataError(null)
+      setRetrievalError(null)
     } catch (error) {
       console.error('Failed to load document:', error)
       onSelectedDocumentChange?.(null)
@@ -862,6 +865,36 @@ export function DocumentsView({
     }
   }
 
+  const handleRetrievalUpdate = async (
+    documentId: string,
+    patch: { retrievalEnabled?: boolean; retrievalExpiresAt?: string | null },
+  ) => {
+    setIsUpdatingRetrieval(true)
+    setRetrievalError(null)
+    try {
+      const updated = await documentsApi.updateDocumentRetrieval(documentId, patch)
+      // Keep the open document and the list row in sync so the toggle, expiry,
+      // and status badge reflect the new eligibility immediately.
+      setActiveDocument((current) => (current && current.id === documentId ? updated : current))
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === documentId
+            ? {
+                ...document,
+                retrievalEnabled: updated.retrievalEnabled,
+                retrievalExpiresAt: updated.retrievalExpiresAt,
+                updatedAt: updated.updatedAt,
+              }
+            : document,
+        ),
+      )
+    } catch (error) {
+      setRetrievalError(getApiErrorMessage(error, 'Failed to update retrieval settings. Please try again.'))
+    } finally {
+      setIsUpdatingRetrieval(false)
+    }
+  }
+
   const formatDate = (date: string) => {
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
@@ -1084,6 +1117,18 @@ export function DocumentsView({
               })
             }
           }}
+          onRetrievalEnabledChange={(enabled) => {
+            if (activeDetailDocument) {
+              void handleRetrievalUpdate(activeDetailDocument.id, { retrievalEnabled: enabled })
+            }
+          }}
+          onRetrievalExpiresAtChange={(expiresAt) => {
+            if (activeDetailDocument) {
+              void handleRetrievalUpdate(activeDetailDocument.id, { retrievalExpiresAt: expiresAt })
+            }
+          }}
+          isUpdatingRetrieval={isUpdatingRetrieval}
+          retrievalError={activeDetailDocument ? retrievalError : null}
           onSubmit={handleSubmit}
         />
       ) : (

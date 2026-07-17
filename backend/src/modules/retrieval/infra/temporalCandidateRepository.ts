@@ -8,6 +8,7 @@ import type {
   TemporalCandidateRetrievalPort,
 } from "../domain/temporal/temporalCandidateRetrieval.js";
 import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
+import { retrievableDocumentWhere } from "./documentRetrievalEligibility.js";
 
 type ChunkDocumentJoin = DB & { c: DB["chunks"]; d: DB["documents"] };
 
@@ -30,7 +31,7 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
         "c.metadata",
       ])
       .where("c.workspace_id", "=", input.workspaceId)
-      .where("d.status", "=", "ready")
+      .where(retrievableDocumentWhere("d"))
       .where((eb) =>
         eb.or([
           eb("c.date_from", ">=", sql<Date>`${input.today}::date`),

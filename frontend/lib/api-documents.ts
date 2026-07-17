@@ -7,6 +7,7 @@ import type {
   DocumentCreateResponse,
   DocumentDetails,
   DocumentListResponse,
+  DocumentRetrievalUpdateRequest,
   DocumentSourceCrawlSettings,
   DocumentSourceListItem,
   DocumentSourceListResponse,
@@ -68,6 +69,16 @@ export const documentsApi = {
   async updateDocument(documentId: string, data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
     return request<DocumentCreateResponse>(`/document/${documentId}`, {
       method: "PUT",
+      body: JSON.stringify(data),
+    }, { withApiToken: true })
+  },
+
+  async updateDocumentRetrieval(
+    documentId: string,
+    data: DocumentRetrievalUpdateRequest,
+  ): Promise<DocumentDetails> {
+    return request<DocumentDetails>(`/document/${documentId}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     }, { withApiToken: true })
   },

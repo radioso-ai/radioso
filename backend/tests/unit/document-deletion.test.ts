@@ -33,6 +33,8 @@ describe("document deletion", () => {
             failureReason: null,
             createdAt: new Date(),
             updatedAt: new Date(),
+            retrievalEnabled: true,
+            retrievalExpiresAt: null,
           };
         },
         async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
@@ -104,6 +106,8 @@ describe("document deletion", () => {
             failureReason: null,
             createdAt: new Date(),
             updatedAt: new Date(),
+            retrievalEnabled: true,
+            retrievalExpiresAt: null,
           };
         },
         async deleteByIdAndWorkspaceId() {
@@ -160,6 +164,8 @@ describe("document deletion", () => {
             failureReason: null,
             createdAt: new Date(),
             updatedAt: new Date(),
+            retrievalEnabled: true,
+            retrievalExpiresAt: null,
           };
         },
         async deleteByIdAndWorkspaceId() {

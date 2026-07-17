@@ -4951,6 +4951,15 @@ components:
             - integer
             - "null"
           minimum: 0
+        retrievalEnabled:
+          type: boolean
+          description: When false, the document is excluded from retrieval regardless of processing status.
+        retrievalExpiresAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Instant after which the document is auto-excluded from retrieval. Null when no expiry is set.
       required:
         - id
         - title
@@ -4959,6 +4968,19 @@ components:
         - createdAt
         - updatedAt
         - sourceKind
+        - retrievalEnabled
+        - retrievalExpiresAt
+    DocumentRetrievalUpdateRequest:
+      type: object
+      properties:
+        retrievalEnabled:
+          type: boolean
+        retrievalExpiresAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      additionalProperties: false
     DocumentDetails:
       allOf:
         - $ref: "#/components/schemas/DocumentSummary"
@@ -17977,6 +17999,52 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DocumentOperationResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Documents
+      summary: Update a document's retrieval eligibility
+      description: Enable or disable a document for retrieval and/or set an expiry after which it is auto-excluded. Does not re-process the document. Re-enabling a document (retrievalEnabled=true) clears an already-elapsed expiry.
+      operationId: updateDocumentRetrieval
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DocumentRetrievalUpdateRequest"
+      responses:
+        "200":
+          description: Updated document details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentDetails"
         "400":
           description: Request validation failed
           content:

@@ -376,6 +376,8 @@ export interface Documents {
   id: string;
   markdown_content: string;
   metadata: Generated<Json>;
+  retrieval_enabled: Generated<boolean>;
+  retrieval_expires_at: Timestamp | null;
   revision: Generated<number>;
   source_content: string;
   source_filename: string | null;

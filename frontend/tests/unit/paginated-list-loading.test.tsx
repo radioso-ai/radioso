@@ -27,6 +27,8 @@ const document: DocumentSummary = {
   updatedAt: '2026-01-02T00:00:00.000Z',
   metadata: {},
   sourceKind: 'inline_text',
+  retrievalEnabled: true,
+  retrievalExpiresAt: null,
 }
 
 const conversation: ChatConversationSummary = {

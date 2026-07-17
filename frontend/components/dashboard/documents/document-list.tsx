@@ -5,7 +5,7 @@ import { FileText, Globe, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { DocumentRetrievalBadge, DocumentStatus } from '@/components/dashboard/document-status'
+import { DocumentStatus } from '@/components/dashboard/document-status'
 import { getDocumentRetrievalState } from '@/lib/document-retrieval'
 import { cn } from '@/lib/utils'
 import { DashboardPaginatedContent } from '@/components/dashboard/shared/dashboard-paginated-content'
@@ -153,11 +153,8 @@ function DocumentRow({
       <DashboardTableCell className="w-40 text-sm text-muted-foreground">
         {formatDate(document.updatedAt)}
       </DashboardTableCell>
-      <DashboardTableCell className="w-44">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <DocumentStatus status={document.status} />
-          <DocumentRetrievalBadge document={document} />
-        </div>
+      <DashboardTableCell className="w-32">
+        <DocumentStatus document={document} />
       </DashboardTableCell>
       <DashboardTableCell className="w-28">
         <div className="flex items-center justify-end gap-2">
@@ -312,7 +309,7 @@ export function DocumentList({
             <DashboardTableHeader className="w-48">Source</DashboardTableHeader>
             <DashboardTableHeader className="w-24 text-right">Size</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
-            <DashboardTableHeader className="w-44">Status</DashboardTableHeader>
+            <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
             <DashboardTableHeader className="w-28 text-right" />
           </DashboardTableHead>
           <DashboardTableBody>

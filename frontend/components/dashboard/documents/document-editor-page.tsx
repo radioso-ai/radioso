@@ -4,7 +4,7 @@ import type { FormEvent } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Boxes, ExternalLink, FileText, PanelRight, Pencil, RefreshCw, Save, Trash2, X } from 'lucide-react'
 
-import { DocumentRetrievalBadge, DocumentStatus } from '@/components/dashboard/document-status'
+import { DocumentStatus } from '@/components/dashboard/document-status'
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -247,7 +247,7 @@ export function DocumentEditorPage({
                 ) : (
                   <h1 className="text-xl font-semibold text-foreground [overflow-wrap:anywhere]">{document.title}</h1>
                 )}
-                <DocumentStatus status={document.status} />
+                <DocumentStatus document={document} />
               </div>
               {isFailed && document.failureReason ? (
                 <p className="text-sm text-destructive">{document.failureReason}</p>
@@ -396,7 +396,6 @@ export function DocumentEditorPage({
                       aria-label="Available for retrieval"
                     />
                   </div>
-                  <DocumentRetrievalBadge document={document} />
                   <div className="space-y-1">
                     <label
                       htmlFor="document-retrieval-expiry"

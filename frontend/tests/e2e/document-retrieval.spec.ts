@@ -82,9 +82,16 @@ test("shows a source column and an excluded status, and toggles retrieval from t
   await expect(page.getByRole("columnheader", { name: "Source" })).toBeVisible();
   await expect(page.getByText("https://example.org/very/long/path/that/should/truncate")).toBeVisible();
 
-  // 2. The excluded document stays in the list but stands out with a status badge.
+  // 2. The excluded document stays in the list but stands out with a single
+  //    status badge: "Excluded" replaces "Ready" (no two competing statuses).
   const excludedRow = page.getByRole("row").filter({ hasText: "Excluded Doc" });
   await expect(excludedRow.getByText("Excluded", { exact: true })).toBeVisible();
+  await expect(excludedRow.getByText("Ready", { exact: true })).toHaveCount(0);
+
+  // An ordinary document shows its processing status only.
+  const includedRow = page.getByRole("row").filter({ hasText: "Included Doc" });
+  await expect(includedRow.getByText("Ready", { exact: true })).toBeVisible();
+  await expect(includedRow.getByText("Excluded", { exact: true })).toHaveCount(0);
 
   // 3. Opening a document exposes the retrieval toggle, and flipping it off
   //    issues a PATCH that excludes the document from retrieval.
@@ -97,4 +104,32 @@ test("shows a source column and an excluded status, and toggles retrieval from t
   await toggle.click();
 
   await expect.poll(() => patchBody).toEqual({ retrievalEnabled: false });
+});
+
+test("the detail header shows the same excluded status as the list, without repeating it by the toggle", async ({
+  page,
+}) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    documentList: {
+      documents: [includedDoc, excludedDoc],
+      total: 2,
+      nextCursor: null,
+      hasMore: false,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+  await page.getByRole("button", { name: "Excluded Doc", exact: true }).click();
+
+  // The detail header carries the same single "Excluded" status as the table.
+  await expect(page.getByRole("heading", { name: "Excluded Doc" })).toBeVisible();
+  await expect(page.getByText("Excluded", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Properties" }).click();
+  const toggle = page.getByRole("switch", { name: "Available for retrieval" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+
+  // The status is not repeated next to the toggle: only the header badge exists.
+  await expect(page.getByText("Excluded", { exact: true })).toHaveCount(1);
 });

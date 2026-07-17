@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, Ban, CalendarClock, CalendarX, CheckCircle2, Loader2 } from 'lucide-react'
+import { AlertCircle, Ban, CalendarX, CheckCircle2, Loader2 } from 'lucide-react'
 
 import {
   getDocumentRetrievalState,
@@ -8,11 +8,9 @@ import {
 } from '@/lib/document-retrieval'
 import { cn } from '@/lib/utils'
 
-interface DocumentStatusProps {
-  status: string
-}
+type ProcessingStatus = 'queued' | 'processing' | 'ready' | 'failed'
 
-const normalizeStatus = (status: string): 'queued' | 'processing' | 'ready' | 'failed' => {
+const normalizeStatus = (status: string): ProcessingStatus => {
   const normalized = status.toLowerCase()
 
   if (normalized === 'ready') {
@@ -30,102 +28,71 @@ const normalizeStatus = (status: string): 'queued' | 'processing' | 'ready' | 'f
   return 'processing'
 }
 
-const getStatusLabel = (status: string): string => {
-  const normalized = status.toLowerCase()
-
-  if (normalized === 'ready') {
-    return 'Ready'
-  }
-
-  if (normalized === 'failed') {
-    return 'Failed'
-  }
-
-  if (normalized === 'queued') {
-    return 'Queued'
-  }
-
-  return 'Processing'
+const processingLabel: Record<ProcessingStatus, string> = {
+  ready: 'Ready',
+  failed: 'Failed',
+  queued: 'Queued',
+  processing: 'Processing',
 }
 
-export function DocumentStatus({ status }: DocumentStatusProps) {
-  const normalizedStatus = normalizeStatus(status)
-  const label = getStatusLabel(status)
+const pillClass = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium'
 
-  return (
-    <div className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-foreground">
-      {normalizedStatus === 'ready' ? (
-        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-      ) : normalizedStatus === 'failed' ? (
-        <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
-      ) : (
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
-      )}
-      <span>{label}</span>
-    </div>
-  )
-}
-
-const formatExpiryDate = (iso: string | null): string | null => {
-  if (!iso) return null
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return null
-  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
-}
+type DocumentStatusInput = DocumentRetrievalFields & { status: string }
 
 /**
- * Retrieval-eligibility badge. Renders nothing for an ordinary included
- * document; makes excluded and expired documents stand out, and hints at a
- * scheduled auto-exclude date.
+ * A document's single status badge. While the document is still processing (or
+ * failed) that is the only status shown. Once it is `ready`, retrieval
+ * eligibility takes over: a document that has been turned off or has expired
+ * reads as Excluded / Expired instead of Ready, so the list and the detail
+ * header never show two competing statuses.
  */
-export function DocumentRetrievalBadge({
-  document,
-  className,
-}: {
-  document: DocumentRetrievalFields
-  className?: string
-}) {
-  const state = getDocumentRetrievalState(document)
-  if (state === 'included') {
-    return null
+export function DocumentStatus({ document }: { document: DocumentStatusInput }) {
+  const processing = normalizeStatus(document.status)
+
+  if (processing !== 'ready') {
+    return (
+      <div className={cn(pillClass, 'border-border text-foreground')}>
+        {processing === 'failed' ? (
+          <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
+        ) : (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+        )}
+        <span>{processingLabel[processing]}</span>
+      </div>
+    )
   }
 
-  const expiryLabel = formatExpiryDate(document.retrievalExpiresAt)
+  const retrievalState = getDocumentRetrievalState(document)
 
-  const base = 'inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium'
-
-  if (state === 'excluded') {
+  if (retrievalState === 'excluded') {
     return (
-      <span
-        className={cn(base, 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400', className)}
+      <div
+        className={cn(pillClass, 'border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400')}
         title="Excluded from retrieval"
       >
         <Ban className="h-3.5 w-3.5" aria-hidden="true" />
-        Excluded
-      </span>
+        <span>Excluded</span>
+      </div>
     )
   }
 
-  if (state === 'expired') {
+  if (retrievalState === 'expired') {
     return (
-      <span
-        className={cn(base, 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400', className)}
-        title={expiryLabel ? `Auto-excluded on ${expiryLabel}` : 'Auto-excluded'}
+      <div
+        className={cn(pillClass, 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400')}
+        title="Auto-excluded from retrieval"
       >
         <CalendarX className="h-3.5 w-3.5" aria-hidden="true" />
-        Expired
-      </span>
+        <span>Expired</span>
+      </div>
     )
   }
 
-  // scheduled: still retrievable, will auto-exclude on a future date.
+  // included or scheduled: the document is retrievable now.
   return (
-    <span
-      className={cn(base, 'border-border bg-muted/40 text-muted-foreground', className)}
-      title={expiryLabel ? `Auto-excludes on ${expiryLabel}` : undefined}
-    >
-      <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
-      {expiryLabel ? `Expires ${expiryLabel}` : 'Scheduled'}
-    </span>
+    <div className={cn(pillClass, 'border-border text-foreground')}>
+      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+      <span>Ready</span>
+    </div>
   )
 }

@@ -20,7 +20,7 @@ export function getDocumentRetrievalState(
   document: DocumentRetrievalFields,
   now: Date = new Date(),
 ): DocumentRetrievalState {
-  if (!document.retrievalEnabled) {
+  if (document.retrievalEnabled === false) {
     return 'excluded'
   }
   if (document.retrievalExpiresAt) {

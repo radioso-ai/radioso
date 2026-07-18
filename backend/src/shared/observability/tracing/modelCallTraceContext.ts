@@ -101,6 +101,9 @@ export const runWithModelCallTrace = <T>(
   run: () => T,
 ): T => modelCallTraceStorage.run(collector, run);
 
+export const runWithoutModelCallTrace = <T>(run: () => T): T =>
+  modelCallTraceStorage.exit(run);
+
 export const runAsyncIterableWithModelCallTrace = async function* <T>(
   collector: ModelCallTraceCollector,
   createIterable: () => AsyncIterable<T>,

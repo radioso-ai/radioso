@@ -99,6 +99,14 @@ export const setLocal = (name: string, value: string): RawBuilder<unknown> =>
   sql`set local ${sql.raw(name)} = ${sql.raw(value)}`;
 
 /**
+ * Transaction-scoped advisory lock for a stable text key. Callers use this to
+ * serialize a short get-or-create transaction without holding application data
+ * in the lock key. PostgreSQL releases the lock automatically at transaction end.
+ */
+export const transactionAdvisoryLock = (key: string): RawBuilder<unknown> =>
+  sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+
+/**
  * Whether a table (or other relation) currently exists, via `to_regclass`. Mirrors the
  * defensive guard some repositories use before querying a table that may be absent in a
  * partially-migrated schema (returns NULL rather than erroring on a missing relation).

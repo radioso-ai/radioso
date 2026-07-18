@@ -20,6 +20,7 @@ export interface RoutineSkillExecutorDispatcherOptions {
   metricsRegistry?: MetricsRegistry | null;
   workspaceId?: string;
   accountId?: string;
+  throwIfCancelled?: () => void;
 }
 
 const allowAllRoutineCapabilityGate: RoutineCapabilityGate = async () => ({ allowed: true });
@@ -111,6 +112,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
   private readonly metricsRegistry: MetricsRegistry | null;
   private readonly workspaceId?: string;
   private readonly accountId?: string;
+  private readonly throwIfCancelled?: () => void;
 
   constructor(
     private readonly resolver: RoutineSkillResolver,
@@ -121,6 +123,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     this.metricsRegistry = options.metricsRegistry ?? null;
     this.workspaceId = options.workspaceId;
     this.accountId = options.accountId;
+    this.throwIfCancelled = options.throwIfCancelled;
   }
 
   async dispatch(
@@ -171,6 +174,7 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     const collected = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
       : state.variables ?? {};
+    this.throwIfCancelled?.();
     try {
       result = await executor.dispatch({
         skill,

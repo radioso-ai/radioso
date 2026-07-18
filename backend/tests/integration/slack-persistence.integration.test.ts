@@ -124,6 +124,41 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
     expect(link).toBeNull();
   });
 
+  it("atomically creates one linked conversation for concurrent first events", async () => {
+    const slackKey = `${teamId}:DM:${randomUUID().slice(0, 6)}`;
+    const input = {
+      workspaceId,
+      installationId,
+      slackKey,
+      agentId,
+      sourceChannel: "slack" as const,
+      channelContext: {
+        provider: "slack" as const,
+        team: { id: teamId },
+        channel: { id: "D-CONCURRENT", type: "im" as const },
+        user: { id: "U-CONCURRENT" },
+      },
+    };
+
+    const [first, second] = await Promise.all([
+      persistence.getOrCreateConversationLink(input),
+      persistence.getOrCreateConversationLink(input),
+    ]);
+
+    expect(first.conversationId).toBe(second.conversationId);
+    const conversations = await database.query<{ id: string }>(
+      `SELECT id FROM conversations WHERE workspace_id = $1 AND source_channel = 'slack'`,
+      [workspaceId],
+    );
+    expect(conversations).toHaveLength(1);
+    expect(conversations[0]?.id).toBe(first.conversationId);
+    const links = await database.query<{ conversation_id: string }>(
+      `SELECT conversation_id FROM slack_conversation_links WHERE slack_key = $1`,
+      [slackKey],
+    );
+    expect(links).toEqual([{ conversation_id: first.conversationId }]);
+  });
+
   it("upserts a conversation link on the slack_key conflict, updating conversation + installation", async () => {
     const slackKey = `${teamId}:C123:${randomUUID().slice(0, 6)}`;
 

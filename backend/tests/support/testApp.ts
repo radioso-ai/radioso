@@ -1417,6 +1417,7 @@ export const createTestDependencies = (overrides: {
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),
     ),
+    logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,

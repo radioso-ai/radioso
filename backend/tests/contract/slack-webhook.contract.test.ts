@@ -273,7 +273,7 @@ describe("Slack inbound webhook contract", () => {
         markNeedsReauthForInstallation: async () => false,
       },
       persistence: {
-        findConversationLink: async () => ({ conversationId: "conversation-1" }),
+        getOrCreateConversationLink: async () => ({ conversationId: "conversation-1" }),
         markInboundEventStatus: markHandledStatus,
       } as never,
       clientFactory: () => ({ postMessage, addReaction, removeReaction }),
@@ -311,6 +311,81 @@ describe("Slack inbound webhook contract", () => {
       "Slack turn superseded",
     );
     expect(JSON.stringify(info.mock.calls)).not.toContain("Question");
+  });
+
+  it("does not retry a superseded turn when its skipped-status write fails", async () => {
+    const answer = vi.fn(async () => {
+      throw new ChatTurnSupersededError("conversation-1", "routing");
+    });
+    const postMessage = vi.fn(async () => ({ channel: "DUSER", ts: "reply-ts" }));
+    const markHandledStatus = vi.fn(async (_eventId: string, status: string) => {
+      if (status === "skipped") {
+        throw new Error("status write unavailable");
+      }
+    });
+    const warn = vi.fn();
+    const handler = new SlackMessageHandler({
+      logger: { info: vi.fn(), warn, error: vi.fn() },
+      chat: { answer },
+      installations: {
+        findByTeamId: async () => ({
+          id: "installation-1",
+          connectionId: "connection-1",
+          workspaceId: "workspace-1",
+          accountId: "account-1",
+          teamId: "TTEST",
+          teamName: "Test Slack",
+          botUserId: "UBOT",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      } as never,
+      bindings: {
+        findAnswerer: async () => ({
+          id: "binding-1",
+          connectionId: "connection-1",
+          workspaceId: "workspace-1",
+          channelId: null,
+          answeringAgentId: "agent-1",
+          escalationChannelId: null,
+          gapEscalationEnabled: false,
+        }),
+      } as never,
+      installationService: {
+        resolveBotTokenForInstallation: async () => "xoxb-test",
+        markNeedsReauthForInstallation: async () => false,
+      },
+      persistence: {
+        getOrCreateConversationLink: async () => ({ conversationId: "conversation-1" }),
+        markInboundEventStatus: markHandledStatus,
+      } as never,
+      clientFactory: () => ({
+        postMessage,
+        addReaction: vi.fn(async () => undefined),
+        removeReaction: vi.fn(async () => undefined),
+      }),
+    });
+    const { app, markInboundEventStatus } = createApp({
+      messageHandler: handler,
+      processingRetryDelaysMs: [0],
+    });
+    const body = JSON.stringify(messagePayload("EvSupersededStatusFailure"));
+
+    const response = await request(app)
+      .post("/api/connectors/slack/events")
+      .set(createSignedHeaders(body))
+      .type("application/json")
+      .send(body);
+
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "EvSupersededStatusFailure" }),
+      "Slack superseded status update failed",
+    ));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(answer).toHaveBeenCalledTimes(1);
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(markInboundEventStatus).not.toHaveBeenCalledWith("EvSupersededStatusFailure", "failed");
   });
 
   it("dispatches app_mention events and ignores ordinary channel messages", async () => {

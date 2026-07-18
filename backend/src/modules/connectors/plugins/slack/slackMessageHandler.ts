@@ -197,9 +197,14 @@ export class SlackMessageHandler {
     await this.markProcessingReaction(client, reactionTarget, envelope.eventId);
 
     const slackKey = input.getSlackKey(installation);
-    const existingLink = await this.options.persistence.findConversationLink({
+    const channelContext = input.getChannelContext(installation);
+    const conversationLink = await this.options.persistence.getOrCreateConversationLink({
       workspaceId: binding.workspaceId,
+      installationId: installation.id,
       slackKey,
+      agentId: binding.answeringAgentId,
+      sourceChannel: "slack",
+      channelContext,
     });
 
     this.options.logger.info(
@@ -211,10 +216,10 @@ export class SlackMessageHandler {
       response = await this.options.chat.answer({
         workspaceId: binding.workspaceId,
         agentId: binding.answeringAgentId,
-        conversationId: existingLink?.conversationId,
+        conversationId: conversationLink.conversationId,
         query,
         sourceChannel: "slack",
-        channelContext: input.getChannelContext(installation),
+        channelContext,
       });
     } catch (error) {
       const superseded = readSupersededTurn(error);
@@ -222,25 +227,33 @@ export class SlackMessageHandler {
         throw error;
       }
       await this.clearProcessingReaction(client, reactionTarget, envelope.eventId);
-      await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+      try {
+        await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+      } catch (statusError) {
+        this.options.logger.warn(
+          {
+            workspaceId: binding.workspaceId,
+            installationId: installation.id,
+            eventId: envelope.eventId,
+            conversationId: superseded.conversationId ?? conversationLink.conversationId,
+            stage: superseded.stage,
+            errorType: statusError instanceof Error ? statusError.name : typeof statusError,
+          },
+          "Slack superseded status update failed",
+        );
+      }
       this.options.logger.info(
         {
           workspaceId: binding.workspaceId,
           installationId: installation.id,
           eventId: envelope.eventId,
-          conversationId: superseded.conversationId ?? existingLink?.conversationId,
+          conversationId: superseded.conversationId ?? conversationLink.conversationId,
           stage: superseded.stage,
         },
         "Slack turn superseded",
       );
       return;
     }
-    await this.options.persistence.upsertConversationLink({
-      workspaceId: binding.workspaceId,
-      installationId: installation.id,
-      slackKey,
-      conversationId: response.conversationId,
-    });
     await this.enqueueGapEscalationIfNeeded({
       envelope,
       installation,

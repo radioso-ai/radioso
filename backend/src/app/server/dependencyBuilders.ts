@@ -1276,6 +1276,7 @@ export const buildChatServices = (input: {
       pinnedRoutineIds = [],
       responseLanguage,
       groundedAnswerRenderer,
+      throwIfCancelled,
     }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
@@ -1470,6 +1471,7 @@ export const buildChatServices = (input: {
                   workspaceId,
                 }),
               metricsRegistry: input.metricsRegistry ?? null,
+              throwIfCancelled,
             },
           ),
         ),

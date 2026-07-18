@@ -3,6 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
+import type {
+  UsageLimitPolicy,
+  UsageLimitReservation,
+} from "../../src/shared/domain/usageLimitPolicy.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
 import { createTestDependencies } from "../support/testApp.js";
 
 const deferred = () => {
@@ -33,6 +38,26 @@ const collect = async <T>(iterable: AsyncIterable<T>): Promise<T[]> => {
   }
   return values;
 };
+
+const noopReservation = (): UsageLimitReservation => ({
+  async commit() {},
+  async release() {},
+});
+
+const usagePolicyWith = (
+  reserveAnswer: UsageLimitPolicy["reserveAnswer"],
+): UsageLimitPolicy => ({
+  reserveAnswer,
+  async reserveDocument() {
+    return noopReservation();
+  },
+  async reserveIndexedStorage() {
+    return noopReservation();
+  },
+  async reserveMonthlyIndexedContent() {
+    return noopReservation();
+  },
+});
 
 const createChatContext = async (overrides: Parameters<typeof createTestDependencies>[0]) => {
   const ctx = createTestDependencies(overrides);
@@ -395,6 +420,222 @@ describe("chat interruption", () => {
     ]);
     await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
     expect(recordFailure).not.toHaveBeenCalled();
+  });
+
+  it("prefers non-streaming supersession when usage reservation acquisition rejects after cancellation", async () => {
+    const acquisitionStarted = deferred();
+    const acquisitionFailure = rejectableDeferred();
+    let reservations = 0;
+    const ctx = await createChatContext({
+      usageLimitPolicy: usagePolicyWith(async () => {
+        reservations += 1;
+        if (reservations === 1) {
+          acquisitionStarted.resolve();
+          await acquisitionFailure.promise;
+        }
+        return noopReservation();
+      }),
+    });
+    const conversation = await ctx.repositories.conversationRepository.create(
+      ctx.workspaceId,
+      ctx.agent.id,
+      "authenticated_chat",
+    );
+
+    const first = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "first question",
+      stream: false,
+    });
+    await acquisitionStarted.promise;
+    const latest = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "latest question",
+      stream: false,
+    });
+    acquisitionFailure.reject(new Error("reservation unavailable after cancellation"));
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
+    expect(reservations).toBe(2);
+  });
+
+  it("prefers streaming supersession when usage reservation acquisition rejects after cancellation", async () => {
+    const acquisitionStarted = deferred();
+    const acquisitionFailure = rejectableDeferred();
+    let reservations = 0;
+    const ctx = await createChatContext({
+      usageLimitPolicy: usagePolicyWith(async () => {
+        reservations += 1;
+        if (reservations === 1) {
+          acquisitionStarted.resolve();
+          await acquisitionFailure.promise;
+        }
+        return noopReservation();
+      }),
+    });
+    const conversation = await ctx.repositories.conversationRepository.create(
+      ctx.workspaceId,
+      ctx.agent.id,
+      "authenticated_chat",
+    );
+
+    const firstEvents = collect(ctx.dependencies.assistantChatService.streamAnswer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "first question",
+      stream: true,
+    }));
+    await acquisitionStarted.promise;
+    const latest = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "latest question",
+      stream: false,
+    });
+    acquisitionFailure.reject(new Error("reservation unavailable after cancellation"));
+
+    await expect(firstEvents).resolves.toEqual([{
+      type: "cancelled",
+      conversationId: conversation.id,
+      reason: "superseded",
+      stage: "waiting",
+    }]);
+    await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
+    expect(reservations).toBe(2);
+  });
+
+  it("keeps non-streaming supersession terminal when reservation release fails", async () => {
+    const routingStarted = deferred();
+    const releaseRouting = deferred();
+    let reservations = 0;
+    const release = vi.fn(async () => {
+      throw new Error("release unavailable");
+    });
+    const logger = createLogger("silent");
+    const warn = vi.fn();
+    logger.warn = warn as never;
+    const ctx = await createChatContext({
+      logger,
+      usageLimitPolicy: usagePolicyWith(async () => {
+        reservations += 1;
+        return reservations === 1
+          ? { commit: async () => undefined, release }
+          : noopReservation();
+      }),
+      turnRouter: {
+        async classify(input) {
+          if (input.query === "first question") {
+            routingStarted.resolve();
+            await releaseRouting.promise;
+          }
+          return directRouting();
+        },
+      },
+    });
+    const conversation = await ctx.repositories.conversationRepository.create(
+      ctx.workspaceId,
+      ctx.agent.id,
+      "authenticated_chat",
+    );
+
+    const first = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "first question",
+      stream: false,
+    });
+    await routingStarted.promise;
+    const latest = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "latest question",
+      stream: false,
+    });
+    releaseRouting.resolve();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
+    expect(release).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: ctx.workspaceId,
+        conversationId: conversation.id,
+        stream: false,
+        errorType: "Error",
+      }),
+      "Chat usage reservation release failed",
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("release unavailable");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("first question");
+  });
+
+  it("emits streaming cancellation even when reservation release fails", async () => {
+    const routingStarted = deferred();
+    const releaseRouting = deferred();
+    let reservations = 0;
+    const release = vi.fn(async () => {
+      throw new Error("release unavailable");
+    });
+    const ctx = await createChatContext({
+      usageLimitPolicy: usagePolicyWith(async () => {
+        reservations += 1;
+        return reservations === 1
+          ? { commit: async () => undefined, release }
+          : noopReservation();
+      }),
+      turnRouter: {
+        async classify(input) {
+          if (input.query === "first question") {
+            routingStarted.resolve();
+            await releaseRouting.promise;
+          }
+          return directRouting();
+        },
+      },
+    });
+    const conversation = await ctx.repositories.conversationRepository.create(
+      ctx.workspaceId,
+      ctx.agent.id,
+      "authenticated_chat",
+    );
+
+    const firstEvents = collect(ctx.dependencies.assistantChatService.streamAnswer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "first question",
+      stream: true,
+    }));
+    await routingStarted.promise;
+    const latest = ctx.dependencies.assistantChatService.answer({
+      workspaceId: ctx.workspaceId,
+      agentId: ctx.agent.id,
+      conversationId: conversation.id,
+      message: "latest question",
+      stream: false,
+    });
+    releaseRouting.resolve();
+
+    await expect(firstEvents).resolves.toEqual([
+      { type: "conversation", conversationId: conversation.id },
+      {
+        type: "cancelled",
+        conversationId: conversation.id,
+        reason: "superseded",
+        stage: "routing",
+      },
+    ]);
+    await expect(latest).resolves.toMatchObject({ answer: expect.any(String) });
+    expect(release).toHaveBeenCalledOnce();
   });
 
   it("releases the lease at done while lazy suggestions are still pending", async () => {

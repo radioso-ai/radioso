@@ -52,7 +52,11 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import {
+  NoopUsageLimitPolicy,
+  type UsageLimitPolicy,
+  type UsageLimitReservation,
+} from "../../../shared/domain/usageLimitPolicy.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
   attemptRoutineTurnWithConversationEngine,
@@ -291,6 +295,7 @@ export interface ChatRoutineProvider {
     pinnedRoutineIds?: string[];
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
+    throwIfCancelled?: () => void;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
@@ -638,6 +643,34 @@ export class ChatService {
     coordination.lease?.beginEmission();
   }
 
+  private async releaseUsageReservation(
+    reservation: UsageLimitReservation | null,
+    input: {
+      workspaceId: string;
+      conversationId?: string;
+      sourceChannel?: string | null;
+      stream: boolean;
+    },
+  ): Promise<void> {
+    if (!reservation) {
+      return;
+    }
+    try {
+      await reservation.release();
+    } catch (error) {
+      this.logger?.warn(
+        {
+          workspaceId: input.workspaceId,
+          conversationId: input.conversationId,
+          surface: input.sourceChannel ?? "assistant",
+          stream: input.stream,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        "Chat usage reservation release failed",
+      );
+    }
+  }
+
   private async registerPreparedTurn(
     coordination: TurnCoordinationState,
     conversationId: string,
@@ -704,6 +737,7 @@ export class ChatService {
         responseLanguage,
         turnSkills: this.turnSkills,
       }),
+      throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),
     });
     if (!routineTurnPorts) {
       return null;
@@ -1795,13 +1829,14 @@ export class ChatService {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    const usageReservation = await this.usageLimitPolicy.reserveAnswer({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      surface: input.sourceChannel ?? "assistant",
-    });
+    let usageReservation: UsageLimitReservation | null = null;
 
     try {
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
@@ -1811,7 +1846,10 @@ export class ChatService {
         const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
-        await usageReservation.release();
+        await this.releaseUsageReservation(usageReservation, {
+          ...input,
+          conversationId: session.conversation.id,
+        });
         return suppressedHumanOwnedResponse(session, waitingMessage);
       }
 
@@ -2012,13 +2050,16 @@ export class ChatService {
 
       return completedTurn.response;
     } catch (error) {
-      await usageReservation.release();
       let preferredError = error;
       try {
         this.checkTurnCancellation(coordination);
       } catch (cancellationError) {
         preferredError = cancellationError;
       }
+      await this.releaseUsageReservation(usageReservation, {
+        ...input,
+        conversationId: session?.conversation.id ?? input.conversationId,
+      });
       if (preferredError instanceof ChatTurnSupersededError) {
         throw preferredError;
       }
@@ -2093,22 +2134,26 @@ export class ChatService {
       | Promise<Pick<ChatPresentedAnswer, "suggestions">>
       | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
-    const usageReservation = await this.usageLimitPolicy.reserveAnswer({
-      accountId: input.accountId,
-      workspaceId: input.workspaceId,
-      surface: input.sourceChannel ?? "assistant",
-    });
+    let usageReservation: UsageLimitReservation | null = null;
     let usageReservationCommitted = false;
     let usageReservationReleased = false;
     const releaseUsageReservation = async () => {
-      if (usageReservationCommitted || usageReservationReleased) {
+      if (!usageReservation || usageReservationCommitted || usageReservationReleased) {
         return;
       }
       usageReservationReleased = true;
-      await usageReservation.release();
+      await this.releaseUsageReservation(usageReservation, {
+        ...input,
+        conversationId: session?.conversation.id ?? input.conversationId,
+      });
     };
 
     try {
+      usageReservation = await this.usageLimitPolicy.reserveAnswer({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        surface: input.sourceChannel ?? "assistant",
+      });
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
@@ -2406,13 +2451,13 @@ export class ChatService {
       };
 
     } catch (error) {
-      await releaseUsageReservation();
       let preferredError = error;
       try {
         this.checkTurnCancellation(coordination);
       } catch (cancellationError) {
         preferredError = cancellationError;
       }
+      await releaseUsageReservation();
       if (preferredError instanceof ChatTurnSupersededError) {
         yield {
           type: "cancelled",

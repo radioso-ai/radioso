@@ -289,6 +289,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       try {
         let didComplete = false
+        let didCancel = false
 
         const completion = await chatApi.streamChatResponse(
           {
@@ -318,6 +319,19 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                         content: `${message.content}${text}`,
                       }
                     : message,
+                ),
+              }))
+            },
+            onCancelled: ({ conversationId }) => {
+              didCancel = true
+              updateSession(accountId, agentId, (session) => ({
+                ...session,
+                conversationId: conversationId || session.conversationId,
+                bootstrapGreetingId: undefined,
+                isLoading: false,
+                messages: restoreMessageSuggestions(
+                  session.messages.filter((message) => message.id !== assistantMessageId),
+                  previousMessages,
                 ),
               }))
             },
@@ -360,6 +374,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             },
           },
         )
+
+        if (didCancel) {
+          return false
+        }
 
         if (!didComplete) {
           assertSelectedAgentCompletion(agentId, completion.agentId)

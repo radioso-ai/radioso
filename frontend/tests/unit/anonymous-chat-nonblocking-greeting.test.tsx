@@ -65,7 +65,7 @@ const waitFor = async (assertion: () => void) => {
   throw lastError
 }
 
-type Snapshot = { messages: ChatMessage[]; isHydrating: boolean }
+type Snapshot = { messages: ChatMessage[]; isHydrating: boolean; isLoading: boolean }
 
 function ChatProbe({
   sendMessage,
@@ -80,8 +80,8 @@ function ChatProbe({
   const didSendRef = useRef(false)
 
   useEffect(() => {
-    onSnapshot({ messages: chat.messages, isHydrating: chat.isHydrating })
-  }, [chat.messages, chat.isHydrating, onSnapshot])
+    onSnapshot({ messages: chat.messages, isHydrating: chat.isHydrating, isLoading: chat.isLoading })
+  }, [chat.messages, chat.isHydrating, chat.isLoading, onSnapshot])
 
   useEffect(() => {
     const messagesToSend = sendMessages ?? (sendMessage ? [sendMessage] : [])
@@ -155,7 +155,7 @@ describe('anonymous chat non-blocking greeting', () => {
     const greeting = deferred<unknown>()
     publicChatApiMock.bootstrapConversation.mockReturnValue(greeting.promise as Promise<never>)
 
-    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
     mounted = renderProvider({
       onSnapshot: (next) => {
         snapshot = next
@@ -215,7 +215,7 @@ describe('anonymous chat non-blocking greeting', () => {
       return completion
     })
 
-    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
     // The probe auto-sends as soon as the UI unblocks — i.e. while the greeting
     // is still generating.
     mounted = renderProvider({
@@ -283,7 +283,7 @@ describe('anonymous chat non-blocking greeting', () => {
       return completion
     })
 
-    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
     mounted = renderProvider({
       sendMessages: ['first question', 'second question'],
       onSnapshot: (next) => {
@@ -333,7 +333,7 @@ describe('anonymous chat non-blocking greeting', () => {
     const greeting = deferred<unknown>()
     publicChatApiMock.bootstrapConversation.mockReturnValue(greeting.promise as Promise<never>)
 
-    let snapshot: Snapshot = { messages: [], isHydrating: true }
+    let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
     mounted = renderProvider({
       onSnapshot: (next) => {
         snapshot = next
@@ -353,5 +353,37 @@ describe('anonymous chat non-blocking greeting', () => {
     await waitFor(() => {
       expect(snapshot.messages).toHaveLength(0)
     })
+  })
+
+  it('ends a cancelled turn without recovery or assistant error state while retaining the user message', async () => {
+    publicChatApiMock.listConversations.mockResolvedValue({
+      ...greetingActiveConversationList,
+      assistantBootstrapActive: false,
+    })
+    publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
+      handlers.onConversation?.({ conversationId: 'conversation-1' })
+      handlers.onCancelled?.({
+        conversationId: 'conversation-1',
+        reason: 'superseded',
+        stage: 'routing',
+      })
+      return { conversationId: 'conversation-1', answer: '' }
+    })
+
+    let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
+    mounted = renderProvider({
+      sendMessage: 'latest context',
+      onSnapshot: (next) => {
+        snapshot = next
+      },
+    })
+
+    await waitFor(() => {
+      expect(snapshot.messages.map(({ role, content, status }) => ({ role, content, status }))).toEqual([
+        { role: 'user', content: 'latest context', status: 'complete' },
+      ])
+      expect(snapshot.isLoading).toBe(false)
+    })
+    expect(publicChatApiMock.getConversationDetail).not.toHaveBeenCalled()
   })
 })

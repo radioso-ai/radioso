@@ -41,6 +41,7 @@ values. Replays of the same provider attempt must reuse the same key.
 | Surface | Operation | Caller | Lineage |
 |---------|-----------|--------|---------|
 | `assistant` | `answer` | Assistant chat answer generation, including grounded and no-context fallback answers | account, workspace, conversation, user message |
+| `assistant` | `turn_interpretation` | Merged assistant turn routing and retrieval rewrite interpretation | account when available, workspace, conversation, user message |
 | `assistant` | `turn_router` | Assistant turn routing before retrieval or direct answer selection | account when available, workspace, conversation, user message |
 | `assistant` | `routine_activation_embedding` | Routine trigger embedding prefilter before activation ranking | account when available, workspace, conversation, user message |
 | `assistant` | `routine_activation` | Routine activation ranking over plausible triggers | account when available, workspace, conversation, user message |

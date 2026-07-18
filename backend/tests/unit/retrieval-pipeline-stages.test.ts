@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
 import { QueryInterpretationStageService } from "../../src/modules/retrieval/services/queryInterpretationStage.js";
@@ -99,6 +99,82 @@ const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
 });
 
 describe("retrieval pipeline stages", () => {
+  it("uses a precomputed rewrite proposal without calling the rewrite gateway", async () => {
+    const gateway = {
+      rewrite: vi.fn(async () => {
+        throw new Error("rewrite gateway should not be called");
+      }),
+    };
+    const stage = new QueryInterpretationStageService(new QueryRewriteService(gateway));
+
+    const result = await stage.execute({
+      request: {
+        workspaceId: "workspace-1",
+        query: "tell me about it",
+        history: [],
+        precomputedRewriteProposal: {
+          rewrittenQuery: "known topic details",
+          semanticQuery: "known topic details",
+          lexicalQuery: "known topic",
+          queryShape: "general_grounding",
+          temporalQueryMode: "none",
+          retrievalSubqueries: [
+            {
+              id: "",
+              label: "known topic",
+              semanticQuery: "known topic details",
+              lexicalQuery: "known topic",
+            },
+          ],
+          turnKind: "referential_followup",
+          proposedActiveSubject: "known topic",
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.91,
+        },
+      },
+      settings: {
+        workspaceId: "workspace-1",
+        queryRewriteEnabled: true,
+        semanticRewriteInstructions: "",
+        lexicalRewriteInstructions: "",
+        suggestedQuestionsEnabled: true,
+        suggestedQuestionsCount: 3,
+        rerankEnabled: false,
+        vectorTopK: 20,
+        similarityThreshold: 0.2,
+        rerankTopK: 5,
+        customInstruction: "",
+        metadataRules: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      contextWindow: {
+        selectedMessages: [
+          {
+            id: "m1",
+            conversationId: "c1",
+            workspaceId: "workspace-1",
+            role: "user",
+            content: "Tell me about known topic",
+            createdAt: new Date(),
+          },
+        ],
+        truncated: false,
+        selectionReason: "full-history",
+      },
+    });
+
+    expect(gateway.rewrite).not.toHaveBeenCalled();
+    expect(result.rewrittenQuery).toMatchObject({
+      rewrittenQuery: "known topic details",
+      semanticQuery: "known topic details",
+      lexicalQuery: "known topic",
+      status: "applied",
+      retrievalEligible: true,
+    });
+  });
+
   it("assembles answer prompts with the detector response language from the request", () => {
     const calls: Array<Parameters<PromptBuilder["build"]>[0]> = [];
     const promptBuilder = {

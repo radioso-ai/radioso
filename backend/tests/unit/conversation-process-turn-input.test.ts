@@ -388,6 +388,181 @@ describe("createChatProcessTurnInput", () => {
     });
   });
 
+  it("keeps route-scoped retrieval directives eligible before the engine resolves the turn route", async () => {
+    const directDirective: Directive = {
+      name: "direct-tone",
+      condition: { kind: "always" },
+      action: "Answer conversationally.",
+    };
+    const retrievalDirective: Directive = {
+      name: "retrieval-grounding",
+      condition: { kind: "always" },
+      action: "Use retrieved context.",
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    const sessionRef = { current: session };
+    const matchedDirectiveNames: string[][] = [];
+    const runtime: RouteScopedDirectiveRuntime = {
+      directivesFor(input) {
+        const route = input.turnContext?.route;
+        return [
+          ...(route === "direct" ? [directDirective] : []),
+          ...(route === "retrieval" ? [retrievalDirective] : []),
+          ...(input.additionalDirectives ?? []),
+        ];
+      },
+      matcher: {
+        async match(): Promise<DirectiveMatch[]> {
+          throw new Error("chat turn adapter should use matchAndResolve");
+        },
+      },
+      async resolveMatches(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchAndResolve");
+      },
+      async matchAndResolve(_input, directives): Promise<DirectiveSteeringResult> {
+        matchedDirectiveNames.push(directives.map((directive) => directive.name));
+        const matches = directives.map((directive) => ({
+          directive,
+          selectionMode: "deterministic" as const,
+          selectionReason: "test matcher",
+        }));
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
+      async steer(): Promise<DirectiveSteeringResult> {
+        throw new Error("steer should not pre-resolve chat engine directives");
+      },
+    };
+    const input = createChatProcessTurnInput({
+      session,
+      getSession: () => sessionRef.current,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    expect(input.directives.map((directive) => directive.name)).toEqual(["direct-tone", "retrieval-grounding"]);
+
+    sessionRef.current = { ...sessionRef.current, turnRoute: "retrieval" };
+    await expect(input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        directive: retrievalDirective,
+        selectionReason: "test matcher",
+      }),
+    ]);
+
+    expect(matchedDirectiveNames).toEqual([["retrieval-grounding"]]);
+    expect(sessionRef.current.directiveSteering).toMatchObject({
+      rules: [{ action: "Use retrieved context.", source: "directive", lifespan: "response" }],
+      matches: [expect.objectContaining({ directive: retrievalDirective })],
+      omissions: [],
+    });
+  });
+
+  it("stores directive steering on the latest prepared session when matching spans session replacement", async () => {
+    const directive: Directive = {
+      name: "retrieval-grounding",
+      condition: { kind: "always" },
+      action: "Use retrieved context.",
+    };
+    const session = preparedSession();
+    session.directiveSteering = undefined;
+    const sessionRef = { current: session };
+    let resolveMatch: (() => void) | undefined;
+    const matchingStarted = new Promise<void>((resolve) => {
+      resolveMatch = resolve;
+    });
+    const runtime: RouteScopedDirectiveRuntime = {
+      directivesFor(input) {
+        return input.turnContext?.route === "retrieval" ? [directive] : [];
+      },
+      matcher: {
+        async match(): Promise<DirectiveMatch[]> {
+          throw new Error("chat turn adapter should use matchAndResolve");
+        },
+      },
+      async resolveMatches(): Promise<DirectiveSteeringResult> {
+        throw new Error("chat turn adapter should use matchAndResolve");
+      },
+      async matchAndResolve(_input, directives): Promise<DirectiveSteeringResult> {
+        await matchingStarted;
+        const matches = directives.map((candidate) => ({
+          directive: candidate,
+          selectionMode: "deterministic" as const,
+          selectionReason: "test matcher",
+        }));
+        return {
+          rules: matches.map((match) => ({
+            action: match.directive.action,
+            source: "directive",
+            lifespan: "response",
+          })),
+          matches,
+          omissions: [],
+        };
+      },
+      async steer(): Promise<DirectiveSteeringResult> {
+        throw new Error("steer should not pre-resolve chat engine directives");
+      },
+    };
+    const input = createChatProcessTurnInput({
+      session,
+      getSession: () => sessionRef.current,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+    sessionRef.current = { ...sessionRef.current, turnRoute: "retrieval" };
+
+    const matchPromise = input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    });
+    const replacedSession = { ...sessionRef.current, directiveSteering: undefined };
+    sessionRef.current = replacedSession;
+    resolveMatch?.();
+
+    await expect(matchPromise).resolves.toEqual([
+      expect.objectContaining({
+        directive,
+        selectionReason: "test matcher",
+      }),
+    ]);
+    expect(session.directiveSteering).toBeUndefined();
+    expect(replacedSession.directiveSteering).toMatchObject({
+      rules: [{ action: "Use retrieved context.", source: "directive", lifespan: "response" }],
+      matches: [expect.objectContaining({ directive })],
+      omissions: [],
+    });
+  });
+
   it("adds the resolved agent's authored directives to the engine candidate catalog", () => {
     const builtIn: Directive = {
       name: "brief",

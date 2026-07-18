@@ -121,6 +121,26 @@ describe("ChatTurnSkillSelector", () => {
     ]);
   });
 
+  it("lets a forced skill override directive bindings for host-owned terminal turns", () => {
+    const defaultAnswer = skillStub("retrieval.answer", () => true);
+    const clarification = skillStub("clarification.answer", () => false);
+    const orderLookup = skillStub("order.lookup", () => false);
+    const boundSelector = new ChatTurnSkillSelector([clarification, defaultAnswer, orderLookup], strategy, {
+      agentSkillStates: new Map([
+        ["order.lookup", { enabled: true, turnCapable: true }],
+      ]),
+      forceSkillName: () => "clarification.answer",
+    });
+
+    const { skill, decision } = boundSelector.select(sessionWithBoundDirective("retrieval"));
+
+    expect(skill).toBe(clarification);
+    expect(decision.selected).toEqual([
+      { skillName: "clarification.answer", reason: "forced_turn_skill" },
+    ]);
+    expect(decision.reason).toBe("forced_turn_skill");
+  });
+
   it("preserves default behavior when no matched directive has a binding", () => {
     const { skill, decision } = selector.select(session("direct"));
 

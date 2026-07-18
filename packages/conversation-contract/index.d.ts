@@ -525,6 +525,42 @@ export interface ConversationSkillSelector {
   }): Promise<SelectionDecision>;
 }
 
+export type ConversationTurnRoute = "retrieval" | "direct";
+
+export interface ConversationTurnInterpretation {
+  route: ConversationTurnRoute;
+  framing?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Host-owned structured turn interpretation. The engine owns when this runs and
+ * which downstream ports it gates; the host owns model prompts and product
+ * fields such as routing scope and retrieval rewrite metadata.
+ */
+export interface ConversationTurnInterpreter {
+  interpret(input: { turn: TurnContext }): Promise<ConversationTurnInterpretation>;
+}
+
+export interface ConversationRetrievalWorkResult {
+  stagedContext?: StagedContext[];
+  steering?: SteeringRule[];
+  trace?: ConversationTrace;
+  subTrace?: CapabilitySubTrace;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Host-owned pre-answer retrieval work. The engine treats the payload opaquely
+ * and invokes this port only when interpretation selected the retrieval route.
+ */
+export interface ConversationRetrievalWorkPort {
+  run(input: {
+    turn: TurnContext;
+    interpretation: ConversationTurnInterpretation;
+  }): Promise<ConversationRetrievalWorkResult>;
+}
+
 export interface ConversationTurnComposeInput {
   turn: TurnContext;
   outcomes: TurnOutcome[];
@@ -988,6 +1024,8 @@ export interface ProcessTurnInput {
   dispatcher: ConversationSkillDispatcher;
   directiveMatcher: ConversationDirectiveMatcher;
   steeringResolver?: SteeringResolver;
+  turnInterpreter?: ConversationTurnInterpreter;
+  retrievalWork?: ConversationRetrievalWorkPort;
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   /**

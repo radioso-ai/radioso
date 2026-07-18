@@ -105,6 +105,7 @@ import {
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import {
   evaluateRetrievalSenseClarification,
+  type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
 } from "../../retrieval/public.js";
 import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
@@ -142,6 +143,20 @@ const chatTurnTraceAttributes = (input: {
   "radioso.workspace_id": input.workspaceId,
   "chat.source_channel": input.sourceChannel ?? "assistant",
   "chat.stream": input.stream,
+});
+
+const retrievalDiagnosticsMetadata = (
+  session: PreparedSession,
+): {
+  route: PreparedSession["turnRoute"];
+  contextCount: number;
+  rewriteStatus?: RetrievalExecutionDiagnostics["rewriteStatus"];
+  triggerStatus?: NonNullable<RetrievalExecutionDiagnostics["triggerAnalysis"]>["status"];
+} => ({
+  route: session.turnRoute,
+  contextCount: session.retrieval.contexts.length,
+  rewriteStatus: session.retrieval.diagnostics.rewriteStatus,
+  triggerStatus: session.retrieval.diagnostics.triggerAnalysis?.status,
 });
 
 export class ModelChatGateway implements ChatGateway {
@@ -1241,6 +1256,17 @@ export class ChatService {
           turnRoute: routing.route,
           turnFraming: routing.framing,
         };
+        if (routing.route === CHAT_TURN_ROUTE.DIRECT) {
+          input.sessionRef.current = this.withResponseLanguage(
+            input.sessionRef.current,
+            await input.responseLanguagePromise,
+          );
+          input.sessionRef.current = await this.chatSessionPreparer.prepareDirect(
+            input.retrievalInput,
+            input.sessionRef.current,
+            routing.framing,
+          );
+        }
         return {
           route: routing.route,
           framing: routing.framing,
@@ -1257,12 +1283,7 @@ export class ChatService {
         return {
           stagedContext: input.sessionRef.current.stagedContext,
           trace: input.sessionRef.current.turnTrace,
-          metadata: {
-            route: input.sessionRef.current.turnRoute,
-            contextCount: input.sessionRef.current.retrieval.contexts.length,
-            rewriteStatus: input.sessionRef.current.retrieval.diagnostics.rewriteStatus,
-            triggerStatus: input.sessionRef.current.retrieval.diagnostics.triggerAnalysis.status,
-          },
+          metadata: retrievalDiagnosticsMetadata(input.sessionRef.current),
         };
       },
     };
@@ -1888,45 +1909,50 @@ export class ChatService {
         }
         finalPresentation = event.finalPresentation;
         suggestions = event.suggestions;
-        engineTrace = event.engineTrace;
-        actions = event.actions;
-        if ("session" in event && event.session) {
-          session = event.session;
-        }
-      }
-      if (clarificationTurn?.kind === "continue" && clarificationTurn.stage && engineTrace) {
-        engineTrace = this.conversationTraceWithStage(engineTrace, clarificationTurn.stage);
-      }
-      if (!finalPresentation || !suggestions) {
-        throw new Error("chat_stream_missing_final_presentation");
-      }
-      // The lazy promise can call chatActionSuggestionService.evaluate (which may
+	        engineTrace = event.engineTrace;
+	        actions = event.actions;
+	        const eventSession = (event as { session?: PreparedSession }).session;
+	        if (eventSession) {
+	          session = eventSession;
+	        }
+	      }
+	      if (clarificationTurn?.kind === "continue" && clarificationTurn.stage && engineTrace) {
+	        engineTrace = this.conversationTraceWithStage(engineTrace, clarificationTurn.stage);
+	      }
+	      if (!finalPresentation || !suggestions) {
+	        throw new Error("chat_stream_missing_final_presentation");
+	      }
+	      if (!session) {
+	        throw new Error("chat_stream_missing_prepared_session");
+	      }
+	      const preparedSession = session;
+	      // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
       // promise stays in flight — swallow its rejection so it can't surface as an
       // unhandled rejection. The post-`done` await still observes the failure and
       // skips emitting suggestions, which is the desired behavior.
-      lazySuggestionsPromise = this.composeLazySuggestions({
-        session,
-        presentation: finalPresentation,
-        suggestions,
-        userExpectedLocale: input.userExpectedLocale,
-      });
+	      lazySuggestionsPromise = this.composeLazySuggestions({
+	        session: preparedSession,
+	        presentation: finalPresentation,
+	        suggestions,
+	        userExpectedLocale: input.userExpectedLocale,
+	      });
       lazySuggestionsPromise.catch(() => undefined);
       const presentation: ChatPresentedAnswer = {
         ...finalPresentation,
         suggestions: undefined,
       };
-      const retrievalMissHandoff = retrievalMissHandoffForTurn({
-        session,
-        presentation,
-        workspaceId: input.workspaceId,
-        actions,
-      });
+	      const retrievalMissHandoff = retrievalMissHandoffForTurn({
+	        session: preparedSession,
+	        presentation,
+	        workspaceId: input.workspaceId,
+	        actions,
+	      });
 
-      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        session,
+	      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+	        workspaceId: input.workspaceId,
+	        accountId: input.accountId,
+	        session: preparedSession,
         presentation,
         answerStartedAt,
         stream: input.stream,

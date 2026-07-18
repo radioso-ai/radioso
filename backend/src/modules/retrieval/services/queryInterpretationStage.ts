@@ -23,6 +23,21 @@ const skippedTriggerAnalysis = (matcherVersion: string) => ({
   matcherVersion,
 });
 
+const DEFER_TRIGGER_ANALYSIS = Symbol("deferTriggerAnalysis");
+
+export const deferTriggerAnalysisForConcurrentPipeline = (
+  input: RetrievalContextStageResult,
+): RetrievalContextStageResult => {
+  Object.defineProperty(input, DEFER_TRIGGER_ANALYSIS, {
+    value: true,
+    enumerable: false,
+  });
+  return input;
+};
+
+const shouldDeferTriggerAnalysis = (input: RetrievalContextStageResult): boolean =>
+  (input as RetrievalContextStageResult & { [DEFER_TRIGGER_ANALYSIS]?: boolean })[DEFER_TRIGGER_ANALYSIS] === true;
+
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
   constructor(private readonly queryRewriteService: QueryRewriteService) {}
 
@@ -100,7 +115,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
-    return {
+    const result: QueryInterpretationStageResult = {
       ...input,
       originalParsedQuery,
       originalPreparedQuery,
@@ -113,6 +128,13 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       promptHistory,
       promptHistoryReset: shouldResetPromptHistory,
       continuityDecision,
+    };
+    if (shouldDeferTriggerAnalysis(input)) {
+      return result;
+    }
+    return {
+      ...result,
+      triggerAnalysis: await this.analyzeTriggers(result),
     };
   }
 

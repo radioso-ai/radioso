@@ -25,7 +25,10 @@ import { CandidateRetrievalStageService } from "./candidateRetrievalStage.js";
 import { CandidatePreparationStageService } from "./candidatePreparationStage.js";
 import { ContextSelectionStageService } from "./contextSelectionStage.js";
 import { PromptAssemblyStageService } from "./promptAssemblyStage.js";
-import { QueryInterpretationStageService } from "./queryInterpretationStage.js";
+import {
+  QueryInterpretationStageService,
+  deferTriggerAnalysisForConcurrentPipeline,
+} from "./queryInterpretationStage.js";
 import { RetrievalContextStageService, type SkillSettingsResolver } from "./retrievalContextStage.js";
 import { RetrievalDiagnosticsStageService } from "./retrievalDiagnosticsStage.js";
 import { RetrievalPipelineActivityTraceBuilder } from "./retrievalPipelineActivityTraceBuilder.js";
@@ -230,7 +233,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
       const interpretation = await this.measureTraced(
         RETRIEVAL_TRACE_SPAN_NAMES.queryInterpretation,
         buildRetrievalContextTraceAttributes(context.result),
-        () => this.queryInterpretationStage.execute(context.result),
+        () => this.queryInterpretationStage.execute(deferTriggerAnalysisForConcurrentPipeline(context.result)),
         buildQueryInterpretationTraceAttributes,
       );
 

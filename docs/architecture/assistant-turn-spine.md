@@ -91,6 +91,9 @@ credentials, or provider request IDs. Each retained call has a stable ID and is
 referenced from its enclosing spine stage. Calls made before the engine starts
 use the `pre_engine` attribution. The collection retains at most 64 call records;
 the rollup still counts all calls and reports how many records were dropped.
+Suggestion enrichment runs after the answer pipeline and is deliberately outside
+the turn rollup. This boundary is the same for streamed and non-streamed turns, so
+the summary measures answer production rather than optional action-chip generation.
 
 Each envelope also carries a turn summary with total LLM calls, serial LLM
 depth, the longest stage, total model time, and total turn time. Concurrent

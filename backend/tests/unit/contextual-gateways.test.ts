@@ -1,4 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { openAiResponsesCreate } = vi.hoisted(() => ({
+  openAiResponsesCreate: vi.fn(),
+}));
+
+vi.mock("../../src/shared/infra/llm/openaiProvider.js", async () => {
+  const actual = await vi.importActual<typeof import("../../src/shared/infra/llm/openaiProvider.js")>(
+    "../../src/shared/infra/llm/openaiProvider.js",
+  );
+  return {
+    ...actual,
+    createOpenAIClient: () => ({ responses: { create: openAiResponsesCreate } }),
+  };
+});
 
 import {
   ContextualChatGateway,
@@ -23,7 +37,12 @@ import type {
   LlmCapabilityName,
 } from "../../src/shared/infra/llm/providerTypes.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
+
+beforeEach(() => {
+  openAiResponsesCreate.mockReset();
+});
 
 const usageContext = {
   workspaceId: "ws-1",
@@ -244,5 +263,45 @@ describe("ContextualRerankGateway", () => {
     await gateway.rerank({ query: "q", today: "2026-01-01", contexts: [] });
 
     expect(fallback.calls).toBe(1);
+  });
+
+  it("records each contextual OpenAI rerank provider attempt once", async () => {
+    openAiResponsesCreate.mockResolvedValue({
+      output_text: JSON.stringify({ scores: [] }),
+      usage: { input_tokens: 13, output_tokens: 3, total_tokens: 16 },
+    });
+    const fallback = new StubRerankFallback();
+    const gateway = new ContextualRerankGateway(
+      {
+        resolver: buildResolver({
+          rerank: {
+            capability: "rerank",
+            provider: "openai",
+            model: "gpt-4.1-mini-contextual",
+            apiKey: "workspace-key",
+          },
+        }),
+        clientCache: new TextGenerationClientCache(),
+      },
+      fallback,
+    );
+
+    const { calls } = await captureModelCallTrace(() => gateway.rerank({
+      query: "q",
+      today: "2026-01-01",
+      contexts: [],
+      workspaceContext: { workspaceId: "ws-1" },
+      usageContext: { ...usageContext, operation: "rerank" },
+    }));
+
+    expect(fallback.calls).toBe(0);
+    expect(openAiResponsesCreate).toHaveBeenCalledOnce();
+    expect(calls).toEqual([expect.objectContaining({
+      operation: "rerank",
+      model: "gpt-4.1-mini-contextual",
+      inputTokens: 13,
+      outputTokens: 3,
+      totalTokens: 16,
+    })]);
   });
 });

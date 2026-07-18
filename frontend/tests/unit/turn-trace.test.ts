@@ -40,6 +40,7 @@ describe('spineStageLabel', () => {
     // Both the selection-time match stage and the routine-turn steering stage are "Directives".
     expect(spineStageLabel({ id: 'd', kind: 'directive_match', status: 'applied' })).toBe('Directives')
     expect(spineStageLabel({ id: 's', kind: 'directive_steering', status: 'applied' })).toBe('Directives')
+    expect(spineStageLabel({ id: 'm', kind: 'model_calls', status: 'applied' })).toBe('Model calls')
     expect(spineStageLabel({ id: 'x', kind: 'custom_phase', status: 'applied' })).toBe('custom phase')
   })
 })
@@ -56,6 +57,7 @@ describe('spineStageTelemetry', () => {
       outputs: {
         modelCalls: [
           {
+            stageId: 'compose',
             operation: 'grounded',
             model: 'gpt-answer',
             durationMs: 280,
@@ -65,6 +67,7 @@ describe('spineStageTelemetry', () => {
             status: 'succeeded',
           },
           {
+            stageId: 'compose',
             operation: 'grounded_unsupported',
             model: 'gpt-answer',
             durationMs: 70,
@@ -93,6 +96,7 @@ describe('spineStageTelemetry', () => {
       totalTokens: 158,
       calls: [
         {
+          stageId: 'compose',
           operation: 'grounded',
           model: 'gpt-answer',
           durationMs: 280,
@@ -102,6 +106,7 @@ describe('spineStageTelemetry', () => {
           status: 'succeeded',
         },
         {
+          stageId: 'compose',
           operation: 'grounded_unsupported',
           model: 'gpt-answer',
           durationMs: 70,
@@ -134,6 +139,7 @@ describe('turnTraceRollup', () => {
         longestStage: { name: 'compose', durationMs: 250 },
         totalModelTimeMs: 350,
         totalTurnWallClockMs: 500,
+        droppedCallCount: 2,
       },
     }
     expect(turnTraceRollup(envelope)).toEqual({
@@ -142,6 +148,7 @@ describe('turnTraceRollup', () => {
       longestStage: { name: 'compose', durationMs: 250 },
       totalModelTimeMs: 350,
       totalTurnWallClockMs: 500,
+      droppedCallCount: 2,
     })
     expect(turnTraceRollup({ ...envelope, summary: { totalLlmCalls: 'four' } })).toBeUndefined()
     expect(turnTraceRollup(undefined)).toBeUndefined()

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
+import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
-import { currentTimestamp } from "../../../../shared/infra/kysely/sqlHelpers.js";
+import { ConversationRepository } from "../../../../db/repositories/conversationRepository.js";
+import {
+  currentTimestamp,
+  transactionAdvisoryLock,
+} from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 
 export interface SlackConversationLinkRecord {
@@ -20,6 +25,14 @@ export interface SlackPersistencePort {
     workspaceId: string;
     conversationId: string;
   }): Promise<Pick<SlackConversationLinkRecord, "slackKey" | "installationId"> | null>;
+  getOrCreateConversationLink(input: {
+    workspaceId: string;
+    installationId: string;
+    slackKey: string;
+    agentId: string;
+    sourceChannel: string;
+    channelContext: ConversationChannelContext;
+  }): Promise<SlackConversationLinkRecord>;
   upsertConversationLink(input: {
     workspaceId: string;
     installationId: string;
@@ -103,6 +116,70 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
       slackKey: row.slack_key,
       installationId: row.installation_id,
     } : null;
+  }
+
+  async getOrCreateConversationLink(input: {
+    workspaceId: string;
+    installationId: string;
+    slackKey: string;
+    agentId: string;
+    sourceChannel: string;
+    channelContext: ConversationChannelContext;
+  }): Promise<SlackConversationLinkRecord> {
+    const conflict = new Error("slack_conversation_link_conflict");
+    try {
+      return await this.db.transaction().execute(async (trx) => {
+        await transactionAdvisoryLock(`slack_conversation:${input.slackKey}`).execute(trx);
+        const existing = await trx
+          .selectFrom("slack_conversation_links")
+          .select(["id", "workspace_id", "installation_id", "slack_key", "conversation_id"])
+          .where("workspace_id", "=", input.workspaceId)
+          .where("slack_key", "=", input.slackKey)
+          .executeTakeFirst();
+        if (existing) {
+          return mapLink(existing);
+        }
+
+        const conversation = await new ConversationRepository(trx).create(
+          input.workspaceId,
+          input.agentId,
+          input.sourceChannel,
+          null,
+          null,
+          input.channelContext,
+        );
+        const inserted = await trx
+          .insertInto("slack_conversation_links")
+          .values({
+            id: randomUUID(),
+            workspace_id: input.workspaceId,
+            installation_id: input.installationId,
+            slack_key: input.slackKey,
+            conversation_id: conversation.id,
+          })
+          .onConflict((oc) => oc.column("slack_key").doNothing())
+          .returning(["id", "workspace_id", "installation_id", "slack_key", "conversation_id"])
+          .executeTakeFirst();
+        if (!inserted) {
+          // Roll back the candidate conversation. The winner is read after this
+          // transaction releases its snapshot and advisory lock.
+          throw conflict;
+        }
+        return mapLink(inserted);
+      });
+    } catch (error) {
+      if (error !== conflict) {
+        throw error;
+      }
+      const winner = await this.findConversationLink({
+        workspaceId: input.workspaceId,
+        slackKey: input.slackKey,
+      });
+      if (!winner) {
+        throw new Error("slack_conversation_link_winner_missing");
+      }
+      return winner;
+    }
   }
 
   async upsertConversationLink(input: {

@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
-last_updated: 2026-07-02
+last_updated: 2026-07-18
 ---
 
 # MCP Client Setup
@@ -80,6 +80,12 @@ Authorization: Bearer <session token>
 
 { "message": "What is your refund window?" }
 ```
+
+If another ask arrives for the same conversation before the first reply starts,
+the first request returns HTTP `409` with error code `chat_turn_superseded`. The
+newer ask waits for cleanup and answers from the latest conversation history. If
+the first reply has already started persisting, it completes before the newer ask
+runs.
 
 Request a grounded answer. This uses the bound agent's retrieval settings (query rewrite, rerank, source scope, citation policy), so the result matches the agent's in-product answers rather than workspace defaults.
 

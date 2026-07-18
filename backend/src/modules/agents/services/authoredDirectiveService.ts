@@ -138,12 +138,12 @@ export class AuthoredDirectiveService {
     if (skill.invocationMode !== "agent_selectable") {
       throw badRequest(`Directive binding skill "${binding.skillName}" is not turn-selectable`);
     }
-    // Only external MCP skills settle with user-facing answer text today; other
-    // kinds would dispatch and then render an empty reply (retrieve returns raw
-    // contexts by design, action kinds settle with outputs only).
-    if (skill.kind !== "external_mcp") {
+    // External MCP skills still claim the terminal turn; retrieve skills are
+    // staged into the agentic answer loop as lookup tools. Action kinds settle
+    // with outputs only, so they remain unsafe for directive binding.
+    if (skill.kind !== "external_mcp" && skill.kind !== "retrieve") {
       throw badRequest(
-        `Directive binding skill "${binding.skillName}" (kind "${skill.kind}") cannot answer chat turns; only external MCP skills can be bound`,
+        `Directive binding skill "${binding.skillName}" (kind "${skill.kind}") cannot answer chat turns or be staged as lookup; only external MCP and retrieve skills can be bound`,
       );
     }
   }

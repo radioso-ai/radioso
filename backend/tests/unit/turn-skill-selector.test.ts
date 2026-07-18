@@ -82,7 +82,7 @@ describe("ChatTurnSkillSelector", () => {
     const orderLookup = skillStub("order.lookup", () => false);
     const boundSelector = new ChatTurnSkillSelector([defaultAnswer, orderLookup], strategy, {
       agentSkillStates: new Map([
-        ["order.lookup", { enabled: true, turnCapable: true }],
+        ["order.lookup", { enabled: true, turnCapable: true, stagingCapable: false }],
       ]),
     });
 
@@ -127,7 +127,7 @@ describe("ChatTurnSkillSelector", () => {
     const orderLookup = skillStub("order.lookup", () => false);
     const boundSelector = new ChatTurnSkillSelector([clarification, defaultAnswer, orderLookup], strategy, {
       agentSkillStates: new Map([
-        ["order.lookup", { enabled: true, turnCapable: true }],
+        ["order.lookup", { enabled: true, turnCapable: true, stagingCapable: false }],
       ]),
       forceSkillName: () => "clarification.answer",
     });
@@ -198,7 +198,7 @@ describe("ChatTurnSkillSelector", () => {
     const defaultAnswer = skillStub("retrieval.answer", () => true);
     const boundSelector = new ChatTurnSkillSelector([defaultAnswer], strategy, {
       agentSkillStates: new Map([
-        ["order.lookup", { enabled: false, turnCapable: true }],
+        ["order.lookup", { enabled: false, turnCapable: true, stagingCapable: false }],
       ]),
       logger,
     });

@@ -74,7 +74,7 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
-import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
+import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type {
   ChatConversationTurnInterpreter,
   ConversationTurnInterpretationResult,
@@ -110,6 +110,7 @@ import {
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import {
   evaluateRetrievalSenseClarification,
+  type AgenticRetrievalToolFactory,
   type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
   type StructuredRewriteResult,
@@ -1241,6 +1242,7 @@ export class ChatService {
   ): Promise<{
     turnSkills: TurnSkill[];
     turnSkillSelector: ChatTurnSkillSelector;
+    agentSkillRuntime?: AgentSkillTurnRuntime;
   }> {
     const agentSkillRuntime = await this.agentSkillTurnSkillProvider?.forSession(session);
     const turnSkills = [
@@ -1255,6 +1257,7 @@ export class ChatService {
         logger: this.logger,
         forceSkillName: input.forceSkillName,
       }),
+      ...(agentSkillRuntime ? { agentSkillRuntime } : {}),
     };
   }
 
@@ -1366,6 +1369,7 @@ export class ChatService {
       clarifier?: ConversationClarifier;
     };
     activeRoutineAtTurnStart?: boolean;
+    agenticRetrievalToolFactories?: (session: PreparedSession) => ReadonlyArray<AgenticRetrievalToolFactory>;
   }): {
     turnInterpreter: ConversationTurnInterpreter;
     retrievalWork: ConversationRetrievalWorkPort;
@@ -1412,7 +1416,11 @@ export class ChatService {
           interpretation.metadata?.rewriteProposal && typeof interpretation.metadata.rewriteProposal === "object"
             ? interpretation.metadata.rewriteProposal as StructuredRewriteResult
             : undefined;
-        const preparedRetrievalInput = this.retrievalInputWithRewriteProposal(input.retrievalInput, rewriteProposal);
+        const agenticToolFactories = input.agenticRetrievalToolFactories?.(input.sessionRef.current) ?? [];
+        const preparedRetrievalInput = {
+          ...this.retrievalInputWithRewriteProposal(input.retrievalInput, rewriteProposal),
+          ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
+        };
         const directiveSteering = input.sessionRef.current.directiveSteering;
         input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
           preparedRetrievalInput,
@@ -1486,6 +1494,13 @@ export class ChatService {
   }> {
     const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
     const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
+    const { turnSkills, turnSkillSelector, agentSkillRuntime } = await this.turnSelectionRuntime(
+      sessionRef.current,
+      {
+        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
+        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+      },
+    );
     const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
       request: input.request,
       retrievalInput: input.retrievalInput,
@@ -1495,14 +1510,8 @@ export class ChatService {
       clarificationState,
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
+      agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
     });
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(
-      sessionRef.current,
-      {
-        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
-        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
-      },
-    );
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
       session: sessionRef.current,
@@ -1577,6 +1586,13 @@ export class ChatService {
   ): AsyncIterable<PreparedChatStreamTurnEvent & { session?: PreparedSession }> {
     const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
     const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
+    const { turnSkills, turnSkillSelector, agentSkillRuntime } = await this.turnSelectionRuntime(
+      sessionRef.current,
+      {
+        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
+        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+      },
+    );
     const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
       request: input.request,
       retrievalInput: input.retrievalInput,
@@ -1586,14 +1602,8 @@ export class ChatService {
       clarificationState,
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
+      agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
     });
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(
-      sessionRef.current,
-      {
-        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
-        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
-      },
-    );
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
       engine: this.conversationEngine,
       session: sessionRef.current,

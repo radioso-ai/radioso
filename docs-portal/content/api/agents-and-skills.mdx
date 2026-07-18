@@ -86,17 +86,19 @@ Create a directive with `POST /api/v1/agents/{agentId}/directives`:
 }
 ```
 
-`binding` is optional and may be `null`. In this slice, the only supported
-binding kind is `skill`. The named skill must exist on the agent, be enabled,
-use `agent_selectable` invocation mode, and be an external MCP skill
-(`kind: external_mcp`) — other skill kinds cannot produce a user-facing chat
-reply yet and are rejected. Invalid bindings return `400` and name the
-offending skill.
+`binding` is optional and may be `null`. The only supported binding kind is
+`skill`. The named skill must exist on the agent, be enabled, and use
+`agent_selectable` invocation mode. External MCP skills (`kind: external_mcp`)
+can claim the terminal turn and produce a user-facing chat reply. Retrieval
+skills (`kind: retrieve`) are staged into the agentic retrieval loop as
+directive-scoped lookup tools. Action-only skill kinds are rejected. Invalid
+bindings return `400` and name the offending skill.
 
-When a directive with a binding matches a non-routine turn, the turn selector
-routes to the bound skill if that skill is available as a runtime turn skill.
-The directive action still steers the answer. A non-matching directive has no
-selection effect.
+When a directive with an external MCP binding matches a non-routine turn, the
+turn selector routes to the bound skill if that skill is available as a runtime
+turn skill. When a directive with a retrieval binding matches, the answer loop
+receives a lookup tool for that skill. The directive action still steers the
+answer. A non-matching directive has no selection effect.
 
 When multiple matched directives bind skills, one binding wins:
 
@@ -104,12 +106,14 @@ When multiple matched directives bind skills, one binding wins:
 2. higher matcher confidence, with deterministic `always` matches treated as `1.0`
 3. directive name ascending
 
-If the bound skill is later disabled, removed, no longer turn-selectable, not
-registered at runtime, or blocked by the workspace capability policy (external
-skills require the `external_skills.invoke` capability), Radioso ignores the
-binding and falls through to normal selection. The directive action still
-applies. The turn trace records selected, losing, and skipped bindings with
-their reasons.
+If a bound external MCP skill is later disabled, removed, no longer
+turn-selectable, not registered at runtime, or blocked by the workspace
+capability policy (external skills require the `external_skills.invoke`
+capability), Radioso ignores the binding and falls through to normal selection.
+The directive action still applies. The turn trace records selected, losing,
+and skipped terminal bindings with their reasons. If a bound retrieval skill is
+unavailable or blocked by the `retrieval.answer` capability, it is not staged as
+an agentic lookup tool.
 
 Agent config export/import preserves directive bindings by skill name. Import
 does not validate that the target agent currently has the skill; runtime

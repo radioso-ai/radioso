@@ -34,6 +34,8 @@ imports from `services/`.
 - `services/chatService.ts`: core chat service behavior.
 - `services/chatSessionPreparer.ts`: session setup for chat turns.
 - `services/chatTurnLifecycle.ts`: turn lifecycle and persistence flow.
+- `services/conversationTurnRegistry.ts`: per-conversation interruption and
+  emission-latch coordination.
 - `services/conversationContractMappers.ts` and
   `services/conversationProcessTurnInput.ts`: adapters from prepared chat turns
   into the reusable conversation-engine contracts.
@@ -51,6 +53,11 @@ imports from `services/`.
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
   reusable engine.
+- Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
+  in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
+  waits for its cleanup, and latches immediately before assistant persistence or
+  the first assistant chunk. The default registry is process-local; strict
+  multi-instance behavior requires conversation-affine routing.
 - Citations: `citation*`, `implicitCitationSupport.ts`,
   `chatAnswerPresenter.ts`.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
@@ -107,6 +114,7 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-history-service.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-presenter.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/integration/chat-interruption.integration.test.ts tests/contract/chat-interruption.contract.test.ts`
 - `cd backend && pnpm run test:integration` for chat route behavior.
 
 Pair backend changes with frontend chat tests when visible chat behavior changes.

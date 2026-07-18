@@ -27,7 +27,7 @@ export interface FallbackReplyComposer {
 
 export class MissingFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(_input: FallbackReplyInput): Promise<string> {
-    return buildNoContextFallback();
+    return getGroundedMissFallback();
   }
 }
 
@@ -69,7 +69,8 @@ const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string =>
   return normalized.length > 0 ? normalized : "No additional answer instructions.";
 };
 
-const buildNoContextFallback = (): string => loadPromptTemplate("chat/grounded-miss-fallback.md").trim();
+export const getGroundedMissFallback = (): string =>
+  loadPromptTemplate("chat/grounded-miss-fallback.md").trim();
 
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
   appendSteeringBlock(
@@ -126,13 +127,13 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         return normalized;
       }
 
-      return buildNoContextFallback();
+      return getGroundedMissFallback();
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      return buildNoContextFallback();
+      return getGroundedMissFallback();
     }
   }
 }

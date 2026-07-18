@@ -56,8 +56,11 @@ imports from `services/`.
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation. A valid in-range `[[n]]` assertion opens the
   stream gate; `[[?]]`, malformed, and anchor-free output stays held until the
-  computed final presentation is available. Raw envelope JSON is never emitted
-  or persisted.
+  computed final presentation is available. When retrieved contexts exist, an
+  answer or malformed result with no valid sourced assertion is replaced by the
+  static grounded-miss presentation and typed `no_context`; partial answers with
+  at least one valid assertion remain visible and degraded. Raw envelope JSON is
+  never emitted or persisted, and suppression never starts a second generation.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`

@@ -6,6 +6,7 @@ import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerP
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import { getGroundedMissFallback } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
@@ -102,8 +103,8 @@ describe("retrieval answer envelope v2", () => {
     { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3 },
     { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1 },
     { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0 },
-    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "Visible malformed answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
-    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "Visible anchor-free answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
+    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: getGroundedMissFallback(), verdict: "degraded", outcome: "no_context", citations: 0 },
+    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: getGroundedMissFallback(), verdict: "degraded", outcome: "no_context", citations: 0 },
   ] as const;
 
   for (const testCase of cases) {
@@ -158,6 +159,28 @@ describe("retrieval answer envelope v2", () => {
       labels: { protocol: "v2", verdict: "degraded", reason: "unsourced", stream: "false" },
     }]);
     expect(JSON.stringify(metricWrites)).not.toContain("workshop");
+  });
+
+  it("records anchor_free while suppressing the unsupported presentation", async () => {
+    const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+      v: 2,
+      outcome: "answer",
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    })}`;
+    const { composer, counts, metricWrites } = buildComposer(raw);
+
+    const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
+
+    expect(presented.answer).toBe(getGroundedMissFallback());
+    expect(presented.skillOutcome).toBe("no_context");
+    expect(presented.groundingSummary).toMatchObject({ verdict: "degraded", sourcedClaimCount: 0 });
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "degraded", reason: "anchor_free", stream: "false" },
+    }]);
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
   });
 
   it("does not start a second semantic call after a blank page-context generation", async () => {

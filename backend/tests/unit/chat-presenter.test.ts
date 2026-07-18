@@ -51,6 +51,7 @@ describe("chat presenter", () => {
           reason: "evidence_required",
         },
         answer: "Answer",
+        skillOutcome: "grounded_degraded",
         citations: [],
         answerSegments: [{ text: "Answer" }],
         suggestions: [
@@ -90,6 +91,7 @@ describe("chat presenter", () => {
 
     const donePayload = writes.find((entry) => entry.startsWith("data: {") && entry.includes("\"answer\":\"Answer\""));
     expect(donePayload).toContain("\"assistantMessageId\":\"assistant-message-1\"");
+    expect(donePayload).toContain("\"skillOutcome\":\"grounded_degraded\"");
     expect(donePayload).toContain("\"suggestions\":[");
     expect(donePayload).toContain("\"kind\":\"deeper\"");
   });

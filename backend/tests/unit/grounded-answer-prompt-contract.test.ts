@@ -49,7 +49,27 @@ describe("grounded answer prompt contract", () => {
     expect(disabled.suggestionsExpected).toBe(false);
     expect(disabled.systemPrompt).not.toContain("Suggestion quality");
     expect(enabled.suggestionsExpected).toBe(true);
+    expect(enabled.systemPrompt).toContain("Output envelope");
     expect(enabled.systemPrompt).toContain("Suggestion quality");
+  });
+
+  it("renders conversation-intent context inside the conditional suggestion block", () => {
+    const enabled = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot: {
+        recentTurns: [{ role: "user", content: "Help me plan a retreat" }],
+        activeSubject: "Facilitator support",
+        activeGoal: "Plan the next retreat",
+      },
+    });
+
+    expect(enabled.systemPrompt).toContain("Recent conversation context:");
+    expect(enabled.systemPrompt).toContain("Help me plan a retreat");
+    expect(enabled.systemPrompt).toContain("Active subject:\nFacilitator support");
+    expect(enabled.systemPrompt).toContain("Active goal:\nPlan the next retreat");
   });
 
   it("renders the canonical decline rules in main retrieval and focused miss prompts", () => {

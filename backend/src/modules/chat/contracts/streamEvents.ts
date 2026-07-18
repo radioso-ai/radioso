@@ -42,6 +42,7 @@ export type ChatStreamEvent =
       agentName?: string;
       assistantMessageId: string;
       answer: string;
+      skillOutcome?: string;
       citations?: ChatCitation[];
       answerSegments?: AnswerSegment[];
       suggestions?: ChatSuggestion[];

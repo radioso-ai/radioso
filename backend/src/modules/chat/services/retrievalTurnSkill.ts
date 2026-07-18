@@ -13,7 +13,7 @@ import {
 } from "./groundedAnswerEnvelope.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
-import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import { getGroundedMissFallback, type FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
@@ -44,6 +44,20 @@ const isOutOfScopeOnly = (session: PreparedSession): boolean => {
   const framing = session.turnFraming;
   return Boolean(framing?.outsideScopeRequest?.trim()) && !framing?.inScopeRequest?.trim();
 };
+
+const shouldSuppressUnsupportedDraft = (
+  session: PreparedSession,
+  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
+  summary: GroundingSummary,
+): boolean =>
+  session.retrieval.contexts.length > 0
+  && summary.sourcedClaimCount === 0
+  && (
+    envelope.outcome === "answer"
+    || envelope.parseStatus === "missing"
+    || envelope.parseStatus === "malformed"
+    || envelope.parseStatus === "invalid_v2"
+  );
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
@@ -133,6 +147,18 @@ export class RetrievalAnswerComposer {
     return envelope;
   }
 
+  private presentSuppressedUnsupportedDraft(
+    session: PreparedSession,
+    summary: GroundingSummary,
+  ): ChatPresentedAnswer {
+    return {
+      ...this.chatAnswerPresenter.presentGroundedMissAnswer(getGroundedMissFallback()),
+      grounding: summary.verdict,
+      groundingSummary: summary,
+      effectiveRetrieval: session.retrieval,
+    };
+  }
+
   async generateAnswerWithPageContext(
     session: PreparedSession,
     query: string,
@@ -164,6 +190,7 @@ export class RetrievalAnswerComposer {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
+    let suppressUnsupportedDraft = false;
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -202,6 +229,11 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
       });
       this.recordGroundingOutcome(grounding, envelope, false);
+      suppressUnsupportedDraft = shouldSuppressUnsupportedDraft(session, envelope, grounding);
+    }
+
+    if (suppressUnsupportedDraft && typeof grounding !== "string") {
+      return this.presentSuppressedUnsupportedDraft(session, grounding);
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -277,6 +309,7 @@ export class RetrievalAnswerComposer {
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
+    let suppressUnsupportedDraft = false;
 
     if (session.retrieval.contexts.length === 0) {
       const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -345,6 +378,16 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
       });
       this.recordGroundingOutcome(grounding, finalized, true);
+      suppressUnsupportedDraft = shouldSuppressUnsupportedDraft(session, finalized, grounding);
+    }
+
+    if (suppressUnsupportedDraft && typeof grounding !== "string") {
+      return {
+        finalPresentation: this.presentSuppressedUnsupportedDraft(session, grounding),
+        suggestions: { mode: "assistant", planned: [] },
+        hasStreamedAnswer,
+        streamedAnswer,
+      };
     }
 
     // Present the same generated body from its computed assertion verdict. Suggestions

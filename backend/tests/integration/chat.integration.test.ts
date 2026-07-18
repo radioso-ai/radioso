@@ -20,6 +20,7 @@ import {
   GROUNDED_V2_VISIBLE,
   NO_SUPPORT_V2_BODY,
   degradedV2Envelope,
+  formatV2Envelope,
   groundedV2Envelope,
   noSupportV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
@@ -172,9 +173,12 @@ describe("chat integration", () => {
     });
     const { token } = await issueTestToken(app, `answer-envelope-${_name}@example.com`);
     for (const [title, content] of [
+      // Every document must share terms with the probe query ("advanced workshop") so
+      // the keyword-scoring test retriever selects all three contexts; the grounded
+      // fixture asserts sources [[1]]-[[3]] and an out-of-range index degrades.
       ["Workshop dates", "The advanced workshop runs in June."],
-      ["Returning students", "Returning students can register online."],
-      ["Registration", "Online registration is available for returning students."],
+      ["Returning students", "Returning students can register online for the advanced workshop."],
+      ["Registration", "Advanced workshop online registration is available for returning students."],
     ]) {
       await request(app)
         .post("/api/v1/document/")
@@ -1374,7 +1378,14 @@ describe("chat integration", () => {
   it("records grounded answers in assistant-turn audit metadata without validation diagnostics", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
-        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+        const answer = "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[1]].";
+        return formatV2Envelope(answer, {
+          v: 2,
+          outcome: "answer",
+          claims: [[1], [1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
@@ -1904,7 +1915,13 @@ describe("chat integration", () => {
   it("keeps mixed social-plus-substantive turns on the retrieval path", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
-        return "The next retreat is the Spring Retreat.";
+        return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
+          v: 2,
+          outcome: "answer",
+          claims: [[1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "unused";
@@ -1973,7 +1990,13 @@ describe("chat integration", () => {
   it("fails safely to retrieval when a non-retrieval intent is low confidence", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
-        return "The next retreat is the Spring Retreat.";
+        return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
+          v: 2,
+          outcome: "answer",
+          claims: [[1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "unused";

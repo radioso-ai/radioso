@@ -1,3 +1,4 @@
+Output envelope
 Answer assertion protocol
 Always finish the response with the protocol below, whether or not follow-up suggestions are enabled and whether or not any Result excerpts support an answer.
 

@@ -15,6 +15,7 @@ import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domai
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
+import { getCandidateFusedScore } from "./candidateScoring.js";
 
 export interface RerankGatewayInput {
   query: string;
@@ -83,7 +84,7 @@ export class ModelRerankGateway implements RerankGateway {
           candidateCount: input.contexts.length,
           rawResponsePreview: content.slice(0, 500),
         },
-        "Rerank response could not be parsed; falling back to similarity ordering",
+        "Rerank response could not be parsed; falling back to fused candidate ordering",
       );
       throw error;
     }
@@ -179,7 +180,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
         response = await createRerank(sampling);
       } catch (error) {
         // A reasoning-effort rejection must degrade to a real rerank at the model
-        // default, not silently fall through to similarity ordering. Retry without
+        // default, not silently fall through to fused candidate ordering. Retry without
         // the effort and remember it so the failed round-trip is paid at most once.
         if (!sampling.reasoning || !isUnsupportedReasoningEffortError(error)) {
           throw error;
@@ -283,7 +284,7 @@ export class RerankService {
   }): Promise<{ contexts: RerankedCandidate[]; status: RerankStatus }> {
     if (!input.enabled) {
       return {
-        contexts: this.bySimilarity(input.contexts, input.topK),
+        contexts: this.byFusedScore(input.contexts, input.topK),
         status: "skipped",
       };
     }
@@ -317,10 +318,10 @@ export class RerankService {
             rerankCandidateCount: input.contexts.length,
             rerankBatchCount: rerankBatches.length,
           },
-          "Rerank returned no valid scores; falling back to similarity ordering",
+          "Rerank returned no valid scores; falling back to fused candidate ordering",
         );
         return {
-          contexts: this.bySimilarity(input.contexts, input.topK),
+          contexts: this.byFusedScore(input.contexts, input.topK),
           status: "fallback",
         };
       }
@@ -331,7 +332,7 @@ export class RerankService {
           ...context,
           relevanceScore: byChunkId.get(context.chunkId) ?? 0,
         }))
-        .sort((a, b) => b.relevanceScore - a.relevanceScore || b.similarity - a.similarity)
+        .sort((a, b) => b.relevanceScore - a.relevanceScore || getCandidateFusedScore(b) - getCandidateFusedScore(a))
         .slice(0, input.topK)
         .map((context, index) => ({
           ...context,
@@ -351,22 +352,22 @@ export class RerankService {
           rerankCandidateCount: input.contexts.length,
           rerankBatchCount: Math.ceil(input.contexts.length / RETRIEVAL_BEHAVIOR.rerank.maxBatchSize),
         },
-        "Rerank request failed; falling back to similarity ordering",
+        "Rerank request failed; falling back to fused candidate ordering",
       );
       return {
-        contexts: this.bySimilarity(input.contexts, input.topK),
+        contexts: this.byFusedScore(input.contexts, input.topK),
         status: "fallback",
       };
     }
   }
 
-  private bySimilarity(contexts: RetrievedCandidate[], topK: number): RerankedCandidate[] {
+  private byFusedScore(contexts: RetrievedCandidate[], topK: number): RerankedCandidate[] {
     return [...contexts]
-      .sort((a, b) => b.similarity - a.similarity)
+      .sort((a, b) => getCandidateFusedScore(b) - getCandidateFusedScore(a))
       .slice(0, topK)
       .map((context, index) => ({
         ...context,
-        relevanceScore: context.similarity,
+        relevanceScore: getCandidateFusedScore(context),
         rerankPosition: index,
       }));
   }

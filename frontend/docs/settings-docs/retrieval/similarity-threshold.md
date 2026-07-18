@@ -1,7 +1,7 @@
 ---
 title: "Similarity Threshold"
 description: "Retrieval setting for minimum semantic similarity score to keep candidates in the pool, balancing precision and recall."
-last_updated: 2026-04-02
+last_updated: 2026-07-18
 ---
 
 # Similarity Threshold
@@ -13,6 +13,8 @@ Drop semantic matches that fall below this minimum similarity score.
 ### Overview
 
 This sets the minimum semantic similarity score required for a candidate to remain in the retrieval pool.
+
+It applies inside semantic vector search, before semantic and lexical results are merged. It does not filter lexical results and is not compared with the normalized fused candidate score shown in retrieval diagnostics or stored answer metadata.
 
 ### Higher Values
 

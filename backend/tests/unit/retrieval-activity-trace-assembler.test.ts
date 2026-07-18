@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ActivityTraceAssembler } from "../../src/modules/retrieval/services/retrievalActivityTraceAssembler.js";
 import type { ActivityTraceAssemblerInput } from "../../src/modules/retrieval/services/retrievalActivityTraceAssembler.js";
+import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 
 const baseInput = (): ActivityTraceAssemblerInput => ({
   prompt: {
@@ -430,5 +431,49 @@ describe("activity trace assembler", () => {
     expect(trace.stages.filter((stage) => stage.kind === "semantic_rewritten")).toHaveLength(2);
     // ...but every branch still contributes a lexical stage.
     expect(trace.stages.filter((stage) => stage.kind === "lexical")).toHaveLength(3);
+  });
+
+  it("labels normalized fused and per-source scores in candidate trace output", () => {
+    const assembler = new ActivityTraceAssembler();
+    const input = baseInput();
+    const candidate: RetrievedCandidate = {
+      chunkId: "n1",
+      documentId: "d1",
+      title: "Narayani",
+      content: "Narayani profile",
+      similarity: 0.93,
+      fusedScore: 0.93,
+      retrievalSources: ["semantic_rewritten", "lexical"],
+      retrievalText: "Narayani profile",
+      semanticScore: 0.9,
+      lexicalScore: 1,
+      lexicalRankScore: 0.4,
+      semanticRank: 1,
+      lexicalRank: 1,
+    };
+    input.prompt.normalizedCandidates = [candidate];
+    input.prompt.mergedCandidates = [candidate];
+    input.prompt.scoredCandidates = [candidate];
+
+    const trace = assembler.assemble(input);
+    const preparation = trace.stages.find((stage) => stage.kind === "candidate_preparation");
+    const outputs = preparation?.outputs as {
+      topCandidates?: Array<Record<string, unknown>>;
+    } | undefined;
+
+    expect(outputs?.topCandidates?.[0]).toMatchObject({
+      similarity: 0.93,
+      fusedScore: 0.93,
+      semanticScore: 0.9,
+      lexicalScore: 1,
+      lexicalRankScore: 0.4,
+      semanticRank: 1,
+      lexicalRank: 1,
+    });
+    for (const field of ["similarity", "fusedScore", "semanticScore", "lexicalScore"] as const) {
+      expect(outputs?.topCandidates?.[0]?.[field]).toEqual(expect.any(Number));
+      expect(outputs?.topCandidates?.[0]?.[field]).toBeGreaterThanOrEqual(0);
+      expect(outputs?.topCandidates?.[0]?.[field]).toBeLessThanOrEqual(1);
+    }
   });
 });

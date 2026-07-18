@@ -100,6 +100,17 @@ export {
   type TurnSelectionInput,
 } from "./services/turnSelectionStrategy.js";
 export {
+  LlmConversationTurnInterpreter,
+  ModelTurnInterpretationGateway,
+  buildTurnInterpretationPrompt,
+  parseTurnInterpretation,
+  type TurnInterpretationGateway,
+  type TurnInterpretationGatewayInput,
+  type TurnInterpretationGatewayResult,
+  type ConversationTurnInterpretationResult,
+  type ChatConversationTurnInterpreter,
+} from "./services/conversationTurnInterpreter.js";
+export {
   ChatGatewayTurnRouterGateway,
   LlmTurnRouter,
   ModelTurnRouterGateway,

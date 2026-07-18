@@ -195,7 +195,8 @@ export class ActivityTraceAssembler {
           inputs: {
             originalQuery: prompt.request.query,
           },
-        outputs: {
+          outputs: {
+          interpretationSource: prompt.interpretationSource,
           effectiveQuery: prompt.activeQuery,
           semanticQuery: prompt.activeParsedQuery.semanticQuery,
           lexicalQuery: prompt.activeParsedQuery.lexicalQuery,

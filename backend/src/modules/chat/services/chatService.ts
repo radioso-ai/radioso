@@ -74,6 +74,7 @@ import {
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
+import type { ChatConversationTurnInterpreter } from "./conversationTurnInterpreter.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -107,6 +108,7 @@ import {
   evaluateRetrievalSenseClarification,
   type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
+  type StructuredRewriteResult,
 } from "../../retrieval/public.js";
 import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
 import {
@@ -403,6 +405,7 @@ export interface ChatServiceOptions {
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
+  turnInterpreter?: ChatConversationTurnInterpreter;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
@@ -461,6 +464,7 @@ export class ChatService {
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
+  private readonly turnInterpreter?: ChatConversationTurnInterpreter;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
 
@@ -481,6 +485,7 @@ export class ChatService {
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
+      turnInterpreter,
       conversationEngine,
       actionOutbox,
       assistantTurnPersistence,
@@ -527,6 +532,7 @@ export class ChatService {
     this.usageLimitPolicy = usageLimitPolicy;
     this.selectionStrategy = selectionStrategy;
     this.turnRouter = turnRouter;
+    this.turnInterpreter = turnInterpreter;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
     this.agentSkillTurnSkillProvider = agentSkillTurnSkillProvider;
@@ -1248,9 +1254,25 @@ export class ChatService {
   } {
     const turnInterpreter: ConversationTurnInterpreter = {
       interpret: async () => {
-        const routing = input.resolvedRetrievalSense
+        const interpreted = input.resolvedRetrievalSense
           ? { route: CHAT_TURN_ROUTE.RETRIEVAL, framing: { isIdentityQuestion: false } }
-          : await this.routeTurn(input.request, input.sessionRef.current);
+          : this.turnInterpreter
+            ? await this.turnInterpreter.interpretChatTurn({
+                query: input.request.query,
+                history: input.sessionRef.current.history,
+                responseIdentity: input.sessionRef.current.retrieval.responseIdentity,
+                customInstruction: input.sessionRef.current.agent.customInstruction,
+                workspaceId: input.request.workspaceId,
+                accountId: input.request.accountId,
+                conversationId: input.sessionRef.current.conversation.id,
+                messageId: input.sessionRef.current.userMessage.id,
+                agentSkillSettings: input.sessionRef.current.agent.skillSettings,
+              })
+            : await this.routeTurn(input.request, input.sessionRef.current);
+        const routing = {
+          route: interpreted.route,
+          framing: interpreted.framing,
+        };
         input.sessionRef.current = {
           ...input.sessionRef.current,
           turnRoute: routing.route,
@@ -1270,13 +1292,23 @@ export class ChatService {
         return {
           route: routing.route,
           framing: routing.framing,
+          metadata: "rewriteProposal" in interpreted && interpreted.rewriteProposal
+            ? { rewriteProposal: interpreted.rewriteProposal }
+            : undefined,
         };
       },
     };
     const retrievalWork: ConversationRetrievalWorkPort = {
-      run: async () => {
+      run: async ({ interpretation }) => {
+        const rewriteProposal =
+          interpretation.metadata?.rewriteProposal && typeof interpretation.metadata.rewriteProposal === "object"
+            ? interpretation.metadata.rewriteProposal as StructuredRewriteResult
+            : undefined;
         input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
-          input.retrievalInput,
+          {
+            ...input.retrievalInput,
+            ...(rewriteProposal ? { precomputedRewriteProposal: rewriteProposal } : {}),
+          },
           input.sessionRef.current,
           input.sessionRef.current.turnFraming,
         );

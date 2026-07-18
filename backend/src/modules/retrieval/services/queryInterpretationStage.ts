@@ -64,15 +64,23 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
     );
     const workspaceContext = { workspaceId: input.request.workspaceId };
     const usageContext = input.request.usageContext ?? fallbackUsageContext(input.request.workspaceId);
-    const rewrittenQuery = await this.queryRewriteService.rewrite({
-      query: input.request.query,
-      contextWindow: input.contextWindow,
-      enabled: input.settings.queryRewriteEnabled,
-      semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
-      lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
-      workspaceContext,
-      usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
-    });
+    const rewrittenQuery = input.request.precomputedRewriteProposal
+      ? this.queryRewriteService.rewriteFromProposal({
+          query: input.request.query,
+          contextWindow: input.contextWindow,
+          enabled: input.settings.queryRewriteEnabled,
+          proposal: input.request.precomputedRewriteProposal,
+          unusableFallbackReason: "rewrite_unusable",
+        })
+      : await this.queryRewriteService.rewrite({
+          query: input.request.query,
+          contextWindow: input.contextWindow,
+          enabled: input.settings.queryRewriteEnabled,
+          semanticRewriteInstructions: input.settings.semanticRewriteInstructions,
+          lexicalRewriteInstructions: input.settings.lexicalRewriteInstructions,
+          workspaceContext,
+          usageContext: { ...usageContext, operation: "query_interpretation", attemptKey: "rewrite" },
+        });
     const parsedQueryBase = originalParsedQuery;
     const preparedParsedQuery = prepareQueries(
       parsedQueryBase,
@@ -117,6 +125,7 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
           ];
     const result: QueryInterpretationStageResult = {
       ...input,
+      interpretationSource: input.request.precomputedRewriteProposal ? "turn_interpretation" : "query_interpretation",
       originalParsedQuery,
       originalPreparedQuery,
       rewrittenQuery,

@@ -77,7 +77,6 @@ export class QueryRewriteService {
     }
 
     try {
-      const hasConversationContext = input.contextWindow.selectedMessages.length > 0;
       const rawResult = await this.gateway?.rewrite({
         query: input.query,
         contextMessages: input.contextWindow.selectedMessages,
@@ -86,85 +85,105 @@ export class QueryRewriteService {
         workspaceContext: input.workspaceContext,
         usageContext: resolveFallbackUsageContext(input, "query_interpretation"),
       });
-      const result = this.normalizeStructuredResult(input.query, rawResult);
-      const normalizedStructuredResult = result;
-
-      const semanticQuery = this.selectSemanticQuery(
-        input.query,
-        normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
-        hasConversationContext,
-      );
-      const lexicalQuery = this.selectLexicalQuery(
-        input.query,
-        normalizedStructuredResult.lexicalQuery ?? normalizedStructuredResult.rewrittenQuery,
-        hasConversationContext,
-      );
-      const compatibilityRewrite = semanticQuery;
-      const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
-      const lexicalRewriteAccepted = lexicalQuery !== input.query;
-      const modelRetrievalSubqueries =
-        normalizedStructuredResult.retrievalSubqueries ??
-        (lexicalRewriteAccepted
-          ? buildLexicalAlternativeSubqueries({
-              semanticQuery,
-              lexicalQuery,
-              responseLanguagePolicy,
-            })
-          : undefined);
-      const resolvedLexicalQuery = this.selectResolvedSubjectLexicalQuery({
-        queryShape: normalizedStructuredResult.queryShape,
-        lexicalQuery,
-        proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+      return this.rewriteFromProposal({
+        query: input.query,
+        contextWindow: input.contextWindow,
+        enabled: input.enabled,
+        proposal: rawResult,
+        unusableFallbackReason: "rewrite_unusable",
       });
-      const retrievalSubqueries = modelRetrievalSubqueries;
-      const applied =
-        semanticQuery !== input.query
-        || resolvedLexicalQuery !== input.query
-        || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
-
-      if (!applied) {
-        return {
-          ...this.fallback(input.query, "rewrite_unusable"),
-          structuredResult: {
-            ...normalizedStructuredResult,
-            rewrittenQuery: compatibilityRewrite,
-            semanticQuery,
-            lexicalQuery: resolvedLexicalQuery,
-          },
-        };
-      }
-
-      const structuredResult = {
-        ...normalizedStructuredResult,
-        rewrittenQuery: compatibilityRewrite,
-        semanticQuery,
-        lexicalQuery: resolvedLexicalQuery,
-        retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
-      };
-      const eligibility = this.eligibilityService.evaluate({
-        originalQuery: input.query,
-        rewrite: structuredResult,
-      });
-      const retrievalEligible = eligibility.eligible;
-
-      return {
-        originalQuery: input.query,
-        rewrittenQuery: compatibilityRewrite,
-        effectiveQuery: retrievalEligible ? semanticQuery : input.query,
-        semanticQuery: retrievalEligible ? semanticQuery : input.query,
-        lexicalQuery: retrievalEligible ? resolvedLexicalQuery : input.query,
-        responseLanguagePolicy,
-        retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
-        rewriteApplied: retrievalEligible,
-        retrievalEligible,
-        status: retrievalEligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
-        confidence: normalizedStructuredResult.confidence ?? 0.5,
-        structuredResult,
-        rejectionReason: eligibility.rejectionReason,
-      };
     } catch {
       return this.fallback(input.query, "rewrite_failed");
     }
+  }
+
+  rewriteFromProposal(input: {
+    query: string;
+    contextWindow: ConversationContextWindow;
+    enabled: boolean;
+    proposal?: QueryRewriteGatewayResultPort;
+    unusableFallbackReason?: string;
+  }): RewrittenRetrievalQuery {
+    if (!input.enabled) {
+      return this.skipped(input.query);
+    }
+
+    const hasConversationContext = input.contextWindow.selectedMessages.length > 0;
+    const normalizedStructuredResult = this.normalizeStructuredResult(input.query, input.proposal);
+
+    const semanticQuery = this.selectSemanticQuery(
+      input.query,
+      normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
+      hasConversationContext,
+    );
+    const lexicalQuery = this.selectLexicalQuery(
+      input.query,
+      normalizedStructuredResult.lexicalQuery ?? normalizedStructuredResult.rewrittenQuery,
+      hasConversationContext,
+    );
+    const compatibilityRewrite = semanticQuery;
+    const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
+    const lexicalRewriteAccepted = lexicalQuery !== input.query;
+    const modelRetrievalSubqueries =
+      normalizedStructuredResult.retrievalSubqueries ??
+      (lexicalRewriteAccepted
+        ? buildLexicalAlternativeSubqueries({
+            semanticQuery,
+            lexicalQuery,
+            responseLanguagePolicy,
+          })
+        : undefined);
+    const resolvedLexicalQuery = this.selectResolvedSubjectLexicalQuery({
+      queryShape: normalizedStructuredResult.queryShape,
+      lexicalQuery,
+      proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+    });
+    const retrievalSubqueries = modelRetrievalSubqueries;
+    const applied =
+      semanticQuery !== input.query
+      || resolvedLexicalQuery !== input.query
+      || Boolean(retrievalSubqueries && retrievalSubqueries.length > 1);
+
+    if (!applied) {
+      return {
+        ...this.fallback(input.query, input.unusableFallbackReason ?? "rewrite_unusable"),
+        structuredResult: {
+          ...normalizedStructuredResult,
+          rewrittenQuery: compatibilityRewrite,
+          semanticQuery,
+          lexicalQuery: resolvedLexicalQuery,
+        },
+      };
+    }
+
+    const structuredResult = {
+      ...normalizedStructuredResult,
+      rewrittenQuery: compatibilityRewrite,
+      semanticQuery,
+      lexicalQuery: resolvedLexicalQuery,
+      retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
+    };
+    const eligibility = this.eligibilityService.evaluate({
+      originalQuery: input.query,
+      rewrite: structuredResult,
+    });
+    const retrievalEligible = eligibility.eligible;
+
+    return {
+      originalQuery: input.query,
+      rewrittenQuery: compatibilityRewrite,
+      effectiveQuery: retrievalEligible ? semanticQuery : input.query,
+      semanticQuery: retrievalEligible ? semanticQuery : input.query,
+      lexicalQuery: retrievalEligible ? resolvedLexicalQuery : input.query,
+      responseLanguagePolicy,
+      retrievalSubqueries: retrievalEligible ? retrievalSubqueries : undefined,
+      rewriteApplied: retrievalEligible,
+      retrievalEligible,
+      status: retrievalEligible ? REWRITE_STATUS.APPLIED : REWRITE_STATUS.REJECTED,
+      confidence: normalizedStructuredResult.confidence ?? 0.5,
+      structuredResult,
+      rejectionReason: eligibility.rejectionReason,
+    };
   }
 
   async analyzeTriggers(input: {

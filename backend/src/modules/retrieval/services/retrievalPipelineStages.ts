@@ -10,6 +10,7 @@ import type {
   RewrittenRetrievalQuery,
   RetrievalAnswerShapeSelection,
   RetrievalExecutionMetadata,
+  StructuredRewriteResult,
   TemporalQueryMode,
   TriggerAnalysisResult,
   TriggerBackoffDecision,
@@ -36,6 +37,7 @@ export interface RetrievalPipelineRequest {
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+  precomputedRewriteProposal?: StructuredRewriteResult;
 }
 
 export interface RetrievalContextStageResult {
@@ -45,6 +47,7 @@ export interface RetrievalContextStageResult {
 }
 
 export interface QueryInterpretationStageResult extends RetrievalContextStageResult {
+  interpretationSource?: "query_interpretation" | "turn_interpretation";
   originalParsedQuery: ParsedQueryInterpretation;
   originalPreparedQuery: ParsedQueryInterpretation;
   rewrittenQuery: RewrittenRetrievalQuery;
@@ -178,6 +181,7 @@ type TraceRetrievalContextInput = {
 };
 
 type TraceQueryInterpretationInput = TraceRetrievalContextInput & {
+  interpretationSource?: unknown;
   rewrittenQuery?: {
     status?: unknown;
     retrievalEligible?: unknown;
@@ -283,6 +287,7 @@ export const buildRetrievalContextTraceAttributes = (result: TraceRetrievalConte
 export const buildQueryInterpretationTraceAttributes = (result: TraceQueryInterpretationInput): TraceAttributes =>
   compactTraceAttributes({
     ...buildRetrievalPipelineTraceAttributes(result.request),
+    "retrieval.interpretation.source": result.interpretationSource,
     "retrieval.rewrite.status": result.rewrittenQuery?.status,
     "retrieval.rewrite.eligible": result.rewrittenQuery?.retrievalEligible,
     "retrieval.query_history.count": boundedTraceCount(result.promptHistory?.length),

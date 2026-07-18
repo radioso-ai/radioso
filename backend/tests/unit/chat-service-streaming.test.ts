@@ -116,6 +116,7 @@ const makeChatService = (
   },
   conversationOwnershipReader?: ChatServiceOptions["conversationOwnershipReader"],
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"],
+  turnInterpreter?: ChatServiceOptions["turnInterpreter"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -136,6 +137,7 @@ const makeChatService = (
     directiveSteering,
     selectionStrategy,
     turnRouter,
+    turnInterpreter,
     conversationEngine,
     routineStore: routine?.routineStore,
     routineProvider: routine?.routineProvider,
@@ -416,6 +418,120 @@ describe("chat service streaming", () => {
       };
     },
   } as const);
+
+  it("uses the merged turn interpreter proposal on the engine-prepared retrieval path", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    const rewriteProposal = {
+      rewrittenQuery: "known topic details",
+      semanticQuery: "known topic details",
+      lexicalQuery: "known topic",
+      queryShape: "general_grounding" as const,
+      temporalQueryMode: "none" as const,
+      retrievalSubqueries: [
+        {
+          id: "",
+          label: "known topic",
+          semanticQuery: "known topic details",
+          lexicalQuery: "known topic",
+        },
+      ],
+      turnKind: "fresh_subject" as const,
+      proposedActiveSubject: "known topic",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.92,
+    };
+    const turnRouter: ChatServiceOptions["turnRouter"] = {
+      classify: vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } })),
+    };
+    const turnInterpreter: ChatServiceOptions["turnInterpreter"] = {
+      interpretChatTurn: vi.fn(async () => ({
+        route: "retrieval" as const,
+        framing: { isIdentityQuestion: false, intentTopic: "known topic" },
+        rewriteProposal,
+      })),
+    };
+    const retrievalTurn: ChatServiceOptions["retrievalTurn"] = {
+      interpret: vi.fn(async (input) => ({
+        request: input,
+        traceStartedAtMs: Date.now(),
+        context: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            request: input,
+            settings: {
+              workspaceId: input.workspaceId,
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: { selectedMessages: [], truncated: false, selectionReason: "full-history" },
+          },
+        },
+        interpretation: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {},
+        },
+      } as never)),
+      dispatch: vi.fn(async () => createGroundedPipeline().run() as never),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => groundingEnvelope("The guide covers known topic details.[[1]]", "grounded")),
+      streamAnswer: vi.fn(async function* () {}),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      chatGateway,
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      turnRouter,
+      undefined,
+      undefined,
+      turnInterpreter,
+    );
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about it",
+      stream: false,
+    });
+
+    expect(response.answer).toContain("The guide covers known topic details.");
+    expect(turnInterpreter.interpretChatTurn).toHaveBeenCalledOnce();
+    expect(turnRouter.classify).not.toHaveBeenCalled();
+    expect(retrievalTurn.interpret).toHaveBeenCalledWith(expect.objectContaining({
+      precomputedRewriteProposal: rewriteProposal,
+    }));
+  });
 
   const createCapturingAssistantTurnPersistence = () => ({
     completeAssistantTurn: vi.fn(async (input) => ({

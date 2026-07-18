@@ -155,6 +155,7 @@ export class RetrievalPipelineActivityTraceBuilder {
           },
           outputs: {
             retrievalSkipped: true,
+            interpretationSource: stages.interpretation.result.interpretationSource,
             promptHistoryCount: stages.interpretation.result.promptHistory.length,
             responseLanguagePolicy: stages.interpretation.result.rewrittenQuery.responseLanguagePolicy,
             continuityDecision: stages.interpretation.result.continuityDecision,

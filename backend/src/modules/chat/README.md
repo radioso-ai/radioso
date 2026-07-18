@@ -84,9 +84,12 @@ imports from `services/`.
   traces keep reading the same steering shape.
   `turnOutcome.ts` holds only the capability-neutral turn machinery (`TurnSkill`,
   renderer registry); the engine adapter names no specific skill and only takes
-  skill-shaped input. `turnRouter.ts` is adapted as the engine's turn
-  interpretation port after routines decline; retrieval preparation is adapted as
-  retrieval work and runs only when interpretation selects the retrieval route.
+  skill-shaped input. `conversationTurnInterpreter.ts` is adapted as the engine's
+  turn interpretation port after routines decline; it performs the merged
+  route-and-rewrite structured call for normal engine-prepared turns. `turnRouter.ts`
+  remains available for non-engine callers and the retrieval-sense-compatible
+  serial path. Retrieval preparation is adapted as retrieval work and runs only
+  when interpretation selects the retrieval route.
   Each terminal answer capability is its own skill, selected by route —
   `retrievalTurnSkill.ts` and `directTurnSkill.ts` — each owning its composition.
   Skill **identity is sourced

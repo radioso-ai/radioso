@@ -60,7 +60,7 @@ const drain = async (generator: AsyncGenerator<string, TurnStreamResult>) => {
   return { chunks, result: step.value };
 };
 
-const buildComposer = (raw: string) => {
+const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
   let answerCalls = 0;
   let streamCalls = 0;
   let fallbackCalls = 0;
@@ -81,9 +81,10 @@ const buildComposer = (raw: string) => {
     },
   };
   const fallback: FallbackReplyComposer = {
-    async composeNoContext() {
+    async composeNoContext(input) {
       fallbackCalls += 1;
-      return "STATIC FALLBACK";
+      attemptKeys.push(input.usageContext.attemptKey);
+      return decline;
     },
   };
   return {
@@ -100,15 +101,15 @@ const buildComposer = (raw: string) => {
 
 describe("retrieval answer envelope v2", () => {
   const cases = [
-    { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3 },
-    { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1 },
-    { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0 },
-    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: getGroundedMissFallback(), verdict: "degraded", outcome: "no_context", citations: 0 },
-    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: getGroundedMissFallback(), verdict: "degraded", outcome: "no_context", citations: 0 },
+    { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3, suppressed: false },
+    { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1, suppressed: false },
+    { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0, suppressed: false },
+    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "FOCUSED GROUNDED MISS", verdict: "degraded", outcome: "no_context", citations: 0, suppressed: true },
+    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "FOCUSED GROUNDED MISS", verdict: "degraded", outcome: "no_context", citations: 0, suppressed: true },
   ] as const;
 
   for (const testCase of cases) {
-    it(`uses one non-streaming generation and no fallback for ${testCase.name}`, async () => {
+    it(`uses the expected non-streaming generations for ${testCase.name}`, async () => {
       const { composer, counts, attemptKeys } = buildComposer(testCase.raw);
       const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
 
@@ -116,12 +117,14 @@ describe("retrieval answer envelope v2", () => {
       expect(presented.grounding).toBe(testCase.verdict);
       expect(presented.skillOutcome).toBe(testCase.outcome);
       expect(presented.citations ?? []).toHaveLength(testCase.citations);
-      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
-      expect(attemptKeys).toEqual(["grounded"]);
+      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: testCase.suppressed ? 1 : 0 });
+      expect(attemptKeys).toEqual(testCase.suppressed
+        ? ["grounded", "grounded_suppressed_decline"]
+        : ["grounded"]);
       expect(attemptKeys).not.toContain("grounded_unsupported");
     });
 
-    it(`uses one streaming generation and no fallback for ${testCase.name}`, async () => {
+    it(`uses the expected streaming generations for ${testCase.name}`, async () => {
       const { composer, counts, attemptKeys } = buildComposer(testCase.raw);
       const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
 
@@ -131,8 +134,10 @@ describe("retrieval answer envelope v2", () => {
       expect(result.finalPresentation.citations ?? []).toHaveLength(testCase.citations);
       expect(chunks.join("")).not.toContain("RADIOSO_FOLLOWUPS_JSON");
       expect(chunks.join("")).not.toContain("[[");
-      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 0 });
-      expect(attemptKeys).toEqual(["stream_grounded"]);
+      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: testCase.suppressed ? 1 : 0 });
+      expect(attemptKeys).toEqual(testCase.suppressed
+        ? ["stream_grounded", "grounded_suppressed_decline"]
+        : ["stream_grounded"]);
       expect(attemptKeys).not.toContain("stream_grounded_unsupported");
     });
   }
@@ -173,14 +178,31 @@ describe("retrieval answer envelope v2", () => {
 
     const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
 
-    expect(presented.answer).toBe(getGroundedMissFallback());
+    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
     expect(presented.skillOutcome).toBe("no_context");
     expect(presented.groundingSummary).toMatchObject({ verdict: "degraded", sourcedClaimCount: 0 });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
       labels: { protocol: "v2", verdict: "degraded", reason: "anchor_free", stream: "false" },
     }]);
-    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+  });
+
+  it("presents the static asset only when the focused decline composer returns its failure fallback", async () => {
+    const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+      v: 2,
+      outcome: "answer",
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    })}`;
+    const { composer, counts, attemptKeys } = buildComposer(raw, getGroundedMissFallback());
+
+    const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
+
+    expect(presented.answer).toBe(getGroundedMissFallback());
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+    expect(attemptKeys).toEqual(["grounded", "grounded_suppressed_decline"]);
   });
 
   it("does not start a second semantic call after a blank page-context generation", async () => {

@@ -13,7 +13,7 @@ import {
 } from "./groundedAnswerEnvelope.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
-import { getGroundedMissFallback, type FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
@@ -147,12 +147,22 @@ export class RetrievalAnswerComposer {
     return envelope;
   }
 
-  private presentSuppressedUnsupportedDraft(
+  private async presentSuppressedUnsupportedDraft(
     session: PreparedSession,
     summary: GroundingSummary,
-  ): ChatPresentedAnswer {
+    query: string,
+    userExpectedLocale: string | null | undefined,
+    accountId: string | undefined,
+  ): Promise<ChatPresentedAnswer> {
+    const decline = await this.composeFocusedDecline(
+      session,
+      query,
+      userExpectedLocale,
+      accountId,
+      "grounded_suppressed_decline",
+    );
     return {
-      ...this.chatAnswerPresenter.presentGroundedMissAnswer(getGroundedMissFallback()),
+      ...this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
       grounding: summary.verdict,
       groundingSummary: summary,
       effectiveRetrieval: session.retrieval,
@@ -233,7 +243,13 @@ export class RetrievalAnswerComposer {
     }
 
     if (suppressUnsupportedDraft && typeof grounding !== "string") {
-      return this.presentSuppressedUnsupportedDraft(session, grounding);
+      return this.presentSuppressedUnsupportedDraft(
+        session,
+        grounding,
+        query,
+        userExpectedLocale,
+        accountId,
+      );
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -247,10 +263,10 @@ export class RetrievalAnswerComposer {
     return presentation;
   }
 
-  /** Compose a focused out-of-scope decline (reuses the grounded-miss composer — its
-   * sole job is to decline + redirect, so it has none of the answer model's pull to
-   * "help" with off-scope general knowledge). */
-  private async composeScopeDecline(
+  /** Compose a focused decline through the grounded-miss path. Its narrow prompt
+   * declines and redirects without the grounded answer model's pull to continue an
+   * unsupported draft. */
+  private async composeFocusedDecline(
     session: PreparedSession,
     query: string,
     userExpectedLocale: string | null | undefined,
@@ -274,7 +290,7 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     attemptKey: string,
   ): Promise<ChatPresentedAnswer> {
-    const decline = await this.composeScopeDecline(session, query, userExpectedLocale, accountId, attemptKey);
+    const decline = await this.composeFocusedDecline(session, query, userExpectedLocale, accountId, attemptKey);
     return this.chatAnswerPresenter.presentGroundedMissAnswer(decline);
   }
 
@@ -294,7 +310,7 @@ export class RetrievalAnswerComposer {
     // Scope gate (mirrors composeAnswer): a wholly out-of-scope turn declines via the
     // focused grounded-miss composer instead of streaming a grounded answer.
     if (isOutOfScopeOnly(session)) {
-      const decline = await this.composeScopeDecline(session, query, userExpectedLocale, accountId, "stream_out_of_scope");
+      const decline = await this.composeFocusedDecline(session, query, userExpectedLocale, accountId, "stream_out_of_scope");
       yield decline;
       return {
         finalPresentation: await this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
@@ -383,7 +399,13 @@ export class RetrievalAnswerComposer {
 
     if (suppressUnsupportedDraft && typeof grounding !== "string") {
       return {
-        finalPresentation: this.presentSuppressedUnsupportedDraft(session, grounding),
+        finalPresentation: await this.presentSuppressedUnsupportedDraft(
+          session,
+          grounding,
+          query,
+          userExpectedLocale,
+          accountId,
+        ),
         suggestions: { mode: "assistant", planned: [] },
         hasStreamedAnswer,
         streamedAnswer,

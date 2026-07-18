@@ -18,7 +18,6 @@ import {
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import {
-  getGroundedMissFallback,
   MissingFallbackReplyComposer,
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
@@ -70,11 +69,11 @@ const groundedSkillCapabilities: SkillOutcomeCapabilityProvider = {
   supportsGroundedAnswer: () => true,
 };
 
-const staticGroundedMiss = getGroundedMissFallback();
+const focusedGroundedMiss = "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
-    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+    return focusedGroundedMiss;
   },
 };
 
@@ -2657,7 +2656,7 @@ describe("chat service streaming", () => {
     }));
   });
 
-  it("holds unsupported grounded drafts and releases the static grounded miss at finalize", async () => {
+  it("holds unsupported grounded drafts and releases the focused grounded miss at finalize", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2733,7 +2732,7 @@ describe("chat service streaming", () => {
     const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
 
     expect(streamedText).toBe(done?.answer);
-    expect(done?.answer).toBe(staticGroundedMiss);
+    expect(done?.answer).toBe(focusedGroundedMiss);
     expect((done as unknown as { skillOutcome?: string } | undefined)?.skillOutcome).toBe("no_context");
   });
 
@@ -3503,11 +3502,11 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(staticGroundedMiss);
+    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
-      answer: staticGroundedMiss,
+      answer: focusedGroundedMiss,
       citations: undefined,
       answerSegments: undefined,
       skillOutcome: "no_context",
@@ -3535,7 +3534,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: staticGroundedMiss,
+      content: focusedGroundedMiss,
     });
   });
 
@@ -3610,7 +3609,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual([staticGroundedMiss]);
+    expect(chunkTexts).toEqual([focusedGroundedMiss]);
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
@@ -3621,7 +3620,7 @@ describe("chat service streaming", () => {
         type: "retrieval",
         reason: "evidence_required",
       },
-      answer: staticGroundedMiss,
+      answer: focusedGroundedMiss,
       skillOutcome: "no_context",
       answerOutcome: "no_context_refusal",
       citations: undefined,
@@ -3662,7 +3661,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: staticGroundedMiss,
+      content: focusedGroundedMiss,
     });
   });
 
@@ -4004,7 +4003,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("suppresses an anchor-free degraded answer with the static grounded miss", async () => {
+  it("suppresses an anchor-free degraded answer with a focused grounded miss", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4047,12 +4046,21 @@ describe("chat service streaming", () => {
         yield "unused";
       },
     };
+    const focusedDecline = "I don't have supporting material for that. Ask me about the guide instead.";
+    const declineAttemptKeys: string[] = [];
+    const focusedDeclineComposer: FallbackReplyComposer = {
+      async composeNoContext(input) {
+        declineAttemptKeys.push(input.usageContext.attemptKey);
+        return focusedDecline;
+      },
+    };
     const service = makeChatService(
       conversationRepository,
       messageRepository,
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
+      focusedDeclineComposer,
     );
 
     const response = await service.answer({
@@ -4064,8 +4072,9 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
-    expect(response.answer).not.toContain("specific details");
+    expect(response.answer).toBe(focusedDecline);
     expect(response.skillOutcome).toBe("no_context");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
       skillOutcome: "no_context",
@@ -4423,7 +4432,7 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("suppresses an uncited warn-mode draft without a second generation", async () => {
+  it("suppresses an uncited warn-mode draft with a focused decline", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4478,6 +4487,7 @@ describe("chat service streaming", () => {
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -4495,11 +4505,11 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts.join("")).toBe(staticGroundedMiss);
+    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: staticGroundedMiss,
+        answer: focusedGroundedMiss,
         skillOutcome: "no_context",
         activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([

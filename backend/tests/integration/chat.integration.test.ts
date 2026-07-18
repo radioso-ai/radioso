@@ -1086,6 +1086,8 @@ describe("chat integration", () => {
   });
 
   it("turns fully unsupported grounded drafts into a conversational grounded miss", async () => {
+    const focusedDecline = "I don't have supporting material for that. Ask me about the guide instead.";
+    const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
       async answer() {
         return "It also offers 24/7 phone support and a discount code.";
@@ -1094,7 +1096,15 @@ describe("chat integration", () => {
         yield "It also offers 24/7 phone support and a discount code.";
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: unsupportedGateway });
+    const { app } = createTestApp({
+      chatGateway: unsupportedGateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          declineAttemptKeys.push(input.usageContext.attemptKey);
+          return focusedDecline;
+        },
+      },
+    });
 
     const { token, workspaceId } = await issueTestToken(app, "fully-unsupported@example.com");
     const authorization = `Bearer ${token}`;
@@ -1110,12 +1120,14 @@ describe("chat integration", () => {
       .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toEqual(expect.any(String));
-    expect(response.body.answer.length).toBeGreaterThan(0);
+    expect(response.body.answer).toBe(focusedDecline);
     expect(response.body.answer).not.toContain("discount code");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
   });
 
   it("uses exploratory recovery without leaking unsupported claims", async () => {
+    const focusedDecline = "I couldn't support that from these documents. Ask about testing or parser validation.";
+    const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
       async answer() {
         return "It also offers 24/7 phone support and a discount code.";
@@ -1124,7 +1136,15 @@ describe("chat integration", () => {
         yield "It also offers 24/7 phone support and a discount code.";
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: unsupportedGateway });
+    const { app, dependencies } = createTestApp({
+      chatGateway: unsupportedGateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          declineAttemptKeys.push(input.usageContext.attemptKey);
+          return focusedDecline;
+        },
+      },
+    });
 
     const { token, workspaceId } = await issueTestToken(app, "unsupported-exploratory@example.com");
     const authorization = `Bearer ${token}`;
@@ -1153,11 +1173,11 @@ describe("chat integration", () => {
       .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toEqual(expect.any(String));
-    expect(response.body.answer.length).toBeGreaterThan(0);
+    expect(response.body.answer).toBe(focusedDecline);
     expect(response.body.answer).not.toContain("\n- ");
     expect(response.body.answer).not.toContain("discount code");
     expect(response.body.answer).not.toContain("24/7 phone support");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
   });
 
   it("keeps conversations account scoped", async () => {

@@ -59,8 +59,10 @@ imports from `services/` or `infra/`.
 ## Common Change Paths
 
 - Query rewrite: `queryRewrite*`, `rewritePolicyService.ts`,
-  `domain/lexicalQueryPlan.ts`. Turn routing belongs to the chat module's
-  `TurnRouter`; retrieval rewrite should only reshape retrieval queries.
+  `domain/lexicalQueryPlan.ts`. Turn routing is supplied to the conversation
+  engine by chat's interpretation adapter; retrieval rewrite should only reshape
+  retrieval queries. Trigger analysis is a separate retrieval-only stage so it can
+  run alongside candidate retrieval after interpretation.
 - Candidate ranking or filtering: `candidate*`, `metadataRuleScoringService.ts`,
   `attributeMatchScoringService.ts`, `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,

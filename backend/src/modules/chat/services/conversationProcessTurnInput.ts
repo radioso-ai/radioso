@@ -9,8 +9,10 @@ import type {
   ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
   ConversationRoutineStore,
+  ConversationRetrievalWorkPort,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
+  ConversationTurnInterpreter,
   ConversationTurnComposer,
   ConversationTurnStreamComposer,
   Directive,
@@ -56,6 +58,9 @@ export interface ChatProcessTurnInputOptions {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+  turnInterpreter?: ConversationTurnInterpreter;
+  retrievalWork?: ConversationRetrievalWorkPort;
+  getSession?: () => PreparedSession;
 }
 
 export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
@@ -101,6 +106,7 @@ const directiveSteerInputForSession = (
 
 const buildDirectiveTurnWiring = (options: {
   session: PreparedSession;
+  getSession?: () => PreparedSession;
   accountId?: string;
   directives?: Directive[];
   directiveRuntime?: RouteScopedDirectiveRuntime;
@@ -111,13 +117,14 @@ const buildDirectiveTurnWiring = (options: {
       directivesForSession(options.session),
     directiveMatcher: {
       async match({ turn, directives }) {
+        const session = options.getSession?.() ?? options.session;
         const runtime = options.directiveRuntime;
         if (!runtime) {
-          return directiveMatchesForSession(options.session);
+          return directiveMatchesForSession(session);
         }
-        const steerInput = directiveSteerInputForSession(options.session, options.accountId, turn);
+        const steerInput = directiveSteerInputForSession(session, options.accountId, turn);
         const steering = await runtime.matchAndResolve(steerInput, directives);
-        options.session.directiveSteering = steering;
+        session.directiveSteering = steering;
         return steering.matches;
       },
     },
@@ -126,15 +133,16 @@ const buildDirectiveTurnWiring = (options: {
 
 export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions): ProcessTurnInput => {
   const directiveWiring = buildDirectiveTurnWiring(options);
+  const readSession = options.getSession ?? (() => options.session);
   return {
-    agent: toConversationAgentConfig(options.session.agent),
-    sessionId: options.session.conversation.id,
-    inputEvent: effectiveInputEventForSession(options.session),
+    agent: toConversationAgentConfig(readSession().agent),
+    sessionId: readSession().conversation.id,
+    inputEvent: effectiveInputEventForSession(readSession()),
     skills: options.skills ?? [],
     directives: directiveWiring.directives,
     stores: {
       async loadHistory() {
-        return toConversationMessages(options.session.history);
+        return toConversationMessages(readSession().history);
       },
       async appendEvent(event) {
         await options.appendEvent?.(event);
@@ -145,6 +153,8 @@ export const createChatProcessTurnInput = (options: ChatProcessTurnInputOptions)
     selector: options.selector,
     composer: options.composer,
     directiveMatcher: directiveWiring.directiveMatcher,
+    ...(options.turnInterpreter ? { turnInterpreter: options.turnInterpreter } : {}),
+    ...(options.retrievalWork ? { retrievalWork: options.retrievalWork } : {}),
     ...(options.routineStore ? { routineStore: options.routineStore } : {}),
     ...(options.routineRunner ? { routineRunner: options.routineRunner } : {}),
     ...(options.routineActivator ? { routineActivator: options.routineActivator } : {}),

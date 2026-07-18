@@ -24,6 +24,7 @@ export interface ActivityTraceAssemblerInput {
     totalDurationMs: number;
     retrievalContext: StageTiming;
     queryInterpretation: StageTiming;
+    triggerAnalysis?: StageTiming;
     shapeSelection?: StageTiming;
     semanticRetrieval: StageTiming;
     lexicalRetrieval: StageTiming;
@@ -230,7 +231,7 @@ export class ActivityTraceAssembler {
         "trigger_analysis",
         "Trigger analysis",
         toTriggerStatus(prompt.triggerAnalysis.status),
-        timings.queryInterpretation,
+        timings.triggerAnalysis ?? timings.queryInterpretation,
         {
           inputs: {
             query: prompt.request.query,

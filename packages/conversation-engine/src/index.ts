@@ -5,6 +5,7 @@ import type {
   ConversationRoutineSteeringInput,
   ConversationTrace,
   ConversationTraceStage,
+  ConversationTurnInterpretation,
   Directive,
   DirectiveMatch,
   ProcessTurnInput,
@@ -40,6 +41,16 @@ const stage = (input: Omit<ConversationTraceStage, "startedAt" | "completedAt">)
     completedAt: timestamp,
   };
 };
+
+const timedStage = (
+  startedAtMs: number,
+  completedAtMs: number,
+  input: Omit<ConversationTraceStage, "startedAt" | "completedAt">,
+): ConversationTraceStage => ({
+  ...input,
+  startedAt: new Date(startedAtMs).toISOString(),
+  completedAt: new Date(completedAtMs).toISOString(),
+});
 
 const HISTORY_TAIL_LIMIT = 12;
 
@@ -285,6 +296,12 @@ const createResponseEvent = (sessionId: string, response: RenderableTurn): Conve
   createdAt: nowIso(),
 });
 
+const summarizeInterpretation = (interpretation: ConversationTurnInterpretation): Record<string, unknown> => ({
+  route: interpretation.route,
+  framing: interpretation.framing,
+  metadata: interpretation.metadata,
+});
+
 const createProcessTurnResult = (input: {
   sessionId: string;
   events: ConversationEvent[];
@@ -359,19 +376,65 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
     }));
 
-    const resolved = await buildResolvedSteering({
-      turn: baseTurn,
+    const interpretation = input.turnInterpreter
+      ? await input.turnInterpreter.interpret({ turn: baseTurn })
+      : null;
+    if (interpretation) {
+      stages.push(stage({
+        id: "turn_interpretation",
+        kind: "turn_interpretation",
+        status: "applied",
+        outputs: summarizeInterpretation(interpretation),
+      }));
+    }
+
+    const interpretedTurn: TurnContext = interpretation
+      ? {
+          ...baseTurn,
+          metadata: {
+            ...(baseTurn.metadata ?? {}),
+            turnInterpretation: interpretation,
+            turnRoute: interpretation.route,
+          },
+        }
+      : baseTurn;
+
+    const resolveDirectives = () => buildResolvedSteering({
+      turn: interpretedTurn,
       directives: input.directives,
       directiveMatcher: input.directiveMatcher,
       steeringResolver: input.steeringResolver,
     });
+    const shouldRunRetrieval = Boolean(input.retrievalWork && interpretation?.route === "retrieval");
+    const retrievalStartedAt = Date.now();
+    const retrievalPromise = shouldRunRetrieval
+      ? input.retrievalWork!.run({ turn: interpretedTurn, interpretation: interpretation! })
+      : Promise.resolve(null);
+    const directivePromise = resolveDirectives();
+    const [retrievalResult, resolved] = await Promise.all([retrievalPromise, directivePromise]);
+    const retrievalCompletedAt = Date.now();
+    if (input.retrievalWork && interpretation) {
+      stages.push(timedStage(retrievalStartedAt, retrievalCompletedAt, {
+        id: "retrieval_fanout",
+        kind: "retrieval_fanout",
+        status: shouldRunRetrieval ? "applied" : "skipped",
+        outputs: {
+          route: interpretation.route,
+          stagedContextCount: retrievalResult?.stagedContext?.length ?? 0,
+          steeringCount: retrievalResult?.steering?.length ?? 0,
+          hasTrace: Boolean(retrievalResult?.trace || retrievalResult?.subTrace),
+        },
+        ...(retrievalResult?.subTrace ? { subTrace: retrievalResult.subTrace } : {}),
+      }));
+    }
     const directiveMatches = resolved.directiveMatches;
     const directiveSteering = resolved.steering;
     stages.push(resolved.traceStage);
 
     const selectedTurn: TurnContext = {
-      ...baseTurn,
-      steering: directiveSteering,
+      ...interpretedTurn,
+      stagedContext: retrievalResult?.stagedContext ?? [],
+      steering: [...directiveSteering, ...(retrievalResult?.steering ?? [])],
     };
     const decision = await input.selector.select({
       turn: selectedTurn,
@@ -398,7 +461,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     }));
 
     const outcomes: TurnOutcome[] = [];
-    let mergedSteering = [...directiveSteering];
+    let mergedSteering = [...selectedTurn.steering];
     for (const selected of decision.selected) {
       const skill = findSkill(input.skills, selected.skillName);
       if (!skill) {
@@ -442,7 +505,7 @@ export class DefaultConversationEngine implements ConversationEngine {
 
     const composeTurn: TurnContext = {
       ...selectedTurn,
-      stagedContext: mergeStagedContext(outcomes),
+      stagedContext: [...selectedTurn.stagedContext, ...mergeStagedContext(outcomes)],
       steering: mergedSteering,
     };
     return {

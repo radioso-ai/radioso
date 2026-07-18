@@ -24,6 +24,7 @@ export interface ActivityTraceSourceStages {
   traceStartedAtMs: number;
   context: MeasuredStage<RetrievalContextStageResult>;
   interpretation: MeasuredStage<QueryInterpretationStageResult>;
+  triggerAnalysis?: MeasuredStage<unknown>;
   shapeSelection?: MeasuredStage<RetrievalAnswerShapeSelection>;
   retrieval: MeasuredStage<unknown>;
   prepared: MeasuredStage<unknown>;
@@ -72,6 +73,12 @@ export class RetrievalPipelineActivityTraceBuilder {
           startedAt: toIso(stages.interpretation.startedAt),
           durationMs: stages.interpretation.durationMs,
         },
+        triggerAnalysis: stages.triggerAnalysis
+          ? {
+              startedAt: toIso(stages.triggerAnalysis.startedAt),
+              durationMs: stages.triggerAnalysis.durationMs,
+            }
+          : undefined,
         shapeSelection: stages.shapeSelection
           ? {
               startedAt: toIso(stages.shapeSelection.startedAt),

@@ -76,18 +76,20 @@ imports from `services/`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
-  `conversationProcessTurnInput.ts` passes the route-scoped directive catalog to
-  the engine and adapts the real directive matcher into the engine's
-  `directiveMatcher` port; `chatSessionPreparer.ts` does not pre-resolve
-  directive matches for terminal answer turns. The adapter writes the resolved
-  steering back onto the prepared session before dispatch/render so Radioso-owned
-  composers and lifecycle traces keep reading the same steering shape.
+  `conversationProcessTurnInput.ts` passes route-scoped directive matching, turn
+  interpretation, and retrieval work to the engine through neutral ports;
+  `chatSessionPreparer.ts` does not pre-resolve directive matches for terminal
+  answer turns. The adapter writes the resolved steering and prepared retrieval
+  session back before dispatch/render so Radioso-owned composers and lifecycle
+  traces keep reading the same steering shape.
   `turnOutcome.ts` holds only the capability-neutral turn machinery (`TurnSkill`,
   renderer registry); the engine adapter names no specific skill and only takes
-  skill-shaped input. `turnRouter.ts` classifies a turn as `retrieval` or `direct`
-  after routines decline and before retrieval runs. Each terminal answer
-  capability is its own skill, selected by route — `retrievalTurnSkill.ts` and
-  `directTurnSkill.ts` — each owning its composition. Skill **identity is sourced
+  skill-shaped input. `turnRouter.ts` is adapted as the engine's turn
+  interpretation port after routines decline; retrieval preparation is adapted as
+  retrieval work and runs only when interpretation selects the retrieval route.
+  Each terminal answer capability is its own skill, selected by route —
+  `retrievalTurnSkill.ts` and `directTurnSkill.ts` — each owning its composition.
+  Skill **identity is sourced
   from the canonical catalog** (`modules/skills`): these files derive their skill
   name from `retrievalAnswerSkillDefinition` / `directAnswerSkillDefinition` — the
   chat loop never mints its own skill names. The `TurnSkill` here is the chat-side

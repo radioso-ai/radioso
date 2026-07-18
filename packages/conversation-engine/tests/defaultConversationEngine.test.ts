@@ -166,6 +166,104 @@ describe("DefaultConversationEngine", () => {
     expect(dispatchStage?.subTrace).toBeUndefined();
   });
 
+  it("runs retrieval work concurrently with directive matching after interpretation", async () => {
+    const events: string[] = [];
+    let finishRetrieval!: () => void;
+    let finishDirectives!: () => void;
+    const input = createInput({
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval", metadata: { queryShape: "general_grounding" } })),
+      },
+      retrievalWork: {
+        run: vi.fn(async () => {
+          events.push("retrieval:start");
+          await new Promise<void>((resolve) => {
+            finishRetrieval = resolve;
+          });
+          events.push("retrieval:finish");
+          return { stagedContext: [{ kind: "retrieval", data: { count: 1 } }] };
+        }),
+      },
+      directiveMatcher: {
+        match: vi.fn(async ({ directives }) => {
+          events.push("directives:start");
+          await new Promise<void>((resolve) => {
+            finishDirectives = resolve;
+          });
+          events.push("directives:finish");
+          return [
+            {
+              directive: directives[0],
+              selectionMode: "deterministic",
+              selectionReason: "always",
+            },
+          ];
+        }),
+      },
+      selector: {
+        select: vi.fn(async ({ turn }) => {
+          events.push("selection");
+          return {
+            selected: [{ skillName: "order.status" }],
+            reason: `staged:${turn.stagedContext.length}`,
+          };
+        }),
+      },
+    });
+
+    const turn = new DefaultConversationEngine().processTurn(input);
+    await vi.waitFor(() => {
+      expect(events).toEqual(["retrieval:start", "directives:start"]);
+    });
+    finishDirectives();
+    await vi.waitFor(() => {
+      expect(events).toContain("directives:finish");
+      expect(events).not.toContain("selection");
+    });
+    finishRetrieval();
+    const result = await turn;
+
+    expect(input.retrievalWork?.run).toHaveBeenCalledWith({
+      turn: expect.objectContaining({
+        metadata: expect.objectContaining({
+          turnRoute: "retrieval",
+        }),
+      }),
+      interpretation: expect.objectContaining({ route: "retrieval" }),
+    });
+    expect(result.decision.reason).toBe("staged:1");
+    expect(result.trace.stages.map((traceStage) => traceStage.kind)).toEqual([
+      "message",
+      "gather",
+      "turn_interpretation",
+      "retrieval_fanout",
+      "directive_match",
+      "skill_selection",
+      "skill_dispatch",
+      "compose",
+    ]);
+  });
+
+  it("does not invoke retrieval work for direct interpretations", async () => {
+    const input = createInput({
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "direct", framing: { isIdentityQuestion: true } })),
+      },
+      retrievalWork: {
+        run: vi.fn(async () => ({ stagedContext: [{ kind: "retrieval", data: {} }] })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(input.retrievalWork?.run).not.toHaveBeenCalled();
+    const fanout = result.trace.stages.find((traceStage) => traceStage.kind === "retrieval_fanout");
+    expect(fanout).toEqual(expect.objectContaining({
+      status: "skipped",
+      outputs: expect.objectContaining({ route: "direct", stagedContextCount: 0 }),
+    }));
+  });
+
   it("records a failed outcome when selection names an unregistered skill", async () => {
     const input = createInput({
       selector: {

@@ -125,6 +125,7 @@ export interface PromptAssemblyStageResult extends ContextSelectionStageResult {
 
 export interface QueryInterpretationStage {
   execute(input: RetrievalContextStageResult): Promise<QueryInterpretationStageResult>;
+  analyzeTriggers?(input: QueryInterpretationStageResult): Promise<TriggerAnalysisResult>;
 }
 
 export interface RetrievalContextStage {
@@ -237,6 +238,7 @@ export const RETRIEVAL_TRACE_SPAN_NAMES = {
   pipelineNoRetrieval: "retrieval.pipeline.no_retrieval",
   context: "retrieval.stage.context",
   queryInterpretation: "retrieval.stage.query_interpretation",
+  triggerAnalysis: "retrieval.stage.trigger_analysis",
   answerShapeSelection: "retrieval.stage.answer_shape_selection",
   candidateRetrieval: "retrieval.stage.candidate_retrieval",
   candidatePreparation: "retrieval.stage.candidate_preparation",

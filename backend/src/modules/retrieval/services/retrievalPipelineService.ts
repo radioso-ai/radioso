@@ -267,12 +267,35 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
           shapeSelection: shapeSelection?.result,
         },
       };
-      const retrieval = await this.measureTraced(
+      const triggerAnalysisPromise = this.queryInterpretationStage.analyzeTriggers
+        ? this.measureTraced(
+            RETRIEVAL_TRACE_SPAN_NAMES.triggerAnalysis,
+            buildQueryInterpretationTraceAttributes(interpretation.result),
+            () => this.queryInterpretationStage.analyzeTriggers!(interpretation.result),
+            (result) => ({
+              "retrieval.trigger.status": result.status,
+              "retrieval.trigger.match_count": result.matchCount,
+              "retrieval.trigger.considered_rule.count": result.consideredRules.length,
+            }),
+          )
+        : Promise.resolve(undefined);
+      const retrievalPromise = this.measureTraced(
         RETRIEVAL_TRACE_SPAN_NAMES.candidateRetrieval,
         buildQueryInterpretationTraceAttributes(interpretation.result),
         () => this.candidateRetrievalStage.execute(interpretation.result),
         buildCandidateRetrievalTraceAttributes,
       );
+      const [retrieval, triggerAnalysis] = await Promise.all([retrievalPromise, triggerAnalysisPromise]);
+      if (triggerAnalysis) {
+        interpretation.result = {
+          ...interpretation.result,
+          triggerAnalysis: triggerAnalysis.result,
+        };
+        retrieval.result = {
+          ...retrieval.result,
+          triggerAnalysis: triggerAnalysis.result,
+        };
+      }
       const prepared = await this.measureTraced(
         RETRIEVAL_TRACE_SPAN_NAMES.candidatePreparation,
         buildCandidateRetrievalTraceAttributes(retrieval.result),
@@ -307,6 +330,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
         traceStartedAtMs: input.traceStartedAtMs,
         context: input.context,
         interpretation,
+        triggerAnalysis,
         shapeSelection,
         retrieval,
         prepared,

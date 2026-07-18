@@ -2,12 +2,25 @@ import type { ParsedQueryInterpretation } from "../domain/queryConstraintTypes.j
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { QueryRewriteService } from "./queryRewriteService.js";
-import type { QueryInterpretationStage as QueryInterpretationStageContract, RetrievalContextStageResult } from "./retrievalPipelineStages.js";
+import type {
+  QueryInterpretationStage as QueryInterpretationStageContract,
+  QueryInterpretationStageResult,
+  RetrievalContextStageResult,
+} from "./retrievalPipelineStages.js";
 
 const fallbackUsageContext = (workspaceId: string): Omit<ModelCallUsageContext, "operation"> => ({
   workspaceId,
   surface: "retrieval",
   attemptKey: "query_interpretation",
+});
+
+const skippedTriggerAnalysis = (matcherVersion: string) => ({
+  status: "skipped_non_retrieval" as const,
+  consideredRules: [],
+  matchedRuleIds: [],
+  unmatchedRuleIds: [],
+  matchCount: 0,
+  matcherVersion,
 });
 
 export class QueryInterpretationStageService implements QueryInterpretationStageContract {
@@ -87,15 +100,6 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
               responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy ?? "match_user_question",
             },
           ];
-    const triggerAnalysis = await this.queryRewriteService.analyzeTriggers({
-      query: input.request.query,
-      activeQuery,
-      contextMessages: [],
-      metadataRules: input.settings.metadataRules ?? [],
-      workspaceContext,
-      usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
-    });
-
     return {
       ...input,
       originalParsedQuery,
@@ -105,10 +109,22 @@ export class QueryInterpretationStageService implements QueryInterpretationStage
       activeParsedQuery,
       activeSemanticQuery: activeParsedQuery.semanticQuery || activeQuery,
       activeRetrievalSubqueries,
-      triggerAnalysis,
+      triggerAnalysis: skippedTriggerAnalysis("pending_retrieval"),
       promptHistory,
       promptHistoryReset: shouldResetPromptHistory,
       continuityDecision,
     };
+  }
+
+  async analyzeTriggers(input: QueryInterpretationStageResult) {
+    const usageContext = input.request.usageContext ?? fallbackUsageContext(input.request.workspaceId);
+    return this.queryRewriteService.analyzeTriggers({
+      query: input.request.query,
+      activeQuery: input.activeQuery,
+      contextMessages: [],
+      metadataRules: input.settings.metadataRules ?? [],
+      workspaceContext: { workspaceId: input.request.workspaceId },
+      usageContext: { ...usageContext, operation: "trigger_analysis", attemptKey: "trigger_analysis" },
+    });
   }
 }

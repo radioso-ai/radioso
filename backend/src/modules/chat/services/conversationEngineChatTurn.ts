@@ -31,12 +31,6 @@ import {
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
-import {
-  captureModelCallTrace,
-  runWithModelCallTrace,
-  type ModelCallTraceRecord,
-} from "../../../shared/observability/tracing/modelCallTraceContext.js";
-import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 
 export interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -147,11 +141,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
     },
   });
 
-  const captured = await captureModelCallTrace(() => input.engine.processTurn(processTurnInput));
-  const result = {
-    ...captured.result,
-    trace: attachModelCallsToSpine(captured.result.trace, captured.calls),
-  };
+  const result = await input.engine.processTurn(processTurnInput);
   if (!rendered) {
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
@@ -246,10 +236,9 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     },
   });
 
-  const modelCalls: ModelCallTraceRecord[] = [];
   const engineEvents = input.engine.processTurnStream(processTurnInput)[Symbol.asyncIterator]();
   while (true) {
-    const step = await runWithModelCallTrace(modelCalls, () => engineEvents.next());
+    const step = await engineEvents.next();
     if (step.done) {
       break;
     }
@@ -262,10 +251,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     if (!streamResult) {
       throw new Error("conversation_engine_stream_missing_chat_result");
     }
-    const result = {
-      ...event.result,
-      trace: attachModelCallsToSpine(event.result.trace, modelCalls),
-    };
+    const result = event.result;
     yield {
       type: "final",
       presentation: streamResult.finalPresentation,

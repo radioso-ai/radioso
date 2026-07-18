@@ -26,6 +26,7 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
   routine_resume: 'Routine',
   routine_activate: 'Routine',
   clarification: 'Clarification',
+  model_calls: 'Model calls',
 }
 
 export const spineStageLabel = (stage: ConversationTraceStage): string =>
@@ -41,6 +42,7 @@ export interface SpineStageTelemetry {
   outputTokens?: number
   totalTokens?: number
   calls: Array<{
+    stageId?: string
     operation: string
     model: string
     durationMs?: number
@@ -100,6 +102,7 @@ export const spineStageTelemetry = (stage: ConversationTraceStage): SpineStageTe
     const totalTokens = finiteNumber(call.totalTokens)
     return [
       {
+        ...(typeof call.stageId === 'string' ? { stageId: call.stageId } : {}),
         operation: call.operation,
         model: call.model,
         ...(durationMs !== undefined ? { durationMs } : {}),
@@ -129,6 +132,7 @@ export interface TurnTraceRollup {
   longestStage: { name: string; durationMs: number }
   totalModelTimeMs: number
   totalTurnWallClockMs: number
+  droppedCallCount: number
 }
 
 export const turnTraceRollup = (
@@ -140,6 +144,7 @@ export const turnTraceRollup = (
   const serialLlmDepth = finiteNumber(summary?.serialLlmDepth)
   const totalModelTimeMs = finiteNumber(summary?.totalModelTimeMs)
   const totalTurnWallClockMs = finiteNumber(summary?.totalTurnWallClockMs)
+  const droppedCallCount = finiteNumber(summary?.droppedCallCount) ?? 0
   const longestStageDurationMs = finiteNumber(longestStage?.durationMs)
   if (
     totalLlmCalls === undefined
@@ -157,6 +162,7 @@ export const turnTraceRollup = (
     longestStage: { name: longestStage.name, durationMs: longestStageDurationMs },
     totalModelTimeMs,
     totalTurnWallClockMs,
+    droppedCallCount,
   }
 }
 

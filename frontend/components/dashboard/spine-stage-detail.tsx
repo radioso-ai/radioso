@@ -119,6 +119,7 @@ function StageHeader({ stage }: { stage: ConversationTraceStage }) {
                 <li key={`${call.operation}-${index}`} className="flex flex-wrap gap-x-3 gap-y-0.5">
                   <span className="font-mono text-foreground">{call.operation}</span>
                   <span className="font-mono text-muted-foreground">{call.model}</span>
+                  {call.stageId ? <span className="font-mono text-muted-foreground">{call.stageId}</span> : null}
                   {call.durationMs !== undefined ? <span>{call.durationMs}ms</span> : null}
                   {call.inputTokens !== undefined || call.outputTokens !== undefined ? (
                     <span>{call.inputTokens ?? 0} in / {call.outputTokens ?? 0} out</span>

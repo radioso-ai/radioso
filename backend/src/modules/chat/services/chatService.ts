@@ -1,5 +1,11 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
+import {
+  createModelCallTraceCollector,
+  runAsyncIterableWithModelCallTrace,
+  runWithModelCallTrace,
+  type ModelCallTraceCollector,
+} from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type {
   ConversationEngine,
   ConversationClarificationStore,
@@ -496,6 +502,14 @@ interface TurnCoordinationState {
   lease?: ConversationTurnLease;
 }
 
+interface ResumeAwaitingDecisionTurnInput {
+  record: PendingDecisionRecord;
+  optionId: string;
+  payload?: unknown;
+  decidedBy: string;
+  transaction: Db;
+}
+
 export class ChatService {
   private readonly conversationRepository: ConversationRepositoryPort;
   private readonly messageRepository: MessageRepositoryPort;
@@ -877,13 +891,41 @@ export class ChatService {
     return { store, resolution, clarifier };
   }
 
-  async resumeAwaitingDecisionTurn(input: {
-    record: PendingDecisionRecord;
-    optionId: string;
-    payload?: unknown;
-    decidedBy: string;
-    transaction: Db;
-  }): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+  async resumeAwaitingDecisionTurn(
+    input: ResumeAwaitingDecisionTurnInput,
+  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
+    const coordination: TurnCoordinationState = {
+      lease: this.conversationTurnRegistry.start(input.record.conversationId),
+    };
+    try {
+      await coordination.lease?.waitForPredecessor();
+      const modelCallTrace = createModelCallTraceCollector();
+      return await runWithModelCallTrace(
+        modelCallTrace,
+        () => this.resumeAwaitingDecisionTurnWithinTrace(
+          input,
+          coordination,
+          modelCallTrace,
+        ),
+      );
+    } catch (error) {
+      let preferredError = error;
+      try {
+        this.checkTurnCancellation(coordination);
+      } catch (cancellationError) {
+        preferredError = cancellationError;
+      }
+      throw preferredError;
+    } finally {
+      coordination.lease?.complete();
+    }
+  }
+
+  private async resumeAwaitingDecisionTurnWithinTrace(
+    input: ResumeAwaitingDecisionTurnInput,
+    coordination: TurnCoordinationState,
+    modelCallTrace: ModelCallTraceCollector,
+  ): Promise<{ conversationId: string; resumed: boolean; assistantMessageId?: string }> {
     if (!this.routineProvider || !this.suspendedRoutineReader) {
       throw new Error("approval_resume_routine_provider_missing");
     }
@@ -891,15 +933,18 @@ export class ChatService {
       throw new Error("approval_resume_agent_service_missing");
     }
 
+    this.checkTurnCancellation(coordination, "preparing");
     let session = await this.prepareDecisionResumeSession(input.record);
     // A resumed routine renders its own reply, so it needs the same response-language guard
     // as every other turn — otherwise the renderer falls back to a weak hint and a routine
     // step authored in another language leaks through (issue #755).
+    this.checkTurnCancellation(coordination, "routing");
     session = this.withResponseLanguage(session, await this.detectResponseLanguage({
       workspaceId: input.record.workspaceId,
       accountId: input.decidedBy,
       query: session.userMessage.content,
     }, session));
+    this.checkTurnCancellation(coordination, "routing");
     const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, input.decidedBy, "routine_turn"),
@@ -917,11 +962,14 @@ export class ChatService {
         responseLanguage: session.responseLanguage,
         turnSkills: this.turnSkills,
       }),
+      throwIfCancelled: () => this.checkTurnCancellation(coordination, "routing"),
     });
+    this.checkTurnCancellation(coordination, "routing");
     if (!routineTurnPorts) {
       throw new Error("approval_resume_routine_ports_missing");
     }
 
+    this.checkTurnCancellation(coordination, "routing");
     const result = await this.conversationEngine.resumeAwaitingDecision({
       agent: toConversationAgentConfig(session.agent),
       turn: this.buildClarificationTurn(session),
@@ -936,6 +984,7 @@ export class ChatService {
       },
       routineRunner: routineTurnPorts.runner,
     });
+    this.checkTurnCancellation(coordination, "rendering");
 
     if (!result.resumed) {
       throw new Error("approval_resume_suspended_state_missing");
@@ -946,6 +995,7 @@ export class ChatService {
       : { kind: "clear", sessionId: input.record.sessionId };
     const presentation = presentRoutineRenderableAnswer(this.chatAnswerPresenter, result.response);
 
+    this.beginTurnEmission(coordination);
     const completed = await this.chatTurnLifecycle.completeAssistantTurn({
       workspaceId: input.record.workspaceId,
       accountId: input.decidedBy,
@@ -954,6 +1004,7 @@ export class ChatService {
       answerStartedAt: Date.now(),
       stream: false,
       engineTrace: result.trace ? this.conversationTraceWithRoutineTrace(session.turnTrace, result.trace) : session.turnTrace,
+      modelCallTrace,
       actions: result.actions,
       routineStateTransition,
       additionalAuditEvent: {
@@ -1822,10 +1873,14 @@ export class ChatService {
     };
     try {
       await coordination.lease?.waitForPredecessor();
+      const modelCallTrace = createModelCallTraceCollector();
       return await traceOperation({
         name: "chat.turn",
         attributes: chatTurnTraceAttributes(input),
-        run: () => this.answerWithinTrace(input, coordination),
+        run: () => runWithModelCallTrace(
+          modelCallTrace,
+          () => this.answerWithinTrace(input, coordination, modelCallTrace),
+        ),
       });
     } finally {
       coordination.lease?.complete();
@@ -1852,7 +1907,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
-  }, coordination: TurnCoordinationState): Promise<ChatResponse> {
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
@@ -1928,6 +1983,7 @@ export class ChatService {
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
+          modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
@@ -2023,6 +2079,7 @@ export class ChatService {
           answerStartedAt,
           stream: input.stream,
           engineTrace,
+          modelCallTrace,
           actions: retrievalMissHandoff.actions,
           ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
           clarificationTransition: clarification.store?.getTransition(),
@@ -2067,6 +2124,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        modelCallTrace,
         actions: retrievalMissHandoff.actions,
         ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
         clarificationTransition: clarification.store?.getTransition(),
@@ -2124,11 +2182,17 @@ export class ChatService {
     };
     try {
       await coordination.lease?.waitForPredecessor();
-      yield* traceAsyncIterable({
-        name: "chat.turn",
-        attributes: chatTurnTraceAttributes(input),
-        createIterable: () => this.streamAnswerWithinTrace(input, coordination),
-      });
+      const modelCallTrace = createModelCallTraceCollector();
+      yield* runAsyncIterableWithModelCallTrace(modelCallTrace, () =>
+        traceAsyncIterable({
+          name: "chat.turn",
+          attributes: chatTurnTraceAttributes(input),
+          createIterable: () => this.streamAnswerWithinTrace(
+            input,
+            coordination,
+            modelCallTrace,
+          ),
+        }));
     } finally {
       coordination.lease?.complete();
     }
@@ -2154,7 +2218,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
-  }, coordination: TurnCoordinationState): AsyncIterable<ChatStreamEvent> {
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): AsyncIterable<ChatStreamEvent> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     let lazySuggestionsPromise:
@@ -2255,6 +2319,7 @@ export class ChatService {
           answerStartedAt: routineStartedAt,
           stream: input.stream,
           engineTrace: routineTurn.engineTrace,
+          modelCallTrace,
           actions,
           routineStateTransition: routineTurn.routineStateTransition,
           pendingDecisionTransition: routineTurn.pendingDecisionTransition,
@@ -2357,6 +2422,7 @@ export class ChatService {
             answerStartedAt,
             stream: input.stream,
             engineTrace: clarificationTurn.engineTrace,
+            modelCallTrace,
             clarificationTransition: clarification.store?.getTransition(),
             commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
           });
@@ -2462,6 +2528,7 @@ export class ChatService {
         answerStartedAt,
         stream: input.stream,
         engineTrace,
+        modelCallTrace,
         actions: retrievalMissHandoff.actions,
         ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
         clarificationTransition: clarification.store?.getTransition(),

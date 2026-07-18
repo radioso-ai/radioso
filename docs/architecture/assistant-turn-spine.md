@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-07-18
+last_updated: 2026-07-19
 ---
 
 # Assistant Turn Spine
@@ -78,17 +78,27 @@ the `chat.answer` success audit event. Capability traces, including retrieval,
 hang from their dispatch stage as typed leaves. The legacy retrieval-derived
 `activityTrace` remains available during the history migration.
 
-Real spine stages record wall-clock start and completion times. Model calls made
-by host adapters add only safe operational facts to the enclosing stage: the
-operation, provider model, latency, and input/output token counts. Prompts,
-completions, retrieved chunks, and document content are not copied into trace
-telemetry.
+Real spine stages record wall-clock start and completion times. The envelope's
+capability leaves remain operator-facing diagnostics. In particular, the
+retrieval activity trace can include queries, answer previews, and tool outputs;
+the persisted envelope as a whole is therefore not content-free.
+
+The new turn-level model-call collection and performance rollup are content-free.
+They contain only structural operation and stage labels, model names, token
+counts, timestamps, and durations. They do not contain attempt keys, prompts,
+completions, tool arguments or outputs, retrieved chunks, document content,
+credentials, or provider request IDs. Each retained call has a stable ID and is
+referenced from its enclosing spine stage. Calls made before the engine starts
+use the `pre_engine` attribution. The collection retains at most 64 call records;
+the rollup still counts all calls and reports how many records were dropped.
 
 Each envelope also carries a turn summary with total LLM calls, serial LLM
 depth, the longest stage, total model time, and total turn time. Concurrent
 model calls contribute to total model time but count once at that point in the
-serial-depth calculation. The workbench and activity turn inspector show this
-summary and the per-stage timing and usage fields.
+serial-depth calculation. Synthesized legacy envelopes do not receive this
+summary because they did not capture the required call data. The workbench and
+activity turn inspector show the summary and the per-stage timing and usage
+fields for current envelopes.
 
 ## Skills are dispatched, not called
 

@@ -216,6 +216,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
   const clarification = findStage(spine, 'clarification')
   const dispatch = spine.stages.find((stage) => stage.kind === 'skill_dispatch')
   const compose = findStage(spine, 'compose')
+  const modelCalls = findStage(spine, 'model_calls')
   // Routine turns never run compose; their assistant reply is carried on the
   // routine stage itself, so fall back to it for the Outcome detail.
   const routine = spine.stages.find(
@@ -308,6 +309,23 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
       edges.push({ id: `e:skill->${rawId}`, source: skillId, target: rawId, kind: 'sequence' })
       tailId = rawId
     }
+  }
+
+  if (modelCalls) {
+    const modelCallsId = `spine:${modelCalls.id}`
+    const callCount = typeof modelCalls.metrics?.llmCallCount === 'number'
+      ? modelCalls.metrics.llmCallCount
+      : undefined
+    nodes.push({
+      id: modelCallsId,
+      nodeKind: 'stage',
+      label: spineStageLabel(modelCalls),
+      sublabel: callCount === undefined ? undefined : `${callCount} call${callCount === 1 ? '' : 's'}`,
+      status: modelCalls.status,
+      detail: { kind: 'spine', spineStageId: modelCalls.id },
+    })
+    edges.push({ id: `e:${tailId}->${modelCallsId}`, source: tailId, target: modelCallsId, kind: 'sequence' })
+    tailId = modelCallsId
   }
 
   // Outcome.

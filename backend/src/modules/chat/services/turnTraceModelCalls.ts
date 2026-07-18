@@ -2,6 +2,13 @@ import type { ConversationTrace, ConversationTraceStage } from "@radioso/convers
 
 import type { ModelCallTraceRecord } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 
+export const MODEL_CALLS_STAGE_ID = "model_calls";
+export const PRE_ENGINE_MODEL_CALL_STAGE_ID = "pre_engine";
+
+export interface AttributedModelCallTraceRecord extends ModelCallTraceRecord {
+  stageId: string;
+}
+
 const timestampMs = (value: string | undefined): number | undefined => {
   if (!value) {
     return undefined;
@@ -39,16 +46,24 @@ const stageForCall = (
     ? "turn_interpretation"
     : call.operation === "directive_match"
       ? "directive_match"
-      : undefined;
+      : call.operation === "answer"
+        || call.operation === "direct_answer"
+        || call.operation === "grounded_answer"
+        ? "compose"
+        : undefined;
   if (exactKind) {
-    const exact = stages.find((stage) => stage.kind === exactKind && encloses(stage, call));
+    const exact = stages.find((stage) => stage.kind === exactKind && encloses(stage, call))
+      ?? stages.find((stage) => stage.kind === exactKind);
     if (exact) {
       return exact;
     }
   }
   return stages
-    .filter((stage) => stage.kind !== "retrieval_fanout" && encloses(stage, call))
-    .sort((left, right) => stageDurationMs(left) - stageDurationMs(right))[0];
+    .map((stage, index) => ({ stage, index }))
+    .filter(({ stage }) => stage.kind !== MODEL_CALLS_STAGE_ID && encloses(stage, call))
+    .sort((left, right) =>
+      stageDurationMs(left.stage) - stageDurationMs(right.stage)
+      || right.index - left.index)[0]?.stage;
 };
 
 const aggregate = (calls: ModelCallTraceRecord[]): Record<string, number> => ({
@@ -63,45 +78,69 @@ export const attachModelCallsToSpine = (
   spine: ConversationTrace,
   calls: ModelCallTraceRecord[],
 ): ConversationTrace => {
-  const byStageId = new Map<string, ModelCallTraceRecord[]>();
-  for (const call of calls) {
-    const target = stageForCall(spine.stages, call);
-    if (!target) {
-      continue;
-    }
-    const assigned = byStageId.get(target.id) ?? [];
-    assigned.push(call);
-    byStageId.set(target.id, assigned);
-  }
-  if (byStageId.size === 0) {
+  if (calls.length === 0) {
     return spine;
   }
 
+  const stages = spine.stages.filter((stage) => stage.kind !== MODEL_CALLS_STAGE_ID);
+  const byStageId = new Map<string, ModelCallTraceRecord[]>();
+  const attributed: AttributedModelCallTraceRecord[] = calls.map((call) => {
+    const target = stageForCall(stages, call);
+    if (target) {
+      const assigned = byStageId.get(target.id) ?? [];
+      assigned.push(call);
+      byStageId.set(target.id, assigned);
+    }
+    return {
+      id: call.id,
+      operation: call.operation,
+      model: call.model,
+      startedAt: call.startedAt,
+      completedAt: call.completedAt,
+      durationMs: call.durationMs,
+      inputTokens: call.inputTokens,
+      outputTokens: call.outputTokens,
+      totalTokens: call.totalTokens,
+      stageId: target?.id ?? PRE_ENGINE_MODEL_CALL_STAGE_ID,
+    };
+  });
+
+  const enrichedStages = stages.map((stage) => {
+    const assigned = byStageId.get(stage.id);
+    if (!assigned) {
+      return stage;
+    }
+    const models = [...new Set(assigned.map((call) => call.model))];
+    const operations = [...new Set(assigned.map((call) => call.operation))];
+    return {
+      ...stage,
+      inputs: {
+        ...(stage.inputs ?? {}),
+        ...(models.length === 1 ? { model: models[0] } : {}),
+        ...(operations.length === 1 ? { operation: operations[0] } : {}),
+      },
+      outputs: {
+        ...(stage.outputs ?? {}),
+        modelCallIds: assigned.map((call) => call.id),
+      },
+      metrics: {
+        ...(stage.metrics ?? {}),
+        ...aggregate(assigned),
+      },
+    };
+  });
+
   return {
     ...spine,
-    stages: spine.stages.map((stage) => {
-      const assigned = byStageId.get(stage.id);
-      if (!assigned) {
-        return stage;
-      }
-      const models = [...new Set(assigned.map((call) => call.model))];
-      const operations = [...new Set(assigned.map((call) => call.operation))];
-      return {
-        ...stage,
-        inputs: {
-          ...(stage.inputs ?? {}),
-          ...(models.length === 1 ? { model: models[0] } : {}),
-          ...(operations.length === 1 ? { operation: operations[0] } : {}),
-        },
-        outputs: {
-          ...(stage.outputs ?? {}),
-          modelCalls: assigned.map((call) => ({ ...call })),
-        },
-        metrics: {
-          ...(stage.metrics ?? {}),
-          ...aggregate(assigned),
-        },
-      };
-    }),
+    stages: [
+      ...enrichedStages,
+      {
+        id: MODEL_CALLS_STAGE_ID,
+        kind: MODEL_CALLS_STAGE_ID,
+        status: "applied",
+        outputs: { modelCalls: attributed },
+        metrics: aggregate(calls),
+      },
+    ],
   };
 };

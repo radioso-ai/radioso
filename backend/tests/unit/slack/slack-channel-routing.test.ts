@@ -71,6 +71,13 @@ const makeHandler = (bindings: InMemorySlackBindingRepository) => {
     markStaleInboundEventsFailed: vi.fn(async () => 0),
     findConversationLink: vi.fn(async () => null),
     findConversationLinkByConversationId: vi.fn(async () => null),
+    getOrCreateConversationLink: vi.fn(async (input) => ({
+      id: "55555555-5555-4555-8555-555555555555",
+      workspaceId: input.workspaceId,
+      installationId: input.installationId,
+      slackKey: input.slackKey,
+      conversationId: "44444444-4444-4444-4444-444444444444",
+    })),
     upsertConversationLink: vi.fn(),
   };
   const installationService: Pick<SlackInstallationService, "markNeedsReauthForInstallation" | "resolveBotTokenForInstallation"> = {
@@ -132,11 +139,10 @@ describe("Slack channel-scoped answerer routing", () => {
 
     expect(answeredWith).toEqual([AGENT_SALES]);
     expect(answeredWorkspaces).toEqual([WORKSPACE_SIBLING]);
-    expect(persistence.findConversationLink).toHaveBeenCalledWith(expect.objectContaining({
+    expect(persistence.getOrCreateConversationLink).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: WORKSPACE_SIBLING,
-    }));
-    expect(persistence.upsertConversationLink).toHaveBeenCalledWith(expect.objectContaining({
-      workspaceId: WORKSPACE_SIBLING,
+      agentId: AGENT_SALES,
+      sourceChannel: "slack",
     }));
   });
 });

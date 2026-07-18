@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-07-18
+last_updated: 2026-07-19
 ---
 
 # Assistant Execution Model
@@ -56,8 +56,10 @@ event: cancelled
 data: {"conversationId":"...","reason":"superseded","stage":"rendering"}
 ```
 
-Clients should stop the pending reply state when they receive `cancelled`. A
-successful stream still ends with `done`.
+Clients should stop the pending reply state when they receive `cancelled`.
+For a successful stream, `done` marks completion of the core turn. Optional
+`suggestions` enrichment can follow, so clients that use suggestions should
+continue reading until the stream closes.
 
 Interruption coordination is process-local. Multi-instance deployments need
 conversation-affine routing for strict behavior across instances. Without it,

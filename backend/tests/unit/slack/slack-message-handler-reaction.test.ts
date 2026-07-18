@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   SlackMessageHandler,
   type SlackAppMentionEvent,
   type SlackInboundEventEnvelope,
 } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
+import { ChatTurnSupersededError } from "../../../src/modules/chat/services/conversationTurnRegistry.js";
 
 const PROCESSING_REACTION = "eyes";
 const ANSWERED_REACTION = "white_check_mark";
@@ -31,9 +32,11 @@ const buildHandler = (overrides: {
   reactions: ReactionCall[];
   events: string[];
   postImpl?: () => Promise<{ channel: string; ts: string }>;
+  answerImpl?: () => Promise<{ conversationId: string; answer: string; outcome: "answered" }>;
+  info?: (entry: unknown, message?: string) => void;
 }) => {
   return new SlackMessageHandler({
-    logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    logger: { info: overrides.info ?? (() => undefined), warn: () => undefined, error: () => undefined },
     installations: {
       findByTeamId: async () => installation,
       findByWorkspaceId: async () => null,
@@ -64,7 +67,7 @@ const buildHandler = (overrides: {
       upsertConversationLink: async () => undefined,
     } as never,
     chat: {
-      answer: async () => ({ conversationId: "conv-1", answer: "the answer", outcome: "answered" }),
+      answer: overrides.answerImpl ?? (async () => ({ conversationId: "conv-1", answer: "the answer", outcome: "answered" })),
     },
     clientFactory: () => ({
       postMessage: overrides.postImpl ?? (async (input) => ({ channel: input.channel, ts: "ts-reply" })),
@@ -124,5 +127,31 @@ describe("SlackMessageHandler reaction lifecycle", () => {
       { op: "remove", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
       { op: "add", channel: "C1", timestamp: "1700000000.0001", name: FAILED_REACTION },
     ]);
+  });
+
+  it("clears only the processing reaction and marks a superseded event skipped", async () => {
+    const reactions: ReactionCall[] = [];
+    const events: string[] = [];
+    const info = vi.fn();
+    const handler = buildHandler({
+      reactions,
+      events,
+      info,
+      answerImpl: async () => {
+        throw new ChatTurnSupersededError("conv-1", "routing");
+      },
+    });
+
+    await handler.handleAppMention(mentionEnvelope);
+
+    expect(reactions).toEqual([
+      { op: "add", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
+      { op: "remove", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
+    ]);
+    expect(events).toEqual(["skipped"]);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-1", eventId: "Ev1", stage: "routing" }),
+      "Slack turn superseded",
+    );
   });
 });

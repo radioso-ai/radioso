@@ -46,9 +46,11 @@ const WORKSPACE_ID = 'workspace-1'
 function ChatProbe({
   sendMessage,
   onMessages,
+  onLoading,
 }: {
   sendMessage?: string
   onMessages: (messages: ChatMessage[]) => void
+  onLoading?: (isLoading: boolean) => void
 }) {
   const chat = useChatSession(WORKSPACE_ID)
   const didSendRef = useRef(false)
@@ -56,6 +58,10 @@ function ChatProbe({
   useEffect(() => {
     onMessages(chat.messages)
   }, [chat.messages, onMessages])
+
+  useEffect(() => {
+    onLoading?.(chat.isLoading)
+  }, [chat.isLoading, onLoading])
 
   useEffect(() => {
     if (!sendMessage || didSendRef.current) {
@@ -70,9 +76,11 @@ function ChatProbe({
 
 const renderProvider = ({
   onMessages,
+  onLoading,
   sendMessage,
 }: {
   onMessages: (messages: ChatMessage[]) => void
+  onLoading?: (isLoading: boolean) => void
   sendMessage?: string
 }) => {
   const container = document.createElement('div')
@@ -82,7 +90,7 @@ const renderProvider = ({
   act(() => {
     root.render(
       <ChatProvider>
-        <ChatProbe onMessages={onMessages} sendMessage={sendMessage} />
+        <ChatProbe onMessages={onMessages} onLoading={onLoading} sendMessage={sendMessage} />
       </ChatProvider>,
     )
   })
@@ -170,5 +178,36 @@ describe('workspace chat HITL suppression', () => {
     })
 
     expect(latestMessages.some((message) => message.role === 'assistant')).toBe(false)
+  })
+
+  it('ends a cancelled turn without assistant error state while retaining the user message', async () => {
+    chatApiMock.streamChatResponse.mockImplementation(async (_data, handlers) => {
+      handlers.onConversation?.({ conversationId: 'conversation-1' })
+      handlers.onCancelled?.({
+        conversationId: 'conversation-1',
+        reason: 'superseded',
+        stage: 'routing',
+      })
+      return { conversationId: 'conversation-1', answer: '' }
+    })
+
+    let latestMessages: ChatMessage[] = []
+    let isLoading = false
+    mounted = renderProvider({
+      sendMessage: 'latest context',
+      onMessages: (messages) => {
+        latestMessages = messages
+      },
+      onLoading: (next) => {
+        isLoading = next
+      },
+    })
+
+    await waitFor(() => {
+      expect(latestMessages.map(({ role, content, status }) => ({ role, content, status }))).toEqual([
+        { role: 'user', content: 'latest context', status: 'complete' },
+      ])
+      expect(isLoading).toBe(false)
+    })
   })
 })

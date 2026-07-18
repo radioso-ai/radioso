@@ -16,6 +16,7 @@ import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { TurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
+import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../src/modules/retrieval/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 
@@ -208,6 +209,36 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       },
     });
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
+  });
+
+  it("checks cancellation immediately before external skill dispatch", async () => {
+    const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "stale answer" },
+    }));
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([{
+        kind: "internal",
+        adapter: EXTERNAL_SKILLS_ADAPTER,
+        executor: { dispatch },
+      }]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("order_lookup");
+    const throwIfCancelled = vi.fn(() => {
+      throw new ChatTurnSupersededError(conversationId, "rendering");
+    });
+    const runtime = await provider.forSession(session, { throwIfCancelled });
+    const selector = new ChatTurnSkillSelector(
+      [defaultTurnSkill, ...runtime.turnSkills],
+      strategy,
+      { agentSkillStates: runtime.skillStates },
+    );
+
+    await expect(selector.select(session).skill.dispatch(session)).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    expect(throwIfCancelled).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("excludes skill kinds whose executors cannot produce a user-facing terminal answer", async () => {

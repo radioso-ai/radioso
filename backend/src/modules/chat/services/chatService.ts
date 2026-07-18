@@ -663,6 +663,7 @@ export class ChatService {
     accountId: string | undefined,
     responseLanguage: Promise<string | undefined>,
     activeRoutine: RoutineState | null,
+    coordination: TurnCoordinationState,
     clarification?: {
       store?: DeferredClarificationStore;
       resolution?: PendingClarificationResolution;
@@ -712,6 +713,7 @@ export class ChatService {
       : routineTurnPorts.activator;
     const deferredStore = new DeferredRoutineStore(this.routineStore);
     const deferredClarificationStore = clarification?.store;
+    this.checkTurnCancellation(coordination, "routing");
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -1287,18 +1289,34 @@ export class ChatService {
     input: {
       prependTurnSkills?: TurnSkill[];
       forceSkillName?: () => string | null | undefined;
+      coordination?: TurnCoordinationState;
     } = {},
   ): Promise<{
     turnSkills: TurnSkill[];
     turnSkillSelector: ChatTurnSkillSelector;
     agentSkillRuntime?: AgentSkillTurnRuntime;
   }> {
-    const agentSkillRuntime = await this.agentSkillTurnSkillProvider?.forSession(session);
-    const turnSkills = [
+    const coordination = input.coordination;
+    const agentSkillRuntime = await this.agentSkillTurnSkillProvider?.forSession(
+      session,
+      coordination
+        ? { throwIfCancelled: () => this.checkTurnCancellation(coordination, "rendering") }
+        : undefined,
+    );
+    const availableTurnSkills = [
       ...(input.prependTurnSkills ?? []),
       ...this.turnSkills,
       ...(agentSkillRuntime?.turnSkills ?? []),
     ];
+    const turnSkills = coordination
+      ? availableTurnSkills.map((skill) => ({
+          ...skill,
+          dispatch: (session: PreparedSession) => {
+            this.checkTurnCancellation(coordination, "rendering");
+            return skill.dispatch(session);
+          },
+        }))
+      : availableTurnSkills;
     return {
       turnSkills,
       turnSkillSelector: new ChatTurnSkillSelector(turnSkills, this.selectionStrategy, {
@@ -1317,9 +1335,16 @@ export class ChatService {
    */
   private async renderTurn(
     session: PreparedSession,
-    input: { query: string; userExpectedLocale?: string | null; accountId?: string },
+    input: {
+      query: string;
+      userExpectedLocale?: string | null;
+      accountId?: string;
+      coordination?: TurnCoordinationState;
+    },
   ): Promise<{ presentation: ChatPresentedAnswer; engineTrace?: ConversationTrace; actions?: RoutineActionRequest[] }> {
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session);
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
+      coordination: input.coordination,
+    });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -1419,6 +1444,7 @@ export class ChatService {
     };
     activeRoutineAtTurnStart?: boolean;
     agenticRetrievalToolFactories?: (session: PreparedSession) => ReadonlyArray<AgenticRetrievalToolFactory>;
+    coordination: TurnCoordinationState;
   }): {
     turnInterpreter: ConversationTurnInterpreter;
     retrievalWork: ConversationRetrievalWorkPort;
@@ -1430,6 +1456,7 @@ export class ChatService {
           session: input.sessionRef.current,
           resolvedRetrievalSense: input.resolvedRetrievalSense,
         });
+        this.checkTurnCancellation(input.coordination, "routing");
         const routing = {
           route: interpreted.route,
           framing: interpreted.framing,
@@ -1449,6 +1476,7 @@ export class ChatService {
             input.sessionRef.current,
             routing.framing,
           );
+          this.checkTurnCancellation(input.coordination, "rendering");
         }
         return {
           route: routing.route,
@@ -1476,6 +1504,7 @@ export class ChatService {
           input.sessionRef.current,
           input.sessionRef.current.turnFraming,
         );
+        this.checkTurnCancellation(input.coordination, "rendering");
         if (directiveSteering) {
           input.sessionRef.current = {
             ...input.sessionRef.current,
@@ -1498,6 +1527,7 @@ export class ChatService {
               input.sessionRef.current,
               input.sessionRef.current.turnFraming,
             );
+            this.checkTurnCancellation(input.coordination, "rendering");
           }
           if (input.clarificationState.current?.kind === "continue" && input.clarificationState.current.offerAlternatives) {
             input.sessionRef.current = {
@@ -1506,6 +1536,7 @@ export class ChatService {
             };
           }
         }
+        this.checkTurnCancellation(input.coordination, "rendering");
         return {
           stagedContext: input.sessionRef.current.stagedContext,
           trace: input.sessionRef.current.turnTrace,
@@ -1549,6 +1580,7 @@ export class ChatService {
       {
         prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
         forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+        coordination: input.coordination,
       },
     );
     const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
@@ -1561,6 +1593,7 @@ export class ChatService {
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
       agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
+      coordination: input.coordination,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.conversationEngine,
@@ -1588,9 +1621,16 @@ export class ChatService {
 
   private async *streamTurn(
     session: PreparedSession,
-    input: { query: string; userExpectedLocale?: string | null; accountId?: string },
+    input: {
+      query: string;
+      userExpectedLocale?: string | null;
+      accountId?: string;
+      coordination?: TurnCoordinationState;
+    },
   ): AsyncIterable<PreparedChatStreamTurnEvent> {
-    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session);
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(session, {
+      coordination: input.coordination,
+    });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
       engine: this.conversationEngine,
       session,
@@ -1643,6 +1683,7 @@ export class ChatService {
       {
         prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
         forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+        coordination: input.coordination,
       },
     );
     const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
@@ -1655,6 +1696,7 @@ export class ChatService {
       clarification: input.clarification,
       activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
       agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
+      coordination: input.coordination,
     });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
       engine: this.conversationEngine,
@@ -1781,6 +1823,7 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
+      this.checkTurnCancellation(coordination, "routing");
       const routineTurn = suspendedRoutine
         ? null
         : await this.attemptRoutineTurn(
@@ -1788,6 +1831,7 @@ export class ChatService {
             input.accountId,
             responseLanguagePromise,
             activeRoutine,
+            coordination,
             clarification,
           );
       this.checkTurnCancellation(coordination, "routing");
@@ -1850,6 +1894,7 @@ export class ChatService {
           session,
           resolvedRetrievalSense,
         });
+        this.checkTurnCancellation(coordination, "routing");
         const routing = {
           route: interpreted.route,
           framing: interpreted.framing,
@@ -1863,6 +1908,7 @@ export class ChatService {
         session = groundTurn
           ? await this.chatSessionPreparer.prepareRetrieval(preparedRetrievalInput, session, routing.framing)
           : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
+        this.checkTurnCancellation(coordination, "rendering");
         const clarificationTurn = groundTurn
           ? await this.maybeClarifyRetrievalSense({
               session,
@@ -1880,6 +1926,7 @@ export class ChatService {
             session,
             routing.framing,
           );
+          this.checkTurnCancellation(coordination, "rendering");
         }
         if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
           session = {
@@ -1887,9 +1934,10 @@ export class ChatService {
             retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
           };
         }
+        this.checkTurnCancellation(coordination, "rendering");
         const renderedTurn = clarificationTurn?.kind === "ask"
           ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
-          : await this.renderTurn(session, retrievalInput);
+          : await this.renderTurn(session, { ...retrievalInput, coordination });
         this.checkTurnCancellation(coordination, "rendering");
         const { presentation, actions } = renderedTurn;
         const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
@@ -1965,10 +2013,16 @@ export class ChatService {
       return completedTurn.response;
     } catch (error) {
       await usageReservation.release();
-      if (error instanceof ChatTurnSupersededError) {
-        throw error;
+      let preferredError = error;
+      try {
+        this.checkTurnCancellation(coordination);
+      } catch (cancellationError) {
+        preferredError = cancellationError;
       }
-      const normalizedError = normalizeProviderCredentialError(error);
+      if (preferredError instanceof ChatTurnSupersededError) {
+        throw preferredError;
+      }
+      const normalizedError = normalizeProviderCredentialError(preferredError);
       await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     }
@@ -2065,6 +2119,7 @@ export class ChatService {
         const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
+        coordination.lease?.complete();
         yield { type: "done", ...suppressedHumanOwnedResponse(session, waitingMessage) };
         return;
       }
@@ -2083,6 +2138,7 @@ export class ChatService {
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
+      this.checkTurnCancellation(coordination, "routing");
       const routineTurn = suspendedRoutine
         ? null
         : await this.attemptRoutineTurn(
@@ -2090,6 +2146,7 @@ export class ChatService {
             input.accountId,
             responseLanguagePromise,
             activeRoutine,
+            coordination,
             clarification,
           );
       this.checkTurnCancellation(coordination, "routing");
@@ -2141,6 +2198,7 @@ export class ChatService {
         if (routineTurn.presentation.answer) {
           yield { type: "chunk", text: routineTurn.presentation.answer };
         }
+        coordination.lease?.complete();
         yield { type: "done", ...completedTurn.response };
         return;
       }
@@ -2176,6 +2234,7 @@ export class ChatService {
           session,
           resolvedRetrievalSense,
         });
+        this.checkTurnCancellation(coordination, "routing");
         const routing = {
           route: interpreted.route,
           framing: interpreted.framing,
@@ -2189,6 +2248,7 @@ export class ChatService {
         session = groundTurn
           ? await this.chatSessionPreparer.prepareRetrieval(preparedRetrievalInput, session, routing.framing)
           : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
+        this.checkTurnCancellation(coordination, "rendering");
         clarificationTurn = groundTurn
           ? await this.maybeClarifyRetrievalSense({
               session,
@@ -2206,6 +2266,7 @@ export class ChatService {
             session,
             routing.framing,
           );
+          this.checkTurnCancellation(coordination, "rendering");
         }
         if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
           session = {
@@ -2231,6 +2292,7 @@ export class ChatService {
           await usageReservation.commit();
           usageReservationCommitted = true;
           yield { type: "chunk", text: clarificationTurn.presentation.answer };
+          coordination.lease?.complete();
           yield { type: "done", ...completedTurn.response };
           return;
         }
@@ -2244,8 +2306,11 @@ export class ChatService {
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
       let emissionStarted = false;
+      if (useSenseCompatiblePath) {
+        this.checkTurnCancellation(coordination, "rendering");
+      }
       const streamEvents = useSenseCompatiblePath
-        ? this.streamTurn(session, retrievalInput)
+        ? this.streamTurn(session, { ...retrievalInput, coordination })
         : this.streamPreparedByEngine(session, {
             request: {
               workspaceId: input.workspaceId,
@@ -2334,6 +2399,7 @@ export class ChatService {
       await usageReservation.commit();
       usageReservationCommitted = true;
 
+      coordination.lease?.complete();
       yield {
         type: "done",
         ...completedTurn.response,
@@ -2341,16 +2407,22 @@ export class ChatService {
 
     } catch (error) {
       await releaseUsageReservation();
-      if (error instanceof ChatTurnSupersededError) {
+      let preferredError = error;
+      try {
+        this.checkTurnCancellation(coordination);
+      } catch (cancellationError) {
+        preferredError = cancellationError;
+      }
+      if (preferredError instanceof ChatTurnSupersededError) {
         yield {
           type: "cancelled",
-          conversationId: error.conversationId,
+          conversationId: preferredError.conversationId,
           reason: "superseded",
-          stage: error.stage,
+          stage: preferredError.stage,
         };
         return;
       }
-      const normalizedError = normalizeProviderCredentialError(error);
+      const normalizedError = normalizeProviderCredentialError(preferredError);
       await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
       throw normalizedError;
     } finally {

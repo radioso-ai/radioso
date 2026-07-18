@@ -242,3 +242,4 @@ export interface RetrievalPipelineService {
 export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";
 export type { AgenticRetrievalToolFactory, AgenticRetrievalToolFactoryContext } from "./services/agenticRetrievalRunner.js";
 export { RetrieveRoutineSkillResolver } from "./services/retrieveRoutineSkillResolver.js";
+export { buildSnippet, type RegisteredChunk } from "./services/agenticTools/index.js";

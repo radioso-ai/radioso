@@ -31,6 +31,135 @@ const SPINE_STAGE_LABELS: Record<string, string> = {
 export const spineStageLabel = (stage: ConversationTraceStage): string =>
   SPINE_STAGE_LABELS[stage.kind] ?? stage.kind.replaceAll('_', ' ')
 
+export interface SpineStageTelemetry {
+  durationMs?: number
+  models: string[]
+  operations: string[]
+  llmCallCount?: number
+  modelTimeMs?: number
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+  calls: Array<{
+    operation: string
+    model: string
+    durationMs?: number
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+    status?: string
+  }>
+}
+
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isFinite(value) ? value : undefined
+
+const elapsedMs = (
+  startedAt: string | undefined,
+  completedAt: string | undefined,
+): number | undefined => {
+  if (!startedAt || !completedAt) return undefined
+  const startedAtMs = Date.parse(startedAt)
+  const completedAtMs = Date.parse(completedAt)
+  return Number.isFinite(startedAtMs) && Number.isFinite(completedAtMs)
+    ? Math.max(0, completedAtMs - startedAtMs)
+    : undefined
+}
+
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+
+export const spineStageTelemetry = (stage: ConversationTraceStage): SpineStageTelemetry => {
+  const inputs = stage.inputs ?? {}
+  const outputs = stage.outputs ?? {}
+  const metrics = stage.metrics ?? {}
+  const calls = Array.isArray(outputs.modelCalls)
+    ? outputs.modelCalls.map(record).filter((call): call is Record<string, unknown> => Boolean(call))
+    : []
+  const models = new Set<string>()
+  const operations = new Set<string>()
+  if (typeof inputs.model === 'string') models.add(inputs.model)
+  if (typeof inputs.operation === 'string') operations.add(inputs.operation)
+  for (const call of calls) {
+    if (typeof call.model === 'string') models.add(call.model)
+    if (typeof call.operation === 'string') operations.add(call.operation)
+  }
+  const durationMs = elapsedMs(stage.startedAt, stage.completedAt)
+  const llmCallCount = finiteNumber(metrics.llmCallCount)
+  const modelTimeMs = finiteNumber(metrics.latencyMs)
+  const inputTokens = finiteNumber(metrics.inputTokens)
+  const outputTokens = finiteNumber(metrics.outputTokens)
+  const totalTokens = finiteNumber(metrics.totalTokens)
+  const normalizedCalls = calls.flatMap((call) => {
+    if (typeof call.operation !== 'string' || typeof call.model !== 'string') return []
+    const durationMs = finiteNumber(call.durationMs)
+    const inputTokens = finiteNumber(call.inputTokens)
+    const outputTokens = finiteNumber(call.outputTokens)
+    const totalTokens = finiteNumber(call.totalTokens)
+    return [
+      {
+        operation: call.operation,
+        model: call.model,
+        ...(durationMs !== undefined ? { durationMs } : {}),
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(outputTokens !== undefined ? { outputTokens } : {}),
+        ...(totalTokens !== undefined ? { totalTokens } : {}),
+        ...(typeof call.status === 'string' ? { status: call.status } : {}),
+      },
+    ]
+  })
+  return {
+    ...(durationMs !== undefined ? { durationMs } : {}),
+    models: [...models],
+    operations: [...operations],
+    ...(llmCallCount !== undefined ? { llmCallCount } : {}),
+    ...(modelTimeMs !== undefined ? { modelTimeMs } : {}),
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    calls: normalizedCalls,
+  }
+}
+
+export interface TurnTraceRollup {
+  totalLlmCalls: number
+  serialLlmDepth: number
+  longestStage: { name: string; durationMs: number }
+  totalModelTimeMs: number
+  totalTurnWallClockMs: number
+}
+
+export const turnTraceRollup = (
+  envelope: TurnTraceEnvelope | undefined,
+): TurnTraceRollup | undefined => {
+  const summary = record(envelope?.summary)
+  const longestStage = record(summary?.longestStage)
+  const totalLlmCalls = finiteNumber(summary?.totalLlmCalls)
+  const serialLlmDepth = finiteNumber(summary?.serialLlmDepth)
+  const totalModelTimeMs = finiteNumber(summary?.totalModelTimeMs)
+  const totalTurnWallClockMs = finiteNumber(summary?.totalTurnWallClockMs)
+  const longestStageDurationMs = finiteNumber(longestStage?.durationMs)
+  if (
+    totalLlmCalls === undefined
+    || serialLlmDepth === undefined
+    || totalModelTimeMs === undefined
+    || totalTurnWallClockMs === undefined
+    || typeof longestStage?.name !== 'string'
+    || longestStageDurationMs === undefined
+  ) {
+    return undefined
+  }
+  return {
+    totalLlmCalls,
+    serialLlmDepth,
+    longestStage: { name: longestStage.name, durationMs: longestStageDurationMs },
+    totalModelTimeMs,
+    totalTurnWallClockMs,
+  }
+}
+
 /**
  * Namespaces whose sub-trace payload is an {@link ActivityTrace} (the rich
  * retrieval explorer). Both retrieval and pre-engine skill intake produce one,

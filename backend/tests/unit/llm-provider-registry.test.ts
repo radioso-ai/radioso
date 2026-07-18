@@ -543,11 +543,28 @@ describe("OpenAITextGenerationClient", () => {
       requests.push(input);
       if (requests.length === 1) {
         return {
+          id: "resp-empty",
           choices: [{ finish_reason: "length", message: { content: "" } }],
-          usage: { prompt_tokens: 6000, completion_tokens: 4096, total_tokens: 10096 },
+          usage: {
+            prompt_tokens: 6000,
+            completion_tokens: 4096,
+            total_tokens: 10096,
+            prompt_tokens_details: { cached_tokens: 120 },
+            completion_tokens_details: { reasoning_tokens: 4096 },
+          },
         };
       }
-      return { choices: [{ finish_reason: "stop", message: { content: "Recovered answer" } }] };
+      return {
+        id: "resp-retry",
+        choices: [{ finish_reason: "stop", message: { content: "Recovered answer" } }],
+        usage: {
+          prompt_tokens: 6000,
+          completion_tokens: 12,
+          total_tokens: 6012,
+          prompt_tokens_details: { cached_tokens: 120 },
+          completion_tokens_details: { reasoning_tokens: 1 },
+        },
+      };
     });
 
     const result = await client.complete({
@@ -560,6 +577,15 @@ describe("OpenAITextGenerationClient", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]).toHaveProperty("reasoning_effort", "none");
     expect(requests[1]).toHaveProperty("reasoning_effort", "low");
+    expect(result.usage).toEqual({
+      inputTokens: 12000,
+      outputTokens: 4108,
+      totalTokens: 16108,
+      cachedInputTokens: 240,
+      reasoningTokens: 4097,
+      providerRequestId: "resp-retry",
+      quality: "actual",
+    });
   });
 
   it("rethrows chat completion errors unrelated to reasoning_effort", async () => {
@@ -622,18 +648,35 @@ describe("OpenAITextGenerationClient", () => {
           yield {
             id: "s1",
             choices: [{ delta: {}, finish_reason: "length" }],
-            usage: { prompt_tokens: 6000, completion_tokens: 4096, total_tokens: 10096 },
+            usage: {
+              prompt_tokens: 6000,
+              completion_tokens: 4096,
+              total_tokens: 10096,
+              prompt_tokens_details: { cached_tokens: 80 },
+              completion_tokens_details: { reasoning_tokens: 4096 },
+            },
           };
         })();
       }
       return (async function* () {
         yield { id: "s2", choices: [{ delta: { content: "Recovered" } }] };
         yield { id: "s2", choices: [{ delta: { content: " stream" }, finish_reason: "stop" }] };
+        yield {
+          id: "s2",
+          choices: [],
+          usage: {
+            prompt_tokens: 6000,
+            completion_tokens: 3,
+            total_tokens: 6003,
+            prompt_tokens_details: { cached_tokens: 80 },
+            completion_tokens_details: { reasoning_tokens: 1 },
+          },
+        };
       })();
     });
 
     const chunks: string[] = [];
-    const { textStream } = client.stream({
+    const { textStream, usage } = client.stream({
       prompt: "hi",
       reasoningEffort: "none",
       maxOutputTokens: 4096,
@@ -646,6 +689,15 @@ describe("OpenAITextGenerationClient", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]).toHaveProperty("reasoning_effort", "none");
     expect(requests[1]).toHaveProperty("reasoning_effort", "low");
+    expect(await usage).toEqual({
+      inputTokens: 12000,
+      outputTokens: 4099,
+      totalTokens: 16099,
+      cachedInputTokens: 160,
+      reasoningTokens: 4097,
+      providerRequestId: "s2",
+      quality: "actual",
+    });
   });
 
   it("only strips the rejected effort, not a different supported effort on the same model", async () => {

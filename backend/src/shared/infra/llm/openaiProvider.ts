@@ -48,6 +48,35 @@ const toProviderUsage = (
   };
 };
 
+const sumOptionalUsage = (
+  left: number | undefined,
+  right: number | undefined,
+): number | undefined =>
+  left === undefined && right === undefined
+    ? undefined
+    : (left ?? 0) + (right ?? 0);
+
+const aggregateProviderUsage = (
+  first: ProviderUsage | undefined,
+  second: ProviderUsage | undefined,
+): ProviderUsage | undefined => {
+  if (!first) {
+    return second;
+  }
+  if (!second) {
+    return first;
+  }
+  return {
+    inputTokens: sumOptionalUsage(first.inputTokens, second.inputTokens),
+    outputTokens: sumOptionalUsage(first.outputTokens, second.outputTokens),
+    totalTokens: sumOptionalUsage(first.totalTokens, second.totalTokens),
+    cachedInputTokens: sumOptionalUsage(first.cachedInputTokens, second.cachedInputTokens),
+    reasoningTokens: sumOptionalUsage(first.reasoningTokens, second.reasoningTokens),
+    providerRequestId: second.providerRequestId ?? first.providerRequestId,
+    quality: first.quality === "actual" && second.quality === "actual" ? "actual" : "estimated",
+  };
+};
+
 const buildMessages = (input: { systemPrompt?: string; prompt: string }) => {
   const messages: Array<{ role: "system" | "user"; content: string }> = [];
   if (input.systemPrompt) {
@@ -244,6 +273,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       sampling,
       createCompletion,
     );
+    let usage = toProviderUsage(response.usage, response.id);
     const retrySampling = isCapExhaustedEmptyCompletion(response)
       ? lowReasoningRetrySampling(this.config.model, sampling)
       : null;
@@ -253,11 +283,12 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         retrySampling,
         createCompletion,
       );
+      usage = aggregateProviderUsage(usage, toProviderUsage(response.usage, response.id));
     }
 
     return {
       text: completionText(response),
-      usage: toProviderUsage(response.usage, response.id),
+      usage,
     };
   }
 
@@ -287,12 +318,17 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
           ? lowReasoningRetrySampling(config.model, sampling)
           : null;
       if (retrySampling) {
+        const firstUsage = result.usage;
         const retryStream = await createChatCompletionWithReasoningFallback(
           config.model,
           retrySampling,
           createStream,
         );
         result = yield* readCompletionStream(retryStream);
+        result = {
+          ...result,
+          usage: aggregateProviderUsage(firstUsage, result.usage),
+        };
       }
       return result.usage;
     });

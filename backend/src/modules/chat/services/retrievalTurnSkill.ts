@@ -1,6 +1,6 @@
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import { ChatAnswerPresenter, type ChatPresentedAnswer } from "./chatAnswerPresenter.js";
-import { BlankChatAnswerError, hasCitedAnswerSegment, isBlankChatAnswerError } from "./chatAnswerErrors.js";
+import { BlankChatAnswerError } from "./chatAnswerErrors.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
@@ -8,7 +8,6 @@ import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js
 import {
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
-  type AnswerGroundingVerdict,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
@@ -19,25 +18,16 @@ import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
+import {
+  computeGroundingSummary,
+  hasValidSourcedAssertion,
+  type GroundingSummary,
+  type GroundingVerdict,
+} from "./groundingAssertions.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 /** The outcome kind a grounded/retrieval turn produces (chat-side renderer tag). */
 export const RETRIEVAL_OUTCOME_KIND = "retrieval";
-
-// Structural matcher for a leading run of citation anchors (`[[n]]`) plus trailing
-// punctuation/space — used to detect when grounded prose is anchored enough to
-// start streaming. Format syntax, not product vocabulary.
-const CITED_ANSWER_PREFIX_PATTERN = /\[\[\d+\]\](?:[ \t]*[.,;:!?)]?)?[ \t]*/g;
-
-const splitCitedAnswerPrefix = (buffer: string): { streamable: string; remaining: string } => {
-  let releaseEnd = 0;
-  for (const match of buffer.matchAll(CITED_ANSWER_PREFIX_PATTERN)) {
-    releaseEnd = match.index + match[0].length;
-  }
-  return {
-    streamable: buffer.slice(0, releaseEnd),
-    remaining: buffer.slice(releaseEnd),
-  };
-};
 
 /** The skill this turn dispatches — identity sourced from the canonical skill catalog. */
 export const RETRIEVAL_TURN_SKILL = retrievalAnswerSkillDefinition.name;
@@ -57,8 +47,8 @@ const isOutOfScopeOnly = (session: PreparedSession): boolean => {
 
 /**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
- * envelope call, the page-context fallback, and the grounded-miss replacement when
- * the model fails to cite. Grounding is retrieval's *private* business — this only
+ * envelope call, the page-context fallback, and computed grounding presentation.
+ * Grounding is retrieval's *private* business — this only
  * ever runs for `RETRIEVAL` turns; social/identity turns are answered by their own
  * skills and never reach here.
  */
@@ -68,7 +58,39 @@ export class RetrievalAnswerComposer {
     private readonly chatGateway: ChatGateway,
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
     private readonly fallbackReplyComposer: FallbackReplyComposer,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {}
+
+  private recordGroundingOutcome(
+    summary: GroundingSummary,
+    envelope: Pick<GroundedAnswerEnvelope, "outcome">,
+    stream: boolean,
+  ): void {
+    const protocol = summary.parseStatus === "valid_v2"
+      ? "v2"
+      : summary.parseStatus === "legacy_v1"
+        ? "v1"
+        : summary.parseStatus === "missing"
+          ? "missing"
+          : "malformed";
+    const reason = summary.parseStatus !== "valid_v2"
+      ? "parse_failure"
+      : summary.invalidSourceCount > 0
+        ? "invalid_index"
+        : summary.assertionMismatch
+          ? "mismatch"
+          : envelope.outcome === "no_support" && summary.verdict !== "no_support"
+            ? "invalid_no_support"
+            : summary.claimCount === 0 && summary.verdict !== "no_support"
+              ? "anchor_free"
+              : summary.unsourcedClaimCount > 0
+                ? "unsourced"
+                : "complete";
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: { protocol, verdict: summary.verdict, reason, stream: String(stream) },
+    });
+  }
 
   composeGroundedSystemPrompt(session: PreparedSession): string {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
@@ -121,16 +143,8 @@ export class RetrievalAnswerComposer {
       return null;
     }
 
-    try {
-      const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt, accountId, "page_context");
-      return { ...envelope, answer: envelope.answer.trim() };
-    } catch (error) {
-      // Page-context fallback is best-effort — let blank envelopes drop through.
-      if (isBlankChatAnswerError(error)) {
-        return null;
-      }
-      throw error;
-    }
+    const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt, accountId, "page_context");
+    return { ...envelope, answer: envelope.answer.trim() };
   }
 
   async composeAnswer(
@@ -149,13 +163,19 @@ export class RetrievalAnswerComposer {
 
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
-    let answerGrounding: AnswerGroundingVerdict = "grounded";
+    let grounding: GroundingSummary | GroundingVerdict = "no_support";
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
+        grounding = computeGroundingSummary({
+          body: fallback.answer,
+          envelope: fallback,
+          contextCount: 0,
+        });
+        this.recordGroundingOutcome(grounding, fallback, false);
       } else {
         answer = await this.fallbackReplyComposer.composeNoContext({
           query,
@@ -176,7 +196,12 @@ export class RetrievalAnswerComposer {
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
-      answerGrounding = envelope.grounding;
+      grounding = computeGroundingSummary({
+        body: envelope.answer,
+        envelope,
+        contextCount: session.retrieval.contexts.length,
+      });
+      this.recordGroundingOutcome(grounding, envelope, false);
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -185,9 +210,9 @@ export class RetrievalAnswerComposer {
       query,
       plannedSuggestions,
       userExpectedLocale,
-      answerGrounding,
+      grounding,
     );
-    return this.reconcileGroundedMiss(session, presentation, query, userExpectedLocale, accountId, "grounded_unsupported");
+    return presentation;
   }
 
   /** Compose a focused out-of-scope decline (reuses the grounded-miss composer — its
@@ -222,42 +247,11 @@ export class RetrievalAnswerComposer {
   }
 
   /**
-   * Retrieval's private grounding safety net: when contexts were retrieved but the
-   * answer cites none of them, the draft is unsupported — decline with a
-   * grounded-miss reply instead of presenting an ungrounded answer. Shared by the
-   * non-streaming and streaming paths so this policy lives in exactly one place; it
-   * used to be duplicated into the capability-neutral streaming host. `attemptKey`
-   * distinguishes the two paths for usage accounting.
-   */
-  private async reconcileGroundedMiss(
-    session: PreparedSession,
-    presentation: ChatPresentedAnswer,
-    query: string,
-    userExpectedLocale: string | null | undefined,
-    accountId: string | undefined,
-    attemptKey: string,
-  ): Promise<ChatPresentedAnswer> {
-    if (session.retrieval.contexts.length === 0 || hasCitedAnswerSegment(presentation)) {
-      return presentation;
-    }
-    const groundedMiss = await this.fallbackReplyComposer.composeNoContext({
-      query,
-      userExpectedLocale,
-      answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
-      steering: session.directiveSteering?.rules ?? [],
-      workspaceContext: this.support.buildChatWorkspaceContext(session),
-      usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
-    });
-    return this.chatAnswerPresenter.presentGroundedMissAnswer(groundedMiss);
-  }
-
-  /**
    * Streams the grounded answer: a no-context fallback yielded as one chunk, or the
-   * token loop that holds un-cited prose until the first citation anchor confirms
-   * grounding, then streams every later token. Yields chunk text, then owns the full
-   * post-stream reconcile (present + grounded-miss safety net) and returns the
-   * finished presentation; the host only persists, re-emits any non-streamed
-   * remainder, and sources suggestions.
+   * token loop that holds unasserted prose until the first valid sourced assertion,
+   * then streams every later token. Yields sanitized body text and returns the
+   * presentation computed from the same generation; the host only persists, re-emits
+   * any non-streamed remainder, and sources suggestions.
    */
   async *streamAnswer(
     session: PreparedSession,
@@ -280,7 +274,7 @@ export class RetrievalAnswerComposer {
 
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
-    let answerGrounding: AnswerGroundingVerdict = "grounded";
+    let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
 
@@ -295,6 +289,11 @@ export class RetrievalAnswerComposer {
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
         });
+      plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
+      if (fallbackEnvelope) {
+        grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
+        this.recordGroundingOutcome(grounding, fallbackEnvelope, true);
+      }
       yield rawAnswer;
       hasStreamedAnswer = true;
       streamedAnswer += rawAnswer;
@@ -315,7 +314,10 @@ export class RetrievalAnswerComposer {
           continue;
         }
         pendingStreamText += reader.push(text);
-        if (!groundingConfirmed && splitCitedAnswerPrefix(pendingStreamText).streamable) {
+        if (
+          !groundingConfirmed
+          && hasValidSourcedAssertion(pendingStreamText, session.retrieval.contexts.length)
+        ) {
           groundingConfirmed = true;
         }
         let streamable = "";
@@ -333,34 +335,29 @@ export class RetrievalAnswerComposer {
 
       const finalized = reader.finalize();
       plannedSuggestions = finalized.suggestions;
-      answerGrounding = finalized.grounding;
       rawAnswer = finalized.fullAnswer;
       if (!rawAnswer.trim()) {
         throw new BlankChatAnswerError();
       }
+      grounding = computeGroundingSummary({
+        body: rawAnswer,
+        envelope: finalized,
+        contextCount: session.retrieval.contexts.length,
+      });
+      this.recordGroundingOutcome(grounding, finalized, true);
     }
 
-    // Own the full post-stream reconcile (mirrors composeAnswer): present the raw
-    // answer, then apply the grounded-miss safety net. Suggestions stay
-    // assistant-sourced — the host expands the planned envelope suggestions for both
-    // cited answers and grounded misses (the behavior the host did before).
+    // Present the same generated body from its computed assertion verdict. Suggestions
+    // stay assistant-sourced; there is no semantic reconciliation generation here.
     const presentation = await this.chatAnswerPresenter.presentWithoutSuggestions(
       session,
       rawAnswer,
       query,
       userExpectedLocale,
-      answerGrounding,
-    );
-    const finalPresentation = await this.reconcileGroundedMiss(
-      session,
-      presentation,
-      query,
-      userExpectedLocale,
-      accountId,
-      "stream_grounded_unsupported",
+      grounding,
     );
     return {
-      finalPresentation,
+      finalPresentation: presentation,
       suggestions: { mode: "assistant", planned: plannedSuggestions },
       hasStreamedAnswer,
       streamedAnswer,

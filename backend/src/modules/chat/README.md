@@ -42,8 +42,8 @@ imports from `services/`.
 ## Common Change Paths
 
 - Streaming: `services/chatService.ts`, `contracts/streamEvents.ts`, frontend
-  chat stream adapters. Each terminal skill's `streamRender` owns its full
-  post-stream reconcile (grounded-miss safety net included) and returns a
+  chat stream adapters. Each terminal skill's `streamRender` owns final
+  presentation of its single generation and returns a
   `TurnStreamResult` (`turnOutcome.ts`) carrying the final presentation plus how
   the host should source question suggestions. The conversation engine is the only
   turn path (`ChatService` requires it), so `processTurnStream` drives terminal
@@ -51,8 +51,18 @@ imports from `services/`.
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
   reusable engine.
-- Citations: `citation*`, `implicitCitationSupport.ts`,
-  `chatAnswerPresenter.ts`.
+- Grounded retrieval answers: `groundedAnswerEnvelope.ts` frames the v1/v2
+  terminal envelope, `groundingAssertions.ts` structurally computes
+  `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
+  semantic answer generation. A valid in-range `[[n]]` assertion opens the
+  stream gate; `[[?]]`, malformed, and anchor-free output stays held until the
+  computed final presentation is available. Raw envelope JSON is never emitted
+  or persisted.
+- Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
+  `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
+  only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
+  records aggregate rollout diagnostics and never attaches citation artifacts or
+  changes verdicts and suggestions.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,

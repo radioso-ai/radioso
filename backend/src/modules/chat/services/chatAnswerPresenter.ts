@@ -13,8 +13,21 @@ import type { ChatSuggestion } from "../types/chatResponses.js";
 import type { AssistantSuggestionExpansionService } from "./assistantSuggestionExpansionService.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { ChatActionSuggestionService } from "./actionSuggestions/chatActionSuggestionService.js";
-import type { AnswerGroundingVerdict, PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
-import { resolveCitationArtifacts } from "./implicitCitationSupport.js";
+import type { PlannedEnvelopeSuggestion } from "./groundedAnswerEnvelope.js";
+import type { GroundingSummary, GroundingVerdict } from "./groundingAssertions.js";
+import {
+  diagnoseImplicitCitationSupport,
+  type ImplicitCitationDiagnostics,
+} from "./implicitCitationDiagnostics.js";
+
+export interface ChatGroundingDiagnostics extends ImplicitCitationDiagnostics {
+  parseStatus: GroundingSummary["parseStatus"];
+  claimCount: number;
+  sourcedClaimCount: number;
+  unsourcedClaimCount: number;
+  invalidSourceCount: number;
+  assertionMismatch: boolean;
+}
 
 export interface ChatPresentedAnswer {
   answer: string;
@@ -29,10 +42,11 @@ export interface ChatPresentedAnswer {
   skillOutcome: string;
   skillStatus: SkillTurnOutcome["status"];
   answerOutcome?: AssistantTurnOutcome;
-  // The model's raw self-reported grounding verdict for this turn, retained for
-  // observability/eval even when the grounded-miss safety net later reclassifies
-  // the turn (e.g. a degraded draft with no citations becomes no_context).
-  grounding?: AnswerGroundingVerdict;
+  // Computed from the v2 manifest and inline assertions. Raw envelope JSON is
+  // deliberately never carried beyond generation finalization.
+  grounding?: GroundingVerdict;
+  groundingSummary?: GroundingSummary;
+  groundingDiagnostics?: ChatGroundingDiagnostics;
 }
 
 export interface SkillOutcomeCapabilityProvider {
@@ -207,11 +221,9 @@ export class ChatAnswerPresenter {
 
     const normalized = this.answerPresentationService.normalize({ answer, citations: citationEvidence });
     const presented = this.answerPresentationService.present({ answer, citations: citationEvidence });
-    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
 
     return {
       ...presented,
-      ...citationArtifacts,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: skillTurnOutcome.skillName,
       skillOutcome: skillTurnOutcome.outcome,
@@ -226,7 +238,7 @@ export class ChatAnswerPresenter {
     query: string,
     plannedSuggestions: PlannedEnvelopeSuggestion[],
     userExpectedLocale?: string | null,
-    grounding: AnswerGroundingVerdict = "grounded",
+    grounding: GroundingSummary | GroundingVerdict = "grounded",
   ): Promise<ChatPresentedAnswer> {
     const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale, grounding);
     const withQuestionSuggestions = this.applyAssistantSuggestions(session, presentation, plannedSuggestions);
@@ -238,34 +250,48 @@ export class ChatAnswerPresenter {
     answer: string,
     query: string,
     userExpectedLocale?: string | null,
-    grounding: AnswerGroundingVerdict = "grounded",
+    grounding: GroundingSummary | GroundingVerdict = "grounded",
   ): Promise<ChatPresentedAnswer> {
     const citationEvidence = toCitationEvidence(session);
+    const groundingSummary = typeof grounding === "string" ? undefined : grounding;
+    const groundingVerdict = typeof grounding === "string" ? grounding : grounding.verdict;
+    const normalized = this.answerPresentationService.normalize({ answer, citations: citationEvidence });
+    const implicitDiagnostics = diagnoseImplicitCitationSupport(normalized.answerSegments, citationEvidence);
+    const groundingDiagnostics = groundingSummary
+      ? {
+          parseStatus: groundingSummary.parseStatus,
+          claimCount: groundingSummary.claimCount,
+          sourcedClaimCount: groundingSummary.sourcedClaimCount,
+          unsourcedClaimCount: groundingSummary.unsourcedClaimCount,
+          invalidSourceCount: groundingSummary.invalidSourceCount,
+          assertionMismatch: groundingSummary.assertionMismatch,
+          ...implicitDiagnostics,
+        }
+      : undefined;
 
-    if (session.retrieval.contexts.length === 0) {
+    if (groundingVerdict === "no_support" || session.retrieval.contexts.length === 0) {
       return {
         ...this.presentNoContextRefusal(answer, citationEvidence),
+        grounding: groundingVerdict,
+        groundingSummary,
+        groundingDiagnostics,
         effectiveRetrieval: session.retrieval,
       };
     }
 
-    const normalized = this.answerPresentationService.normalize({
-      answer,
-      citations: citationEvidence,
-    });
     const presented = this.answerPresentationService.present({
       answer,
       citations: citationEvidence,
     });
-    const citationArtifacts = resolveCitationArtifacts(presented, normalized, citationEvidence);
-    const groundedOutcome = grounding === "degraded"
+    const groundedOutcome = groundingVerdict === "degraded"
       ? SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED_DEGRADED
       : SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED;
 
     return withLegacyAnswerOutcome({
       ...presented,
-      ...citationArtifacts,
-      grounding,
+      grounding: groundingVerdict,
+      groundingSummary,
+      groundingDiagnostics,
       effectiveRetrieval: session.retrieval,
       planningCitations: toPlanningCitations(normalized.citationEvidence),
       skillName: groundedOutcome.skillName,

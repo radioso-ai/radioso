@@ -3,6 +3,29 @@ import { describe, expect, it } from "vitest";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
 describe("answer presentation service", () => {
+  it("keeps an explicitly unsourced assertion separate from a later cited assertion", () => {
+    const service = new AnswerPresentationService();
+
+    const result = service.present({
+      answer: "I'm Vikram[[?]]. The page explains testing and parsing[[1]].",
+      citations: [
+        {
+          documentId: "doc-1",
+          chunkId: "chunk-1",
+          title: "Guide",
+          content: "The page explains testing and parsing.",
+        },
+      ],
+    });
+
+    expect(result.answer).toBe("I'm Vikram. The page explains testing and parsing.");
+    expect(result.answerSegments).toEqual([
+      { text: "I'm Vikram" },
+      { text: ". The page explains testing and parsing", citationIndices: [0] },
+      { text: "." },
+    ]);
+  });
+
   it("normalize() retains citation evidence and segments", () => {
     const service = new AnswerPresentationService();
 
@@ -321,6 +344,17 @@ describe("answer presentation service", () => {
         text: ". Price: EUR 18,00. Broken  token and dangling  marker.",
       },
     ]);
+  });
+
+  it("never presents numeric-lookalike marker syntax as an explicit citation", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "Malformed claim[[1e0]].",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide", content: "Malformed claim." }],
+    });
+
+    expect(result.answer).toBe("Malformed claim.");
+    expect(result.citations).toBeUndefined();
   });
 
   it("collapses consecutive claims that cite the same document into one visible citation", () => {

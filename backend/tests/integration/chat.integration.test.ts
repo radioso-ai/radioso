@@ -15,6 +15,14 @@ import {
   type SkillDispatchResult,
   type SkillExecutorPort,
 } from "../../src/modules/skills/public.js";
+import {
+  DEGRADED_V2_VISIBLE,
+  GROUNDED_V2_VISIBLE,
+  NO_SUPPORT_V2_BODY,
+  degradedV2Envelope,
+  groundedV2Envelope,
+  noSupportV2Envelope,
+} from "../support/answerEnvelopeV2Fixtures.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -129,6 +137,76 @@ const bindAlwaysDirectiveToAgentSkill = async (
 };
 
 describe("chat integration", () => {
+  it.each([
+    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, "grounded", 3],
+    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE, "grounded_degraded", 1],
+    ["no-support", noSupportV2Envelope, NO_SUPPORT_V2_BODY, "no_context", 0],
+  ] as const)("streams the v2 %s fixture through authenticated chat with one answer attempt", async (
+    _name,
+    buildRaw,
+    visibleAnswer,
+    expectedOutcome,
+    expectedCitationCount,
+  ) => {
+    const attemptKeys: string[] = [];
+    const raw = buildRaw();
+    const gateway: ChatGateway = {
+      async answer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
+        return raw;
+      },
+      async *streamAnswer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
+        for (let offset = 0; offset < raw.length; offset += 11) {
+          yield raw.slice(offset, offset + 11);
+        }
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: gateway,
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
+    const { token } = await issueTestToken(app, `answer-envelope-${_name}@example.com`);
+    for (const [title, content] of [
+      ["Workshop dates", "The advanced workshop runs in June."],
+      ["Returning students", "Returning students can register online."],
+      ["Registration", "Online registration is available for returning students."],
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title, content });
+    }
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", () => callback(null, body));
+      })
+      .send({ message: "Tell me about the advanced workshop.", stream: true, includeDebug: true });
+
+    expect(response.status).toBe(200);
+    const events = parseSseEvents(response.body);
+    const done = events.find((event) => event.event === "done")?.data;
+    expect(done?.answer).toBe(visibleAnswer);
+    expect(done?.skillOutcome).toBe(expectedOutcome);
+    expect(Array.isArray(done?.citations) ? done.citations : []).toHaveLength(expectedCitationCount);
+    expect(response.body).not.toContain("RADIOSO_FOLLOWUPS_JSON");
+    expect(response.body).not.toContain("[[");
+    expect(attemptKeys).toEqual(["stream_grounded"]);
+    expect(attemptKeys).not.toContain("stream_grounded_unsupported");
+    expect(attemptKeys).not.toContain("grounded_unsupported");
+  });
+
   it("hydrates agent-selectable directive-bound skills for non-streaming chat turns", async () => {
     let dispatched = false;
     const executor: SkillExecutorPort = {

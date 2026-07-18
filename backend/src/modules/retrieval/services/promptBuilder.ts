@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
-import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
@@ -60,6 +60,7 @@ export class PromptBuilder {
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         today: formatIsoDateUtc(this.clock()),
+        decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
       }),
       prompt: renderPromptTemplate("retrieval/answer-user.md", {
         history_section: historySection || "No prior history",

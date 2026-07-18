@@ -216,6 +216,9 @@ interface AssistantTurnSuccessInput {
   turnTrace?: TurnTraceEnvelope;
   route: ChatRoute;
   stream: boolean;
+  groundingVerdict?: ChatPresentedAnswer["grounding"];
+  groundingProtocolVersion?: 1 | 2 | null;
+  groundingDiagnostics?: ChatPresentedAnswer["groundingDiagnostics"];
 }
 
 export interface BuildTurnTraceForPresentationInput {
@@ -333,9 +336,9 @@ export const buildTurnTraceForPresentation = (
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),
-      // Raw model grounding verdict, retained for observability even when the
-      // grounded-miss path reclassifies the skill outcome.
       groundingVerdict: input.presentation.grounding,
+      groundingProtocolVersion: input.presentation.groundingSummary?.protocolVersion,
+      groundingDiagnostics: input.presentation.groundingDiagnostics,
     },
   };
   const successInput: AssistantTurnSuccessInput = {
@@ -358,6 +361,9 @@ export const buildTurnTraceForPresentation = (
     turnTrace,
     route,
     stream: input.stream,
+    groundingVerdict: input.presentation.grounding,
+    groundingProtocolVersion: input.presentation.groundingSummary?.protocolVersion,
+    groundingDiagnostics: input.presentation.groundingDiagnostics,
   };
 
   return {
@@ -704,6 +710,9 @@ export class ChatTurnLifecycle {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
+        groundingVerdict: input.groundingVerdict,
+        groundingProtocolVersion: input.groundingProtocolVersion,
+        groundingDiagnostics: input.groundingDiagnostics,
         rewriteContinuityState: buildRewriteContinuityState({
           previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,
@@ -746,6 +755,9 @@ export class ChatTurnLifecycle {
         citations: input.citations,
         answerSegments: input.answerSegments,
         suggestions: input.suggestions,
+        groundingVerdict: input.groundingVerdict,
+        groundingProtocolVersion: input.groundingProtocolVersion,
+        groundingDiagnostics: input.groundingDiagnostics,
         rewriteContinuityState: buildRewriteContinuityState({
           previousState: input.priorRewriteContinuityState,
           diagnostics: input.diagnostics,

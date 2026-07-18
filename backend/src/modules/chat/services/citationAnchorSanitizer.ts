@@ -37,7 +37,7 @@ export class CitationAnchorSanitizer {
     const reflowed = combined.replace(DETACHED_ANCHOR_BEFORE_PUNCTUATION, "");
     const stripped = stripCompleteAnchors(reflowed);
 
-    const suffixMatch = stripped.match(/\[\[[^\]]*$/);
+    const suffixMatch = stripped.match(/\[\[(?:(?!\]\]).)*$/s);
     if (suffixMatch && suffixMatch.index !== undefined) {
       const start = suffixMatch.index;
       this.carry = stripped.slice(start).slice(-32);

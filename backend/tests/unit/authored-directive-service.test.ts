@@ -269,11 +269,10 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.created).toHaveLength(0);
   });
 
-  it("rejects directive bindings to skill kinds that cannot answer chat turns", async () => {
+  it("rejects directive bindings to skill kinds that cannot answer chat turns or stage lookup context", async () => {
     const repository = new StubAgentRepository();
     const agentSkills = new StubAgentSkillRepository();
     agentSkills.skills.push(
-      agentSkill({ skillName: "grounded.search", kind: "retrieve", targetType: null, targetId: null }),
       agentSkill({ skillName: "crm.webhook", kind: "webhook" }),
     );
     const service = new AuthoredDirectiveService({
@@ -283,15 +282,13 @@ describe("AuthoredDirectiveService", () => {
       agentSkills,
     });
 
-    for (const skillName of ["grounded.search", "crm.webhook"]) {
-      await expect(service.create(workspaceId, agentId, directiveInput({
-        binding: { kind: "skill", skillName },
-      }))).rejects.toMatchObject({
-        statusCode: 400,
-        code: "bad_request",
-        message: expect.stringContaining(skillName),
-      });
-    }
+    await expect(service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "crm.webhook" },
+    }))).rejects.toMatchObject({
+      statusCode: 400,
+      code: "bad_request",
+      message: expect.stringContaining("crm.webhook"),
+    });
 
     expect(repository.created).toHaveLength(0);
   });
@@ -299,7 +296,10 @@ describe("AuthoredDirectiveService", () => {
   it("accepts directive bindings to enabled agent-selectable skills", async () => {
     const repository = new StubAgentRepository();
     const agentSkills = new StubAgentSkillRepository();
-    agentSkills.skills.push(agentSkill({ skillName: "order.lookup" }));
+    agentSkills.skills.push(
+      agentSkill({ skillName: "order.lookup" }),
+      agentSkill({ skillName: "grounded.search", kind: "retrieve", targetType: null, targetId: null }),
+    );
     const service = new AuthoredDirectiveService({
       repository,
       coherenceChecker: new CapturingChecker(),
@@ -310,8 +310,14 @@ describe("AuthoredDirectiveService", () => {
     await service.create(workspaceId, agentId, directiveInput({
       binding: { kind: "skill", skillName: "order.lookup" },
     }));
+    await service.create(workspaceId, agentId, directiveInput({
+      binding: { kind: "skill", skillName: "grounded.search" },
+    }));
 
-    expect(repository.created.at(-1)?.binding).toEqual({ kind: "skill", skillName: "order.lookup" });
+    expect(repository.created.map((created) => created.binding)).toEqual([
+      { kind: "skill", skillName: "order.lookup" },
+      { kind: "skill", skillName: "grounded.search" },
+    ]);
   });
 
   it("includes built-in directives in the coherence comparison set", async () => {

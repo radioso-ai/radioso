@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-07-03
+last_updated: 2026-07-18
 ---
 
 # Conversational Directives
@@ -34,9 +34,11 @@ A directive can also name a skill binding:
 }
 ```
 
-The binding does not make the directive execute. It only tells turn selection to
-route the turn to that enabled, turn-selectable skill when the directive already
-matched. The directive action is still rendered as steering for the answer.
+The binding does not make the directive execute. It tells the turn loop to make
+that enabled skill available when the directive already matched. External MCP
+skills can claim the terminal turn. Retrieval skills are staged into the
+agentic retrieval loop as lookup tools. The directive action is still rendered
+as steering for the answer.
 
 ## How it works
 
@@ -66,13 +68,17 @@ a binding cannot make a directive more or less likely to match.
 
 Bindings are optional. Create and update requests validate that the named skill
 exists on the agent, is enabled, uses an agent-selectable invocation mode, and
-is an external MCP skill (`kind: external_mcp`) — the only kind whose execution
-settles with user-facing answer text. Retrieval skills return raw contexts by
-design (answer composition belongs to the turn loop), and action skills
-(webhook, Slack, email, notify) settle with outputs only, so binding either
-would render an empty reply; authoring rejects them with a descriptive error.
-Agent config import preserves the binding by name even if the target agent does
-not currently have that skill.
+is either:
+
+- an external MCP skill (`kind: external_mcp`), which can settle the terminal
+  turn with user-facing answer text
+- a retrieval skill (`kind: retrieve`), which can be staged into the agentic
+  retrieval loop as a directive-scoped lookup tool
+
+Action skills (webhook, Slack, email, notify) settle with outputs only, so
+binding them would render an empty reply; authoring rejects them with a
+descriptive error. Agent config import preserves the binding by name even if the
+target agent does not currently have that skill.
 
 When several matched directives have bindings, Radioso chooses one winner:
 
@@ -80,14 +86,20 @@ When several matched directives have bindings, Radioso chooses one winner:
 2. higher matcher confidence wins; deterministic `always` matches rank as `1.0`
 3. directive name ascending breaks the final tie
 
-If a bound skill is later disabled, removed, no longer turn-selectable, not
-registered as a runtime turn skill, or requires a capability the workspace
-policy denies (external skills require `external_skills.invoke`, enforced the
-same way routine dispatch enforces it), the binding is skipped. The turn falls
-back to normal selection, the directive action still steers the reply, and the
-trace records the skipped binding with the reason. The backend also writes a warn log
-with workspace, agent, conversation, directive name, skill name, and reason. It
-does not log message text or document content.
+If a bound external MCP skill is later disabled, removed, no longer
+turn-selectable, not registered as a runtime turn skill, or requires a capability
+the workspace policy denies (external skills require `external_skills.invoke`,
+enforced the same way routine dispatch enforces it), the binding is skipped. The
+turn falls back to normal selection, the directive action still steers the
+reply, and the trace records the skipped binding with the reason. The backend
+also writes a warn log with workspace, agent, conversation, directive name,
+skill name, and reason. It does not log message text or document content.
+
+If a bound retrieval skill is later disabled, removed, no longer
+agent-selectable, or requires a capability the workspace policy denies
+(`retrieval.answer`), it is not staged as a lookup tool. Staged-only retrieval
+bindings do not appear as terminal turn-skill selections because they are inputs
+to the answer loop, not answer producers.
 
 Routine turns are different. Active routine flow bypasses terminal turn
 selection, so directive bindings do not run there. A directive with

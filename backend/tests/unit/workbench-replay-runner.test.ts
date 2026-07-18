@@ -233,6 +233,8 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toEqual([
       "message",
       "gather",
+      "turn_interpretation",
+      "retrieval_fanout",
       "directive_match",
       "skill_selection",
       "skill_dispatch",
@@ -279,7 +281,8 @@ describe("WorkbenchReplayRunner", () => {
     };
     const forSession = vi.fn(async () => ({
       turnSkills: [boundSkill],
-      skillStates: new Map([["order_lookup", { enabled: true, turnCapable: true }]]),
+      agenticRetrievalToolFactories: () => [],
+      skillStates: new Map([["order_lookup", { enabled: true, turnCapable: true, stagingCapable: false }]]),
     }));
     const provider: AgentSkillTurnSkillProvider = { forSession };
     const boundAgent: ConversationAgent = {
@@ -328,6 +331,62 @@ describe("WorkbenchReplayRunner", () => {
     expect(forSession).toHaveBeenCalledOnce();
     const selection = result.turnTrace?.spine.stages.find((stage) => stage.kind === "skill_selection");
     expect(selection?.outputs ?? {}).toMatchObject({ reason: "directive:order-status" });
+  });
+
+  it("stages directive-bound retrieval skills before replay grounding runs", async () => {
+    const stagedFactory = vi.fn(() => []);
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const forSession = vi.fn(async () => ({
+      turnSkills: [],
+      agenticRetrievalToolFactories: vi.fn(() => [stagedFactory]),
+      skillStates: new Map([["grounded_search", { enabled: true, turnCapable: false, stagingCapable: true }]]),
+    }));
+    const provider: AgentSkillTurnSkillProvider = { forSession };
+    const boundAgent: ConversationAgent = {
+      ...agent(),
+      authoredDirectives: [{
+        id: "directive-1",
+        agentId: "agent-1",
+        name: "refund-lookup",
+        condition: { kind: "always" },
+        action: "Use the refund lookup skill.",
+        priority: null,
+        binding: { kind: "skill", skillName: "grounded_search" },
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
+        tags: [],
+        description: null,
+        metadata: {},
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      }],
+    };
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [],
+      }),
+      agentSkillTurnSkillProvider: provider,
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(boundAgent),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(forSession).toHaveBeenCalledOnce();
+    expect(capturedRequests[0]?.agenticToolFactories).toEqual([stagedFactory]);
   });
 
   it("does not wire routines or enqueue actions for contact-like replay queries", async () => {

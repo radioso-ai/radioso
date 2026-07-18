@@ -340,6 +340,35 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.responseSettings.responseLanguage).toBe("English");
   });
 
+  it("passes caller-supplied agentic tool factories into the runner", async () => {
+    const agenticToolFactories = [() => []];
+    const observed: { input?: { agenticToolFactories?: unknown } } = {};
+    const runner = {
+      run: async (input: { agenticToolFactories?: unknown }) => {
+        observed.input = input;
+        return {
+          selectedChunks: [],
+          rationale: null,
+          trace: emptyTrace(),
+          terminatedReason: "completed" as const,
+          stepsTaken: 1,
+          searchStats: defaultSearchStats,
+        };
+      },
+    } as unknown as AgenticRetrievalRunner;
+    const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
+    const service = new AgenticRetrievalPipelineService({
+      deterministic: stubDeterministic(detState),
+      runner,
+      promptBuilder: new PromptBuilder(),
+      systemPrompt: "agentic system",
+    });
+
+    await service.runInterpreted(buildInterpretation(buildRequest({ agenticToolFactories })));
+
+    expect(observed.input?.agenticToolFactories).toBe(agenticToolFactories);
+  });
+
   it("returns the agent's trace as the pipeline trace", async () => {
     const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
     const trace = emptyTrace();

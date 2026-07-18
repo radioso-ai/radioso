@@ -450,13 +450,12 @@ export class DefaultConversationEngine implements ConversationEngine {
       directiveMatcher: input.directiveMatcher,
       steeringResolver: input.steeringResolver,
     });
+    const resolved = await resolveDirectives();
     const shouldRunRetrieval = Boolean(input.retrievalWork && interpretation?.route === "retrieval");
     const retrievalStartedAt = Date.now();
-    const retrievalPromise = shouldRunRetrieval
-      ? input.retrievalWork!.run({ turn: interpretedTurn, interpretation: interpretation! })
-      : Promise.resolve(null);
-    const directivePromise = resolveDirectives();
-    const [retrievalResult, resolved] = await Promise.all([retrievalPromise, directivePromise]);
+    const retrievalResult = shouldRunRetrieval
+      ? await input.retrievalWork!.run({ turn: interpretedTurn, interpretation: interpretation! })
+      : null;
     const retrievalCompletedAt = Date.now();
     if (input.retrievalWork && interpretation) {
       stages.push(timedStage(retrievalStartedAt, retrievalCompletedAt, {

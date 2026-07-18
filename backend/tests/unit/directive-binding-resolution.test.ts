@@ -30,7 +30,7 @@ describe("resolveDirectiveBinding", () => {
       matches: [match({ name: "order-status", skillName: "order_lookup" })],
       registeredTurnSkillNames: new Set(["order_lookup", "retrieval.answer"]),
       agentSkillStates: new Map([
-        ["order_lookup", { enabled: true, turnCapable: true }],
+        ["order_lookup", { enabled: true, turnCapable: true, stagingCapable: false }],
       ]),
     });
 
@@ -94,8 +94,8 @@ describe("resolveDirectiveBinding", () => {
       ],
       registeredTurnSkillNames: new Set(["disabled_skill", "routine_skill"]),
       agentSkillStates: new Map([
-        ["disabled_skill", { enabled: false, turnCapable: true }],
-        ["routine_skill", { enabled: true, turnCapable: false }],
+        ["disabled_skill", { enabled: false, turnCapable: true, stagingCapable: false }],
+        ["routine_skill", { enabled: true, turnCapable: false, stagingCapable: false }],
       ]),
     });
 
@@ -112,7 +112,7 @@ describe("resolveDirectiveBinding", () => {
       matches: [match({ name: "order-status", skillName: "order_lookup" })],
       registeredTurnSkillNames: new Set([]),
       agentSkillStates: new Map([
-        ["order_lookup", { enabled: true, turnCapable: true, capabilityDenied: true }],
+        ["order_lookup", { enabled: true, turnCapable: true, stagingCapable: false, capabilityDenied: true }],
       ]),
     });
 
@@ -120,5 +120,17 @@ describe("resolveDirectiveBinding", () => {
       { directiveName: "order-status", skillName: "order_lookup", reason: "skill_capability_denied" },
     ]);
     expect(result.winner).toBeUndefined();
+  });
+
+  it("leaves staged-only retrieve bindings out of terminal turn selection", () => {
+    const result = resolveDirectiveBinding({
+      matches: [match({ name: "lookup-docs", skillName: "grounded_search" })],
+      registeredTurnSkillNames: new Set(["retrieval.answer"]),
+      agentSkillStates: new Map([
+        ["grounded_search", { enabled: true, turnCapable: false, stagingCapable: true }],
+      ]),
+    });
+
+    expect(result).toEqual({ winner: undefined, losers: [], skipped: [] });
   });
 });

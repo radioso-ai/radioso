@@ -16,6 +16,8 @@ import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { TurnSelectionStrategy } from "../../src/modules/chat/services/turnSelectionStrategy.js";
 import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
+import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../src/modules/retrieval/public.js";
+import type { RetrievalPipelineResult } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
 
 const workspaceId = randomUUID();
 const agentId = randomUUID();
@@ -104,6 +106,52 @@ const strategy: TurnSelectionStrategy = {
   select: () => ["retrieval"],
 };
 
+const retrievalResult = (): RetrievalPipelineResult => ({
+  rewrittenQuery: "refund policy",
+  systemPrompt: "system",
+  prompt: "prompt",
+  citations: [],
+  responseIdentity: null,
+  responseSettings: {
+    citationDisplayEnabled: true,
+    suggestedQuestionsEnabled: true,
+    suggestedQuestionsCount: 3,
+  },
+  diagnostics: {
+    rewriteStatus: "applied",
+    rerankStatus: "applied",
+    originalCandidateCount: 1,
+    rewrittenCandidateCount: 1,
+    normalizedCandidateCount: 1,
+    finalContextCount: 1,
+    candidateFallbackApplied: false,
+    fallbackApplied: false,
+  },
+  trace: {
+    traceId: "retrieval-trace",
+    startedAt: "2026-07-03T12:00:00.000Z",
+    stages: [],
+    links: [],
+  },
+  contexts: [{
+    chunkId: "chunk-refund",
+    documentId: "doc-refund",
+    title: "Refund policy",
+    content: "Refunds are available within thirty days when the receipt is present.",
+    searchText: "Refund policy receipt required.",
+    similarity: 0.8,
+    retrievalSources: ["semantic_rewritten"],
+    retrievalText: "Refunds are available within thirty days when the receipt is present.",
+    semanticScore: 0.8,
+    lexicalScore: 0,
+    relevanceScore: 0.92,
+    rerankPosition: 0,
+    promptPosition: 0,
+    estimatedTokenCost: 16,
+    metadata: { category: "policy" },
+  }],
+});
+
 describe("RepositoryAgentSkillTurnSkillProvider", () => {
   it("registers enabled agent-selectable skills for directive binding selection and dispatch", async () => {
     let invocation: SkillInvocation | undefined;
@@ -137,8 +185,8 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     const selected = selector.select(session);
     expect(selected.skill.definition.name).toBe("order_lookup");
     expect(selected.decision.reason).toBe("directive:order-status");
-    expect(runtime.skillStates.get("disabled_lookup")).toEqual({ enabled: false, turnCapable: true });
-    expect(runtime.skillStates.get("routine_lookup")).toEqual({ enabled: true, turnCapable: false });
+    expect(runtime.skillStates.get("disabled_lookup")).toEqual({ enabled: false, turnCapable: true, stagingCapable: false });
+    expect(runtime.skillStates.get("routine_lookup")).toEqual({ enabled: true, turnCapable: false, stagingCapable: false });
 
     const outcome = await selected.skill.dispatch(session);
     expect(outcome).toMatchObject({
@@ -162,7 +210,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);
   });
 
-  it("excludes skill kinds whose executors cannot produce a user-facing answer", async () => {
+  it("excludes skill kinds whose executors cannot produce a user-facing terminal answer", async () => {
     const provider = new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: repositoryWith([
         agentSkill({ skillName: "grounded_search", kind: "retrieve", targetType: null, targetId: null }),
@@ -176,9 +224,68 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     const runtime = await provider.forSession(sessionWithBinding("grounded_search"));
 
     expect(runtime.turnSkills).toEqual([]);
-    expect(runtime.skillStates.get("grounded_search")).toEqual({ enabled: true, turnCapable: false });
-    expect(runtime.skillStates.get("crm_webhook")).toEqual({ enabled: true, turnCapable: false });
-    expect(runtime.skillStates.get("escalate")).toEqual({ enabled: true, turnCapable: false });
+    expect(runtime.skillStates.get("grounded_search")).toEqual({ enabled: true, turnCapable: false, stagingCapable: true });
+    expect(runtime.skillStates.get("crm_webhook")).toEqual({ enabled: true, turnCapable: false, stagingCapable: false });
+    expect(runtime.skillStates.get("escalate")).toEqual({ enabled: true, turnCapable: false, stagingCapable: false });
+  });
+
+  it("stages matched retrieve bindings as agentic retrieval tools and records returned contexts", async () => {
+    const run = vi.fn(async () => retrievalResult());
+    const registry = new SkillExecutorRegistry([
+      {
+        kind: "internal",
+        adapter: RETRIEVAL_ANSWER_ADAPTER,
+        executor: new RetrievalAnswerSkillExecutor({
+          run,
+          interpret: vi.fn(),
+          runInterpreted: vi.fn(),
+          runWithoutRetrieval: vi.fn(),
+        }),
+      },
+    ]);
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([
+        agentSkill({ skillName: "grounded_search", kind: "retrieve", targetType: null, targetId: null, config: { sourceScope: "all" } }),
+      ]),
+      executorRegistry: registry,
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("grounded_search");
+
+    const runtime = await provider.forSession(session);
+    const chunkRegistry = {
+      record: vi.fn(),
+      resolve: vi.fn(),
+      has: vi.fn(),
+    };
+    const tools = runtime.agenticRetrievalToolFactories(session).flatMap((factory) =>
+      factory({ registry: chunkRegistry, snippetChars: 48 })
+    );
+
+    expect(tools.map((tool) => tool.name)).toEqual(["skill_grounded_search"]);
+    const output = await tools[0]!.invoke(
+      { query: "What is the refund policy?" },
+      { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" },
+    );
+
+    expect(run).toHaveBeenCalledWith(expect.objectContaining({
+      query: "What is the refund policy?",
+      workspaceId,
+    }));
+    expect(chunkRegistry.record).toHaveBeenCalledWith([
+      expect.objectContaining({
+        chunkId: "chunk-refund",
+        fullContent: "Refunds are available within thirty days when the receipt is present.",
+      }),
+    ]);
+    expect(output).toMatchObject({
+      ok: true,
+      skillName: "grounded_search",
+      results: [expect.objectContaining({
+        chunkId: "chunk-refund",
+        title: "Refund policy",
+      })],
+    });
   });
 
   it("does not register bindable skills whose required capability the workspace denies", async () => {
@@ -201,6 +308,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect(runtime.skillStates.get("order_lookup")).toEqual({
       enabled: true,
       turnCapable: true,
+      stagingCapable: false,
       capabilityDenied: true,
     });
     expect(checks).toEqual([{ capability: "external_skills.invoke", workspaceId }]);

@@ -1,5 +1,6 @@
 import type { MessageRecord } from "../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
+import type { AgenticRetrievalToolFactory } from "./services/agenticRetrievalRunner.js";
 import type { ResponseIdentity } from "../../shared/domain/responseIdentity.js";
 import type { RetrievalSettingsRecord } from "../settings/contracts/retrieval.js";
 import type {
@@ -194,6 +195,7 @@ export interface RetrievalPipelineRequest {
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;
+  agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   precomputedRewriteProposal?: StructuredRewriteResult;
   // When set, the retrieval pipeline runs against these settings instead of
   // reading the workspace's persisted retrieval settings. The override is
@@ -238,4 +240,5 @@ export interface RetrievalPipelineService {
 // `RetrievalPipelineService` describes here; re-exported so consumers wiring the
 // retrieval.answer executor have one import for the controller type.
 export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";
+export type { AgenticRetrievalToolFactory, AgenticRetrievalToolFactoryContext } from "./services/agenticRetrievalRunner.js";
 export { RetrieveRoutineSkillResolver } from "./services/retrieveRoutineSkillResolver.js";

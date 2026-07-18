@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   AgenticCapabilityRunner,
   DefaultAgentRuntime,
+  type AgentTool,
   type ModelToolCall,
   type ModelToolCallRequest,
   type ModelToolCallResponse,
@@ -128,6 +130,31 @@ describe("AgenticRetrievalRunner", () => {
     expect(result.terminatedReason).toBe("completed");
     expect(result.selectedChunks.map((c) => c.chunkId)).toEqual(["chunk-a", "chunk-b"]);
     expect(result.rationale).toBe("covers the question");
+  });
+
+  it("adds caller-provided staged tools to the agentic tool catalog", async () => {
+    const stagedTool: AgentTool<Record<string, never>, { ok: true }> = {
+      name: "skill_grounded_search",
+      description: "Run the directive-staged grounded search skill.",
+      inputSchema: z.object({}),
+      outputSchema: z.object({ ok: z.literal(true) }),
+      invoke: async () => ({ ok: true }),
+    };
+    const gateway = makeGateway([
+      { say: "lookup", tools: [call("skill_grounded_search", {}, "c1")] },
+      { say: "finalizing", tools: [call("finalize", { chunkIds: [], rationale: "no grounded chunks" }, "c2")] },
+      { say: "complete" },
+    ]);
+    const runner = buildRunner({ gateway });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      query: "refund policy",
+      systemPrompt: "system",
+      agenticToolFactories: [() => [stagedTool]],
+    });
+
+    expect(result.trace.stages.map((stage) => stage.inputs?.toolName)).toContain("skill_grounded_search");
   });
 
   it("reports search stats: distinct semantic/lexical/merged candidate counts and rerank invocation", async () => {

@@ -15,6 +15,7 @@ import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositor
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type {
+  AgenticRetrievalToolFactory,
   RetrievalPipelineRequest,
   RetrievalPipelineService,
   RewriteContinuityState,
@@ -102,6 +103,7 @@ export interface PrepareChatSessionInput {
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
+  agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
 }
 
 export interface PrepareChatSessionOptions {
@@ -439,6 +441,7 @@ export class ChatSessionPreparer {
       responseLanguage,
       responseBehaviorEnabled: true,
       agentSkillSettings: agent.skillSettings,
+      agenticToolFactories: input.agenticToolFactories,
       metadataFilter: input.metadataFilter,
       documentScope: input.documentScope,
       precomputedRewriteProposal: input.precomputedRewriteProposal,

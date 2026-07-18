@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { ConversationEngine, RoutineState } from "@radioso/conversation-contract";
+import type {
+  ConversationEngine,
+  ConversationRetrievalWorkPort,
+  ConversationTurnInterpreter,
+  RoutineState,
+} from "@radioso/conversation-contract";
 
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -45,7 +50,7 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
-import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
+import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type { TurnRouter } from "./turnRouter.js";
 
 export interface WorkbenchReplayResolvedConfig {
@@ -246,46 +251,37 @@ export class WorkbenchReplayRunner {
       return routineResult;
     }
 
-    // Route through the same classifier the live turn uses, so a replayed turn
-    // takes the same retrieval-vs-direct path (Coach/preview fidelity).
-    const routing = await this.turnRouter.classify({
-      query: input.query,
-      history: session.history,
-      responseIdentity: session.retrieval.responseIdentity,
-      customInstruction: session.agent.customInstruction,
-      workspaceContext: { workspaceId: input.workspaceId },
-      usageContext: {
-        accountId: input.accountId ?? undefined,
-        workspaceId: input.workspaceId,
-        conversationId: session.conversation.id,
-        messageId: session.userMessage.id,
-        surface: "assistant",
-        attemptKey: session.userMessage.id,
-      },
-    });
-    session = routing.route === "retrieval"
-      ? await this.preparer.prepareRetrieval(prepareInput, session, routing.framing)
-      : await this.preparer.prepareDirect(prepareInput, session, routing.framing);
-
     // Mirror live chat's per-session selection runtime: hydrate directive-bindable
-    // agent skills so a replayed bound turn selects and dispatches like production.
+    // agent skills so a replayed bound turn selects, dispatches, and stages lookup
+    // tools like production.
     const agentSkillRuntime = await this.options.agentSkillTurnSkillProvider?.forSession(session);
     const turnSkills = [...this.options.turnSkills, ...(agentSkillRuntime?.turnSkills ?? [])];
     const turnSkillSelector = new ChatTurnSkillSelector(turnSkills, this.selectionStrategy, {
       agentSkillStates: agentSkillRuntime?.skillStates,
+    });
+    const sessionRef = { current: session };
+    const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
+      input,
+      prepareInput,
+      sessionRef,
+      agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
     });
 
     const answerStartedAt = Date.now();
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
+      getSession: () => sessionRef.current,
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      turnInterpreter,
+      retrievalWork,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId ?? undefined,
     });
+    session = sessionRef.current;
     const tracePresentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId ?? undefined,
@@ -315,6 +311,78 @@ export class WorkbenchReplayRunner {
         })),
       },
     };
+  }
+
+  private buildEnginePreparationPorts(input: {
+    input: WorkbenchReplayInput;
+    prepareInput: PrepareChatSessionInput;
+    sessionRef: { current: PreparedSession };
+    agenticRetrievalToolFactories?: AgentSkillTurnRuntime["agenticRetrievalToolFactories"];
+  }): {
+    turnInterpreter: ConversationTurnInterpreter;
+    retrievalWork: ConversationRetrievalWorkPort;
+  } {
+    const turnInterpreter: ConversationTurnInterpreter = {
+      interpret: async () => {
+        const session = input.sessionRef.current;
+        const routing = await this.turnRouter.classify({
+          query: input.input.query,
+          history: session.history,
+          responseIdentity: session.retrieval.responseIdentity,
+          customInstruction: session.agent.customInstruction,
+          workspaceContext: { workspaceId: input.input.workspaceId },
+          usageContext: {
+            accountId: input.input.accountId ?? undefined,
+            workspaceId: input.input.workspaceId,
+            conversationId: session.conversation.id,
+            messageId: session.userMessage.id,
+            surface: "assistant",
+            attemptKey: session.userMessage.id,
+          },
+        });
+        input.sessionRef.current = {
+          ...session,
+          turnRoute: routing.route,
+          turnFraming: routing.framing,
+        };
+        if (routing.route === "direct") {
+          input.sessionRef.current = await this.preparer.prepareDirect(
+            input.prepareInput,
+            input.sessionRef.current,
+            routing.framing,
+          );
+        }
+        return routing;
+      },
+    };
+
+    const retrievalWork: ConversationRetrievalWorkPort = {
+      run: async () => {
+        const agenticToolFactories = input.agenticRetrievalToolFactories?.(input.sessionRef.current) ?? [];
+        const preparedInput = {
+          ...input.prepareInput,
+          ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
+        };
+        const directiveSteering = input.sessionRef.current.directiveSteering;
+        input.sessionRef.current = await this.preparer.prepareRetrieval(
+          preparedInput,
+          input.sessionRef.current,
+          input.sessionRef.current.turnFraming,
+        );
+        if (directiveSteering) {
+          input.sessionRef.current = {
+            ...input.sessionRef.current,
+            directiveSteering,
+          };
+        }
+        return {
+          stagedContext: input.sessionRef.current.stagedContext,
+          trace: input.sessionRef.current.turnTrace,
+        };
+      },
+    };
+
+    return { turnInterpreter, retrievalWork };
   }
 
   /**

@@ -18,6 +18,7 @@ import type {
   RetrievalPipelineRequest,
   RetrievalPipelineService,
   RewriteContinuityState,
+  StructuredRewriteResult,
 } from "../../retrieval/public.js";
 import { resolveContextForTurn } from "../../context-variables/public.js";
 import type {
@@ -100,6 +101,7 @@ export interface PrepareChatSessionInput {
   sourceOrigin?: string | null;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  precomputedRewriteProposal?: StructuredRewriteResult;
 }
 
 export interface PrepareChatSessionOptions {
@@ -439,6 +441,7 @@ export class ChatSessionPreparer {
       agentSkillSettings: agent.skillSettings,
       metadataFilter: input.metadataFilter,
       documentScope: input.documentScope,
+      precomputedRewriteProposal: input.precomputedRewriteProposal,
       sourceScope: agent.sourceScope,
       usageContext: {
         workspaceId: input.workspaceId,

@@ -7,6 +7,7 @@ import type {
   ResponseLanguagePolicy,
   RetrievalExecutionDiagnostics,
   ActivityTrace,
+  StructuredRewriteResult,
 } from "./domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceScope } from "./domain/retrievalSourceFilter.js";
 
@@ -139,6 +140,7 @@ export {
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,
 } from "./services/queryRewriteService.js";
+export { parseStructuredRewrite } from "./services/queryRewriteParser.js";
 export type { RerankGateway, RerankGatewayInput } from "./services/rerankService.js";
 export type {
   QueryRewritePort,
@@ -192,6 +194,7 @@ export interface RetrievalPipelineRequest {
   sourceScope?: RetrievalSourceScope;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;
+  precomputedRewriteProposal?: StructuredRewriteResult;
   // When set, the retrieval pipeline runs against these settings instead of
   // reading the workspace's persisted retrieval settings. The override is
   // applied as a shallow merge over the workspace record and MUST NOT cause

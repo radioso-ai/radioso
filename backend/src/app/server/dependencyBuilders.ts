@@ -65,6 +65,8 @@ import {
   createRouteScopedDirectiveSteering,
   createSkillOutcomeCapabilityProvider,
   LlmTurnRouter,
+  LlmConversationTurnInterpreter,
+  ModelTurnInterpretationGateway,
   ModelTurnRouterGateway,
   NoopAnswerFeedbackHistoryProvider,
   NoopPublicChatActionAdvertiser,
@@ -942,6 +944,8 @@ export const buildChatServices = (input: {
   publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
+  skillSettingsResolver?: SkillSettingsResolver;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   workspaceRepository: WorkspaceRepository;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
@@ -1497,6 +1501,11 @@ export const buildChatServices = (input: {
   const turnRouter = new LlmTurnRouter(
     new ModelTurnRouterGateway(input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder)),
   );
+  const turnInterpreter = new LlmConversationTurnInterpreter(
+    new ModelTurnInterpretationGateway(input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder)),
+    input.retrievalDefaultsProvider,
+    input.skillSettingsResolver,
+  );
   const responseLanguageDetector = new LlmResponseLanguageDetector(
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
@@ -1546,6 +1555,7 @@ export const buildChatServices = (input: {
     // terminal turn). Registerable so a host can swap it.
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
+    turnInterpreter,
     responseLanguageDetector,
     handoffWaitingMessageGenerator,
     // The reusable conversation engine is the chat turn spine in every

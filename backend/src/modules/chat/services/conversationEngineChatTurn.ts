@@ -8,7 +8,9 @@ import type {
   ConversationRoutineSlotCorrection,
   ConversationRoutineRunner,
   ConversationRoutineStore,
+  ConversationRetrievalWorkPort,
   ConversationTrace,
+  ConversationTurnInterpreter,
   ProcessTurnResult,
   RenderableTurn,
 } from "@radioso/conversation-contract";
@@ -42,6 +44,10 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
+  turnInterpreter?: ConversationTurnInterpreter;
+  retrievalWork?: ConversationRetrievalWorkPort;
+  getSession?: () => PreparedSession;
+  beforeRender?: () => Promise<void>;
 }
 
 export interface RunPreparedChatTurnWithConversationEngineResult {
@@ -91,16 +97,20 @@ export const runPreparedChatTurnWithConversationEngine = async (
   input: RunPreparedChatTurnWithConversationEngineInput,
 ): Promise<RunPreparedChatTurnWithConversationEngineResult> => {
   let rendered: ChatPresentedAnswer | null = null;
+  const readSession = input.getSession ?? (() => input.session);
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
   const processTurnInput = createChatProcessTurnInput({
     session: input.session,
+    getSession: readSession,
     accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
+    turnInterpreter: input.turnInterpreter,
+    retrievalWork: input.retrievalWork,
     selector: {
       async select() {
-        const { decision } = input.turnSkillSelector.select(input.session);
+        const { decision } = input.turnSkillSelector.select(readSession());
         return decision;
       },
     },
@@ -110,7 +120,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
         if (!turnSkill) {
           throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
         }
-        return turnSkill.dispatch(input.session);
+        return turnSkill.dispatch(readSession());
       },
     },
     composer: {
@@ -119,8 +129,9 @@ export const runPreparedChatTurnWithConversationEngine = async (
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
+        await input.beforeRender?.();
         rendered = await renderers.resolve(outcome).render(outcome, {
-          session: input.session,
+          session: readSession(),
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
@@ -140,18 +151,22 @@ export const runPreparedChatTurnWithConversationEngine = async (
 export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   input: RunPreparedChatTurnWithConversationEngineInput,
 ): AsyncIterable<RunPreparedChatTurnStreamWithConversationEngineEvent> {
+  const readSession = input.getSession ?? (() => input.session);
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
   const streamState: { result?: TurnStreamResult } = {};
 
   const processTurnInput = createChatProcessTurnStreamInput({
     session: input.session,
+    getSession: readSession,
     accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
+    turnInterpreter: input.turnInterpreter,
+    retrievalWork: input.retrievalWork,
     selector: {
       async select() {
-        const { decision } = input.turnSkillSelector.select(input.session);
+        const { decision } = input.turnSkillSelector.select(readSession());
         return decision;
       },
     },
@@ -161,7 +176,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         if (!turnSkill) {
           throw new Error(`conversation_engine_no_turn_skill_for_${skill.name}`);
         }
-        return turnSkill.dispatch(input.session);
+        return turnSkill.dispatch(readSession());
       },
     },
     composer: {
@@ -173,10 +188,11 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
+        await input.beforeRender?.();
         const turnSkill = skillsByName.get(outcome.skillName);
         if (!turnSkill?.streamRender) {
           const finalPresentation = await renderers.resolve(outcome).render(outcome, {
-            session: input.session,
+            session: readSession(),
             query: input.query,
             userExpectedLocale: input.userExpectedLocale,
             accountId: input.accountId,
@@ -197,7 +213,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           return;
         }
         const answerStream = turnSkill.streamRender({
-          session: input.session,
+          session: readSession(),
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,

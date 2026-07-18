@@ -399,6 +399,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookSkillDefinitionRepository: repositories.webhookSkillDefinitionRepository,
     slackSkillDefinitionRepository: repositories.slackSkillDefinitionRepository,
     retrievalPipeline: retrieval.retrievalPipeline,
+    retrievalDefaultsProvider,
+    skillSettingsResolver,
     usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     workspaceRepository: repositories.workspaceRepository,

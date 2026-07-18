@@ -5,12 +5,14 @@ import type {
   ConversationClarificationStore,
   ConversationClarifier,
   ConversationModelGateway,
+  ConversationRetrievalWorkPort,
   ConversationRoutineActivator,
   ConversationRoutineReentryGate,
   ConversationRoutineRunner,
   ConversationRoutineSlotCorrection,
   ConversationRoutineStore,
   ConversationTrace,
+  ConversationTurnInterpreter,
   ClarificationCandidate,
   ConversationChannelContext,
   ClarificationPolicy,
@@ -20,6 +22,7 @@ import type {
   RoutineAwaitingDecision,
   RoutineState,
   TurnContext,
+  TurnOutcome,
 } from "@radioso/conversation-contract";
 import type { RoutineGroundedAnswerRenderer } from "@radioso/conversation-defaults";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -73,6 +76,10 @@ import {
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type {
+  ChatConversationTurnInterpreter,
+  ConversationTurnInterpretationResult,
+} from "./conversationTurnInterpreter.js";
+import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
 } from "./chatAnswerPresenter.js";
@@ -103,7 +110,9 @@ import {
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import {
   evaluateRetrievalSenseClarification,
+  type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
+  type StructuredRewriteResult,
 } from "../../retrieval/public.js";
 import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
 import {
@@ -141,6 +150,42 @@ const chatTurnTraceAttributes = (input: {
   "chat.source_channel": input.sourceChannel ?? "assistant",
   "chat.stream": input.stream,
 });
+
+const retrievalDiagnosticsMetadata = (
+  session: PreparedSession,
+): {
+  route: PreparedSession["turnRoute"];
+  contextCount: number;
+  rewriteStatus?: RetrievalExecutionDiagnostics["rewriteStatus"];
+  triggerStatus?: NonNullable<RetrievalExecutionDiagnostics["triggerAnalysis"]>["status"];
+} => ({
+  route: session.turnRoute,
+  contextCount: session.retrieval.contexts.length,
+  rewriteStatus: session.retrieval.diagnostics.rewriteStatus,
+  triggerStatus: session.retrieval.diagnostics.triggerAnalysis?.status,
+});
+
+type RetrievalSenseClarificationTurn =
+  | {
+      kind: "ask";
+      presentation: ChatPresentedAnswer;
+      engineTrace: ConversationTrace;
+    }
+  | {
+      kind: "continue";
+      documentScope?: string[];
+      offerAlternatives?: ClarificationCandidate[];
+      stage?: ConversationTrace["stages"][number];
+    };
+
+const CLARIFICATION_TURN_SKILL = "clarification.answer";
+
+const clarificationTraceStage = (
+  turn: RetrievalSenseClarificationTurn | null,
+): ConversationTrace["stages"][number] | undefined =>
+  turn?.kind === "continue"
+    ? turn.stage
+    : turn?.engineTrace.stages.find((stage) => stage.kind === "clarification");
 
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly inference: ModelInferencePipeline) {}
@@ -395,6 +440,7 @@ export interface ChatServiceOptions {
   directiveSteering?: RouteScopedDirectiveRuntime;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
+  turnInterpreter?: ChatConversationTurnInterpreter;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
@@ -453,6 +499,7 @@ export class ChatService {
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
+  private readonly turnInterpreter?: ChatConversationTurnInterpreter;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
 
@@ -473,6 +520,7 @@ export class ChatService {
       directiveSteering = noopRouteScopedDirectiveRuntime,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
+      turnInterpreter,
       conversationEngine,
       actionOutbox,
       assistantTurnPersistence,
@@ -519,6 +567,7 @@ export class ChatService {
     this.usageLimitPolicy = usageLimitPolicy;
     this.selectionStrategy = selectionStrategy;
     this.turnRouter = turnRouter;
+    this.turnInterpreter = turnInterpreter;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
     this.agentSkillTurnSkillProvider = agentSkillTurnSkillProvider;
@@ -1183,12 +1232,19 @@ export class ChatService {
     };
   }
 
-  private async turnSelectionRuntime(session: PreparedSession): Promise<{
+  private async turnSelectionRuntime(
+    session: PreparedSession,
+    input: {
+      prependTurnSkills?: TurnSkill[];
+      forceSkillName?: () => string | null | undefined;
+    } = {},
+  ): Promise<{
     turnSkills: TurnSkill[];
     turnSkillSelector: ChatTurnSkillSelector;
   }> {
     const agentSkillRuntime = await this.agentSkillTurnSkillProvider?.forSession(session);
     const turnSkills = [
+      ...(input.prependTurnSkills ?? []),
       ...this.turnSkills,
       ...(agentSkillRuntime?.turnSkills ?? []),
     ];
@@ -1197,6 +1253,7 @@ export class ChatService {
       turnSkillSelector: new ChatTurnSkillSelector(turnSkills, this.selectionStrategy, {
         agentSkillStates: agentSkillRuntime?.skillStates,
         logger: this.logger,
+        forceSkillName: input.forceSkillName,
       }),
     };
   }
@@ -1224,6 +1281,251 @@ export class ChatService {
     return { presentation, engineTrace: result.trace, actions: result.actions };
   }
 
+  private async interpretChatTurnForPreparation(input: {
+    request: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    };
+    session: PreparedSession;
+    resolvedRetrievalSense: boolean;
+  }): Promise<ConversationTurnInterpretationResult> {
+    const interpreted = this.turnInterpreter
+      ? await this.turnInterpreter.interpretChatTurn({
+        query: input.request.query,
+        history: input.session.history,
+        responseIdentity: input.session.retrieval.responseIdentity,
+        customInstruction: input.session.agent.customInstruction,
+        workspaceId: input.request.workspaceId,
+        accountId: input.request.accountId,
+        conversationId: input.session.conversation.id,
+        messageId: input.session.userMessage.id,
+        agentSkillSettings: input.session.agent.skillSettings,
+      })
+      : await this.routeTurn(input.request, input.session);
+    return input.resolvedRetrievalSense
+      ? { ...interpreted, route: CHAT_TURN_ROUTE.RETRIEVAL }
+      : interpreted;
+  }
+
+  private retrievalInputWithRewriteProposal(
+    input: Parameters<ChatSessionPreparer["prepareRetrieval"]>[0],
+    proposal?: StructuredRewriteResult,
+  ): Parameters<ChatSessionPreparer["prepareRetrieval"]>[0] {
+    return proposal
+      ? { ...input, precomputedRewriteProposal: proposal }
+      : input;
+  }
+
+  private clarificationTurnSkill(state: { current: RetrievalSenseClarificationTurn | null }): TurnSkill {
+    return {
+      definition: { name: CLARIFICATION_TURN_SKILL, outcomeKinds: ["clarification"] },
+      selects: () => state.current?.kind === "ask",
+      dispatch: () => {
+        if (state.current?.kind !== "ask") {
+          throw new Error("clarification_turn_skill_without_question");
+        }
+        return {
+          kind: "clarification",
+          skillName: CLARIFICATION_TURN_SKILL,
+          outcome: {
+            status: "completed",
+            answer: state.current.presentation.answer,
+          },
+          stagedContext: [],
+          steering: [],
+          trace: state.current.engineTrace,
+        } satisfies TurnOutcome;
+      },
+      renderer: {
+        supports: (outcome) => outcome.skillName === CLARIFICATION_TURN_SKILL,
+        render: async () => {
+          if (state.current?.kind !== "ask") {
+            throw new Error("clarification_turn_render_without_question");
+          }
+          return state.current.presentation;
+        },
+      },
+    };
+  }
+
+  private buildEnginePreparationPorts(input: {
+    request: {
+      workspaceId: string;
+      accountId?: string;
+      query: string;
+    };
+    retrievalInput: Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
+    responseLanguagePromise: Promise<string | undefined>;
+    resolvedRetrievalSense: boolean;
+    sessionRef: { current: PreparedSession };
+    clarificationState?: { current: RetrievalSenseClarificationTurn | null };
+    clarification?: {
+      store?: DeferredClarificationStore;
+      resolution?: PendingClarificationResolution;
+      clarifier?: ConversationClarifier;
+    };
+    activeRoutineAtTurnStart?: boolean;
+  }): {
+    turnInterpreter: ConversationTurnInterpreter;
+    retrievalWork: ConversationRetrievalWorkPort;
+  } {
+    const turnInterpreter: ConversationTurnInterpreter = {
+      interpret: async () => {
+        const interpreted = await this.interpretChatTurnForPreparation({
+          request: input.request,
+          session: input.sessionRef.current,
+          resolvedRetrievalSense: input.resolvedRetrievalSense,
+        });
+        const routing = {
+          route: interpreted.route,
+          framing: interpreted.framing,
+        };
+        input.sessionRef.current = {
+          ...input.sessionRef.current,
+          turnRoute: routing.route,
+          turnFraming: routing.framing,
+        };
+        if (routing.route === CHAT_TURN_ROUTE.DIRECT) {
+          input.sessionRef.current = this.withResponseLanguage(
+            input.sessionRef.current,
+            await input.responseLanguagePromise,
+          );
+          input.sessionRef.current = await this.chatSessionPreparer.prepareDirect(
+            input.retrievalInput,
+            input.sessionRef.current,
+            routing.framing,
+          );
+        }
+        return {
+          route: routing.route,
+          framing: routing.framing,
+          metadata: "rewriteProposal" in interpreted && interpreted.rewriteProposal
+            ? { rewriteProposal: interpreted.rewriteProposal }
+            : undefined,
+        };
+      },
+    };
+    const retrievalWork: ConversationRetrievalWorkPort = {
+      run: async ({ interpretation }) => {
+        const rewriteProposal =
+          interpretation.metadata?.rewriteProposal && typeof interpretation.metadata.rewriteProposal === "object"
+            ? interpretation.metadata.rewriteProposal as StructuredRewriteResult
+            : undefined;
+        const preparedRetrievalInput = this.retrievalInputWithRewriteProposal(input.retrievalInput, rewriteProposal);
+        const directiveSteering = input.sessionRef.current.directiveSteering;
+        input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
+          preparedRetrievalInput,
+          input.sessionRef.current,
+          input.sessionRef.current.turnFraming,
+        );
+        if (directiveSteering) {
+          input.sessionRef.current = {
+            ...input.sessionRef.current,
+            directiveSteering,
+          };
+        }
+        if (input.clarificationState && input.clarification) {
+          input.clarificationState.current = await this.maybeClarifyRetrievalSense({
+            session: input.sessionRef.current,
+            accountId: input.request.accountId,
+            clarification: input.clarification,
+            activeRoutineAtTurnStart: input.activeRoutineAtTurnStart ?? false,
+          });
+          if (input.clarificationState.current?.kind === "continue" && input.clarificationState.current.documentScope) {
+            input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
+              {
+                ...preparedRetrievalInput,
+                documentScope: input.clarificationState.current.documentScope,
+              },
+              input.sessionRef.current,
+              input.sessionRef.current.turnFraming,
+            );
+          }
+          if (input.clarificationState.current?.kind === "continue" && input.clarificationState.current.offerAlternatives) {
+            input.sessionRef.current = {
+              ...input.sessionRef.current,
+              retrievalSenseOfferAlternatives: input.clarificationState.current.offerAlternatives,
+            };
+          }
+        }
+        return {
+          stagedContext: input.sessionRef.current.stagedContext,
+          trace: input.sessionRef.current.turnTrace,
+          metadata: retrievalDiagnosticsMetadata(input.sessionRef.current),
+        };
+      },
+    };
+    return { turnInterpreter, retrievalWork };
+  }
+
+  private async renderPreparedByEngine(
+    session: PreparedSession,
+    input: {
+      request: {
+        workspaceId: string;
+        accountId?: string;
+        query: string;
+        userExpectedLocale?: string | null;
+      };
+      retrievalInput: Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
+      responseLanguagePromise: Promise<string | undefined>;
+      resolvedRetrievalSense: boolean;
+      clarification?: {
+        store?: DeferredClarificationStore;
+        resolution?: PendingClarificationResolution;
+        clarifier?: ConversationClarifier;
+      };
+      activeRoutineAtTurnStart?: boolean;
+    },
+  ): Promise<{
+    session: PreparedSession;
+    presentation: ChatPresentedAnswer;
+    engineTrace?: ConversationTrace;
+    actions?: RoutineActionRequest[];
+  }> {
+    const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
+    const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
+    const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
+      request: input.request,
+      retrievalInput: input.retrievalInput,
+      responseLanguagePromise: input.responseLanguagePromise,
+      resolvedRetrievalSense: input.resolvedRetrievalSense,
+      sessionRef,
+      clarificationState,
+      clarification: input.clarification,
+      activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
+    });
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(
+      sessionRef.current,
+      {
+        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
+        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+      },
+    );
+    const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
+      engine: this.conversationEngine,
+      session: sessionRef.current,
+      getSession: () => sessionRef.current,
+      turnSkillSelector,
+      turnSkills,
+      directiveRuntime: this.directiveRuntime,
+      turnInterpreter,
+      retrievalWork,
+      beforeRender: async () => {
+        sessionRef.current = this.withResponseLanguage(sessionRef.current, await input.responseLanguagePromise);
+      },
+      query: input.request.query,
+      userExpectedLocale: input.request.userExpectedLocale,
+      accountId: input.request.accountId,
+    });
+    const stage = clarificationTraceStage(clarificationState.current);
+    const engineTrace = stage
+      ? this.conversationTraceWithStage(result.trace, stage)
+      : result.trace;
+    return { session: sessionRef.current, presentation, engineTrace, actions: result.actions };
+  }
+
   private async *streamTurn(
     session: PreparedSession,
     input: { query: string; userExpectedLocale?: string | null; accountId?: string },
@@ -1249,6 +1551,79 @@ export class ChatService {
         suggestions: event.suggestions,
         engineTrace: event.engineTrace,
         actions: event.result.actions,
+      };
+    }
+  }
+
+  private async *streamPreparedByEngine(
+    session: PreparedSession,
+    input: {
+      request: {
+        workspaceId: string;
+        accountId?: string;
+        query: string;
+        userExpectedLocale?: string | null;
+      };
+      retrievalInput: Parameters<ChatSessionPreparer["prepareRetrieval"]>[0];
+      responseLanguagePromise: Promise<string | undefined>;
+      resolvedRetrievalSense: boolean;
+      clarification?: {
+        store?: DeferredClarificationStore;
+        resolution?: PendingClarificationResolution;
+        clarifier?: ConversationClarifier;
+      };
+      activeRoutineAtTurnStart?: boolean;
+    },
+  ): AsyncIterable<PreparedChatStreamTurnEvent & { session?: PreparedSession }> {
+    const sessionRef = { current: { ...session, effectiveQuery: input.retrievalInput.query } };
+    const clarificationState: { current: RetrievalSenseClarificationTurn | null } = { current: null };
+    const { turnInterpreter, retrievalWork } = this.buildEnginePreparationPorts({
+      request: input.request,
+      retrievalInput: input.retrievalInput,
+      responseLanguagePromise: input.responseLanguagePromise,
+      resolvedRetrievalSense: input.resolvedRetrievalSense,
+      sessionRef,
+      clarificationState,
+      clarification: input.clarification,
+      activeRoutineAtTurnStart: input.activeRoutineAtTurnStart,
+    });
+    const { turnSkills, turnSkillSelector } = await this.turnSelectionRuntime(
+      sessionRef.current,
+      {
+        prependTurnSkills: [this.clarificationTurnSkill(clarificationState)],
+        forceSkillName: () => clarificationState.current?.kind === "ask" ? CLARIFICATION_TURN_SKILL : null,
+      },
+    );
+    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
+      engine: this.conversationEngine,
+      session: sessionRef.current,
+      getSession: () => sessionRef.current,
+      turnSkillSelector,
+      turnSkills,
+      directiveRuntime: this.directiveRuntime,
+      turnInterpreter,
+      retrievalWork,
+      beforeRender: async () => {
+        sessionRef.current = this.withResponseLanguage(sessionRef.current, await input.responseLanguagePromise);
+      },
+      query: input.request.query,
+      userExpectedLocale: input.request.userExpectedLocale,
+      accountId: input.request.accountId,
+    })) {
+      if (event.type === "chunk") {
+        yield event;
+        continue;
+      }
+      const stage = clarificationTraceStage(clarificationState.current);
+      yield {
+        type: "final",
+        finalPresentation: event.presentation,
+        suggestions: event.suggestions,
+        engineTrace: stage
+          ? this.conversationTraceWithStage(event.engineTrace, stage)
+          : event.engineTrace,
+        actions: event.result.actions,
+        session: sessionRef.current,
       };
     }
   }
@@ -1384,40 +1759,102 @@ export class ChatService {
       // direct and silently drop the document scope.
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
-      const routing = await this.routeTurn(retrievalInput, session);
-      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
-      session = this.withResponseLanguage(session, await responseLanguagePromise);
-      session = groundTurn
-        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
-        : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
       const answerStartedAt = Date.now();
-      const clarificationTurn = groundTurn
-        ? await this.maybeClarifyRetrievalSense({
-            session,
+      if (!this.turnInterpreter && (this.retrievalSenseDetector || resolvedRetrievalSense)) {
+        const interpreted = await this.interpretChatTurnForPreparation({
+          request: {
+            workspaceId: input.workspaceId,
             accountId: input.accountId,
-            clarification,
-            activeRoutineAtTurnStart,
-          })
-        : null;
-      if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
-        session = await this.chatSessionPreparer.prepareRetrieval({
-          ...retrievalInput,
-          documentScope: clarificationTurn.documentScope,
-        }, session, routing.framing);
-      }
-      if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
-        session = {
-          ...session,
-          retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
+            query: retrievalInput.query,
+          },
+          session,
+          resolvedRetrievalSense,
+        });
+        const routing = {
+          route: interpreted.route,
+          framing: interpreted.framing,
         };
+        const preparedRetrievalInput = this.retrievalInputWithRewriteProposal(
+          retrievalInput,
+          interpreted.rewriteProposal,
+        );
+        const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
+        session = groundTurn
+          ? await this.chatSessionPreparer.prepareRetrieval(preparedRetrievalInput, session, routing.framing)
+          : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
+        const clarificationTurn = groundTurn
+          ? await this.maybeClarifyRetrievalSense({
+              session,
+              accountId: input.accountId,
+              clarification,
+              activeRoutineAtTurnStart,
+            })
+          : null;
+        if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
+          session = await this.chatSessionPreparer.prepareRetrieval(
+            {
+              ...preparedRetrievalInput,
+              documentScope: clarificationTurn.documentScope,
+            },
+            session,
+            routing.framing,
+          );
+        }
+        if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
+          session = {
+            ...session,
+            retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
+          };
+        }
+        const renderedTurn = clarificationTurn?.kind === "ask"
+          ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
+          : await this.renderTurn(session, retrievalInput);
+        const { presentation, actions } = renderedTurn;
+        const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
+          ? this.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
+          : renderedTurn.engineTrace;
+        const retrievalMissHandoff = retrievalMissHandoffForTurn({
+          session,
+          presentation,
+          workspaceId: input.workspaceId,
+          actions,
+        });
+        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          session,
+          presentation,
+          answerStartedAt,
+          stream: input.stream,
+          engineTrace,
+          actions: retrievalMissHandoff.actions,
+          ownershipHandoff: retrievalMissHandoff.ownershipHandoff,
+          clarificationTransition: clarification.store?.getTransition(),
+          commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+        });
+        assistantMessageId = completedTurn.assistantMessageId;
+        await usageReservation.commit();
+
+        return completedTurn.response;
       }
-      const renderedTurn = clarificationTurn?.kind === "ask"
-        ? { presentation: clarificationTurn.presentation, engineTrace: clarificationTurn.engineTrace, actions: undefined }
-        : await this.renderTurn(session, retrievalInput);
+      const preparedTurn = await this.renderPreparedByEngine(session, {
+        request: {
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          query: retrievalInput.query,
+          userExpectedLocale: input.userExpectedLocale,
+        },
+        retrievalInput,
+        responseLanguagePromise,
+        resolvedRetrievalSense,
+        clarification,
+        activeRoutineAtTurnStart,
+      });
+      session = preparedTurn.session;
+      const renderedTurn = preparedTurn;
       const { presentation, actions } = renderedTurn;
-      const engineTrace = clarificationTurn?.kind === "continue" && clarificationTurn.stage && renderedTurn.engineTrace
-        ? this.conversationTraceWithStage(renderedTurn.engineTrace, clarificationTurn.stage)
-        : renderedTurn.engineTrace;
+      const engineTrace = renderedTurn.engineTrace;
       const retrievalMissHandoff = retrievalMissHandoffForTurn({
         session,
         presentation,
@@ -1609,51 +2046,87 @@ export class ChatService {
       // direct and silently drop the document scope.
       const resolvedRetrievalSense = clarification.resolution?.kind === "retrieval_sense";
       const retrievalInput = retrievalInputForResolvedSense(input, clarification.resolution);
-      const routing = await this.routeTurn(retrievalInput, session);
-      const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
-      session = this.withResponseLanguage(session, await responseLanguagePromise);
-      session = groundTurn
-        ? await this.chatSessionPreparer.prepareRetrieval(retrievalInput, session, routing.framing)
-        : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
       const answerStartedAt = Date.now();
-      const clarificationTurn = groundTurn
-        ? await this.maybeClarifyRetrievalSense({
-            session,
+      const useSenseCompatiblePath = Boolean(!this.turnInterpreter && (this.retrievalSenseDetector || resolvedRetrievalSense));
+      let clarificationTurn:
+        | {
+            kind: "ask";
+            presentation: ChatPresentedAnswer;
+            engineTrace?: ConversationTrace;
+          }
+        | {
+            kind: "continue";
+            documentScope?: string[];
+            offerAlternatives?: ClarificationCandidate[];
+            stage?: ConversationTrace["stages"][number];
+          }
+        | null = null;
+      if (useSenseCompatiblePath) {
+        const interpreted = await this.interpretChatTurnForPreparation({
+          request: {
+            workspaceId: input.workspaceId,
             accountId: input.accountId,
-            clarification,
-            activeRoutineAtTurnStart,
-          })
-        : null;
-      if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
-        session = await this.chatSessionPreparer.prepareRetrieval({
-          ...retrievalInput,
-          documentScope: clarificationTurn.documentScope,
-        }, session, routing.framing);
-      }
-      if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
-        session = {
-          ...session,
-          retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
-        };
-      }
-      if (clarificationTurn?.kind === "ask") {
-        const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
+            query: retrievalInput.query,
+          },
           session,
-          presentation: clarificationTurn.presentation,
-          answerStartedAt,
-          stream: input.stream,
-          engineTrace: clarificationTurn.engineTrace,
-          clarificationTransition: clarification.store?.getTransition(),
-          commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+          resolvedRetrievalSense,
         });
-        assistantMessageId = completedTurn.assistantMessageId;
-        await usageReservation.commit();
-        usageReservationCommitted = true;
-        yield { type: "chunk", text: clarificationTurn.presentation.answer };
-        yield { type: "done", ...completedTurn.response };
-        return;
+        const routing = {
+          route: interpreted.route,
+          framing: interpreted.framing,
+        };
+        const preparedRetrievalInput = this.retrievalInputWithRewriteProposal(
+          retrievalInput,
+          interpreted.rewriteProposal,
+        );
+        const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
+        session = this.withResponseLanguage(session, await responseLanguagePromise);
+        session = groundTurn
+          ? await this.chatSessionPreparer.prepareRetrieval(preparedRetrievalInput, session, routing.framing)
+          : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
+        clarificationTurn = groundTurn
+          ? await this.maybeClarifyRetrievalSense({
+              session,
+              accountId: input.accountId,
+              clarification,
+              activeRoutineAtTurnStart,
+            })
+          : null;
+        if (clarificationTurn?.kind === "continue" && clarificationTurn.documentScope) {
+          session = await this.chatSessionPreparer.prepareRetrieval(
+            {
+              ...preparedRetrievalInput,
+              documentScope: clarificationTurn.documentScope,
+            },
+            session,
+            routing.framing,
+          );
+        }
+        if (clarificationTurn?.kind === "continue" && clarificationTurn.offerAlternatives) {
+          session = {
+            ...session,
+            retrievalSenseOfferAlternatives: clarificationTurn.offerAlternatives,
+          };
+        }
+        if (clarificationTurn?.kind === "ask") {
+          const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+            workspaceId: input.workspaceId,
+            accountId: input.accountId,
+            session,
+            presentation: clarificationTurn.presentation,
+            answerStartedAt,
+            stream: input.stream,
+            engineTrace: clarificationTurn.engineTrace,
+            clarificationTransition: clarification.store?.getTransition(),
+            commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
+          });
+          assistantMessageId = completedTurn.assistantMessageId;
+          await usageReservation.commit();
+          usageReservationCommitted = true;
+          yield { type: "chunk", text: clarificationTurn.presentation.answer };
+          yield { type: "done", ...completedTurn.response };
+          return;
+        }
       }
 
       // Route to the capability that claims this turn and stream its answer. When
@@ -1663,7 +2136,22 @@ export class ChatService {
       let suggestions: TurnStreamSuggestions | null = null;
       let engineTrace: ConversationTrace | undefined;
       let actions: RoutineActionRequest[] | undefined;
-      for await (const event of this.streamTurn(session, retrievalInput)) {
+      const streamEvents = useSenseCompatiblePath
+        ? this.streamTurn(session, retrievalInput)
+        : this.streamPreparedByEngine(session, {
+            request: {
+              workspaceId: input.workspaceId,
+              accountId: input.accountId,
+              query: retrievalInput.query,
+              userExpectedLocale: input.userExpectedLocale,
+            },
+            retrievalInput,
+            responseLanguagePromise,
+            resolvedRetrievalSense,
+            clarification,
+            activeRoutineAtTurnStart,
+          });
+      for await (const event of streamEvents) {
         if (event.type === "chunk") {
           yield {
             type: "chunk",
@@ -1675,6 +2163,10 @@ export class ChatService {
         suggestions = event.suggestions;
         engineTrace = event.engineTrace;
         actions = event.actions;
+        const eventSession = (event as { session?: PreparedSession }).session;
+        if (eventSession) {
+          session = eventSession;
+        }
       }
       if (clarificationTurn?.kind === "continue" && clarificationTurn.stage && engineTrace) {
         engineTrace = this.conversationTraceWithStage(engineTrace, clarificationTurn.stage);
@@ -1682,13 +2174,17 @@ export class ChatService {
       if (!finalPresentation || !suggestions) {
         throw new Error("chat_stream_missing_final_presentation");
       }
+      if (!session) {
+        throw new Error("chat_stream_missing_prepared_session");
+      }
+      const preparedSession = session;
       // The lazy promise can call chatActionSuggestionService.evaluate (which may
       // hit an LLM). If completeAssistantTurn below throws, we rethrow but the
       // promise stays in flight — swallow its rejection so it can't surface as an
       // unhandled rejection. The post-`done` await still observes the failure and
       // skips emitting suggestions, which is the desired behavior.
       lazySuggestionsPromise = this.composeLazySuggestions({
-        session,
+        session: preparedSession,
         presentation: finalPresentation,
         suggestions,
         userExpectedLocale: input.userExpectedLocale,
@@ -1698,17 +2194,17 @@ export class ChatService {
         ...finalPresentation,
         suggestions: undefined,
       };
-      const retrievalMissHandoff = retrievalMissHandoffForTurn({
-        session,
-        presentation,
-        workspaceId: input.workspaceId,
-        actions,
-      });
+	      const retrievalMissHandoff = retrievalMissHandoffForTurn({
+	        session: preparedSession,
+	        presentation,
+	        workspaceId: input.workspaceId,
+	        actions,
+	      });
 
-      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
-        workspaceId: input.workspaceId,
-        accountId: input.accountId,
-        session,
+	      const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
+	        workspaceId: input.workspaceId,
+	        accountId: input.accountId,
+	        session: preparedSession,
         presentation,
         answerStartedAt,
         stream: input.stream,

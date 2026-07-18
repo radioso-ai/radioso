@@ -61,6 +61,9 @@ export type {
 export {
   conversationRoutineActivatorFromCandidate,
   RoutineRegistry,
+  type RoutineActivationPrefilter,
+  type RoutineActivationPrefilterScore,
+  type RoutineActivationTrigger,
   type RoutineRegistration,
 } from "./routineRegistry.js";
 export {

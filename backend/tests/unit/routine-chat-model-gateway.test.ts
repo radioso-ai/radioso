@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { RoutineChatModelGateway } from "../../src/modules/chat/services/routines/routineChatModelGateway.js";
+import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 
 const turnContext = {
@@ -43,5 +44,34 @@ describe("RoutineChatModelGateway", () => {
     expect(input.systemPrompt).toBe("ROUTINE STEP INSTRUCTIONS");
     expect(input.usageContext).toBe(turnContext.usageContext);
     expect(input.workspaceContext).toBe(turnContext.workspaceContext);
+  });
+
+  it("uses a cheap routine_activation usage label and generation budget for activation ranking", async () => {
+    const calls: ChatGatewayInput[] = [];
+    const chatGateway: Pick<ChatGateway, "answer"> = {
+      async answer(input) {
+        calls.push(input);
+        return '{"matches":[]}';
+      },
+    };
+    const gateway = new RoutineChatModelGateway(chatGateway, turnContext);
+
+    await gateway.complete({
+      messages: [{ role: "user", content: "Can I book a demo?" }],
+      systemPrompt: "ROUTINE ACTIVATION",
+      metadata: { routineActivation: true },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      query: "Can I book a demo?",
+      prompt: "user: Can I book a demo?",
+      usageContext: {
+        ...turnContext.usageContext,
+        operation: "routine_activation",
+        attemptKey: "routine_activation",
+      },
+      generation: CHAT_BEHAVIOR.intentRouting,
+    });
   });
 });

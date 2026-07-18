@@ -26,6 +26,7 @@ export {
   RoutineSlotCorrector,
   RoutineReentryGate,
   DefaultClarifier,
+  type RoutineActivationPrefilter,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
 export {

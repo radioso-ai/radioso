@@ -4,6 +4,7 @@ import type {
   ConversationTraceStage,
 } from "@radioso/conversation-contract";
 import { getActiveTraceCorrelation } from "../../../shared/observability/tracing/operations.js";
+import { buildTurnTraceSummary } from "./turnTraceSummary.js";
 
 /**
  * Versioned envelope persisted per chat turn. The conversation spine is the root
@@ -184,11 +185,15 @@ export const buildTurnTraceEnvelope = (input: {
   const openTelemetry = version >= TURN_TRACE_ENVELOPE_VERSION
     ? readOpenTelemetryCorrelation()
     : undefined;
+  const summary = {
+    ...(input.summary ?? {}),
+    ...buildTurnTraceSummary(input.spine),
+  };
 
   return {
     version,
     spine: input.spine,
     ...(openTelemetry ? { openTelemetry } : {}),
-    ...(input.summary ? { summary: input.summary } : {}),
+    summary,
   };
 };

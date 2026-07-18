@@ -11,7 +11,11 @@ import {
   presentActivityOutcome,
   presentRunParameters,
 } from '@/lib/activity-diagnostics'
-import { clarificationDecisionFromSpine, routineTurnSignalFromSpine } from '@/lib/turn-trace'
+import {
+  clarificationDecisionFromSpine,
+  routineTurnSignalFromSpine,
+  turnTraceRollup,
+} from '@/lib/turn-trace'
 
 type ChatConversationTurnDebug = NonNullable<ChatConversationTurn['debug']>
 
@@ -130,6 +134,7 @@ export function TurnDiagnosticsPanel({
     clarificationAsked: clarificationDecisionFromSpine(spine) === 'asked',
   })
   const runParameters = presentRunParameters(resolvedActivityTrace)
+  const rollup = turnTraceRollup(activeEnvelope)
 
   return (
     <div className="space-y-4">
@@ -142,6 +147,29 @@ export function TurnDiagnosticsPanel({
       ) : null}
 
       <DiagnosticPresentationSection label="Outcome summary" presentation={outcomePresentation} />
+
+      {rollup ? (
+        <section className="rounded-lg border border-border/70 bg-background/60 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Turn performance</p>
+          <dl className="mt-3 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+            {[
+              { label: 'Turn time', value: `${rollup.totalTurnWallClockMs}ms` },
+              { label: 'Model time', value: `${rollup.totalModelTimeMs}ms` },
+              { label: 'LLM calls', value: String(rollup.totalLlmCalls) },
+              { label: 'Serial LLM depth', value: String(rollup.serialLlmDepth) },
+              {
+                label: 'Longest stage',
+                value: `${rollup.longestStage.name.replaceAll('_', ' ')} · ${rollup.longestStage.durationMs}ms`,
+              },
+            ].map((fact) => (
+              <div key={fact.label} className="min-w-0">
+                <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{fact.label}</dt>
+                <dd className="mt-0.5 break-words font-mono text-sm text-foreground">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
 
       {runParameters ? (
         <DiagnosticPresentationSection label="Run parameters" presentation={runParameters} />

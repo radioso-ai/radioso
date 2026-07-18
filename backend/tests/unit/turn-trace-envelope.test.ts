@@ -179,7 +179,13 @@ describe("buildTurnTraceEnvelope", () => {
     const envelope = buildTurnTraceEnvelope({ spine: spine() });
     expect(envelope.version).toBe(TURN_TRACE_ENVELOPE_VERSION);
     expect(envelope.spine.traceId).toBe("conversation-turn-1");
-    expect(envelope.summary).toBeUndefined();
+    expect(envelope.summary).toEqual({
+      totalLlmCalls: 0,
+      serialLlmDepth: 0,
+      longestStage: { name: "gather", durationMs: 0 },
+      totalModelTimeMs: 0,
+      totalTurnWallClockMs: 0,
+    });
     expect(envelope.openTelemetry).toBeUndefined();
   });
 
@@ -190,7 +196,14 @@ describe("buildTurnTraceEnvelope", () => {
       version: 0,
     });
     expect(envelope.version).toBe(0);
-    expect(envelope.summary).toEqual({ outcome: "answered" });
+    expect(envelope.summary).toEqual({
+      totalLlmCalls: 0,
+      serialLlmDepth: 0,
+      longestStage: { name: "gather", durationMs: 0 },
+      totalModelTimeMs: 0,
+      totalTurnWallClockMs: 0,
+      outcome: "answered",
+    });
   });
 
   it("does not stamp synthesized legacy envelopes with the current request trace", () => {

@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-06-13
+last_updated: 2026-07-18
 ---
 
 # Assistant Turn Spine
@@ -73,10 +73,22 @@ run response-language detection. Query rewrite does not own response-language
 selection.
 
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
-compose stages) is recorded on the `chat.answer` success audit event under
-`metadata.conversationEngine.trace`, alongside the retrieval-derived
-`activityTrace`. This is audit-only observability; the user-facing answer and
-activity trace are unchanged.
+compose stages) is the root of the versioned `metadata.turnTrace` envelope on
+the `chat.answer` success audit event. Capability traces, including retrieval,
+hang from their dispatch stage as typed leaves. The legacy retrieval-derived
+`activityTrace` remains available during the history migration.
+
+Real spine stages record wall-clock start and completion times. Model calls made
+by host adapters add only safe operational facts to the enclosing stage: the
+operation, provider model, latency, and input/output token counts. Prompts,
+completions, retrieved chunks, and document content are not copied into trace
+telemetry.
+
+Each envelope also carries a turn summary with total LLM calls, serial LLM
+depth, the longest stage, total model time, and total turn time. Concurrent
+model calls contribute to total model time but count once at that point in the
+serial-depth calculation. The workbench and activity turn inspector show this
+summary and the per-stage timing and usage fields.
 
 ## Skills are dispatched, not called
 

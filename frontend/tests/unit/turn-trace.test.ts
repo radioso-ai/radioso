@@ -8,7 +8,9 @@ import {
   resolveCapabilityLeaf,
   routineTurnSignalFromSpine,
   spineStageLabel,
+  spineStageTelemetry,
   stageLeafView,
+  turnTraceRollup,
 } from '@/lib/turn-trace'
 
 const activityTrace = { traceId: 'trace-1', startedAt: '2026-01-01T00:00:00.000Z', stages: [], links: [] }
@@ -39,6 +41,110 @@ describe('spineStageLabel', () => {
     expect(spineStageLabel({ id: 'd', kind: 'directive_match', status: 'applied' })).toBe('Directives')
     expect(spineStageLabel({ id: 's', kind: 'directive_steering', status: 'applied' })).toBe('Directives')
     expect(spineStageLabel({ id: 'x', kind: 'custom_phase', status: 'applied' })).toBe('custom phase')
+  })
+})
+
+describe('spineStageTelemetry', () => {
+  it('normalizes wall-clock duration plus per-call model, operation, and token facts', () => {
+    expect(spineStageTelemetry({
+      id: 'compose',
+      kind: 'compose',
+      status: 'applied',
+      startedAt: '2026-01-01T00:00:00.100Z',
+      completedAt: '2026-01-01T00:00:00.500Z',
+      inputs: { model: 'gpt-answer' },
+      outputs: {
+        modelCalls: [
+          {
+            operation: 'grounded',
+            model: 'gpt-answer',
+            durationMs: 280,
+            inputTokens: 100,
+            outputTokens: 30,
+            totalTokens: 130,
+            status: 'succeeded',
+          },
+          {
+            operation: 'grounded_unsupported',
+            model: 'gpt-answer',
+            durationMs: 70,
+            inputTokens: 20,
+            outputTokens: 8,
+            totalTokens: 28,
+            status: 'succeeded',
+          },
+        ],
+      },
+      metrics: {
+        llmCallCount: 2,
+        latencyMs: 350,
+        inputTokens: 120,
+        outputTokens: 38,
+        totalTokens: 158,
+      },
+    })).toEqual({
+      durationMs: 400,
+      models: ['gpt-answer'],
+      operations: ['grounded', 'grounded_unsupported'],
+      llmCallCount: 2,
+      modelTimeMs: 350,
+      inputTokens: 120,
+      outputTokens: 38,
+      totalTokens: 158,
+      calls: [
+        {
+          operation: 'grounded',
+          model: 'gpt-answer',
+          durationMs: 280,
+          inputTokens: 100,
+          outputTokens: 30,
+          totalTokens: 130,
+          status: 'succeeded',
+        },
+        {
+          operation: 'grounded_unsupported',
+          model: 'gpt-answer',
+          durationMs: 70,
+          inputTokens: 20,
+          outputTokens: 8,
+          totalTokens: 28,
+          status: 'succeeded',
+        },
+      ],
+    })
+  })
+
+  it('returns only available facts for legacy or bookkeeping stages', () => {
+    expect(spineStageTelemetry({ id: 'gather', kind: 'gather', status: 'applied' })).toEqual({
+      models: [],
+      operations: [],
+      calls: [],
+    })
+  })
+})
+
+describe('turnTraceRollup', () => {
+  it('normalizes the persisted per-turn rollup and rejects malformed generic summary values', () => {
+    const envelope: TurnTraceEnvelope = {
+      version: 1,
+      spine: spine(),
+      summary: {
+        totalLlmCalls: 4,
+        serialLlmDepth: 3,
+        longestStage: { name: 'compose', durationMs: 250 },
+        totalModelTimeMs: 350,
+        totalTurnWallClockMs: 500,
+      },
+    }
+    expect(turnTraceRollup(envelope)).toEqual({
+      totalLlmCalls: 4,
+      serialLlmDepth: 3,
+      longestStage: { name: 'compose', durationMs: 250 },
+      totalModelTimeMs: 350,
+      totalTurnWallClockMs: 500,
+    })
+    expect(turnTraceRollup({ ...envelope, summary: { totalLlmCalls: 'four' } })).toBeUndefined()
+    expect(turnTraceRollup(undefined)).toBeUndefined()
   })
 })
 

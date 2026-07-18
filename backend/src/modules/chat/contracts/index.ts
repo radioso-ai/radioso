@@ -20,6 +20,7 @@ export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
+export type { ConversationTurnStage } from "./interruption.js";
 export type {
   ActionHandler,
   ActionHandlerContext,

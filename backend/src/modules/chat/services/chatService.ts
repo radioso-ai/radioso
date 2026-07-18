@@ -1422,6 +1422,10 @@ export class ChatService {
           ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
         };
         const directiveSteering = input.sessionRef.current.directiveSteering;
+        input.sessionRef.current = this.withResponseLanguage(
+          input.sessionRef.current,
+          await input.responseLanguagePromise,
+        );
         input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
           preparedRetrievalInput,
           input.sessionRef.current,

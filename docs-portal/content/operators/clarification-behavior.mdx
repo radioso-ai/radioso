@@ -87,9 +87,11 @@ with two facets: what it is, and how to begin. The document groups are
 complementary, not competing.
 
 In this case Radioso does not ask or offer. It answers once over all the matched
-groups, so the reply covers every facet. The trace records the decision as
-`not_clarified` with the reason `compatible_facets`. This judgment is made by the
-model in the conversation language, so it works the same in any language.
+groups, so the reply covers every facet. In the debug trace, this turn shows the
+decision `none` with the reason `compatible_facets`. The ask-rate metric counts
+the same turn as `not_clarified` (see "Measuring ask-rate"), so the trace value
+and the metric value differ by design. This judgment is made by the model in the
+conversation language, so it works the same in any language.
 
 When the model is unsure, or the judgment is missing, Radioso treats the groups as
 competing readings and falls back to the normal ask-or-offer behavior.
@@ -117,7 +119,9 @@ The detail panel shows:
 
 - `surface` — where the ambiguity came from, such as `routine_activation` or
   `retrieval_sense`
-- `decision` — `asked`, `offered`, `auto_picked`, `suppressed`, or `not_clarified`
+- `decision` — `asked`, `offered`, `auto_picked`, `suppressed`, or `none`. A
+  compatible-facets turn shows `none` here; the ask-rate metric records it as
+  `not_clarified`
 - `reason` — why the turn resolved the way it did, such as `clear_margin`,
   `priority`, `suppressed`, `loop_guard`, `label_fallback`, `phrasing_fallback`,
   or `compatible_facets`
@@ -146,17 +150,23 @@ The label set is small and fixed, so the counter stays low-cardinality. It never
 contains message text, labels, or document content.
 
 Ask-rate is the share of ambiguity-candidate turns that ended in a blocking
-question. Derive it per surface from the counter:
+question. The denominator must count only fresh ambiguity turns, not the later
+turns where a visitor answers a prior clarification. Derive it per surface from
+the counter:
 
 ```promql
 sum(rate(radioso_clarification_decisions_total{surface="retrieval_sense",decision="asked"}[1h]))
 /
-sum(rate(radioso_clarification_decisions_total{surface="retrieval_sense"}[1h]))
+sum(rate(radioso_clarification_decisions_total{surface="retrieval_sense",decision=~"asked|offered|auto_picked|suppressed|not_clarified"}[1h]))
 ```
 
-The denominator is every decision on that surface, including `not_clarified`
-(reason `compatible_facets`) and the silent `auto_picked` picks. Turns where the
-system found fewer than two candidates never enter the counter, because they were
-not ambiguous. A rising ask-rate means the assistant is interrupting more often;
-compare it against `not_clarified` and the silent-pick reasons to see where turns
-are going instead.
+The denominator is the fresh ambiguity decisions on that surface: `asked`,
+`offered`, `auto_picked`, `suppressed`, and `not_clarified` (reason
+`compatible_facets`). It deliberately excludes the reply-resolution decisions
+recorded on a later turn when a visitor answers a prior ask or offer — `mapped`,
+`declined`, `expired`, `offer_accepted_alternative`, and `offer_ignored`. Those
+are second increments for an ask that was already counted, so including them would
+deflate the true ask-rate. Turns where the system found fewer than two candidates
+never enter the counter, because they were not ambiguous. A rising ask-rate means
+the assistant is interrupting more often; compare it against `not_clarified` and
+the silent-pick reasons to see where turns are going instead.

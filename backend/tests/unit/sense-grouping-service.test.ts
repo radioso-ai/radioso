@@ -485,6 +485,51 @@ describe("SenseGroupingService", () => {
     ]);
   });
 
+  it("does not tag the set complementary when a separated group is left unlabeled", async () => {
+    // Three separated groups; the gateway judges only two of them complementary and
+    // omits the third. Partial complementary labeling must not suppress the ask for
+    // the whole set — the unlabeled (potentially exclusive) facet gets no clarity.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
+        { id: "doc-a", label: "What Kriya Yoga is", relationship: "complementary" as const },
+        { id: "doc-b", label: "How to begin Kriya Yoga", relationship: "complementary" as const },
+      ]),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: {
+        readChunkEmbeddings: vi.fn(async () => new Map([
+          ["a-1", [1, 0, 0]],
+          ["a-2", [1, 0.1, 0]],
+          ["b-1", [0, 1, 0]],
+          ["b-2", [0.1, 1, 0]],
+          ["c-1", [0, 0, 1]],
+          ["c-2", [0, 0.1, 1]],
+        ])),
+      },
+      labelGateway,
+    });
+
+    const rankedCandidates: RetrievedCandidate[] = [
+      candidate({ chunkId: "a-1", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.86 }),
+      candidate({ chunkId: "a-2", documentId: "doc-a", title: "About Kriya Yoga", similarity: 0.84 }),
+      candidate({ chunkId: "b-1", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.82 }),
+      candidate({ chunkId: "b-2", documentId: "doc-b", title: "Learning Kriya Yoga", similarity: 0.8 }),
+      candidate({ chunkId: "c-1", documentId: "doc-c", title: "Refund Policy", similarity: 0.78 }),
+      candidate({ chunkId: "c-2", documentId: "doc-c", title: "Refund Policy", similarity: 0.76 }),
+    ];
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "What is Kriya Yoga, how do I begin, and what is your refund policy?",
+      rankedCandidates,
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates.every((item) => item.relationship !== "complementary")).toBe(true);
+  });
+
   it("leaves candidates untagged when the gateway omits or splits the relationship judgment", async () => {
     const labelGateway = {
       label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group, index) => ({

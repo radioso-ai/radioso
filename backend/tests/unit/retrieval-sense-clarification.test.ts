@@ -563,6 +563,50 @@ describe("retrieval sense clarification", () => {
     ]));
   });
 
+  it("does not short-circuit to compatible_facets when only some senses are labeled complementary", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    // The gateway judged one sense complementary but left the other unlabeled: a
+    // partial signal must not suppress the ask — the un-judged (possibly exclusive)
+    // sense still deserves clarification.
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", labelStatus: "generated", relationship: "complementary", confidence: 0.61, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", labelStatus: "generated", confidence: 0.6, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    const clarificationStages = response.turnTrace?.spine.stages.filter((stage) => stage.kind === "clarification") ?? [];
+    expect(clarificationStages.map((stage) => stage.outputs?.reason)).not.toContain("compatible_facets");
+    expect(saved).toMatchObject({ source: "retrieval_sense", mode: "ask" });
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "asked",
+        }),
+      }),
+    ]));
+  });
+
   it("applies resolved retrieval_sense documentScope to the resolving retrieval turn", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
     const service = makeService({

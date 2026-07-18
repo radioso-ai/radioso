@@ -190,10 +190,15 @@ export class SenseGroupingService {
     }).catch(() => []);
     const labels = new Map(labelResults.map((label) => [label.id, label]));
     // The relationship is a single set-level judgment; treat the set as
-    // complementary only when the gateway labeled every group and unanimously said
-    // so. Any exclusive, missing, or unparsed value falls back to exclusive.
-    const complementary = labelResults.length >= 2
-      && labelResults.every((label) => label.relationship === "complementary");
+    // complementary only when *every separated group* carries a parsed
+    // complementary label. Checking the deduped map per group closes the
+    // partial-labeling gap: a dropped or duplicated label (invalid id, non-string
+    // label, omitted group) must not let an unlabeled — potentially exclusive —
+    // facet ride along as complementary. Any exclusive, missing, or unparsed value
+    // falls back to exclusive.
+    const complementary = separated.every(
+      (group) => labels.get(group.documentId)?.relationship === "complementary",
+    );
 
     return separated.map((group) => {
       const label = labels.get(group.documentId);

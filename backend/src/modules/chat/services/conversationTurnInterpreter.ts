@@ -1,8 +1,6 @@
 import type {
-  ConversationMessage,
   ConversationTurnInterpretation,
   ConversationTurnInterpreter,
-  TurnContext,
 } from "@radioso/conversation-contract";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -56,17 +54,6 @@ export interface TurnInterpretationGatewayResult extends TurnRouterGatewayResult
 export interface TurnInterpretationGateway {
   interpret(input: TurnInterpretationGatewayInput): Promise<TurnInterpretationGatewayResult>;
 }
-
-const messageFromConversationMessage = (message: ConversationMessage): MessageRecord => ({
-  id: message.id ?? "",
-  conversationId: "",
-  workspaceId: "",
-  role: message.role === "assistant" || message.role === "system" ? message.role : "user",
-  content: message.content,
-  source: message.source,
-  metadata: message.metadata,
-  createdAt: message.createdAt ? new Date(message.createdAt) : new Date(0),
-});
 
 const formatConversationContext = (messages: MessageRecord[]): string =>
   messages
@@ -198,28 +185,4 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
     };
   }
 
-  async interpretEngineTurn(input: {
-    turn: TurnContext;
-    accountId?: string;
-  }): Promise<ConversationTurnInterpretation> {
-    const workspaceId = typeof input.turn.agent.metadata?.workspaceId === "string"
-      ? input.turn.agent.metadata.workspaceId
-      : "unknown";
-    const result = await this.interpretChatTurn({
-      query: input.turn.inputEvent.content,
-      history: input.turn.history.map(messageFromConversationMessage),
-      responseIdentity: input.turn.agent.name ? { name: input.turn.agent.name } : undefined,
-      customInstruction: input.turn.agent.instructions?.join("\n"),
-      workspaceId,
-      accountId: input.accountId,
-      conversationId: input.turn.sessionId,
-      messageId: input.turn.inputEvent.id,
-      agentSkillSettings: input.turn.agent.metadata?.skillSettings as Record<string, unknown> | undefined,
-    });
-    return {
-      route: result.route,
-      framing: result.framing,
-      metadata: result.rewriteProposal ? { rewriteProposal: result.rewriteProposal } : undefined,
-    };
-  }
 }

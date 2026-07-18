@@ -25,6 +25,7 @@ import {
   createRerankTool,
   createRewriteQueryTool,
   createSemanticSearchTool,
+  type ChunkRegistry,
   type FinalizedSelection,
   type RegisteredChunk,
 } from "./agenticTools/index.js";
@@ -59,9 +60,19 @@ export interface AgenticRetrievalRunInput {
   readonly embeddingModel?: string;
   readonly similarityThreshold?: number;
   readonly snippetChars?: number;
+  readonly agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   readonly signal?: AbortSignal;
   readonly now?: () => number;
 }
+
+export interface AgenticRetrievalToolFactoryContext {
+  readonly registry: ChunkRegistry;
+  readonly snippetChars?: number;
+}
+
+export type AgenticRetrievalToolFactory = (
+  context: AgenticRetrievalToolFactoryContext,
+) => ReadonlyArray<AgentTool>;
 
 export interface AgenticRetrievalSearchStats {
   /** Distinct chunkIds surfaced across all semantic_search calls. */
@@ -90,6 +101,9 @@ export class AgenticRetrievalRunner {
     const registry = new InMemoryChunkRegistry();
     let finalized: FinalizedSelection | null = null;
     const metadataFilter = normalizeVectorMetadataFilter(input.metadataFilter);
+
+    const stagedTools = (input.agenticToolFactories ?? [])
+      .flatMap((factory) => factory({ registry, snippetChars: input.snippetChars }));
 
     const tools: AgentTool[] = [
       createSemanticSearchTool({
@@ -125,6 +139,7 @@ export class AgenticRetrievalRunner {
         usageContext: input.usageContext,
       }) as AgentTool,
       createFetchChunkTool({ registry }) as AgentTool,
+      ...stagedTools,
       createFinalizeTool({
         registry,
         onFinalized: (selection) => {

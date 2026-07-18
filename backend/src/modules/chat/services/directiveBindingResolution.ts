@@ -24,6 +24,8 @@ export interface DirectiveBindingResolution {
 export interface DirectiveBindingSkillState {
   enabled: boolean;
   turnCapable: boolean;
+  /** This binding is consumed as an answer-loop staged tool, not terminal selection. */
+  stagingCapable: boolean;
   /** The workspace capability policy denies a capability this skill requires. */
   capabilityDenied?: boolean;
 }
@@ -77,7 +79,14 @@ const skipReason = (
 
 export const resolveDirectiveBinding = (input: ResolveDirectiveBindingInput): DirectiveBindingResolution => {
   const boundMatches = input.matches
-    .filter((match) => match.directive.binding?.kind === "skill")
+    .filter((match) => {
+      const binding = match.directive.binding;
+      if (binding?.kind !== "skill") {
+        return false;
+      }
+      const state = input.agentSkillStates?.get(binding.skillName);
+      return !(state?.enabled && state.stagingCapable && !state.turnCapable);
+    })
     .sort(compareBoundMatches);
 
   const resolution: DirectiveBindingResolution = {

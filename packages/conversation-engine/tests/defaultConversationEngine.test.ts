@@ -166,9 +166,8 @@ describe("DefaultConversationEngine", () => {
     expect(dispatchStage?.subTrace).toBeUndefined();
   });
 
-  it("runs retrieval work concurrently with directive matching after interpretation", async () => {
+  it("resolves directives before retrieval work so retrieval can consume directive-scoped inputs", async () => {
     const events: string[] = [];
-    let finishRetrieval!: () => void;
     let finishDirectives!: () => void;
     const input = createInput({
       turnInterpreter: {
@@ -177,9 +176,7 @@ describe("DefaultConversationEngine", () => {
       retrievalWork: {
         run: vi.fn(async () => {
           events.push("retrieval:start");
-          await new Promise<void>((resolve) => {
-            finishRetrieval = resolve;
-          });
+          expect(events).toContain("directives:finish");
           events.push("retrieval:finish");
           return { stagedContext: [{ kind: "retrieval", data: { count: 1 } }] };
         }),
@@ -213,16 +210,12 @@ describe("DefaultConversationEngine", () => {
 
     const turn = new DefaultConversationEngine().processTurn(input);
     await vi.waitFor(() => {
-      expect(events).toEqual(["retrieval:start", "directives:start"]);
+      expect(events).toEqual(["directives:start"]);
     });
     finishDirectives();
-    await vi.waitFor(() => {
-      expect(events).toContain("directives:finish");
-      expect(events).not.toContain("selection");
-    });
-    finishRetrieval();
     const result = await turn;
 
+    expect(events).toEqual(["directives:start", "directives:finish", "retrieval:start", "retrieval:finish", "selection"]);
     expect(input.retrievalWork?.run).toHaveBeenCalledWith({
       turn: expect.objectContaining({
         metadata: expect.objectContaining({

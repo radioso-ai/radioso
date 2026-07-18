@@ -2,6 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { RetrievalSettingsRecord } from "../../settings/contracts/retrieval.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type { AgenticRetrievalToolFactory } from "./agenticRetrievalRunner.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type {
   ConversationContextWindow,
@@ -36,6 +37,7 @@ export interface RetrievalPipelineRequest {
   execution?: RetrievalExecutionMetadata;
   usageContext?: Omit<ModelCallUsageContext, "operation">;
   agentSkillSettings?: Record<string, unknown>;
+  agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   precomputedRewriteProposal?: StructuredRewriteResult;
 }

@@ -42,6 +42,11 @@ const stageForCall = (
   stages: ConversationTraceStage[],
   call: ModelCallTraceRecord,
 ): ConversationTraceStage | undefined => {
+  // Detection starts at the host boundary before the engine. Millisecond timestamps
+  // can otherwise make a zero-width call look enclosed by the first engine stage.
+  if (call.operation === "response_language_detection") {
+    return undefined;
+  }
   const exactKind = call.operation === "turn_interpretation"
     ? "turn_interpretation"
     : call.operation === "directive_match"

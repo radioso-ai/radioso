@@ -1,5 +1,7 @@
 import type { ConversationTrace, ConversationTraceStage } from "@radioso/conversation-contract";
 
+import { MODEL_CALLS_STAGE_ID } from "./turnTraceModelCalls.js";
+
 export interface TurnTraceSummary {
   totalLlmCalls: number;
   serialLlmDepth: number;
@@ -9,6 +11,15 @@ export interface TurnTraceSummary {
   };
   totalModelTimeMs: number;
   totalTurnWallClockMs: number;
+  droppedCallCount: number;
+}
+
+export interface TurnTraceModelCallSummary {
+  totalLlmCalls: number;
+  serialLlmDepth: number;
+  totalModelTimeMs: number;
+  totalTurnWallClockMs: number;
+  droppedCallCount: number;
 }
 
 interface ModelCallInterval {
@@ -45,7 +56,7 @@ const durationBetween = (startedAt: unknown, completedAt: unknown): number | und
 };
 
 const modelCallFromRecord = (value: unknown): ModelCallInterval | undefined => {
-  if (!isRecord(value) || typeof value.operation !== "string" || typeof value.model !== "string") {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.operation !== "string" || typeof value.model !== "string") {
     return undefined;
   }
   const startedAtMs = timestampMs(value.startedAt);
@@ -54,47 +65,18 @@ const modelCallFromRecord = (value: unknown): ModelCallInterval | undefined => {
     ?? (startedAtMs !== undefined && completedAtMs !== undefined
       ? Math.max(0, completedAtMs - startedAtMs)
       : undefined);
-  if (durationMs === undefined) {
-    return undefined;
-  }
-  return { startedAtMs, completedAtMs, durationMs };
+  return durationMs === undefined ? undefined : { startedAtMs, completedAtMs, durationMs };
 };
 
-const callsFromSpineStage = (stage: ConversationTraceStage): ModelCallInterval[] => {
-  const modelCalls = stage.outputs?.modelCalls;
+const canonicalCallsFromSpine = (spine: ConversationTrace): ModelCallInterval[] => {
+  const collection = spine.stages.find((stage) => stage.kind === MODEL_CALLS_STAGE_ID);
+  const modelCalls = collection?.outputs?.modelCalls;
   return Array.isArray(modelCalls)
     ? modelCalls.flatMap((value) => {
         const call = modelCallFromRecord(value);
         return call ? [call] : [];
       })
     : [];
-};
-
-const callFromCapabilityStage = (stage: Record<string, unknown>): ModelCallInterval | undefined => {
-  const metrics = isRecord(stage.metrics) ? stage.metrics : {};
-  const inputs = isRecord(stage.inputs) ? stage.inputs : {};
-  const outputs = isRecord(stage.outputs) ? stage.outputs : {};
-  const model = typeof inputs.model === "string"
-    ? inputs.model
-    : typeof outputs.model === "string"
-      ? outputs.model
-      : undefined;
-  const hasTokenMetrics = finiteNumber(metrics.inputTokens) !== undefined
-    || finiteNumber(metrics.outputTokens) !== undefined
-    || finiteNumber(metrics.totalTokens) !== undefined;
-  if (!model || !hasTokenMetrics) {
-    return undefined;
-  }
-  const startedAtMs = timestampMs(stage.startedAt);
-  const durationMs = finiteNumber(metrics.latencyMs) ?? finiteNumber(stage.durationMs);
-  if (durationMs === undefined) {
-    return undefined;
-  }
-  return {
-    startedAtMs,
-    completedAtMs: startedAtMs === undefined ? undefined : startedAtMs + durationMs,
-    durationMs,
-  };
 };
 
 const capabilityStagesFrom = (stage: ConversationTraceStage): Record<string, unknown>[] => {
@@ -121,21 +103,21 @@ const serialDepth = (calls: ModelCallInterval[]): number => {
   return depth + (calls.length - timed.length);
 };
 
-export const buildTurnTraceSummary = (spine: ConversationTrace): TurnTraceSummary => {
-  const calls: ModelCallInterval[] = [];
+export const buildTurnTraceSummary = (
+  spine: ConversationTrace,
+  modelCallSummary?: TurnTraceModelCallSummary,
+): TurnTraceSummary => {
+  const calls = canonicalCallsFromSpine(spine);
   const timedStages: TimedTraceStage[] = [];
 
   for (const stage of spine.stages) {
-    calls.push(...callsFromSpineStage(stage));
-    timedStages.push({
-      name: stage.id,
-      durationMs: durationBetween(stage.startedAt, stage.completedAt) ?? 0,
-    });
+    if (stage.kind !== MODEL_CALLS_STAGE_ID) {
+      timedStages.push({
+        name: stage.id,
+        durationMs: durationBetween(stage.startedAt, stage.completedAt) ?? 0,
+      });
+    }
     for (const capabilityStage of capabilityStagesFrom(stage)) {
-      const call = callFromCapabilityStage(capabilityStage);
-      if (call) {
-        calls.push(call);
-      }
       timedStages.push({
         name: typeof capabilityStage.stageId === "string"
           ? capabilityStage.stageId
@@ -153,10 +135,14 @@ export const buildTurnTraceSummary = (spine: ConversationTrace): TurnTraceSummar
   );
 
   return {
-    totalLlmCalls: calls.length,
-    serialLlmDepth: serialDepth(calls),
+    totalLlmCalls: modelCallSummary?.totalLlmCalls ?? calls.length,
+    serialLlmDepth: modelCallSummary?.serialLlmDepth ?? serialDepth(calls),
     longestStage,
-    totalModelTimeMs: calls.reduce((total, call) => total + call.durationMs, 0),
-    totalTurnWallClockMs: durationBetween(spine.startedAt, spine.completedAt) ?? 0,
+    totalModelTimeMs: modelCallSummary?.totalModelTimeMs
+      ?? calls.reduce((total, call) => total + call.durationMs, 0),
+    totalTurnWallClockMs: modelCallSummary?.totalTurnWallClockMs
+      ?? durationBetween(spine.startedAt, spine.completedAt)
+      ?? 0,
+    droppedCallCount: modelCallSummary?.droppedCallCount ?? 0,
   };
 };

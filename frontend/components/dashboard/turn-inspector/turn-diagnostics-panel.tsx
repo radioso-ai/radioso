@@ -156,6 +156,9 @@ export function TurnDiagnosticsPanel({
               { label: 'Turn time', value: `${rollup.totalTurnWallClockMs}ms` },
               { label: 'Model time', value: `${rollup.totalModelTimeMs}ms` },
               { label: 'LLM calls', value: String(rollup.totalLlmCalls) },
+              ...(rollup.droppedCallCount > 0
+                ? [{ label: 'Call records dropped', value: String(rollup.droppedCallCount) }]
+                : []),
               { label: 'Serial LLM depth', value: String(rollup.serialLlmDepth) },
               {
                 label: 'Longest stage',

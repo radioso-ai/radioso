@@ -35,6 +35,8 @@ import {
   RoutineSkillExecutorDispatcher,
   StaticRoutineSkillResolver,
 } from "../../src/modules/routines/skillDispatcher.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -53,6 +55,21 @@ const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
     return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
   },
+};
+
+const preEngineResponseLanguageDetector = (
+  inference: ModelInferencePipelineService,
+): NonNullable<ChatServiceOptions["responseLanguageDetector"]> => {
+  const detector = new LlmResponseLanguageDetector(inference);
+  return {
+    async detect(input) {
+      const result = await detector.detect(input);
+      // Model-call attribution uses millisecond timestamps. Let the completed
+      // pre-engine call fall strictly before the engine stages created next.
+      await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      return result;
+    },
+  };
 };
 
 const humanOwnedRecord = (conversationId: string): ConversationOwnershipRecord => {
@@ -102,6 +119,7 @@ const makeChatService = (
     actionOutbox?: ChatServiceOptions["actionOutbox"];
     suspendedRoutineReader?: ChatServiceOptions["suspendedRoutineReader"];
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
+    responseLanguageDetector?: ChatServiceOptions["responseLanguageDetector"];
   },
   turnRouter: ChatServiceOptions["turnRouter"] = {
     async classify(input) {
@@ -152,7 +170,7 @@ const makeChatService = (
     conversationOwnershipReader,
     handoffWaitingMessageGenerator,
     retrievalSenseDetector,
-    responseLanguageDetector,
+    responseLanguageDetector: responseLanguageDetector ?? routine?.responseLanguageDetector,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -1330,6 +1348,14 @@ describe("chat service streaming", () => {
         },
       }),
     };
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "et" }),
+        usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
     const service = makeChatService(
       conversationRepository,
       messageRepository,
@@ -1354,7 +1380,11 @@ describe("chat service streaming", () => {
       undefined,
       undefined,
       createConversationEngine(),
-      { routineStore, routineProvider },
+      {
+        routineStore,
+        routineProvider,
+        responseLanguageDetector: preEngineResponseLanguageDetector(inference),
+      },
     );
 
     const response = await service.answer({
@@ -1364,6 +1394,13 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("What is your email?");
+    expect(response.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(response.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        operation: "response_language_detection",
+        model: "gpt-language",
+        stageId: "pre_engine",
+      })]);
     // The routine claimed the turn before grounding — retrieval was never attempted.
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
@@ -2268,6 +2305,14 @@ describe("chat service streaming", () => {
         yield " answer.";
       },
     };
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language-stream" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "en" }),
+        usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
     const service = makeChatService(
       conversationRepository,
       messageRepository,
@@ -2287,6 +2332,11 @@ describe("chat service streaming", () => {
       undefined,
       undefined,
       createConversationEngine(),
+      {
+        routineStore: undefined,
+        routineProvider: undefined,
+        responseLanguageDetector: preEngineResponseLanguageDetector(inference),
+      },
     );
 
     const events: ChatStreamEvent[] = [];
@@ -2305,13 +2355,23 @@ describe("chat service streaming", () => {
       (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
     );
     const metadata = answerEvent?.metadata as {
-      turnTrace?: { spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> } };
+      turnTrace?: {
+        summary?: Record<string, unknown>;
+        spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
+      };
     };
     const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
       .toContain("direct.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "compose")).toBe(true);
+    expect(metadata.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(engineTrace?.stages?.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        operation: "response_language_detection",
+        model: "gpt-language-stream",
+        stageId: "pre_engine",
+      })]);
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {

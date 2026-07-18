@@ -32,7 +32,7 @@ import {
   type AgenticRetrievalToolFactory,
 } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
-import { buildSnippet, type RegisteredChunk } from "../../../modules/retrieval/services/agenticTools/index.js";
+import { buildSnippet, type RegisteredChunk } from "../../../modules/retrieval/public.js";
 
 export interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;

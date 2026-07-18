@@ -31,6 +31,12 @@ import {
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import {
+  captureModelCallTrace,
+  runWithModelCallTrace,
+  type ModelCallTraceRecord,
+} from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 
 export interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -141,7 +147,11 @@ export const runPreparedChatTurnWithConversationEngine = async (
     },
   });
 
-  const result = await input.engine.processTurn(processTurnInput);
+  const captured = await captureModelCallTrace(() => input.engine.processTurn(processTurnInput));
+  const result = {
+    ...captured.result,
+    trace: attachModelCallsToSpine(captured.result.trace, captured.calls),
+  };
   if (!rendered) {
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
@@ -236,7 +246,14 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     },
   });
 
-  for await (const event of input.engine.processTurnStream(processTurnInput)) {
+  const modelCalls: ModelCallTraceRecord[] = [];
+  const engineEvents = input.engine.processTurnStream(processTurnInput)[Symbol.asyncIterator]();
+  while (true) {
+    const step = await runWithModelCallTrace(modelCalls, () => engineEvents.next());
+    if (step.done) {
+      break;
+    }
+    const event = step.value;
     if (event.type === "delta") {
       yield { type: "chunk", text: event.text };
       continue;
@@ -245,12 +262,16 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     if (!streamResult) {
       throw new Error("conversation_engine_stream_missing_chat_result");
     }
+    const result = {
+      ...event.result,
+      trace: attachModelCallsToSpine(event.result.trace, modelCalls),
+    };
     yield {
       type: "final",
       presentation: streamResult.finalPresentation,
       suggestions: streamResult.suggestions,
-      result: event.result,
-      engineTrace: event.result.trace,
+      result,
+      engineTrace: result.trace,
     };
   }
 };

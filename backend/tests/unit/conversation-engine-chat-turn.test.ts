@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationEngine } from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
@@ -36,6 +36,7 @@ import type {
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -248,6 +249,90 @@ const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; se
 };
 
 describe("runPreparedChatTurnWithConversationEngine", () => {
+  it("attaches answer model identity, latency, operation, and tokens to the compose stage", async () => {
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-answer" },
+      complete: vi.fn(async () => ({
+        text: "Composed answer.",
+        usage: { inputTokens: 30, outputTokens: 8, totalTokens: 38, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
+    const answerSkill: TurnSkill = {
+      definition: { name: "answer.direct", outcomeKinds: ["answer"] },
+      selects: () => true,
+      dispatch: () => ({
+        kind: "answer",
+        skillName: "answer.direct",
+        outcome: { status: "completed" },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+      }),
+      renderer: {
+        supports: () => true,
+        render: async (outcome) => ({
+          answer: (await inference.complete({
+            operation: {
+              workspaceId: "workspace_1",
+              surface: "assistant",
+              operation: "direct_answer",
+              attemptKey: "msg_1:answer",
+            },
+            prompt: "private prompt",
+          })).text,
+          skillName: outcome.skillName,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const base = drivingEngine().engine;
+    const engine: ConversationEngine = {
+      ...base,
+      async processTurn(input) {
+        const result = await base.processTurn(input);
+        const compose = result.trace.stages.find((stage) => stage.kind === "compose");
+        if (!compose) {
+          result.trace.stages.push({
+            id: "compose",
+            kind: "compose",
+            status: "applied",
+            startedAt: new Date(Date.now() - 1_000).toISOString(),
+            completedAt: new Date(Date.now() + 1_000).toISOString(),
+          });
+        }
+        return result;
+      },
+    };
+
+    const { result } = await runPreparedChatTurnWithConversationEngine({
+      engine,
+      session: session(),
+      turnSkillSelector: new ChatTurnSkillSelector([answerSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [answerSkill],
+      query: "Answer directly",
+    });
+
+    expect(result.trace.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      inputs: { operation: "direct_answer", model: "gpt-answer" },
+      metrics: {
+        llmCallCount: 1,
+        inputTokens: 30,
+        outputTokens: 8,
+        totalTokens: 38,
+      },
+      outputs: {
+        modelCalls: [expect.objectContaining({
+          operation: "direct_answer",
+          model: "gpt-answer",
+          inputTokens: 30,
+          outputTokens: 8,
+        })],
+      },
+    });
+  });
+
   it("lets the engine select and dispatch the registered retrieval skill, then renders it", async () => {
     // The retrieval skill is injected as skill-shaped input — the adapter names no
     // skill itself. The renderer stands in for the host's grounded composition.

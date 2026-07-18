@@ -8,7 +8,7 @@ import type {
 } from "@radioso/conversation-contract";
 import { createConversationEngine } from "@radioso/conversation-engine";
 
-import { ChatService, type ChatGateway } from "../../src/modules/chat/services/chatService.js";
+import { ChatService, type ChatGateway, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
@@ -168,6 +168,7 @@ const makeService = (input: {
   messageRepository?: InMemoryMessageRepository;
   routerInputs?: TurnRouterInput[];
   suggestedQuestionsEnabled?: boolean;
+  turnInterpreter?: ChatServiceOptions["turnInterpreter"];
 }) => {
   const gateway = input.chatGateway ?? chatGateway();
   return new ChatService({
@@ -200,6 +201,7 @@ const makeService = (input: {
     },
     retrievalSenseDetector: input.detector as never,
     directiveSteering: input.directiveRuntime,
+    turnInterpreter: input.turnInterpreter,
     retrievalSenseClarificationPolicy: { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 },
     routineStore: input.routineStore,
     routineProvider: input.routineStore
@@ -305,6 +307,103 @@ describe("retrieval sense clarification", () => {
           surface: "retrieval_sense",
           decision: "offered",
           chosenCandidateId: "doc-hatha",
+        }),
+      }),
+    ]));
+  });
+
+  it("forces an engine-prepared clarification question over directive-bound skill selection", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.59, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const boundDirectiveRuntime: RouteScopedDirectiveRuntime = {
+      matcher: {
+        async match({ directives }) {
+          return [{
+            directive: directives[0]!,
+            selectionMode: "deterministic" as const,
+            selectionReason: "always",
+          }];
+        },
+      },
+      directivesFor: () => [{
+        name: "force-retrieval",
+        condition: { kind: "always" },
+        action: "Force retrieval answer.",
+        binding: { kind: "skill", skillName: "retrieval.answer" },
+      }],
+      async matchAndResolve(_input, directives) {
+        return {
+          rules: [],
+          omissions: [],
+          matches: [{
+            directive: directives[0]!,
+            selectionMode: "deterministic" as const,
+            selectionReason: "always",
+          }],
+        };
+      },
+      async resolveMatches(_input, matches) {
+        return { rules: [], omissions: [], matches };
+      },
+      async steer() {
+        return { rules: [], omissions: [], matches: [] };
+      },
+    };
+    const turnInterpreter: ChatServiceOptions["turnInterpreter"] = {
+      interpretChatTurn: vi.fn(async () => ({
+        route: "retrieval" as const,
+        framing: { isIdentityQuestion: false },
+      })),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      directiveRuntime: boundDirectiveRuntime,
+      turnInterpreter,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Which yoga sense do you mean?");
+    expect(answerInputs).toHaveLength(0);
+    expect(turnInterpreter.interpretChatTurn).toHaveBeenCalledOnce();
+    expect(capturedRequests.map((request) => request.query)).toEqual(["tell me about yoga", "tell me about yoga"]);
+    expect(saved).toMatchObject({
+      source: "retrieval_sense",
+      originalQuery: "tell me about yoga",
+      mode: "ask",
+    });
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "asked",
+        }),
+      }),
+    ]));
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "skill_selection",
+        outputs: expect.objectContaining({
+          selectedSkills: ["clarification.answer"],
         }),
       }),
     ]));
@@ -482,6 +581,37 @@ describe("retrieval sense clarification", () => {
     expect(directiveInputs.map((input) => input.turnContext?.query)).toContain(originalQuery);
     const persistedUserMessages = [...messageRepository.items.values()].flat().filter((message) => message.role === "user");
     expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
+  });
+
+  it("matches directives against the original question for a resolved retrieval_sense turn on the engine path", async () => {
+    const directiveInputs: DirectiveSteerInput[] = [];
+    const originalQuery = "How do I upload a document via the REST API? Give me a curl example.";
+    const selectorReply = "the first one";
+    const service = makeService({
+      directiveRuntime: captureDirectiveRuntime(directiveInputs),
+      turnInterpreter: {
+        interpretChatTurn: vi.fn(async () => ({
+          route: "direct" as const,
+          framing: { isIdentityQuestion: false },
+        })),
+      },
+      clarificationStore: {
+        loadPending: vi.fn(async () => retrievalSensePending(originalQuery)),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: selectorReply,
+      stream: false,
+    });
+
+    expect(directiveInputs.length).toBeGreaterThan(0);
+    expect(directiveInputs.map((input) => input.turnContext?.query)).toEqual(
+      directiveInputs.map(() => originalQuery),
+    );
   });
 
   it("accepts an offered alternative by answering the original question scoped to the alternative documents", async () => {

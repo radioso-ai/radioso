@@ -231,6 +231,11 @@ describe("DefaultConversationEngine", () => {
       }),
       interpretation: expect.objectContaining({ route: "retrieval" }),
     });
+    expect(input.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      turn: expect.objectContaining({
+        stagedContext: [expect.objectContaining({ kind: "retrieval" })],
+      }),
+    }));
     expect(result.decision.reason).toBe("staged:1");
     expect(result.trace.stages.map((traceStage) => traceStage.kind)).toEqual([
       "message",
@@ -242,6 +247,69 @@ describe("DefaultConversationEngine", () => {
       "skill_dispatch",
       "compose",
     ]);
+  });
+
+  it("redacts model-derived interpretation text from trace outputs", async () => {
+    const input = createInput({
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({
+          route: "retrieval",
+          framing: {
+            isIdentityQuestion: false,
+            intentTopic: "sensitive topic",
+            inScopeRequest: "answer sensitive request",
+            outsideScopeRequest: "ignore private out-of-scope text",
+          },
+          metadata: {
+            rewriteProposal: {
+              rewrittenQuery: "private rewritten query",
+              semanticQuery: "private semantic query",
+              lexicalQuery: "private lexical query",
+              queryShape: "general_grounding",
+              temporalQueryMode: "none",
+              retrievalSubqueries: [
+                {
+                  label: "private branch",
+                  semanticQuery: "private branch semantic",
+                  lexicalQuery: "private branch lexical",
+                },
+              ],
+              turnKind: "fresh_subject",
+              unresolved: false,
+              confidence: 0.9,
+            },
+          },
+        })),
+      },
+      retrievalWork: {
+        run: vi.fn(async () => ({ stagedContext: [{ kind: "retrieval", data: { count: 1 } }] })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    const interpretationStage = result.trace.stages.find((traceStage) => traceStage.kind === "turn_interpretation");
+    expect(JSON.stringify(interpretationStage?.outputs)).not.toContain("sensitive");
+    expect(JSON.stringify(interpretationStage?.outputs)).not.toContain("private");
+    expect(interpretationStage?.outputs).toEqual({
+      route: "retrieval",
+      framing: {
+        isIdentityQuestion: false,
+        hasIntentTopic: true,
+        hasInScopeRequest: true,
+        hasOutsideScopeRequest: true,
+      },
+      metadata: {
+        rewriteProposal: {
+          queryShape: "general_grounding",
+          temporalQueryMode: "none",
+          turnKind: "fresh_subject",
+          unresolved: false,
+          confidence: 0.9,
+          retrievalSubqueryCount: 1,
+        },
+      },
+    });
   });
 
   it("does not invoke retrieval work for direct interpretations", async () => {

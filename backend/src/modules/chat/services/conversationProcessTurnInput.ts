@@ -30,6 +30,7 @@ import {
   toConversationInputEvent,
   toConversationMessages,
 } from "./conversationContractMappers.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
 
 const missingModelGateway: ConversationModelGateway = {
@@ -111,10 +112,23 @@ const buildDirectiveTurnWiring = (options: {
   directives?: Directive[];
   directiveRuntime?: RouteScopedDirectiveRuntime;
 }): Pick<ProcessTurnInput, "directives" | "directiveMatcher"> => {
-  const directiveSteerInput = directiveSteerInputForSession(options.session, options.accountId);
+  const directivesForRoutes = (): Directive[] => {
+    if (!options.directiveRuntime) {
+      return directivesForSession(options.session);
+    }
+    const byName = new Map<string, Directive>();
+    for (const route of new Set([options.session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL])) {
+      const sessionForRoute = { ...options.session, turnRoute: route };
+      for (const directive of options.directiveRuntime.directivesFor(
+        directiveSteerInputForSession(sessionForRoute, options.accountId),
+      )) {
+        byName.set(directive.name, directive);
+      }
+    }
+    return [...byName.values()];
+  };
   return {
-    directives: options.directives ?? options.directiveRuntime?.directivesFor(directiveSteerInput) ??
-      directivesForSession(options.session),
+    directives: options.directives ?? directivesForRoutes(),
     directiveMatcher: {
       async match({ turn, directives }) {
         const session = options.getSession?.() ?? options.session;
@@ -123,8 +137,12 @@ const buildDirectiveTurnWiring = (options: {
           return directiveMatchesForSession(session);
         }
         const steerInput = directiveSteerInputForSession(session, options.accountId, turn);
-        const steering = await runtime.matchAndResolve(steerInput, directives);
-        session.directiveSteering = steering;
+        const scopedDirectives = runtime.directivesFor(steerInput);
+        const candidateByName = new Map(directives.map((directive) => [directive.name, directive]));
+        const currentRouteDirectives = scopedDirectives.filter((directive) => candidateByName.has(directive.name));
+        const steering = await runtime.matchAndResolve(steerInput, currentRouteDirectives);
+        const currentSession = options.getSession?.() ?? session;
+        currentSession.directiveSteering = steering;
         return steering.matches;
       },
     },

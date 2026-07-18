@@ -296,10 +296,55 @@ const createResponseEvent = (sessionId: string, response: RenderableTurn): Conve
   createdAt: nowIso(),
 });
 
+const summarizeFraming = (framing: ConversationTurnInterpretation["framing"]): Record<string, unknown> | undefined => {
+  if (!framing) {
+    return undefined;
+  }
+  return {
+    ...(typeof framing.isIdentityQuestion === "boolean"
+      ? { isIdentityQuestion: framing.isIdentityQuestion }
+      : {}),
+    ...(typeof framing.intentTopic === "string" ? { hasIntentTopic: framing.intentTopic.length > 0 } : {}),
+    ...(typeof framing.inScopeRequest === "string" ? { hasInScopeRequest: framing.inScopeRequest.length > 0 } : {}),
+    ...(typeof framing.outsideScopeRequest === "string"
+      ? { hasOutsideScopeRequest: framing.outsideScopeRequest.length > 0 }
+      : {}),
+  };
+};
+
+const summarizeRewriteProposal = (value: unknown): Record<string, unknown> | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const proposal = value as Record<string, unknown>;
+  return {
+    ...(typeof proposal.queryShape === "string" ? { queryShape: proposal.queryShape } : {}),
+    ...(typeof proposal.temporalQueryMode === "string" ? { temporalQueryMode: proposal.temporalQueryMode } : {}),
+    ...(typeof proposal.turnKind === "string" ? { turnKind: proposal.turnKind } : {}),
+    ...(typeof proposal.unresolved === "boolean" ? { unresolved: proposal.unresolved } : {}),
+    ...(typeof proposal.confidence === "number" ? { confidence: proposal.confidence } : {}),
+    ...(Array.isArray(proposal.retrievalSubqueries)
+      ? { retrievalSubqueryCount: proposal.retrievalSubqueries.length }
+      : {}),
+  };
+};
+
+const summarizeInterpretationMetadata = (
+  metadata: ConversationTurnInterpretation["metadata"],
+): Record<string, unknown> | undefined => {
+  if (!metadata) {
+    return undefined;
+  }
+  const rewriteProposal = summarizeRewriteProposal(metadata.rewriteProposal);
+  return {
+    ...(rewriteProposal ? { rewriteProposal } : {}),
+  };
+};
+
 const summarizeInterpretation = (interpretation: ConversationTurnInterpretation): Record<string, unknown> => ({
   route: interpretation.route,
-  framing: interpretation.framing,
-  metadata: interpretation.metadata,
+  framing: summarizeFraming(interpretation.framing),
+  metadata: summarizeInterpretationMetadata(interpretation.metadata),
 });
 
 const createProcessTurnResult = (input: {
@@ -473,7 +518,7 @@ export class DefaultConversationEngine implements ConversationEngine {
 
       const turnForSkill: TurnContext = {
         ...selectedTurn,
-        stagedContext: mergeStagedContext(outcomes),
+        stagedContext: [...selectedTurn.stagedContext, ...mergeStagedContext(outcomes)],
         steering: mergedSteering,
       };
       const outcome = await input.dispatcher.dispatch({

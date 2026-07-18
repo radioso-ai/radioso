@@ -24,6 +24,7 @@ export interface ChatTurnSkillSelectorOptions {
   logger?: {
     warn(payload: Record<string, unknown>, message: string): void;
   };
+  forceSkillName?: () => string | null | undefined;
 }
 
 const selectedBindingMetadata = (binding: DirectiveBindingOutcome) => ({
@@ -136,8 +137,24 @@ export class ChatTurnSkillSelector {
     return skill;
   }
 
+  private resolveForcedSkill(): TurnSkill | null {
+    const forcedSkillName = this.options.forceSkillName?.();
+    if (!forcedSkillName) {
+      return null;
+    }
+    const skill = this.turnSkills.find((candidate) => candidate.definition.name === forcedSkillName);
+    if (!skill) {
+      throw new Error("chat_forced_turn_skill_not_registered");
+    }
+    return skill;
+  }
+
   /** The terminal skill that claims this prepared turn. */
   resolveSkill(session: PreparedSession): TurnSkill {
+    const forced = this.resolveForcedSkill();
+    if (forced) {
+      return forced;
+    }
     const binding = this.resolveBinding(session);
     const skill = binding.winner
       ? this.turnSkills.find((candidate) => candidate.definition.name === binding.winner?.skillName)
@@ -150,6 +167,16 @@ export class ChatTurnSkillSelector {
 
   /** Resolves the terminal skill and the engine-shaped decision that selected it. */
   select(session: PreparedSession): TurnSkillSelection {
+    const forced = this.resolveForcedSkill();
+    if (forced) {
+      return {
+        skill: forced,
+        decision: {
+          selected: [{ skillName: forced.definition.name, reason: "forced_turn_skill" }],
+          reason: "forced_turn_skill",
+        },
+      };
+    }
     const binding = this.resolveBinding(session);
     const skill = binding.winner
       ? this.turnSkills.find((candidate) => candidate.definition.name === binding.winner?.skillName)

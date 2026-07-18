@@ -117,6 +117,7 @@ const makeChatService = (
   conversationOwnershipReader?: ChatServiceOptions["conversationOwnershipReader"],
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"],
   turnInterpreter?: ChatServiceOptions["turnInterpreter"],
+  retrievalSenseDetector?: ChatServiceOptions["retrievalSenseDetector"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -144,6 +145,7 @@ const makeChatService = (
     suspendedRoutineReader: routine?.suspendedRoutineReader,
     conversationOwnershipReader,
     handoffWaitingMessageGenerator,
+    retrievalSenseDetector,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -419,7 +421,7 @@ describe("chat service streaming", () => {
     },
   } as const);
 
-  it("uses the merged turn interpreter proposal on the engine-prepared retrieval path", async () => {
+  it("uses the merged turn interpreter proposal when retrieval-sense detection is wired", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -453,6 +455,9 @@ describe("chat service streaming", () => {
         framing: { isIdentityQuestion: false, intentTopic: "known topic" },
         rewriteProposal,
       })),
+    };
+    const retrievalSenseDetector: ChatServiceOptions["retrievalSenseDetector"] = {
+      detect: vi.fn(async () => []),
     };
     const retrievalTurn: ChatServiceOptions["retrievalTurn"] = {
       interpret: vi.fn(async (input) => ({
@@ -517,6 +522,7 @@ describe("chat service streaming", () => {
       undefined,
       undefined,
       turnInterpreter,
+      retrievalSenseDetector,
     );
 
     const response = await service.answer({

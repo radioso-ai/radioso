@@ -1,4 +1,4 @@
-import type { LlmProviderName } from "./providerTypes.js";
+import type { LlmProviderName, ReasoningEffort } from "./providerTypes.js";
 
 /**
  * Single source of truth for the (provider, model) pairs Radioso supports for
@@ -39,4 +39,38 @@ export const isKnownModelForProvider = (provider: LlmProviderName, model: string
     return model.trim().length > 0;
   }
   return knownModelsByProvider[provider].includes(model);
+};
+
+const GPT_5_MODEL_PATTERN = /^gpt-5(?:(?:\.(\d+))|[.-]|$)/i;
+const MODERN_GPT_5_MINOR = 4;
+
+const gpt5Minor = (model: string): number | null | undefined => {
+  const match = GPT_5_MODEL_PATTERN.exec(model.trim());
+  if (!match) {
+    return undefined;
+  }
+  return match[1] === undefined ? null : Number.parseInt(match[1], 10);
+};
+
+export const isOpenAIGpt5Model = (model: string): boolean => gpt5Minor(model) !== undefined;
+
+/**
+ * OpenAI uses two lowest-effort vocabularies across the known gpt-5 families:
+ * gpt-5.4+ accepts `none` and rejects `minimal`; earlier gpt-5 models accept
+ * `minimal` and reject `none`. Normalize the provider-neutral hint at the model
+ * catalog boundary so callers can ask for "lowest effort" without falling back to
+ * the provider default.
+ */
+export const normalizeOpenAIReasoningEffort = (
+  model: string,
+  effort: ReasoningEffort,
+): ReasoningEffort => {
+  const minor = gpt5Minor(model);
+  if (minor === undefined) {
+    return effort;
+  }
+  if (minor !== null && minor >= MODERN_GPT_5_MINOR) {
+    return effort === "minimal" ? "none" : effort;
+  }
+  return effort === "none" ? "minimal" : effort;
 };

@@ -69,6 +69,41 @@ describe("ModelChatGateway", () => {
     ]);
   });
 
+  it("uses caller-supplied generation settings for cheap utility chat calls", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete(input) {
+        requests.push(input);
+        return textResult("Answer");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+
+    await gateway.answer({
+      query: "Question",
+      history: [],
+      systemPrompt: "System instructions",
+      prompt: "User prompt",
+      usageContext,
+      generation: {
+        maxOutputTokens: 256,
+        reasoningEffort: "minimal",
+      },
+    });
+
+    expect(requests).toEqual([
+      {
+        systemPrompt: "System instructions",
+        prompt: "User prompt",
+        maxOutputTokens: 256,
+        reasoningEffort: "minimal",
+      },
+    ]);
+  });
+
   it("passes system prompts through to streaming generation", async () => {
     const requests: TextGenerationRequest[] = [];
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({

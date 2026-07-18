@@ -4,6 +4,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { ChatGateway, ChatGatewayUsageContext } from "../../contracts/chatGateway.js";
+import { CHAT_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/workspaceContext.js";
 
 /** The per-turn billing + model-resolution context a routine LLM call needs. */
@@ -30,6 +31,15 @@ const lastUserContent = (messages: ConversationMessage[]): string => {
   return "";
 };
 
+const isRoutineActivationCall = (metadata: Record<string, unknown> | undefined): boolean =>
+  metadata?.routineActivation === true;
+
+const routineActivationUsageContext = (usageContext: ChatGatewayUsageContext): ChatGatewayUsageContext => ({
+  ...usageContext,
+  operation: "routine_activation",
+  attemptKey: "routine_activation",
+});
+
 /**
  * Adapts the host {@link ChatGateway} to the engine's {@link ConversationModelGateway}
  * for routine progression. Built per turn (it carries that turn's usage + workspace
@@ -46,14 +56,19 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
   async complete(input: {
     messages: ConversationMessage[];
     systemPrompt?: string;
+    metadata?: Record<string, unknown>;
   }): Promise<{ text: string }> {
+    const routineActivation = isRoutineActivationCall(input.metadata);
     const text = await this.chatGateway.answer({
       query: lastUserContent(input.messages),
       history: [],
       prompt: serializeTranscript(input.messages),
       systemPrompt: input.systemPrompt,
       workspaceContext: this.turn.workspaceContext,
-      usageContext: this.turn.usageContext,
+      usageContext: routineActivation
+        ? routineActivationUsageContext(this.turn.usageContext)
+        : this.turn.usageContext,
+      ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
     });
     return { text };
   }

@@ -24,6 +24,26 @@ import { renderPromptTemplate } from "./promptTemplate.js";
  */
 export type RoutineReentryMode = "once_per_conversation" | "always" | "semantic";
 
+export interface RoutineActivationTrigger {
+  routineId: string;
+  description: string;
+}
+
+export interface RoutineActivationPrefilterScore {
+  routineId: string;
+  score: number;
+}
+
+export interface RoutineActivationPrefilter {
+  minScore?: number;
+  topK?: number;
+  rank(input: {
+    query: string;
+    triggers: readonly RoutineActivationTrigger[];
+    turn: TurnContext;
+  }): Promise<readonly RoutineActivationPrefilterScore[]>;
+}
+
 export interface RoutineRegistration {
   routine: Routine;
   trigger: {
@@ -48,6 +68,7 @@ Routines:
 export interface RoutineRegistryOptions {
   policy: ClarificationPolicy;
   promptTemplate?: string;
+  activationPrefilter?: RoutineActivationPrefilter;
 }
 
 interface RankedRoutineMatch {
@@ -78,6 +99,47 @@ const routineLabel = (routine: Routine): string => {
     ? routine.metadata.name.trim()
     : "";
   return name || routine.id;
+};
+
+const DEFAULT_PREFILTER_TOP_K = 8;
+const DEFAULT_PREFILTER_MIN_SCORE = 0.2;
+
+const filterRegistrationsByPrefilter = async (
+  registrations: readonly RoutineRegistration[],
+  turn: TurnContext,
+  prefilter: RoutineActivationPrefilter | undefined,
+): Promise<readonly RoutineRegistration[]> => {
+  if (!prefilter) {
+    return registrations;
+  }
+  const byId = new Map(registrations.map((registration) => [registration.routine.id, registration]));
+  try {
+    const ranked = await prefilter.rank({
+      query: turn.inputEvent.content,
+      triggers: registrations.map((registration) => ({
+        routineId: registration.routine.id,
+        description: registration.trigger.description,
+      })),
+      turn,
+    });
+    const minScore = prefilter.minScore ?? DEFAULT_PREFILTER_MIN_SCORE;
+    const topK = Math.max(1, prefilter.topK ?? DEFAULT_PREFILTER_TOP_K);
+    const seen = new Set<string>();
+    return ranked
+      .filter((item) => Number.isFinite(item.score) && item.score >= minScore && byId.has(item.routineId))
+      .sort((left, right) => right.score - left.score || left.routineId.localeCompare(right.routineId))
+      .filter((item) => {
+        if (seen.has(item.routineId)) {
+          return false;
+        }
+        seen.add(item.routineId);
+        return true;
+      })
+      .slice(0, topK)
+      .map((item) => byId.get(item.routineId)!);
+  } catch {
+    return registrations;
+  }
 };
 
 export const conversationRoutineActivatorFromCandidate = (
@@ -135,6 +197,7 @@ const parseRankedMatches = (raw: string, knownIds: Set<string>): RankedRoutineMa
 export class RoutineRegistry {
   private readonly policy: ClarificationPolicy;
   private readonly promptTemplate: string;
+  private readonly activationPrefilter?: RoutineActivationPrefilter;
 
   constructor(
     private readonly registrations: readonly RoutineRegistration[],
@@ -142,6 +205,7 @@ export class RoutineRegistry {
   ) {
     this.policy = options.policy;
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_RANKED_ACTIVATION_PROMPT;
+    this.activationPrefilter = options.activationPrefilter;
   }
 
   get routines(): Routine[] {
@@ -182,12 +246,20 @@ export class RoutineRegistry {
             };
           }
         }
-        const knownIds = new Set(eligibleRegistrations.map((registration) => registration.routine.id));
-        const byId = new Map(eligibleRegistrations.map((registration) => [registration.routine.id, registration]));
+        const rankedRegistrations = await filterRegistrationsByPrefilter(
+          eligibleRegistrations,
+          turn,
+          this.activationPrefilter,
+        );
+        if (rankedRegistrations.length === 0) {
+          return null;
+        }
+        const knownIds = new Set(rankedRegistrations.map((registration) => registration.routine.id));
+        const byId = new Map(rankedRegistrations.map((registration) => [registration.routine.id, registration]));
         const { text } = await modelGateway.complete({
           messages: turnMessages(turn),
           systemPrompt: renderPromptTemplate("chat/routine-ranked-activation.md", this.promptTemplate, {
-            routines: routinesBlock(eligibleRegistrations),
+            routines: routinesBlock(rankedRegistrations),
             latestMessage: turn.inputEvent.content,
           }),
           metadata: {
@@ -213,7 +285,7 @@ export class RoutineRegistry {
           };
         });
         const priorities = Object.fromEntries(
-          eligibleRegistrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
+          rankedRegistrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
         );
         const decision = decideClarification(candidates, this.policy, {
           priorities,

@@ -77,6 +77,68 @@ describe("RoutineRegistry ranked activation", () => {
     });
   });
 
+  it("prefilters routine triggers before asking the model to rank plausible candidates", async () => {
+    const registrations = Array.from({ length: 6 }, (_, index) => registration(`routine_${index}`));
+    const prefilter = {
+      rank: vi.fn(async () => [
+        { routineId: "routine_4", score: 0.92 },
+        { routineId: "routine_2", score: 0.81 },
+        { routineId: "routine_1", score: 0.2 },
+      ]),
+      minScore: 0.4,
+      topK: 2,
+    };
+    const gw = gateway(rankedJson([
+      { routineId: "routine_4", confidence: 0.88 },
+    ]));
+
+    const result = await new RoutineRegistry(registrations, {
+      policy,
+      activationPrefilter: prefilter,
+    }).activator(gw).activate({ turn });
+
+    expect(prefilter.rank).toHaveBeenCalledWith({
+      query: "I need to book a call",
+      triggers: registrations.map((item) => ({
+        routineId: item.routine.id,
+        description: item.trigger.description,
+      })),
+      turn,
+    });
+    expect(gw.complete).toHaveBeenCalledTimes(1);
+    const prompt = vi.mocked(gw.complete).mock.calls[0]![0].systemPrompt;
+    expect(prompt).toContain("routine_4");
+    expect(prompt).toContain("routine_2");
+    expect(prompt).not.toContain("routine_0");
+    expect(prompt).not.toContain("routine_1");
+    expect(prompt).not.toContain("routine_5");
+    expect(result).toMatchObject({ kind: "activate", routineId: "routine_4" });
+  });
+
+  it("skips ranked activation when the prefilter finds no plausible routine", async () => {
+    const registrations = [
+      registration("demo"),
+      registration("support"),
+    ];
+    const prefilter = {
+      rank: vi.fn(async () => [
+        { routineId: "demo", score: 0.19 },
+        { routineId: "support", score: 0.17 },
+      ]),
+      minScore: 0.4,
+      topK: 2,
+    };
+    const gw = gateway(rankedJson([]));
+
+    const result = await new RoutineRegistry(registrations, {
+      policy,
+      activationPrefilter: prefilter,
+    }).activator(gw).activate({ turn });
+
+    expect(result).toBeNull();
+    expect(gw.complete).not.toHaveBeenCalled();
+  });
+
   it("parses structured ranked output into clarification candidates with activation variables as opaque payload", async () => {
     const gw = gateway(rankedJson([
       { routineId: "demo", confidence: 0.82, variables: { company: "Acme" } },

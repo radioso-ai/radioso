@@ -1,7 +1,7 @@
 ---
 title: "Usage Event Taxonomy"
 description: "Specification of how model inference and embedding operations are tracked and recorded in usage events with surface names and operation lineage."
-last_updated: 2026-06-11
+last_updated: 2026-07-18
 ---
 
 # Usage Event Taxonomy
@@ -42,6 +42,8 @@ values. Replays of the same provider attempt must reuse the same key.
 |---------|-----------|--------|---------|
 | `assistant` | `answer` | Assistant chat answer generation, including grounded and no-context fallback answers | account, workspace, conversation, user message |
 | `assistant` | `turn_router` | Assistant turn routing before retrieval or direct answer selection | account when available, workspace, conversation, user message |
+| `assistant` | `routine_activation_embedding` | Routine trigger embedding prefilter before activation ranking | account when available, workspace, conversation, user message |
+| `assistant` | `routine_activation` | Routine activation ranking over plausible triggers | account when available, workspace, conversation, user message |
 | `assistant` | `response_language_detection` | Assistant per-turn response language detection | account when available, workspace, conversation, user message |
 | `assistant` | `bootstrap_greeting` | Assistant bootstrap greeting generation | account when available, workspace, request |
 | `retrieval` | `query_interpretation` | Retrieval query rewrite and query interpretation | account when available, workspace, request |

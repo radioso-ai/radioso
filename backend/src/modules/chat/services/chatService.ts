@@ -145,13 +145,21 @@ const chatTurnTraceAttributes = (input: {
 export class ModelChatGateway implements ChatGateway {
   constructor(private readonly inference: ModelInferencePipeline) {}
 
+  private generation(input: ChatGatewayInput) {
+    return {
+      maxOutputTokens: input.generation?.maxOutputTokens ?? CHAT_BEHAVIOR.answer.maxOutputTokens,
+      reasoningEffort: input.generation?.reasoningEffort ?? CHAT_BEHAVIOR.answer.reasoningEffort,
+    };
+  }
+
   async answer(input: ChatGatewayInput): Promise<string> {
+    const generation = this.generation(input);
     const result = await this.inference.complete({
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
-      maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
-      reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
+      maxOutputTokens: generation.maxOutputTokens,
+      reasoningEffort: generation.reasoningEffort,
       validateResult(result) {
         if (!result.text?.trim()) {
           throw new BlankChatAnswerError();
@@ -162,12 +170,13 @@ export class ModelChatGateway implements ChatGateway {
   }
 
   async *streamAnswer(input: ChatGatewayInput): AsyncIterable<string> {
+    const generation = this.generation(input);
     const { textStream } = this.inference.stream({
       operation: input.usageContext,
       prompt: input.prompt,
       systemPrompt: input.systemPrompt,
-      maxOutputTokens: CHAT_BEHAVIOR.answer.maxOutputTokens,
-      reasoningEffort: CHAT_BEHAVIOR.answer.reasoningEffort,
+      maxOutputTokens: generation.maxOutputTokens,
+      reasoningEffort: generation.reasoningEffort,
     });
     for await (const chunk of textStream) {
       if (chunk.length > 0) {

@@ -78,6 +78,7 @@ import {
   RoutineSlotCorrector,
   RoutineReentryGate,
   DefaultClarifier,
+  type RoutineActivationPrefilter,
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
@@ -840,6 +841,76 @@ export const buildWorkspaceServices = (input: {
   };
 };
 
+const ROUTINE_ACTIVATION_PREFILTER_TOP_K = 8;
+const ROUTINE_ACTIVATION_PREFILTER_MIN_SCORE = 0.2;
+
+const cosineSimilarity = (left: readonly number[], right: readonly number[]): number => {
+  const length = Math.min(left.length, right.length);
+  let dot = 0;
+  let leftNorm = 0;
+  let rightNorm = 0;
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = left[index] ?? 0;
+    const rightValue = right[index] ?? 0;
+    dot += leftValue * rightValue;
+    leftNorm += leftValue * leftValue;
+    rightNorm += rightValue * rightValue;
+  }
+  const denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
+  return denominator === 0 ? 0 : dot / denominator;
+};
+
+const createRoutineActivationPrefilter = (input: {
+  accountId?: string;
+  embeddingService: EmbeddingService;
+  logger: AppLogger;
+  workspaceId: string;
+}): RoutineActivationPrefilter => ({
+  minScore: ROUTINE_ACTIVATION_PREFILTER_MIN_SCORE,
+  topK: ROUTINE_ACTIVATION_PREFILTER_TOP_K,
+  async rank({ query, triggers, turn }) {
+    if (triggers.length === 0) {
+      return [];
+    }
+    try {
+      const vectors = await input.embeddingService.embedTexts(
+        [query, ...triggers.map((trigger) => trigger.description)],
+        {
+          usageContext: {
+            accountId: input.accountId ?? null,
+            workspaceId: input.workspaceId,
+            conversationId: turn.sessionId,
+            messageId: turn.inputEvent.id ?? null,
+            surface: "assistant",
+            operation: "routine_activation_embedding",
+            attemptKey: "routine_activation_prefilter",
+          },
+        },
+      );
+      const queryVector = vectors[0];
+      if (!queryVector) {
+        return [];
+      }
+      return triggers.flatMap((trigger, index) => {
+        const triggerVector = vectors[index + 1];
+        return triggerVector
+          ? [{ routineId: trigger.routineId, score: cosineSimilarity(queryVector, triggerVector) }]
+          : [];
+      });
+    } catch (error) {
+      input.logger.warn(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          workspaceId: input.workspaceId,
+          routineTriggerCount: triggers.length,
+        },
+        "Routine activation prefilter failed; falling back to ranked LLM activation",
+      );
+      throw error;
+    }
+  },
+});
+
 
 export const buildChatServices = (input: {
   accountAccessService: AccountAccessService;
@@ -877,6 +948,9 @@ export const buildChatServices = (input: {
   errorReporter: ErrorReporter;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
+  const routineActivationEmbeddingService = new EmbeddingService(
+    input.llmRegistry.createEmbeddingGateway(input.usageEventRecorder),
+  );
   const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
   // Retrieval-sense clarification is answer-first: once a candidate set survives
   // floor/suppression/clear-margin/loop-guard/priority checks, a no-clear-winner case
@@ -1246,6 +1320,16 @@ export const buildChatServices = (input: {
       const routineRegistry = new RoutineRegistry(gatedRegistrations, {
         policy: routineActivationPolicy,
         promptTemplate: loadPromptTemplate("chat/routine-ranked-activation.md"),
+        ...(workspaceId
+          ? {
+              activationPrefilter: createRoutineActivationPrefilter({
+                accountId,
+                embeddingService: routineActivationEmbeddingService,
+                logger: input.logger,
+                workspaceId,
+              }),
+            }
+          : {}),
       });
       const routinesById = new Map(routineRegistry.routines.map((routine) => [routine.id, routine]));
       for (const registration of pinnedRegistrations) {

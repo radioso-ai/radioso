@@ -4,10 +4,15 @@ import { decideClarification } from "@radioso/conversation-engine";
 import {
   ModelSenseLabelGateway,
   SenseGroupingService,
+  type RetrievalSenseClarificationCandidate,
   type SenseLabelGateway,
   type SenseLabelGroup,
 } from "../../src/modules/retrieval/services/senseGroupingService.js";
-import { evaluateRetrievalSenseClarification } from "../../src/modules/retrieval/services/retrievalSenseClarification.js";
+import {
+  evaluateRetrievalSenseClarification,
+  phraseRetrievalSenseAsk,
+  presentableSenseCandidates,
+} from "../../src/modules/retrieval/services/retrievalSenseClarification.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/public.js";
 import {
   dominantHathaYogaCandidates,
@@ -321,11 +326,14 @@ describe("SenseGroupingService", () => {
       }),
       expect.objectContaining({
         id: "doc-right",
-        label: "doc-right",
+        label: "",
         labelStatus: "missing",
       }),
     ]);
+    // A labeling miss must never leak the document id or title as a visitor-facing
+    // label; the missing label is represented honestly as an empty string.
     expect(candidates.map((candidate) => candidate.label)).not.toContain("Shipping FAQ");
+    expect(candidates.map((candidate) => candidate.label)).not.toContain("doc-right");
   });
 
   it("treats rejected LLM labels as missing so retrieval sense clarification can auto-pick", async () => {
@@ -355,12 +363,12 @@ describe("SenseGroupingService", () => {
     expect(candidates).toEqual([
       expect.objectContaining({
         id: "doc-left",
-        label: "doc-left",
+        label: "",
         labelStatus: "missing",
       }),
       expect.objectContaining({
         id: "doc-right",
-        label: "doc-right",
+        label: "",
         labelStatus: "missing",
       }),
     ]);
@@ -443,5 +451,200 @@ describe("SenseGroupingService", () => {
     expect(labelGateway.label).toHaveBeenCalledWith(expect.objectContaining({
       conversationLanguage: "es",
     }));
+  });
+
+  it("tags candidates complementary when the label gateway judges the groups a single intent", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+        relationship: "complementary" as const,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "What is Kriya Yoga and how do I learn it?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "About Kriya Yoga",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Learning Kriya Yoga",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates.map((candidate) => candidate.relationship)).toEqual([
+      "complementary",
+      "complementary",
+    ]);
+  });
+
+  it("leaves candidates untagged when the gateway omits or splits the relationship judgment", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group, index) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "Whether refunds are available" : "Whether shipping applies",
+        // Only one group carries a relationship, and it is exclusive: the set must
+        // fall back to the exclusive path bit-for-bit.
+        ...(index === 0 ? { relationship: "exclusive" as const } : {}),
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "Tell me about refunds and shipping.",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Refund Policy",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Shipping FAQ",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates.every((candidate) => candidate.relationship !== "complementary")).toBe(true);
+  });
+});
+
+const complementaryCandidate = (
+  id: string,
+  confidence: number,
+): RetrievalSenseClarificationCandidate => ({
+  id,
+  label: id === "doc-left" ? "What Kriya Yoga is" : "How to begin Kriya Yoga",
+  labelStatus: "generated",
+  confidence,
+  relationship: "complementary",
+  payload: { documentIds: [id] },
+});
+
+describe("evaluateRetrievalSenseClarification complementary facets", () => {
+  const basePolicy = { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 };
+
+  it("proceeds without clarification, without document scoping, and records compatible_facets", async () => {
+    const candidates = [
+      complementaryCandidate("doc-left", 0.61),
+      complementaryCandidate("doc-right", 0.6),
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "What is Kriya Yoga and how do I learn it?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect).toMatchObject({
+      kind: "proceed",
+      stage: expect.objectContaining({
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          reason: "compatible_facets",
+        }),
+      }),
+    });
+    expect(effect && "documentScope" in effect ? effect.documentScope : undefined).toBeUndefined();
+  });
+
+  it("still asks when the same well-separated groups are judged exclusive readings", async () => {
+    const candidates = [
+      { ...complementaryCandidate("doc-left", 0.61), relationship: undefined },
+      { ...complementaryCandidate("doc-right", 0.6), relationship: undefined },
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "Do you mean posture or meditation?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect?.kind).toBe("ask");
+  });
+});
+
+describe("phraseRetrievalSenseAsk", () => {
+  const askStage = {
+    id: "clarification",
+    kind: "clarification" as const,
+    status: "applied" as const,
+    startedAt: "2099-01-01T00:00:00.000Z",
+    completedAt: "2099-01-01T00:00:00.000Z",
+    outputs: { surface: "retrieval_sense", decision: "asked" },
+  };
+  const presentable: RetrievalSenseClarificationCandidate[] = [
+    { id: "doc-left", label: "Posture practice", labelStatus: "generated", confidence: 0.6, payload: { documentIds: ["doc-left"] } },
+    { id: "doc-right", label: "Meditation practice", labelStatus: "generated", confidence: 0.59, payload: { documentIds: ["doc-right"] } },
+  ];
+
+  it("drops candidates whose label is empty or equal to their id", () => {
+    const filtered = presentableSenseCandidates([
+      ...presentable,
+      { id: "doc-empty", label: "", labelStatus: "missing", confidence: 0.4, payload: { documentIds: ["doc-empty"] } },
+      { id: "doc-id", label: "doc-id", labelStatus: "generated", confidence: 0.4, payload: { documentIds: ["doc-id"] } },
+    ]);
+    expect(filtered.map((candidate) => candidate.id)).toEqual(["doc-left", "doc-right"]);
+  });
+
+  it("returns an ask when at least two options are presentable and the lead-in is real", async () => {
+    const result = await phraseRetrievalSenseAsk({
+      candidates: presentable,
+      askStage,
+      phraseQuestion: async () => "Which did you mean?\n\n1. Posture practice\n2. Meditation practice",
+    });
+    expect(result.kind).toBe("ask");
+    expect(result.kind === "ask" && result.presented.map((candidate) => candidate.id)).toEqual(["doc-left", "doc-right"]);
+  });
+
+  it("falls back silently to phrasing_fallback when the lead-in degenerates to a bare label", async () => {
+    const result = await phraseRetrievalSenseAsk({
+      candidates: presentable,
+      askStage,
+      phraseQuestion: async () => "Posture practice",
+    });
+    expect(result.kind).toBe("fallback");
+    expect(result.kind === "fallback" && result.documentScope).toEqual(["doc-left"]);
+    expect(result.stage.outputs).toMatchObject({
+      surface: "retrieval_sense",
+      decision: "auto_picked",
+      reason: "phrasing_fallback",
+      chosenCandidateId: "doc-left",
+    });
+  });
+
+  it("falls back when fewer than two options survive the presentable guard", async () => {
+    const result = await phraseRetrievalSenseAsk({
+      candidates: [
+        presentable[0]!,
+        { id: "doc-id", label: "doc-id", confidence: 0.5, payload: { documentIds: ["doc-id"] } },
+      ],
+      askStage,
+      phraseQuestion: async () => "Which did you mean?",
+    });
+    expect(result.kind).toBe("fallback");
+    expect(result.kind === "fallback" && result.documentScope).toEqual(["doc-left"]);
   });
 });

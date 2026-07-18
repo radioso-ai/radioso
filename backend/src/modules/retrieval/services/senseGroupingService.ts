@@ -27,17 +27,27 @@ export interface SenseLabelGroup {
   separation: number;
 }
 
+/**
+ * `relationship` is an LLM-returned judgment (never an in-code keyword test): are
+ * the candidate groups mutually exclusive readings of the question, or complementary
+ * facets of a single intent that one combined answer should cover? Absent/unparsed
+ * ⇒ treated as exclusive (conservative, preserves prior behavior).
+ */
+export type SenseRelationship = "exclusive" | "complementary";
+
 export interface SenseLabelGateway {
   label(input: {
     question: string;
     groups: SenseLabelGroup[];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
-  }): Promise<Array<{ id: string; label: string; description?: string }>>;
+  }): Promise<Array<{ id: string; label: string; description?: string; relationship?: SenseRelationship }>>;
 }
 
 export type RetrievalSenseClarificationCandidate = ClarificationCandidate & {
   labelStatus: "generated" | "missing";
+  /** Set only when the gateway judges the whole candidate set complementary facets. */
+  relationship?: SenseRelationship;
 };
 
 export interface SenseEmbeddingReader {
@@ -98,7 +108,7 @@ export class ModelSenseLabelGateway implements SenseLabelGateway {
     groups: SenseLabelGroup[];
     conversationLanguage?: string;
     usageContext?: ModelCallUsageContext;
-  }): Promise<Array<{ id: string; label: string; description?: string }>> {
+  }): Promise<Array<{ id: string; label: string; description?: string; relationship?: SenseRelationship }>> {
     const { text } = await this.inference.complete({
       operation: input.usageContext ?? {
         workspaceId: "unknown",
@@ -179,15 +189,23 @@ export class SenseGroupingService {
       usageContext: input.usageContext,
     }).catch(() => []);
     const labels = new Map(labelResults.map((label) => [label.id, label]));
+    // The relationship is a single set-level judgment; treat the set as
+    // complementary only when the gateway labeled every group and unanimously said
+    // so. Any exclusive, missing, or unparsed value falls back to exclusive.
+    const complementary = labelResults.length >= 2
+      && labelResults.every((label) => label.relationship === "complementary");
 
     return separated.map((group) => {
       const label = labels.get(group.documentId);
       const generatedLabel = label?.label?.trim();
       return {
         id: group.documentId,
-        label: generatedLabel || group.documentId,
+        // A labeling miss must never leak the document id/title to the visitor; keep
+        // the id internally (payload) and represent the missing label honestly.
+        label: generatedLabel || "",
         labelStatus: generatedLabel ? "generated" : "missing",
         ...(label?.description ? { description: label.description } : {}),
+        ...(complementary ? { relationship: "complementary" as const } : {}),
         confidence: confidenceFor(group.share, group.separation, group.averageSimilarity, bestAverageSimilarity),
         payload: { documentIds: [group.documentId] },
       };
@@ -312,24 +330,29 @@ const extractJsonArray = (raw: string): string | null => {
   return start >= 0 && end > start ? raw.slice(start, end + 1) : null;
 };
 
+const parseRelationship = (value: unknown): SenseRelationship | undefined =>
+  value === "exclusive" || value === "complementary" ? value : undefined;
+
 const parseLabelResponse = (
   raw: string,
   allowedIds: Set<string>,
-): Array<{ id: string; label: string; description?: string }> => {
+): Array<{ id: string; label: string; description?: string; relationship?: SenseRelationship }> => {
   const json = extractJsonArray(raw);
   if (!json) {
     return [];
   }
   try {
-    const parsed = JSON.parse(json) as Array<{ id?: unknown; label?: unknown; description?: unknown }>;
+    const parsed = JSON.parse(json) as Array<{ id?: unknown; label?: unknown; description?: unknown; relationship?: unknown }>;
     return parsed.flatMap((item) => {
       if (typeof item.id !== "string" || !allowedIds.has(item.id) || typeof item.label !== "string") {
         return [];
       }
+      const relationship = parseRelationship(item.relationship);
       return [{
         id: item.id,
         label: item.label,
         ...(typeof item.description === "string" ? { description: item.description } : {}),
+        ...(relationship ? { relationship } : {}),
       }];
     });
   } catch {

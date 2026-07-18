@@ -110,12 +110,17 @@ import {
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
 import {
   evaluateRetrievalSenseClarification,
+  phraseRetrievalSenseAsk,
   type AgenticRetrievalToolFactory,
   type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
-import type { ClarificationMetricDecision } from "./clarification/clarificationMetrics.js";
+import {
+  clarificationDecisionMetric,
+  type ClarificationMetricDecision,
+  type ClarificationMetricReason,
+} from "./clarification/clarificationMetrics.js";
 import {
   toConversationAgentConfig,
   toConversationInputEvent,
@@ -466,7 +471,7 @@ export interface ChatServiceOptions {
   clarifier?: ConversationClarifier;
   clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
   clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
-  recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
+  recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision; reason?: ClarificationMetricReason }) => void;
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
@@ -496,7 +501,7 @@ export class ChatService {
   private readonly clarifier?: ConversationClarifier;
   private readonly clarifierFactory?: (input: { session: PreparedSession; accountId?: string }) => ConversationClarifier;
   private readonly clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
-  private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision }) => void;
+  private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision; reason?: ClarificationMetricReason }) => void;
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
   private readonly retrievalSenseClarificationPolicy: ClarificationPolicy;
   private readonly turnRouter: TurnRouter;
@@ -743,8 +748,10 @@ export class ChatService {
       const outputs = stage.outputs ?? {};
       const surface = typeof outputs.surface === "string" ? outputs.surface : "unknown";
       const decision = typeof outputs.decision === "string" ? outputs.decision : "";
-      if (decision === "asked" || decision === "offered" || decision === "auto_picked" || decision === "suppressed") {
-        this.recordClarificationDecision({ surface, decision });
+      const stageReason = typeof outputs.reason === "string" ? outputs.reason : undefined;
+      const recorded = clarificationDecisionMetric(decision, stageReason);
+      if (recorded) {
+        this.recordClarificationDecision({ surface, ...recorded });
       }
     }
   }
@@ -1122,13 +1129,13 @@ export class ChatService {
     if (!effect) {
       return null;
     }
-    const engineTrace = effect.stage
-      ? this.conversationTraceWithStage(input.session.turnTrace, effect.stage)
-      : input.session.turnTrace;
-    if (effect.stage) {
-      this.recordTraceClarificationDecisions(engineTrace);
-    }
     if (effect.kind !== "ask") {
+      const engineTrace = effect.stage
+        ? this.conversationTraceWithStage(input.session.turnTrace, effect.stage)
+        : input.session.turnTrace;
+      if (effect.stage) {
+        this.recordTraceClarificationDecisions(engineTrace);
+      }
       if (effect.kind === "offer") {
         await input.clarification.store.save(effect.pending);
       }
@@ -1139,14 +1146,30 @@ export class ChatService {
         ...(effect.kind === "offer" ? { offerAlternatives: effect.alternatives } : {}),
       };
     }
-    const answer = await input.clarification.clarifier.phraseQuestion({
+    // A degenerate lead-in or fewer than two presentable options must silently
+    // auto-pick (FR-019) rather than render a broken menu. phraseRetrievalSenseAsk
+    // owns that structural decision; recording and trace assembly happen only after
+    // the ask-vs-fallback outcome is known so the metric reason is accurate.
+    const clarifier = input.clarification.clarifier;
+    const phrased = await phraseRetrievalSenseAsk({
       candidates: effect.candidates,
-      turn: this.buildClarificationTurn(input.session),
+      askStage: effect.stage,
+      phraseQuestion: (candidates) =>
+        clarifier.phraseQuestion({ candidates, turn: this.buildClarificationTurn(input.session) }),
     });
-    await input.clarification.store.save(effect.pending);
+    const engineTrace = this.conversationTraceWithStage(input.session.turnTrace, phrased.stage);
+    this.recordTraceClarificationDecisions(engineTrace);
+    if (phrased.kind === "fallback") {
+      return {
+        kind: "continue",
+        stage: phrased.stage,
+        ...(phrased.documentScope ? { documentScope: phrased.documentScope } : {}),
+      };
+    }
+    await input.clarification.store.save({ ...effect.pending, candidates: phrased.presented });
     return {
       kind: "ask",
-      presentation: this.chatAnswerPresenter.presentNonRetrievalAnswer(answer),
+      presentation: this.chatAnswerPresenter.presentNonRetrievalAnswer(phrased.answer),
       engineTrace,
     };
   }

@@ -118,6 +118,7 @@ const makeChatService = (
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"],
   turnInterpreter?: ChatServiceOptions["turnInterpreter"],
   retrievalSenseDetector?: ChatServiceOptions["retrievalSenseDetector"],
+  responseLanguageDetector?: ChatServiceOptions["responseLanguageDetector"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -146,6 +147,7 @@ const makeChatService = (
     conversationOwnershipReader,
     handoffWaitingMessageGenerator,
     retrievalSenseDetector,
+    responseLanguageDetector,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -536,6 +538,116 @@ describe("chat service streaming", () => {
     expect(turnRouter.classify).not.toHaveBeenCalled();
     expect(retrievalTurn.interpret).toHaveBeenCalledWith(expect.objectContaining({
       precomputedRewriteProposal: rewriteProposal,
+    }));
+  });
+
+  it("passes detected response language into engine-prepared retrieval", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    const turnRouter: ChatServiceOptions["turnRouter"] = {
+      classify: vi.fn(async () => {
+        throw new Error("merged turn interpreter should own routing");
+      }),
+    };
+    const turnInterpreter: ChatServiceOptions["turnInterpreter"] = {
+      interpretChatTurn: vi.fn(async () => ({
+        route: "retrieval" as const,
+        framing: { isIdentityQuestion: false },
+        rewriteProposal: {
+          rewrittenQuery: "known topic details",
+          semanticQuery: "known topic details",
+          lexicalQuery: "known topic",
+          queryShape: "general_grounding" as const,
+          temporalQueryMode: "none" as const,
+          retrievalSubqueries: [],
+          turnKind: "fresh_subject" as const,
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      })),
+    };
+    const responseLanguageDetector: ChatServiceOptions["responseLanguageDetector"] = {
+      detect: vi.fn(async () => ({ responseLanguage: "English" })),
+    };
+    const retrievalTurn: ChatServiceOptions["retrievalTurn"] = {
+      interpret: vi.fn(async (input) => ({
+        request: input,
+        traceStartedAtMs: Date.now(),
+        context: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            request: input,
+            settings: {
+              workspaceId: input.workspaceId,
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: { selectedMessages: [], truncated: false, selectionReason: "full-history" },
+          },
+        },
+        interpretation: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {},
+        },
+      } as never)),
+      dispatch: vi.fn(async () => createGroundedPipeline().run() as never),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => groundingEnvelope("The guide covers known topic details.[[1]]", "grounded")),
+      streamAnswer: vi.fn(async function* () {}),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      chatGateway,
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      turnRouter,
+      undefined,
+      undefined,
+      turnInterpreter,
+      undefined,
+      responseLanguageDetector,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "How does the known topic work?",
+      stream: false,
+    });
+
+    expect(responseLanguageDetector.detect).toHaveBeenCalledOnce();
+    expect(retrievalTurn.interpret).toHaveBeenCalledWith(expect.objectContaining({
+      responseLanguage: "English",
     }));
   });
 

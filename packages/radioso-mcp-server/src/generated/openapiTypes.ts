@@ -15340,6 +15340,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Expensive authenticated request rate limit exceeded */
             429: {
                 headers: {
@@ -17087,6 +17096,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     answerMcpConverseGrounded: {
@@ -17318,6 +17336,15 @@ export interface operations {
             };
             /** @description Public chat link not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Turn superseded by a newer message in the same conversation */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

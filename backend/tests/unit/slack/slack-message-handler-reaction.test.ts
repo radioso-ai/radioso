@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { ConnectorChatPort } from "@radioso/connector-api";
 
 import {
   SlackMessageHandler,
   type SlackAppMentionEvent,
   type SlackInboundEventEnvelope,
 } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
+import { ChatTurnSupersededError } from "../../../src/modules/chat/services/conversationTurnRegistry.js";
 
 const PROCESSING_REACTION = "eyes";
 const ANSWERED_REACTION = "white_check_mark";
@@ -16,6 +18,14 @@ interface ReactionCall {
   timestamp: string;
   name: string;
 }
+
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
 
 const installation = {
   id: "inst-1",
@@ -30,10 +40,19 @@ const installation = {
 const buildHandler = (overrides: {
   reactions: ReactionCall[];
   events: string[];
-  postImpl?: () => Promise<{ channel: string; ts: string }>;
+  postImpl?: (input: { channel: string; text: string; threadTs?: string }) => Promise<{ channel: string; ts: string }>;
+  answerImpl?: ConnectorChatPort["answer"];
+  getOrCreateConversationLinkImpl?: () => Promise<{
+    id: string;
+    workspaceId: string;
+    installationId: string;
+    slackKey: string;
+    conversationId: string;
+  }>;
+  info?: (entry: unknown, message?: string) => void;
 }) => {
   return new SlackMessageHandler({
-    logger: { info: () => undefined, warn: () => undefined, error: () => undefined },
+    logger: { info: overrides.info ?? (() => undefined), warn: () => undefined, error: () => undefined },
     installations: {
       findByTeamId: async () => installation,
       findByWorkspaceId: async () => null,
@@ -61,10 +80,17 @@ const buildHandler = (overrides: {
       },
       findConversationLink: async () => null,
       findConversationLinkByConversationId: async () => null,
+      getOrCreateConversationLink: overrides.getOrCreateConversationLinkImpl ?? (async () => ({
+        id: "link-1",
+        workspaceId: "ws-1",
+        installationId: "inst-1",
+        slackKey: "mention:T1:C1:1700000000.0001",
+        conversationId: "conv-1",
+      })),
       upsertConversationLink: async () => undefined,
     } as never,
     chat: {
-      answer: async () => ({ conversationId: "conv-1", answer: "the answer", outcome: "answered" }),
+      answer: overrides.answerImpl ?? (async () => ({ conversationId: "conv-1", answer: "the answer", outcome: "answered" })),
     },
     clientFactory: () => ({
       postMessage: overrides.postImpl ?? (async (input) => ({ channel: input.channel, ts: "ts-reply" })),
@@ -124,5 +150,93 @@ describe("SlackMessageHandler reaction lifecycle", () => {
       { op: "remove", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
       { op: "add", channel: "C1", timestamp: "1700000000.0001", name: FAILED_REACTION },
     ]);
+  });
+
+  it("clears only the processing reaction and marks a superseded event skipped", async () => {
+    const reactions: ReactionCall[] = [];
+    const events: string[] = [];
+    const info = vi.fn();
+    const handler = buildHandler({
+      reactions,
+      events,
+      info,
+      answerImpl: async () => {
+        throw new ChatTurnSupersededError("conv-1", "routing");
+      },
+    });
+
+    await handler.handleAppMention(mentionEnvelope);
+
+    expect(reactions).toEqual([
+      { op: "add", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
+      { op: "remove", channel: "C1", timestamp: "1700000000.0001", name: PROCESSING_REACTION },
+    ]);
+    expect(events).toEqual(["skipped"]);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: "conv-1", eventId: "Ev1", stage: "routing" }),
+      "Slack turn superseded",
+    );
+  });
+
+  it("dispatches concurrent first thread events through one conversation and posts only the newest reply", async () => {
+    const reactions: ReactionCall[] = [];
+    const events: string[] = [];
+    const firstStarted = deferred();
+    const newerArrived = deferred();
+    const messages: string[] = [];
+    const conversationIds: Array<string | undefined> = [];
+    const posts: string[] = [];
+    let createdConversations = 0;
+    let linkedConversationId: string | undefined;
+    const handler = buildHandler({
+      reactions,
+      events,
+      getOrCreateConversationLinkImpl: async () => {
+        if (!linkedConversationId) {
+          createdConversations += 1;
+          linkedConversationId = "conv-shared";
+        }
+        return {
+          id: "link-1",
+          workspaceId: "ws-1",
+          installationId: "inst-1",
+          slackKey: "mention:T1:C1:1700000000.0001",
+          conversationId: linkedConversationId,
+        };
+      },
+      answerImpl: async (input) => {
+        conversationIds.push(input.conversationId);
+        messages.push(input.query);
+        if (input.query === "first message") {
+          firstStarted.resolve();
+          await newerArrived.promise;
+          throw new ChatTurnSupersededError(input.conversationId!, "routing");
+        }
+        newerArrived.resolve();
+        return { conversationId: input.conversationId!, answer: "newest reply", outcome: "answered" };
+      },
+      postImpl: async (input) => {
+        posts.push(input.text);
+        return { channel: input.channel, ts: "reply-ts" };
+      },
+    });
+    const first = handler.handleAppMention({
+      ...mentionEnvelope,
+      event: { ...mentionEnvelope.event, text: "first message" },
+    });
+    await firstStarted.promise;
+    const second = handler.handleAppMention({
+      ...mentionEnvelope,
+      eventId: "Ev2",
+      event: { ...mentionEnvelope.event, text: "newest message", ts: "1700000000.0002", thread_ts: "1700000000.0001" },
+    });
+
+    await Promise.all([first, second]);
+
+    expect(createdConversations).toBe(1);
+    expect(conversationIds).toEqual(["conv-shared", "conv-shared"]);
+    expect(messages).toEqual(["first message", "newest message"]);
+    expect(posts).toEqual(["newest reply"]);
+    expect(events).toEqual(expect.arrayContaining(["skipped", "processed"]));
   });
 });

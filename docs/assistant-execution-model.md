@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-05-16
+last_updated: 2026-07-19
 ---
 
 # Assistant Execution Model
@@ -18,6 +18,52 @@ Normal agent chat runs in the live request path. That includes:
 - assistant bootstrap greetings for new conversations
 
 This work is classified in code as `interactive_synchronous`. Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.
+
+## New Messages Supersede Unstarted Replies
+
+Only one assistant reply can prepare or emit for a conversation at a time. If a
+new message arrives before the current reply starts streaming or persisting,
+Radioso cancels the current reply. The newer turn waits for cancellation cleanup,
+then reads the latest history. Earlier user messages remain in that history, but
+no assistant message is saved for the cancelled turn.
+
+Once the first assistant chunk is streamed, or a whole reply starts persisting,
+the turn completes. The newer message then runs as the next turn. This prevents
+partial assistant messages from being saved.
+
+For a superseded non-streaming request, authenticated chat, public chat, and MCP
+converse return HTTP `409` with a structured error:
+
+```json
+{
+  "error": {
+    "code": "chat_turn_superseded",
+    "message": "Chat turn was superseded by a newer message.",
+    "details": {
+      "conversationId": "...",
+      "reason": "superseded",
+      "stage": "rendering"
+    }
+  }
+}
+```
+
+For streaming chat, the superseded stream ends normally with a terminal SSE
+event. It does not contain assistant-facing copy:
+
+```text
+event: cancelled
+data: {"conversationId":"...","reason":"superseded","stage":"rendering"}
+```
+
+Clients should stop the pending reply state when they receive `cancelled`.
+For a successful stream, `done` marks completion of the core turn. Optional
+`suggestions` enrichment can follow, so clients that use suggestions should
+continue reading until the stream closes.
+
+Interruption coordination is process-local. Multi-instance deployments need
+conversation-affine routing for strict behavior across instances. Without it,
+cancellation remains best effort within each process.
 
 ## Background Work Is Separate
 

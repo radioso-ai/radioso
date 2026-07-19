@@ -59,6 +59,26 @@ const SLACK_PROCESSING_REACTION = "eyes";
 const SLACK_ANSWERED_REACTION = "white_check_mark";
 const SLACK_FAILED_REACTION = "x";
 
+const readSupersededTurn = (error: unknown): { conversationId?: string; stage?: string } | null => {
+  if (!error || typeof error !== "object" || !("code" in error) || error.code !== "chat_turn_superseded") {
+    return null;
+  }
+  const details = "details" in error && error.details && typeof error.details === "object"
+    ? error.details as Record<string, unknown>
+    : null;
+  const conversationId = "conversationId" in error && typeof error.conversationId === "string"
+    ? error.conversationId
+    : typeof details?.conversationId === "string"
+      ? details.conversationId
+      : undefined;
+  const stage = "stage" in error && typeof error.stage === "string"
+    ? error.stage
+    : typeof details?.stage === "string"
+      ? details.stage
+      : undefined;
+  return { conversationId, stage };
+};
+
 export interface SlackMessageHandlerOptions {
   logger: ConnectorLogger;
   chat: ConnectorChatPort;
@@ -177,29 +197,63 @@ export class SlackMessageHandler {
     await this.markProcessingReaction(client, reactionTarget, envelope.eventId);
 
     const slackKey = input.getSlackKey(installation);
-    const existingLink = await this.options.persistence.findConversationLink({
+    const channelContext = input.getChannelContext(installation);
+    const conversationLink = await this.options.persistence.getOrCreateConversationLink({
       workspaceId: binding.workspaceId,
+      installationId: installation.id,
       slackKey,
+      agentId: binding.answeringAgentId,
+      sourceChannel: "slack",
+      channelContext,
     });
 
     this.options.logger.info(
       { workspaceId: binding.workspaceId, installationWorkspaceId: installation.workspaceId, installationId: installation.id, eventId: envelope.eventId },
       "Slack turn dispatch started",
     );
-    const response = await this.options.chat.answer({
-      workspaceId: binding.workspaceId,
-      agentId: binding.answeringAgentId,
-      conversationId: existingLink?.conversationId,
-      query,
-      sourceChannel: "slack",
-      channelContext: input.getChannelContext(installation),
-    });
-    await this.options.persistence.upsertConversationLink({
-      workspaceId: binding.workspaceId,
-      installationId: installation.id,
-      slackKey,
-      conversationId: response.conversationId,
-    });
+    let response: Awaited<ReturnType<ConnectorChatPort["answer"]>>;
+    try {
+      response = await this.options.chat.answer({
+        workspaceId: binding.workspaceId,
+        agentId: binding.answeringAgentId,
+        conversationId: conversationLink.conversationId,
+        query,
+        sourceChannel: "slack",
+        channelContext,
+      });
+    } catch (error) {
+      const superseded = readSupersededTurn(error);
+      if (!superseded) {
+        throw error;
+      }
+      await this.clearProcessingReaction(client, reactionTarget, envelope.eventId);
+      try {
+        await this.options.persistence.markInboundEventStatus(envelope.eventId, "skipped");
+      } catch (statusError) {
+        this.options.logger.warn(
+          {
+            workspaceId: binding.workspaceId,
+            installationId: installation.id,
+            eventId: envelope.eventId,
+            conversationId: superseded.conversationId ?? conversationLink.conversationId,
+            stage: superseded.stage,
+            errorType: statusError instanceof Error ? statusError.name : typeof statusError,
+          },
+          "Slack superseded status update failed",
+        );
+      }
+      this.options.logger.info(
+        {
+          workspaceId: binding.workspaceId,
+          installationId: installation.id,
+          eventId: envelope.eventId,
+          conversationId: superseded.conversationId ?? conversationLink.conversationId,
+          stage: superseded.stage,
+        },
+        "Slack turn superseded",
+      );
+      return;
+    }
     await this.enqueueGapEscalationIfNeeded({
       envelope,
       installation,
@@ -269,6 +323,21 @@ export class SlackMessageHandler {
       () => client.addReaction({ ...target, name: outcomeReaction }),
       eventId,
       "add_outcome",
+    );
+  }
+
+  private async clearProcessingReaction(
+    client: SlackReactionClient,
+    target: { channel: string; timestamp: string } | null,
+    eventId: string,
+  ): Promise<void> {
+    if (!target) {
+      return;
+    }
+    await this.safeReaction(
+      () => client.removeReaction({ ...target, name: SLACK_PROCESSING_REACTION }),
+      eventId,
+      "remove_processing",
     );
   }
 

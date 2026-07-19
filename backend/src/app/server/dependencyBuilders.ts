@@ -58,6 +58,8 @@ import {
   ChatHistoryService,
   ConversationForkService,
   ChatService,
+  InMemoryConversationTurnRegistry,
+  LoggingConversationTurnInterruptionObserver,
   type ChatRoutineProvider,
   type PublicConversationEventBus,
   ChainedPublicChatActionAdvertiser,
@@ -1274,6 +1276,7 @@ export const buildChatServices = (input: {
       pinnedRoutineIds = [],
       responseLanguage,
       groundedAnswerRenderer,
+      throwIfCancelled,
     }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
@@ -1468,6 +1471,7 @@ export const buildChatServices = (input: {
                   workspaceId,
                 }),
               metricsRegistry: input.metricsRegistry ?? null,
+              throwIfCancelled,
             },
           ),
         ),
@@ -1573,6 +1577,9 @@ export const buildChatServices = (input: {
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
+    conversationTurnRegistry: new InMemoryConversationTurnRegistry(
+      new LoggingConversationTurnInterruptionObserver(input.logger, input.metricsRegistry),
+    ),
     conversationOwnershipRepository: input.conversationOwnershipRepository,
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,

@@ -10,5 +10,8 @@ export interface AgentSkillTurnRuntime {
 }
 
 export interface AgentSkillTurnSkillProvider {
-  forSession(session: PreparedSession): Promise<AgentSkillTurnRuntime>;
+  forSession(
+    session: PreparedSession,
+    coordination?: { throwIfCancelled(): void },
+  ): Promise<AgentSkillTurnRuntime>;
 }

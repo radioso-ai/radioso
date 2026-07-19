@@ -882,6 +882,7 @@ export function AnonymousChatProvider({
 
         try {
           let didComplete = false
+          let didCancel = false
           let activeRequestToken = publicChatTokenRef.current
 
           const completion = await withPublicSessionRetry((activeToken) => {
@@ -914,6 +915,18 @@ export function AnonymousChatProvider({
                         : message,
                     ),
                   )
+                },
+                onCancelled: ({ conversationId: cancelledConversationId }) => {
+                  didCancel = true
+                  setConversationId(cancelledConversationId)
+                  setBootstrapGreetingId(undefined)
+                  setMessages((prev) =>
+                    restoreMessageSuggestions(
+                      prev.filter((message) => message.id !== assistantMessageId),
+                      previousMessages,
+                    ),
+                  )
+                  setIsLoading(false)
                 },
                 onDone: (completion) => {
                   didComplete = true
@@ -952,6 +965,10 @@ export function AnonymousChatProvider({
               },
             )
           })
+
+          if (didCancel) {
+            return
+          }
 
           const nextConversationId = completion.conversationId ?? resolvedConversationId
           const suppressedByHumanOwnership =

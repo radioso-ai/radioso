@@ -3,7 +3,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 
 import type { DB } from "../../src/shared/infra/kysely/schema.js";
-import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, setLocal, toJsonb, toSanitizedJsonb } from "../../src/shared/infra/kysely/sqlHelpers.js";
+import { anyOf, castText, clockTimestamp, jsonbConcat, jsonbKeyText, jsonbSet, setLocal, toJsonb, toSanitizedJsonb, transactionAdvisoryLock } from "../../src/shared/infra/kysely/sqlHelpers.js";
 
 // Compilation is synchronous and never touches the pool, so a Kysely bound to a dummy pool
 // is enough to assert the SQL each helper emits.
@@ -15,6 +15,13 @@ describe("kysely sqlHelpers", () => {
 
     expect(compiled.sql).toBe("set local statement_timeout = 0");
     expect(compiled.parameters).toEqual([]);
+  });
+
+  it("transactionAdvisoryLock emits a parameterized text-key transaction lock", () => {
+    const compiled = transactionAdvisoryLock("slack_conversation:workspace:key").compile(db);
+
+    expect(compiled.sql).toBe("select pg_advisory_xact_lock(hashtextextended($1, 0))");
+    expect(compiled.parameters).toEqual(["slack_conversation:workspace:key"]);
   });
 
   it("toJsonb stringifies the value and casts to jsonb (works for arrays)", () => {

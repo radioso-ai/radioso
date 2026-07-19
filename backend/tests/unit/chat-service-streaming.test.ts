@@ -4,6 +4,7 @@ import type { ConversationEngine, RoutineState } from "@radioso/conversation-con
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
+  ChatTurnSupersededError,
   ChatService,
   type ChatGateway,
   type ChatServiceOptions,
@@ -30,6 +31,10 @@ import {
   InMemoryMessageRepository,
 } from "../support/fakes.js";
 import type { ConversationOwnershipRecord } from "../../src/modules/handoff/public.js";
+import {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+} from "../../src/modules/routines/skillDispatcher.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -1363,6 +1368,105 @@ describe("chat service streaming", () => {
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("cancels during routine activation before the selected executor is invoked", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create("workspace-1", null);
+    let releaseActivation!: () => void;
+    let markActivationStarted!: () => void;
+    const activationStarted = new Promise<void>((resolve) => {
+      markActivationStarted = resolve;
+    });
+    const activationRelease = new Promise<void>((resolve) => {
+      releaseActivation = resolve;
+    });
+    let activationCalls = 0;
+    const executorDispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" as const },
+    }));
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async ({ throwIfCancelled }) => {
+        const dispatcher = new RoutineSkillExecutorDispatcher(
+          new StaticRoutineSkillResolver([{
+            name: "send_side_effect",
+            execution: { kind: "internal", adapter: "test" },
+          }] as never),
+          { resolve: () => ({ dispatch: executorDispatch }) } as never,
+          { throwIfCancelled },
+        );
+        return {
+          activator: {
+            activate: async () => {
+              activationCalls += 1;
+              if (activationCalls === 1) {
+                markActivationStarted();
+                await activationRelease;
+                return { kind: "activate" as const, routineId: "side_effect_routine" };
+              }
+              return null;
+            },
+          },
+          runner: {
+            resume: async () => {
+              await dispatcher.dispatch({
+                skillName: "send_side_effect",
+                state: {
+                  sessionId: conversation.id,
+                  routineId: "side_effect_routine",
+                  path: ["send"],
+                  variables: {},
+                  status: "active",
+                },
+                turn: {
+                  agent: { id: "workspace-1" },
+                  sessionId: conversation.id,
+                  stagedContext: [],
+                },
+              } as never);
+              return { response: { answer: "stale reply" }, nextState: null };
+            },
+          },
+        };
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(createIntentRoutedNoContextPipeline({ query: "hello" }) as never),
+      { async answer() { return "latest reply"; }, async *streamAnswer() { yield "latest reply"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+
+    const first = service.answer({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      query: "contact me",
+      stream: false,
+    });
+    await activationStarted;
+    const latest = service.answer({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      query: "hello",
+      stream: false,
+    });
+    releaseActivation();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: "latest reply" });
+    expect(executorDispatch).not.toHaveBeenCalled();
   });
 
   it("skips routine activation when a suspended routine exists for the conversation", async () => {

@@ -191,3 +191,11 @@ export {
   type ClarificationMetricDecision,
 } from "./services/clarification/clarificationMetrics.js";
 export { ChatAnswerSupport } from "./services/chatAnswerSupport.js";
+export {
+  ChatTurnSupersededError,
+  InMemoryConversationTurnRegistry,
+  LoggingConversationTurnInterruptionObserver,
+  type ConversationTurnInterruptionObserver,
+  type ConversationTurnLease,
+  type ConversationTurnRegistry,
+} from "./services/conversationTurnRegistry.js";

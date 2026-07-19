@@ -3,9 +3,17 @@ import { normalizeError, RadiosoError } from "../core/errors.js";
 import { requestStream } from "../core/http.js";
 import type { AssistantChatRequest, ChatResponse, ChatStreamRequest } from "../generated/client.js";
 
+export interface RadiosoChatStreamCancelledEvent {
+  type: "cancelled";
+  conversationId: string;
+  reason: "superseded";
+  stage: "waiting" | "preparing" | "routing" | "rendering" | "persisting";
+}
+
 export type RadiosoChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
+  | RadiosoChatStreamCancelledEvent
   | {
       type: "suggestions";
       conversationId: string;
@@ -15,6 +23,13 @@ export type RadiosoChatStreamEvent =
   | { type: "error"; error: RadiosoError };
 
 const parsePayload = (value: string): Record<string, unknown> => JSON.parse(value) as Record<string, unknown>;
+
+const isCancellationStage = (value: unknown): value is RadiosoChatStreamCancelledEvent["stage"] =>
+  value === "waiting" ||
+  value === "preparing" ||
+  value === "routing" ||
+  value === "rendering" ||
+  value === "persisting";
 
 const toLines = async function* (stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
@@ -62,6 +77,20 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
 
   if (eventName === "chunk" && typeof payload.text === "string") {
     return { type: "chunk", text: payload.text };
+  }
+
+  if (
+    eventName === "cancelled" &&
+    typeof payload.conversationId === "string" &&
+    payload.reason === "superseded" &&
+    isCancellationStage(payload.stage)
+  ) {
+    return {
+      type: "cancelled",
+      conversationId: payload.conversationId,
+      reason: payload.reason,
+      stage: payload.stage,
+    };
   }
 
   if (

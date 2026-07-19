@@ -92,6 +92,7 @@ export const registerMcpConversePaths = (
         description: "Agent answer",
         content: json(mcpConverseAskResponseSchema),
       },
+      409: errorResponse("Turn superseded by a newer message in the same conversation"),
       401: errorResponse("Invalid converse session"),
       403: errorResponse("Converse session is no longer authorized"),
     },

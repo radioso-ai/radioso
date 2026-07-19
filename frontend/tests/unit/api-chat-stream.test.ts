@@ -29,4 +29,25 @@ describe('streamChatEvents', () => {
     expect(donePayload?.ownership).toEqual(completion.ownership)
     expect(result.ownership).toEqual(completion.ownership)
   })
+
+  it('dispatches typed cancelled events', async () => {
+    const cancelled = {
+      conversationId: 'conversation-1',
+      reason: 'superseded',
+      stage: 'routing',
+    }
+    const response = new Response(`event: cancelled\ndata: ${JSON.stringify(cancelled)}\n\n`, {
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    let cancelledPayload: typeof cancelled | undefined
+
+    const result = await streamChatEvents(response, {
+      onCancelled: (payload) => {
+        cancelledPayload = payload
+      },
+    })
+
+    expect(cancelledPayload).toEqual(cancelled)
+    expect(result).toMatchObject({ conversationId: 'conversation-1', answer: '' })
+  })
 })

@@ -28491,6 +28491,16 @@
               }
             }
           },
+          "409": {
+            "description": "Turn superseded by a newer message in the same conversation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Expensive authenticated request rate limit exceeded",
             "content": {
@@ -31474,6 +31484,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Turn superseded by a newer message in the same conversation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -31820,6 +31840,16 @@
           },
           "404": {
             "description": "Public chat link not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Turn superseded by a newer message in the same conversation",
             "content": {
               "application/json": {
                 "schema": {

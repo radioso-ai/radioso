@@ -30,6 +30,7 @@ import type {
   AnswerFeedbackValue,
   AnswerSegment,
   ChatSuggestion,
+  ChatStatusStage,
   ChatUserInputMetadata,
   Citation,
   SkillDisplayMetadata,
@@ -123,12 +124,19 @@ export interface ChatThreadMessage {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
   persistedAssistantMessageId?: string
   status?: 'streaming' | 'done' | 'complete' | 'error'
+  statusStage?: ChatStatusStage
   skill?: SkillStreamPayload
   /** Display name of the human operator who authored a takeover reply. */
   operatorDisplayName?: string
 }
 
 const SKILL_ACCENT_FALLBACK = '#0f172a'
+
+const CHAT_STATUS_LABELS: Record<ChatStatusStage, string> = {
+  interpreting: 'Understanding your request…',
+  searching: 'Searching for relevant information…',
+  composing: 'Composing a response…',
+}
 
 const accentTint = (accent: string | undefined, percent: number): string =>
   `color-mix(in srgb, ${accent ?? SKILL_ACCENT_FALLBACK} ${percent}%, transparent)`
@@ -715,7 +723,11 @@ export function ChatMessageThread({
                         }
                       >
                         {message.status === 'streaming' && !message.content ? (
-                          <TypingIndicator />
+                          message.statusStage ? (
+                            <span className="text-sm text-muted-foreground" role="status">
+                              {CHAT_STATUS_LABELS[message.statusStage]}
+                            </span>
+                          ) : <TypingIndicator />
                         ) : (
                           <div className="select-text">
                             <AssistantMessageContent

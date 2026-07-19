@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
+import type { ChatStreamEvent } from "../../src/modules/chat/contracts/streamEvents.js";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type {
@@ -38,6 +39,12 @@ const collect = async <T>(iterable: AsyncIterable<T>): Promise<T[]> => {
   }
   return values;
 };
+
+// Status events are informational and race supersession: the #859 contract permits
+// statuses before `cancelled` without guaranteeing them. Cancellation tests assert the
+// deterministic non-status sequence and separately that `cancelled` is the last event.
+const withoutStatusEvents = <T extends { type: string }>(events: T[]): T[] =>
+  events.filter((event) => event.type !== "status");
 
 const noopReservation = (): UsageLimitReservation => ({
   async commit() {},
@@ -180,7 +187,8 @@ describe("chat interruption", () => {
 
     const firstEvents = await firstEventsPromise;
     await expect(latest).resolves.toMatchObject({ answer: "answer for latest question" });
-    expect(firstEvents).toEqual([
+    expect(firstEvents.at(-1)).toMatchObject({ type: "cancelled" });
+    expect(withoutStatusEvents(firstEvents)).toEqual([
       { type: "conversation", conversationId: conversation.id },
       {
         type: "cancelled",
@@ -226,14 +234,29 @@ describe("chat interruption", () => {
       "authenticated_chat",
     );
 
-    const firstEventsPromise = collect(ctx.dependencies.assistantChatService.streamAnswer({
-      workspaceId,
-      agentId: agent.id,
-      conversationId: conversation.id,
-      message: "first question",
-      stream: true,
-    }));
+    // The emission latch engages on the first PUBLIC chunk, not on the provider yield:
+    // a produced-but-not-yet-emitted chunk is still discardable by a successor (#859
+    // status/queue design). Synchronize on the public chunk so this test exercises the
+    // post-latch guarantee it is named for.
+    const firstPublicChunk = deferred();
+    const firstEventsPromise = (async () => {
+      const events: ChatStreamEvent[] = [];
+      for await (const event of ctx.dependencies.assistantChatService.streamAnswer({
+        workspaceId,
+        agentId: agent.id,
+        conversationId: conversation.id,
+        message: "first question",
+        stream: true,
+      })) {
+        events.push(event);
+        if (event.type === "chunk") {
+          firstPublicChunk.resolve();
+        }
+      }
+      return events;
+    })();
     await firstChunkYielded.promise;
+    await firstPublicChunk.promise;
 
     let secondSettled = false;
     const second = ctx.dependencies.assistantChatService.answer({
@@ -409,7 +432,9 @@ describe("chat interruption", () => {
     });
     stageFailure.reject(new Error("provider failed after cancellation"));
 
-    await expect(firstEvents).resolves.toEqual([
+    const settledFirstEvents = await firstEvents;
+    expect(settledFirstEvents.at(-1)).toMatchObject({ type: "cancelled" });
+    expect(withoutStatusEvents(settledFirstEvents)).toEqual([
       { type: "conversation", conversationId: conversation.id },
       {
         type: "cancelled",
@@ -501,7 +526,9 @@ describe("chat interruption", () => {
     });
     acquisitionFailure.reject(new Error("reservation unavailable after cancellation"));
 
-    await expect(firstEvents).resolves.toEqual([{
+    const settledFirstEvents = await firstEvents;
+    expect(settledFirstEvents.at(-1)).toMatchObject({ type: "cancelled" });
+    expect(withoutStatusEvents(settledFirstEvents)).toEqual([{
       type: "cancelled",
       conversationId: conversation.id,
       reason: "superseded",
@@ -625,7 +652,9 @@ describe("chat interruption", () => {
     });
     releaseRouting.resolve();
 
-    await expect(firstEvents).resolves.toEqual([
+    const settledFirstEvents = await firstEvents;
+    expect(settledFirstEvents.at(-1)).toMatchObject({ type: "cancelled" });
+    expect(withoutStatusEvents(settledFirstEvents)).toEqual([
       { type: "conversation", conversationId: conversation.id },
       {
         type: "cancelled",

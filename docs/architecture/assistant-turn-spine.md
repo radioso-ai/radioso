@@ -58,6 +58,25 @@ composer still renders through the Radioso `TurnOutcomeRendererRegistry`, and
 persistence, audit, and billing. The engine is `ChatService`'s only turn path — it
 is a required dependency, with no engine-less fallback.
 
+For streamed turns, the engine reports semantic progress immediately before
+interpretation, retrieval, selection, dispatch, and compose work. The backend
+adapter pumps the engine concurrently and maps those phases to the three public
+chat stages. A small ordered queue is required here because a progress callback
+cannot make an outer async iterator yield while the engine is awaiting work. The
+pure engine knows nothing about SSE or display copy.
+
+The renderer registry is also the incremental-delivery boundary. A renderer may
+stream validated provider deltas; otherwise the registry renders once and replays
+the committed presentation in bounded Unicode-safe chunks. This keeps citation,
+guard, and durability policy with the renderer that understands it.
+
+Retrieval holds candidate body text until a complete, in-range sourced assertion
+appears. The private prefix is capped at 4,096 Unicode code points. Reaching the
+cap aborts that provider request, discards the prefix, and returns the focused
+grounded decline for committed replay. There is no time limit: a slow valid
+candidate is not rejected because of provider pacing. The compose trace records
+only the numeric gate wait duration, never the candidate text.
+
 Turn routing is a chat-owned step above retrieval. `TurnRouter` classifies the
 latest user turn as `retrieval` or `direct` from the raw query, recent history,
 assistant identity, and configured answer scope. Retrieval query rewrite runs only

@@ -44,10 +44,14 @@ imports from `services/`.
 ## Common Change Paths
 
 - Streaming: `services/chatService.ts`, `contracts/streamEvents.ts`, frontend
-  chat stream adapters. Each terminal skill's `streamRender` owns final
-  presentation of its single generation and returns a
+  chat stream adapters. The engine reports semantic progress through a neutral
+  port; `conversationEngineChatTurn.ts` queues those reports with deltas and maps
+  them to the public `interpreting | searching | composing` stages. A renderer's
+  optional `stream` method owns live, validated delivery and returns a
   `TurnStreamResult` (`turnOutcome.ts`) carrying the final presentation plus how
-  the host should source question suggestions. The conversation engine is the only
+  the host should source question suggestions. Renderers without a live stream
+  are rendered once and replayed through the shared Unicode-safe chunk iterator.
+  The conversation engine is the only
   turn path (`ChatService` requires it), so `processTurnStream` drives terminal
   selection, dispatch, streaming composition, final event append, and trace
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
@@ -58,7 +62,9 @@ imports from `services/`.
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths. A valid in-range `[[n]]`
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
-  stays held until the computed final presentation is available. When retrieved contexts exist, an
+  stays held until the computed final presentation is available. The gate retains
+  at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
+  returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
   answer or malformed result with no valid sourced assertion suppresses the draft
   and invokes the focused, locale-aware grounded-miss composer with typed
   `no_context`; its static asset is only the composer's last resort for provider or

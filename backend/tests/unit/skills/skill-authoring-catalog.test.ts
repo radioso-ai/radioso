@@ -201,7 +201,7 @@ describe("SkillAuthoringCatalogService", () => {
       },
       externalSkills: {
         async list() {
-          return [{ skillName: "contact_mayadevi", exposedParams: {}, declaredOutcomes: null, outcomeMap: null, enabled: true }];
+          return [];
         },
       },
       agentSkills: {
@@ -237,6 +237,101 @@ describe("SkillAuthoringCatalogService", () => {
         { name: "failed", displayName: "failed", status: "failed" },
       ],
       hasDataOutputs: false,
+    });
+  });
+
+  it("keeps external MCP skills on the specialized descriptor path", async () => {
+    const catalog = new SkillAuthoringCatalogService({
+      skillCatalog: {
+        async list() {
+          return { skills: [] };
+        },
+      },
+      externalSkills: {
+        async list() {
+          return [{
+            skillName: "post_slack",
+            displayName: "Post Slack",
+            exposedParams: { message: { description: "Message body." } },
+            declaredOutcomes: ["sent"],
+            outcomeMap: { ok: "accepted" },
+            enabled: true,
+          }];
+        },
+      },
+      agentSkills: {
+        async listByAgent() {
+          return [
+            agentSkill({
+              skillName: "post_slack",
+              kind: "external_mcp",
+              targetType: "mcp_connection",
+              targetId: randomUUID(),
+              config: {},
+            }),
+          ];
+        },
+      },
+      capabilities: createDefaultSkillCapabilityRegistry(),
+    });
+
+    const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
+
+    expect(descriptors).toEqual([expect.objectContaining({
+      skillName: "post_slack",
+      displayName: "Post Slack",
+      category: "external_mcp",
+      inputs: [{ key: "message", type: "text", required: false, description: "Message body." }],
+      outcomes: [
+        { name: "sent", displayName: "sent", status: "completed" },
+        { name: "accepted", displayName: "accepted", status: "completed" },
+      ],
+    })]);
+  });
+
+  it("exposes slot-bound inputs under the collected key runtime dispatch reads", async () => {
+    const catalog = new SkillAuthoringCatalogService({
+      skillCatalog: {
+        async list() {
+          return { skills: [] };
+        },
+      },
+      externalSkills: {
+        async list() {
+          return [];
+        },
+      },
+      agentSkills: {
+        async listByAgent() {
+          return [
+            agentSkill({
+              skillName: "post_update_to_slack",
+              kind: "slack",
+              targetType: "slack_installation",
+              targetId: randomUUID(),
+              config: {
+                boundInputs: { channelId: "C123" },
+                exposedInputs: {
+                  text: { slotBinding: "message", required: true, description: "Slack message" },
+                  threadTs: { slotBinding: "thread", required: false },
+                },
+              },
+            }),
+          ];
+        },
+      },
+      capabilities: createDefaultSkillCapabilityRegistry(),
+    });
+
+    const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
+
+    expect(descriptors[0]).toMatchObject({
+      skillName: "post_update_to_slack",
+      category: "slack",
+      inputs: [
+        { key: "message", type: "text", required: true, description: "Slack message" },
+        { key: "thread", type: "text", required: false },
+      ],
     });
   });
 });

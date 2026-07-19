@@ -163,6 +163,11 @@ const optionalDescription = (value: unknown): string | undefined =>
 const exposedRequired = (value: unknown, fallback: boolean): boolean =>
   isRecord(value) && typeof value.required === "boolean" ? value.required : fallback;
 
+const exposedCollectedKey = (payloadKey: string, value: unknown): string =>
+  isRecord(value) && typeof value.slotBinding === "string" && value.slotBinding.trim().length > 0
+    ? value.slotBinding
+    : payloadKey;
+
 const humanizeIdentifier = (value: string): string =>
   value
     .replace(/[._-]+/gu, " ")
@@ -211,19 +216,21 @@ const inputsForAgentSkill = (
   const parsedConfig = descriptor.validateConfig(source.config ?? {});
   const config = isRecord(parsedConfig.data) ? parsedConfig.data : source.config ?? {};
   const exposedInputs = exposedInputsForAgentSkill(config);
-  const fieldNames = exposedInputs
+  const fields = exposedInputs
     ? Object.entries(exposedInputs)
       .filter(([, spec]) => spec !== false)
-      .map(([key]) => key)
+      .map(([key, spec]) => ({ key: exposedCollectedKey(key, spec), spec, payloadKey: key }))
     : staticFieldsForCapability(descriptor);
   const requiredFields = staticRequiredForCapability(descriptor);
 
-  return fieldNames.map((key) => {
-    const spec = exposedInputs?.[key];
+  return fields.map((field) => {
+    const key = typeof field === "string" ? field : field.key;
+    const payloadKey = typeof field === "string" ? field : field.payloadKey;
+    const spec = typeof field === "string" ? exposedInputs?.[field] : field.spec;
     return {
       key,
       type: inputTypeForKey(key),
-      required: exposedRequired(spec, requiredFields.has(key)),
+      required: exposedRequired(spec, requiredFields.has(payloadKey)),
       ...(optionalDescription(spec) ? { description: optionalDescription(spec) } : {}),
     };
   });

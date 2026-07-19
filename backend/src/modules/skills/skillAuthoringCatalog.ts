@@ -98,6 +98,7 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
       return [];
     }
     return skills
+      .filter((skill) => skill.kind !== "external_mcp")
       .filter((skill) => skill.enabled && skill.invocationMode === "routine_named")
       .flatMap((skill) => {
         const capability = this.sources.capabilities?.getByStoredKind(skill.kind);

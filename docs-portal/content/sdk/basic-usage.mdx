@@ -254,6 +254,59 @@ const response = await client.chat.create({
 
 Agents use the retrieval pipeline through their default-answer `retrieve` skill. Edit that skill to configure retrieval behavior for one agent. Omitted fields inherit system/model defaults, and the dashboard shows those inherited values inline before saving only explicit overrides. Direct-only agents answer from their own instructions and return retrieval diagnostics with `retrievalInvoked: false`.
 
+## Agent authoring
+
+Authoring surfaces are available with a workspace API token. A script can build and configure an agent the same way the dashboard does, then chat with it, using one token. Authoring calls are namespaced under `client.agents.*` and take the agent id first.
+
+Author a routine as portable markdown and publish it:
+
+```ts
+const draft = await client.agents.routines.createPortable(agentId, {
+  grammarVersion: 1,
+  content: '---\nname: Book a demo\ntrigger: the visitor asks for a demo\n---\nAsk for their @work_email.\nThen call #book_demo and confirm the time.',
+})
+
+await client.agents.routines.publish(agentId, draft.routineId)
+```
+
+Create a directive that steers behavior by condition:
+
+```ts
+await client.agents.directives.create(agentId, {
+  name: 'Escalate refunds',
+  condition: { kind: 'contextual', description: 'the customer asks for a refund' },
+  action: 'Offer to connect them with a human agent.',
+})
+```
+
+Define a context variable, set a scoped value, and enable it on an agent:
+
+```ts
+const { contextVariable } = await client.contextVariables.create({
+  name: 'plan_tier',
+  description: "The visitor's current plan",
+  valueType: 'string',
+  trustTier: 'unverified',
+  sensitivity: 'normal',
+  defaultSurfacing: 'always',
+})
+await client.contextVariables.upsertValue(contextVariable.id, { scope: { type: 'customer', id: customerId }, data: 'pro' })
+await client.agents.contextVariables.upsert(agentId, contextVariable.id, { source: 'pushed', surfacing: 'always', enabled: true })
+```
+
+Bind a skill so a routine can act. Capability-specific bindings have their own namespaces: `client.agents.emailSkills`, `client.agents.externalSkills`, `client.agents.webhookSkills`, `client.agents.slackSkills`, `client.agents.mcpConnections`, and `client.agents.mcpConverseGrants`.
+
+```ts
+const skill = await client.agents.skills.create(agentId, {
+  name: 'send_followup',
+  capability: 'email',
+  target: { kind: 'customer_email_connection', id: connectionId },
+  config: { mode: 'draft', exposedInputs: { to: { slotBinding: 'email' } }, boundInputs: { subject: 'Follow-up' } },
+  invocationMode: 'routine_named',
+  enabled: true,
+})
+```
+
 ## Non-streaming chat
 
 SDK chat methods target the assistant chat surface. Use them for human-facing agent conversations that should keep history and may answer directly or with retrieval-backed evidence.

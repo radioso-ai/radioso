@@ -5,8 +5,9 @@ In-repo SDK package for token-based Radioso integrations.
 ## Status
 
 - v1 is token-first.
+- Agent authoring (routines, directives, context variables, skills) is available with a workspace API token.
 - Session-only and browser-admin workflows are out of scope.
-- Session-authenticated workspace CRUD is not part of the public v1 SDK.
+- Workspace create/rename/delete stays session-authenticated and is not part of the SDK.
 - The SDK contract snapshot is synced from `../backend/openapi.json` and `../backend/openapi.yaml`.
 
 ## Development
@@ -41,6 +42,16 @@ pnpm run build
 - `client.chat.listHistory(...)`
 - `client.chat.getHistoryConversation(...)`
 - `client.chat.stream(...)`
+
+### Agent authoring
+
+- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, and the portable-markdown round-trip (`getPortable`, `updatePortable`, `createPortable`, `skillCatalog`)
+- `client.routines.canonicalizePortable(...)` — normalize a portable routine document without saving it
+- `client.agents.directives.*` — list, draft, create, update, delete
+- `client.agents.contextVariables.*` — list, upsert, delete, getSigningKey (per-agent enablement)
+- `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)
+- `client.agents.skills.*` and `client.agents.{emailSkills,externalSkills,webhookSkills,slackSkills}.*` — skill bindings per capability
+- `client.agents.mcpConnections.*` and `client.agents.mcpConverseGrants.*` — external MCP connections and converse grants
 
 ## Contract Refresh
 

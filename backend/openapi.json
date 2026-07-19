@@ -31144,6 +31144,75 @@
                       "type": "array",
                       "items": {}
                     },
+                    "groundingVerdict": {
+                      "type": "string",
+                      "enum": [
+                        "grounded",
+                        "degraded",
+                        "no_support"
+                      ]
+                    },
+                    "groundingDiagnostics": {
+                      "type": "object",
+                      "properties": {
+                        "protocolVersion": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                2
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "parseStatus": {
+                          "type": "string",
+                          "enum": [
+                            "valid_v2",
+                            "legacy_v1",
+                            "missing",
+                            "malformed",
+                            "invalid_v2"
+                          ]
+                        },
+                        "claimCount": {
+                          "type": "integer"
+                        },
+                        "sourcedClaimCount": {
+                          "type": "integer"
+                        },
+                        "unsourcedClaimCount": {
+                          "type": "integer"
+                        },
+                        "invalidSourceCount": {
+                          "type": "integer"
+                        },
+                        "assertionMismatch": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "protocolVersion",
+                        "parseStatus",
+                        "claimCount",
+                        "sourcedClaimCount",
+                        "unsourcedClaimCount",
+                        "invalidSourceCount",
+                        "assertionMismatch"
+                      ]
+                    },
                     "turnTrace": {},
                     "resolvedConfig": {}
                   }

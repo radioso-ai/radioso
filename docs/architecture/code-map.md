@@ -795,3 +795,44 @@ Related docs and specs:
 - [Architecture Extension Points](../architecture-extension-points.md)
 - `specs/058-ee-feature-architecture/`
 - `specs/063-enterprise-usage-metering/`
+
+## Conversation-Quality Eval Suite
+
+Owns a committed, version-controlled suite that measures conversation quality:
+routing, retrieval, grounding, directive steering, routine activation, and
+clarification. It is separate from the DB-backed product eval harness in
+`backend/src/modules/eval/`, which is an operator dashboard surface.
+
+Should not own product behavior. It observes turns and scores them; it does not
+change how turns are produced.
+
+Two layers. A deterministic layer reads structured trace signal (route, skill,
+routine, grounding verdict) plus retrieval and citation checks, and runs with no
+model. A semantic layer (`llm_judge`) is reserved for properties a check cannot
+express, such as empathy or refusal.
+
+Primary paths:
+
+- `backend/src/modules/eval/suite/` — case schema, trace assertions, scoring,
+  baseline diff, sampling reducer, report
+- `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
+  routines and directives, agent, cases, `baseline.json`) and its `README.md`
+- `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
+  through `WorkbenchReplayRunner`, scores, and gates on the baseline
+- `.github/workflows/conversation-quality-evals.yml` — nightly live run
+
+Useful searches:
+
+- `rg "SuiteTraceAssertion|reduceSamples|diffAgainstBaseline" backend/src/modules/eval/suite`
+- `rg "conversationQualityCases|conversationQualityRoutines" backend/tests/fixtures/conversation-quality`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/eval-suite` — deterministic
+  harness (runs in normal CI)
+- `cd backend && pnpm run evals:ci` — live sampled run (needs Postgres,
+  `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR
+
+Related docs:
+
+- `backend/tests/fixtures/conversation-quality/README.md`

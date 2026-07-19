@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-07-19T12:55:01.577Z",
+  "cases": {
+    "clarification-ambiguous-plan": "fail",
+    "directive-refund-empathy": "pass",
+    "grounding-out-of-scope-refusal": "pass",
+    "multiturn-pricing-followup": "pass",
+    "retrieval-pricing-pro": "pass",
+    "retrieval-refund-window": "pass",
+    "retrieval-security-soc2": "pass",
+    "routine-book-demo-activate": "fail",
+    "routine-contact-activate": "fail",
+    "routine-contact-resume": "pass",
+    "routing-greeting-direct": "pass",
+    "routing-identity-direct": "pass"
+  }
+}

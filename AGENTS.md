@@ -79,6 +79,15 @@ pnpm run test:integration
 pnpm run test:contract
 ```
 
+Conversation-quality evals (grounded/routing/directive/routine behavior, distinct from unit tests). The deterministic harness runs in normal CI via `tests/unit/eval-suite`; the live model suite is a nightly/on-demand gate, not a per-PR check (needs Postgres, `OPENAI_API_KEY`, and a running document worker):
+
+```bash
+cd backend
+pnpm run evals                 # live suite once against a bootstrapped throwaway agent
+pnpm run evals:ci              # sampled 5× (what the nightly workflow runs)
+pnpm run evals:update-baseline # re-record the committed baseline after an intended change
+```
+
 Frontend:
 
 ```bash

@@ -104,8 +104,14 @@ data: {"conversationId":"...","reason":"superseded","stage":"rendering"}
 ```
 
 Treat `cancelled` as terminal and clear the pending reply state. It contains no
-assistant copy. If the first assistant chunk has already streamed, the first turn
+assistant copy. Before an answer or cancellation, the stream can emit `status`
+with stage `interpreting`, `searching`, or `composing`. Status is transient UI
+state and does not prevent cancellation. If the first assistant chunk has already streamed, the first turn
 finishes and the newer message runs next.
+
+Answer chunks are incremental delivery. Guarded or durability-sensitive replies
+may be validated or committed before their first chunk, then replayed in bounded
+chunks. Clients should not assume every chunk is a live provider token.
 
 If the assistant cannot produce a public response body, the route returns a
 JSON error instead of an empty `204` response:

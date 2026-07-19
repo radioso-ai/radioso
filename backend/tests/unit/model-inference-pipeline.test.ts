@@ -5,7 +5,9 @@ import { AppError } from "../../src/shared/domain/errors.js";
 import { LLM_DEFAULTS } from "../../src/shared/domain/behaviorConfig.js";
 import { AGENT_STEP_MAX_INPUT_TOKENS } from "../../src/shared/agent-runtime/index.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 
@@ -18,6 +20,17 @@ const usageContext = {
 } as const;
 
 const estimateOldByteTokens = (text: string): number => Math.max(1, Math.ceil(Buffer.byteLength(text, "utf8") / 4));
+
+const recordingUsageRecorder = () => {
+  const events: ModelUsageEvent[] = [];
+  const recorder: UsageEventRecorder = {
+    async recordEmbedding() {},
+    async recordModelCall(event) {
+      events.push(event);
+    },
+  };
+  return { recorder, events };
+};
 
 type BudgetErrorDetails = {
   estimatedInputTokens: number;
@@ -285,5 +298,128 @@ describe("ModelInferencePipelineService", () => {
       }),
     ).resolves.toMatchObject({ text: "Answer" });
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it("records an early-returned stream exactly once as cancelled with provider usage", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const providerUsage = {
+      inputTokens: 7,
+      outputTokens: 3,
+      totalTokens: 10,
+      quality: "actual" as const,
+    };
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-cancelled" },
+      async complete() {
+        return textResult("unused");
+      },
+      stream() {
+        return streamWithUsage(async function* () {
+          try {
+            yield "PRIVATE PARTIAL OUTPUT";
+            yield "unused";
+          } finally {
+            return providerUsage;
+          }
+        });
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+    const result = pipeline.stream({ operation: usageContext, prompt: "PRIVATE PROMPT" });
+    const iterator = result.textStream[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: "PRIVATE PARTIAL OUTPUT" });
+    await iterator.return?.();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      status: "failed",
+      errorCode: "model_stream_cancelled",
+      inputTokens: 7,
+      outputTokens: 3,
+      totalTokens: 10,
+      usageQuality: "actual",
+    });
+    expect(JSON.stringify(events)).not.toContain("PRIVATE");
+  });
+
+  it("records an abort-mid-stream exactly once with estimated accumulated output", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const controller = new AbortController();
+    const aborted = new Error("turn_superseded");
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-aborted" },
+      async complete() {
+        return textResult("unused");
+      },
+      stream(input) {
+        return {
+          textStream: (async function* () {
+            const abortedSignal = new Promise<never>((_resolve, reject) => {
+              input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+            });
+            yield "PRIVATE PARTIAL OUTPUT";
+            await abortedSignal;
+          })(),
+          usage: Promise.resolve(undefined),
+        };
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+    const result = pipeline.stream({
+      operation: usageContext,
+      prompt: "PRIVATE PROMPT",
+      signal: controller.signal,
+    });
+    const iterator = result.textStream[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: "PRIVATE PARTIAL OUTPUT" });
+    controller.abort(aborted);
+    await expect(iterator.next()).rejects.toBe(aborted);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      status: "failed",
+      errorCode: "model_stream_aborted",
+      outputTokens: expect.any(Number),
+      usageQuality: "estimated",
+    });
+    expect(events[0]?.outputTokens).toBeGreaterThan(0);
+    expect(JSON.stringify(events)).not.toContain("PRIVATE");
+  });
+
+  it("records a normally completed stream exactly once as succeeded", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-completed" },
+      async complete() {
+        return textResult("unused");
+      },
+      stream() {
+        return streamResult(["A", "B"], {
+          inputTokens: 4,
+          outputTokens: 2,
+          totalTokens: 6,
+          quality: "actual",
+        });
+      },
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+    const result = pipeline.stream({ operation: usageContext, prompt: "PRIVATE PROMPT" });
+
+    for await (const _chunk of result.textStream) {
+      // drain
+    }
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      status: "succeeded",
+      errorCode: null,
+      inputTokens: 4,
+      outputTokens: 2,
+      totalTokens: 6,
+      usageQuality: "actual",
+    });
+    expect(JSON.stringify(events)).not.toContain("PRIVATE");
   });
 });

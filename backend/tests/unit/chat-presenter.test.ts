@@ -38,6 +38,19 @@ const createMockResponse = () => {
 };
 
 describe("chat presenter", () => {
+  it("writes an exact machine-readable status frame without display copy", async () => {
+    const { response, writes } = createMockResponse();
+    const status: ChatStreamEvent = { type: "status", stage: "searching" };
+
+    await sendChatSse(response as never, (async function* () {
+      yield status;
+    })());
+
+    expect(writes).toContain("event: status\n");
+    expect(writes).toContain('data: {"stage":"searching"}\n\n');
+    expect(writes.join("")).not.toContain("label");
+  });
+
   it("writes a terminal cancelled event without assistant copy", async () => {
     const { response, writes } = createMockResponse();
     const cancelled: ChatStreamEvent = {

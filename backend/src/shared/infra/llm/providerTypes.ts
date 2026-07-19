@@ -20,6 +20,7 @@ export interface TextGenerationRequest {
   // temperature so reasoning models don't spend the whole output budget on
   // hidden reasoning and return empty visible text.
   reasoningEffort?: ReasoningEffort;
+  signal?: AbortSignal;
 }
 
 export type UsageQuality = "actual" | "estimated";

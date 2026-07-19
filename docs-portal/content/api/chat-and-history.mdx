@@ -64,6 +64,17 @@ In practice:
 - use `stream: false` for simple request-response flows
 - use `stream: true` when you want incremental output
 
+A stream can emit `status` before the answer begins. Its `stage` is one of
+`interpreting`, `searching`, or `composing`. Map these values to localized UI
+copy in the client; they are not assistant messages. A successful answer then
+uses `chunk` and `done`. A superseded pre-answer turn ends with `cancelled`, which
+is terminal.
+
+Chunks indicate incremental delivery, not necessarily live model tokens. Replies
+that require validation or a durable write can be committed first and replayed
+in bounded chunks. Clients should ignore unknown event names so additive stream
+events remain compatible.
+
 Use the [API Reference](/api-reference) for the exact streaming and non-streaming response contracts.
 
 ## Conversation history

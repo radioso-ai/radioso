@@ -4,6 +4,25 @@ import { streamChatEvents } from '@/lib/api-chat-stream'
 import type { ChatStreamCompletion } from '@/lib/api-types'
 
 describe('streamChatEvents', () => {
+  it('dispatches typed status events and ignores unknown future events', async () => {
+    const response = new Response([
+      'event: status\ndata: {"stage":"interpreting"}\n\n',
+      'event: future-progress\ndata: {"value":1}\n\n',
+      'event: status\ndata: {"stage":"searching"}\n\n',
+    ].join(''), {
+      headers: { 'content-type': 'text/event-stream' },
+    })
+    const stages: string[] = []
+
+    await streamChatEvents(response, {
+      onStatus: ({ stage }) => {
+        stages.push(stage)
+      },
+    })
+
+    expect(stages).toEqual(['interpreting', 'searching'])
+  })
+
   it('preserves ownership acknowledgements from done events', async () => {
     const completion = {
       type: 'done',
@@ -36,18 +55,24 @@ describe('streamChatEvents', () => {
       reason: 'superseded',
       stage: 'routing',
     }
-    const response = new Response(`event: cancelled\ndata: ${JSON.stringify(cancelled)}\n\n`, {
+    const response = new Response([
+      `event: cancelled\ndata: ${JSON.stringify(cancelled)}\n\n`,
+      'event: status\ndata: {"stage":"composing"}\n\n',
+    ].join(''), {
       headers: { 'content-type': 'text/event-stream' },
     })
     let cancelledPayload: typeof cancelled | undefined
+    const statuses: string[] = []
 
     const result = await streamChatEvents(response, {
       onCancelled: (payload) => {
         cancelledPayload = payload
       },
+      onStatus: ({ stage }) => statuses.push(stage),
     })
 
     expect(cancelledPayload).toEqual(cancelled)
+    expect(statuses).toEqual([])
     expect(result).toMatchObject({ conversationId: 'conversation-1', answer: '' })
   })
 })

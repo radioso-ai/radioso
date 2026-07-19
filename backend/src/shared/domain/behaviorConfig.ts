@@ -59,6 +59,10 @@ export const RETRIEVAL_BEHAVIOR = {
   promptContextMinUsefulChars: 24,
   rewriteConversationContextMaxMessages: 10,
   promptHistoryMaxMessages: 4,
+  // A streamed grounded candidate stays private until it contains a complete,
+  // in-range sourced assertion. This safety cap bounds that private prefix in
+  // Unicode code points; reaching it without an assertion abandons the candidate.
+  groundingStreamGateMaxRetainedCodePoints: 4_096,
   queryInterpretation: {
     // Rewrite, intent classification, and trigger analysis are short structured
     // calls that run before retrieval can start. Minimal reasoning effort avoids

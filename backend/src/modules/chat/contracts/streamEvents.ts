@@ -6,6 +6,7 @@ import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 import type { ConversationTurnStage } from "./interruption.js";
 
 export type SkillStreamPhase = "active" | "completed" | "failed";
+export type ChatStatusStage = "interpreting" | "searching" | "composing";
 
 export interface SkillStreamReceipt {
   fields: Array<{
@@ -25,6 +26,7 @@ export interface SkillStreamPayload {
 }
 
 export type ChatStreamEvent =
+  | { type: "status"; stage: ChatStatusStage }
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
   | {

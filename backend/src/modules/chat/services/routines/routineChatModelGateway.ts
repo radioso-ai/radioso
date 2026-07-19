@@ -11,6 +11,7 @@ import type { LlmCapabilityResolveInput } from "../../../../shared/infra/llm/wor
 export interface RoutineModelTurnContext {
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
+  signal?: AbortSignal;
 }
 
 /**
@@ -69,6 +70,7 @@ export class RoutineChatModelGateway implements ConversationModelGateway {
         ? routineActivationUsageContext(this.turn.usageContext)
         : this.turn.usageContext,
       ...(routineActivation ? { generation: CHAT_BEHAVIOR.intentRouting } : {}),
+      ...(this.turn.signal ? { signal: this.turn.signal } : {}),
     });
     return { text };
   }

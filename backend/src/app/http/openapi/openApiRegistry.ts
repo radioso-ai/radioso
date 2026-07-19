@@ -103,6 +103,8 @@ export interface OpenApiSchemaCatalog {
   ChatConversationSummarySchema: z.ZodTypeAny;
   ChatHistoryListResponseSchema: z.ZodTypeAny;
   ChatResponseSchema: z.ZodTypeAny;
+  ChatStatusEventSchema: z.ZodTypeAny;
+  ChatStatusStageSchema: z.ZodTypeAny;
   ChatSuggestionActionSchema: z.ZodTypeAny;
   ChatSuggestionSchema: z.ZodTypeAny;
   ConversationOwnershipResponseSchema: z.ZodTypeAny;

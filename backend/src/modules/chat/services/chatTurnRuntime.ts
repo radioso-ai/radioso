@@ -18,7 +18,7 @@ export interface ChatTurnRuntimeDependencies {
   fallbackReplyComposer: FallbackReplyComposer;
   chatActionSuggestionService?: ChatActionSuggestionService;
   skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
-  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
+  metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
 /**
@@ -32,6 +32,7 @@ export interface ChatTurnRuntimeDependencies {
 export interface ChatTurnRuntime {
   chatAnswerPresenter: ChatAnswerPresenter;
   turnSkills: TurnSkill[];
+  metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
 
 /**
@@ -74,5 +75,6 @@ export const buildChatTurnRuntime = (
   return {
     chatAnswerPresenter,
     turnSkills,
+    metrics: deps.metrics,
   };
 };

@@ -293,6 +293,12 @@ for await (const event of client.chat.stream({
     continue;
   }
 
+  if (event.type === "status") {
+    // event.stage is "interpreting", "searching", or "composing".
+    // Choose localized display copy in your client.
+    continue;
+  }
+
   if (event.type === "chunk") {
     continue;
   }
@@ -301,11 +307,22 @@ for await (const event of client.chat.stream({
     continue;
   }
 
+  if (event.type === "cancelled") {
+    // Terminal: a newer message superseded this turn before answer delivery.
+    break;
+  }
+
   if (event.type === "error") {
     throw event.error;
   }
 }
 ```
+
+Chunks are incremental delivery. Some replies contain live provider deltas;
+guarded or durability-sensitive replies are validated or committed first and
+then delivered in bounded chunks. Do not infer provider timing from chunk size.
+Treat unknown event names as additive and ignore them unless your application
+needs their behavior.
 
 List chat history:
 

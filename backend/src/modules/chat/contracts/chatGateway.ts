@@ -23,6 +23,7 @@ export interface ChatGatewayInput {
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
   generation?: ChatGatewayGenerationOptions;
+  signal?: AbortSignal;
 }
 
 export interface ChatGateway {

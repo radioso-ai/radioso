@@ -2,6 +2,7 @@ import {
   type LlmCapabilityConfig,
   type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
@@ -81,12 +82,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     };
   }
 
-  async complete(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): Promise<TextGenerationResult> {
+  async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
     const response = await fetch(CLAUDE_API_URL, {
       method: "POST",
       headers: {
@@ -94,6 +90,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
         "x-api-key": this.config.apiKey,
         "anthropic-version": CLAUDE_VERSION,
       },
+      signal: input.signal,
       body: JSON.stringify(buildClaudeBody(this.config, input)),
     });
 
@@ -111,12 +108,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     };
   }
 
-  stream(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): TextGenerationStreamResult {
+  stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const config = this.config;
     return streamWithUsage(async function* () {
       const response = await fetch(CLAUDE_API_URL, {
@@ -126,6 +118,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
           "x-api-key": config.apiKey,
           "anthropic-version": CLAUDE_VERSION,
         },
+        signal: input.signal,
         body: JSON.stringify(buildClaudeBody(config, { ...input, stream: true })),
       });
 

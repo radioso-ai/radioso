@@ -19,6 +19,7 @@ export interface FallbackReplyInput {
   steering?: SteeringRule[];
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
+  signal?: AbortSignal;
 }
 
 export interface FallbackReplyComposer {
@@ -103,6 +104,9 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
           attemptIndex,
         };
       } catch (error) {
+        if (input.signal?.aborted) {
+          throw input.signal.reason ?? error;
+        }
         lastError = error;
       }
     }
@@ -119,6 +123,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         // Short utility decline: keep reasoning spend minimal so the token budget
         // leaves room for visible text on reasoning models.
         reasoningEffort: "minimal" as const,
+        signal: input.signal,
       };
       const { result } = await this.completeWithRetry(request, input);
 
@@ -129,6 +134,9 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
 
       return getGroundedMissFallback();
     } catch (error) {
+      if (input.signal?.aborted) {
+        throw input.signal.reason ?? error;
+      }
       if (isProviderCredentialError(error)) {
         throw error;
       }

@@ -93,6 +93,12 @@ export const sendChatSse = (
       return;
     }
 
+    if (event.type === "status") {
+      res.write("event: status\n");
+      res.write(`data: ${JSON.stringify({ stage: event.stage })}\n\n`);
+      return;
+    }
+
     if (event.type === "chunk") {
       res.write("event: chunk\n");
       res.write(`data: ${JSON.stringify({ text: event.text })}\n\n`);

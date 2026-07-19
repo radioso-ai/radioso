@@ -7,6 +7,7 @@ import type {
   ChatStreamConversation,
   ChatStreamHandlers,
   ChatStreamSkill,
+  ChatStreamStatus,
   ChatStreamSuggestions,
   ChatSuggestion,
   Citation,
@@ -60,9 +61,14 @@ export const streamChatEvents = async (
   let activityTrace: ActivityTrace | undefined
   let route: ChatResponse['route'] | undefined
   let ownership: ChatResponse['ownership'] | undefined
+  let cancelled = false
 
   const flushEvent = (rawEvent: string) => {
     if (!rawEvent.trim()) {
+      return
+    }
+
+    if (cancelled) {
       return
     }
 
@@ -74,6 +80,7 @@ export const streamChatEvents = async (
 
     const payload = JSON.parse(data) as
       | (ChatStreamConversation & { type?: 'conversation' })
+      | (ChatStreamStatus & { type?: 'status' })
       | (ChatStreamChunk & { type?: 'chunk' })
       | (ChatStreamCancelled & { type?: 'cancelled' })
       | (ChatStreamSuggestions & { type?: 'suggestions' })
@@ -92,6 +99,18 @@ export const streamChatEvents = async (
       return
     }
 
+    if (normalizedEventName === 'status') {
+      const statusPayload = payload as ChatStreamStatus
+      if (
+        statusPayload.stage === 'interpreting' ||
+        statusPayload.stage === 'searching' ||
+        statusPayload.stage === 'composing'
+      ) {
+        handlers.onStatus?.(statusPayload)
+      }
+      return
+    }
+
     if (normalizedEventName === 'chunk') {
       const chunkPayload = payload as ChatStreamChunk
       answer = `${answer}${chunkPayload.text}`
@@ -107,6 +126,7 @@ export const streamChatEvents = async (
         reason: cancelledPayload.reason,
         stage: cancelledPayload.stage,
       })
+      cancelled = true
       return
     }
 

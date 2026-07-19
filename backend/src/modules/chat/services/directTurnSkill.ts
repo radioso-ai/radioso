@@ -27,7 +27,7 @@ export const createDirectTurnSkill = (composer: AssistantReplyComposer): TurnSki
     supports: (outcome) => outcome.kind === DIRECT_OUTCOME_KIND,
     render: (_outcome, ctx: TurnRenderContext) =>
       composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
+    stream: (_outcome, ctx: TurnRenderContext) =>
+      composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal),
   },
-  streamRender: (ctx: TurnRenderContext) =>
-    composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
 });

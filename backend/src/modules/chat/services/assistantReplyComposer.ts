@@ -118,6 +118,7 @@ export class AssistantReplyComposer {
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
+    signal?: AbortSignal,
   ): AsyncGenerator<string, TurnStreamResult> {
     let streamedAnswer = "";
     for await (const text of this.chatGateway.streamAnswer({
@@ -126,6 +127,7 @@ export class AssistantReplyComposer {
       prompt: this.buildPrompt(session, query),
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}`),
+      signal,
     })) {
       if (!text) {
         continue;
@@ -141,10 +143,12 @@ export class AssistantReplyComposer {
         suggestions: { mode: "presentation" },
         hasStreamedAnswer: true,
         streamedAnswer,
+        deliveryMode: "live",
       };
     }
 
-    // Blank reply: graceful no-answer fallback, emitted as a single chunk.
+    // Blank reply: return the settled fallback for committed replay. The provider
+    // candidate was empty, so there is no live delta to expose.
     const miss = await this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
@@ -152,13 +156,14 @@ export class AssistantReplyComposer {
       steering: session.directiveSteering?.rules ?? [],
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `stream_${this.config.outcomeKind}_miss`),
+      signal,
     });
-    yield miss;
     return {
       finalPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(miss),
       suggestions: { mode: "presentation" },
-      hasStreamedAnswer: true,
-      streamedAnswer: streamedAnswer + miss,
+      hasStreamedAnswer: false,
+      streamedAnswer,
+      deliveryMode: "committed",
     };
   }
 }

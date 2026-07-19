@@ -10,6 +10,7 @@ import { getGroundedMissFallback } from "../../src/modules/chat/services/fallbac
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import {
   DEGRADED_V2_VISIBLE,
@@ -66,6 +67,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
   let fallbackCalls = 0;
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
+  let gateAbortObserved = false;
   const gateway: ChatGateway = {
     async answer(input) {
       answerCalls += 1;
@@ -75,8 +77,12 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
     async *streamAnswer(input) {
       streamCalls += 1;
       attemptKeys.push(input.usageContext.attemptKey);
-      for (let offset = 0; offset < raw.length; offset += 7) {
-        yield raw.slice(offset, offset + 7);
+      try {
+        for (let offset = 0; offset < raw.length; offset += 7) {
+          yield raw.slice(offset, offset + 7);
+        }
+      } finally {
+        gateAbortObserved = input.signal?.aborted ?? false;
       }
     },
   };
@@ -96,6 +102,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
     attemptKeys,
     metricWrites,
+    gateAbortObserved: () => gateAbortObserved,
   };
 };
 
@@ -153,6 +160,108 @@ describe("retrieval answer envelope v2", () => {
     const { composer } = buildComposer(groundedV2Envelope());
     const { chunks } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
     expect(chunks.length).toBeGreaterThan(0);
+  });
+
+  it("admits an assertion completed exactly at the 4,096-code-point boundary", async () => {
+    const assertion = "claim[[1]]";
+    const body = `${"x".repeat(RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints - assertion.length)}${assertion}`;
+    const raw = `${body}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "grounded",
+    })}`;
+    const { composer, gateAbortObserved } = buildComposer(raw);
+
+    const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
+
+    expect(chunks.join("").length).toBeGreaterThan(4_000);
+    expect(result.finalPresentation.answer).toContain("claim");
+    expect(gateAbortObserved()).toBe(false);
+  });
+
+  it("abandons an anchor-free candidate at the cap, aborts upstream, and returns only a focused decline", async () => {
+    const privateDraft = "PRIVATE DOCUMENT DRAFT ".repeat(300);
+    const { composer, counts, metricWrites, gateAbortObserved } = buildComposer(privateDraft);
+
+    const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
+
+    expect(chunks).toEqual([]);
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(result.deliveryMode).toBe("bounded_decline");
+    expect(result.traceMetrics).toMatchObject({ groundingGateWaitMs: expect.any(Number) });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE DOCUMENT DRAFT");
+    expect(gateAbortObserved()).toBe(true);
+    expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true" },
+    }]);
+  });
+
+  it("aborts upstream and exposes no prefix when superseded while the gate is held", async () => {
+    const controller = new AbortController();
+    const superseded = new Error("superseded_while_grounding_held");
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => { providerStarted = resolve; });
+    let providerAbortObserved = false;
+    const gateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer(input) {
+        providerStarted();
+        try {
+          yield "PRIVATE UNSUPPORTED PREFIX";
+          await new Promise<void>((_resolve, reject) => {
+            input.signal?.addEventListener("abort", () => reject(input.signal?.reason), { once: true });
+          });
+        } finally {
+          providerAbortObserved = input.signal?.aborted ?? false;
+        }
+      },
+    };
+    const composer = new RetrievalAnswerComposer(
+      new ChatAnswerSupport(),
+      gateway,
+      presenter(),
+      { async composeNoContext() { return "must not run"; } },
+    );
+    const pending = drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined, controller.signal));
+
+    await started;
+    controller.abort(superseded);
+
+    await expect(pending).rejects.toBe(superseded);
+    expect(providerAbortObserved).toBe(true);
+  });
+
+  it("lets supersession win between a cap trip and the focused decline", async () => {
+    const controller = new AbortController();
+    const superseded = new Error("superseded_before_decline");
+    let declineStarted!: () => void;
+    let releaseDecline!: () => void;
+    const started = new Promise<void>((resolve) => { declineStarted = resolve; });
+    const blockedDecline = new Promise<void>((resolve) => { releaseDecline = resolve; });
+    const gateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() { yield "PRIVATE ".repeat(1_000); },
+    };
+    const fallback: FallbackReplyComposer = {
+      async composeNoContext(input) {
+        declineStarted();
+        expect(input.signal).toBe(controller.signal);
+        await blockedDecline;
+        return "DECLINE";
+      },
+    };
+    const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter(), fallback);
+    const pending = drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined, controller.signal));
+
+    await started;
+    controller.abort(superseded);
+    releaseDecline();
+
+    await expect(pending).rejects.toBe(superseded);
   });
 
   it("emits one bounded, content-free outcome counter", async () => {

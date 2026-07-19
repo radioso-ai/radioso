@@ -19,6 +19,16 @@ Normal agent chat runs in the live request path. That includes:
 
 This work is classified in code as `interactive_synchronous`. Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.
 
+A streaming turn reports typed progress before the answer starts. The public
+stages are `interpreting`, `searching`, and `composing`. They are UI state, not
+assistant messages: Radioso does not save them in history, include them in
+prompts, or treat them as the start of answer delivery.
+
+Answer chunks describe incremental delivery, not necessarily live model tokens.
+Direct and admissible retrieval answers can stream provider output. Replies that
+must pass a guard or complete a durable write are validated or committed first,
+then replayed in bounded Unicode-safe chunks without artificial delays.
+
 ## New Messages Supersede Unstarted Replies
 
 Only one assistant reply can prepare or emit for a conversation at a time. If a
@@ -57,6 +67,9 @@ data: {"conversationId":"...","reason":"superseded","stage":"rendering"}
 ```
 
 Clients should stop the pending reply state when they receive `cancelled`.
+They may receive one or more `status` events before `cancelled`, but never an
+answer chunk or another terminal event afterward. A status event does not prevent
+the turn from being superseded.
 For a successful stream, `done` marks completion of the core turn. Optional
 `suggestions` enrichment can follow, so clients that use suggestions should
 continue reading until the stream closes.

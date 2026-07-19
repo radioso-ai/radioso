@@ -4,6 +4,7 @@ import {
   type LlmCapabilityConfig,
   type ProviderUsage,
   type TextGenerationClient,
+  type TextGenerationRequest,
   type TextGenerationResult,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
@@ -77,12 +78,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     };
   }
 
-  async complete(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): Promise<TextGenerationResult> {
+  async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
     const response = await fetch(
       `${GEMINI_BASE_URL}/${this.config.model}:generateContent?key=${encodeURIComponent(this.config.apiKey)}`,
       {
@@ -90,6 +86,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
         headers: {
           "Content-Type": "application/json",
         },
+        signal: input.signal,
         body: JSON.stringify(buildGenerateBody(input)),
       },
     );
@@ -105,12 +102,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     };
   }
 
-  stream(input: {
-    prompt: string;
-    systemPrompt?: string;
-    temperature?: number;
-    maxOutputTokens?: number;
-  }): TextGenerationStreamResult {
+  stream(input: TextGenerationRequest): TextGenerationStreamResult {
     const config = this.config;
     return streamWithUsage(async function* () {
       const response = await fetch(
@@ -120,6 +112,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
           headers: {
             "Content-Type": "application/json",
           },
+          signal: input.signal,
           body: JSON.stringify(buildGenerateBody(input)),
         },
       );

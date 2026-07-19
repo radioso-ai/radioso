@@ -394,8 +394,14 @@ describe("DefaultConversationEngine", () => {
   });
 
   it("streams a turn through the same gather-select-dispatch stages and yields a final result", async () => {
+    const phases: string[] = [];
     const input: ProcessTurnStreamInput = {
       ...createInput(),
+      progress: {
+        report({ phase }) {
+          phases.push(phase);
+        },
+      },
       composer: {
         compose: vi.fn(),
         async *stream({ outcomes }) {
@@ -405,7 +411,13 @@ describe("DefaultConversationEngine", () => {
             type: "final",
             response: {
               answer: outcomes[0]?.outcome.answer ?? "",
-              metadata: { streamed: true },
+              metadata: {
+                streamed: true,
+                traceMetrics: {
+                  groundingGateWaitMs: 37,
+                  ignoredText: "PRIVATE ANSWER",
+                },
+              },
             },
           };
         },
@@ -429,6 +441,7 @@ describe("DefaultConversationEngine", () => {
     });
     expect(input.stores.appendEvent).toHaveBeenCalledTimes(2);
     expect(input.composer.compose).not.toHaveBeenCalled();
+    expect(phases).toEqual(["selecting", "dispatching", "composing"]);
     expect(final?.type === "final" ? final.result.trace.stages.map((stage) => stage.kind) : []).toEqual([
       "message",
       "gather",
@@ -436,6 +449,48 @@ describe("DefaultConversationEngine", () => {
       "skill_selection",
       "skill_dispatch",
       "compose",
+    ]);
+    const composeStage = final?.type === "final"
+      ? final.result.trace.stages.findLast((stage) => stage.kind === "compose")
+      : undefined;
+    expect(composeStage?.metrics).toEqual({ groundingGateWaitMs: 37 });
+    expect(JSON.stringify(composeStage)).not.toContain("PRIVATE ANSWER");
+  });
+
+  it("reports retrieval progress immediately before each streamed schedule boundary", async () => {
+    const phases: string[] = [];
+    const input: ProcessTurnStreamInput = {
+      ...createInput({
+        turnInterpreter: {
+          interpret: vi.fn(async () => ({ route: "retrieval" })),
+        },
+        retrievalWork: {
+          run: vi.fn(async () => ({ stagedContext: [] })),
+        },
+      }),
+      progress: {
+        report({ phase }) {
+          phases.push(phase);
+        },
+      },
+      composer: {
+        compose: vi.fn(),
+        async *stream() {
+          yield { type: "final", response: { answer: "Grounded." } };
+        },
+      },
+    };
+
+    for await (const _event of new DefaultConversationEngine().processTurnStream(input)) {
+      // drain
+    }
+
+    expect(phases).toEqual([
+      "interpreting",
+      "retrieving",
+      "selecting",
+      "dispatching",
+      "composing",
     ]);
   });
 });
@@ -553,7 +608,7 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
     expect(result.trace.stages.map((stage) => stage.kind)).toContain("compose");
   });
 
-  it("streams a resumed routine as a single delta plus final, bypassing the composer stream", async () => {
+  it("replays a resumed routine through committed chunks plus final, bypassing the live composer stream", async () => {
     const base = withRoutine({
       resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: activeState })),
     });
@@ -561,6 +616,10 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       ...base,
       composer: {
         compose: vi.fn(),
+        streamCommitted: vi.fn(function* () {
+          yield "What's ";
+          yield "your email?";
+        }),
         stream: vi.fn(async function* () {
           yield { type: "final", response: { answer: "should not run" } };
         }),
@@ -572,11 +631,86 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       events.push(event);
     }
 
-    expect(events.map((event) => event.type)).toEqual(["delta", "final"]);
-    expect(events[0]).toMatchObject({ type: "delta", text: "What's your email?" });
+    expect(events.map((event) => event.type)).toEqual(["delta", "delta", "final"]);
+    expect(events.slice(0, 2)).toEqual([
+      { type: "delta", sessionId: "session_1", text: "What's " },
+      { type: "delta", sessionId: "session_1", text: "your email?" },
+    ]);
     expect(input.composer.stream).not.toHaveBeenCalled();
     const final = events.at(-1);
     expect(final?.type === "final" ? final.result.response.answer : "").toBe("What's your email?");
+  });
+
+  it("reports routine progress before a claimed streamed routine blocks", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const phases: string[] = [];
+    const base = withRoutine({
+      resume: vi.fn(async () => {
+        await blocked;
+        return { response: { answer: "Done" }, nextState: activeState };
+      }),
+    });
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      progress: { report: ({ phase }) => phases.push(phase) },
+      composer: {
+        compose: vi.fn(),
+        async *stream() { yield { type: "final", response: { answer: "unused" } }; },
+      },
+    };
+    const events = new DefaultConversationEngine().processTurnStream(input)[Symbol.asyncIterator]();
+    const pending = events.next();
+
+    await vi.waitFor(() => expect(phases).toEqual(["routine"]));
+    release();
+    await expect(pending).resolves.toMatchObject({ value: { type: "delta", text: "Done" } });
+  });
+
+  it("reports routine fallthrough before the normal streamed schedule", async () => {
+    const phases: string[] = [];
+    const base = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "" }, nextState: activeState, yielded: true })),
+    });
+    const input: ProcessTurnStreamInput = {
+      ...base,
+      progress: { report: ({ phase }) => phases.push(phase) },
+      composer: {
+        compose: vi.fn(),
+        async *stream({ outcomes }) {
+          yield { type: "final", response: { answer: outcomes[0]?.outcome.answer ?? "" } };
+        },
+      },
+    };
+
+    for await (const _event of new DefaultConversationEngine().processTurnStream(input)) {
+      // drain
+    }
+
+    expect(phases).toEqual(["routine", "selecting", "dispatching", "composing"]);
+  });
+
+  it("reports the failing streamed boundary before surfacing its error", async () => {
+    const phases: string[] = [];
+    const failure = new Error("interpretation_failed");
+    const input: ProcessTurnStreamInput = {
+      ...createInput({
+        turnInterpreter: { interpret: vi.fn(async () => { throw failure; }) },
+      }),
+      progress: { report: ({ phase }) => phases.push(phase) },
+      composer: {
+        compose: vi.fn(),
+        async *stream() { yield { type: "final", response: { answer: "unused" } }; },
+      },
+    };
+
+    const drain = async () => {
+      for await (const _event of new DefaultConversationEngine().processTurnStream(input)) {
+        // drain
+      }
+    };
+    await expect(drain()).rejects.toBe(failure);
+    expect(phases).toEqual(["interpreting"]);
   });
 
   it("activates a new routine at its root when the activator claims an idle turn", async () => {

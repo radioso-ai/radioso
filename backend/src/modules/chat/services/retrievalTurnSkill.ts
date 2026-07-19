@@ -20,11 +20,22 @@ import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   computeGroundingSummary,
-  hasValidSourcedAssertion,
   type GroundingSummary,
   type GroundingVerdict,
 } from "./groundingAssertions.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
+
+export class GroundingStreamGateBoundError extends Error {
+  constructor() {
+    super("grounding_stream_gate_bound");
+    this.name = "GroundingStreamGateBoundError";
+  }
+}
+
+const combineAbortSignals = (turnSignal: AbortSignal | undefined, gateSignal: AbortSignal): AbortSignal =>
+  turnSignal ? AbortSignal.any([turnSignal, gateSignal]) : gateSignal;
 
 /** The outcome kind a grounded/retrieval turn produces (chat-side renderer tag). */
 export const RETRIEVAL_OUTCOME_KIND = "retrieval";
@@ -106,6 +117,13 @@ export class RetrievalAnswerComposer {
     });
   }
 
+  private recordGroundingGateBound(): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true" },
+    });
+  }
+
   composeGroundedSystemPrompt(session: PreparedSession): string {
     const conversationIntentSnapshot = buildConversationIntentSnapshot({
       history: session.history,
@@ -131,6 +149,7 @@ export class RetrievalAnswerComposer {
     prompt: string,
     accountId: string | undefined,
     attemptKey: string,
+    signal?: AbortSignal,
   ): Promise<GroundedAnswerEnvelope> {
     const raw = await this.chatGateway.answer({
       query,
@@ -139,6 +158,7 @@ export class RetrievalAnswerComposer {
       prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
+      ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
     if (!envelope.answer.trim()) {
@@ -153,6 +173,7 @@ export class RetrievalAnswerComposer {
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
+    signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
     const decline = await this.composeFocusedDecline(
       session,
@@ -160,6 +181,7 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       accountId,
       "grounded_suppressed_decline",
+      signal,
     );
     return {
       ...this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
@@ -173,13 +195,21 @@ export class RetrievalAnswerComposer {
     session: PreparedSession,
     query: string,
     accountId: string | undefined,
+    signal?: AbortSignal,
   ): Promise<GroundedAnswerEnvelope | null> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
       return null;
     }
 
-    const envelope = await this.generateGroundedAnswerEnvelope(session, query, prompt, accountId, "page_context");
+    const envelope = await this.generateGroundedAnswerEnvelope(
+      session,
+      query,
+      prompt,
+      accountId,
+      "page_context",
+      signal,
+    );
     return { ...envelope, answer: envelope.answer.trim() };
   }
 
@@ -272,6 +302,7 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     attemptKey: string,
+    signal?: AbortSignal,
   ): Promise<string> {
     return this.fallbackReplyComposer.composeNoContext({
       query,
@@ -280,6 +311,7 @@ export class RetrievalAnswerComposer {
       steering: session.directiveSteering?.rules ?? [],
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
+      ...(signal ? { signal } : {}),
     });
   }
 
@@ -306,17 +338,25 @@ export class RetrievalAnswerComposer {
     query: string,
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
+    signal?: AbortSignal,
   ): AsyncGenerator<string, TurnStreamResult> {
     // Scope gate (mirrors composeAnswer): a wholly out-of-scope turn declines via the
     // focused grounded-miss composer instead of streaming a grounded answer.
     if (isOutOfScopeOnly(session)) {
-      const decline = await this.composeFocusedDecline(session, query, userExpectedLocale, accountId, "stream_out_of_scope");
-      yield decline;
+      const decline = await this.composeFocusedDecline(
+        session,
+        query,
+        userExpectedLocale,
+        accountId,
+        "stream_out_of_scope",
+        signal,
+      );
       return {
         finalPresentation: await this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
         suggestions: { mode: "assistant", planned: [] },
-        hasStreamedAnswer: true,
-        streamedAnswer: decline,
+        hasStreamedAnswer: false,
+        streamedAnswer: "",
+        deliveryMode: "committed",
       };
     }
 
@@ -326,9 +366,10 @@ export class RetrievalAnswerComposer {
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
     let suppressUnsupportedDraft = false;
+    let groundingGateWaitMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
-      const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId);
+      const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId, signal);
       rawAnswer = fallbackEnvelope?.answer
         ?? await this.fallbackReplyComposer.composeNoContext({
           query,
@@ -337,44 +378,45 @@ export class RetrievalAnswerComposer {
           steering: session.directiveSteering?.rules ?? [],
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
+          ...(signal ? { signal } : {}),
         });
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       if (fallbackEnvelope) {
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
         this.recordGroundingOutcome(grounding, fallbackEnvelope, true);
       }
-      yield rawAnswer;
-      hasStreamedAnswer = true;
-      streamedAnswer += rawAnswer;
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
       const citationSanitizer = new CitationAnchorSanitizer();
-      let pendingStreamText = "";
-      let groundingConfirmed = false;
-      for await (const text of this.chatGateway.streamAnswer({
+      const gate = new BoundedGroundingStreamGate({
+        contextCount: session.retrieval.contexts.length,
+        maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
+      });
+      const gateController = new AbortController();
+      const candidateStream = this.chatGateway.streamAnswer({
         query,
         history: session.history,
         systemPrompt: this.composeGroundedSystemPrompt(session),
         prompt: this.support.buildPromptWithContext(session.retrieval.prompt, session),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
-      })) {
+        signal: combineAbortSignals(signal, gateController.signal),
+      });
+      let gateBound = false;
+      for await (const text of candidateStream) {
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
         if (!text) {
           continue;
         }
-        pendingStreamText += reader.push(text);
-        if (
-          !groundingConfirmed
-          && hasValidSourcedAssertion(pendingStreamText, session.retrieval.contexts.length)
-        ) {
-          groundingConfirmed = true;
+        const decision = gate.push(reader.push(text));
+        if (decision.kind === "bound") {
+          gateBound = true;
+          gateController.abort(new GroundingStreamGateBoundError());
+          break;
         }
-        let streamable = "";
-        if (groundingConfirmed) {
-          streamable = pendingStreamText;
-          pendingStreamText = "";
-        }
-        const cleanChunk = citationSanitizer.push(streamable);
+        const cleanChunk = citationSanitizer.push(decision.kind === "release" ? decision.text : "");
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;
@@ -382,7 +424,39 @@ export class RetrievalAnswerComposer {
         }
       }
 
+      groundingGateWaitMs = gate.waitDurationMs;
+      if (signal?.aborted) {
+        throw signal.reason ?? new Error("chat_turn_aborted");
+      }
+      if (gateBound) {
+        this.recordGroundingGateBound();
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_grounding_gate_bound",
+          signal,
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        return {
+          finalPresentation: await this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
+          suggestions: { mode: "assistant", planned: [] },
+          hasStreamedAnswer: false,
+          streamedAnswer: "",
+          deliveryMode: "bounded_decline",
+          traceMetrics: { groundingGateWaitMs },
+        };
+      }
+
       const finalized = reader.finalize();
+      // The cap governs in-flight streaming only. On natural completion without
+      // opening or bounding, the computed #860 verdict and draft suppression below
+      // remain final authority, preserving pre-#859 delivery behavior.
+      gate.finish();
+      groundingGateWaitMs = gate.waitDurationMs;
       plannedSuggestions = finalized.suggestions;
       rawAnswer = finalized.fullAnswer;
       if (!rawAnswer.trim()) {
@@ -405,10 +479,13 @@ export class RetrievalAnswerComposer {
           query,
           userExpectedLocale,
           accountId,
+          signal,
         ),
         suggestions: { mode: "assistant", planned: [] },
         hasStreamedAnswer,
         streamedAnswer,
+        deliveryMode: hasStreamedAnswer ? "live" : "committed",
+        ...(groundingGateWaitMs === undefined ? {} : { traceMetrics: { groundingGateWaitMs } }),
       };
     }
 
@@ -426,6 +503,8 @@ export class RetrievalAnswerComposer {
       suggestions: { mode: "assistant", planned: plannedSuggestions },
       hasStreamedAnswer,
       streamedAnswer,
+      deliveryMode: hasStreamedAnswer ? "live" : "committed",
+      ...(groundingGateWaitMs === undefined ? {} : { traceMetrics: { groundingGateWaitMs } }),
     };
   }
 }
@@ -443,7 +522,7 @@ export const createRetrievalTurnSkill = (composer: RetrievalAnswerComposer): Tur
     supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
     render: (_outcome, ctx: TurnRenderContext) =>
       composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
+    stream: (_outcome, ctx: TurnRenderContext) =>
+      composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal),
   },
-  streamRender: (ctx: TurnRenderContext) =>
-    composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId),
 });

@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-06-13
+last_updated: 2026-07-19
 ---
 
 # Assistant Turn Spine
@@ -73,10 +73,35 @@ run response-language detection. Query rewrite does not own response-language
 selection.
 
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
-compose stages) is recorded on the `chat.answer` success audit event under
-`metadata.conversationEngine.trace`, alongside the retrieval-derived
-`activityTrace`. This is audit-only observability; the user-facing answer and
-activity trace are unchanged.
+compose stages) is the root of the versioned `metadata.turnTrace` envelope on
+the `chat.answer` success audit event. Capability traces, including retrieval,
+hang from their dispatch stage as typed leaves. The legacy retrieval-derived
+`activityTrace` remains available during the history migration.
+
+Real spine stages record wall-clock start and completion times. The envelope's
+capability leaves remain operator-facing diagnostics. In particular, the
+retrieval activity trace can include queries, answer previews, and tool outputs;
+the persisted envelope as a whole is therefore not content-free.
+
+The new turn-level model-call collection and performance rollup are content-free.
+They contain only structural operation and stage labels, model names, token
+counts, timestamps, and durations. They do not contain attempt keys, prompts,
+completions, tool arguments or outputs, retrieved chunks, document content,
+credentials, or provider request IDs. Each retained call has a stable ID and is
+referenced from its enclosing spine stage. Calls made before the engine starts
+use the `pre_engine` attribution. The collection retains at most 64 call records;
+the rollup still counts all calls and reports how many records were dropped.
+Suggestion enrichment runs after the answer pipeline and is deliberately outside
+the turn rollup. This boundary is the same for streamed and non-streamed turns, so
+the summary measures answer production rather than optional action-chip generation.
+
+Each envelope also carries a turn summary with total LLM calls, serial LLM
+depth, the longest stage, total model time, and total turn time. Concurrent
+model calls contribute to total model time but count once at that point in the
+serial-depth calculation. Synthesized legacy envelopes do not receive this
+summary because they did not capture the required call data. The workbench and
+activity turn inspector show the summary and the per-stage timing and usage
+fields for current envelopes.
 
 ## Skills are dispatched, not called
 

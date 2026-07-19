@@ -98,6 +98,39 @@ describe('envelopeToFlowGraph', () => {
     expect(graph.nodes.find((n) => n.id === 'stage:semantic')?.detail).toEqual({ kind: 'leaf', leafStageId: 'semantic' })
   })
 
+  it('places the canonical model-call collection before the outcome', () => {
+    const base = envelope()
+    base.spine.stages.push({
+      id: 'model_calls',
+      kind: 'model_calls',
+      status: 'applied',
+      outputs: {
+        modelCalls: [{
+          id: 'model_call_1',
+          stageId: 'compose',
+          operation: 'grounded_answer',
+          model: 'gpt-answer',
+          durationMs: 120,
+          inputTokens: 20,
+          outputTokens: 5,
+          totalTokens: 25,
+        }],
+      },
+      metrics: { llmCallCount: 1 },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+    const node = graph.nodes.find((candidate) => candidate.id === 'spine:model_calls')
+
+    expect(node).toMatchObject({
+      label: 'Model calls',
+      sublabel: '1 call',
+      detail: { kind: 'spine', spineStageId: 'model_calls' },
+    })
+    expect(edge(graph, 'stage:answer', 'spine:model_calls')).toBeDefined()
+    expect(edge(graph, 'spine:model_calls', 'outcome')).toBeDefined()
+  })
+
   it('connects skill straight to outcome when there is no capability leaf', () => {
     const base = envelope()
     const dispatch = base.spine.stages.find((s) => s.kind === 'skill_dispatch')!

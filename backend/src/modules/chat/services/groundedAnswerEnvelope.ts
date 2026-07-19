@@ -2,17 +2,14 @@ import type { ChatSuggestionKind } from "../types/chatResponses.js";
 
 export const SUGGESTIONS_SENTINEL = "<<<RADIOSO_FOLLOWUPS_JSON>>>";
 
-// The model self-reports how well the retrieved excerpts supported its answer.
-// "degraded" marks an answer the model could only partially ground — it answered
-// but had to hedge or note that the materials don't fully cover the question.
-// We never infer this from the prose (Radioso is multilingual); it is the model's
-// verdict, defaulting to "grounded" when absent or unrecognized.
-export type AnswerGroundingVerdict = "grounded" | "degraded";
+export type GroundingEnvelopeParseStatus =
+  | "valid_v2"
+  | "legacy_v1"
+  | "missing"
+  | "malformed"
+  | "invalid_v2";
 
-const DEFAULT_GROUNDING: AnswerGroundingVerdict = "grounded";
-
-const normalizeGrounding = (value: unknown): AnswerGroundingVerdict =>
-  value === "degraded" ? "degraded" : DEFAULT_GROUNDING;
+export type GroundingEnvelopeOutcome = "answer" | "no_support";
 
 export interface PlannedEnvelopeSuggestion {
   text: string;
@@ -22,21 +19,25 @@ export interface PlannedEnvelopeSuggestion {
 
 export interface GroundedAnswerEnvelope {
   answer: string;
-  grounding: AnswerGroundingVerdict;
+  protocolVersion: 1 | 2 | null;
+  parseStatus: GroundingEnvelopeParseStatus;
+  outcome: GroundingEnvelopeOutcome | null;
+  claims: unknown[][];
   suggestions: PlannedEnvelopeSuggestion[];
 }
 
-interface ParsedEnvelopeTail {
-  grounding: AnswerGroundingVerdict;
-  suggestions: PlannedEnvelopeSuggestion[];
-}
+interface ParsedEnvelopeTail extends Omit<GroundedAnswerEnvelope, "answer"> {}
+
+const emptyTail = (parseStatus: GroundingEnvelopeParseStatus): ParsedEnvelopeTail => ({
+  protocolVersion: null,
+  parseStatus,
+  outcome: null,
+  claims: [],
+  suggestions: [],
+});
 
 const normalizeWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim();
 
-// The prompt asks the model to set kind explicitly, but it's the field most often
-// omitted in early-streaming model output. Defaulting to "deeper" keeps a valid
-// suggestion alive when the model drops the field; explicit "broader" still wins
-// and any other value is rejected so we don't accept arbitrary kinds silently.
 const normalizeKind = (value: unknown): ChatSuggestionKind | null => {
   if (value === "deeper" || value === undefined) {
     return "deeper";
@@ -44,117 +45,143 @@ const normalizeKind = (value: unknown): ChatSuggestionKind | null => {
   return value === "broader" ? "broader" : null;
 };
 
+const readSuggestion = (entry: unknown): PlannedEnvelopeSuggestion | null => {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return null;
+  }
+  const record = entry as Record<string, unknown>;
+  const text = typeof record.text === "string" ? normalizeWhitespace(record.text) : "";
+  const kind = normalizeKind(record.kind);
+  const numericIndex = typeof record.contextIndex === "string" && /^\d+$/.test(record.contextIndex.trim())
+    ? Number(record.contextIndex.trim())
+    : record.contextIndex;
+  const contextIndex = typeof numericIndex === "number" ? numericIndex : NaN;
+  if (!text || !kind || !Number.isSafeInteger(contextIndex) || contextIndex < 1) {
+    return null;
+  }
+  return { text, kind, contextIndex };
+};
+
 const readSuggestionsArray = (raw: unknown): PlannedEnvelopeSuggestion[] => {
   if (!Array.isArray(raw)) {
     return [];
   }
   return raw.flatMap((entry) => {
-    if (!entry || typeof entry !== "object") {
-      return [];
-    }
-    const record = entry as Record<string, unknown>;
-    const text = typeof record.text === "string" ? normalizeWhitespace(record.text) : "";
-    const kind = normalizeKind(record.kind);
-    const rawIndex = typeof record.contextIndex === "number" ? Math.trunc(record.contextIndex) : NaN;
-    if (!text || !kind || !Number.isInteger(rawIndex) || rawIndex < 1) {
-      return [];
-    }
-    return [{ text, kind, contextIndex: rawIndex }];
+    const suggestion = readSuggestion(entry);
+    return suggestion ? [suggestion] : [];
   });
 };
 
 const parseEnvelopeTail = (buffer: string): ParsedEnvelopeTail => {
-  const empty: ParsedEnvelopeTail = { grounding: DEFAULT_GROUNDING, suggestions: [] };
   const trimmed = buffer.trim();
   if (!trimmed) {
-    return empty;
+    return emptyTail("malformed");
   }
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    return empty;
+    return emptyTail("malformed");
   }
-  // The current prompt asks for an object envelope {grounding, suggestions}, but
-  // a bare array remains valid (older format / providers that drop the wrapper).
-  // A bare array carries no verdict, so grounding stays at the grounded default.
+
   if (Array.isArray(parsed)) {
-    return { grounding: DEFAULT_GROUNDING, suggestions: readSuggestionsArray(parsed) };
-  }
-  if (parsed && typeof parsed === "object") {
-    const record = parsed as { grounding?: unknown; suggestions?: unknown };
     return {
-      grounding: normalizeGrounding(record.grounding),
+      protocolVersion: 1,
+      parseStatus: "legacy_v1",
+      outcome: null,
+      claims: [],
+      suggestions: readSuggestionsArray(parsed),
+    };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return emptyTail("malformed");
+  }
+
+  const record = parsed as Record<string, unknown>;
+  if (!("v" in record)) {
+    return {
+      protocolVersion: 1,
+      parseStatus: "legacy_v1",
+      outcome: null,
+      claims: [],
       suggestions: readSuggestionsArray(record.suggestions),
     };
   }
-  return empty;
+
+  const isV2 = record.v === 2 || record.v === "2";
+  const outcome = record.outcome === "answer" || record.outcome === "no_support"
+    ? record.outcome
+    : null;
+  const claims = Array.isArray(record.claims) && record.claims.every(Array.isArray)
+    ? record.claims
+    : null;
+  const suggestionsValid = Array.isArray(record.suggestions)
+    && record.suggestions.every((entry) => readSuggestion(entry) !== null);
+  if (!isV2 || !outcome || !claims || !suggestionsValid) {
+    return {
+      protocolVersion: isV2 ? 2 : null,
+      parseStatus: "invalid_v2",
+      outcome,
+      claims: claims ?? [],
+      suggestions: readSuggestionsArray(record.suggestions),
+    };
+  }
+
+  return {
+    protocolVersion: 2,
+    parseStatus: "valid_v2",
+    outcome,
+    claims,
+    suggestions: readSuggestionsArray(record.suggestions),
+  };
 };
 
 export const parseGroundedAnswerEnvelope = (raw: string): GroundedAnswerEnvelope => {
-  // The prompt requires the sentinel to appear on a line by itself after the
-  // complete answer. We use first-occurrence indexOf rather than a stricter
-  // "newline-prefixed" match because a literal sentinel inside answer prose is
-  // not produced by the model in practice, and a substring search is cheaper
-  // than a regex on streamed bytes. If a future prompt change ever surfaces
-  // false positives, prefer requiring the sentinel be preceded by a newline.
   const sentinelIndex = raw.indexOf(SUGGESTIONS_SENTINEL);
   if (sentinelIndex === -1) {
-    return { answer: raw.trim(), grounding: DEFAULT_GROUNDING, suggestions: [] };
+    return { answer: raw.trim(), ...emptyTail("missing") };
   }
   const answer = raw.slice(0, sentinelIndex).trim();
   const tail = parseEnvelopeTail(raw.slice(sentinelIndex + SUGGESTIONS_SENTINEL.length));
-  return { answer, grounding: tail.grounding, suggestions: tail.suggestions };
+  return { answer, ...tail };
 };
 
-// Hold back the trailing (sentinel.length - 1) bytes of the answer buffer before
-// emitting to the user: any shorter tail could still be the beginning of the
-// sentinel and would split incorrectly if released. Once the full sentinel is
-// observed it's stripped, so we never need to hold back more than this.
-const SENTINEL_HOLDBACK = SUGGESTIONS_SENTINEL.length - 1;
+// Retain enough preceding text to remove the line delimiter before a sentinel even
+// when the sentinel itself is split at the earliest possible chunk boundary.
+const SENTINEL_HOLDBACK = SUGGESTIONS_SENTINEL.length + 1;
 
-export interface ReaderFinalizeResult {
+export interface ReaderFinalizeResult extends Omit<GroundedAnswerEnvelope, "answer"> {
   trailingAnswer: string;
   fullAnswer: string;
-  grounding: AnswerGroundingVerdict;
-  suggestions: PlannedEnvelopeSuggestion[];
 }
 
-/**
- * Incrementally splits a streamed LLM response into the markdown answer body and
- * the suggestions JSON that follows {@link SUGGESTIONS_SENTINEL}. While the
- * sentinel has not been observed, push() returns answer text that's safe to
- * forward to the user, holding back the trailing bytes that could form the
- * sentinel. After the sentinel is observed, push() returns "" and all further
- * input is buffered as suggestions JSON to parse on finalize().
- */
 export class GroundedAnswerEnvelopeReader {
   private buffer = "";
-  // Use a chunk array rather than concatenating onto a string to keep ingestion
-  // linear in total bytes even if a future caller sends many suggestion chunks.
-  private suggestionsChunks: string[] = [];
-  private inSuggestions = false;
+  private tailChunks: string[] = [];
+  private inTail = false;
   private emittedAnswer = "";
 
   push(chunk: string): string {
     if (!chunk) {
       return "";
     }
-    if (this.inSuggestions) {
-      this.suggestionsChunks.push(chunk);
+    if (this.inTail) {
+      this.tailChunks.push(chunk);
       return "";
     }
 
     this.buffer += chunk;
     const sentinelIndex = this.buffer.indexOf(SUGGESTIONS_SENTINEL);
     if (sentinelIndex !== -1) {
-      const answerPortion = this.buffer.slice(0, sentinelIndex);
+      const answerPortion = this.buffer.slice(0, sentinelIndex).replace(/\r?\n$/, "");
       const tailAfterSentinel = this.buffer.slice(sentinelIndex + SUGGESTIONS_SENTINEL.length);
       if (tailAfterSentinel) {
-        this.suggestionsChunks.push(tailAfterSentinel);
+        this.tailChunks.push(tailAfterSentinel);
       }
       this.buffer = "";
-      this.inSuggestions = true;
+      this.inTail = true;
       this.emittedAnswer += answerPortion;
       return answerPortion;
     }
@@ -171,23 +198,21 @@ export class GroundedAnswerEnvelopeReader {
   }
 
   finalize(): ReaderFinalizeResult {
-    if (this.inSuggestions) {
-      const tail = parseEnvelopeTail(this.suggestionsChunks.join(""));
+    if (this.inTail) {
       return {
         trailingAnswer: "",
         fullAnswer: this.emittedAnswer,
-        grounding: tail.grounding,
-        suggestions: tail.suggestions,
+        ...parseEnvelopeTail(this.tailChunks.join("")),
       };
     }
+
     const trailingAnswer = this.buffer;
     this.emittedAnswer += this.buffer;
     this.buffer = "";
     return {
       trailingAnswer,
       fullAnswer: this.emittedAnswer,
-      grounding: DEFAULT_GROUNDING,
-      suggestions: [],
+      ...emptyTail("missing"),
     };
   }
 }

@@ -133,7 +133,9 @@ export {
   type RetrievalTurnPort,
 } from "./services/retrievalTurnDispatch.js";
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
-export { resolveCitationArtifacts } from "./services/implicitCitationSupport.js";
+export { composeGroundedAnswerSystemPrompt } from "./services/groundedAnswerPromptComposer.js";
+export { parseGroundedAnswerEnvelope } from "./services/groundedAnswerEnvelope.js";
+export { computeGroundingSummary } from "./services/groundingAssertions.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export {
   ActionDispatcher,

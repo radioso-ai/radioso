@@ -11,12 +11,14 @@ import type { TurnSkill } from "./turnOutcome.js";
 import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
 import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 export interface ChatTurnRuntimeDependencies {
   chatGateway: ChatGateway;
   fallbackReplyComposer: FallbackReplyComposer;
   chatActionSuggestionService?: ChatActionSuggestionService;
   skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
+  metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
 }
 
 /**
@@ -56,6 +58,7 @@ export const buildChatTurnRuntime = (
         deps.chatGateway,
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
+        deps.metrics,
       ),
     ),
     createDirectTurnSkill(

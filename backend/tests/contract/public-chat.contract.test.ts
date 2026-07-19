@@ -4,6 +4,14 @@ import { adminSessionHeaders, createTestApp, issueTestSession } from "../support
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
+import {
+  DEGRADED_V2_VISIBLE,
+  GROUNDED_V2_VISIBLE,
+  NO_SUPPORT_V2_BODY,
+  degradedV2Envelope,
+  groundedV2Envelope,
+  noSupportV2Envelope,
+} from "../support/answerEnvelopeV2Fixtures.js";
 
 describe("public chat contract", () => {
   beforeEach(() => {
@@ -585,6 +593,63 @@ describe("public chat contract", () => {
     expect(response.body).toContain("event: conversation");
     expect(response.body).toContain("event: chunk");
     expect(response.body).toContain('data: {"text":"Streaming works."}');
+    expect(response.body).toContain("event: done");
+  });
+
+  it.each([
+    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE],
+    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE],
+    ["no-support", noSupportV2Envelope, NO_SUPPORT_V2_BODY],
+  ] as const)("streams the sanitized v2 %s fixture through public chat", async (_name, buildRaw, visibleAnswer) => {
+    const raw = buildRaw();
+    const streamingGateway: ChatGateway = {
+      async answer() {
+        return raw;
+      },
+      async *streamAnswer() {
+        for (let offset = 0; offset < raw.length; offset += 9) {
+          yield raw.slice(offset, offset + 9);
+        }
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: streamingGateway,
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
+    const session = await issueTestSession(app, `public-v2-${_name}@example.com`);
+    for (const [title, content] of [
+      ["Workshop dates", "The advanced workshop runs in June."],
+      ["Returning students", "Returning students can register online."],
+      ["Registration", "Online registration is available for returning students."],
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set(adminSessionHeaders(session))
+        .send({ title, content });
+    }
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const response = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .buffer(true)
+      .parse((res, callback) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", () => callback(null, body));
+      })
+      .send({ message: "Tell me about the advanced workshop.", stream: true });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toContain(JSON.stringify(visibleAnswer));
+    expect(response.body).not.toContain("RADIOSO_FOLLOWUPS_JSON");
+    expect(response.body).not.toContain("[[");
     expect(response.body).toContain("event: done");
   });
 

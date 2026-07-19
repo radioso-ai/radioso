@@ -3,6 +3,32 @@ import { describe, expect, it } from "vitest";
 import { CitationAnchorSanitizer } from "../../src/modules/chat/services/citationAnchorSanitizer.js";
 
 describe("citation anchor sanitizer", () => {
+  it("never leaks sourced or unsourced anchors split at any boundary", () => {
+    for (const marker of ["[[12]]", "[[?]]"]) {
+      for (let split = 1; split < marker.length; split += 1) {
+        const sanitizer = new CitationAnchorSanitizer();
+        const chunks = [
+          sanitizer.push(`Claim${marker.slice(0, split)}`),
+          sanitizer.push(`${marker.slice(split)}.`),
+          sanitizer.flush(),
+        ];
+
+        expect(chunks.join(""), `${marker} split at ${split}`).toBe("Claim.");
+      }
+    }
+  });
+
+  it("never leaks explicit unsourced assertions, including across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+    const chunks = [
+      sanitizer.push("A supported fact[[1]], but a limitation[["),
+      sanitizer.push("?"),
+      sanitizer.push("]]."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("A supported fact, but a limitation.");
+  });
   it("does not stream detached punctuation when an anchor is followed by a spaced period", () => {
     const sanitizer = new CitationAnchorSanitizer();
 

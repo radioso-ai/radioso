@@ -91,6 +91,21 @@ export interface AssertionVerdict {
 export type EvalCaseStatus = 'pending' | 'passing' | 'failing' | 'error'
 export type EvalRunMode = 'retrieval_only' | 'full_assistant'
 export type EvalRunStatus = 'pass' | 'fail' | 'error' | 'recorded'
+export type GroundingVerdict = 'grounded' | 'degraded' | 'no_support'
+export type GroundingEnvelopeParseStatus = 'valid_v2' | 'legacy_v1' | 'missing' | 'malformed' | 'invalid_v2'
+
+export interface GroundingSummary {
+  protocolVersion: 1 | 2 | null
+  parseStatus: GroundingEnvelopeParseStatus
+  verdict: GroundingVerdict
+  claimCount: number
+  sourcedClaimCount: number
+  unsourcedClaimCount: number
+  invalidSourceCount: number
+  assertionMismatch: boolean
+}
+
+export type GroundingDiagnostics = Omit<GroundingSummary, 'verdict'>
 
 export interface EvalCase {
   id: string
@@ -117,6 +132,9 @@ export interface EvalRunObservedOutput {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  groundingSummary?: GroundingSummary
+  groundingVerdict?: GroundingVerdict
+  groundingDiagnostics?: GroundingDiagnostics
   turnTrace?: TurnTraceEnvelope
   activityTrace?: ActivityTrace
   error?: { message: string; code?: string }
@@ -248,6 +266,8 @@ export interface WorkbenchReplayRunResponse {
   answer?: string
   citations?: Citation[]
   answerSegments?: AnswerSegment[]
+  groundingVerdict?: GroundingVerdict
+  groundingDiagnostics?: GroundingDiagnostics
   turnTrace?: TurnTraceEnvelope
   resolvedConfig?: Record<string, unknown>
 }

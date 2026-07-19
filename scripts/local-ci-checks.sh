@@ -75,6 +75,7 @@ else
         mark_all
         ;;
       .github/workflows/*|infra/*|.dockerignore|*/.dockerignore|Dockerfile|*/Dockerfile|*.Dockerfile)
+        mark_all
         ;;
       backend/*)
         backend=true

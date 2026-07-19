@@ -14,6 +14,18 @@ test("frontend dev entrypoint invalidates persisted Next cache when runtime depe
   assert.match(entrypoint, /printf '%s' "\$CURRENT_INSTALL_STATE" > "\$NEXT_CACHE_STATE_FILE"/);
 });
 
+test("frontend dev entrypoint restarts Next when dev manifests are missing at runtime", async () => {
+  const entrypoint = await readFile(path.join(repoRoot, "infra/frontend.dev.entrypoint.sh"), "utf8");
+
+  assert.match(entrypoint, /next_cache_has_missing_dev_manifest\(\) \{/);
+  assert.match(entrypoint, /frontend\/\.next\/dev\/routes-manifest\.json/);
+  assert.match(entrypoint, /frontend\/\.next\/dev\/server\/middleware-manifest\.json/);
+  assert.match(
+    entrypoint,
+    /while kill -0 "\$NEXT_PID"[\s\S]+if next_cache_looks_incomplete[\s\S]+Restarting frontend Next\.js dev server after incomplete cache\./,
+  );
+});
+
 test("frontend dev entrypoint builds frontend workspace dependencies before starting Next", async () => {
   const entrypoint = await readFile(path.join(repoRoot, "infra/frontend.dev.entrypoint.sh"), "utf8");
 

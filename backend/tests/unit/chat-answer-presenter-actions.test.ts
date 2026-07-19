@@ -132,7 +132,7 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
     expect(result.answerOutcome).toBe("grounded_success");
   });
 
-  it("reports a degraded outcome when the model flags weak grounding", async () => {
+  it("reports a degraded outcome from the computed grounding verdict", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
 
     const result = await presenter.presentWithoutSuggestions(
@@ -151,6 +151,39 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
 });
 
 describe("ChatAnswerPresenter.applyActionSuggestions", () => {
+  it("keeps action suggestions available while suppressing question suggestions for no-support", async () => {
+    const actionChip: ChatSuggestion = {
+      text: "Contact us",
+      kind: "contact_human",
+      action: { kind: "start_intent", intent: { skillName: "human_contact.request" } },
+    };
+    const presenter = new ChatAnswerPresenter(
+      stubExpansionService,
+      new ChatActionSuggestionService(new ChatActionSuggestionRegistry([buildProvider(actionChip)])),
+    );
+
+    const result = await presenter.presentWithSuggestions(
+      buildSession(),
+      "I can help with a different part of our program.",
+      "Question?",
+      [{ text: "Unsupported follow-up", kind: "deeper", contextIndex: 1 }],
+      undefined,
+      {
+        protocolVersion: 2,
+        parseStatus: "valid_v2",
+        verdict: "no_support",
+        claimCount: 0,
+        sourcedClaimCount: 0,
+        unsourcedClaimCount: 0,
+        invalidSourceCount: 0,
+        assertionMismatch: false,
+      },
+    );
+
+    expect(result.skillOutcome).toBe("no_context");
+    expect(result.suggestions).toEqual([actionChip]);
+  });
+
   it("returns the presentation unchanged when no action service is wired", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
     const result = await presenter.applyActionSuggestions(buildSession(), basePresentation);

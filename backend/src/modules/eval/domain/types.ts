@@ -3,6 +3,7 @@ import type { AgentSnapshot, InternalAgentConfig } from "../../agents/public.js"
 import type { AnswerSegment, ChatCitation, TurnTraceEnvelope } from "../../chat/contracts/index.js";
 import type { ActivityTrace } from "../../retrieval/public.js";
 import type { LlmCapabilityOverride } from "../../../shared/infra/llm/workspaceContext.js";
+import type { GroundingSummary } from "../../chat/retrievalSupport.js";
 import type {
   RetrievalSettingsRecord,
   RetrievalSettingsSnapshot,
@@ -17,6 +18,7 @@ export interface EvalSnapshotMessage {
   createdAt: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  groundingSummary?: GroundingSummary;
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {
@@ -164,6 +166,9 @@ export interface EvalRunObservedOutput {
   answer?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  groundingSummary?: GroundingSummary;
+  groundingVerdict?: GroundingSummary["verdict"];
+  groundingDiagnostics?: Omit<GroundingSummary, "verdict">;
   turnTrace?: TurnTraceEnvelope;
   activityTrace?: ActivityTrace;
   error?: { message: string; code?: string };

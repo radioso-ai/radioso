@@ -15,6 +15,15 @@ import {
   type SkillDispatchResult,
   type SkillExecutorPort,
 } from "../../src/modules/skills/public.js";
+import {
+  DEGRADED_V2_VISIBLE,
+  GROUNDED_V2_VISIBLE,
+  NO_SUPPORT_V2_BODY,
+  degradedV2Envelope,
+  formatV2Envelope,
+  groundedV2Envelope,
+  noSupportV2Envelope,
+} from "../support/answerEnvelopeV2Fixtures.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -129,6 +138,79 @@ const bindAlwaysDirectiveToAgentSkill = async (
 };
 
 describe("chat integration", () => {
+  it.each([
+    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, "grounded", 3],
+    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE, "grounded_degraded", 1],
+    ["no-support", noSupportV2Envelope, NO_SUPPORT_V2_BODY, "no_context", 0],
+  ] as const)("streams the v2 %s fixture through authenticated chat with one answer attempt", async (
+    _name,
+    buildRaw,
+    visibleAnswer,
+    expectedOutcome,
+    expectedCitationCount,
+  ) => {
+    const attemptKeys: string[] = [];
+    const raw = buildRaw();
+    const gateway: ChatGateway = {
+      async answer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
+        return raw;
+      },
+      async *streamAnswer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
+        for (let offset = 0; offset < raw.length; offset += 11) {
+          yield raw.slice(offset, offset + 11);
+        }
+      },
+    };
+    const { app } = createTestApp({
+      chatGateway: gateway,
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
+    const { token } = await issueTestToken(app, `answer-envelope-${_name}@example.com`);
+    for (const [title, content] of [
+      // Every document must share terms with the probe query ("advanced workshop") so
+      // the keyword-scoring test retriever selects all three contexts; the grounded
+      // fixture asserts sources [[1]]-[[3]] and an out-of-range index degrades.
+      ["Workshop dates", "The advanced workshop runs in June."],
+      ["Returning students", "Returning students can register online for the advanced workshop."],
+      ["Registration", "Advanced workshop online registration is available for returning students."],
+    ]) {
+      await request(app)
+        .post("/api/v1/document/")
+        .set("Authorization", `Bearer ${token}`)
+        .send({ title, content });
+    }
+
+    const response = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", `Bearer ${token}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        let body = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk) => { body += chunk; });
+        res.on("end", () => callback(null, body));
+      })
+      .send({ message: "Tell me about the advanced workshop.", stream: true, includeDebug: true });
+
+    expect(response.status).toBe(200);
+    const events = parseSseEvents(response.body);
+    const done = events.find((event) => event.event === "done")?.data;
+    expect(done?.answer).toBe(visibleAnswer);
+    expect(done?.skillOutcome).toBe(expectedOutcome);
+    expect(Array.isArray(done?.citations) ? done.citations : []).toHaveLength(expectedCitationCount);
+    expect(response.body).not.toContain("RADIOSO_FOLLOWUPS_JSON");
+    expect(response.body).not.toContain("[[");
+    expect(attemptKeys).toEqual(["stream_grounded"]);
+    expect(attemptKeys).not.toContain("stream_grounded_unsupported");
+    expect(attemptKeys).not.toContain("grounded_unsupported");
+  });
+
   it("hydrates agent-selectable directive-bound skills for non-streaming chat turns", async () => {
     let dispatched = false;
     const executor: SkillExecutorPort = {
@@ -1004,6 +1086,8 @@ describe("chat integration", () => {
   });
 
   it("turns fully unsupported grounded drafts into a conversational grounded miss", async () => {
+    const focusedDecline = "I don't have supporting material for that. Ask me about the guide instead.";
+    const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
       async answer() {
         return "It also offers 24/7 phone support and a discount code.";
@@ -1012,7 +1096,15 @@ describe("chat integration", () => {
         yield "It also offers 24/7 phone support and a discount code.";
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: unsupportedGateway });
+    const { app } = createTestApp({
+      chatGateway: unsupportedGateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          declineAttemptKeys.push(input.usageContext.attemptKey);
+          return focusedDecline;
+        },
+      },
+    });
 
     const { token, workspaceId } = await issueTestToken(app, "fully-unsupported@example.com");
     const authorization = `Bearer ${token}`;
@@ -1028,12 +1120,14 @@ describe("chat integration", () => {
       .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toEqual(expect.any(String));
-    expect(response.body.answer.length).toBeGreaterThan(0);
+    expect(response.body.answer).toBe(focusedDecline);
     expect(response.body.answer).not.toContain("discount code");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
   });
 
   it("uses exploratory recovery without leaking unsupported claims", async () => {
+    const focusedDecline = "I couldn't support that from these documents. Ask about testing or parser validation.";
+    const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
       async answer() {
         return "It also offers 24/7 phone support and a discount code.";
@@ -1042,7 +1136,15 @@ describe("chat integration", () => {
         yield "It also offers 24/7 phone support and a discount code.";
       },
     };
-    const { app, dependencies } = createTestApp({ chatGateway: unsupportedGateway });
+    const { app, dependencies } = createTestApp({
+      chatGateway: unsupportedGateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          declineAttemptKeys.push(input.usageContext.attemptKey);
+          return focusedDecline;
+        },
+      },
+    });
 
     const { token, workspaceId } = await issueTestToken(app, "unsupported-exploratory@example.com");
     const authorization = `Bearer ${token}`;
@@ -1071,11 +1173,11 @@ describe("chat integration", () => {
       .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toEqual(expect.any(String));
-    expect(response.body.answer.length).toBeGreaterThan(0);
+    expect(response.body.answer).toBe(focusedDecline);
     expect(response.body.answer).not.toContain("\n- ");
     expect(response.body.answer).not.toContain("discount code");
     expect(response.body.answer).not.toContain("24/7 phone support");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
   });
 
   it("keeps conversations account scoped", async () => {
@@ -1296,7 +1398,14 @@ describe("chat integration", () => {
   it("records grounded answers in assistant-turn audit metadata without validation diagnostics", async () => {
     const mixedGateway: ChatGateway = {
       async answer() {
-        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+        const answer = "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[1]].";
+        return formatV2Envelope(answer, {
+          v: 2,
+          outcome: "answer",
+          claims: [[1], [1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
@@ -1826,7 +1935,13 @@ describe("chat integration", () => {
   it("keeps mixed social-plus-substantive turns on the retrieval path", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
-        return "The next retreat is the Spring Retreat.";
+        return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
+          v: 2,
+          outcome: "answer",
+          claims: [[1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "unused";
@@ -1895,7 +2010,13 @@ describe("chat integration", () => {
   it("fails safely to retrieval when a non-retrieval intent is low confidence", async () => {
     const deterministicGateway: ChatGateway = {
       async answer() {
-        return "The next retreat is the Spring Retreat.";
+        return formatV2Envelope("The next retreat is the Spring Retreat[[1]].", {
+          v: 2,
+          outcome: "answer",
+          claims: [[1]],
+          suggestions: [],
+          grounding: "degraded",
+        });
       },
       async *streamAnswer() {
         yield "unused";

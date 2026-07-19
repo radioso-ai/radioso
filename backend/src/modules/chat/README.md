@@ -44,8 +44,8 @@ imports from `services/`.
 ## Common Change Paths
 
 - Streaming: `services/chatService.ts`, `contracts/streamEvents.ts`, frontend
-  chat stream adapters. Each terminal skill's `streamRender` owns its full
-  post-stream reconcile (grounded-miss safety net included) and returns a
+  chat stream adapters. Each terminal skill's `streamRender` owns final
+  presentation of its single generation and returns a
   `TurnStreamResult` (`turnOutcome.ts`) carrying the final presentation plus how
   the host should source question suggestions. The conversation engine is the only
   turn path (`ChatService` requires it), so `processTurnStream` drives terminal
@@ -53,13 +53,27 @@ imports from `services/`.
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
   reusable engine.
+- Grounded retrieval answers: `groundedAnswerEnvelope.ts` frames the v1/v2
+  terminal envelope, `groundingAssertions.ts` structurally computes
+  `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
+  semantic answer generation on compliant paths. A valid in-range `[[n]]`
+  assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
+  stays held until the computed final presentation is available. When retrieved contexts exist, an
+  answer or malformed result with no valid sourced assertion suppresses the draft
+  and invokes the focused, locale-aware grounded-miss composer with typed
+  `no_context`; its static asset is only the composer's last resort for provider or
+  blank-output failure. Partial answers with at least one valid assertion remain
+  visible and degraded. Raw envelope JSON is never emitted or persisted.
+- Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
+  `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
+  only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
+  records aggregate rollout diagnostics and never attaches citation artifacts or
+  changes verdicts and suggestions.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or
   the first assistant chunk. The default registry is process-local; strict
   multi-instance behavior requires conversation-affine routing.
-- Citations: `citation*`, `implicitCitationSupport.ts`,
-  `chatAnswerPresenter.ts`.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,

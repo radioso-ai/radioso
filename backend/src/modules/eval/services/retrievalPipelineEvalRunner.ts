@@ -2,9 +2,14 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { ChatGateway } from "../../chat/contracts/index.js";
 import type {
   CitationEvidence,
-  NormalizedPresentedAnswer,
   PresentedAnswer,
 } from "../../chat/contracts/answerTypes.js";
+import {
+  composeGroundedAnswerSystemPrompt,
+  computeGroundingSummary,
+  BlankChatAnswerError,
+  parseGroundedAnswerEnvelope,
+} from "../../chat/retrievalSupport.js";
 import {
   resolveContextSourceUrl,
   type FinalPromptContext,
@@ -25,13 +30,7 @@ import type { EvalReplayContext, EvalRetrievalRunnerPort } from "./evalRunner.js
 const UNKNOWN_MODEL = { provider: "unknown", model: "unknown" } as const;
 
 export interface EvalAnswerPresentationPort {
-  normalize(input: { answer: string; citations: CitationEvidence[] }): NormalizedPresentedAnswer;
   present(input: { answer: string; citations: CitationEvidence[] }): PresentedAnswer;
-  resolveCitationArtifacts(
-    presented: PresentedAnswer,
-    normalized: NormalizedPresentedAnswer,
-    citationEvidence: CitationEvidence[],
-  ): Pick<PresentedAnswer, "citations" | "answerSegments">;
 }
 
 const toCitationEvidence = (contexts: FinalPromptContext[]): CitationEvidence[] =>
@@ -156,6 +155,20 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       }),
     );
 
+    const composedSystemPrompt = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: pipelineResult.systemPrompt,
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: pipelineResult.contexts.length > 0,
+      conversationIntentSnapshot: {
+        recentTurns: input.history
+          .filter((message) => message.role !== "system")
+          .slice(-6)
+          .map((message) => ({ role: message.role, content: message.content })),
+        activeSubject: input.query,
+        activeGoal: input.query,
+      },
+    }).systemPrompt;
     let generated = "";
     let callError: unknown = null;
     try {
@@ -163,7 +176,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         query: input.query,
         history: input.history,
         prompt: pipelineResult.prompt,
-        systemPrompt: pipelineResult.systemPrompt,
+        systemPrompt: composedSystemPrompt,
         workspaceContext: {
           workspaceId: input.workspaceId,
           capabilityOverride: input.modelOverride ?? null,
@@ -185,16 +198,20 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       throw callError;
     }
 
+    const envelope = parseGroundedAnswerEnvelope(generated);
+    if (!envelope.answer.trim()) {
+      throw new BlankChatAnswerError();
+    }
     const citationEvidence = toCitationEvidence(pipelineResult.contexts);
-    const normalized = this.answerPresentation.normalize({
-      answer: generated,
-      citations: citationEvidence,
-    });
     const presented = this.answerPresentation.present({
-      answer: generated,
+      answer: envelope.answer,
       citations: citationEvidence,
     });
-    const citationArtifacts = this.answerPresentation.resolveCitationArtifacts(presented, normalized, citationEvidence);
+    const groundingSummary = computeGroundingSummary({
+      body: envelope.answer,
+      envelope,
+      contextCount: pipelineResult.contexts.length,
+    });
 
     return {
       chunks: pipelineResult.contexts.map((ctx, index) => ({
@@ -206,9 +223,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         metadata: ctx.metadata,
       })),
       answer: presented.answer,
-      citations: citationArtifacts.citations,
-      answerSegments: citationArtifacts.answerSegments,
-      composedInstructions: pipelineResult.systemPrompt,
+      citations: presented.citations,
+      answerSegments: presented.answerSegments,
+      groundingSummary,
+      composedInstructions: composedSystemPrompt,
       resolvedSettings: await this.resolveSettingsSnapshot(
         input.workspaceId,
         input.context?.agent?.skillSettings,

@@ -64,6 +64,20 @@ const caseStatusFromRun = (runStatus: EvalRun["status"]): EvalCaseStatus | null 
   }
 };
 
+const toObservedGrounding = (
+  summary: EvalRunObservedOutput["groundingSummary"],
+): Pick<EvalRunObservedOutput, "groundingSummary" | "groundingVerdict" | "groundingDiagnostics"> | Record<string, never> => {
+  if (!summary) {
+    return {};
+  }
+  const { verdict, ...groundingDiagnostics } = summary;
+  return {
+    groundingSummary: summary,
+    groundingVerdict: verdict,
+    groundingDiagnostics,
+  };
+};
+
 const resolveSnapshotReplayAgent = (snapshot: EvalSnapshot) => {
   if (snapshot.originalAgentConfig) {
     if (!snapshot.sourceAgentId) {
@@ -180,6 +194,7 @@ export class EvalRunService {
           answer: result.answer,
           citations: result.citations,
           answerSegments: result.answerSegments,
+          ...toObservedGrounding(result.groundingSummary),
           activityTrace: result.activityTrace,
         };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
@@ -342,6 +357,7 @@ export class EvalRunService {
         answer: result.answer,
         citations: result.citations,
         answerSegments: result.answerSegments,
+        ...toObservedGrounding(result.groundingSummary),
         turnTrace: result.turnTrace,
       };
       resolvedConfig.composedInstructions = result.resolvedConfig.composedInstructions;

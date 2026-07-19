@@ -100,6 +100,37 @@ const extractAnswerSegments = (metadata: Record<string, unknown> | undefined): A
   return segments.length > 0 ? segments : undefined;
 };
 
+const extractGroundingSummary = (metadata: Record<string, unknown> | undefined): EvalSnapshotMessage["groundingSummary"] => {
+  const verdict = metadata?.groundingVerdict;
+  const protocolVersion = metadata?.groundingProtocolVersion;
+  const diagnostics = metadata?.groundingDiagnostics;
+  if (
+    (verdict !== "grounded" && verdict !== "degraded" && verdict !== "no_support")
+    || (protocolVersion !== 1 && protocolVersion !== 2 && protocolVersion !== null)
+    || !isRecord(diagnostics)
+  ) {
+    return undefined;
+  }
+  const parseStatus = diagnostics.parseStatus;
+  if (![
+    "valid_v2", "legacy_v1", "missing", "malformed", "invalid_v2",
+  ].includes(String(parseStatus))) {
+    return undefined;
+  }
+  const readCount = (key: string): number =>
+    typeof diagnostics[key] === "number" && Number.isInteger(diagnostics[key]) ? diagnostics[key] : 0;
+  return {
+    protocolVersion,
+    parseStatus: parseStatus as "valid_v2" | "legacy_v1" | "missing" | "malformed" | "invalid_v2",
+    verdict,
+    claimCount: readCount("claimCount"),
+    sourcedClaimCount: readCount("sourcedClaimCount"),
+    unsourcedClaimCount: readCount("unsourcedClaimCount"),
+    invalidSourceCount: readCount("invalidSourceCount"),
+    assertionMismatch: diagnostics.assertionMismatch === true,
+  };
+};
+
 const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => ({
   id: record.id,
   role: record.role,
@@ -108,6 +139,7 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => ({
   ...(record.role === "assistant" ? {
     citations: extractCitations(record.metadata),
     answerSegments: extractAnswerSegments(record.metadata),
+    groundingSummary: extractGroundingSummary(record.metadata),
   } : {}),
 });
 

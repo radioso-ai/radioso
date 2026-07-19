@@ -193,6 +193,17 @@ const answerSkill = (): TurnSkill => ({
       skillOutcome: outcome.outcome.status,
       skillStatus: outcome.outcome.status,
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Refund Policy" }],
+      grounding: "grounded",
+      groundingSummary: {
+        protocolVersion: 2,
+        parseStatus: "valid_v2",
+        verdict: "grounded",
+        claimCount: 1,
+        sourcedClaimCount: 1,
+        unsourcedClaimCount: 0,
+        invalidSourceCount: 0,
+        assertionMismatch: false,
+      },
     }),
   },
 });
@@ -230,6 +241,7 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(result.answer).toBe("Answered with Replay override.");
     expect(result.citations).toEqual([{ documentId: "doc-1", chunkId: "chunk-1", title: "Refund Policy" }]);
+    expect(result.groundingSummary).toMatchObject({ verdict: "grounded", parseStatus: "valid_v2" });
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toEqual([
       "message",
       "gather",

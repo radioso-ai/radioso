@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { ChatGatewayLlmJudge } from "../../src/modules/eval/services/evalJudge.js";
 import { RetrievalPipelineEvalRunner } from "../../src/modules/eval/services/retrievalPipelineEvalRunner.js";
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
-import { resolveCitationArtifacts } from "../../src/modules/chat/services/implicitCitationSupport.js";
 import { createRetrievalSkillSettingsResolver } from "../../src/app/composition/skillSettingsResolver.js";
 import type { LlmCapabilityResolver } from "../../src/shared/infra/llm/capabilityResolver.js";
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
@@ -12,6 +11,7 @@ import type { AgentSnapshot } from "../../src/modules/agents/public.js";
 import type { RetrievalDefaultsProvider, RetrievalPipelineRequest } from "../../src/modules/retrieval/public.js";
 import type { RetrievalSettingsRecord } from "../../src/modules/settings/contracts/retrieval.js";
 import { defaultRetrievalSettings } from "../../src/modules/settings/contracts/retrieval.js";
+import { formatV2Envelope } from "../support/answerEnvelopeV2Fixtures.js";
 
 const fixedPipelineResult = {
   rewrittenQuery: "q",
@@ -92,9 +92,7 @@ const buildDefaultsProvider = (): RetrievalDefaultsProvider => ({
 const buildAnswerPresentation = () => {
   const answerPresentationService = new AnswerPresentationService();
   return {
-    normalize: answerPresentationService.normalize.bind(answerPresentationService),
     present: answerPresentationService.present.bind(answerPresentationService),
-    resolveCitationArtifacts,
   };
 };
 
@@ -268,7 +266,13 @@ describe("eval LLM-call usage recording end-to-end", () => {
       ...fixedPipelineResult,
       contexts: [context],
     };
-    const chat = buildChatGateway("Refunds are available within 30 days[[1]].");
+    const chat = buildChatGateway(formatV2Envelope("Refunds are available within 30 days[[1]].", {
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+    }));
     const runner = new RetrievalPipelineEvalRunner(
       {
         async run() { return pipelineResult as never; },
@@ -302,6 +306,9 @@ describe("eval LLM-call usage recording end-to-end", () => {
       { text: "Refunds are available within 30 days", citationIndices: [0] },
       { text: "." },
     ]);
+    expect(result.groundingSummary).toMatchObject({ verdict: "grounded", parseStatus: "valid_v2" });
+    expect(chat.calls[0]!.systemPrompt).toContain("<<<RADIOSO_FOLLOWUPS_JSON>>>");
+    expect(chat.calls[0]!.systemPrompt).not.toContain("Suggestion quality");
   });
 
   it("propagates chat gateway failures after passing eval usage context", async () => {
@@ -331,6 +338,23 @@ describe("eval LLM-call usage recording end-to-end", () => {
     ).rejects.toThrow(/rate limited/);
 
     expect(calls[0]!.usageContext.operation).toBe("full_assistant");
+  });
+
+  it("treats a blank generated envelope body as a generation failure", async () => {
+    const runner = new RetrievalPipelineEvalRunner(
+      buildPipeline() as never,
+      buildChatGateway("   ").gateway,
+      buildResolver(),
+      buildDefaultsProvider(),
+      buildAnswerPresentation(),
+    );
+
+    await expect(runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-blank",
+      query: "anything",
+      history: [],
+    })).rejects.toMatchObject({ name: "BlankChatAnswerError" });
   });
 
   it("threads eval usage context through the llm_judge gateway call", async () => {

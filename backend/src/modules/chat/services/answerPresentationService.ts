@@ -194,7 +194,10 @@ export class AnswerPresentationService {
         trailingWhitespace = "";
       }
 
-      if (citationIndices.length > 0 && coreText.length > 0) {
+      if (anchorGroup.explicitlyUnsourced && coreText.length > 0) {
+        pushSegment(coreText);
+        currentText = trailingWhitespace;
+      } else if (citationIndices.length > 0 && coreText.length > 0) {
         pushSegment(coreText, citationIndices);
         currentText = trailingWhitespace;
       } else {

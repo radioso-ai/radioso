@@ -372,12 +372,13 @@ module.exports = {
       name: "no-chat-retrieval-support-outside-retrieval-answering",
       severity: "error",
       comment:
-        "The chat retrieval-support entrypoint is only for retrieval answer assembly.",
+        "The chat retrieval-support entrypoint is only for retrieval answer assembly and its eval replay, which must reuse the same envelope parser/composer instead of maintaining an eval-only copy.",
       from: {
         path: "^src/",
         pathNot: [
           "^src/modules/chat/",
           "^src/modules/retrieval/services/retrievalAnswerService\\.ts$",
+          "^src/modules/eval/services/retrievalPipelineEvalRunner\\.ts$",
         ],
       },
       to: {

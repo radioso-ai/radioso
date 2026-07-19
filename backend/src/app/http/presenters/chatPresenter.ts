@@ -26,6 +26,7 @@ type ChatPayload = {
   assistantMessageId?: string;
   route: ChatRoute;
   answer: string;
+  skillOutcome?: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
@@ -137,6 +138,7 @@ export const sendChatSse = (
       assistantMessageId: event.assistantMessageId,
       route: event.route,
       answer: event.answer,
+      skillOutcome: event.skillOutcome,
       citations: event.citations,
       answerSegments: event.answerSegments,
       suggestions: event.suggestions,

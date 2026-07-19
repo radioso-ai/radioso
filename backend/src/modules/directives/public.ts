@@ -26,9 +26,21 @@ export {
   DirectiveSteeringService,
   noopDirectiveSteering,
   type DirectiveSteerInput,
+  type DirectiveSteeringLogger,
   type DirectiveSteeringPort,
   type DirectiveSteeringResult,
 } from "./directiveSteeringService.js";
+export {
+  boundSteeringMatches,
+  type SteeringBoundConfig,
+  type SteeringBoundDrop,
+  type SteeringBoundReason,
+} from "./steeringBound.js";
+export {
+  DEFAULT_DIRECTIVE_PRIORITY,
+  directiveMatchConfidence,
+  directiveMatchPriority,
+} from "./directiveMatchRanking.js";
 export {
   builtInAnswerDirectiveViews,
   conciseReadableFormattingDirective,

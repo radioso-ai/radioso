@@ -1,5 +1,7 @@
 import type { DirectiveMatch } from "@radioso/conversation-contract";
 
+import { directiveMatchConfidence, directiveMatchPriority } from "../../directives/public.js";
+
 export type DirectiveBindingSkipReason =
   | "skill_not_registered"
   | "skill_not_enabled"
@@ -36,20 +38,16 @@ export interface ResolveDirectiveBindingInput {
   agentSkillStates?: ReadonlyMap<string, DirectiveBindingSkillState>;
 }
 
-const DEFAULT_DIRECTIVE_PRIORITY = 50;
-
-const rankConfidence = (match: DirectiveMatch): number =>
-  match.selectionMode === "deterministic" ? 1 : match.selectionConfidence ?? 0;
-
-const rankPriority = (match: DirectiveMatch): number =>
-  match.directive.priority ?? DEFAULT_DIRECTIVE_PRIORITY;
-
+// Binding picks a single turn-claiming winner: authored priority dominates, matcher
+// confidence breaks priority ties, then name for a stable order. (The steering bound
+// blends the same primitives multiplicatively instead — different policy, shared
+// primitives; see directiveMatchRanking.)
 const compareBoundMatches = (left: DirectiveMatch, right: DirectiveMatch): number => {
-  const priority = rankPriority(right) - rankPriority(left);
+  const priority = directiveMatchPriority(right) - directiveMatchPriority(left);
   if (priority !== 0) {
     return priority;
   }
-  const confidence = rankConfidence(right) - rankConfidence(left);
+  const confidence = directiveMatchConfidence(right) - directiveMatchConfidence(left);
   if (confidence !== 0) {
     return confidence;
   }

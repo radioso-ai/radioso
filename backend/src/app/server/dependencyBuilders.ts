@@ -1184,6 +1184,7 @@ export const buildChatServices = (input: {
     registrations: input.composition.directiveRegistrations,
     matcher: input.composition.directiveMatcher,
     directiveMatchGatewayFactory,
+    logger: input.logger,
   });
   // Async conversation actions (spec 070). A routine action step enqueues an intent to
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a

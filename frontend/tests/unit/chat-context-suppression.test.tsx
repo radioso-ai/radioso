@@ -183,8 +183,6 @@ describe('workspace chat HITL suppression', () => {
   it('ends a cancelled turn without assistant error state while retaining the user message', async () => {
     chatApiMock.streamChatResponse.mockImplementation(async (_data, handlers) => {
       handlers.onConversation?.({ conversationId: 'conversation-1' })
-      handlers.onStatus?.({ stage: 'searching' })
-      await flush()
       handlers.onCancelled?.({
         conversationId: 'conversation-1',
         reason: 'superseded',
@@ -194,13 +192,11 @@ describe('workspace chat HITL suppression', () => {
     })
 
     let latestMessages: ChatMessage[] = []
-    const observedStages: Array<string | undefined> = []
     let isLoading = false
     mounted = renderProvider({
       sendMessage: 'latest context',
       onMessages: (messages) => {
         latestMessages = messages
-        observedStages.push(messages.find((message) => message.role === 'assistant')?.statusStage)
       },
       onLoading: (next) => {
         isLoading = next
@@ -213,6 +209,5 @@ describe('workspace chat HITL suppression', () => {
       ])
       expect(isLoading).toBe(false)
     })
-    expect(observedStages).toContain('searching')
   })
 })

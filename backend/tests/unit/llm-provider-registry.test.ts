@@ -6,6 +6,7 @@ import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "../../src/sha
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
 import {
   LlmProviderRegistry,
@@ -288,7 +289,10 @@ describe("OpenAISemanticRerankGateway", () => {
         responses: {
           async create(input: Record<string, unknown>) {
             request = input;
-            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }) };
+            return {
+              output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }),
+              usage: { input_tokens: 11, output_tokens: 4, total_tokens: 15 },
+            };
           },
         },
       },
@@ -308,17 +312,28 @@ describe("OpenAISemanticRerankGateway", () => {
         responses: {
           async create(input: Record<string, unknown>) {
             request = input;
-            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }) };
+            return {
+              output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.91 }] }),
+              usage: { input_tokens: 11, output_tokens: 4, total_tokens: 15 },
+            };
           },
         },
       },
       "gpt-4.1-mini",
     );
 
-    await gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext });
+    const { calls } = await captureModelCallTrace(() =>
+      gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext }));
 
     expect(request).toMatchObject({ model: "gpt-4.1-mini", temperature: 0.2 });
     expect(request).not.toHaveProperty("reasoning");
+    expect(calls).toEqual([expect.objectContaining({
+      operation: "rerank",
+      model: "gpt-4.1-mini",
+      inputTokens: 11,
+      outputTokens: 4,
+      totalTokens: 15,
+    })]);
   });
 
   it("retries without reasoning and reranks when the model rejects the effort", async () => {
@@ -335,14 +350,18 @@ describe("OpenAISemanticRerankGateway", () => {
                 param: "reasoning.effort",
               });
             }
-            return { output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.93 }] }) };
+            return {
+              output_text: JSON.stringify({ scores: [{ candidateIndex: 1, relevanceScore: 0.93 }] }),
+              usage: { input_tokens: 12, output_tokens: 5, total_tokens: 17 },
+            };
           },
         },
       },
       "gpt-5.4-nano-rerank-test",
     );
 
-    const result = await gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext });
+    const { result, calls } = await captureModelCallTrace(() =>
+      gateway.rerank({ query: "retreats", today: "2026-01-01", contexts: [context], usageContext }));
 
     // First attempt sends reasoning; on rejection it retries without it and still
     // reranks (rather than throwing through to the similarity fallback).
@@ -350,6 +369,17 @@ describe("OpenAISemanticRerankGateway", () => {
     expect(requests[0]).toHaveProperty("reasoning");
     expect(requests[1]).not.toHaveProperty("reasoning");
     expect(result).toEqual([{ chunkId: "chunk-1", relevanceScore: 0.93 }]);
+    expect(calls).toHaveLength(2);
+    expect(calls).toEqual([
+      expect.objectContaining({ operation: "rerank", model: "gpt-5.4-nano-rerank-test" }),
+      expect.objectContaining({
+        operation: "rerank",
+        model: "gpt-5.4-nano-rerank-test",
+        inputTokens: 12,
+        outputTokens: 5,
+        totalTokens: 17,
+      }),
+    ]);
   });
 });
 

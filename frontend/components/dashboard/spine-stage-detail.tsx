@@ -1,7 +1,7 @@
 'use client'
 
 import type { ConversationTraceStage } from '@/lib/api'
-import { spineStageLabel, type CapabilityLeafView } from '@/lib/turn-trace'
+import { spineStageLabel, spineStageTelemetry, type CapabilityLeafView } from '@/lib/turn-trace'
 
 /**
  * Minimal shape the detail renderers need from a conversation message record
@@ -55,13 +55,82 @@ const asStringArray = (value: unknown): string[] =>
   asArray(value).filter((entry): entry is string => typeof entry === 'string')
 
 function StageHeader({ stage }: { stage: ConversationTraceStage }) {
+  const telemetry = spineStageTelemetry(stage)
+  const hasTelemetry =
+    telemetry.durationMs !== undefined ||
+    telemetry.models.length > 0 ||
+    telemetry.operations.length > 0 ||
+    telemetry.llmCallCount !== undefined
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <p className="text-base font-medium text-foreground">{spineStageLabel(stage)}</p>
-      <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[stage.status]}`}>
-        {STATUS_LABELS[stage.status]}
-      </span>
-      <code className="text-[11px] text-muted-foreground">{stage.id}</code>
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-base font-medium text-foreground">{spineStageLabel(stage)}</p>
+        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_TONE[stage.status]}`}>
+          {STATUS_LABELS[stage.status]}
+        </span>
+        <code className="text-[11px] text-muted-foreground">{stage.id}</code>
+      </div>
+      {hasTelemetry ? (
+        <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+          <dl className="flex flex-wrap gap-x-4 gap-y-1">
+            {telemetry.durationMs !== undefined ? (
+              <div>
+                <dt className="inline text-muted-foreground">Duration </dt>
+                <dd className="inline font-mono text-foreground">{telemetry.durationMs}ms</dd>
+              </div>
+            ) : null}
+            {telemetry.models.length > 0 ? (
+              <div>
+                <dt className="inline text-muted-foreground">Model </dt>
+                <dd className="inline font-mono text-foreground">{telemetry.models.join(', ')}</dd>
+              </div>
+            ) : null}
+            {telemetry.operations.length > 0 ? (
+              <div>
+                <dt className="inline text-muted-foreground">Operation </dt>
+                <dd className="inline font-mono text-foreground">{telemetry.operations.join(', ')}</dd>
+              </div>
+            ) : null}
+            {telemetry.llmCallCount !== undefined ? (
+              <div>
+                <dt className="inline text-muted-foreground">LLM calls </dt>
+                <dd className="inline font-mono text-foreground">{telemetry.llmCallCount}</dd>
+              </div>
+            ) : null}
+            {telemetry.inputTokens !== undefined || telemetry.outputTokens !== undefined ? (
+              <div>
+                <dt className="inline text-muted-foreground">Tokens </dt>
+                <dd className="inline font-mono text-foreground">
+                  {telemetry.inputTokens ?? 0} in / {telemetry.outputTokens ?? 0} out
+                  {telemetry.totalTokens !== undefined ? ` / ${telemetry.totalTokens} total` : ''}
+                </dd>
+              </div>
+            ) : null}
+            {telemetry.modelTimeMs !== undefined ? (
+              <div>
+                <dt className="inline text-muted-foreground">Model time </dt>
+                <dd className="inline font-mono text-foreground">{telemetry.modelTimeMs}ms</dd>
+              </div>
+            ) : null}
+          </dl>
+          {telemetry.calls.length > 0 ? (
+            <ol className="space-y-1 border-t border-border/60 pt-2">
+              {telemetry.calls.map((call, index) => (
+                <li key={`${call.operation}-${index}`} className="flex flex-wrap gap-x-3 gap-y-0.5">
+                  <span className="font-mono text-foreground">{call.operation}</span>
+                  <span className="font-mono text-muted-foreground">{call.model}</span>
+                  {call.stageId ? <span className="font-mono text-muted-foreground">{call.stageId}</span> : null}
+                  {call.durationMs !== undefined ? <span>{call.durationMs}ms</span> : null}
+                  {call.inputTokens !== undefined || call.outputTokens !== undefined ? (
+                    <span>{call.inputTokens ?? 0} in / {call.outputTokens ?? 0} out</span>
+                  ) : null}
+                  {call.status ? <span className="text-muted-foreground">{call.status}</span> : null}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

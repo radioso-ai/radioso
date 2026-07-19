@@ -236,7 +236,13 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     },
   });
 
-  for await (const event of input.engine.processTurnStream(processTurnInput)) {
+  const engineEvents = input.engine.processTurnStream(processTurnInput)[Symbol.asyncIterator]();
+  while (true) {
+    const step = await engineEvents.next();
+    if (step.done) {
+      break;
+    }
+    const event = step.value;
     if (event.type === "delta") {
       yield { type: "chunk", text: event.text };
       continue;
@@ -245,12 +251,13 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     if (!streamResult) {
       throw new Error("conversation_engine_stream_missing_chat_result");
     }
+    const result = event.result;
     yield {
       type: "final",
       presentation: streamResult.finalPresentation,
       suggestions: streamResult.suggestions,
-      result: event.result,
-      engineTrace: event.result.trace,
+      result,
+      engineTrace: result.trace,
     };
   }
 };

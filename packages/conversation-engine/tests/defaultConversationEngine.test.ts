@@ -85,6 +85,40 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
 };
 
 describe("DefaultConversationEngine", () => {
+  it("records wall-clock boundaries for every real stage in the normal turn spine", async () => {
+    const now = vi.spyOn(Date, "now");
+    let current = Date.parse("2026-07-18T10:00:00.000Z");
+    now.mockImplementation(() => {
+      current += 10;
+      return current;
+    });
+    const input = createInput({
+      turnInterpreter: {
+        interpret: vi.fn(async () => ({ route: "retrieval" })),
+      },
+      retrievalWork: {
+        run: vi.fn(async () => ({ stagedContext: [] })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    for (const kind of [
+      "turn_interpretation",
+      "retrieval_fanout",
+      "directive_match",
+      "skill_selection",
+      "skill_dispatch",
+      "compose",
+    ]) {
+      const traceStage = result.trace.stages.find((candidate) => candidate.kind === kind);
+      expect(traceStage, `missing ${kind} stage`).toBeDefined();
+      expect(Date.parse(traceStage!.completedAt!) - Date.parse(traceStage!.startedAt!)).toBeGreaterThan(0);
+    }
+
+    now.mockRestore();
+  });
+
   it("runs a pure gather-select-dispatch-compose turn through contract ports", async () => {
     const input = createInput();
     const result = await new DefaultConversationEngine().processTurn(input);

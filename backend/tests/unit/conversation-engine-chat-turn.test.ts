@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ConversationEngine } from "@radioso/conversation-contract";
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
@@ -36,6 +36,13 @@ import type {
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import {
+  createModelCallTraceCollector,
+  runAsyncIterableWithModelCallTrace,
+  runWithModelCallTrace,
+} from "../../src/shared/observability/tracing/modelCallTraceContext.js";
+import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -248,6 +255,97 @@ const drivingEngine = (): { engine: ConversationEngine; dispatched: string[]; se
 };
 
 describe("runPreparedChatTurnWithConversationEngine", () => {
+  it("attaches answer model identity, latency, operation, and tokens to the compose stage", async () => {
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-answer" },
+      complete: vi.fn(async () => ({
+        text: "Composed answer.",
+        usage: { inputTokens: 30, outputTokens: 8, totalTokens: 38, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
+    const answerSkill: TurnSkill = {
+      definition: { name: "answer.direct", outcomeKinds: ["answer"] },
+      selects: () => true,
+      dispatch: () => ({
+        kind: "answer",
+        skillName: "answer.direct",
+        outcome: { status: "completed" },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+      }),
+      renderer: {
+        supports: () => true,
+        render: async (outcome) => ({
+          answer: (await inference.complete({
+            operation: {
+              workspaceId: "workspace_1",
+              surface: "assistant",
+              operation: "direct_answer",
+              attemptKey: "msg_1:answer",
+            },
+            prompt: "private prompt",
+          })).text,
+          skillName: outcome.skillName,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const base = drivingEngine().engine;
+    const engine: ConversationEngine = {
+      ...base,
+      async processTurn(input) {
+        const result = await base.processTurn(input);
+        const compose = result.trace.stages.find((stage) => stage.kind === "compose");
+        if (!compose) {
+          result.trace.stages.push({
+            id: "compose",
+            kind: "compose",
+            status: "applied",
+            startedAt: new Date(Date.now() - 1_000).toISOString(),
+            completedAt: new Date(Date.now() + 1_000).toISOString(),
+          });
+        }
+        return result;
+      },
+    };
+
+    const collector = createModelCallTraceCollector();
+    const { result } = await runWithModelCallTrace(collector, () =>
+      runPreparedChatTurnWithConversationEngine({
+        engine,
+        session: session(),
+        turnSkillSelector: new ChatTurnSkillSelector([answerSkill], new DefaultTurnSelectionStrategy()),
+        turnSkills: [answerSkill],
+        query: "Answer directly",
+      }));
+    const envelope = buildTurnTraceEnvelope({ spine: result.trace, modelCallTrace: collector });
+
+    expect(envelope.spine.stages.find((stage) => stage.kind === "compose")).toMatchObject({
+      inputs: { operation: "direct_answer", model: "gpt-answer" },
+      metrics: {
+        llmCallCount: 1,
+        inputTokens: 30,
+        outputTokens: 8,
+        totalTokens: 38,
+      },
+      outputs: {
+        modelCallIds: ["model_call_1"],
+      },
+    });
+    expect(envelope.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        id: "model_call_1",
+        operation: "direct_answer",
+        model: "gpt-answer",
+        inputTokens: 30,
+        outputTokens: 8,
+        stageId: "compose",
+      })]);
+  });
+
   it("lets the engine select and dispatch the registered retrieval skill, then renders it", async () => {
     // The retrieval skill is injected as skill-shaped input — the adapter names no
     // skill itself. The renderer stands in for the host's grounded composition.
@@ -450,6 +548,21 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
   });
 
   it("lets the engine drive streamed turn selection and emits any final unstreamed remainder", async () => {
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-stream" },
+      complete: vi.fn(),
+      stream: vi.fn(() => ({
+        textStream: (async function* () {
+          yield "Hello";
+        })(),
+        usage: Promise.resolve({
+          inputTokens: 6,
+          outputTokens: 2,
+          totalTokens: 8,
+          quality: "actual" as const,
+        }),
+      })),
+    });
     const streamingSkill: TurnSkill = {
       definition: { name: "booking.create", outcomeKinds: ["booking"] },
       selects: () => true,
@@ -471,7 +584,18 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
         }),
       },
       async *streamRender() {
-        yield "Hello";
+        const answer = await inference.stream({
+          operation: {
+            workspaceId: "workspace_1",
+            surface: "assistant",
+            operation: "direct_answer",
+            attemptKey: "private-answer-attempt",
+          },
+          prompt: "private prompt",
+        });
+        for await (const chunk of answer.textStream) {
+          yield chunk;
+        }
         return {
           finalPresentation: {
             answer: "Hello world.",
@@ -487,14 +611,16 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     };
     const engine = new DefaultConversationEngine();
     const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+    const collector = createModelCallTraceCollector();
 
-    for await (const event of runPreparedChatTurnStreamWithConversationEngine({
-      engine,
-      session: session(),
-      turnSkillSelector: new ChatTurnSkillSelector([streamingSkill], new DefaultTurnSelectionStrategy()),
-      turnSkills: [streamingSkill],
-      query: "Book me a slot",
-    })) {
+    for await (const event of runAsyncIterableWithModelCallTrace(collector, () =>
+      runPreparedChatTurnStreamWithConversationEngine({
+        engine,
+        session: session(),
+        turnSkillSelector: new ChatTurnSkillSelector([streamingSkill], new DefaultTurnSelectionStrategy()),
+        turnSkills: [streamingSkill],
+        query: "Book me a slot",
+      }))) {
       events.push(event);
     }
 
@@ -517,5 +643,18 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
         }),
       },
     ]);
+    const final = events.find((event) => event.type === "final");
+    if (!final || final.type !== "final") {
+      throw new Error("expected final event");
+    }
+    const envelope = buildTurnTraceEnvelope({ spine: final.engineTrace, modelCallTrace: collector });
+    expect(envelope.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(envelope.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        id: "model_call_1",
+        operation: "direct_answer",
+        model: "gpt-stream",
+        stageId: "compose",
+      })]);
   });
 });

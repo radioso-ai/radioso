@@ -48,6 +48,7 @@ import {
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
+import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -229,6 +230,7 @@ export interface BuildTurnTraceForPresentationInput {
   answerStartedAt: number;
   stream: boolean;
   engineTrace?: ConversationTrace;
+  modelCallTrace?: ModelCallTraceCollector;
 }
 
 export interface TurnTracePresentation {
@@ -291,11 +293,12 @@ export const buildTurnTraceForPresentation = (
   // present — but stay defensive: no spine means no envelope this turn.
   const turnTrace = input.engineTrace
     ? buildTurnTraceEnvelope({
-        spine: attachContextVariablesToGather(
-          attachRetrievalActivityTrace(input.engineTrace, activityTrace),
-          contextVariablesSnapshot,
-        ),
-      })
+      spine: attachContextVariablesToGather(
+        attachRetrievalActivityTrace(input.engineTrace, activityTrace),
+        contextVariablesSnapshot,
+      ),
+      modelCallTrace: input.modelCallTrace,
+    })
     : undefined;
 
   const assistantMessageId = randomUUID();
@@ -481,6 +484,8 @@ export class ChatTurnLifecycle {
      * retrieval-derived activity trace; it does not change the user-facing reply.
      */
     engineTrace?: ConversationTrace;
+    /** Turn-scoped model calls captured at the shared inference seam. */
+    modelCallTrace?: ModelCallTraceCollector;
     /** Fire-and-forget actions a routine emitted this turn; enqueued at completion. */
     actions?: RoutineActionRequest[];
     /**
@@ -507,6 +512,7 @@ export class ChatTurnLifecycle {
       answerStartedAt: input.answerStartedAt,
       stream: input.stream,
       engineTrace: input.engineTrace,
+      modelCallTrace: input.modelCallTrace,
     });
 
     let assistantMessage: MessageRecord;

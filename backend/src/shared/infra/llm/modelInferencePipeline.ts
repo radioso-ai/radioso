@@ -15,6 +15,7 @@ import type {
   TextGenerationResult,
   TextGenerationStreamResult,
 } from "./providerTypes.js";
+import { recordModelCallTrace } from "../../observability/tracing/modelCallTraceContext.js";
 
 export interface ModelInferenceRequest extends TextGenerationRequest {
   operation: ModelCallUsageContext;
@@ -131,19 +132,22 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
   }
 
   private async completeWithinTrace(input: ModelInferenceRequest): Promise<TextGenerationResult> {
+    const startedAtMs = Date.now();
     const request = stripOperation(input);
     this.enforceInputBudget(input, request);
     let result: TextGenerationResult;
     try {
       result = await this.delegate.complete(request);
     } catch (error) {
-      await this.recordUsage({
+      const completedAtMs = Date.now();
+      const usage = await this.recordUsage({
         operation: input.operation,
         request,
         outputText: "",
         status: "failed",
         error,
       });
+      this.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
       setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
@@ -151,7 +155,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     try {
       input.validateResult?.(result);
     } catch (error) {
-      await this.recordUsage({
+      const completedAtMs = Date.now();
+      const usage = await this.recordUsage({
         operation: input.operation,
         request,
         outputText: result.text,
@@ -159,22 +164,26 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
         providerUsage: result.usage,
         error,
       });
+      this.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
       setTraceAttributes({ "llm.provider.outcome": "failed" });
       throw error;
     }
 
-    await this.recordUsage({
+    const completedAtMs = Date.now();
+    const usage = await this.recordUsage({
       operation: input.operation,
       request,
       outputText: result.text,
       status: "succeeded",
       providerUsage: result.usage,
     });
+    this.recordTrace(input, startedAtMs, completedAtMs, "succeeded", usage);
     setTraceAttributes({ "llm.provider.outcome": "succeeded" });
     return result;
   }
 
   stream(input: ModelInferenceRequest): TextGenerationStreamResult {
+    const startedAtMs = Date.now();
     const request = stripOperation(input);
     this.enforceInputBudget(input, request);
     const result = this.delegate.stream(request);
@@ -195,16 +204,20 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           outputText += chunk;
           yield chunk;
         }
-        await pipeline.recordUsage({
+        const providerUsage = await readUsage();
+        const completedAtMs = Date.now();
+        const usage = await pipeline.recordUsage({
           operation: input.operation,
           request,
           outputText,
           status: "succeeded",
-          providerUsage: await readUsage(),
+          providerUsage,
         });
+        pipeline.recordTrace(input, startedAtMs, completedAtMs, "succeeded", usage);
         setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       } catch (error) {
-        await pipeline.recordUsage({
+        const completedAtMs = Date.now();
+        const usage = await pipeline.recordUsage({
           operation: input.operation,
           request,
           outputText,
@@ -212,6 +225,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
           providerUsage: await readUsage(),
           error,
         });
+        pipeline.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
         setTraceAttributes({ "llm.provider.outcome": "failed" });
         throw error;
       }
@@ -221,6 +235,28 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     return { textStream, usage: result.usage };
   }
 
+  private recordTrace(
+    input: ModelInferenceRequest,
+    startedAtMs: number,
+    completedAtMs: number,
+    status: UsageEventStatus,
+    usage: { inputTokens: number; outputTokens: number; totalTokens: number },
+  ): void {
+    recordModelCallTrace({
+      operation: input.operation.operation,
+      attemptKey: input.operation.attemptKey,
+      provider: this.delegate.metadata.provider,
+      model: this.delegate.metadata.model,
+      startedAt: new Date(startedAtMs).toISOString(),
+      completedAt: new Date(completedAtMs).toISOString(),
+      durationMs: Math.max(0, completedAtMs - startedAtMs),
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      totalTokens: usage.totalTokens,
+      status,
+    });
+  }
+
   private async recordUsage(input: {
     operation: ModelCallUsageContext;
     request: TextGenerationRequest;
@@ -228,7 +264,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     status: UsageEventStatus;
     providerUsage?: ProviderUsage;
     error?: unknown;
-  }): Promise<void> {
+  }): Promise<{ inputTokens: number; outputTokens: number; totalTokens: number }> {
     const inputBytes = Buffer.byteLength(`${input.request.systemPrompt ?? ""}\n${input.request.prompt}`, "utf8");
     const outputBytes = Buffer.byteLength(input.outputText, "utf8");
     const inputTokens = input.providerUsage?.inputTokens ?? estimateTokens(inputBytes);
@@ -236,6 +272,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     const provider = this.delegate.metadata.provider;
     const model = this.delegate.metadata.model;
 
+    const totalTokens = input.providerUsage?.totalTokens ?? inputTokens + outputTokens;
     await this.usageEventRecorder.recordModelCall({
       idempotencyKey: buildUsageIdempotencyKey(input.operation, provider, model, input.status),
       accountId: input.operation.accountId ?? null,
@@ -248,7 +285,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       model,
       inputTokens,
       outputTokens,
-      totalTokens: input.providerUsage?.totalTokens ?? inputTokens + outputTokens,
+      totalTokens,
       inputBytes,
       outputBytes,
       status: input.status,
@@ -258,6 +295,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
     }).catch(() => {
       // Usage accounting is observational; model results remain authoritative.
     });
+    return { inputTokens, outputTokens, totalTokens };
   }
 
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {

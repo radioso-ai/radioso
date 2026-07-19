@@ -35,6 +35,11 @@ import {
   RoutineSkillExecutorDispatcher,
   StaticRoutineSkillResolver,
 } from "../../src/modules/routines/skillDispatcher.js";
+import type { PendingDecisionRecord } from "../../src/db/repositories/pendingDecisionRepository.js";
+import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
+import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
+import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
 
 const assertionManifest = (answer: string): number[][] =>
   [...answer.matchAll(/(?:\[\[(?:\d+|\?)\]\])+/g)].flatMap((group) => {
@@ -80,6 +85,21 @@ const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
     return focusedGroundedMiss;
   },
+};
+
+const preEngineResponseLanguageDetector = (
+  inference: ModelInferencePipelineService,
+): NonNullable<ChatServiceOptions["responseLanguageDetector"]> => {
+  const detector = new LlmResponseLanguageDetector(inference);
+  return {
+    async detect(input) {
+      const result = await detector.detect(input);
+      // Model-call attribution uses millisecond timestamps. Let the completed
+      // pre-engine call fall strictly before the engine stages created next.
+      await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      return result;
+    },
+  };
 };
 
 const humanOwnedRecord = (conversationId: string): ConversationOwnershipRecord => {
@@ -129,6 +149,7 @@ const makeChatService = (
     actionOutbox?: ChatServiceOptions["actionOutbox"];
     suspendedRoutineReader?: ChatServiceOptions["suspendedRoutineReader"];
     assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
+    responseLanguageDetector?: ChatServiceOptions["responseLanguageDetector"];
   },
   turnRouter: ChatServiceOptions["turnRouter"] = {
     async classify(input) {
@@ -179,7 +200,7 @@ const makeChatService = (
     conversationOwnershipReader,
     handoffWaitingMessageGenerator,
     retrievalSenseDetector,
-    responseLanguageDetector,
+    responseLanguageDetector: responseLanguageDetector ?? routine?.responseLanguageDetector,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -1357,6 +1378,14 @@ describe("chat service streaming", () => {
         },
       }),
     };
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "et" }),
+        usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
     const service = makeChatService(
       conversationRepository,
       messageRepository,
@@ -1381,7 +1410,11 @@ describe("chat service streaming", () => {
       undefined,
       undefined,
       createConversationEngine(),
-      { routineStore, routineProvider },
+      {
+        routineStore,
+        routineProvider,
+        responseLanguageDetector: preEngineResponseLanguageDetector(inference),
+      },
     );
 
     const response = await service.answer({
@@ -1391,6 +1424,13 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("What is your email?");
+    expect(response.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(response.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        operation: "response_language_detection",
+        model: "gpt-language",
+        stageId: "pre_engine",
+      })]);
     // The routine claimed the turn before grounding — retrieval was never attempted.
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
@@ -1494,6 +1534,106 @@ describe("chat service streaming", () => {
     await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
     await expect(latest).resolves.toMatchObject({ answer: "latest reply" });
     expect(executorDispatch).not.toHaveBeenCalled();
+  });
+
+  it("persists approval-resume model calls exactly once in the resumed turn envelope", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("workspace-1", { name: "Support" });
+    const conversation = await conversationRepository.create("workspace-1", agent.id);
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "Palun kinnita tagasimakse.",
+    });
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language-resume" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "et" }),
+        usage: { inputTokens: 7, outputTokens: 2, totalTokens: 9, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
+    const conversationEngine = createConversationEngine();
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
+      resumed: true,
+      response: { answer: "Tagasimakse on kinnitatud." },
+      nextState: null,
+    });
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: vi.fn(async () => ({
+        activator: { activate: vi.fn(async () => null) },
+        runner: {} as never,
+      })),
+    };
+    const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {
+      loadSuspended: vi.fn(async () => null),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined,
+      { resolve: vi.fn(async () => agent) },
+      undefined, undefined, undefined, undefined, undefined,
+      conversationEngine,
+      {
+        routineStore: undefined,
+        routineProvider,
+        suspendedRoutineReader,
+        assistantTurnPersistence,
+        responseLanguageDetector: new LlmResponseLanguageDetector(inference),
+      },
+    );
+    const now = new Date("2026-07-19T12:00:00.000Z");
+    const record: PendingDecisionRecord = {
+      id: "decision-1",
+      handle: "refund-approval",
+      conversationId: conversation.id,
+      sessionId: conversation.id,
+      workspaceId: "workspace-1",
+      agentId: agent.id,
+      routineId: "refund-flow",
+      stepId: "await-approval",
+      reason: "refund_review",
+      options: [{ id: "approve", label: "Approve" }],
+      deciderScope: {},
+      contentHash: "hash-1",
+      status: "resolved",
+      decision: { optionId: "approve" },
+      decidedBy: "account-1",
+      decidedAt: now,
+      deadline: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await service.resumeAwaitingDecisionTurn({
+      record,
+      optionId: "approve",
+      decidedBy: "account-1",
+      transaction: {} as never,
+    });
+
+    expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    const turnTrace = persisted.auditEvent.metadata?.turnTrace as {
+      summary?: { totalLlmCalls?: number; droppedCallCount?: number };
+      spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
+    };
+    expect(turnTrace.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(turnTrace.spine?.stages?.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        operation: "response_language_detection",
+        model: "gpt-language-resume",
+        stageId: "pre_engine",
+      })]);
   });
 
   it("skips routine activation when a suspended routine exists for the conversation", async () => {
@@ -2295,6 +2435,14 @@ describe("chat service streaming", () => {
         yield " answer.";
       },
     };
+    const inference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language-stream" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "en" }),
+        usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
     const service = makeChatService(
       conversationRepository,
       messageRepository,
@@ -2314,6 +2462,11 @@ describe("chat service streaming", () => {
       undefined,
       undefined,
       createConversationEngine(),
+      {
+        routineStore: undefined,
+        routineProvider: undefined,
+        responseLanguageDetector: preEngineResponseLanguageDetector(inference),
+      },
     );
 
     const events: ChatStreamEvent[] = [];
@@ -2332,13 +2485,123 @@ describe("chat service streaming", () => {
       (event) => event.eventType === "chat.answer" && event.eventStatus === "success",
     );
     const metadata = answerEvent?.metadata as {
-      turnTrace?: { spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> } };
+      turnTrace?: {
+        summary?: Record<string, unknown>;
+        spine?: { stages?: Array<{ kind: string; outputs?: Record<string, unknown> }> };
+      };
     };
     const engineTrace = metadata.turnTrace?.spine;
     expect(engineTrace).toBeDefined();
     expect(engineTrace?.stages?.find((stage) => stage.kind === "skill_selection")?.outputs?.selectedSkills)
       .toContain("direct.answer");
     expect(engineTrace?.stages?.some((stage) => stage.kind === "compose")).toBe(true);
+    expect(metadata.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1, droppedCallCount: 0 });
+    expect(engineTrace?.stages?.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({
+        operation: "response_language_detection",
+        model: "gpt-language-stream",
+        stageId: "pre_engine",
+      })]);
+  });
+
+  it("excludes inference-backed suggestion enrichment from streamed and non-streamed turn rollups", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const languageInference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-language-rollup" },
+      complete: vi.fn(async () => ({
+        text: JSON.stringify({ responseLanguage: "en" }),
+        usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6, quality: "actual" as const },
+      })),
+      stream: vi.fn(),
+    });
+    const suggestionComplete = vi.fn(async () => ({
+      text: "contact_human",
+      usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5, quality: "actual" as const },
+    }));
+    const suggestionInference = new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai", model: "gpt-suggestion-enrichment" },
+      complete: suggestionComplete,
+      stream: vi.fn(),
+    });
+    const suggestionProvider = {
+      name: "inference-backed-suggestion",
+      async evaluate(context: { workspaceId: string; conversationId: string }) {
+        await suggestionInference.complete({
+          operation: {
+            workspaceId: context.workspaceId,
+            conversationId: context.conversationId,
+            surface: "assistant",
+            operation: "suggestion_enrichment",
+            attemptKey: `${context.conversationId}:suggestion-enrichment`,
+          },
+          prompt: "Decide whether to offer a contact action.",
+        });
+        return {
+          text: "Contact a person",
+          kind: "contact_human",
+          action: { kind: "start_intent" as const, intent: { skillName: "contact.request" } },
+        };
+      },
+    };
+    const chatActionSuggestionService = new ChatActionSuggestionService(
+      new ChatActionSuggestionRegistry([suggestionProvider]),
+    );
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      {
+        async answer() {
+          return groundingEnvelope("The guide covers known topic details.[[1]]", "grounded");
+        },
+        async *streamAnswer() {
+          yield groundingEnvelope("The guide covers known topic details.[[1]]", "grounded");
+        },
+      },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined,
+      chatActionSuggestionService,
+      groundedSkillCapabilities,
+      undefined, undefined,
+      createConversationEngine(),
+      {
+        routineStore: undefined,
+        routineProvider: undefined,
+        responseLanguageDetector: new LlmResponseLanguageDetector(languageInference),
+      },
+    );
+
+    const nonStreamed = await service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "What does the guide cover?",
+      stream: false,
+    });
+    const streamedEvents: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: nonStreamed.conversationId,
+      query: "Can you explain it again?",
+      stream: true,
+    })) {
+      streamedEvents.push(event);
+    }
+    const streamed = streamedEvents.find(
+      (event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done",
+    );
+
+    expect(suggestionComplete).toHaveBeenCalledTimes(2);
+    expect(nonStreamed.suggestions).toContainEqual(expect.objectContaining({ kind: "contact_human" }));
+    expect(streamedEvents.some((event) => event.type === "suggestions")).toBe(true);
+    expect(nonStreamed.turnTrace?.summary?.totalLlmCalls).toBe(1);
+    expect(streamed?.turnTrace?.summary?.totalLlmCalls).toBe(1);
+    expect(nonStreamed.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({ operation: "response_language_detection" })]);
+    expect(streamed?.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toEqual([expect.objectContaining({ operation: "response_language_detection" })]);
   });
 
   it("persists the normalized assistant answer only after the stream completes", async () => {

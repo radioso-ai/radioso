@@ -14,6 +14,7 @@ import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { recordModelCallTrace } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { RetrievedCandidate, RerankedCandidate, RerankStatus } from "../domain/retrievalPipelineTypes.js";
 
 export interface RerankGatewayInput {
@@ -163,16 +164,44 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     const prompt = buildRerankPrompt({ query: input.query, candidates, today: input.today });
     const operation = input.usageContext ?? fallbackRerankOperation(input.workspaceContext?.workspaceId);
     const sampling = buildRerankResponsesSamplingParams(this.model);
-    const createRerank = (params: RerankSamplingParams) =>
-      this.client.responses.create({
-        model: this.model,
-        ...params,
-        max_output_tokens: maxOutputTokens,
-        input: prompt,
-        text: {
-          format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
-        },
-      });
+    const estimatedInputTokens = estimateTokens(Buffer.byteLength(prompt, "utf8"));
+    let providerAttempt = 0;
+    const createRerank = async (params: RerankSamplingParams) => {
+      const attemptIndex = providerAttempt;
+      providerAttempt += 1;
+      const startedAtMs = Date.now();
+      try {
+        const attemptResponse = await this.client.responses.create({
+          model: this.model,
+          ...params,
+          max_output_tokens: maxOutputTokens,
+          input: prompt,
+          text: {
+            format: OpenAISemanticRerankGateway.RESPONSE_FORMAT,
+          },
+        });
+        this.recordTraceAttempt({
+          operation,
+          attemptIndex,
+          startedAtMs,
+          completedAtMs: Date.now(),
+          status: "succeeded",
+          estimatedInputTokens,
+          providerUsage: attemptResponse.usage ?? undefined,
+        });
+        return attemptResponse;
+      } catch (error) {
+        this.recordTraceAttempt({
+          operation,
+          attemptIndex,
+          startedAtMs,
+          completedAtMs: Date.now(),
+          status: "failed",
+          estimatedInputTokens,
+        });
+        throw error;
+      }
+    };
     let response: Awaited<ReturnType<typeof this.client.responses.create>> | undefined;
     try {
       try {
@@ -221,6 +250,36 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     }
 
     return mapIndexedRerankScores(input.contexts, parseIndexedRerankScores(content || '{"scores":[]}'));
+  }
+
+  private recordTraceAttempt(input: {
+    operation: ModelCallUsageContext;
+    attemptIndex: number;
+    startedAtMs: number;
+    completedAtMs: number;
+    status: UsageEventStatus;
+    estimatedInputTokens: number;
+    providerUsage?: {
+      input_tokens?: number | null;
+      output_tokens?: number | null;
+      total_tokens?: number | null;
+    };
+  }): void {
+    const inputTokens = input.providerUsage?.input_tokens ?? input.estimatedInputTokens;
+    const outputTokens = input.providerUsage?.output_tokens ?? 0;
+    recordModelCallTrace({
+      operation: input.operation.operation,
+      attemptKey: `${input.operation.attemptKey}:openai-rerank:${input.attemptIndex}`,
+      provider: "openai",
+      model: this.model,
+      startedAt: new Date(input.startedAtMs).toISOString(),
+      completedAt: new Date(input.completedAtMs).toISOString(),
+      durationMs: Math.max(0, input.completedAtMs - input.startedAtMs),
+      inputTokens,
+      outputTokens,
+      totalTokens: input.providerUsage?.total_tokens ?? inputTokens + outputTokens,
+      status: input.status,
+    });
   }
 
   private async recordUsage(input: {

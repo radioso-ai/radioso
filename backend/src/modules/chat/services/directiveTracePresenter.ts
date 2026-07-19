@@ -13,7 +13,11 @@ export const appendDirectiveSteeringStage = (
   trace: ActivityTrace,
   steering: DirectiveSteeringResult | undefined,
 ): ActivityTrace => {
-  if (!steering || (steering.matches.length === 0 && steering.omissions.length === 0)) {
+  const bounded = steering?.bounded ?? [];
+  if (
+    !steering ||
+    (steering.matches.length === 0 && steering.omissions.length === 0 && bounded.length === 0)
+  ) {
     return trace;
   }
 
@@ -38,6 +42,10 @@ export const appendDirectiveSteeringStage = (
             selectionConfidence: match.selectionConfidence,
           })),
           omitted: steering.omissions,
+          // Matched but held back from the rendered steering block by the top-k
+          // cap or token budget — surfaced so builders see why a directive that
+          // matched still did not steer this turn.
+          bounded,
         },
       },
     ],

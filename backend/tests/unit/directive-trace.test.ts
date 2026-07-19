@@ -39,6 +39,36 @@ describe("appendDirectiveSteeringStage", () => {
       { name: "be-concise", selectionMode: "deterministic", selectionReason: "always", selectionConfidence: undefined },
     ]);
     expect(stage.outputs?.omitted).toEqual([{ directiveName: "gated", reason: "capability_denied" }]);
+    expect(stage.outputs?.bounded).toEqual([]);
     expect(traced.links).toContainEqual({ fromStageId: "answer", toStageId: "directive_steering", kind: "sequence" });
+  });
+
+  it("records directives held back by the steering bound so caps are never silent", () => {
+    const steering: DirectiveSteeringResult = {
+      rules: [],
+      matches: [
+        {
+          directive: { name: "rendered", condition: { kind: "always" }, action: "steer" },
+          selectionMode: "deterministic",
+          selectionReason: "always",
+        },
+      ],
+      omissions: [],
+      bounded: [{ directiveName: "dropped", reason: "token_budget" }],
+    };
+
+    const stage = appendDirectiveSteeringStage(baseTrace(), steering).stages.at(-1)!;
+    expect(stage.outputs?.bounded).toEqual([{ directiveName: "dropped", reason: "token_budget" }]);
+  });
+
+  it("emits a stage when only the steering bound dropped directives", () => {
+    const steering: DirectiveSteeringResult = {
+      rules: [],
+      matches: [],
+      omissions: [],
+      bounded: [{ directiveName: "dropped", reason: "top_k" }],
+    };
+    const traced = appendDirectiveSteeringStage(baseTrace(), steering);
+    expect(traced.stages.at(-1)?.stageId).toBe("directive_steering");
   });
 });

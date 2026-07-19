@@ -132,7 +132,77 @@ describe("DirectiveSteeringService", () => {
 
   it("returns empty steering for an empty standing set (behavior-preserving default)", async () => {
     const result = await build([]).steer({ workspaceId: "w1" });
-    expect(result).toEqual({ rules: [], matches: [], omissions: [] });
+    expect(result).toEqual({ rules: [], matches: [], omissions: [], bounded: [] });
+  });
+
+  it("bounds the rendered set to top-k while keeping the full matched set and logging the drop", async () => {
+    const debug: Array<{ payload: Record<string, unknown>; message: string }> = [];
+    const service = new DirectiveSteeringService({
+      registry: new DirectiveCatalogRegistry([
+        directive({ name: "high", action: "high", priority: 90 }),
+        directive({ name: "mid", action: "mid", priority: 50 }),
+        directive({ name: "low", action: "low", priority: 10 }),
+      ]),
+      matcher: new AlwaysMatchDirectiveMatcher(),
+      capabilityPolicy: new StubCapabilityPolicy(),
+      steeringBound: { maxRenderedDirectives: 2, renderedTokenBudget: 1_000_000 },
+      logger: { debug: (payload, message) => debug.push({ payload, message }) },
+    });
+
+    const result = await service.steer({ workspaceId: "w1" });
+
+    expect(result.rules.map((r) => r.action)).toEqual(["high", "mid"]);
+    // The full matched set is preserved for skill binding and the trace.
+    expect(result.matches).toHaveLength(3);
+    expect(result.bounded).toEqual([{ directiveName: "low", reason: "top_k" }]);
+    expect(debug).toHaveLength(1);
+    expect(debug[0]!.payload).toMatchObject({ event: "directive_steering_bounded", workspaceId: "w1" });
+  });
+
+  it("preserves registration order for equal-priority directives when nothing is dropped", async () => {
+    // Both default priority: the steering prompt gives earlier rules precedence,
+    // so an unbounded turn must render them in registration order, not re-ranked.
+    const service = build([
+      directive({ name: "z", action: "z" }),
+      directive({ name: "a", action: "a" }),
+    ]);
+    const result = await service.steer({ workspaceId: "w1" });
+    expect(result.rules.map((r) => r.action)).toEqual(["z", "a"]);
+    expect(result.bounded).toEqual([]);
+  });
+
+  it("does not render a dependent whose dependency was bounded out of the rendered set", async () => {
+    const service = new DirectiveSteeringService({
+      registry: new DirectiveCatalogRegistry([
+        directive({ name: "expert", action: "expert", priority: 10 }),
+        directive({ name: "detail", action: "detail", priority: 90, dependsOn: ["expert"] }),
+      ]),
+      matcher: new AlwaysMatchDirectiveMatcher(),
+      capabilityPolicy: new StubCapabilityPolicy(),
+      steeringBound: { maxRenderedDirectives: 1, renderedTokenBudget: 1_000_000 },
+    });
+
+    const result = await service.steer({ workspaceId: "w1" });
+    // `detail` outranks `expert`, but rendering it without its dependency would
+    // break the dependsOn invariant, so neither renders.
+    expect(result.rules).toEqual([]);
+    expect(result.bounded).toEqual([
+      { directiveName: "expert", reason: "top_k" },
+      { directiveName: "detail", reason: "unmet_dependency" },
+    ]);
+  });
+
+  it("does not log when nothing is bounded", async () => {
+    const debug: unknown[] = [];
+    const service = new DirectiveSteeringService({
+      registry: new DirectiveCatalogRegistry([directive({ name: "only", action: "only" })]),
+      matcher: new AlwaysMatchDirectiveMatcher(),
+      capabilityPolicy: new StubCapabilityPolicy(),
+      logger: { debug: () => debug.push(1) },
+    });
+    const result = await service.steer({ workspaceId: "w1" });
+    expect(result.bounded).toEqual([]);
+    expect(debug).toHaveLength(0);
   });
 });
 

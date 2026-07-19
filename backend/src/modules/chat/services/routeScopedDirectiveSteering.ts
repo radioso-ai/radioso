@@ -6,11 +6,13 @@ import {
   type Directive,
   DirectiveCatalogRegistry,
   type DirectiveMatch,
+  type DirectiveSteeringLogger,
   ProbabilisticDirectiveMatcher,
   type DirectiveMatcherPort,
   type DirectiveSteerInput,
   type DirectiveSteeringPort,
   type DirectiveSteeringResult,
+  type SteeringBoundConfig,
   noopDirectiveSteering,
 } from "../../directives/public.js";
 import { DIRECTIVES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
@@ -64,10 +66,14 @@ export const createRouteScopedDirectiveSteering = (input: {
    */
   matcher?: DirectiveMatcherPort;
   directiveMatchGatewayFactory?: DirectiveMatchGatewayFactory;
+  /** Bounds on the rendered steering set; composition-owned default when omitted. */
+  steeringBound?: SteeringBoundConfig;
+  logger?: DirectiveSteeringLogger;
 }): RouteScopedDirectiveRuntime => {
   const matcher = input.matcher ?? createDirectiveMatcher({});
   const servicesByKey = new Map<string, DirectiveSteeringService>();
   const defaultRoutesForDirective = input.defaultRoutesForDirective ?? defaultAnswerDirectiveRoutes;
+  const candidateWarningThreshold = DIRECTIVES_BEHAVIOR.steeringBound.matcherCandidateWarningThreshold;
 
   const serviceFor = (steerInput: DirectiveSteerInput): DirectiveSteeringService => {
     const route = routeFromInput(steerInput);
@@ -78,16 +84,35 @@ export const createRouteScopedDirectiveSteering = (input: {
         capabilityPolicy: input.capabilityPolicy,
         registry: new DirectiveCatalogRegistry(directivesForRoute(input.registrations, route, defaultRoutesForDirective)),
         matcher,
+        ...(input.steeringBound ? { steeringBound: input.steeringBound } : {}),
+        ...(input.logger ? { logger: input.logger } : {}),
       });
       servicesByKey.set(key, service);
     }
     return service;
   };
 
+  // A large single-call candidate set degrades matcher recall; warn (debug) so
+  // builders can split the standing set rather than silently losing matches.
+  const warnOnLargeCandidateSet = (steerInput: DirectiveSteerInput, candidateCount: number): void => {
+    if (candidateCount > candidateWarningThreshold) {
+      input.logger?.debug(
+        {
+          event: "directive_matcher_large_candidate_set",
+          workspaceId: steerInput.workspaceId,
+          candidateCount,
+          threshold: candidateWarningThreshold,
+        },
+        "Directive matcher candidate set exceeds recall-safe size",
+      );
+    }
+  };
+
   const matchAndResolve = async (
     steerInput: DirectiveSteerInput,
     directives: Directive[],
   ): Promise<DirectiveSteeringResult> => {
+    warnOnLargeCandidateSet(steerInput, directives.length);
     const turnContext = steerInput.turnContext ?? {};
     let turnMatcher = matcher;
     if (

@@ -1,4 +1,5 @@
 import type { DirectiveCatalogRegistryPort, DirectiveMatcherPort } from "@radioso/conversation-contract";
+import { DIRECTIVES_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 import { orderSteeringRules, type SteeringRule } from "../../shared/domain/steeringRule.js";
@@ -10,6 +11,16 @@ import {
   type DirectiveMatch,
   type DirectiveOmission,
 } from "./domain.js";
+import {
+  boundSteeringMatches,
+  type SteeringBoundConfig,
+  type SteeringBoundDrop,
+} from "./steeringBound.js";
+
+/** Structural debug sink; a Pino logger satisfies it without an import. */
+export interface DirectiveSteeringLogger {
+  debug(payload: Record<string, unknown>, message: string): void;
+}
 
 export interface DirectiveSteerInput {
   workspaceId: string;
@@ -27,12 +38,19 @@ export interface DirectiveSteerInput {
 }
 
 export interface DirectiveSteeringResult {
-  /** Ordered steering for the composer (capability-filtered). */
+  /** Ordered, bounded steering for the composer (capability-filtered). */
   rules: SteeringRule[];
-  /** Injected matches, for the activity trace. */
+  /**
+   * Matched, relationship-resolved directives, for the activity trace and turn
+   * skill binding. Stays the full matched set even when the steering bound holds
+   * some back from rendering — a bound directive can still claim the turn via its
+   * skill binding; the bound governs prompt rendering, not activation.
+   */
   matches: DirectiveMatch[];
-  /** Capability-denied matches, for the activity trace. */
+  /** Capability-denied and relationship-resolved omissions, for the activity trace. */
   omissions: DirectiveOmission[];
+  /** Matches held back from rendering by the steering bound, for the trace. */
+  bounded?: SteeringBoundDrop[];
 }
 
 /**
@@ -55,15 +73,21 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
   private readonly registry: DirectiveCatalogRegistryPort;
   private readonly matcher: DirectiveMatcherPort;
   private readonly capabilityPolicy: CapabilityPolicy;
+  private readonly steeringBound: SteeringBoundConfig;
+  private readonly logger?: DirectiveSteeringLogger;
 
   constructor(deps: {
     registry: DirectiveCatalogRegistryPort;
     matcher: DirectiveMatcherPort;
     capabilityPolicy: CapabilityPolicy;
+    steeringBound?: SteeringBoundConfig;
+    logger?: DirectiveSteeringLogger;
   }) {
     this.registry = deps.registry;
     this.matcher = deps.matcher;
     this.capabilityPolicy = deps.capabilityPolicy;
+    this.steeringBound = deps.steeringBound ?? DIRECTIVES_BEHAVIOR.steeringBound;
+    this.logger = deps.logger;
   }
 
   async steer(input: DirectiveSteerInput): Promise<DirectiveSteeringResult> {
@@ -99,10 +123,28 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
     // directive never applied, so it can neither exclude nor satisfy others.
     const { kept, omissions: relationshipOmissions } = resolveDirectiveRelationships(allowed);
 
+    // Bound the rendered steering set: rank the survivors by confidence × priority
+    // and keep only what fits the top-k cap and token budget. `matches` stays the
+    // full set (skill binding and the trace still see every match); only `rules`
+    // narrows, and every held-back directive is recorded in `bounded`.
+    const { kept: rendered, dropped } = boundSteeringMatches(kept, this.steeringBound);
+    if (dropped.length > 0) {
+      this.logger?.debug(
+        {
+          event: "directive_steering_bounded",
+          workspaceId: input.workspaceId,
+          rendered: rendered.length,
+          dropped,
+        },
+        "Directive steering bounded",
+      );
+    }
+
     return {
-      rules: orderSteeringRules(kept.map(directiveToSteeringRule)),
+      rules: orderSteeringRules(rendered.map(directiveToSteeringRule)),
       matches: kept,
       omissions: [...omissions, ...relationshipOmissions],
+      bounded: dropped,
     };
   }
 

@@ -201,6 +201,10 @@ const makeChatService = (
   turnInterpreter?: ChatServiceOptions["turnInterpreter"],
   retrievalSenseDetector?: ChatServiceOptions["retrievalSenseDetector"],
   responseLanguageDetector?: ChatServiceOptions["responseLanguageDetector"],
+  clarification?: {
+    clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
+    clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
+  },
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -230,6 +234,8 @@ const makeChatService = (
     handoffWaitingMessageGenerator,
     retrievalSenseDetector,
     responseLanguageDetector: responseLanguageDetector ?? routine?.responseLanguageDetector,
+    clarifier: clarification?.clarifier,
+    clarificationStore: clarification?.clarificationStore,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -680,6 +686,111 @@ describe("chat service streaming", () => {
     expect(response.headersSent).toBe(false);
     expect(response.status).not.toHaveBeenCalled();
     expect(response.setHeader).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+
+  it.each([
+    { surface: "authenticated", reader: "ownership" },
+    { surface: "authenticated", reader: "clarification" },
+    { surface: "authenticated", reader: "active routine" },
+    { surface: "authenticated", reader: "suspended routine" },
+    { surface: "public", reader: "ownership" },
+    { surface: "public", reader: "clarification" },
+    { surface: "public", reader: "active routine" },
+    { surface: "public", reader: "suspended routine" },
+  ] as const)("keeps $surface streaming $reader read failures on the untouched JSON error path", async ({
+    surface,
+    reader,
+  }) => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const chatSessionId = surface === "public" ? "public-session-1" : null;
+    const sourceChannel = surface === "public" ? "public_chat" : "authenticated_chat";
+    const conversation = await conversationRepository.create(
+      "workspace-1",
+      null,
+      sourceChannel,
+      chatSessionId,
+    );
+    const readError = {
+      statusCode: 503,
+      code: "preflight_read_failed",
+      message: `${reader} unavailable`,
+    };
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() { yield "unused"; },
+    };
+    const routineStore: ChatServiceOptions["routineStore"] = reader === "active routine"
+      ? {
+          loadActive: vi.fn(async () => { throw readError; }),
+          save: vi.fn(async () => {}),
+          clear: vi.fn(async () => {}),
+        }
+      : undefined;
+    const suspendedRoutineReader: ChatServiceOptions["suspendedRoutineReader"] = reader === "suspended routine"
+      ? { loadSuspended: vi.fn(async () => { throw readError; }) }
+      : undefined;
+    const conversationOwnershipReader: ChatServiceOptions["conversationOwnershipReader"] = reader === "ownership"
+      ? { load: vi.fn(async () => { throw readError; }) }
+      : undefined;
+    const clarification = reader === "clarification"
+      ? {
+          clarifier: {
+            phraseQuestion: vi.fn(async () => "unused"),
+            mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+          },
+          clarificationStore: {
+            loadPending: vi.fn(async () => { throw readError; }),
+            save: vi.fn(async () => {}),
+            clear: vi.fn(async () => {}),
+          },
+        }
+      : undefined;
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      routineStore || suspendedRoutineReader
+        ? { routineStore, routineProvider: undefined, suspendedRoutineReader }
+        : undefined,
+      undefined,
+      conversationOwnershipReader,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      clarification,
+    );
+    const { response, writes } = createUncommittedSseResponse();
+
+    await expect(sendChatSse(response as never, service.streamAnswer({
+      workspaceId: "workspace-1",
+      ...(surface === "authenticated" ? { accountId: "account-1" } : {}),
+      conversationId: conversation.id,
+      ...(chatSessionId ? { chatSessionId } : {}),
+      sourceChannel,
+      query: "What changed?",
+      stream: true,
+    }))).rejects.toBe(readError);
+
+    expect(response.headersSent).toBe(false);
+    expect(response.status).not.toHaveBeenCalled();
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(response.flushHeaders).not.toHaveBeenCalled();
     expect(writes).toEqual([]);
   });
 
@@ -3639,6 +3750,52 @@ describe("chat service streaming", () => {
         { text: "." },
       ],
     }));
+  });
+
+  it("delivers a naturally completed supported body whose first assertion is in the reader trailing window beyond the streaming cap", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const supportedBody = `${"x".repeat(4_092)}[[1]]`;
+    const deliveredAnswer = "x".repeat(4_092);
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return supportedBody;
+      },
+      async *streamAnswer() {
+        yield supportedBody;
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "What does the guide cover?",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const streamedText = events
+      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
+      .map((event) => event.text)
+      .join("");
+    const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+
+    expect(streamedText).toBe(deliveredAnswer);
+    expect(done).toMatchObject({
+      answer: deliveredAnswer,
+      skillOutcome: "grounded_degraded",
+      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
+    });
+    expect(done?.answer).not.toBe(focusedGroundedMiss);
   });
 
   it("holds unsupported grounded drafts and releases the focused grounded miss at finalize", async () => {

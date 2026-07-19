@@ -56,6 +56,9 @@ export class BoundedGroundingStreamGate {
     if (this.bounded) {
       return { kind: "bound" };
     }
+    if (text) {
+      this.startedAtMs ??= this.now();
+    }
     let completeText = this.trailingHighSurrogate + text;
     this.trailingHighSurrogate = "";
     const trailingCodeUnit = completeText.charCodeAt(completeText.length - 1);
@@ -69,7 +72,6 @@ export class BoundedGroundingStreamGate {
     if (!completeText) {
       return { kind: "hold" };
     }
-    this.startedAtMs ??= this.now();
 
     const available = this.options.maxRetainedCodePoints - this.retainedCodePoints;
     const incomingCodePoints = Array.from(completeText);

@@ -452,6 +452,9 @@ export class RetrievalAnswerComposer {
       }
 
       const finalized = reader.finalize();
+      // The cap governs in-flight streaming only. On natural completion without
+      // opening or bounding, the computed #860 verdict and draft suppression below
+      // remain final authority, preserving pre-#859 delivery behavior.
       gate.finish();
       groundingGateWaitMs = gate.waitDurationMs;
       plannedSuggestions = finalized.suggestions;

@@ -2294,15 +2294,13 @@ export class ChatService {
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
-      // Preflight errors must retain their JSON status/body, so do not commit SSE
-      // until reservation, session preparation, and turn registration all succeed.
-      if (shouldEmitStatus("interpreting")) {
-        yield { type: "status", stage: "interpreting" };
-        this.checkTurnCancellation(coordination);
-      }
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
+        if (shouldEmitStatus("interpreting")) {
+          yield { type: "status", stage: "interpreting" };
+          this.checkTurnCancellation(coordination);
+        }
         if (shouldEmitStatus("composing")) {
           yield { type: "status", stage: "composing" };
           this.checkTurnCancellation(coordination, "rendering");
@@ -2326,6 +2324,12 @@ export class ChatService {
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
       const suspendedRoutine = await this.loadSuspendedRoutine(session);
 
+      // Match main's complete JSON preflight boundary: all state reads above must
+      // succeed before the first SSE event commits the response.
+      if (shouldEmitStatus("interpreting")) {
+        yield { type: "status", stage: "interpreting" };
+        this.checkTurnCancellation(coordination);
+      }
       yield {
         type: "conversation",
         conversationId: session.conversation.id,

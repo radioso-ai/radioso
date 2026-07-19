@@ -54,6 +54,25 @@ describe("BoundedGroundingStreamGate", () => {
     expect(gate.maxObservedRetainedCodePoints).toBe(4_096);
   });
 
+  it("measures hold time from a lone high-surrogate push", () => {
+    let nowMs = 10;
+    const gate = new BoundedGroundingStreamGate({
+      contextCount: 1,
+      maxRetainedCodePoints: 64,
+      now: () => nowMs,
+    });
+
+    expect(gate.push("\uD83D")).toEqual({ kind: "hold" });
+    expect(gate.retainedCodePoints).toBe(0);
+    nowMs = 35;
+    expect(gate.push("\uDE00 claim[[1]]")).toEqual({
+      kind: "release",
+      text: "😀 claim[[1]]",
+    });
+
+    expect(gate.waitDurationMs).toBe(25);
+  });
+
   it("drops a lone trailing high surrogate when generation ends", () => {
     const gate = new BoundedGroundingStreamGate({
       contextCount: 1,

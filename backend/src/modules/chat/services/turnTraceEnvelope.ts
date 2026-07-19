@@ -4,6 +4,9 @@ import type {
   ConversationTraceStage,
 } from "@radioso/conversation-contract";
 import { getActiveTraceCorrelation } from "../../../shared/observability/tracing/operations.js";
+import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
+import { buildTurnTraceSummary } from "./turnTraceSummary.js";
 
 /**
  * Versioned envelope persisted per chat turn. The conversation spine is the root
@@ -179,16 +182,38 @@ export const buildTurnTraceEnvelope = (input: {
   spine: ConversationTrace;
   summary?: Record<string, unknown>;
   version?: number;
+  modelCallTrace?: ModelCallTraceCollector;
+  completedAtMs?: number;
 }): TurnTraceEnvelope => {
   const version = input.version ?? TURN_TRACE_ENVELOPE_VERSION;
   const openTelemetry = version >= TURN_TRACE_ENVELOPE_VERSION
     ? readOpenTelemetryCorrelation()
     : undefined;
+  const spine = version >= TURN_TRACE_ENVELOPE_VERSION && input.modelCallTrace
+    ? attachModelCallsToSpine(input.spine, input.modelCallTrace.calls)
+    : input.spine;
+  const summary = version >= TURN_TRACE_ENVELOPE_VERSION
+    ? {
+        ...(input.summary ?? {}),
+        ...buildTurnTraceSummary(spine, input.modelCallTrace
+          ? {
+              totalLlmCalls: input.modelCallTrace.totalCallCount,
+              serialLlmDepth: input.modelCallTrace.serialLlmDepth,
+              totalModelTimeMs: input.modelCallTrace.totalModelTimeMs,
+              totalTurnWallClockMs: Math.max(
+                0,
+                (input.completedAtMs ?? Date.now()) - input.modelCallTrace.startedAtMs,
+              ),
+              droppedCallCount: input.modelCallTrace.droppedCallCount,
+            }
+          : undefined),
+      }
+    : undefined;
 
   return {
     version,
-    spine: input.spine,
+    spine,
     ...(openTelemetry ? { openTelemetry } : {}),
-    ...(input.summary ? { summary: input.summary } : {}),
+    ...(summary ? { summary } : {}),
   };
 };

@@ -1,4 +1,5 @@
 import type { ChatSuggestion } from "../../types/chatResponses.js";
+import { runWithoutModelCallTrace } from "../../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { ChatActionSuggestionRegistry } from "./chatActionSuggestionRegistry.js";
 import type { ChatActionSuggestionContext } from "./chatActionSuggestionProvider.js";
 
@@ -26,6 +27,10 @@ export class ChatActionSuggestionService {
   }
 
   async evaluate(context: ChatActionSuggestionContext): Promise<ChatSuggestion[]> {
+    return runWithoutModelCallTrace(() => this.evaluateOutsideTurnRollup(context));
+  }
+
+  private async evaluateOutsideTurnRollup(context: ChatActionSuggestionContext): Promise<ChatSuggestion[]> {
     const providers = this.registry.list();
     if (providers.length === 0) {
       return [];

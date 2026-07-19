@@ -174,7 +174,9 @@ const buildDirectiveTraceStage = (input: {
   matches: DirectiveMatch[];
   candidateCount: number;
   scopeFilteredCount?: number;
-}): ConversationTraceStage => stage({
+  startedAtMs: number;
+  completedAtMs: number;
+}): ConversationTraceStage => timedStage(input.startedAtMs, input.completedAtMs, {
   id: input.id,
   kind: input.kind,
   status: input.matches.length > 0 ? "applied" : "skipped",
@@ -198,6 +200,7 @@ const buildResolvedSteering = async (input: {
   baseSteering?: SteeringRule[];
   traceKind?: string;
 }): Promise<{ steering: SteeringRule[]; directiveMatches: DirectiveMatch[]; traceStage: ConversationTraceStage }> => {
+  const startedAtMs = Date.now();
   const directives = input.directives ?? [];
   const eligibleDirectives = directives.filter((directive) => isDirectiveEligibleForTurn(directive, input.turn));
   const directiveMatches = input.directiveMatcher
@@ -208,6 +211,7 @@ const buildResolvedSteering = async (input: {
   const steering = (input.steeringResolver ?? defaultSteeringResolver).resolve(combined, {
     turnContext: input.turn,
   });
+  const completedAtMs = Date.now();
 
   return {
     steering,
@@ -218,6 +222,8 @@ const buildResolvedSteering = async (input: {
       matches: directiveMatches,
       candidateCount: eligibleDirectives.length,
       scopeFilteredCount: directives.length - eligibleDirectives.length,
+      startedAtMs,
+      completedAtMs,
     }),
   };
 };
@@ -421,11 +427,13 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
     }));
 
+    const interpretationStartedAt = Date.now();
     const interpretation = input.turnInterpreter
       ? await input.turnInterpreter.interpret({ turn: baseTurn })
       : null;
+    const interpretationCompletedAt = Date.now();
     if (interpretation) {
-      stages.push(stage({
+      stages.push(timedStage(interpretationStartedAt, interpretationCompletedAt, {
         id: "turn_interpretation",
         kind: "turn_interpretation",
         status: "applied",
@@ -480,12 +488,14 @@ export class DefaultConversationEngine implements ConversationEngine {
       stagedContext: retrievalResult?.stagedContext ?? [],
       steering: [...directiveSteering, ...(retrievalResult?.steering ?? [])],
     };
+    const selectionStartedAt = Date.now();
     const decision = await input.selector.select({
       turn: selectedTurn,
       skills: input.skills,
       directives: directiveMatches,
     });
-    stages.push(stage({
+    const selectionCompletedAt = Date.now();
+    stages.push(timedStage(selectionStartedAt, selectionCompletedAt, {
       id: "selection",
       kind: "skill_selection",
       status: decision.selected.length > 0 ? "applied" : "skipped",
@@ -520,11 +530,13 @@ export class DefaultConversationEngine implements ConversationEngine {
         stagedContext: [...selectedTurn.stagedContext, ...mergeStagedContext(outcomes)],
         steering: mergedSteering,
       };
+      const dispatchStartedAt = Date.now();
       const outcome = await input.dispatcher.dispatch({
         skill,
         turn: turnForSkill,
         selected,
       });
+      const dispatchCompletedAt = Date.now();
       const skillGuidance = (outcome.outcome.guidance ?? []).map((guidance) =>
         guidanceToSteering(guidance, outcome.outcome.control?.lifespan === "session" ? 100 : undefined)
       );
@@ -533,7 +545,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         ...outcome,
         steering: [...outcome.steering, ...skillGuidance],
       });
-      stages.push(stage({
+      stages.push(timedStage(dispatchStartedAt, dispatchCompletedAt, {
         id: `dispatch:${selected.skillName}`,
         kind: "skill_dispatch",
         status: outcome.outcome.status === "completed" ? "applied" : "fallback",
@@ -1035,12 +1047,14 @@ export class DefaultConversationEngine implements ConversationEngine {
       return resumed;
     }
     const prepared = await this.prepareTurn(input);
+    const composeStartedAt = Date.now();
     const response = await input.composer.compose({
       turn: prepared.composeTurn,
       outcomes: prepared.outcomes,
       decision: prepared.decision,
     });
-    prepared.stages.push(stage({
+    const composeCompletedAt = Date.now();
+    prepared.stages.push(timedStage(composeStartedAt, composeCompletedAt, {
       id: "compose",
       kind: "compose",
       status: "applied",
@@ -1073,6 +1087,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     const prepared = await this.prepareTurn(input);
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
+    const composeStartedAt = Date.now();
 
     for await (const event of input.composer.stream({
       turn: prepared.composeTurn,
@@ -1099,7 +1114,8 @@ export class DefaultConversationEngine implements ConversationEngine {
       throw new Error("conversation_stream_missing_final");
     }
 
-    prepared.stages.push(stage({
+    const composeCompletedAt = Date.now();
+    prepared.stages.push(timedStage(composeStartedAt, composeCompletedAt, {
       id: "compose",
       kind: "compose",
       status: "applied",

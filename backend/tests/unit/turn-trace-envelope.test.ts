@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ConversationTrace } from "@radioso/conversation-contract";
 
 import {
+  LEGACY_TURN_TRACE_ENVELOPE_VERSION,
   TURN_TRACE_ENVELOPE_VERSION,
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
@@ -179,18 +180,25 @@ describe("buildTurnTraceEnvelope", () => {
     const envelope = buildTurnTraceEnvelope({ spine: spine() });
     expect(envelope.version).toBe(TURN_TRACE_ENVELOPE_VERSION);
     expect(envelope.spine.traceId).toBe("conversation-turn-1");
-    expect(envelope.summary).toBeUndefined();
+    expect(envelope.summary).toEqual({
+      totalLlmCalls: 0,
+      serialLlmDepth: 0,
+      longestStage: { name: "gather", durationMs: 0 },
+      totalModelTimeMs: 0,
+      totalTurnWallClockMs: 0,
+      droppedCallCount: 0,
+    });
     expect(envelope.openTelemetry).toBeUndefined();
   });
 
-  it("accepts a generic summary roll-up and a version override", () => {
+  it("leaves the summary absent for a synthesized legacy envelope", () => {
     const envelope = buildTurnTraceEnvelope({
       spine: spine(),
       summary: { outcome: "answered" },
-      version: 0,
+      version: LEGACY_TURN_TRACE_ENVELOPE_VERSION,
     });
-    expect(envelope.version).toBe(0);
-    expect(envelope.summary).toEqual({ outcome: "answered" });
+    expect(envelope.version).toBe(LEGACY_TURN_TRACE_ENVELOPE_VERSION);
+    expect(envelope).not.toHaveProperty("summary");
   });
 
   it("does not stamp synthesized legacy envelopes with the current request trace", () => {

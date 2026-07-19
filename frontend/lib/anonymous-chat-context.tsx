@@ -34,7 +34,6 @@ import {
   type ChatSuggestion,
   type ChatConversationDetail,
   type ChatStreamCompletion,
-  type ChatStatusStage,
   type ChatUserInputMetadata,
   type PublicChatIntakeAction,
   type ErrorResponse,
@@ -102,7 +101,6 @@ export interface ChatMessage {
   activityTrace?: ActivityTrace
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
-  statusStage?: ChatStatusStage
   skill?: SkillStreamPayload
   /** Message provenance, so the visitor can tell a human operator reply from the AI. */
   source?: ChatConversationDetail['messages'][number]['source']
@@ -746,7 +744,6 @@ export function AnonymousChatProvider({
                       answerSegments: [],
                       suggestions: [],
                       status: 'complete' as const,
-                      statusStage: undefined,
                     }
                   : message,
               )
@@ -768,7 +765,6 @@ export function AnonymousChatProvider({
                 activityTrace: completion.debug?.activityTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete' as const,
-                statusStage: undefined,
               }
             : message,
         ),
@@ -809,7 +805,6 @@ export function AnonymousChatProvider({
                 activityTrace: assistantMessage.activityTrace,
                 persistedAssistantMessageId: assistantMessage.persistedAssistantMessageId ?? assistantMessage.id,
                 status: 'complete' as const,
-                statusStage: undefined,
               }
             : message,
         ),
@@ -912,20 +907,11 @@ export function AnonymousChatProvider({
                   setConversationId(newId)
                   setBootstrapGreetingId(undefined)
                 },
-                onStatus: ({ stage }) => {
-                  setMessages((prev) =>
-                    prev.map((message) =>
-                      message.id === assistantMessageId && message.status === 'streaming'
-                        ? { ...message, statusStage: stage }
-                        : message,
-                    ),
-                  )
-                },
                 onChunk: ({ text }) => {
                   setMessages((prev) =>
                     prev.map((message) =>
                       message.id === assistantMessageId
-                        ? { ...message, content: `${message.content}${text}`, statusStage: undefined }
+                        ? { ...message, content: `${message.content}${text}` }
                         : message,
                     ),
                   )
@@ -952,7 +938,6 @@ export function AnonymousChatProvider({
                       message.id === assistantMessageId
                         ? {
                             ...message,
-                            statusStage: undefined,
                             suggestions: stripPublicSuggestionCitations(suggestions),
                           }
                         : message,
@@ -1145,7 +1130,6 @@ export function AnonymousChatProvider({
                 if (message.id !== assistantMessageId) return message
                 return {
                   ...message,
-                  statusStage: undefined,
                   content: message.content || errorMessage,
                   status: 'error' as const,
                   answerSegments: undefined,

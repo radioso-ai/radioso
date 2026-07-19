@@ -396,12 +396,6 @@ export interface ChatStreamChunk {
   text: string
 }
 
-export type ChatStatusStage = 'interpreting' | 'searching' | 'composing'
-
-export interface ChatStreamStatus {
-  stage: ChatStatusStage
-}
-
 export interface ChatStreamCancelled {
   conversationId: string
   reason: 'superseded'
@@ -626,7 +620,6 @@ export const normalizeHistoryItemsResponse = (response: HistoryItemsApiResponse)
 }
 
 export interface ChatStreamHandlers {
-  onStatus?: (payload: ChatStreamStatus) => void
   onConversation?: (payload: ChatStreamConversation) => void
   onChunk?: (payload: ChatStreamChunk) => void
   onCancelled?: (payload: ChatStreamCancelled) => void

@@ -152,6 +152,9 @@ export interface RetrievedCandidate extends RetrievedChunk {
   retrievalText: string;
   semanticScore: number;
   lexicalScore: number;
+  fusedScore?: number;
+  semanticRank?: number;
+  lexicalRank?: number;
   attributeMatchScore?: number;
 }
 

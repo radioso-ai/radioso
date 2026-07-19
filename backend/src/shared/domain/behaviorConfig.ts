@@ -65,6 +65,8 @@ export const RETRIEVAL_BEHAVIOR = {
     // a multi-second hidden-reasoning pass on gpt-5 models on the critical path.
     reasoningEffort: "minimal",
   },
+  // Source ranks, not semantic/lexical score magnitudes, drive hybrid fusion.
+  candidateFusionRrfK: 60,
   candidateMergeSecondaryWeight: 0.25,
   metadataBoostWeight: 0.2,
   // Multi-topic query rewrites can fan out into several retrieval branches. Each
@@ -75,6 +77,8 @@ export const RETRIEVAL_BEHAVIOR = {
   maxSemanticBranches: 2,
   hybrid: {
     lexicalTopK: 20,
+    // Absolute ts_rank_cd evidence floor; query-relative lexicalScore cannot satisfy quality gates.
+    lexicalMinimumUsefulRankScore: 0.05,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

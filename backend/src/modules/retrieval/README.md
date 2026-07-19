@@ -71,6 +71,25 @@ imports from `services/` or `infra/`.
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.
 
+## Candidate Score Model
+
+Semantic and lexical scores keep their source-specific meanings until candidate
+preparation:
+
+- `semanticScore` is cosine similarity from vector search.
+- `lexicalScore` is relative to the best lexical result for one query and is only
+  suitable for lexical-local comparisons.
+- `lexicalRankScore` is the absolute PostgreSQL `ts_rank_cd` value used for
+  lexical quality gates.
+- `fusedScore` is the normalized `[0, 1]` candidate score used for merged ordering
+  and rerank fallback. The backward-compatible candidate `similarity` field mirrors
+  this value.
+
+Candidate preparation uses reciprocal source ranks and a bounded, explicit
+secondary-source boost. Metadata and temporal boosts remain bounded in the same
+range. The semantic similarity threshold still applies inside vector search before
+semantic and lexical candidates are merged.
+
 ## Tests
 
 Focused starting points:

@@ -32,6 +32,8 @@ For listing-style event date questions, the pipeline can also ask a retrieval-ow
 
 Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit metadata filters narrow or boost the candidate set here.
 
+Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk. Weak lexical results must also meet an absolute lexical-rank floor before they can contribute to fusion or minimum-useful-candidate checks.
+
 When upcoming-event boost is enabled, dated event evidence can receive a temporal boost during event date lookups. Topic relevance still applies; the temporal signal refines the candidate set rather than replacing it.
 
 ### Context selection

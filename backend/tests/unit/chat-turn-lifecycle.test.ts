@@ -86,6 +86,10 @@ const effectiveRetrieval = (): PreparedSession["retrieval"] =>
       metadata: { sourceUrl: "https://example.com/source" },
       promptPosition: 0,
       similarity: 0.91,
+      fusedScore: 0.91,
+      semanticScore: 0.88,
+      lexicalScore: 1,
+      lexicalRankScore: 0.4,
     }],
     diagnostics: {
       retrievalSkipped: false,
@@ -390,6 +394,10 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       title: "Source",
       rank: 0,
       similarity: 0.91,
+      fusedScore: 0.91,
+      semanticScore: 0.88,
+      lexicalScore: 1,
+      lexicalRankScore: 0.4,
       metadata: { sourceUrl: "https://example.com/source" },
     }]);
     expect(assistantMessage?.metadata?.composedInstructions).toBe("retrieval system prompt");

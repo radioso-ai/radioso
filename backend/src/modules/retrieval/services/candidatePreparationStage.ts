@@ -11,6 +11,7 @@ import type {
 } from "./retrievalPipelineStages.js";
 import type { RetrievedCandidate, TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
+import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 
 export class CandidatePreparationStageService implements CandidatePreparationStageContract {
   constructor(
@@ -46,18 +47,19 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
         candidates: normalizedCandidates,
         metadataRules: [...alwaysOnRules, ...matchedTriggerBoostRules, ...activeHardFilterRules],
       });
-    const classifyBackoffReason = (
-      candidateCount: number,
-    ): TriggerBackoffDecision["reason"] | undefined => {
+    const normalizedUsefulCandidateCount = normalizedCandidates.filter(hasUsefulCandidateEvidence).length;
+    const usefulCandidateCount = (candidates: RetrievedCandidate[]): number =>
+      candidates.filter(hasUsefulCandidateEvidence).length;
+    const classifyBackoffReason = (candidates: RetrievedCandidate[]): TriggerBackoffDecision["reason"] | undefined => {
       if (matchedHardFilterRules.length === 0) {
         return undefined;
       }
-      if (candidateCount === 0) {
+      if (candidates.length === 0) {
         return "empty_filtered_candidates";
       }
       if (
-        candidateCount < minimumUsefulCandidateCount &&
-        normalizedCandidates.length >= minimumUsefulCandidateCount
+        usefulCandidateCount(candidates) < minimumUsefulCandidateCount &&
+        normalizedUsefulCandidateCount >= minimumUsefulCandidateCount
       ) {
         return "weak_filtered_support";
       }
@@ -72,11 +74,11 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
 
     let retainedHardFilterRules = [...matchedHardFilterRules];
     let selectedCandidates = evaluateRules(retainedHardFilterRules);
-    const triggerBackoffReason = classifyBackoffReason(selectedCandidates.candidates.length);
+    const triggerBackoffReason = classifyBackoffReason(selectedCandidates.candidates);
     const relaxedRuleIds: string[] = [];
 
     if (triggerBackoffReason) {
-      while (classifyBackoffReason(selectedCandidates.candidates.length)) {
+      while (classifyBackoffReason(selectedCandidates.candidates)) {
         const relaxationOptions = prioritizedHardFilterRules
           .filter((rule) => retainedHardFilterRules.some((candidateRule) => candidateRule.id === rule.id))
           .map((rule) => {
@@ -87,12 +89,12 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
               rule,
               remainingHardFilterRules,
               evaluation,
-              candidateCount: evaluation.candidates.length,
-              resolved: !classifyBackoffReason(evaluation.candidates.length),
+              candidateCount: usefulCandidateCount(evaluation.candidates),
+              resolved: !classifyBackoffReason(evaluation.candidates),
               matchStrength: triggerStrengthByRuleId.get(rule.id) ?? 1,
             };
           })
-          .filter((option) => option.candidateCount > selectedCandidates.candidates.length)
+          .filter((option) => option.candidateCount > usefulCandidateCount(selectedCandidates.candidates))
           .sort((left, right) => {
             if (left.resolved !== right.resolved) {
               return left.resolved ? -1 : 1;
@@ -147,7 +149,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
         applied: triggerBackoffApplied,
         reason: triggerBackoffApplied ? triggerBackoffReason : undefined,
         relaxedRuleIds,
-        restoredCandidateCount: triggerBackoffApplied ? selectedCandidates.candidates.length : undefined,
+        restoredCandidateCount: triggerBackoffApplied ? usefulCandidateCount(selectedCandidates.candidates) : undefined,
       },
     };
   }
@@ -170,8 +172,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       if (left.lexicalScore !== right.lexicalScore) {
         return right.lexicalScore - left.lexicalScore;
       }
-      return right.similarity - left.similarity;
+      return getCandidateFusedScore(right) - getCandidateFusedScore(left);
     });
   }
 }
-

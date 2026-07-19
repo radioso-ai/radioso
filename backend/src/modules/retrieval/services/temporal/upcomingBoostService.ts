@@ -1,4 +1,5 @@
 import type { RetrievedCandidate } from "../../domain/retrievalPipelineTypes.js";
+import { applyBoundedCandidateBoost, getCandidateFusedScore } from "../candidateScoring.js";
 
 const UPCOMING_EVENT_BOOST = 0.08;
 
@@ -17,10 +18,12 @@ export const applyUpcomingEventBoost = (input: {
     }
 
     const attributeMatchScore = Math.max(candidate.attributeMatchScore ?? 0, UPCOMING_EVENT_BOOST);
+    const fusedScore = applyBoundedCandidateBoost(getCandidateFusedScore(candidate), UPCOMING_EVENT_BOOST);
     return {
       ...candidate,
       attributeMatchScore,
-      similarity: candidate.similarity + UPCOMING_EVENT_BOOST,
+      fusedScore,
+      similarity: fusedScore,
     };
   });
 };

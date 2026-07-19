@@ -72,6 +72,8 @@ describe("metadata rule scoring", () => {
     });
 
     expect(result.candidates[0]?.chunkId).toBe("chunk-1");
+    expect(result.candidates[0]?.similarity).toBeLessThanOrEqual(1);
+    expect(result.candidates[0]?.fusedScore).toBe(result.candidates[0]?.similarity);
     expect(result.appliedRules).toContainEqual({
       signalKey: "metadata.parsedData.url",
       mode: "boost_only",

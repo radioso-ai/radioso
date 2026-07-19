@@ -5,6 +5,7 @@ import type {
 } from "../../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "../../domain/vectorSearch.js";
 import { buildRetrievalText } from "../embeddingService.js";
+import { clampNormalizedScore } from "../candidateScoring.js";
 
 const TEMPORAL_SOURCE: RetrievalSource = "temporal";
 
@@ -56,17 +57,21 @@ const addTemporalSource = (candidate: RetrievedCandidate): RetrievedCandidate =>
     : [...candidate.retrievalSources, TEMPORAL_SOURCE],
 });
 
-const toTemporalCandidate = (chunk: RetrievedChunk): RetrievedCandidate => ({
-  ...chunk,
-  retrievalSources: [TEMPORAL_SOURCE],
-  retrievalText:
-    chunk.searchText ??
-    buildRetrievalText({
-      title: chunk.title,
-      content: chunk.content,
-    }),
-  semanticScore: 0,
-  lexicalScore: 0,
-  similarity: chunk.similarity,
-  attributeMatchScore: 0,
-});
+const toTemporalCandidate = (chunk: RetrievedChunk): RetrievedCandidate => {
+  const fusedScore = clampNormalizedScore(chunk.similarity);
+  return {
+    ...chunk,
+    retrievalSources: [TEMPORAL_SOURCE],
+    retrievalText:
+      chunk.searchText ??
+      buildRetrievalText({
+        title: chunk.title,
+        content: chunk.content,
+      }),
+    semanticScore: 0,
+    lexicalScore: 0,
+    fusedScore,
+    similarity: fusedScore,
+    attributeMatchScore: 0,
+  };
+};

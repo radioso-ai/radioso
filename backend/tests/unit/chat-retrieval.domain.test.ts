@@ -727,7 +727,9 @@ describe("chat retrieval domain", () => {
     expect(result[0]).toMatchObject({
       chunkId: "c1",
       retrievalSources: ["semantic_original", "semantic_rewritten"],
-      similarity: 0.9,
+      similarity: 0.8,
+      fusedScore: 0.8,
+      semanticScore: 0.9,
     });
   });
 

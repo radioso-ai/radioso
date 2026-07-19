@@ -1,7 +1,7 @@
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
-import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { buildRetrievalText } from "./embeddingService.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";
+import { compareByFusedScore, fuseCandidateRanks } from "./candidateScoring.js";
 
 export class CandidatePreparationService {
   prepare(input: {
@@ -15,7 +15,27 @@ export class CandidatePreparationService {
     this.addSource(byChunkId, input.rewritten, "semantic_rewritten");
     this.addSource(byChunkId, input.lexical, "lexical");
 
-    return [...byChunkId.values()].sort((a, b) => b.similarity - a.similarity);
+    const semanticRanks = this.buildSourceRanks([...input.original, ...input.rewritten], (row) => row.similarity);
+    const lexicalRanks = this.buildSourceRanks(input.lexical, (row) => row.lexicalRankScore ?? 0);
+
+    return [...byChunkId.values()]
+      .map((candidate) => {
+        const semanticRank = candidate.semanticScore > 0 ? semanticRanks.get(candidate.chunkId) : undefined;
+        const lexicalRank = (candidate.lexicalRankScore ?? 0) > 0 ? lexicalRanks.get(candidate.chunkId) : undefined;
+        const fusedScore = fuseCandidateRanks({
+          semanticRank,
+          lexicalRank,
+          lexicalRankScore: candidate.lexicalRankScore ?? 0,
+        });
+        return {
+          ...candidate,
+          semanticRank,
+          lexicalRank,
+          fusedScore,
+          similarity: fusedScore,
+        };
+      })
+      .sort(compareByFusedScore);
   }
 
   private addSource(
@@ -31,10 +51,10 @@ export class CandidatePreparationService {
         }
         if (source === "lexical") {
           existing.lexicalScore = Math.max(existing.lexicalScore, row.similarity);
+          existing.lexicalRankScore = Math.max(existing.lexicalRankScore ?? 0, row.lexicalRankScore ?? 0);
         } else {
           existing.semanticScore = Math.max(existing.semanticScore, row.similarity);
         }
-        existing.similarity = this.mergeScore(existing.semanticScore, existing.lexicalScore);
         continue;
       }
 
@@ -51,15 +71,23 @@ export class CandidatePreparationService {
           }),
         semanticScore,
         lexicalScore,
-        similarity: this.mergeScore(semanticScore, lexicalScore),
+        lexicalRankScore: source === "lexical" ? row.lexicalRankScore ?? 0 : 0,
+        similarity: 0,
         attributeMatchScore: 0,
       });
     }
   }
 
-  private mergeScore(semanticScore: number, lexicalScore: number): number {
-    const primary = Math.max(semanticScore, lexicalScore);
-    const secondary = Math.min(semanticScore, lexicalScore);
-    return primary + secondary * RETRIEVAL_BEHAVIOR.candidateMergeSecondaryWeight;
+  private buildSourceRanks(rows: RetrievedChunk[], score: (row: RetrievedChunk) => number): Map<string, number> {
+    const bestByChunkId = new Map<string, number>();
+    for (const row of rows) {
+      bestByChunkId.set(row.chunkId, Math.max(bestByChunkId.get(row.chunkId) ?? 0, score(row)));
+    }
+
+    return new Map(
+      [...bestByChunkId.entries()]
+        .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId))
+        .map(([chunkId], index) => [chunkId, index + 1]),
+    );
   }
 }

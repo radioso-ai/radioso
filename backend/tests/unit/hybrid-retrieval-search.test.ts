@@ -4,6 +4,7 @@ import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexic
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { PgVectorIndex, PgVectorSearch } from "../../src/modules/retrieval/infra/vectorSearch.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
+import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 
 describe("hybrid retrieval search", () => {
@@ -37,6 +38,7 @@ describe("hybrid retrieval search", () => {
           title: "Guide",
           content: "Semantic content",
           similarity: 0.8,
+          lexicalRankScore: 0.4,
         },
         {
           chunkId: "chunk-2",
@@ -44,6 +46,7 @@ describe("hybrid retrieval search", () => {
           title: "Other",
           content: "Lexical only",
           similarity: 0.6,
+          lexicalRankScore: 0.2,
         },
       ],
     });
@@ -54,14 +57,129 @@ describe("hybrid retrieval search", () => {
       retrievalSources: ["semantic_original", "lexical"],
       semanticScore: 0.5,
       lexicalScore: 0.8,
+      lexicalRankScore: 0.4,
+      fusedScore: 1,
     });
-    expect(candidates[0].similarity).toBeGreaterThan(0.8);
+    expect(candidates[0].similarity).toBe(1);
     expect(candidates[1]).toMatchObject({
       chunkId: "chunk-2",
       retrievalSources: ["lexical"],
       semanticScore: 0,
       lexicalScore: 0.6,
     });
+  });
+
+  it("does not let a query-relative lexical top hit outrank strong semantic evidence", () => {
+    const candidates = new CandidatePreparationService().prepare({
+      original: [
+        {
+          chunkId: "strong-semantic",
+          documentId: "semantic-doc",
+          title: "Strong semantic result",
+          content: "Strong semantic evidence",
+          similarity: 0.91,
+        },
+      ],
+      rewritten: [],
+      lexical: [
+        {
+          chunkId: "junk-lexical",
+          documentId: "lexical-doc",
+          title: "Weak lexical result",
+          content: "Weak lexical evidence",
+          similarity: 1,
+          lexicalRankScore: 0.001,
+        },
+      ],
+    });
+
+    expect(candidates.map((candidate) => candidate.chunkId)).toEqual([
+      "strong-semantic",
+      "junk-lexical",
+    ]);
+    expect(candidates.every((candidate) =>
+      (candidate.fusedScore ?? -1) >= 0 && (candidate.fusedScore ?? 2) <= 1,
+    )).toBe(true);
+  });
+
+  it("keeps an explicit bounded rank-up for candidates found by both sources", () => {
+    const candidates = new CandidatePreparationService().prepare({
+      original: [
+        {
+          chunkId: "semantic-only",
+          documentId: "semantic-only-doc",
+          title: "Semantic only",
+          content: "Semantic only",
+          similarity: 0.95,
+        },
+        {
+          chunkId: "dual-source",
+          documentId: "dual-source-doc",
+          title: "Dual source",
+          content: "Dual source",
+          similarity: 0.9,
+        },
+      ],
+      rewritten: [],
+      lexical: [
+        {
+          chunkId: "dual-source",
+          documentId: "dual-source-doc",
+          title: "Dual source",
+          content: "Dual source",
+          similarity: 1,
+          lexicalRankScore: 0.5,
+        },
+      ],
+    });
+
+    expect(candidates[0]?.chunkId).toBe("dual-source");
+    expect(candidates[0]?.fusedScore).toBeGreaterThan(candidates[1]?.fusedScore ?? 0);
+    expect(candidates[0]?.fusedScore).toBeLessThanOrEqual(1);
+    expect(candidates[0]?.similarity).toBe(candidates[0]?.fusedScore);
+  });
+
+  it("uses fused ordering when reranking returns no valid scores", async () => {
+    const candidates = new CandidatePreparationService().prepare({
+      original: [
+        {
+          chunkId: "strong-semantic",
+          documentId: "semantic-doc",
+          title: "Strong semantic result",
+          content: "Strong semantic evidence",
+          similarity: 0.91,
+        },
+      ],
+      rewritten: [],
+      lexical: [
+        {
+          chunkId: "junk-lexical",
+          documentId: "lexical-doc",
+          title: "Weak lexical result",
+          content: "Weak lexical evidence",
+          similarity: 1,
+          lexicalRankScore: 0.001,
+        },
+      ],
+    });
+    const rerank = new RerankService({
+      async rerank() {
+        return [];
+      },
+    });
+
+    const result = await rerank.rerank({
+      query: "evidence",
+      contexts: candidates,
+      enabled: true,
+      topK: 2,
+    });
+
+    expect(result.status).toBe("fallback");
+    expect(result.contexts.map((candidate) => candidate.chunkId)).toEqual([
+      "strong-semantic",
+      "junk-lexical",
+    ]);
   });
 
   it("normalizes lexical ranks before they are merged with semantic similarity", async () => {
@@ -102,6 +220,8 @@ describe("hybrid retrieval search", () => {
 
     expect(results[0]?.similarity).toBe(1);
     expect(results[1]?.similarity).toBe(0.25);
+    expect(results[0]?.lexicalRankScore).toBe(4);
+    expect(results[1]?.lexicalRankScore).toBe(1);
   });
 
   it("keeps legacy chunks searchable when search_text is null", async () => {

@@ -8,6 +8,7 @@ export interface RetrievedChunk {
   content: string;
   searchText?: string | null;
   similarity: number;
+  lexicalRankScore?: number;
   chunkIndex?: number;
   startOffset?: number | null;
   endOffset?: number | null;

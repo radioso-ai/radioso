@@ -204,6 +204,10 @@ const extractRetrievedChunks = (
       title: typeof c.title === "string" ? c.title : "",
       rank: typeof c.rank === "number" ? c.rank : index,
       similarity: typeof c.similarity === "number" ? c.similarity : undefined,
+      fusedScore: typeof c.fusedScore === "number" ? c.fusedScore : undefined,
+      semanticScore: typeof c.semanticScore === "number" ? c.semanticScore : undefined,
+      lexicalScore: typeof c.lexicalScore === "number" ? c.lexicalScore : undefined,
+      lexicalRankScore: typeof c.lexicalRankScore === "number" ? c.lexicalRankScore : undefined,
       metadata: c.metadata && typeof c.metadata === "object" && !Array.isArray(c.metadata)
         ? c.metadata as Record<string, unknown>
         : undefined,

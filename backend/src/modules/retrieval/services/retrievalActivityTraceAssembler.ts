@@ -9,6 +9,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { PromptAssemblyStageResult } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
+import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 
 interface StageTiming {
   startedAt: string;
@@ -71,13 +72,63 @@ const buildStage = (
   ...fields,
 });
 
-const toChunkRefs = (
-  contexts: Array<{ chunkId: string; documentId: string; title: string }>,
-) => contexts.map((context) => ({
+const toChunkRef = (context: { chunkId: string; documentId: string; title: string }) => ({
   chunkId: context.chunkId,
   documentId: context.documentId,
   title: context.title,
+});
+
+const toChunkRefs = (
+  contexts: Array<{ chunkId: string; documentId: string; title: string }>,
+) => contexts.map(toChunkRef);
+
+const toSemanticChunkRefs = (
+  contexts: Array<{ chunkId: string; documentId: string; title: string; similarity: number }>,
+) => contexts.map((context) => ({
+  ...toChunkRef(context),
+  semanticScore: context.similarity,
 }));
+
+const toLexicalChunkRefs = (
+  contexts: Array<{
+    chunkId: string;
+    documentId: string;
+    title: string;
+    similarity: number;
+    lexicalRankScore?: number;
+  }>,
+) => contexts.map((context) => ({
+  ...toChunkRef(context),
+  lexicalScore: context.similarity,
+  lexicalRankScore: context.lexicalRankScore ?? 0,
+}));
+
+const toCandidateChunkRefs = (
+  contexts: Array<{
+    chunkId: string;
+    documentId: string;
+    title: string;
+    similarity: number;
+    fusedScore?: number;
+    semanticScore: number;
+    lexicalScore: number;
+    lexicalRankScore?: number;
+    semanticRank?: number;
+    lexicalRank?: number;
+  }>,
+) => contexts.map((context) => {
+  const fusedScore = getCandidateFusedScore(context);
+  return {
+    ...toChunkRef(context),
+    similarity: fusedScore,
+    fusedScore,
+    semanticScore: context.semanticScore,
+    lexicalScore: context.lexicalScore,
+    lexicalRankScore: context.lexicalRankScore ?? 0,
+    semanticRank: context.semanticRank,
+    lexicalRank: context.lexicalRank,
+  };
+});
 
 const toSafeStageId = (value: string): string =>
   value
@@ -287,7 +338,7 @@ export class ActivityTraceAssembler {
           },
           outputs: {
             candidateCount: branch.contexts.length,
-            chunks: toChunkRefs(branch.contexts),
+            chunks: toSemanticChunkRefs(branch.contexts),
           },
           metrics: {
             candidateCount: branch.contexts.length,
@@ -305,7 +356,7 @@ export class ActivityTraceAssembler {
           },
           outputs: {
             candidateCount: branch.contexts.length,
-            chunks: toChunkRefs(branch.contexts),
+            chunks: toLexicalChunkRefs(branch.contexts),
           },
           metrics: {
             candidateCount: branch.contexts.length,
@@ -317,12 +368,13 @@ export class ActivityTraceAssembler {
       buildStage("preparation", "candidate_preparation", "Candidate preparation", diagnostics.fallbackApplied ? "fallback" : "applied", timings.candidatePreparation, {
         outputs: {
           appliedConstraintSummaries: prompt.appliedConstraints.map((constraint) => constraint.summary),
-          topCandidates: toChunkRefs(prompt.scoredCandidates.slice(0, 8)),
+          topCandidates: toCandidateChunkRefs(prompt.scoredCandidates.slice(0, 8)),
         },
         metrics: {
           normalizedCount: prompt.normalizedCandidates.length,
           mergedCount: prompt.mergedCandidates.length,
           scoredCount: prompt.scoredCandidates.length,
+          usefulCandidateCount: prompt.scoredCandidates.filter(hasUsefulCandidateEvidence).length,
           temporalCandidateCount: temporalContexts.length,
         },
         reason: prompt.candidateFallbackApplied ? "Candidate fallback relaxed the prepared candidate pool." : undefined,
@@ -340,7 +392,7 @@ export class ActivityTraceAssembler {
         },
         outputs: {
           finalContextTitles: prompt.contexts.map((context) => context.title),
-          finalContexts: toChunkRefs(prompt.contexts),
+          finalContexts: toCandidateChunkRefs(prompt.contexts),
           temporalDeterministicSortApplied: prompt.temporalDeterministicSortApplied ?? false,
           temporalDeterministicSortToday: prompt.temporalDeterministicSortToday,
         },
@@ -374,7 +426,7 @@ export class ActivityTraceAssembler {
           fallbackApplied: diagnostics.fallbackApplied,
           continuityDecision: diagnostics.continuityDecision,
           temporalDeterministicSortApplied: diagnostics.temporalDeterministicSortApplied,
-          finalContexts: toChunkRefs(prompt.contexts),
+          finalContexts: toCandidateChunkRefs(prompt.contexts),
         },
         metrics: {
           semanticCandidateCount: diagnostics.originalCandidateCount + diagnostics.rewrittenCandidateCount,

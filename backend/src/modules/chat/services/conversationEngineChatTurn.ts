@@ -297,7 +297,6 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     queued.length = 0;
     closed = true;
     queued.push({ type: "error", error: input.signal?.reason ?? new Error("chat_turn_aborted") });
-    void engineEvents.return?.();
     wake?.();
     wake = undefined;
   };
@@ -344,6 +343,15 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     } catch (error) {
       enqueue({ type: "error", error });
     } finally {
+      // The pump is the sole owner of engine iterator shutdown. This cannot
+      // preempt an already-running stage beyond the engine's cooperative signal
+      // checks and provider aborts; that pre-existing zombie-stage window is #868.
+      try {
+        await engineEvents.return?.();
+      } catch {
+        // Iterator cleanup is best-effort and must never become an unhandled
+        // rejection after the consumer has already received cancellation.
+      }
       pumpDone = true;
       wake?.();
       wake = undefined;
@@ -367,8 +375,10 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   } finally {
     input.signal?.removeEventListener("abort", closeForAbort);
     if (!closed) {
+      queued.length = 0;
       closed = true;
-      await engineEvents.return?.();
+      wake?.();
+      wake = undefined;
     }
   }
 };

@@ -2284,13 +2284,8 @@ export class ChatService {
     };
 
     try {
-      // Emit the initial status without advancing the #868 turn stage: the turn is
-      // still "waiting" until the usage reservation succeeds, and a supersession
-      // during acquisition must keep reporting that stage.
-      if (shouldEmitStatus("interpreting")) {
-        yield { type: "status", stage: "interpreting" };
-        this.checkTurnCancellation(coordination);
-      }
+      // Keep the #868 turn stage "waiting" until after reserveAnswer succeeds:
+      // supersession during acquisition must continue to report that stage.
       usageReservation = await this.usageLimitPolicy.reserveAnswer({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -2299,6 +2294,12 @@ export class ChatService {
       this.setTurnStage(coordination, "preparing");
       session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
+      // Preflight errors must retain their JSON status/body, so do not commit SSE
+      // until reservation, session preparation, and turn registration all succeed.
+      if (shouldEmitStatus("interpreting")) {
+        yield { type: "status", stage: "interpreting" };
+        this.checkTurnCancellation(coordination);
+      }
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {

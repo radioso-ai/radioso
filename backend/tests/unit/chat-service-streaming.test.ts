@@ -6,6 +6,7 @@ import {
   BlankChatAnswerError,
   ChatTurnSupersededError,
   ChatService,
+  ModelChatGateway,
   type ChatGateway,
   type ChatServiceOptions,
   type ChatStreamEvent,
@@ -20,6 +21,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import type { SkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import {
   MissingFallbackReplyComposer,
+  ModelFallbackReplyComposer,
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
@@ -40,6 +42,33 @@ import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelI
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
 import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
+import { sendChatSse } from "../../src/app/http/presenters/chatPresenter.js";
+import { streamWithUsage } from "../../src/shared/infra/llm/providerStreaming.js";
+import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
+import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
+
+const createUncommittedSseResponse = () => {
+  const writes: string[] = [];
+  const response = {
+    headersSent: false,
+    writableEnded: false,
+    on: vi.fn(),
+    status: vi.fn(function (this: unknown) {
+      return this;
+    }),
+    setHeader: vi.fn(),
+    flushHeaders: vi.fn(function (this: { headersSent: boolean }) {
+      this.headersSent = true;
+    }),
+    write: vi.fn((chunk: string) => {
+      writes.push(chunk);
+    }),
+    end: vi.fn(function (this: { writableEnded: boolean }) {
+      this.writableEnded = true;
+    }),
+  };
+  return { response, writes };
+};
 
 const assertionManifest = (answer: string): number[][] =>
   [...answer.matchAll(/(?:\[\[(?:\d+|\?)\]\])+/g)].flatMap((group) => {
@@ -575,6 +604,164 @@ describe("chat service streaming", () => {
       };
     },
   } as const);
+
+  it("keeps authenticated streaming quota failures on the untouched JSON error path", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const quotaError = {
+      statusCode: 429,
+      code: "usage_limit_exceeded",
+      message: "Usage limit exceeded",
+      details: { resource: "monthly_answers", resetAt: "2026-08-01T00:00:00.000Z" },
+    };
+    const { usageLimitPolicy: baseUsageLimitPolicy } = createUsageLimitPolicy();
+    const usageLimitPolicy: NonNullable<ChatServiceOptions["usageLimitPolicy"]> = {
+      ...baseUsageLimitPolicy,
+      reserveAnswer: vi.fn(async () => {
+        throw quotaError;
+      }),
+    };
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() { yield "unused"; },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+    );
+    const { response, writes } = createUncommittedSseResponse();
+
+    await expect(sendChatSse(response as never, service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      sourceChannel: "authenticated_chat",
+      query: "What changed?",
+      stream: true,
+    }))).rejects.toBe(quotaError);
+
+    expect(response.headersSent).toBe(false);
+    expect(response.status).not.toHaveBeenCalled();
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+
+  it("keeps anonymous streaming missing-conversation failures on the untouched JSON error path", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() { yield "unused"; },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+    );
+    const { response, writes } = createUncommittedSseResponse();
+
+    await expect(sendChatSse(response as never, service.streamAnswer({
+      workspaceId: "workspace-1",
+      conversationId: "missing-conversation",
+      chatSessionId: "anonymous-session-1",
+      sourceChannel: "public_chat",
+      query: "What changed?",
+      stream: true,
+    }))).rejects.toMatchObject({ statusCode: 404, code: "not_found" });
+
+    expect(response.headersSent).toBe(false);
+    expect(response.status).not.toHaveBeenCalled();
+    expect(response.setHeader).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+
+  it("records both the aborted gate-bound candidate and focused decline in usage and the turn rollup", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const usageEvents: ModelUsageEvent[] = [];
+    const usageRecorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) {
+        usageEvents.push(event);
+      },
+    };
+    let candidateAbortObserved = false;
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-gate-bound" },
+      async complete() {
+        return {
+          text: "FOCUSED GROUNDED DECLINE",
+          usage: { inputTokens: 5, outputTokens: 3, totalTokens: 8, quality: "actual" },
+        };
+      },
+      stream(input) {
+        return streamWithUsage(async function* () {
+          try {
+            yield "PRIVATE DOCUMENT DRAFT ".repeat(300);
+          } finally {
+            candidateAbortObserved = input.signal?.aborted ?? false;
+            return { inputTokens: 20, outputTokens: 9, totalTokens: 29, quality: "actual" as const };
+          }
+        });
+      },
+    };
+    const inference = new ModelInferencePipelineService(client, usageRecorder);
+    const chatGateway = new ModelChatGateway(inference);
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      new ModelFallbackReplyComposer(inference),
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      query: "known topic",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> =>
+      event.type === "done");
+    expect(candidateAbortObserved).toBe(true);
+    expect(usageEvents).toHaveLength(2);
+    expect(usageEvents).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        status: "failed",
+        errorCode: "model_stream_aborted",
+        usageQuality: "actual",
+        inputTokens: 20,
+        outputTokens: 9,
+      }),
+      expect.objectContaining({
+        status: "succeeded",
+        errorCode: null,
+        usageQuality: "actual",
+        inputTokens: 5,
+        outputTokens: 3,
+      }),
+    ]));
+    expect(usageEvents.some((event) => event.idempotencyKey.includes("stream_grounded"))).toBe(true);
+    expect(usageEvents.some((event) => event.idempotencyKey.includes("stream_grounding_gate_bound"))).toBe(true);
+    expect(JSON.stringify(usageEvents)).not.toContain("PRIVATE DOCUMENT DRAFT");
+    expect(JSON.stringify(usageEvents)).not.toContain("FOCUSED GROUNDED DECLINE");
+    expect(done?.turnTrace?.summary).toMatchObject({ totalLlmCalls: 2, droppedCallCount: 0 });
+    expect(done?.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls)
+      .toHaveLength(2);
+  });
 
   it("uses the merged turn interpreter proposal when retrieval-sense detection is wired", async () => {
     const conversationRepository = new InMemoryConversationRepository();

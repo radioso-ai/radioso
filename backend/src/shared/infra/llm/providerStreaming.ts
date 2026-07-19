@@ -39,7 +39,10 @@ export const streamWithUsage = (
     } finally {
       if (!completed) {
         try {
-          await iterator.return?.(undefined);
+          const returned = await iterator.return?.(undefined);
+          if (returned?.done) {
+            captured = returned.value ?? captured;
+          }
         } catch {
           // Closing the provider iterator is best-effort. Preserve the caller's
           // stream cancellation/error path rather than replacing it here.

@@ -39,6 +39,35 @@ describe("BoundedGroundingStreamGate", () => {
     expect(gate.maxObservedRetainedCodePoints).toBe(Array.from(prefix).length);
   });
 
+  it("releases an exact-boundary assertion when its emoji surrogate pair is split across pushes", () => {
+    const gate = new BoundedGroundingStreamGate({
+      contextCount: 1,
+      maxRetainedCodePoints: 4_096,
+      now: () => 0,
+    });
+
+    expect(gate.push(`${"x".repeat(4_090)}\uD83D`)).toEqual({ kind: "hold" });
+    expect(gate.push("\uDE00[[1]]")).toEqual({
+      kind: "release",
+      text: `${"x".repeat(4_090)}😀[[1]]`,
+    });
+    expect(gate.maxObservedRetainedCodePoints).toBe(4_096);
+  });
+
+  it("drops a lone trailing high surrogate when generation ends", () => {
+    const gate = new BoundedGroundingStreamGate({
+      contextCount: 1,
+      maxRetainedCodePoints: 64,
+      now: () => 0,
+    });
+
+    expect(gate.push("claim[[1]]\uD83D")).toEqual({
+      kind: "release",
+      text: "claim[[1]]",
+    });
+    expect(gate.finish()).toEqual({ kind: "open" });
+  });
+
   it("releases the rest of an oversized input chunk when its admitted prefix opens the gate", () => {
     const admitted = "abc[[1]]";
     const gate = new BoundedGroundingStreamGate({

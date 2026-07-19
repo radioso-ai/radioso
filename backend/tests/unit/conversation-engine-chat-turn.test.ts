@@ -403,6 +403,157 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
     await expect(events.next()).resolves.toEqual({ done: true, value: undefined });
   });
 
+  it("delivers cancellation immediately while the pump owns a blocked engine next", async () => {
+    const controller = new AbortController();
+    const superseded = new Error("superseded_while_engine_blocked");
+    let rejectEngineNext!: (error: unknown) => void;
+    const blockedNext = new Promise<IteratorResult<never>>((_resolve, reject) => {
+      rejectEngineNext = reject;
+    });
+    const engineIterator = {
+      next: vi.fn(() => blockedNext),
+      return: vi.fn(async () => ({ done: true, value: undefined })),
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const result = {
+      sessionId: "conv_1",
+      events: [],
+      decision: { selected: [], reason: "test" },
+      outcomes: [],
+      response: { answer: "unused" },
+      trace: { traceId: "trace", startedAt: new Date(0).toISOString(), stages: [] },
+    } as ProcessTurnResult;
+    const engine: ConversationEngine = {
+      attemptRoutine: async () => null,
+      processTurn: async () => result,
+      resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
+      processTurnStream: vi.fn(() => engineIterator) as never,
+    };
+    const turnSkill: TurnSkill = {
+      definition: { name: "answer.direct", outcomeKinds: ["answer"] },
+      selects: () => true,
+      dispatch: () => ({
+        kind: "answer",
+        skillName: "answer.direct",
+        outcome: { status: "completed", answer: "unused" },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+      }),
+      renderer: {
+        supports: () => true,
+        render: async () => ({
+          answer: "unused",
+          skillName: "answer.direct",
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const events = runPreparedChatTurnStreamWithConversationEngine({
+      engine,
+      session: session(),
+      turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [turnSkill],
+      query: "Question",
+      signal: controller.signal,
+    })[Symbol.asyncIterator]();
+
+    const pending = events.next();
+    await vi.waitFor(() => expect(engineIterator.next).toHaveBeenCalledOnce());
+    controller.abort(superseded);
+
+    await expect(pending).rejects.toBe(superseded);
+    expect(engineIterator.return).not.toHaveBeenCalled();
+
+    rejectEngineNext(new Error("blocked_stage_failed_after_cancellation"));
+    await vi.waitFor(() => expect(engineIterator.return).toHaveBeenCalledOnce());
+  });
+
+  it("contains a rejecting engine return in the pump shutdown path", async () => {
+    const controller = new AbortController();
+    const superseded = new Error("superseded_before_rejecting_return");
+    let settleEngineNext!: (result: IteratorResult<never>) => void;
+    const blockedNext = new Promise<IteratorResult<never>>((resolve) => {
+      settleEngineNext = resolve;
+    });
+    const returnError = new Error("engine_return_failed");
+    const engineIterator = {
+      next: vi.fn(() => blockedNext),
+      return: vi.fn(async () => {
+        throw returnError;
+      }),
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const result = {
+      sessionId: "conv_1",
+      events: [],
+      decision: { selected: [], reason: "test" },
+      outcomes: [],
+      response: { answer: "unused" },
+      trace: { traceId: "trace", startedAt: new Date(0).toISOString(), stages: [] },
+    } as ProcessTurnResult;
+    const engine: ConversationEngine = {
+      attemptRoutine: async () => null,
+      processTurn: async () => result,
+      resumeAwaitingDecision: async () => ({ resumed: false, response: { answer: "" }, nextState: null }),
+      processTurnStream: vi.fn(() => engineIterator) as never,
+    };
+    const turnSkill: TurnSkill = {
+      definition: { name: "answer.direct", outcomeKinds: ["answer"] },
+      selects: () => true,
+      dispatch: () => ({
+        kind: "answer",
+        skillName: "answer.direct",
+        outcome: { status: "completed", answer: "unused" },
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "skill", startedAt: new Date(0).toISOString(), stages: [] },
+      }),
+      renderer: {
+        supports: () => true,
+        render: async () => ({
+          answer: "unused",
+          skillName: "answer.direct",
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const unhandled: unknown[] = [];
+    const recordUnhandled = (error: unknown) => {
+      unhandled.push(error);
+    };
+    process.on("unhandledRejection", recordUnhandled);
+    try {
+      const events = runPreparedChatTurnStreamWithConversationEngine({
+        engine,
+        session: session(),
+        turnSkillSelector: new ChatTurnSkillSelector([turnSkill], new DefaultTurnSelectionStrategy()),
+        turnSkills: [turnSkill],
+        query: "Question",
+        signal: controller.signal,
+      })[Symbol.asyncIterator]();
+
+      const pending = events.next();
+      await vi.waitFor(() => expect(engineIterator.next).toHaveBeenCalledOnce());
+      controller.abort(superseded);
+      await expect(pending).rejects.toBe(superseded);
+      settleEngineNext({ done: true, value: undefined });
+      await vi.waitFor(() => expect(engineIterator.return).toHaveBeenCalledOnce());
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      expect(engineIterator.return).toHaveBeenCalledOnce();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.removeListener("unhandledRejection", recordUnhandled);
+    }
+  });
+
   it("attaches answer model identity, latency, operation, and tokens to the compose stage", async () => {
     const inference = new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai", model: "gpt-answer" },

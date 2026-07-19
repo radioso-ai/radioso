@@ -70,6 +70,17 @@ const usageErrorCode = (error: unknown): string => {
   return "model_call_failed";
 };
 
+type StreamingTerminationOutcome = "succeeded" | "failed" | "cancelled" | "aborted";
+
+const isAbortError = (error: unknown): boolean =>
+  Boolean(error && typeof error === "object" && "name" in error && error.name === "AbortError");
+
+const streamingTerminationError = (
+  outcome: Exclude<StreamingTerminationOutcome, "succeeded" | "failed">,
+): { code: string } => ({
+  code: outcome === "aborted" ? "model_stream_aborted" : "model_stream_cancelled",
+});
+
 const buildUsageIdempotencyKey = (
   context: ModelCallUsageContext,
   provider: string,
@@ -200,35 +211,44 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       name: "llm.provider.stream",
       attributes: providerTraceAttributes(this.delegate.metadata, input.operation, { streaming: true }),
       createIterable: () => (async function* (pipeline: ModelInferencePipelineService) {
+      let terminalRecorded = false;
+      const recordTerminal = async (
+        outcome: StreamingTerminationOutcome,
+        error?: unknown,
+      ): Promise<void> => {
+        if (terminalRecorded) {
+          return;
+        }
+        terminalRecorded = true;
+        const completedAtMs = Date.now();
+        const status: UsageEventStatus = outcome === "succeeded" ? "succeeded" : "failed";
+        const terminalError = outcome === "cancelled" || outcome === "aborted"
+          ? streamingTerminationError(outcome)
+          : error;
+        const usage = await pipeline.recordUsage({
+          operation: input.operation,
+          request,
+          outputText,
+          status,
+          providerUsage: await readUsage(),
+          error: terminalError,
+        });
+        pipeline.recordTrace(input, startedAtMs, completedAtMs, status, usage);
+        setTraceAttributes({ "llm.provider.outcome": outcome });
+      };
       try {
         for await (const chunk of result.textStream) {
           outputText += chunk;
           yield chunk;
         }
-        const providerUsage = await readUsage();
-        const completedAtMs = Date.now();
-        const usage = await pipeline.recordUsage({
-          operation: input.operation,
-          request,
-          outputText,
-          status: "succeeded",
-          providerUsage,
-        });
-        pipeline.recordTrace(input, startedAtMs, completedAtMs, "succeeded", usage);
-        setTraceAttributes({ "llm.provider.outcome": "succeeded" });
+        await recordTerminal("succeeded");
       } catch (error) {
-        const completedAtMs = Date.now();
-        const usage = await pipeline.recordUsage({
-          operation: input.operation,
-          request,
-          outputText,
-          status: "failed",
-          providerUsage: await readUsage(),
-          error,
-        });
-        pipeline.recordTrace(input, startedAtMs, completedAtMs, "failed", usage);
-        setTraceAttributes({ "llm.provider.outcome": "failed" });
+        await recordTerminal(input.signal?.aborted || isAbortError(error) ? "aborted" : "failed", error);
         throw error;
+      } finally {
+        if (!terminalRecorded) {
+          await recordTerminal(input.signal?.aborted ? "aborted" : "cancelled");
+        }
       }
     })(this),
     });

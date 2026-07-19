@@ -27,6 +27,7 @@ export class BoundedGroundingStreamGate {
   private startedAtMs: number | undefined;
   private settledAtMs: number | undefined;
   private maxRetained = 0;
+  private trailingHighSurrogate = "";
   private readonly now: () => number;
 
   constructor(private readonly options: BoundedGroundingStreamGateOptions) {
@@ -52,19 +53,26 @@ export class BoundedGroundingStreamGate {
   }
 
   push(text: string): GroundingStreamGateDecision {
-    if (!text) {
-      return this.opened ? { kind: "release", text: "" } : { kind: "hold" };
-    }
     if (this.bounded) {
       return { kind: "bound" };
     }
+    let completeText = this.trailingHighSurrogate + text;
+    this.trailingHighSurrogate = "";
+    const trailingCodeUnit = completeText.charCodeAt(completeText.length - 1);
+    if (trailingCodeUnit >= 0xD800 && trailingCodeUnit <= 0xDBFF) {
+      this.trailingHighSurrogate = completeText.slice(-1);
+      completeText = completeText.slice(0, -1);
+    }
     if (this.opened) {
-      return { kind: "release", text };
+      return { kind: "release", text: completeText };
+    }
+    if (!completeText) {
+      return { kind: "hold" };
     }
     this.startedAtMs ??= this.now();
 
     const available = this.options.maxRetainedCodePoints - this.retainedCodePoints;
-    const incomingCodePoints = Array.from(text);
+    const incomingCodePoints = Array.from(completeText);
     const admitted = incomingCodePoints.slice(0, available).join("");
     const unadmitted = incomingCodePoints.slice(available).join("");
     this.retained += admitted;
@@ -84,6 +92,7 @@ export class BoundedGroundingStreamGate {
       this.bounded = true;
       this.settledAtMs = this.now();
       this.retained = "";
+      this.trailingHighSurrogate = "";
       return { kind: "bound" };
     }
     return { kind: "hold" };
@@ -94,6 +103,7 @@ export class BoundedGroundingStreamGate {
       this.settledAtMs = this.now();
     }
     this.retained = "";
+    this.trailingHighSurrogate = "";
     return this.opened ? { kind: "open" } : { kind: "closed" };
   }
 }

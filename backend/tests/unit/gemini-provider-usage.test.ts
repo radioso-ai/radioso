@@ -40,6 +40,17 @@ afterEach(() => {
 });
 
 describe("GeminiTextGenerationClient.complete", () => {
+  it("passes AbortSignal to fetch", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),
+    );
+    const controller = new AbortController();
+
+    await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi", signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+
   it("returns text plus usageMetadata as actual usage", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({
@@ -77,6 +88,21 @@ describe("GeminiTextGenerationClient.complete", () => {
 });
 
 describe("GeminiTextGenerationClient.stream", () => {
+  it("passes AbortSignal to streaming fetch", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([]));
+    const controller = new AbortController();
+
+    const { textStream } = new GeminiTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      signal: controller.signal,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+
   it("yields text and resolves usage from the final cumulative chunk", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       sseResponse([

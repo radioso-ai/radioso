@@ -33,6 +33,17 @@ afterEach(() => {
 });
 
 describe("ClaudeTextGenerationClient.complete", () => {
+  it("passes AbortSignal to fetch", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
+    );
+    const controller = new AbortController();
+
+    await new ClaudeTextGenerationClient(chatConfig).complete({ prompt: "Hi", signal: controller.signal });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+
   it("returns text plus message usage as actual usage", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({
@@ -67,6 +78,21 @@ describe("ClaudeTextGenerationClient.complete", () => {
 });
 
 describe("ClaudeTextGenerationClient.stream", () => {
+  it("passes AbortSignal to streaming fetch", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([]));
+    const controller = new AbortController();
+
+    const { textStream } = new ClaudeTextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      signal: controller.signal,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ signal: controller.signal }));
+  });
+
   it("assembles usage from message_start (input) and message_delta (output)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       sseResponse([

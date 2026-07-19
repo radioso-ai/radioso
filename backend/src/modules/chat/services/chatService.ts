@@ -229,6 +229,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      signal: input.signal,
       validateResult(result) {
         if (!result.text?.trim()) {
           throw new BlankChatAnswerError();
@@ -246,6 +247,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      signal: input.signal,
     });
     for await (const chunk of textStream) {
       if (chunk.length > 0) {

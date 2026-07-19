@@ -172,6 +172,9 @@ export {
 export { documentScopeFromClarificationCandidate } from "./services/senseGroupingService.js";
 export {
   evaluateRetrievalSenseClarification,
+  phraseRetrievalSenseAsk,
+  presentableSenseCandidates,
+  type PhrasedSenseClarification,
   type RetrievalSenseClarificationEffect,
   type RetrievalSenseDetectorPort,
 } from "./services/retrievalSenseClarification.js";

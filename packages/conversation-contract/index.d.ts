@@ -573,6 +573,7 @@ export interface ConversationTurnComposer {
 
 export interface ConversationTurnStreamComposer extends ConversationTurnComposer {
   stream(input: ConversationTurnComposeInput): AsyncIterable<TurnStreamEvent>;
+  streamCommitted?(response: RenderableTurn): Iterable<string>;
 }
 
 /**
@@ -1045,8 +1046,22 @@ export interface ProcessTurnInput {
   suppressNewClarification?: boolean;
 }
 
+export type ConversationProgressPhase =
+  | "preparing"
+  | "interpreting"
+  | "retrieving"
+  | "selecting"
+  | "dispatching"
+  | "composing"
+  | "routine";
+
+export interface ConversationProgressPort {
+  report(input: { phase: ConversationProgressPhase }): void;
+}
+
 export interface ProcessTurnStreamInput extends Omit<ProcessTurnInput, "composer"> {
   composer: ConversationTurnStreamComposer;
+  progress?: ConversationProgressPort;
 }
 
 /**
@@ -1072,6 +1087,7 @@ export interface AttemptRoutineInput {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+  progress?: ConversationProgressPort;
 }
 
 export interface ResumeAwaitingDecisionInput {

@@ -3,6 +3,22 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
+const assistantChatSseSchema = (name: string) => z.string().openapi(name, {
+  description: [
+    "A server-sent event stream. Status payloads use the named ChatStatusEvent schema.",
+    "Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions.",
+    "A cancelled event is terminal and no event follows it.",
+  ].join(" "),
+  example: [
+    "event: status",
+    'data: {"stage":"interpreting"}',
+    "",
+    "event: chunk",
+    'data: {"text":"Hello"}',
+    "",
+  ].join("\n"),
+});
+
 export const registerAssistantSessionPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
@@ -99,7 +115,7 @@ export const registerAssistantAuthenticatedChatPaths = (
             schema: schemas.AssistantChatResponseSchema,
           },
           "text/event-stream": {
-            schema: z.string().openapi("AssistantChatSseStream"),
+            schema: assistantChatSseSchema("AssistantChatSseStream"),
           },
         },
       },
@@ -361,7 +377,7 @@ export const registerAssistantPublicChatPaths = (
             schema: schemas.AssistantChatResponseSchema,
           },
           "text/event-stream": {
-            schema: z.string().openapi("PublicChatSseStream"),
+            schema: assistantChatSseSchema("PublicChatSseStream"),
           },
         },
       },

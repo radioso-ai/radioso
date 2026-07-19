@@ -18,8 +18,11 @@ describe("chat stream", () => {
       new Response(
         streamFromText(
           [
+            'event: status\ndata: {"stage":"interpreting"}\n\n',
             'event: conversation\ndata: {"conversationId":"c1"}\n\n',
+            'event: status\ndata: {"stage":"composing"}\n\n',
             'event: chunk\ndata: {"text":"hello"}\n\n',
+            'event: future-progress\ndata: {"value":1}\n\n',
             'event: suggestions\ndata: {"conversationId":"c1","suggestions":[{"text":"What next?"}]}\n\n',
             'event: done\ndata: {"conversationId":"c1","assistantMessageId":"m1","answer":"hello","suggestions":[{"text":"What next?"}],"debug":{"route":{"type":"retrieval","reason":"evidence_required"},"activitySummary":{},"activityTrace":{}}}\n\n',
           ].join(""),
@@ -43,7 +46,9 @@ describe("chat stream", () => {
     }
 
     expect(events).toEqual([
+      { type: "status", stage: "interpreting" },
       { type: "conversation", conversationId: "c1" },
+      { type: "status", stage: "composing" },
       { type: "chunk", text: "hello" },
       {
         type: "suggestions",
@@ -103,7 +108,10 @@ describe("chat stream", () => {
     const fetchMock = vi.fn(async () =>
       new Response(
         streamFromText(
-          'event: cancelled\ndata: {"conversationId":"c1","reason":"superseded","stage":"routing"}\n\n',
+          [
+            'event: cancelled\ndata: {"conversationId":"c1","reason":"superseded","stage":"routing"}\n\n',
+            'event: status\ndata: {"stage":"composing"}\n\n',
+          ].join(""),
         ),
         {
           status: 200,

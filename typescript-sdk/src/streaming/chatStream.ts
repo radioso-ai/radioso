@@ -10,7 +10,15 @@ export interface RadiosoChatStreamCancelledEvent {
   stage: "waiting" | "preparing" | "routing" | "rendering" | "persisting";
 }
 
+export type RadiosoChatStatusStage = "interpreting" | "searching" | "composing";
+
+export interface RadiosoChatStreamStatusEvent {
+  type: "status";
+  stage: RadiosoChatStatusStage;
+}
+
 export type RadiosoChatStreamEvent =
+  | RadiosoChatStreamStatusEvent
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
   | RadiosoChatStreamCancelledEvent
@@ -30,6 +38,9 @@ const isCancellationStage = (value: unknown): value is RadiosoChatStreamCancelle
   value === "routing" ||
   value === "rendering" ||
   value === "persisting";
+
+const isStatusStage = (value: unknown): value is RadiosoChatStatusStage =>
+  value === "interpreting" || value === "searching" || value === "composing";
 
 const toLines = async function* (stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
   const reader = stream.getReader();
@@ -73,6 +84,10 @@ const parseFrame = (frame: string): RadiosoChatStreamEvent | null => {
 
   if (eventName === "conversation" && typeof payload.conversationId === "string") {
     return { type: "conversation", conversationId: payload.conversationId };
+  }
+
+  if (eventName === "status" && isStatusStage(payload.stage)) {
+    return { type: "status", stage: payload.stage };
   }
 
   if (eventName === "chunk" && typeof payload.text === "string") {
@@ -160,6 +175,9 @@ export const streamChat = async function* (
       const parsed = parseFrame(frame);
       if (parsed) {
         yield parsed;
+        if (parsed.type === "cancelled") {
+          return;
+        }
       }
     }
   } catch (error) {

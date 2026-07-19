@@ -14,7 +14,7 @@ const presenter = new ChatAnswerPresenter(stubExpansion);
 
 describe("ChatAnswerPresenter.presentRoutineAnswer", () => {
   it("attaches citations from routine retrieval evidence and resolves the source url", () => {
-    const result = presenter.presentRoutineAnswer("Kriya is introduced in the first module.", [
+    const result = presenter.presentRoutineAnswer("Kriya is introduced in the first module[[1]].", [
       {
         documentId: "doc_1",
         chunkId: "chunk_1",
@@ -44,7 +44,7 @@ describe("ChatAnswerPresenter.presentRoutineAnswer", () => {
   });
 
   it("drops an unsafe (non-http) source url while keeping the citation", () => {
-    const result = presenter.presentRoutineAnswer("See the linked guide.", [
+    const result = presenter.presentRoutineAnswer("See the linked guide[[1]].", [
       {
         documentId: "doc_2",
         chunkId: "chunk_2",
@@ -66,5 +66,12 @@ describe("ChatAnswerPresenter.presentRoutineAnswer", () => {
   it("ignores non-citation junk in the citations array", () => {
     const result = presenter.presentRoutineAnswer("Hello there.", [null, 42, { notACitation: true }]);
     expect(result.citations ?? []).toHaveLength(0);
+  });
+
+  it("does not attach routine evidence without an explicit anchor", () => {
+    const result = presenter.presentRoutineAnswer("Kriya is introduced in the first module.", [
+      { documentId: "doc_1", chunkId: "chunk_1", title: "Course Guide", content: "Kriya is introduced." },
+    ]);
+    expect(result.citations ?? []).toEqual([]);
   });
 });

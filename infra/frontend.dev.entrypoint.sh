@@ -97,13 +97,31 @@ mark_next_cache_ready() {
 }
 
 next_cache_looks_incomplete() {
-  if [ -d frontend/.next/dev ] && [ ! -f frontend/.next/dev/routes-manifest.json ]; then
+  if next_cache_has_missing_dev_manifest; then
     return 0
   fi
 
   if next_cache_has_missing_vendor_chunk; then
     return 0
   fi
+
+  return 1
+}
+
+next_cache_has_missing_dev_manifest() {
+  if [ ! -d frontend/.next/dev ]; then
+    return 1
+  fi
+
+  for manifest in \
+    frontend/.next/dev/routes-manifest.json \
+    frontend/.next/dev/server/middleware-manifest.json
+  do
+    if [ ! -f "$manifest" ]; then
+      echo "Detected incomplete Next.js dev cache: missing ${manifest#frontend/.next/dev/}"
+      return 0
+    fi
+  done
 
   return 1
 }
@@ -275,9 +293,9 @@ start_next_dev
 while kill -0 "$NEXT_PID" 2>/dev/null; do
   sleep 5
 
-  if next_cache_has_missing_vendor_chunk; then
+  if next_cache_looks_incomplete; then
     sleep 1
-    if next_cache_has_missing_vendor_chunk; then
+    if next_cache_looks_incomplete; then
       echo "Restarting frontend Next.js dev server after incomplete cache."
       stop_next_dev
       clear_next_cache

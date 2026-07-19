@@ -73,7 +73,6 @@ import {
   NoopAnswerFeedbackHistoryProvider,
   NoopPublicChatActionAdvertiser,
   NoopContactHistoryProvider,
-  resolveCitationArtifacts,
   RetrievalTurnController,
   RoutineRegistry,
   RoutineChatModelGateway,
@@ -989,7 +988,6 @@ export const buildChatServices = (input: {
   const answerPresentation = {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
     present: answerPresentationService.present.bind(answerPresentationService),
-    resolveCitationArtifacts,
   };
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
   const publicChatActionAdvertiserContext = {
@@ -1176,6 +1174,7 @@ export const buildChatServices = (input: {
     skillOutcomeCapabilities: createSkillOutcomeCapabilityProvider(
       input.composition.skillCatalogRegistry,
     ),
+    metrics: input.metricsRegistry,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives

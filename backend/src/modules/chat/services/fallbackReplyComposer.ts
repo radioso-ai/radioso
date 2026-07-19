@@ -6,7 +6,7 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
-import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { isProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
@@ -27,56 +27,16 @@ export interface FallbackReplyComposer {
 
 export class MissingFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(_input: FallbackReplyInput): Promise<string> {
-    return buildNoContextFallback();
+    return getGroundedMissFallback();
   }
 }
 
 const MAX_RESPONSE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxResponseLength;
-const GROUNDED_MISS_SYSTEM_PROMPT = [
-  "You write scoped fallback replies for a document-grounded assistant.",
-  "Write in first person as the assistant. Do not refer to yourself as 'the assistant' or 'this assistant'.",
-  "When the user's exact question is outside the assistant's configured scope or unsupported by available context, do not answer it from general knowledge.",
-  "If the user asks about an out-of-scope person, company, place, product, event, concept, or other named entity, do not identify, describe, summarize, compare, or explain that entity.",
-  "Instead, say the topic is outside your focus, then bridge to what you can help with.",
-].join(" ");
-
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
-
-let groundedMissTemplate: string | undefined;
-
-const getGroundedMissTemplate = (): string => {
-  groundedMissTemplate ??= loadPromptTemplate("chat/grounded-miss.md");
-  return groundedMissTemplate;
-};
-
-const getGroundedMissPromptSection = (sectionName: string): string => {
-  const sectionPattern = new RegExp(`--- ${sectionName} ---\\n([\\s\\S]*?)(?=\\n--- [a-z_]+ ---|$)`);
-  const match = getGroundedMissTemplate().match(sectionPattern);
-  if (!match?.[1]?.trim()) {
-    throw new Error(`Missing grounded miss prompt section "${sectionName}"`);
-  }
-
-  return match[1].trimEnd();
-};
-
-const renderGroundedMissSection = (
-  sectionName: string,
-  variables: Record<string, string>,
-): string => {
-  const template = getGroundedMissPromptSection(sectionName);
-
-  return template.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key: string) => {
-    if (!(key in variables)) {
-      throw new Error(`Missing prompt variable "${key}" for grounded miss section ${sectionName}`);
-    }
-
-    return variables[key] ?? "";
-  });
-};
 
 // Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
 // before the fallback response is shown to users.
@@ -109,7 +69,18 @@ const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string =>
   return normalized.length > 0 ? normalized : "No additional answer instructions.";
 };
 
-const buildNoContextFallback = (): string => renderGroundedMissSection("fallback_no_context", {});
+export const getGroundedMissFallback = (): string =>
+  loadPromptTemplate("chat/grounded-miss-fallback.md").trim();
+
+const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
+  appendSteeringBlock(
+    renderPromptTemplate("chat/grounded-miss.md", {
+      decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
+      locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
+      answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
+    }),
+    input.steering,
+  );
 
 export class ModelFallbackReplyComposer implements FallbackReplyComposer {
   constructor(private readonly inference: ModelInferencePipeline) {}
@@ -141,15 +112,8 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(input: FallbackReplyInput): Promise<string> {
     try {
       const request = {
-        systemPrompt: GROUNDED_MISS_SYSTEM_PROMPT,
-        prompt: appendSteeringBlock(
-          renderGroundedMissSection("prompt", {
-            locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
-            query: input.query,
-            answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
-          }),
-          input.steering,
-        ),
+        systemPrompt: buildGroundedMissSystemPrompt(input),
+        prompt: input.query,
         temperature: CHAT_BEHAVIOR.groundedMiss.temperature,
         maxOutputTokens: CHAT_BEHAVIOR.groundedMiss.noContextMaxOutputTokens,
         // Short utility decline: keep reasoning spend minimal so the token budget
@@ -163,13 +127,13 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         return normalized;
       }
 
-      return buildNoContextFallback();
+      return getGroundedMissFallback();
     } catch (error) {
       if (isProviderCredentialError(error)) {
         throw error;
       }
 
-      return buildNoContextFallback();
+      return getGroundedMissFallback();
     }
   }
 }

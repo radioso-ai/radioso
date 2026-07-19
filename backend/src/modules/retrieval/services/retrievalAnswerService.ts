@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import {
   AnswerPresentationService,
-  resolveCitationArtifacts,
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
@@ -133,11 +132,7 @@ export class RetrievalAnswerService {
         metadata: context.metadata,
         sourceUrl: resolveContextSourceUrl(context.metadata),
       }));
-      const normalized = this.answerPresentationService.normalize({
-        answer: rawAnswer,
-        citations: evidence,
-      });
-      const presented = this.presentAnswer(rawAnswer, normalized, evidence);
+      const presented = this.presentAnswer(rawAnswer, evidence);
       const activityTrace = appendDirectiveSteeringStage(this.activityTracePresenter.appendAnswerOutcome({
         trace: retrieval.trace,
         summary: activitySummary,
@@ -176,18 +171,12 @@ export class RetrievalAnswerService {
 
   private presentAnswer(
     rawAnswer: string,
-    normalized: ReturnType<AnswerPresentationService["normalize"]>,
     evidence: CitationEvidence[],
   ) {
-    const presented = this.answerPresentationService.present({
+    return this.answerPresentationService.present({
       answer: rawAnswer,
       citations: evidence,
     });
-
-    return {
-      ...presented,
-      ...resolveCitationArtifacts(presented, normalized, evidence),
-    };
   }
 
   private async recordAuditAnswer(

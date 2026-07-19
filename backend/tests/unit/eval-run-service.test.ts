@@ -414,6 +414,16 @@ class StubWorkbenchReplayRunner implements EvalWorkbenchReplayRunnerPort {
       answer: "Replay answer.",
       citations: [{ documentId: "doc-refund", chunkId: "chunk-1", title: "Refund Policy" }],
       answerSegments: [{ text: "Replay answer.", citationIndices: [0] }],
+      groundingSummary: {
+        protocolVersion: 2,
+        parseStatus: "valid_v2",
+        verdict: "grounded",
+        claimCount: 1,
+        sourcedClaimCount: 1,
+        unsourcedClaimCount: 0,
+        invalidSourceCount: 0,
+        assertionMismatch: false,
+      },
       turnTrace: {
         version: 1,
         spine: {
@@ -985,6 +995,16 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       answer: "Replay answer.",
       citations: [{ documentId: "doc-refund", chunkId: "chunk-1", title: "Refund Policy" }],
       answerSegments: [{ text: "Replay answer.", citationIndices: [0] }],
+      groundingVerdict: "grounded",
+      groundingDiagnostics: {
+        protocolVersion: 2,
+        parseStatus: "valid_v2",
+        claimCount: 1,
+        sourcedClaimCount: 1,
+        unsourcedClaimCount: 0,
+        invalidSourceCount: 0,
+        assertionMismatch: false,
+      },
       turnTrace: {
         version: 1,
         spine: { traceId: "engine-trace" },

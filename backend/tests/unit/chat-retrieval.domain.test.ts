@@ -1873,7 +1873,7 @@ describe("chat retrieval domain", () => {
     expect(result).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
   });
 
-  it("attaches implicit citations for clean retrieval answers", async () => {
+  it("does not attach implicit citations to anchor-free retrieval answers", async () => {
     const service = new RetrievalAnswerService({
       retrievalPipeline: {
         async interpret() {
@@ -1932,14 +1932,16 @@ describe("chat retrieval domain", () => {
       },
     } as never);
 
-    await expect(service.answer({
+    const result = await service.answer({
       workspaceId: "workspace-1",
       query: "What does the page explain?",
-    })).resolves.toMatchObject({
+    });
+
+    expect(result).toMatchObject({
       outcome: "answer",
       answer: "The page explains testing and parsing content for users.",
-      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
     });
+    expect(result.citations).toBeUndefined();
   });
 
   it("applies retrieval-route directive steering to direct answer generation", async () => {

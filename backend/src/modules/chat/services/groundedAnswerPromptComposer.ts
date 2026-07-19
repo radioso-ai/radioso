@@ -20,7 +20,7 @@ export interface GroundedAnswerSystemPromptInput {
 
 export interface GroundedAnswerSystemPromptResult {
   systemPrompt: string;
-  envelopeExpected: boolean;
+  suggestionsExpected: boolean;
 }
 
 const joinBlocks = (head: string, block: string): string => (head ? `${head}\n\n${block}` : block);
@@ -41,7 +41,7 @@ const formatOfferAlternatives = (
 export const composeGroundedAnswerSystemPrompt = (
   input: GroundedAnswerSystemPromptInput,
 ): GroundedAnswerSystemPromptResult => {
-  const envelopeExpected =
+  const suggestionsExpected =
     input.suggestedQuestionsEnabled &&
     input.suggestedQuestionsCount > 0 &&
     input.hasRetrievedContexts;
@@ -54,11 +54,13 @@ export const composeGroundedAnswerSystemPrompt = (
     ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", { alternatives }))
     : withSteering;
 
-  if (!envelopeExpected) {
-    return { systemPrompt: grounded, envelopeExpected: false };
+  const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
+  const withEnvelope = joinBlocks(grounded, envelopeBlock);
+  if (!suggestionsExpected) {
+    return { systemPrompt: withEnvelope, suggestionsExpected: false };
   }
 
-  const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {
+  const suggestionBlock = renderPromptTemplate("chat/answer-suggestions.md", {
     max_suggestions: String(input.suggestedQuestionsCount),
     recent_turns_json: formatConversationIntentSnapshot(input.conversationIntentSnapshot),
     active_subject: input.conversationIntentSnapshot.activeSubject ?? "None",
@@ -66,7 +68,7 @@ export const composeGroundedAnswerSystemPrompt = (
   });
 
   return {
-    systemPrompt: joinBlocks(grounded, envelopeBlock),
-    envelopeExpected: true,
+    systemPrompt: joinBlocks(withEnvelope, suggestionBlock),
+    suggestionsExpected: true,
   };
 };

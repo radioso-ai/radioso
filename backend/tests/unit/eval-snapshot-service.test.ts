@@ -355,7 +355,26 @@ describe("EvalSnapshotService.capture", () => {
     };
     const messages: MessageRecord[] = [
       { id: "u1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "First", createdAt: fixedDate },
-      { id: "a1", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "First answer", createdAt: fixedDate },
+      {
+        id: "a1",
+        conversationId: conversation.id,
+        workspaceId: "ws-1",
+        role: "assistant",
+        content: "First answer",
+        createdAt: fixedDate,
+        metadata: {
+          groundingVerdict: "degraded",
+          groundingProtocolVersion: 2,
+          groundingDiagnostics: {
+            parseStatus: "valid_v2",
+            claimCount: 2,
+            sourcedClaimCount: 1,
+            unsourcedClaimCount: 1,
+            invalidSourceCount: 0,
+            assertionMismatch: false,
+          },
+        },
+      },
       { id: "u2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Second", createdAt: fixedDate },
       { id: "a2", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "Second answer", createdAt: fixedDate },
     ];
@@ -378,6 +397,11 @@ describe("EvalSnapshotService.capture", () => {
     expect(snapshot.sourceMessageId).toBe("a1");
     expect(snapshot.replayTarget).toEqual({ userMessageId: "u1", assistantMessageId: "a1" });
     expect(snapshot.messages.map((message) => message.id)).toEqual(["u1", "a1"]);
+    expect(snapshot.messages[1]?.groundingSummary).toMatchObject({
+      protocolVersion: 2,
+      verdict: "degraded",
+      unsourcedClaimCount: 1,
+    });
   });
 
   it("records a user-only replay target when the selected message is the user turn", async () => {

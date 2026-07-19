@@ -36,22 +36,49 @@ import {
   StaticRoutineSkillResolver,
 } from "../../src/modules/routines/skillDispatcher.js";
 
+const assertionManifest = (answer: string): number[][] =>
+  [...answer.matchAll(/(?:\[\[(?:\d+|\?)\]\])+/g)].flatMap((group) => {
+    if (group[0] === "[[?]]") {
+      return [[]];
+    }
+    return [[...group[0].matchAll(/\[\[(\d+)\]\]/g)].map((match) => Number(match[1]))];
+  });
+
+const envelopeTail = (answer: string, suggestions: unknown[] = []): string =>
+  JSON.stringify({
+    v: 2,
+    outcome: "answer",
+    claims: assertionManifest(answer),
+    suggestions,
+    grounding: "degraded",
+  });
+
 const envelope = (answer: string, suggestions: unknown[]): string =>
-  `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
+  `${answer}\n${SUGGESTIONS_SENTINEL}\n${envelopeTail(answer, suggestions)}`;
 
 const groundingEnvelope = (
   answer: string,
   grounding: "grounded" | "degraded",
   suggestions: unknown[] = [],
-): string => `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ grounding, suggestions })}`;
+): string => `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+  v: 2,
+  outcome: "answer",
+  claims: grounding === "degraded" && !answer.includes("[[?]]")
+    ? [...assertionManifest(answer), []]
+    : assertionManifest(answer),
+  suggestions,
+  grounding: "degraded",
+})}`;
 
 const groundedSkillCapabilities: SkillOutcomeCapabilityProvider = {
   supportsGroundedAnswer: () => true,
 };
 
+const focusedGroundedMiss = "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
-    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+    return focusedGroundedMiss;
   },
 };
 
@@ -2356,11 +2383,12 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "full answer[[1]]";
+        return envelope("full answer[[1]]", []);
       },
       async *streamAnswer() {
         yield "full answer[[";
         yield "1]]";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("full answer[[1]]")}`;
       },
     };
     const service = makeChatService(
@@ -2508,11 +2536,12 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "Keep meditation practice short and simple. Begin with a few minutes each day.";
+        return envelope("Keep meditation practice short and simple. Begin with a few minutes each day[[1]].", []);
       },
       async *streamAnswer() {
         yield "Keep meditation practice short ";
-        yield "and simple. Begin with a few minutes each day.";
+        yield "and simple. Begin with a few minutes each day[[1]].";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("Keep meditation practice short and simple. Begin with a few minutes each day[[1]].")}`;
       },
     };
     const service = makeChatService(
@@ -2550,9 +2579,10 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
       answerSegments: [
         {
-          text: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+          text: "Keep meditation practice short and simple. Begin with a few minutes each day",
           citationIndices: [0],
         },
+        { text: "." },
       ],
     }));
   });
@@ -2614,7 +2644,7 @@ describe("chat service streaming", () => {
         yield "This following sentence continues the explanation without its own citation marker. ";
         yield "And a third sentence streams in as the model keeps generating more tokens. ";
         yield "Finally a closing sentence wraps things up neatly.";
-        yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail(fullAnswer)}`;
       },
     };
     const service = makeChatService(
@@ -2699,12 +2729,12 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.";
+        return envelope("Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.", []);
       },
       async *streamAnswer() {
         yield "Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.";
         await releaseTail.promise;
-        yield `\n${SUGGESTIONS_SENTINEL}\n[]`;
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("Keep meditation practice short and simple. Begin with a few minutes each day[[1]]. This cited sentence has arrived and can stream now.")}`;
       },
     };
     const service = makeChatService(
@@ -2791,11 +2821,12 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "Keep meditation practice short and simple. Begin with a few minutes each day.";
+        return envelope("Keep meditation practice short and simple. Begin with a few minutes each day[[1]].", []);
       },
       async *streamAnswer() {
         yield "Keep meditation practice short ";
-        yield "and simple. Begin with a few minutes each day.";
+        yield "and simple. Begin with a few minutes each day[[1]].";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("Keep meditation practice short and simple. Begin with a few minutes each day[[1]].")}`;
       },
     };
     const service = makeChatService(
@@ -2833,14 +2864,15 @@ describe("chat service streaming", () => {
       citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Meditation Tips" }],
       answerSegments: [
         {
-          text: "Keep meditation practice short and simple. Begin with a few minutes each day.",
+          text: "Keep meditation practice short and simple. Begin with a few minutes each day",
           citationIndices: [0],
         },
+        { text: "." },
       ],
     }));
   });
 
-  it("does not stream unsupported grounded drafts when the final answer is a grounded miss", async () => {
+  it("holds unsupported grounded drafts and releases the focused grounded miss at finalize", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -2915,9 +2947,9 @@ describe("chat service streaming", () => {
       .join("");
     const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
 
-    expect(streamedText).not.toContain("discount code");
     expect(streamedText).toBe(done?.answer);
-    expect(done?.answer).not.toContain("discount code");
+    expect(done?.answer).toBe(focusedGroundedMiss);
+    expect((done as unknown as { skillOutcome?: string } | undefined)?.skillOutcome).toBe("no_context");
   });
 
   it("fails blank grounded streams instead of persisting an empty assistant turn", async () => {
@@ -3496,10 +3528,11 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "full answer[[1]]";
+        return envelope("full answer[[1]]", []);
       },
       async *streamAnswer() {
         yield "full answer[[1]]";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("full answer[[1]]")}`;
       },
     };
     const service = makeChatService(
@@ -3583,10 +3616,11 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "full answer[[1]]";
+        return envelope("full answer[[1]]", []);
       },
       async *streamAnswer() {
         yield "full answer[[1]]";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("full answer[[1]]")}`;
       },
     };
     const service = makeChatService(
@@ -3612,7 +3646,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("includes the normalized final answer in the done event when a malformed anchor is truncated during streaming", async () => {
+  it("suppresses a draft when a malformed anchor is truncated during streaming", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -3684,13 +3718,14 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe("full answer  marker");
+    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
-      answer: "full answer  marker",
-      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
-      answerSegments: [{ text: "full answer  marker", citationIndices: [0] }],
+      answer: focusedGroundedMiss,
+      citations: undefined,
+      answerSegments: undefined,
+      skillOutcome: "no_context",
       activitySummary: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -3715,11 +3750,11 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: "full answer  marker",
+      content: focusedGroundedMiss,
     });
   });
 
-  it("drops trailing incomplete citation anchor carry when the stream ends", async () => {
+  it("suppresses a draft with trailing incomplete citation syntax", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -3790,8 +3825,8 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual(["full answer"]);
-    expect(doneEvent).toEqual({
+    expect(chunkTexts).toEqual([focusedGroundedMiss]);
+    expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
       agentId: "workspace-1",
@@ -3801,13 +3836,11 @@ describe("chat service streaming", () => {
         type: "retrieval",
         reason: "evidence_required",
       },
-      answer: "full answer",
-      skillOutcome: "grounded",
-      answerOutcome: "grounded_success",
-      citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Intro" }],
-      answerSegments: [
-        { text: "full answer", citationIndices: [0] },
-      ],
+      answer: focusedGroundedMiss,
+      skillOutcome: "no_context",
+      answerOutcome: "no_context_refusal",
+      citations: undefined,
+      answerSegments: undefined,
       suggestions: undefined,
       activitySummary: expect.objectContaining({
         candidateCounts: {
@@ -3838,13 +3871,13 @@ describe("chat service streaming", () => {
           ]),
         }),
       }),
-    });
+    }));
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: "full answer",
+      content: focusedGroundedMiss,
     });
   });
 
@@ -3997,7 +4030,10 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "The page explains testing and parsing content for users. It also offers 24/7 phone support.";
+        return envelope(
+          "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]].",
+          [],
+        );
       },
       async *streamAnswer() {
         yield "unused";
@@ -4019,7 +4055,7 @@ describe("chat service streaming", () => {
     });
 
     expect(response.answer).toContain("24/7 phone support");
-    expect(response.answerSegments).toHaveLength(2);
+    expect(response.answerSegments).toHaveLength(3);
     expect(response.answerSegments?.[0]).toEqual(
       expect.objectContaining({ citationIndices: [0] }),
     );
@@ -4075,7 +4111,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support.";
+        return envelope("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]].", []);
       },
       async *streamAnswer() {
         yield "unused";
@@ -4104,15 +4140,16 @@ describe("chat service streaming", () => {
         citationIndices: [0],
       },
       {
-        text: ". It also offers 24/7 phone support.",
+        text: ". It also offers 24/7 phone support",
       },
+      { text: "." },
     ]);
     expect(response.activityTrace.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({ stageId: "answer" }),
     ]));
   });
 
-  it("records a grounded_degraded outcome when the model flags weak grounding", async () => {
+  it("records a grounded_degraded outcome from the computed assertion verdict", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4182,7 +4219,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("keeps a degraded verdict from overriding the no-context grounded miss", async () => {
+  it("suppresses an anchor-free degraded answer with a focused grounded miss", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4218,12 +4255,19 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        // Degraded verdict, but the model cited nothing — the grounded-miss safety
-        // net must still win and classify the turn as no_context.
+        // An ignored assertion protocol must never expose an unsupported draft.
         return groundingEnvelope("We don't have specific details on that.", "degraded");
       },
       async *streamAnswer() {
         yield "unused";
+      },
+    };
+    const focusedDecline = "I don't have supporting material for that. Ask me about the guide instead.";
+    const declineAttemptKeys: string[] = [];
+    const focusedDeclineComposer: FallbackReplyComposer = {
+      async composeNoContext(input) {
+        declineAttemptKeys.push(input.usageContext.attemptKey);
+        return focusedDecline;
       },
     };
     const service = makeChatService(
@@ -4232,9 +4276,10 @@ describe("chat service streaming", () => {
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
+      focusedDeclineComposer,
     );
 
-    await service.answer({
+    const response = await service.answer({
       workspaceId: "workspace-1",
       accountId: "account-1",
       query: "What does this page do?",
@@ -4243,6 +4288,9 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
+    expect(response.answer).toBe(focusedDecline);
+    expect(response.skillOutcome).toBe("no_context");
+    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
       skillOutcome: "no_context",
@@ -4293,8 +4341,8 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
-        const answerText = "The guide covers parser setup and onboarding workflows.";
-        if (systemPrompt?.includes("Output envelope")) {
+        const answerText = "The guide covers parser setup and onboarding workflows[[1]].";
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "How do import audits work?", kind: "deeper", contextIndex: 1 },
           ]);
@@ -4389,7 +4437,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Thanks for asking.";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           // Envelope is requested even when the answer ends up uncited; the presenter
           // gating drops suggestions for uncited answers.
           return envelope(answerText, [
@@ -4466,7 +4514,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "I'm Vikram. The page explains testing and parsing content for users.";
+        return envelope("I'm Vikram[[?]]. The page explains testing and parsing content for users[[1]].", []);
       },
       async *streamAnswer() {
         yield "unused";
@@ -4494,8 +4542,9 @@ describe("chat service streaming", () => {
       { documentId: "doc-1", chunkId: "chunk-1", title: "Guide" },
     ]);
     expect(response.answerSegments).toEqual([
-      expect.objectContaining({ text: expect.any(String) }),
+      expect.objectContaining({ text: "I'm Vikram" }),
       expect.objectContaining({ text: expect.any(String), citationIndices: [0] }),
+      { text: "." },
     ]);
 
     const [conversationId] = conversationRepository.items.keys();
@@ -4549,7 +4598,8 @@ describe("chat service streaming", () => {
       },
       async *streamAnswer() {
         yield "The page explains testing and parsing content for users[[1]]. ";
-        yield "It also offers 24/7 phone support.";
+        yield "It also offers 24/7 phone support[[?]].";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]].")}`;
       },
     };
     const service = makeChatService(
@@ -4598,7 +4648,7 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("does not stream an uncited warn-mode draft when the final outcome is a grounded miss", async () => {
+  it("suppresses an uncited warn-mode draft with a focused decline", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4653,6 +4703,7 @@ describe("chat service streaming", () => {
       new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
       chatGateway,
       auditService,
+      fallbackReplyComposer,
     );
 
     const events: ChatStreamEvent[] = [];
@@ -4670,11 +4721,12 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts.join("")).toBe("I can't answer that from my current focus. Try asking about the topics I can help with.");
+    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "I can't answer that from my current focus. Try asking about the topics I can help with.",
+        answer: focusedGroundedMiss,
+        skillOutcome: "no_context",
         activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([
             expect.objectContaining({
@@ -4738,7 +4790,7 @@ describe("chat service streaming", () => {
           "- You can also inspect the onboarding FAQ[[1]].",
           "- The notes include worked examples[[1]].",
         ].join("\n");
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, []);
         }
         return answerText;
@@ -4827,7 +4879,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Mahiya is a teacher and author[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
             { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
@@ -4939,7 +4991,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Mahiya is a teacher and author[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
           ]);
@@ -5130,7 +5182,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
           ]);
@@ -5226,7 +5278,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             // Near-paraphrase of the user's query — should be filtered.
             { text: "Where are the next Assisi videos links?", kind: "deeper", contextIndex: 2 },
@@ -5327,7 +5379,7 @@ describe("chat service streaming", () => {
           query === "What should I include next?"
             ? "You should include orientation and meals[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
             { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
@@ -5480,7 +5532,7 @@ describe("chat service streaming", () => {
           query === "What about facilitator support?"
             ? "Facilitators should balance logistics and attendee care[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           if (systemPrompt.includes("Active subject:\nFacilitator support")) {
             return envelope(answerText, [
               { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
@@ -5590,7 +5642,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "The guide covers testing, onboarding, and parser rules[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           suggestionCallCount += 1;
           return envelope(answerText, [
             { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
@@ -5693,7 +5745,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "The archive covers videos, audio, and retreat notes[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
             { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
@@ -5803,7 +5855,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Start with the retreat schedule and day-one orientation[[1]].";
-        if (systemPrompt?.includes("Output envelope")) {
+        if (systemPrompt?.includes("Answer assertion protocol")) {
           return envelope(answerText, [
             { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
             { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },
@@ -5865,7 +5917,7 @@ describe("chat service streaming", () => {
     ]);
   });
 
-  it("preserves grounded markdown links while attaching implicit citations", async () => {
+  it("preserves grounded markdown links while attaching explicit citations", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -5910,7 +5962,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return "Read more here: [Guide](https://example.com/guide). It explains testing and parsing content for users.";
+        return envelope("Read more here: [Guide](https://example.com/guide). It explains testing and parsing content for users[[1]].", []);
       },
       async *streamAnswer() {
         yield "";
@@ -5943,12 +5995,10 @@ describe("chat service streaming", () => {
     ]);
     expect(response.answerSegments).toEqual([
       {
-        text: expect.any(String),
-      },
-      {
-        text: "It explains testing and parsing content for users.",
+        text: "Read more here: [Guide](https://example.com/guide). It explains testing and parsing content for users",
         citationIndices: [0],
       },
+      { text: "." },
     ]);
   });
 

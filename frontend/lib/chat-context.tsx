@@ -18,7 +18,6 @@ import {
   type Citation,
   type ChatSuggestion,
   type ChatStreamCompletion,
-  type ChatStatusStage,
   type ChatUserInputMetadata,
   type ActivitySummary,
   type ActivityTrace,
@@ -42,7 +41,6 @@ export interface ChatMessage {
   turnTrace?: TurnTraceEnvelope
   persistedAssistantMessageId?: string
   status: 'complete' | 'streaming' | 'error'
-  statusStage?: ChatStatusStage
   skill?: SkillStreamPayload
 }
 
@@ -212,7 +210,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                       answerSegments: undefined,
                       suggestions: undefined,
                       status: 'complete' as const,
-                      statusStage: undefined,
                     }
                   : message,
               )
@@ -239,7 +236,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 turnTrace: completion.debug?.turnTrace,
                 skill: completion.skill ?? message.skill,
                 status: 'complete',
-                statusStage: undefined,
               }
             : message,
         ),
@@ -313,16 +309,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                 bootstrapGreetingId: undefined,
               }))
             },
-            onStatus: ({ stage }) => {
-              updateSession(accountId, agentId, (session) => ({
-                ...session,
-                messages: session.messages.map((message) =>
-                  message.id === assistantMessageId && message.status === 'streaming'
-                    ? { ...message, statusStage: stage }
-                    : message,
-                ),
-              }))
-            },
             onChunk: ({ text }) => {
               updateSession(accountId, agentId, (session) => ({
                 ...session,
@@ -331,7 +317,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
                     ? {
                         ...message,
                         content: `${message.content}${text}`,
-                        statusStage: undefined,
                       }
                     : message,
                 ),
@@ -423,7 +408,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
               return {
                 ...message,
-                statusStage: undefined,
                 content: replaceAssistantContent ? errorMessage : message.content || errorMessage,
                 status: 'error' as const,
                 citations: [] as Citation[],

@@ -245,4 +245,6 @@ export interface RetrievalPipelineService {
 export type { RetrievalPipelinePort } from "./services/retrievalPipelineService.js";
 export type { AgenticRetrievalToolFactory, AgenticRetrievalToolFactoryContext } from "./services/agenticRetrievalRunner.js";
 export { RetrieveRoutineSkillResolver } from "./services/retrieveRoutineSkillResolver.js";
+// Snippet building for chunk previews in skill-provider wiring; exposed here so
+// composition never reaches into retrieval service internals.
 export { buildSnippet, type RegisteredChunk } from "./services/agenticTools/index.js";

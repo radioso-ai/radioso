@@ -4,8 +4,37 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 
 describe("retrieval answer contract", () => {
+  it("does not infer REST citations for an anchor-free answer", async () => {
+    const gateway: ChatGateway = {
+      async answer() {
+        return "The advanced workshop runs in June.";
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const { app } = createTestApp({ chatGateway: gateway });
+    const session = await issueTestSession(app, "retrieval-explicit-citations@example.com");
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Course Calendar", content: "The advanced workshop runs in June." });
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/answer")
+      .set(adminSessionHeaders(session))
+      .send({ query: "When does the advanced workshop run?" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.answer).toBe("The advanced workshop runs in June.");
+    expect(response.body).not.toHaveProperty("citations");
+    expect(response.body).not.toHaveProperty("groundingVerdict");
+    expect(response.body).not.toHaveProperty("groundingDiagnostics");
+  });
+
   it("returns a grounded answer without assistant conversation ownership", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "retrieval-answer@example.com");

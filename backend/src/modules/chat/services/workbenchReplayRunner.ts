@@ -52,6 +52,7 @@ import {
 import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type { TurnRouter } from "./turnRouter.js";
+import type { GroundingSummary } from "./groundingAssertions.js";
 
 export interface WorkbenchReplayResolvedConfig {
   composedInstructions?: string;
@@ -71,6 +72,7 @@ export interface WorkbenchReplayResult {
   answer: string;
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
+  groundingSummary?: GroundingSummary;
   turnTrace?: TurnTraceEnvelope;
   resolvedConfig: WorkbenchReplayResolvedConfig;
 }
@@ -296,6 +298,7 @@ export class WorkbenchReplayRunner {
       answer: presentation.answer,
       citations: presentation.citations,
       answerSegments: presentation.answerSegments,
+      groundingSummary: presentation.groundingSummary,
       turnTrace: tracePresentation.turnTrace,
       resolvedConfig: {
         composedInstructions: session.retrieval.systemPrompt,
@@ -467,6 +470,7 @@ export class WorkbenchReplayRunner {
       answer: outcome.presentation.answer,
       citations: outcome.presentation.citations,
       answerSegments: outcome.presentation.answerSegments,
+      groundingSummary: outcome.presentation.groundingSummary,
       turnTrace: tracePresentation.turnTrace,
       resolvedConfig: {
         composedInstructions: session.retrieval.systemPrompt,

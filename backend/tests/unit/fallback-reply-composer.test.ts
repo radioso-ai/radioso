@@ -71,9 +71,9 @@ describe("grounded miss response composer", () => {
 
     expect(observedRequest.reasoningEffort).toBe("minimal");
     expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
-    expect(observedRequest.systemPrompt).toContain("do not answer it from general knowledge");
-    expect(observedRequest.systemPrompt).toContain("Write in first person as the assistant");
-    expect(observedRequest.systemPrompt).toContain("Do not refer to yourself as 'the assistant' or 'this assistant'");
+    expect(observedRequest.systemPrompt).toContain("Never answer from general knowledge when support is absent");
+    expect(observedRequest.systemPrompt).toContain("team's first-person voice");
+    expect(observedRequest.systemPrompt).toContain("Do not refer to yourself");
   });
 
   it("passes assistant scope instructions into no-context generation", async () => {
@@ -84,8 +84,8 @@ describe("grounded miss response composer", () => {
         provider: "openai",
         model: "test-model",
       },
-      async complete({ prompt }) {
-        observedPrompt = prompt;
+      async complete({ systemPrompt }) {
+        observedPrompt = systemPrompt ?? "";
         return textResult("MODEL_NO_CONTEXT");
       },
       stream() {
@@ -99,14 +99,15 @@ describe("grounded miss response composer", () => {
       answerInstructionBlock: "Configured response instructions:\nHelp visitors choose and book Ananda courses.",
     });
 
-    expect(observedPrompt).toContain("Answer Instructions:");
-    expect(observedPrompt).toContain('Do not refer to yourself as "the assistant" or "this assistant"');
+    expect(observedPrompt).toContain("Configured answer instructions:");
+    expect(observedPrompt).toContain("Do not refer to yourself");
     expect(observedPrompt).toContain("Help visitors choose and book Ananda courses.");
-    expect(observedPrompt).toContain("Redirect back to the Answer Instructions scope");
-    expect(observedPrompt).toContain("Do not tell the user only to ask a narrower question");
-    expect(observedPrompt).toContain("do not identify, describe, summarize, compare, or explain that entity");
-    expect(observedPrompt).toContain("Do not offer to help with unrelated topics from the user query");
-    expect(observedPrompt).toContain("Do not mention internal labels");
+    expect(observedPrompt).toContain("Redirect to a concrete configured topic");
+    expect(observedPrompt).toContain("do not merely ask for a narrower question");
+    expect(observedPrompt).toContain("Do not identify, describe, summarize, compare, or explain");
+    expect(observedPrompt).toContain("Do not offer unrelated topics from the query");
+    expect(observedPrompt).toContain("Never expose their internal label");
+    expect(observedPrompt).not.toContain("I like potato chips");
   });
 
   it("passes matched steering directives into no-context generation", async () => {
@@ -117,8 +118,8 @@ describe("grounded miss response composer", () => {
         provider: "openai",
         model: "test-model",
       },
-      async complete({ prompt }) {
-        observedPrompt = prompt;
+      async complete({ systemPrompt }) {
+        observedPrompt = systemPrompt ?? "";
         return textResult("MODEL_NO_CONTEXT");
       },
       stream() {
@@ -150,8 +151,8 @@ describe("grounded miss response composer", () => {
         provider: "openai",
         model: "test-model",
       },
-      async complete({ prompt }) {
-        observedPrompt = prompt;
+      async complete({ systemPrompt }) {
+        observedPrompt = systemPrompt ?? "";
         return textResult("MODEL_NO_CONTEXT");
       },
       stream() {
@@ -161,9 +162,9 @@ describe("grounded miss response composer", () => {
 
     await composer.composeNoContext({ query: "Draft a follow-up", usageContext });
 
-    expect(observedPrompt).toContain("Decline directly in the team's voice");
-    expect(observedPrompt).toContain('Do not say "I don\'t have that information,"');
-    expect(observedPrompt).toContain("anything that references documents, materials, sources, search, or retrieval");
+    expect(observedPrompt).toContain("Decline directly in the team's first-person voice");
+    expect(observedPrompt).toContain("Never say “I don't have that information,”");
+    expect(observedPrompt).toContain("Never mention documents, materials, sources, search, retrieval");
   });
 
   it("passes explicit locale guidance into grounded-miss generation", async () => {

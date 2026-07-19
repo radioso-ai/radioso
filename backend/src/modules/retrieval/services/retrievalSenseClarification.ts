@@ -204,15 +204,31 @@ const isPresentableCandidate = (candidate: ClarificationCandidate): boolean => {
 export const presentableSenseCandidates = <T extends ClarificationCandidate>(candidates: T[]): T[] =>
   candidates.filter(isPresentableCandidate);
 
+const firstAuthoredBlock = (answer: string): string =>
+  answer.trim().split(/\n\s*\n/u)[0]?.trim() ?? "";
+
+const isNumberedOptionsList = (value: string): boolean => {
+  const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
+  return lines.length >= 2 && lines.every((line, index) => {
+    const optionNumber = index + 1;
+    return line.startsWith(`${optionNumber}. `) || line.startsWith(`${optionNumber}) `);
+  });
+};
+
 /**
- * A phrased lead-in is degenerate when it is empty or collapses to a single bare
- * option label / candidate id (the production failure this guards against). The
- * numbered option list, when present, keeps the normalized string from matching a
- * single label, so a real question is never flagged.
+ * A phrased lead-in is degenerate when it is empty, is only the appended options
+ * list, or collapses to a single bare option label / candidate id (the production
+ * failure this guards against). Default clarifiers return `lead-in + options`, so
+ * the structural check must inspect the authored first block rather than the
+ * entire rendered question.
  */
 const isDegeneratePhrasing = (answer: string, candidates: ClarificationCandidate[]): boolean => {
-  const normalized = normalizeChoice(answer);
+  const leadIn = firstAuthoredBlock(answer);
+  const normalized = normalizeChoice(leadIn);
   if (!normalized) {
+    return true;
+  }
+  if (isNumberedOptionsList(leadIn)) {
     return true;
   }
   return candidates.some(

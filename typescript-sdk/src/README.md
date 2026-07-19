@@ -17,11 +17,15 @@ API contract workflow before SDK behavior is updated.
 
 ## Read First
 
-- `index.ts`: exported SDK surface.
+- `index.ts`: exported SDK surface and client composition.
 - `core/config.ts`: client configuration.
 - `core/http.ts`: HTTP transport and request behavior.
 - `core/errors.ts`: SDK error mapping.
 - `generated/client.ts` and `generated/types.ts`: generated API surface.
+- `resources/`: hand-written token-authed authoring resources (routines,
+  directives, context variables, skills, MCP), composed into the client in
+  `index.ts`. `operationTypes.ts` extracts request/response types for endpoints
+  with inline (unnamed) OpenAPI schemas.
 - `streaming/chatStream.ts`: streaming chat helpers.
 
 ## Common Change Paths

@@ -111,8 +111,21 @@ const optionsBlock = (candidates: ClarificationCandidate[]): string =>
  * descriptions are already in the conversation language; numbering and the
  * separator carry no language, so this stays multilingual without echoing ids.
  */
+/**
+ * A candidate is presentable only when its label is a real visitor-facing choice:
+ * non-empty and not structurally degenerate (equal to its own id). Pure structural
+ * check — no language vocabulary — so it holds in any conversation language. A
+ * degenerate label must never render to the visitor even as belt-and-braces behind
+ * the detector's own missing-label handling.
+ */
+const isPresentableCandidate = (candidate: ClarificationCandidate): boolean => {
+  const label = candidate.label?.trim() ?? "";
+  return label.length > 0 && normalizeReplyChoice(label) !== normalizeReplyChoice(candidate.id);
+};
+
 const userFacingOptionsList = (candidates: ClarificationCandidate[]): string =>
   candidates
+    .filter(isPresentableCandidate)
     .map((candidate, index) => {
       const description = candidate.description ? ` — ${candidate.description}` : "";
       return `${index + 1}. ${candidate.label}${description}`;

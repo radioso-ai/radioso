@@ -79,6 +79,24 @@ export const evaluateRetrievalSenseClarification = async (input: {
     return null;
   }
 
+  // Complementary facets are not competing senses: the visitor asked one question
+  // whose answer spans several documents (e.g. "what X is" + "how to learn X").
+  // Clarifying would be over-asking, so proceed over all ranked chunks — that IS
+  // the combined answer — with no document scoping. Conservative: only when the
+  // gateway judged the whole set complementary (absent/failed ⇒ exclusive path).
+  if (candidates.every((candidate) => candidate.relationship === "complementary")) {
+    return {
+      kind: "proceed",
+      candidates,
+      stage: clarificationStage({
+        surface: "retrieval_sense",
+        decision: { kind: "none" },
+        consideredCandidates: candidates,
+        reason: "compatible_facets",
+      }),
+    };
+  }
+
   const decision = decideClarification(candidates, input.policy, {
     suppressAsk: input.suppressAsk,
     loopGuardCandidateIds: input.loopGuardCandidateIds,
@@ -169,3 +187,73 @@ const labelFallbackAutoPickCandidate = (
 
 const hasMissingLabel = (candidate: ClarificationCandidate): boolean =>
   (candidate as { labelStatus?: unknown }).labelStatus === "missing";
+
+const normalizeChoice = (value: string): string =>
+  value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+
+/**
+ * A candidate is presentable only when its label is a real visitor-facing reading:
+ * non-empty and not structurally degenerate (equal to its own id). This is a pure
+ * structural guard — no English vocabulary — so it holds in any conversation language.
+ */
+const isPresentableCandidate = (candidate: ClarificationCandidate): boolean => {
+  const label = candidate.label?.trim() ?? "";
+  return label.length > 0 && normalizeChoice(label) !== normalizeChoice(candidate.id);
+};
+
+export const presentableSenseCandidates = <T extends ClarificationCandidate>(candidates: T[]): T[] =>
+  candidates.filter(isPresentableCandidate);
+
+/**
+ * A phrased lead-in is degenerate when it is empty or collapses to a single bare
+ * option label / candidate id (the production failure this guards against). The
+ * numbered option list, when present, keeps the normalized string from matching a
+ * single label, so a real question is never flagged.
+ */
+const isDegeneratePhrasing = (answer: string, candidates: ClarificationCandidate[]): boolean => {
+  const normalized = normalizeChoice(answer);
+  if (!normalized) {
+    return true;
+  }
+  return candidates.some(
+    (candidate) =>
+      normalizeChoice(candidate.id) === normalized || normalizeChoice(candidate.label) === normalized,
+  );
+};
+
+export type PhrasedSenseClarification =
+  | { kind: "ask"; answer: string; presented: ClarificationCandidate[]; stage: ConversationTraceStage }
+  | { kind: "fallback"; documentScope?: string[]; stage: ConversationTraceStage };
+
+/**
+ * Turns an `ask` decision into either a real clarifying question or the FR-019
+ * silent auto-pick. When fewer than two options are presentable, or the model's
+ * lead-in degenerates to a bare label, the top candidate is picked silently with a
+ * `phrasing_fallback` trace reason rather than rendering a broken menu. This is the
+ * clarification-owned seam; the host only routes the outcome.
+ */
+export const phraseRetrievalSenseAsk = async (input: {
+  candidates: ClarificationCandidate[];
+  askStage: ConversationTraceStage;
+  phraseQuestion: (candidates: ClarificationCandidate[]) => Promise<string>;
+}): Promise<PhrasedSenseClarification> => {
+  const presented = presentableSenseCandidates(input.candidates);
+  if (presented.length >= 2) {
+    const answer = await input.phraseQuestion(presented);
+    if (!isDegeneratePhrasing(answer, presented)) {
+      return { kind: "ask", answer, presented, stage: input.askStage };
+    }
+  }
+  const top = input.candidates[0]!;
+  const documentScope = documentScopeFromClarificationCandidate(top);
+  return {
+    kind: "fallback",
+    ...(documentScope ? { documentScope } : {}),
+    stage: clarificationStage({
+      surface: "retrieval_sense",
+      decision: { kind: "auto_pick", candidate: top, reason: "clear_margin" },
+      consideredCandidates: input.candidates,
+      reason: "phrasing_fallback",
+    }),
+  };
+};

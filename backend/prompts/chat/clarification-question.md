@@ -7,4 +7,6 @@ mention internal ids, payloads, confidence, implementation details, or any hidde
 data.
 
 Write only a single short sentence inviting the user to pick which option they
-mean. Return only that one line.
+mean. Do not echo, quote, or restate any single option label or topic name as your
+whole reply — that would hide the other options. If you cannot write an inviting
+sentence, return nothing. Return only that one line.

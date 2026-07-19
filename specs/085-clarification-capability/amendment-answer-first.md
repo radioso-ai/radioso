@@ -286,3 +286,41 @@ operator-visible. Document titles remain internal data (trace, payloads) only.
 - **Recalibration blast radius**: changing `confidenceFor` shifts existing
   auto-pick/ask boundaries; the parent's unambiguous and yoga-corpus test sets
   must be re-run as the regression net (SC-014).
+
+## 8. Addendum: over-asking on compound facets, phrasing safety, ask telemetry (issue #864)
+
+Issue #864 (epic #856) reports the same over-asking failure surviving in a new
+shape, plus a residual bare-label leak and missing ask telemetry. Three additions,
+scoped to the retrieval-sense surface (FR-021 keeps routine activation unchanged):
+
+- **FR-022 (complementary facets)**: The sense-label gateway MUST additionally
+  return an LLM-judged `relationship` enum per group — `exclusive` (competing
+  readings; clarifying is meaningful) or `complementary` (facets of one intent; a
+  single combined answer is correct). When the gateway labels every group and
+  unanimously judges the set `complementary`, retrieval-sense evaluation MUST
+  proceed as an ordinary grounded answer over all already-ranked chunks, with no
+  ask, no offer, and no document scoping, recording `compatible_facets` on the
+  clarification trace stage. The judgment is language-agnostic and MUST NOT be
+  approximated by keyword rules in code. Missing, split, or unparsed judgments MUST
+  fall back to the exclusive path bit-for-bit. This is not a blend of senses
+  (parent anti-goal): complementary facets are one intent, not competing readings.
+
+- **FR-023 (phrasing safety)**: Before a blocking retrieval-sense question is
+  shown, the system MUST structurally verify it. Options whose visitor-facing label
+  is empty or degenerate (equal to the candidate id) MUST NOT render. If fewer than
+  two options remain presentable, or the phrased lead-in is empty or collapses to a
+  single bare option label, the outcome MUST be the FR-019 behavior — silently
+  auto-pick the top candidate and answer — recording `phrasing_fallback` in the
+  trace, never a broken menu. Checks are structural only (empty / equals-id), so
+  they hold in any conversation language. This complements FR-019's labeling-miss
+  guard, which now represents a missing label as an empty string rather than the
+  document id.
+
+- **FR-024 (ask telemetry)**: `clarification_decisions_total` MUST carry a bounded
+  `reason` label so operators can compute ask-rate (`asked / sum(decisions)` per
+  surface) and see why silent picks happen. Reasons are enumerable
+  (`ask`, `soft_band`, `clear_margin`, `loop_guard`, `priority`, `suppressed`,
+  `label_fallback`, `compatible_facets`, `phrasing_fallback`); `compatible_facets`
+  is counted under a `not_clarified` decision so it stays in the ask-rate
+  denominator. No free-text labels; no prompts, completions, chunks, or content in
+  metrics or traces.

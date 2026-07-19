@@ -91,6 +91,29 @@ describe("DefaultClarifier", () => {
     ].join("\n"));
   });
 
+  it("never renders an option whose label is empty or collapses to its candidate id", async () => {
+    const modelGateway = gateway("¿Cuál de estas describe lo que buscas?");
+    const clarifier = new DefaultClarifier(modelGateway, {
+      questionPromptTemplate: "Lead-in in {{conversationLanguage}}",
+      replyMapPromptTemplate: "unused",
+    });
+
+    const question = await clarifier.phraseQuestion({
+      candidates: [
+        ...candidates,
+        { id: "doc-empty", label: "   ", confidence: 0.4, payload: {} },
+        { id: "doc-42", label: "doc-42", confidence: 0.4, payload: {} },
+      ],
+      turn: turn("Necesito ayuda"),
+    });
+
+    expect(question).toContain("1. Facturacion — Preguntas sobre pagos y facturas.");
+    expect(question).toContain("2. Soporte tecnico — Ayuda con un problema tecnico.");
+    expect(question).not.toContain("doc-empty");
+    expect(question).not.toContain("doc-42");
+    expect(question).not.toContain("3.");
+  });
+
   it("folds turn steering into the question prompt as guidance", async () => {
     const modelGateway = gateway("¿Facturacion o soporte?");
     const clarifier = new DefaultClarifier(modelGateway, {

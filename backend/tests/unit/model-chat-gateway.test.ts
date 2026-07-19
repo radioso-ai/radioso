@@ -139,6 +139,58 @@ describe("ModelChatGateway", () => {
     ]);
   });
 
+  it("passes an AbortSignal through non-streaming generation", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const controller = new AbortController();
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete(input) {
+        requests.push(input);
+        return textResult("Answer");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    } satisfies TextGenerationClient));
+
+    await gateway.answer({
+      query: "Question",
+      history: [],
+      prompt: "User prompt",
+      usageContext,
+      signal: controller.signal,
+    });
+
+    expect(requests[0]?.signal).toBe(controller.signal);
+  });
+
+  it("passes an AbortSignal through streaming generation", async () => {
+    const requests: TextGenerationRequest[] = [];
+    const controller = new AbortController();
+    const gateway = new ModelChatGateway(new ModelInferencePipelineService({
+      metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },
+      async complete() {
+        return textResult("Answer");
+      },
+      stream(input) {
+        requests.push(input);
+        return streamResult(["Answer"]);
+      },
+    } satisfies TextGenerationClient));
+
+    for await (const _chunk of gateway.streamAnswer({
+      query: "Question",
+      history: [],
+      prompt: "User prompt",
+      usageContext,
+      signal: controller.signal,
+    })) {
+      // drain
+    }
+
+    expect(requests[0]?.signal).toBe(controller.signal);
+  });
+
   it("filters zero-length chunks from streaming generation", async () => {
     const gateway = new ModelChatGateway(new ModelInferencePipelineService({
       metadata: { capability: "chat", provider: "openai-compatible", model: "test-chat" },

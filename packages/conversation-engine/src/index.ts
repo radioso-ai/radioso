@@ -5,6 +5,7 @@ import type {
   ConversationRoutineSteeringInput,
   ConversationTrace,
   ConversationTraceStage,
+  ConversationProgressPhase,
   ConversationTurnInterpretation,
   Directive,
   DirectiveMatch,
@@ -27,9 +28,19 @@ import type {
   TurnContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
+
 import { resumeAwaitingDecision } from "./awaitingDecision.js";
 import { verifySlotCorrection } from "./slotCorrection.js";
 import { clarificationStage } from "./clarification.js";
+
+const reportProgress = (
+  input: ProcessTurnInput | ProcessTurnStreamInput | AttemptRoutineInput,
+  phase: ConversationProgressPhase,
+): void => {
+  if ("progress" in input) {
+    input.progress?.report({ phase });
+  }
+};
 
 const nowIso = (): string => new Date().toISOString();
 
@@ -99,6 +110,18 @@ const composeOutputsFor = (
   streamed: options.streamed,
   outcomes: outcomes.map(summarizeOutcomeForCompose),
 });
+
+const composeTraceMetricsFor = (response: RenderableTurn): Record<string, number> | undefined => {
+  const candidate = response.metadata?.traceMetrics;
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return undefined;
+  }
+  const metrics = Object.fromEntries(
+    Object.entries(candidate).filter((entry): entry is [string, number] =>
+      typeof entry[1] === "number" && Number.isFinite(entry[1])),
+  );
+  return Object.keys(metrics).length > 0 ? metrics : undefined;
+};
 
 const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
   action: match.directive.action,
@@ -428,6 +451,9 @@ export class DefaultConversationEngine implements ConversationEngine {
     }));
 
     const interpretationStartedAt = Date.now();
+    if (input.turnInterpreter) {
+      reportProgress(input, "interpreting");
+    }
     const interpretation = input.turnInterpreter
       ? await input.turnInterpreter.interpret({ turn: baseTurn })
       : null;
@@ -461,6 +487,9 @@ export class DefaultConversationEngine implements ConversationEngine {
     const resolved = await resolveDirectives();
     const shouldRunRetrieval = Boolean(input.retrievalWork && interpretation?.route === "retrieval");
     const retrievalStartedAt = Date.now();
+    if (shouldRunRetrieval) {
+      reportProgress(input, "retrieving");
+    }
     const retrievalResult = shouldRunRetrieval
       ? await input.retrievalWork!.run({ turn: interpretedTurn, interpretation: interpretation! })
       : null;
@@ -489,6 +518,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       steering: [...directiveSteering, ...(retrievalResult?.steering ?? [])],
     };
     const selectionStartedAt = Date.now();
+    reportProgress(input, "selecting");
     const decision = await input.selector.select({
       turn: selectedTurn,
       skills: input.skills,
@@ -531,6 +561,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         steering: mergedSteering,
       };
       const dispatchStartedAt = Date.now();
+      reportProgress(input, "dispatching");
       const outcome = await input.dispatcher.dispatch({
         skill,
         turn: turnForSkill,
@@ -824,6 +855,7 @@ export class DefaultConversationEngine implements ConversationEngine {
           baseSteering: [],
           traceKind: "directive_steering",
         });
+        reportProgress(input, "routine");
         const answer = await input.clarifier.phraseQuestion({
           candidates: activation.candidates,
           turn: { ...baseTurn, steering: clarifySteering.steering },
@@ -924,6 +956,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     // Resume runs before any persistence: a routine may decline (yield) the turn —
     // then the input event is left for the normal path and the routine's position is
     // untouched, so it resumes on a later turn.
+    reportProgress(input, "routine");
     const result = await input.routineRunner.resume({ turn, state, steeringResolver: routineSteeringResolver });
     if (result.yielded) {
       return null;
@@ -1078,8 +1111,12 @@ export class DefaultConversationEngine implements ConversationEngine {
   async *processTurnStream(input: ProcessTurnStreamInput): AsyncIterable<ProcessTurnStreamEvent> {
     const resumed = await this.attemptRoutine(input);
     if (resumed) {
-      if (resumed.response.answer) {
-        yield { type: "delta", sessionId: input.sessionId, text: resumed.response.answer };
+      const chunks = input.composer.streamCommitted?.(resumed.response)
+        ?? (resumed.response.answer ? [resumed.response.answer] : []);
+      for (const text of chunks) {
+        if (text) {
+          yield { type: "delta", sessionId: input.sessionId, text };
+        }
       }
       yield { type: "final", result: resumed };
       return;
@@ -1088,6 +1125,7 @@ export class DefaultConversationEngine implements ConversationEngine {
     let response: RenderableTurn | null = null;
     let finalMetadata: Record<string, unknown> | undefined;
     const composeStartedAt = Date.now();
+    reportProgress(input, "composing");
 
     for await (const event of input.composer.stream({
       turn: prepared.composeTurn,
@@ -1120,6 +1158,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       kind: "compose",
       status: "applied",
       outputs: composeOutputsFor(response, prepared.outcomes, { streamed: true }),
+      metrics: composeTraceMetricsFor(response),
     }));
 
     const responseEvent = createResponseEvent(input.sessionId, response);

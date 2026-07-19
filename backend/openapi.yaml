@@ -68,6 +68,19 @@ components:
             - ok
       required:
         - status
+    ChatStatusStage:
+      type: string
+      enum:
+        - interpreting
+        - searching
+        - composing
+    ChatStatusEvent:
+      type: object
+      properties:
+        stage:
+          $ref: "#/components/schemas/ChatStatusStage"
+      required:
+        - stage
     RegisterResponse:
       type: object
       properties:
@@ -8636,6 +8649,13 @@ components:
         - decisions
     AssistantChatSseStream:
       type: string
+      description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
+      example: |
+        event: status
+        data: {"stage":"interpreting"}
+
+        event: chunk
+        data: {"text":"Hello"}
     ConnectorNotFoundResponse:
       type: object
       properties:
@@ -8647,6 +8667,13 @@ components:
         - error
     PublicChatSseStream:
       type: string
+      description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
+      example: |
+        event: status
+        data: {"stage":"interpreting"}
+
+        event: chunk
+        data: {"text":"Hello"}
   parameters: {}
 paths:
   /health:

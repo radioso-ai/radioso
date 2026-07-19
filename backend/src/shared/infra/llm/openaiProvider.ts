@@ -262,12 +262,16 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
   async complete(input: TextGenerationRequest): Promise<TextGenerationResult> {
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(this.config.provider, input, this.config.model);
-    const createCompletion = (samplingParams: ChatSamplingParams) =>
-      this.client.chat.completions.create({
+    const createCompletion = (samplingParams: ChatSamplingParams) => {
+      const request = {
         model: this.config.model,
         ...toSdkSampling(samplingParams),
         messages,
-      }) as Promise<OpenAIChatCompletionResponse>;
+      };
+      return (input.signal
+        ? this.client.chat.completions.create(request, { signal: input.signal })
+        : this.client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
+    };
     let response = await createChatCompletionWithReasoningFallback(
       this.config.model,
       sampling,
@@ -297,15 +301,19 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     const config = this.config;
     const messages = buildMessages(input);
     const sampling = buildChatSamplingParams(config.provider, input, config.model);
-    const createStream = (samplingParams: ChatSamplingParams) =>
-      client.chat.completions.create({
+    const createStream = (samplingParams: ChatSamplingParams) => {
+      const request = {
         model: config.model,
-        stream: true,
+        stream: true as const,
         // Ask OpenAI to append a final usage-only chunk after the content chunks.
         ...buildStreamUsageOptions(config.provider),
         ...toSdkSampling(samplingParams),
         messages,
-      }) as Promise<AsyncIterable<OpenAIChatCompletionChunk>>;
+      };
+      return (input.signal
+        ? client.chat.completions.create(request, { signal: input.signal })
+        : client.chat.completions.create(request)) as Promise<AsyncIterable<OpenAIChatCompletionChunk>>;
+    };
     return streamWithUsage(async function* () {
       const stream = await createChatCompletionWithReasoningFallback(
         config.model,

@@ -74,4 +74,19 @@ describe("RoutineChatModelGateway", () => {
       generation: CHAT_BEHAVIOR.intentRouting,
     });
   });
+
+  it("forwards the turn cancellation signal to routine model calls", async () => {
+    const calls: ChatGatewayInput[] = [];
+    const controller = new AbortController();
+    const gateway = new RoutineChatModelGateway({
+      async answer(input) {
+        calls.push(input);
+        return "Done";
+      },
+    }, { ...turnContext, signal: controller.signal });
+
+    await gateway.complete({ messages: [{ role: "user", content: "Continue" }] });
+
+    expect(calls[0]?.signal).toBe(controller.signal);
+  });
 });

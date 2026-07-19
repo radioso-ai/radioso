@@ -29,9 +29,21 @@ export const registerCommonSchemas = (registry: OpenAPIRegistry, schemas: OpenAp
     }),
   );
 
+  const ChatStatusStageSchema = registry.register(
+    "ChatStatusStage",
+    z.enum(["interpreting", "searching", "composing"]),
+  );
+
+  const ChatStatusEventSchema = registry.register(
+    "ChatStatusEvent",
+    z.object({ stage: ChatStatusStageSchema }),
+  );
+
   Object.assign(schemas, {
     ErrorResponseSchema,
     FlatErrorResponseSchema,
     HealthResponseSchema,
+    ChatStatusEventSchema,
+    ChatStatusStageSchema,
   });
 };

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  COMMITTED_REPLAY_CHUNK_CODE_POINTS,
   GenericTurnOutcomeRenderer,
   TurnOutcomeRendererRegistry,
   type TurnOutcome,
@@ -62,5 +63,54 @@ describe("TurnOutcomeRendererRegistry", () => {
   it("throws when no renderer supports the outcome", () => {
     const registry = new TurnOutcomeRendererRegistry([renderer(false, "skip")]);
     expect(() => registry.resolve(outcome())).toThrow(/no turn-outcome renderer/i);
+  });
+
+  it("delegates to a renderer-owned live stream", async () => {
+    const live: TurnOutcomeRenderer = {
+      supports: () => true,
+      render: vi.fn(),
+      async *stream() {
+        yield "live ";
+        return {
+          finalPresentation: {
+            answer: "live answer",
+            skillName: "order.status",
+            skillOutcome: "completed",
+            skillStatus: "completed",
+          },
+          suggestions: { mode: "presentation" },
+          hasStreamedAnswer: true,
+          streamedAnswer: "live ",
+        };
+      },
+    };
+    const stream = new TurnOutcomeRendererRegistry([live]).stream(outcome(), ctx);
+
+    await expect(stream.next()).resolves.toEqual({ value: "live ", done: false });
+    await expect(stream.next()).resolves.toMatchObject({
+      done: true,
+      value: { finalPresentation: { answer: "live answer" } },
+    });
+    expect(live.render).not.toHaveBeenCalled();
+  });
+
+  it("replays a committed presentation in Unicode-safe bounded chunks", async () => {
+    const answer = `${"😀".repeat(COMMITTED_REPLAY_CHUNK_CODE_POINTS)}é`;
+    const committed = renderer(true, answer);
+    const stream = new TurnOutcomeRendererRegistry([committed]).stream(outcome(), ctx);
+    const chunks: string[] = [];
+    let step = await stream.next();
+    while (!step.done) {
+      chunks.push(step.value);
+      step = await stream.next();
+    }
+
+    expect(chunks).toEqual(["😀".repeat(COMMITTED_REPLAY_CHUNK_CODE_POINTS), "é"]);
+    expect(chunks.join("")).toBe(answer);
+    expect(step.value).toMatchObject({
+      finalPresentation: { answer },
+      hasStreamedAnswer: true,
+      streamedAnswer: answer,
+    });
   });
 });

@@ -118,6 +118,25 @@
           "status"
         ]
       },
+      "ChatStatusStage": {
+        "type": "string",
+        "enum": [
+          "interpreting",
+          "searching",
+          "composing"
+        ]
+      },
+      "ChatStatusEvent": {
+        "type": "object",
+        "properties": {
+          "stage": {
+            "$ref": "#/components/schemas/ChatStatusStage"
+          }
+        },
+        "required": [
+          "stage"
+        ]
+      },
       "RegisterResponse": {
         "type": "object",
         "properties": {
@@ -12739,7 +12758,9 @@
         ]
       },
       "AssistantChatSseStream": {
-        "type": "string"
+        "type": "string",
+        "description": "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.",
+        "example": "event: status\ndata: {\"stage\":\"interpreting\"}\n\nevent: chunk\ndata: {\"text\":\"Hello\"}\n"
       },
       "ConnectorNotFoundResponse": {
         "type": "object",
@@ -12756,7 +12777,9 @@
         ]
       },
       "PublicChatSseStream": {
-        "type": "string"
+        "type": "string",
+        "description": "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.",
+        "example": "event: status\ndata: {\"stage\":\"interpreting\"}\n\nevent: chunk\ndata: {\"text\":\"Hello\"}\n"
       }
     },
     "parameters": {}

@@ -49,6 +49,18 @@ beforeEach(() => {
 });
 
 describe("OpenAITextGenerationClient.complete", () => {
+  it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s completion requests", async (config) => {
+    createMock.mockResolvedValue({
+      id: "resp-signal",
+      choices: [{ message: { content: "Hello" } }],
+    });
+    const controller = new AbortController();
+
+    await new OpenAITextGenerationClient(config).complete({ prompt: "Hi", signal: controller.signal });
+
+    expect(createMock).toHaveBeenCalledWith(expect.any(Object), { signal: controller.signal });
+  });
+
   it("returns generated text plus provider-reported usage marked actual", async () => {
     createMock.mockResolvedValue({
       id: "resp-1",
@@ -90,6 +102,21 @@ describe("OpenAITextGenerationClient.complete", () => {
 });
 
 describe("OpenAITextGenerationClient.stream", () => {
+  it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s streaming requests", async (config) => {
+    createMock.mockResolvedValue(asyncIterableOf([]));
+    const controller = new AbortController();
+
+    const { textStream } = new OpenAITextGenerationClient(config).stream({
+      prompt: "Hi",
+      signal: controller.signal,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(createMock).toHaveBeenCalledWith(expect.any(Object), { signal: controller.signal });
+  });
+
   it("yields text chunks and resolves usage from the final usage-only chunk", async () => {
     createMock.mockResolvedValue(
       asyncIterableOf([

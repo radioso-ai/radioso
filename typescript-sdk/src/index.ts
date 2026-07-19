@@ -59,7 +59,9 @@ export type {
 export type { RadiosoClientOptions } from "./core/config.js";
 export type {
   RadiosoChatStreamCancelledEvent,
+  RadiosoChatStatusStage,
   RadiosoChatStreamEvent,
+  RadiosoChatStreamStatusEvent,
 } from "./streaming/chatStream.js";
 
 export interface DocumentImportFileRequest {

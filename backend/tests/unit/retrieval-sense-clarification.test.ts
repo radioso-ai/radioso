@@ -519,6 +519,58 @@ describe("retrieval sense clarification", () => {
     ]));
   });
 
+  it.each([
+    ["bare label", "Hatha yoga"],
+    ["bare label with appended options", "Hatha yoga\n\n1. Hatha yoga\n2. Raja yoga"],
+  ])("keeps a %s private until the clarification guard resolves", async (_case, generatedQuestion) => {
+    let markPhrasingStarted!: () => void;
+    let releasePhrasing!: () => void;
+    const phrasingStarted = new Promise<void>((resolve) => { markPhrasingStarted = resolve; });
+    const phrasingBlocked = new Promise<void>((resolve) => { releasePhrasing = resolve; });
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", labelStatus: "generated", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", labelStatus: "generated", confidence: 0.59, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      detector,
+      phraseQuestion: vi.fn(async () => {
+        markPhrasingStarted();
+        await phrasingBlocked;
+        return generatedQuestion;
+      }),
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+    const publicEvents: Array<{ type: string; text?: string }> = [];
+    const completion = (async () => {
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "tell me about yoga",
+        stream: true,
+      })) {
+        publicEvents.push(event);
+      }
+    })();
+
+    await phrasingStarted;
+    expect(publicEvents.filter((event) => event.type === "chunk")).toEqual([]);
+    expect(JSON.stringify(publicEvents)).not.toContain(generatedQuestion);
+    releasePhrasing();
+    await completion;
+
+    const publicAnswer = publicEvents
+      .filter((event) => event.type === "chunk")
+      .map((event) => event.text ?? "")
+      .join("");
+    expect(publicAnswer).toBe("Grounded answer");
+    expect(publicAnswer).not.toContain(generatedQuestion);
+  });
+
   it("answers compound complementary facets in one grounded turn without a menu", async () => {
     let saved: PendingClarification | null = null;
     const capturedRequests: RetrievalPipelineRequest[] = [];

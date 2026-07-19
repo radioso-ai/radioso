@@ -2796,6 +2796,11 @@ export interface components {
             /** @enum {string} */
             status: "ok";
         };
+        /** @enum {string} */
+        ChatStatusStage: "interpreting" | "searching" | "composing";
+        ChatStatusEvent: {
+            stage: components["schemas"]["ChatStatusStage"];
+        };
         RegisterResponse: {
             /** Format: uuid */
             userId: string;
@@ -5859,11 +5864,27 @@ export interface components {
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
         };
+        /**
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @example event: status
+         *     data: {"stage":"interpreting"}
+         *
+         *     event: chunk
+         *     data: {"text":"Hello"}
+         */
         AssistantChatSseStream: string;
         ConnectorNotFoundResponse: {
             /** @enum {string} */
             error: "Connector not found";
         };
+        /**
+         * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
+         * @example event: status
+         *     data: {"stage":"interpreting"}
+         *
+         *     event: chunk
+         *     data: {"text":"Hello"}
+         */
         PublicChatSseStream: string;
     };
     responses: never;
@@ -16896,6 +16917,18 @@ export interface operations {
                         answer?: string;
                         citations?: unknown[];
                         answerSegments?: unknown[];
+                        /** @enum {string} */
+                        groundingVerdict?: "grounded" | "degraded" | "no_support";
+                        groundingDiagnostics?: {
+                            protocolVersion: 1 | 2 | null;
+                            /** @enum {string} */
+                            parseStatus: "valid_v2" | "legacy_v1" | "missing" | "malformed" | "invalid_v2";
+                            claimCount: number;
+                            sourcedClaimCount: number;
+                            unsourcedClaimCount: number;
+                            invalidSourceCount: number;
+                            assertionMismatch: boolean;
+                        };
                         turnTrace?: unknown;
                         resolvedConfig?: unknown;
                     };

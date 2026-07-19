@@ -6539,7 +6539,10 @@
               "retrieval",
               "built_in",
               "external_mcp",
-              "customer_email"
+              "customer_email",
+              "webhook",
+              "slack",
+              "notify"
             ]
           },
           "description": {

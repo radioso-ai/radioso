@@ -7,6 +7,9 @@ export const routineSkillCategories = [
   "built_in",
   "external_mcp",
   "customer_email",
+  "webhook",
+  "slack",
+  "notify",
 ] as const;
 
 export type RoutineSkillCategory = (typeof routineSkillCategories)[number];

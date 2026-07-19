@@ -8,6 +8,13 @@
  * is a pure projection over that shape — no persistence, no provider knowledge.
  */
 import type {
+  AgentSkillKind,
+  AgentSkillSpine,
+} from "../agentSkills/domain.js";
+import type {
+  SkillCapabilityDescriptor,
+} from "./capabilityRegistry.js";
+import type {
   SkillCatalogEntry,
   SkillIntakeField,
   SkillOutcomeDefinition,
@@ -145,6 +152,90 @@ const toExternalOutcome = (name: string): SkillAuthoringOutcome => ({
   status: statusForExternalOutcome(name),
 });
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const optionalDescription = (value: unknown): string | undefined =>
+  isRecord(value) && typeof value.description === "string" && value.description.trim().length > 0
+    ? value.description
+    : undefined;
+
+const exposedRequired = (value: unknown, fallback: boolean): boolean =>
+  isRecord(value) && typeof value.required === "boolean" ? value.required : fallback;
+
+const exposedCollectedKey = (payloadKey: string, value: unknown): string =>
+  isRecord(value) && typeof value.slotBinding === "string" && value.slotBinding.trim().length > 0
+    ? value.slotBinding
+    : payloadKey;
+
+const humanizeIdentifier = (value: string): string =>
+  value
+    .replace(/[._-]+/gu, " ")
+    .trim()
+    .replace(/\b\w/gu, (character) => character.toUpperCase());
+
+const agentSkillCategory = (kind: AgentSkillKind): RoutineSkillCategory => {
+  if (kind === "retrieve") {
+    return "retrieval";
+  }
+  return kind;
+};
+
+const inputTypeForKey = (key: string): SkillAuthoringInputType =>
+  key === "email" || key === "to" || key === "cc" || key === "replyTo" ? "email" : "text";
+
+const staticInputSchemaRecord = (descriptor: SkillCapabilityDescriptor): Record<string, unknown> =>
+  descriptor.inputSchema.source === "static" && isRecord(descriptor.inputSchema.schema)
+    ? descriptor.inputSchema.schema
+    : {};
+
+const staticFieldsForCapability = (descriptor: SkillCapabilityDescriptor): string[] => {
+  const schema = staticInputSchemaRecord(descriptor);
+  return Array.isArray(schema.fields) ? schema.fields.filter((field): field is string => typeof field === "string") : [];
+};
+
+const staticRequiredForCapability = (descriptor: SkillCapabilityDescriptor): Set<string> => {
+  const schema = staticInputSchemaRecord(descriptor);
+  return new Set(Array.isArray(schema.required) ? schema.required.filter((field): field is string => typeof field === "string") : []);
+};
+
+const exposedInputsForAgentSkill = (config: Record<string, unknown>): Record<string, unknown> | null => {
+  if (isRecord(config.exposedPayload)) {
+    return config.exposedPayload;
+  }
+  if (isRecord(config.exposedInputs)) {
+    return config.exposedInputs;
+  }
+  return null;
+};
+
+const inputsForAgentSkill = (
+  source: AgentSkillSpine,
+  descriptor: SkillCapabilityDescriptor,
+): SkillAuthoringInput[] => {
+  const parsedConfig = descriptor.validateConfig(source.config ?? {});
+  const config = isRecord(parsedConfig.data) ? parsedConfig.data : source.config ?? {};
+  const exposedInputs = exposedInputsForAgentSkill(config);
+  const fields = exposedInputs
+    ? Object.entries(exposedInputs)
+      .filter(([, spec]) => spec !== false)
+      .map(([key, spec]) => ({ key: exposedCollectedKey(key, spec), spec, payloadKey: key }))
+    : staticFieldsForCapability(descriptor);
+  const requiredFields = staticRequiredForCapability(descriptor);
+
+  return fields.map((field) => {
+    const key = typeof field === "string" ? field : field.key;
+    const payloadKey = typeof field === "string" ? field : field.payloadKey;
+    const spec = typeof field === "string" ? exposedInputs?.[field] : field.spec;
+    return {
+      key,
+      type: inputTypeForKey(key),
+      required: exposedRequired(spec, requiredFields.has(payloadKey)),
+      ...(optionalDescription(spec) ? { description: optionalDescription(spec) } : {}),
+    };
+  });
+};
+
 /**
  * Project an external/MCP skill definition into the normalized authoring
  * descriptor. External definitions store only the exposed-input allow-list and
@@ -180,3 +271,15 @@ export const externalSkillToAuthoringDescriptor = (
     hasDataOutputs: false,
   };
 };
+
+export const agentSkillToAuthoringDescriptor = (
+  source: AgentSkillSpine,
+  descriptor: SkillCapabilityDescriptor,
+): SkillAuthoringDescriptor => ({
+  skillName: source.skillName,
+  displayName: humanizeIdentifier(source.skillName),
+  category: agentSkillCategory(source.kind),
+  inputs: inputsForAgentSkill(source, descriptor),
+  outcomes: descriptor.outcomeVocabulary.map(toExternalOutcome),
+  hasDataOutputs: false,
+});

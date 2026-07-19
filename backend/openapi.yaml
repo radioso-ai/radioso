@@ -4388,6 +4388,9 @@ components:
             - built_in
             - external_mcp
             - customer_email
+            - webhook
+            - slack
+            - notify
         description:
           type: string
         inputs:

@@ -95,6 +95,21 @@ describe('routineSkillCatalogApi', () => {
     expect(skills[0]?.category).toBe('retrieval')
   })
 
+  it('preserves unified skill categories from newer catalog responses', () => {
+    const skills = parseSkillAuthoringCatalogResponse({
+      skills: [{
+        skillName: 'contact_mayadevi',
+        displayName: 'Contact Mayadevi',
+        category: 'notify',
+        inputs: [{ key: 'message', type: 'text', required: true }],
+        outcomes: [{ name: 'delivered', displayName: 'delivered', status: 'completed' }],
+        hasDataOutputs: false,
+      }],
+    })
+
+    expect(skills[0]?.category).toBe('notify')
+  })
+
   it('requests the per-agent catalog with workspace bearer auth', async () => {
     const payload = { skills: [] }
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(payload))

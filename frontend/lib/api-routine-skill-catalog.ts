@@ -1,7 +1,7 @@
 import { request } from './api-client'
 
 export type SkillAuthoringInputType = 'text' | 'number' | 'boolean' | 'email' | 'date' | 'phone' | 'enum'
-export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email'
+export type RoutineSkillCategory = 'retrieval' | 'built_in' | 'external_mcp' | 'customer_email' | 'webhook' | 'slack' | 'notify'
 
 export interface SkillAuthoringInput {
   key: string
@@ -33,7 +33,7 @@ interface SkillAuthoringCatalogResponse {
 }
 
 const inputTypes: readonly SkillAuthoringInputType[] = ['text', 'number', 'boolean', 'email', 'date', 'phone', 'enum']
-const skillCategories: readonly RoutineSkillCategory[] = ['retrieval', 'built_in', 'external_mcp', 'customer_email']
+const skillCategories: readonly RoutineSkillCategory[] = ['retrieval', 'built_in', 'external_mcp', 'customer_email', 'webhook', 'slack', 'notify']
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)

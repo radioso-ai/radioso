@@ -444,6 +444,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const skillAuthoringCatalog = new SkillAuthoringCatalogService({
     skillCatalog: skillCatalogService,
     externalSkills: externalSkillDefinitionService,
+    agentSkills: agentSkillRepository,
+    capabilities: skillCapabilityRegistry,
     logger,
   });
   const onAccountCreated = composition.accountCreatedHooks.length === 0

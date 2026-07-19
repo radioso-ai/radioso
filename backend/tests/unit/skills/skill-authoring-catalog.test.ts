@@ -1,8 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, it } from "vitest";
 
 import { SkillAuthoringCatalogService } from "../../../src/modules/skills/skillAuthoringCatalog.js";
+import { createDefaultSkillCapabilityRegistry } from "../../../src/modules/skills/capabilityRegistry.js";
 import type { SkillAvailability } from "../../../src/modules/skills/public.js";
 import type { SkillCatalogDescriptorSource } from "../../../src/modules/skills/authoringDescriptor.js";
+import type { AgentSkillSpine } from "../../../src/modules/agentSkills/public.js";
 
 type TestCatalogEntry = SkillCatalogDescriptorSource & { availability?: SkillAvailability };
 
@@ -28,6 +32,25 @@ const catalogEntry = (overrides: Partial<TestCatalogEntry> = {}): TestCatalogEnt
     interruptionPolicy: "cancel_on_topic_change",
   },
   outcomes: [{ name: "grounded", displayName: "Grounded", status: "completed" }],
+  ...overrides,
+});
+
+const agentSkill = (overrides: Partial<AgentSkillSpine> = {}): AgentSkillSpine => ({
+  id: randomUUID(),
+  workspaceId: "workspace_1",
+  agentId: "agent_1",
+  skillName: "contact_mayadevi",
+  kind: "notify",
+  targetType: "notify_delivery",
+  targetId: null,
+  config: {
+    delivery: { recipientEmails: ["mayadevi@example.com"], webhook: null },
+    exposedInputs: { message: true, email: true },
+  },
+  invocationMode: "routine_named",
+  enabled: true,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   ...overrides,
 });
 
@@ -167,5 +190,53 @@ describe("SkillAuthoringCatalogService", () => {
 
     const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
     expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual(["post_slack"]);
+  });
+
+  it("includes enabled routine-named unified agent skills in the authoring catalog", async () => {
+    const catalog = new SkillAuthoringCatalogService({
+      skillCatalog: {
+        async list() {
+          return { skills: [catalogEntry()] };
+        },
+      },
+      externalSkills: {
+        async list() {
+          return [{ skillName: "contact_mayadevi", exposedParams: {}, declaredOutcomes: null, outcomeMap: null, enabled: true }];
+        },
+      },
+      agentSkills: {
+        async listByAgent(workspaceId, agentId) {
+          expect(workspaceId).toBe("workspace_1");
+          expect(agentId).toBe("agent_1");
+          return [
+            agentSkill(),
+            agentSkill({ skillName: "notify_disabled", enabled: false }),
+            agentSkill({ skillName: "notify_agent_selectable", invocationMode: "agent_selectable" }),
+          ];
+        },
+      },
+      capabilities: createDefaultSkillCapabilityRegistry(),
+    });
+
+    const descriptors = await catalog.listForAgent({ workspaceId: "workspace_1", agentId: "agent_1" });
+
+    expect(descriptors.map((descriptor) => descriptor.skillName)).toEqual([
+      "retrieval.context",
+      "contact_mayadevi",
+    ]);
+    expect(descriptors.find((descriptor) => descriptor.skillName === "contact_mayadevi")).toMatchObject({
+      skillName: "contact_mayadevi",
+      displayName: "Contact Mayadevi",
+      category: "notify",
+      inputs: [
+        { key: "message", type: "text", required: true },
+        { key: "email", type: "email", required: false },
+      ],
+      outcomes: [
+        { name: "delivered", displayName: "delivered", status: "completed" },
+        { name: "failed", displayName: "failed", status: "failed" },
+      ],
+      hasDataOutputs: false,
+    });
   });
 });

@@ -1,11 +1,15 @@
 import {
+  agentSkillToAuthoringDescriptor,
   externalSkillToAuthoringDescriptor,
   skillCatalogEntryToAuthoringDescriptor,
   type ExternalSkillAuthoringDescriptorSource,
   type SkillAuthoringDescriptor,
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
+import type { AgentSkillSpine } from "../agentSkills/domain.js";
+import type { AgentSkillRepositoryPort } from "../agentSkills/repository.js";
 import type { SkillAvailability } from "./domain.js";
+import type { SkillCapabilityRegistry } from "./capabilityRegistry.js";
 import { isRoutineAuthoringBuiltInSkill } from "./routineAuthoringPolicy.js";
 
 export interface SkillAuthoringCatalogContext {
@@ -49,6 +53,8 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
   constructor(private readonly sources: {
     skillCatalog: SkillCatalogAuthoringSource;
     externalSkills: ExternalSkillAuthoringListSource;
+    agentSkills?: Pick<AgentSkillRepositoryPort, "listByAgent">;
+    capabilities?: SkillCapabilityRegistry;
     logger?: SkillAuthoringCatalogLogger;
   }) {}
 
@@ -61,9 +67,10 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
     // Each source degrades independently: a failure fetching external skills (e.g.
     // a missing table) must not blank the built-in/system skills, which do not
     // depend on it. We surface the partial catalog and log the failed source.
-    const [catalogResult, externalResult] = await Promise.allSettled([
+    const [catalogResult, externalResult, agentSkillsResult] = await Promise.allSettled([
       this.sources.skillCatalog.list(skillCatalogContext),
       this.sources.externalSkills.list(context.agentId),
+      this.sources.agentSkills?.listByAgent(context.workspaceId, context.agentId) ?? Promise.resolve([]),
     ]);
 
     const systemDescriptors = catalogResult.status === "fulfilled"
@@ -72,17 +79,36 @@ export class SkillAuthoringCatalogService implements SkillAuthoringCatalog {
         .filter(isRoutineAuthoringBuiltInSkill)
         .map(skillCatalogEntryToAuthoringDescriptor)
       : this.warnSourceFailed("system_catalog", context, catalogResult.reason);
+    const agentSkillDescriptors = agentSkillsResult.status === "fulfilled"
+      ? this.agentSkillDescriptors(agentSkillsResult.value)
+      : this.warnSourceFailed("agent_skills", context, agentSkillsResult.reason);
+    const agentSkillNames = new Set(agentSkillDescriptors.map((descriptor) => descriptor.skillName));
     const externalDescriptors = externalResult.status === "fulfilled"
       ? externalResult.value
         .filter((skill) => skill.enabled ?? true)
+        .filter((skill) => !agentSkillNames.has(skill.skillName))
         .map(externalSkillToAuthoringDescriptor)
       : this.warnSourceFailed("external_skills", context, externalResult.reason);
 
-    return [...systemDescriptors, ...externalDescriptors];
+    return [...systemDescriptors, ...agentSkillDescriptors, ...externalDescriptors];
+  }
+
+  private agentSkillDescriptors(skills: AgentSkillSpine[]): SkillAuthoringDescriptor[] {
+    if (!this.sources.capabilities) {
+      return [];
+    }
+    return skills
+      .filter((skill) => skill.enabled && skill.invocationMode === "routine_named")
+      .flatMap((skill) => {
+        const capability = this.sources.capabilities?.getByStoredKind(skill.kind);
+        return capability && capability.supportedInvocationModes.includes("routine_named")
+          ? [agentSkillToAuthoringDescriptor(skill, capability)]
+          : [];
+      });
   }
 
   private warnSourceFailed(
-    source: "system_catalog" | "external_skills",
+    source: "system_catalog" | "external_skills" | "agent_skills",
     context: SkillAuthoringCatalogContext,
     reason: unknown,
   ): never[] {

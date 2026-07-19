@@ -1,0 +1,100 @@
+name: Conversation Quality Evals
+
+# Runs the live conversation-quality suite (real model + retrieval + routines) against a
+# throwaway workspace and gates on regressions vs the committed baseline. This is NOT a
+# per-PR gate: it needs provider credentials, spends tokens, and is nondeterministic, so
+# it runs nightly (and on demand). The deterministic harness logic is covered separately
+# by tests/unit/eval-suite in the normal CI job.
+#
+# Requires the OPENAI_API_KEY repository secret. Sampling (--samples 5) matches how the
+# baseline is recorded, so run-to-run LLM variance does not produce false regressions.
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: Samples per case (higher = more stable, more tokens)
+        required: false
+        default: "5"
+
+concurrency:
+  group: conversation-quality-evals
+  cancel-in-progress: true
+
+jobs:
+  evals:
+    name: Conversation-quality suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: radioso_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d radioso_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install backend dependencies
+        run: pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...
+
+      - name: Build workspace packages
+        working-directory: backend
+        run: pnpm run build:workspace-deps
+
+      - name: Prepare eval environment file
+        working-directory: backend
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ]; then
+            echo "::error::OPENAI_API_KEY secret is not set; the live eval suite cannot run." >&2
+            exit 1
+          fi
+          cp ../.env.example ./.env.evals
+          sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
+          sed -i "s|^INTEGRATION_DATABASE_URL=.*|INTEGRATION_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/radioso_test|" ./.env.evals
+          sed -i "s|^OPENAI_API_KEY=.*|OPENAI_API_KEY=${OPENAI_API_KEY}|" ./.env.evals
+          # Deterministic dummy signing secrets — the workspace is throwaway and never exposed.
+          sed -i "s|^SESSION_COOKIE_SECRET=.*|SESSION_COOKIE_SECRET=ci-session-secret-000000000000000000000000000000|" ./.env.evals
+          sed -i "s|^WORKSPACE_TOKEN_SECRET=.*|WORKSPACE_TOKEN_SECRET=ci-workspace-token-secret-0000000000000000000000|" ./.env.evals
+          sed -i "s|^PUBLIC_CHAT_SESSION_SECRET=.*|PUBLIC_CHAT_SESSION_SECRET=ci-public-chat-secret-00000000000000000000000000|" ./.env.evals
+          sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=ci-connector-encryption-key-000000000000000000000|" ./.env.evals
+
+      - name: Apply migrations
+        working-directory: backend
+        run: node --env-file=./.env.evals --import tsx ./scripts/migrate.ts
+
+      - name: Start document worker
+        working-directory: backend
+        run: |
+          node --env-file=./.env.evals --import tsx ./src/documentWorker.ts &
+          echo "WORKER_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Run conversation-quality suite
+        working-directory: backend
+        run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --samples ${{ github.event.inputs.samples || '5' }}
+
+      - name: Stop document worker
+        if: always()
+        run: kill "${WORKER_PID}" 2>/dev/null || true

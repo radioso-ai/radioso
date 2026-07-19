@@ -350,10 +350,13 @@ function ActionDialog({
 // toolbar, so an active toggle gets the solid accent instead.
 const ACTIVE_TOOLBAR_BUTTON = 'bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
 
-const SKILL_CATEGORY_ORDER: RoutineSkillCategory[] = ['retrieval', 'customer_email', 'external_mcp', 'built_in']
+const SKILL_CATEGORY_ORDER: RoutineSkillCategory[] = ['retrieval', 'notify', 'customer_email', 'slack', 'webhook', 'external_mcp', 'built_in']
 const SKILL_CATEGORY_LABELS: Record<RoutineSkillCategory, string> = {
   retrieval: 'Retrieval',
+  notify: 'Notify',
   customer_email: 'Customer email',
+  slack: 'Slack',
+  webhook: 'Webhook',
   external_mcp: 'External MCP',
   built_in: 'Built-in',
 }

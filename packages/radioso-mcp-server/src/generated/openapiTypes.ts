@@ -4250,7 +4250,7 @@ export interface components {
             skillName: string;
             displayName: string;
             /** @enum {string} */
-            category: "retrieval" | "built_in" | "external_mcp" | "customer_email";
+            category: "retrieval" | "built_in" | "external_mcp" | "customer_email" | "webhook" | "slack" | "notify";
             description?: string;
             inputs: components["schemas"]["SkillAuthoringInput"][];
             outcomes: components["schemas"]["SkillAuthoringOutcome"][];

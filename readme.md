@@ -260,7 +260,9 @@ const response = await client.chat.create({
 });
 
 for await (const event of client.chat.stream({ message: "Summarize the FAQ" })) {
+  if (event.type === "status") updateProgress(event.stage);
   if (event.type === "chunk") process.stdout.write(event.text);
+  if (event.type === "cancelled") break;
 }
 ```
 

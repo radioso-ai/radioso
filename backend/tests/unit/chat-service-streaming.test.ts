@@ -292,6 +292,106 @@ describe("chat service streaming", () => {
     return { usageLimitPolicy, reservation };
   };
 
+  it("observes first-answer latency once with bounded route and delivery labels", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const observeHistogram = vi.fn();
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "Hello there.";
+      },
+      async *streamAnswer() {
+        yield "Hello ";
+        yield "there.";
+      },
+    };
+    const service = new ChatService({
+      conversationRepository,
+      messageRepository,
+      retrievalTurn: new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "hello" }),
+      ) as never),
+      chatGateway,
+      auditService,
+      turnRuntime: buildChatTurnRuntime({
+        chatGateway,
+        fallbackReplyComposer,
+        skillOutcomeCapabilities: groundedSkillCapabilities,
+        metrics: { incrementCounter: vi.fn(), observeHistogram },
+      }),
+      turnRouter: {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+      conversationEngine: createConversationEngine(),
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "hello",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "chunk")).toHaveLength(2);
+    expect(observeHistogram).toHaveBeenCalledTimes(1);
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({
+        labels: { route: "direct", delivery_mode: "live" },
+        value: expect.any(Number),
+      }),
+    );
+    expect(JSON.stringify(observeHistogram.mock.calls)).not.toContain("Hello");
+  });
+
+  it("labels an engine-prepared retrieval chunk from the updated prepared route", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const observeHistogram = vi.fn();
+    const chatGateway: ChatGateway = {
+      async answer() { return "unused"; },
+      async *streamAnswer() { yield "unused"; },
+    };
+    const service = new ChatService({
+      conversationRepository,
+      messageRepository,
+      retrievalTurn: new RetrievalTurnController(asChatActivityPipeline(createRetrievalMissPipeline()) as never),
+      chatGateway,
+      auditService: createAuditService(),
+      turnRuntime: buildChatTurnRuntime({
+        chatGateway,
+        fallbackReplyComposer,
+        skillOutcomeCapabilities: groundedSkillCapabilities,
+        metrics: { incrementCounter: vi.fn(), observeHistogram },
+      }),
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+      conversationEngine: createConversationEngine(),
+    });
+
+    for await (const _event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "missing topic",
+      stream: true,
+    })) {
+      // drain
+    }
+
+    expect(observeHistogram).toHaveBeenCalledTimes(1);
+    expect(observeHistogram).toHaveBeenCalledWith(
+      "chat_stream_first_answer_chunk_latency_ms",
+      expect.objectContaining({ labels: { route: "retrieval", delivery_mode: "committed" } }),
+    );
+  });
+
   const createIntentRoutedNoContextPipeline = (input: {
     query: string;
     responseIdentity?: {
@@ -1061,8 +1161,12 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
+    expect(events.map((event) => event.type)).toEqual(["status", "status", "done"]);
+    expect(events.slice(0, 2)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "status", stage: "composing" },
+    ]);
+    expect(events[2]).toMatchObject({
       type: "done",
       conversationId: existingConversation.id,
       assistantMessageId: "",
@@ -1143,8 +1247,12 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
+    expect(events.map((event) => event.type)).toEqual(["status", "status", "chunk", "done"]);
+    expect(events[2]).toEqual({
+      type: "chunk",
+      text: "Un compañero se está uniendo, por favor espera.",
+    });
+    expect(events[3]).toMatchObject({
       type: "done",
       answer: "Un compañero se está uniendo, por favor espera.",
       ownership: { state: "human_owned", suppressed: true },
@@ -1152,6 +1260,87 @@ describe("chat service streaming", () => {
     expect(handoffWaitingMessageGenerator.generate).toHaveBeenCalledOnce();
     expect(chatGateway.streamAnswer).not.toHaveBeenCalled();
     expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
+  it("holds a successor until every committed human-owned replay chunk is delivered", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create("workspace-1", null);
+    const waitingMessage = "x".repeat(600);
+    let markSuccessorEnteredPipeline!: () => void;
+    const successorEnteredPipeline = new Promise<void>((resolve) => { markSuccessorEnteredPipeline = resolve; });
+    const { usageLimitPolicy: baseUsageLimitPolicy, reservation } = createUsageLimitPolicy();
+    let reservationCalls = 0;
+    const usageLimitPolicy: NonNullable<ChatServiceOptions["usageLimitPolicy"]> = {
+      ...baseUsageLimitPolicy,
+      reserveAnswer: vi.fn(async () => {
+        reservationCalls += 1;
+        if (reservationCalls === 2) {
+          markSuccessorEnteredPipeline();
+        }
+        return reservation;
+      }),
+    };
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return "successor answer";
+      },
+      async *streamAnswer() {
+        yield "successor answer";
+      },
+    };
+    const conversationOwnershipReader: NonNullable<ChatServiceOptions["conversationOwnershipReader"]> = {
+      load: vi.fn()
+        .mockResolvedValueOnce(humanOwnedRecord(existingConversation.id))
+        .mockResolvedValue(null),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(
+        createIntentRoutedNoContextPipeline({ query: "hello" }),
+      ) as never),
+      chatGateway,
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, usageLimitPolicy, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      conversationOwnershipReader,
+      { generate: vi.fn(async () => waitingMessage) },
+    );
+
+    const first = service.streamAnswer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "first question",
+      stream: true,
+    })[Symbol.asyncIterator]();
+    await expect(first.next()).resolves.toMatchObject({ value: { type: "status", stage: "interpreting" } });
+    await expect(first.next()).resolves.toMatchObject({ value: { type: "status", stage: "composing" } });
+    await expect(first.next()).resolves.toMatchObject({ value: { type: "chunk", text: "x".repeat(256) } });
+
+    const successor = service.answer({
+      workspaceId: "workspace-1",
+      conversationId: existingConversation.id,
+      query: "hello",
+      stream: false,
+    });
+    const enteredWhileReplayPaused = await Promise.race([
+      successorEnteredPipeline.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 20)),
+    ]);
+    expect(enteredWhileReplayPaused).toBe(false);
+
+    const remainingFirstEvents: ChatStreamEvent[] = [];
+    for (let next = await first.next(); !next.done; next = await first.next()) {
+      remainingFirstEvents.push(next.value);
+    }
+    expect(remainingFirstEvents.filter((event) => event.type === "chunk").map((event) => event.text).join(""))
+      .toBe("x".repeat(344));
+    await expect(successorEnteredPipeline).resolves.toBeUndefined();
+    await expect(successor).resolves.toMatchObject({ answer: "successor answer" });
   });
 
   it("does not stream a waiting message once a human teammate has already replied", async () => {
@@ -1218,8 +1407,8 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
+    expect(events.map((event) => event.type)).toEqual(["status", "status", "done"]);
+    expect(events[2]).toMatchObject({
       type: "done",
       answer: "",
       ownership: { state: "human_owned", suppressed: true },
@@ -1936,6 +2125,111 @@ describe("chat service streaming", () => {
 
     // The confirmation chunk is streamed only after enqueue + routine-state advance.
     expect(order).toEqual(["enqueue", "save", "chunk"]);
+  });
+
+  it("does not expose tentative routine progress before a guarded routine result is available", async () => {
+    let releaseRunner!: () => void;
+    let markRunnerStarted!: () => void;
+    const runnerStarted = new Promise<void>((resolve) => { markRunnerStarted = resolve; });
+    const runnerBlocked = new Promise<void>((resolve) => { releaseRunner = resolve; });
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "contact.request" }) },
+        runner: {
+          resume: async () => {
+            markRunnerStarted();
+            await runnerBlocked;
+            return {
+              response: { answer: "What is your email?" },
+              nextState: {
+                sessionId: "s",
+                routineId: "contact.request",
+                path: ["ask_email"],
+                variables: {},
+                status: "active" as const,
+              },
+            };
+          },
+        },
+      }),
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "x"; }, async *streamAnswer() { yield "x"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+    const events = service.streamAnswer({ workspaceId: "workspace-1", query: "contact me", stream: true })
+      [Symbol.asyncIterator]();
+
+    await expect(events.next()).resolves.toMatchObject({ value: { type: "status", stage: "interpreting" } });
+    await expect(events.next()).resolves.toMatchObject({ value: { type: "conversation" } });
+    const composing = events.next();
+    await runnerStarted;
+    await expect(Promise.race([
+      composing.then(() => "emitted" as const),
+      Promise.resolve("pending" as const),
+    ])).resolves.toBe("pending");
+    releaseRunner();
+    await expect(composing).resolves.toMatchObject({ value: { type: "status", stage: "composing" } });
+    while (!(await events.next()).done) {
+      // drain
+    }
+  });
+
+  it("keeps public status progression stable when a routine yields to retrieval", async () => {
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => ({ kind: "activate" as const, routineId: "yielding.routine" }) },
+        runner: {
+          resume: async () => ({
+            yielded: true,
+            response: { answer: "" },
+            nextState: null,
+          }),
+        },
+      }),
+    };
+    const service = makeChatService(
+      new InMemoryConversationRepository(),
+      new InMemoryMessageRepository(),
+      new RetrievalTurnController(asChatActivityPipeline(createRetrievalMissPipeline()) as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      groundedSkillCapabilities,
+      undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "missing topic",
+      stream: true,
+    })) {
+      events.push(event);
+    }
+
+    expect(events.filter((event) => event.type === "status").map((event) => event.stage))
+      .toEqual(["interpreting", "searching", "composing"]);
   });
 
   it("never streams the routine confirmation when the action enqueue fails", async () => {
@@ -2680,9 +2974,22 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(events[0]).toEqual({ type: "conversation", conversationId: expect.any(String) });
-    expect(events[1]).toEqual({ type: "chunk", text: "full answer" });
-    expect(events[2]).toEqual({
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "status",
+      "chunk",
+      "done",
+    ]);
+    expect(events.slice(0, 4)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "conversation", conversationId: expect.any(String) },
+      { type: "status", stage: "searching" },
+      { type: "status", stage: "composing" },
+    ]);
+    expect(events[4]).toEqual({ type: "chunk", text: "full answer" });
+    expect(events[5]).toEqual({
       type: "done",
       conversationId: expect.any(String),
       agentId: "workspace-1",
@@ -3017,7 +3324,19 @@ describe("chat service streaming", () => {
 
     await expect(iterator.next()).resolves.toEqual({
       done: false,
+      value: { type: "status", stage: "interpreting" },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
       value: { type: "conversation", conversationId: expect.any(String) },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "status", stage: "searching" },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: { type: "status", stage: "composing" },
     });
 
     const nextEvent = iterator.next();
@@ -3283,8 +3602,29 @@ describe("chat service streaming", () => {
     await expect(iterator.next()).resolves.toEqual({
       done: false,
       value: {
+        type: "status",
+        stage: "interpreting",
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
         type: "conversation",
         conversationId: expect.any(String),
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: "status",
+        stage: "searching",
+      },
+    });
+    await expect(iterator.next()).resolves.toEqual({
+      done: false,
+      value: {
+        type: "status",
+        stage: "composing",
       },
     });
     await expect(iterator.next()).rejects.toBeInstanceOf(BlankChatAnswerError);
@@ -3536,9 +3876,20 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events[0]).toEqual({ type: "conversation", conversationId: expect.any(String) });
-    expect(events[1]).toEqual({ type: "chunk", text: expect.any(String) });
-    expect(events[2]).toEqual(
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "chunk",
+      "done",
+    ]);
+    expect(events.slice(0, 3)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "conversation", conversationId: expect.any(String) },
+      { type: "status", stage: "composing" },
+    ]);
+    expect(events[3]).toEqual({ type: "chunk", text: expect.any(String) });
+    expect(events[4]).toEqual(
       expect.objectContaining({
         type: "done",
         answer: expect.any(String),
@@ -3583,11 +3934,23 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events[1]).toEqual({
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "chunk",
+      "done",
+    ]);
+    expect(events.slice(0, 3)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "conversation", conversationId: expect.any(String) },
+      { type: "status", stage: "composing" },
+    ]);
+    expect(events[3]).toEqual({
       type: "chunk",
       text: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
     });
-    expect(events[2]).toEqual(
+    expect(events[4]).toEqual(
       expect.objectContaining({
         type: "done",
         answer: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
@@ -4880,6 +5243,13 @@ describe("chat service streaming", () => {
       stream: true,
     })[Symbol.asyncIterator]();
 
+    const interpretingEvent = await iterator.next();
+
+    expect(interpretingEvent.value).toEqual({
+      type: "status",
+      stage: "interpreting",
+    });
+
     const conversationEvent = await iterator.next();
 
     expect(conversationEvent.value).toEqual({
@@ -4887,7 +5257,7 @@ describe("chat service streaming", () => {
       conversationId: expect.any(String),
     });
 
-    const events: ChatStreamEvent[] = [conversationEvent.value!];
+    const events: ChatStreamEvent[] = [interpretingEvent.value!, conversationEvent.value!];
     for await (const event of { [Symbol.asyncIterator]: () => iterator }) {
       events.push(event);
     }
@@ -4897,6 +5267,21 @@ describe("chat service streaming", () => {
       .map((event) => event.text)
       .join("");
 
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "status",
+      "chunk",
+      "chunk",
+      "done",
+    ]);
+    expect(events.slice(0, 4)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "conversation", conversationId: expect.any(String) },
+      { type: "status", stage: "searching" },
+      { type: "status", stage: "composing" },
+    ]);
     expect(streamedText).toBe("The page explains testing and parsing content for users. It also offers 24/7 phone support.");
     expect(streamedText).toContain("24/7 phone support");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
@@ -5294,13 +5679,27 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events.map((event) => event.type)).toEqual(["conversation", "chunk", "done", "suggestions"]);
-    expect(events[2]).toMatchObject({
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "status",
+      "chunk",
+      "done",
+      "suggestions",
+    ]);
+    expect(events.slice(0, 4)).toEqual([
+      { type: "status", stage: "interpreting" },
+      expect.objectContaining({ type: "conversation" }),
+      { type: "status", stage: "searching" },
+      { type: "status", stage: "composing" },
+    ]);
+    expect(events[5]).toMatchObject({
       type: "done",
       answer: "Mahiya is a teacher and author.",
       suggestions: undefined,
     });
-    expect(events[3]).toMatchObject({
+    expect(events[6]).toMatchObject({
       type: "suggestions",
       suggestions: [
         {
@@ -5388,10 +5787,20 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    expect(events[0]?.type).toBe("conversation");
-    expect(events.at(-1)?.type).toBe("done");
-    expect(events.filter((event) => event.type === "chunk").length).toBeGreaterThan(0);
-    expect(events.some((event) => event.type === "suggestions")).toBe(false);
+    expect(events.map((event) => event.type)).toEqual([
+      "status",
+      "conversation",
+      "status",
+      "status",
+      "chunk",
+      "done",
+    ]);
+    expect(events.slice(0, 4)).toEqual([
+      { type: "status", stage: "interpreting" },
+      { type: "conversation", conversationId: expect.any(String) },
+      { type: "status", stage: "searching" },
+      { type: "status", stage: "composing" },
+    ]);
     expect(auditEventRepository.items.filter((event) => event.eventType === "chat.answer")).toHaveLength(1);
     expect(auditEventRepository.items[0]?.eventStatus).toBe("success");
   });

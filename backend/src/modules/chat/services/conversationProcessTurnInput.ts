@@ -4,6 +4,7 @@ import type {
   ConversationClarificationStore,
   ConversationClarifier,
   ConversationModelGateway,
+  ConversationProgressPort,
   ConversationRoutineActivator,
   ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
@@ -66,6 +67,7 @@ export interface ChatProcessTurnInputOptions {
 
 export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnInputOptions, "composer"> {
   composer: ConversationTurnStreamComposer;
+  progress?: ConversationProgressPort;
 }
 
 const directiveMatchesForSession = (session: PreparedSession): DirectiveMatch[] =>
@@ -188,6 +190,7 @@ export const createChatProcessTurnStreamInput = (
 ): ProcessTurnStreamInput => ({
   ...createChatProcessTurnInput(options),
   composer: options.composer,
+  ...(options.progress ? { progress: options.progress } : {}),
 });
 
 export interface AttemptRoutineInputOptions {
@@ -205,6 +208,7 @@ export interface AttemptRoutineInputOptions {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+  progress?: ConversationProgressPort;
 }
 
 /**
@@ -238,5 +242,6 @@ export const createAttemptRoutineInput = (options: AttemptRoutineInputOptions): 
     ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
     ...(options.loopGuardCandidateIds ? { loopGuardCandidateIds: options.loopGuardCandidateIds } : {}),
     ...(options.suppressNewClarification ? { suppressNewClarification: options.suppressNewClarification } : {}),
+    ...(options.progress ? { progress: options.progress } : {}),
   };
 };

@@ -1,5 +1,7 @@
 import type {
   ConversationEngine,
+  ConversationProgressPhase,
+  ConversationProgressPort,
   ConversationClarificationStore,
   ConversationClarifier,
   Directive,
@@ -25,12 +27,14 @@ import {
 import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
 import {
   buildTurnRendererRegistry,
+  committedAnswerChunks,
   getUnstreamedFinalAnswerRemainder,
   type TurnSkill,
   type TurnStreamResult,
   type TurnStreamSuggestions,
 } from "./turnOutcome.js";
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
+import type { ChatStatusStage } from "../contracts/streamEvents.js";
 
 export interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -48,6 +52,7 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   retrievalWork?: ConversationRetrievalWorkPort;
   getSession?: () => PreparedSession;
   beforeRender?: () => Promise<void>;
+  signal?: AbortSignal;
 }
 
 export interface RunPreparedChatTurnWithConversationEngineResult {
@@ -58,7 +63,13 @@ export interface RunPreparedChatTurnWithConversationEngineResult {
 }
 
 export type RunPreparedChatTurnStreamWithConversationEngineEvent =
-  | { type: "chunk"; text: string }
+  | { type: "status"; stage: ChatStatusStage }
+  | {
+      type: "chunk";
+      text: string;
+      deliveryMode: "live" | "committed" | "bounded_decline";
+      route: "direct" | "retrieval" | "other";
+    }
   | {
       type: "final";
       presentation: ChatPresentedAnswer;
@@ -67,7 +78,29 @@ export type RunPreparedChatTurnStreamWithConversationEngineEvent =
       engineTrace: ConversationTrace;
     };
 
-const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => ({
+export const toChatStatusStage = (phase: ConversationProgressPhase): ChatStatusStage => {
+  switch (phase) {
+    case "preparing":
+    case "interpreting":
+      return "interpreting";
+    case "retrieving":
+      return "searching";
+    case "selecting":
+    case "dispatching":
+    case "composing":
+    case "routine":
+      return "composing";
+  }
+};
+
+type QueuedEngineEvent =
+  | RunPreparedChatTurnStreamWithConversationEngineEvent
+  | { type: "error"; error: unknown };
+
+const toRenderableTurn = (
+  presentation: ChatPresentedAnswer,
+  traceMetrics?: Record<string, number>,
+): RenderableTurn => ({
   answer: presentation.answer,
   citations: presentation.citations,
   suggestions: presentation.suggestions,
@@ -79,6 +112,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     answerSegments: presentation.answerSegments,
     planningCitations: presentation.planningCitations,
     grounding: presentation.grounding,
+    ...(traceMetrics ? { traceMetrics } : {}),
   },
 });
 
@@ -155,6 +189,19 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
   const skillsByName = new Map(input.turnSkills.map((skill) => [skill.definition.name, skill]));
   const renderers = buildTurnRendererRegistry(input.turnSkills);
   const streamState: { result?: TurnStreamResult } = {};
+  const queued: QueuedEngineEvent[] = [];
+  let wake: (() => void) | undefined;
+  let closed = false;
+  let pumpDone = false;
+  let lastStatus: ChatStatusStage | undefined;
+  const enqueue = (event: QueuedEngineEvent): void => {
+    if (closed) {
+      return;
+    }
+    queued.push(event);
+    wake?.();
+    wake = undefined;
+  };
 
   const processTurnInput = createChatProcessTurnStreamInput({
     session: input.session,
@@ -164,6 +211,19 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     directiveRuntime: input.directiveRuntime,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
+    progress: {
+      report({ phase }) {
+        if (input.signal?.aborted) {
+          return;
+        }
+        const stage = toChatStatusStage(phase);
+        if (stage === lastStatus) {
+          return;
+        }
+        lastStatus = stage;
+        enqueue({ type: "status", stage });
+      },
+    },
     selector: {
       async select() {
         const { decision } = input.turnSkillSelector.select(readSession());
@@ -183,82 +243,133 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
       async compose() {
         throw new Error("conversation_engine_stream_used_non_streaming_compose");
       },
+      streamCommitted(response) {
+        return committedAnswerChunks(response.answer);
+      },
       async *stream({ outcomes }) {
         const outcome = outcomes[0];
         if (!outcome) {
           throw new Error("conversation_engine_dispatched_no_outcome");
         }
         await input.beforeRender?.();
-        const turnSkill = skillsByName.get(outcome.skillName);
-        if (!turnSkill?.streamRender) {
-          const finalPresentation = await renderers.resolve(outcome).render(outcome, {
-            session: readSession(),
-            query: input.query,
-            userExpectedLocale: input.userExpectedLocale,
-            accountId: input.accountId,
-          });
-          streamState.result = {
-            finalPresentation,
-            suggestions: { mode: "presentation" },
-            hasStreamedAnswer: false,
-            streamedAnswer: "",
-          };
-          if (finalPresentation.answer) {
-            yield { type: "delta", text: finalPresentation.answer };
-          }
-          yield {
-            type: "final",
-            response: toRenderableTurn(finalPresentation),
-          };
-          return;
-        }
-        const answerStream = turnSkill.streamRender({
+        const answerStream = renderers.stream(outcome, {
           session: readSession(),
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
+          signal: input.signal,
         });
+        const hasLiveRenderer = Boolean(renderers.resolve(outcome).stream);
         let streamStep = await answerStream.next();
         while (!streamStep.done) {
-          yield { type: "delta", text: streamStep.value };
+          yield {
+            type: "delta",
+            text: streamStep.value,
+            metadata: { deliveryMode: hasLiveRenderer ? "live" : "committed" },
+          };
           streamStep = await answerStream.next();
         }
         streamState.result = streamStep.value;
         const remainingAnswer = getUnstreamedFinalAnswerRemainder(streamState.result);
         if (remainingAnswer) {
-          yield { type: "delta", text: remainingAnswer };
+          yield {
+            type: "delta",
+            text: remainingAnswer,
+            metadata: {
+              deliveryMode: streamState.result.deliveryMode
+                ?? (streamState.result.hasStreamedAnswer ? "live" : "committed"),
+            },
+          };
         }
         yield {
           type: "final",
-          response: toRenderableTurn(streamState.result.finalPresentation),
+          response: toRenderableTurn(streamState.result.finalPresentation, streamState.result.traceMetrics),
         };
       },
     },
   });
 
   const engineEvents = input.engine.processTurnStream(processTurnInput)[Symbol.asyncIterator]();
-  while (true) {
-    const step = await engineEvents.next();
-    if (step.done) {
-      break;
+  const closeForAbort = () => {
+    if (closed) {
+      return;
     }
-    const event = step.value;
-    if (event.type === "delta") {
-      yield { type: "chunk", text: event.text };
-      continue;
+    queued.length = 0;
+    closed = true;
+    queued.push({ type: "error", error: input.signal?.reason ?? new Error("chat_turn_aborted") });
+    void engineEvents.return?.();
+    wake?.();
+    wake = undefined;
+  };
+  if (input.signal?.aborted) {
+    closeForAbort();
+  } else {
+    input.signal?.addEventListener("abort", closeForAbort, { once: true });
+  }
+
+  void (async () => {
+    try {
+      while (!closed) {
+        const step = await engineEvents.next();
+        if (step.done) {
+          break;
+        }
+        const event = step.value;
+        if (event.type === "delta") {
+          const deliveryMode = event.metadata?.deliveryMode;
+          const turnRoute = readSession().turnRoute;
+          enqueue({
+            type: "chunk",
+            text: event.text,
+            deliveryMode: deliveryMode === "live" || deliveryMode === "bounded_decline"
+              ? deliveryMode
+              : "committed",
+            route: turnRoute === "direct" || turnRoute === "retrieval" ? turnRoute : "other",
+          });
+          continue;
+        }
+        const streamResult = streamState.result;
+        if (!streamResult) {
+          throw new Error("conversation_engine_stream_missing_chat_result");
+        }
+        const result = event.result;
+        enqueue({
+          type: "final",
+          presentation: streamResult.finalPresentation,
+          suggestions: streamResult.suggestions,
+          result,
+          engineTrace: result.trace,
+        });
+      }
+    } catch (error) {
+      enqueue({ type: "error", error });
+    } finally {
+      pumpDone = true;
+      wake?.();
+      wake = undefined;
     }
-    const streamResult = streamState.result;
-    if (!streamResult) {
-      throw new Error("conversation_engine_stream_missing_chat_result");
+  })();
+
+  try {
+    while ((!closed && !pumpDone) || queued.length > 0) {
+      if (queued.length === 0) {
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+        continue;
+      }
+      const event = queued.shift()!;
+      if (event.type === "error") {
+        throw event.error;
+      }
+      yield event;
     }
-    const result = event.result;
-    yield {
-      type: "final",
-      presentation: streamResult.finalPresentation,
-      suggestions: streamResult.suggestions,
-      result,
-      engineTrace: result.trace,
-    };
+  } finally {
+    input.signal?.removeEventListener("abort", closeForAbort);
+    if (!closed) {
+      closed = true;
+      await engineEvents.return?.();
+    }
   }
 };
 
@@ -285,6 +396,7 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   clarificationStore?: ConversationClarificationStore;
   loopGuardCandidateIds?: string[];
   suppressNewClarification?: boolean;
+  progress?: ConversationProgressPort;
   presentRoutineReply: (response: RenderableTurn) => ChatPresentedAnswer;
 }): Promise<RunPreparedChatTurnWithConversationEngineResult | null> => {
   const result = await input.engine.attemptRoutine(
@@ -302,6 +414,7 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
       clarificationStore: input.clarificationStore,
       loopGuardCandidateIds: input.loopGuardCandidateIds,
       suppressNewClarification: input.suppressNewClarification,
+      progress: input.progress,
     }),
   );
   if (!result) {

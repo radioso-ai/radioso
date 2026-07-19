@@ -63,6 +63,31 @@ describe("openapi contract", () => {
     expect(document.paths?.["/api/v1/document/"]?.post?.security).toEqual([{ bearerAuth: [] }]);
   });
 
+  it("documents typed status events without modeling the SSE body as one JSON object", () => {
+    const document = createOpenApiDocument();
+    const schemas = document.components?.schemas ?? {};
+    const streamSchema = document.paths?.["/api/v1/assistant/chat"]?.post
+      ?.responses?.["200"]?.content?.["text/event-stream"]?.schema;
+
+    expect(schemas.ChatStatusStage).toEqual({
+      type: "string",
+      enum: ["interpreting", "searching", "composing"],
+    });
+    expect(schemas.ChatStatusEvent).toMatchObject({
+      type: "object",
+      properties: {
+        stage: { $ref: "#/components/schemas/ChatStatusStage" },
+      },
+      required: ["stage"],
+    });
+    // The generator registers the SSE body as a named component; assert through the ref.
+    expect(streamSchema).toEqual({ $ref: "#/components/schemas/AssistantChatSseStream" });
+    expect(schemas.AssistantChatSseStream).toMatchObject({
+      type: "string",
+      description: expect.stringContaining("status(interpreting)"),
+    });
+  });
+
   it("keeps the routine validation code enum in sync with the validator", () => {
     const document = createOpenApiDocument();
     const schema = document.components?.schemas?.RoutineValidationResult as

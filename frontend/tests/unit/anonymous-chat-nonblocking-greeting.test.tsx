@@ -362,6 +362,8 @@ describe('anonymous chat non-blocking greeting', () => {
     })
     publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
       handlers.onConversation?.({ conversationId: 'conversation-1' })
+      handlers.onStatus?.({ stage: 'composing' })
+      await flush()
       handlers.onCancelled?.({
         conversationId: 'conversation-1',
         reason: 'superseded',
@@ -371,10 +373,12 @@ describe('anonymous chat non-blocking greeting', () => {
     })
 
     let snapshot: Snapshot = { messages: [], isHydrating: true, isLoading: false }
+    const observedStages: Array<string | undefined> = []
     mounted = renderProvider({
       sendMessage: 'latest context',
       onSnapshot: (next) => {
         snapshot = next
+        observedStages.push(next.messages.find((message) => message.role === 'assistant')?.statusStage)
       },
     })
 
@@ -384,6 +388,7 @@ describe('anonymous chat non-blocking greeting', () => {
       ])
       expect(snapshot.isLoading).toBe(false)
     })
+    expect(observedStages).toContain('composing')
     expect(publicChatApiMock.getConversationDetail).not.toHaveBeenCalled()
   })
 })

@@ -23,6 +23,7 @@ export interface TurnRenderContext {
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -33,6 +34,22 @@ export interface TurnRenderContext {
 export interface TurnOutcomeRenderer {
   supports(outcome: TurnOutcome): boolean;
   render(outcome: TurnOutcome, ctx: TurnRenderContext): Promise<ChatPresentedAnswer>;
+  stream?(outcome: TurnOutcome, ctx: TurnRenderContext): AsyncGenerator<string, TurnStreamResult>;
+}
+
+export const COMMITTED_REPLAY_CHUNK_CODE_POINTS = 256;
+
+export function* committedAnswerChunks(
+  answer: string,
+  maxCodePoints = COMMITTED_REPLAY_CHUNK_CODE_POINTS,
+): Generator<string> {
+  if (maxCodePoints <= 0 || !Number.isInteger(maxCodePoints)) {
+    throw new Error("committed_replay_chunk_size_invalid");
+  }
+  const codePoints = Array.from(answer);
+  for (let offset = 0; offset < codePoints.length; offset += maxCodePoints) {
+    yield codePoints.slice(offset, offset + maxCodePoints).join("");
+  }
 }
 
 /**
@@ -49,6 +66,26 @@ export class TurnOutcomeRendererRegistry {
       throw new Error(`No turn-outcome renderer supports the outcome for skill "${outcome.skillName}"`);
     }
     return renderer;
+  }
+
+  async *stream(outcome: TurnOutcome, ctx: TurnRenderContext): AsyncGenerator<string, TurnStreamResult> {
+    const renderer = this.resolve(outcome);
+    if (renderer.stream) {
+      return yield* renderer.stream(outcome, ctx);
+    }
+    const finalPresentation = await renderer.render(outcome, ctx);
+    let streamedAnswer = "";
+    for (const chunk of committedAnswerChunks(finalPresentation.answer)) {
+      streamedAnswer += chunk;
+      yield chunk;
+    }
+    return {
+      finalPresentation,
+      suggestions: { mode: "presentation" },
+      hasStreamedAnswer: streamedAnswer.length > 0,
+      streamedAnswer,
+      deliveryMode: "committed",
+    };
   }
 }
 
@@ -105,6 +142,8 @@ export interface TurnStreamResult {
   suggestions: TurnStreamSuggestions;
   hasStreamedAnswer: boolean;
   streamedAnswer: string;
+  deliveryMode?: "live" | "committed" | "bounded_decline";
+  traceMetrics?: Record<string, number>;
 }
 
 export const getUnstreamedFinalAnswerRemainder = (result: TurnStreamResult): string => {
@@ -132,8 +171,6 @@ export interface TurnSkill {
   dispatch(session: PreparedSession): Promise<TurnOutcome> | TurnOutcome;
   /** Renders this skill's outcome into a chat presentation (non-streaming path). */
   renderer: TurnOutcomeRenderer;
-  /** Streams this skill's answer (when it supports streaming): yields chunk text, returns the raw result. */
-  streamRender?(ctx: TurnRenderContext): AsyncGenerator<string, TurnStreamResult>;
 }
 
 /**

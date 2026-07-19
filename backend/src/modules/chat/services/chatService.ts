@@ -11,6 +11,7 @@ import type {
   ConversationClarificationStore,
   ConversationClarifier,
   ConversationModelGateway,
+  ConversationProgressPort,
   ConversationRetrievalWorkPort,
   ConversationRoutineActivator,
   ConversationRoutineReentryGate,
@@ -37,6 +38,7 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { ContextVariableRepositoryPort } from "../../../db/repositories/contextVariableRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -48,7 +50,7 @@ import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { AgentService } from "../../agents/public.js";
 import { buildPendingDecisionTransition, type ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
-import type { ChatStreamEvent } from "../contracts/streamEvents.js";
+import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -77,6 +79,7 @@ import {
 import {
   type TurnSkill,
   type TurnStreamSuggestions,
+  committedAnswerChunks,
 } from "./turnOutcome.js";
 import type { ChatTurnRuntime } from "./chatTurnRuntime.js";
 import {
@@ -284,7 +287,13 @@ export const buildRoutinePendingDecisionTransition = (input: {
 };
 
 type PreparedChatStreamTurnEvent =
-  | { type: "chunk"; text: string }
+  | { type: "status"; stage: ChatStatusStage }
+  | {
+      type: "chunk";
+      text: string;
+      deliveryMode: "live" | "committed" | "bounded_decline";
+      route: "direct" | "retrieval" | "other";
+    }
   | {
       type: "final";
       finalPresentation: ChatPresentedAnswer;
@@ -544,6 +553,7 @@ export class ChatService {
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   private readonly conversationTurnRegistry: ConversationTurnRegistry;
+  private readonly streamMetrics?: Pick<MetricsRegistry, "observeHistogram"> | null;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -618,6 +628,7 @@ export class ChatService {
     this.logger = logger;
     this.chatAnswerPresenter = turnRuntime.chatAnswerPresenter;
     this.turnSkills = turnRuntime.turnSkills;
+    this.streamMetrics = turnRuntime.metrics;
     this.chatTurnLifecycle = new ChatTurnLifecycle(
       conversationRepository,
       messageRepository,
@@ -723,6 +734,7 @@ export class ChatService {
       resolution?: PendingClarificationResolution;
       clarifier?: ConversationClarifier;
     },
+    progress?: ConversationProgressPort,
   ): Promise<{
     presentation: ChatPresentedAnswer;
     engineTrace?: ConversationTrace;
@@ -744,6 +756,7 @@ export class ChatService {
     const modelGateway = new RoutineChatModelGateway(this.chatGateway, {
       workspaceContext: this.answerSupport.buildChatWorkspaceContext(session),
       usageContext: this.answerSupport.buildChatUsageContext(session, accountId, "routine_turn"),
+      signal: coordination.lease?.signal,
     });
     const routineTurnPorts = await this.routineProvider.forTurn({
       modelGateway,
@@ -785,6 +798,7 @@ export class ChatService {
         ? clarification.resolution.loopGuardCandidateIds
         : undefined,
       suppressNewClarification: clarification?.resolution?.suppressNewClarification,
+      progress,
       presentRoutineReply: (response) => presentRoutineRenderableAnswer(this.chatAnswerPresenter, response),
     });
     if (!outcome) {
@@ -1754,8 +1768,9 @@ export class ChatService {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
+      signal: input.coordination?.lease?.signal,
     })) {
-      if (event.type === "chunk") {
+      if (event.type === "status" || event.type === "chunk") {
         yield event;
         continue;
       }
@@ -1828,8 +1843,9 @@ export class ChatService {
       query: input.request.query,
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
+      signal: input.coordination.lease?.signal,
     })) {
-      if (event.type === "chunk") {
+      if (event.type === "status" || event.type === "chunk") {
         yield event;
         continue;
       }
@@ -2177,6 +2193,7 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
   }): AsyncIterable<ChatStreamEvent> {
+    const streamStartedAt = Date.now();
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
@@ -2193,6 +2210,7 @@ export class ChatService {
             input,
             coordination,
             modelCallTrace,
+            streamStartedAt,
           ),
         }));
     } finally {
@@ -2220,7 +2238,22 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): AsyncIterable<ChatStreamEvent> {
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
+    let firstAnswerChunkObserved = false;
+    const observeFirstAnswerChunk = (
+      route: "direct" | "retrieval" | "routine" | "other",
+      deliveryMode: "live" | "committed" | "bounded_decline",
+    ): void => {
+      if (firstAnswerChunkObserved) {
+        return;
+      }
+      firstAnswerChunkObserved = true;
+      this.streamMetrics?.observeHistogram("chat_stream_first_answer_chunk_latency_ms", {
+        help: "Latency from chat stream start to the first assistant answer chunk",
+        labels: { route, delivery_mode: deliveryMode },
+        value: Date.now() - streamStartedAt,
+      });
+    };
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     let lazySuggestionsPromise:
@@ -2230,6 +2263,15 @@ export class ChatService {
     let usageReservation: UsageLimitReservation | null = null;
     let usageReservationCommitted = false;
     let usageReservationReleased = false;
+    let lastPublicStatus: ChatStatusStage | undefined;
+    const shouldEmitStatus = (stage: ChatStatusStage): boolean => {
+      this.checkTurnCancellation(coordination);
+      if (lastPublicStatus === stage) {
+        return false;
+      }
+      lastPublicStatus = stage;
+      return true;
+    };
     const releaseUsageReservation = async () => {
       if (!usageReservation || usageReservationCommitted || usageReservationReleased) {
         return;
@@ -2242,6 +2284,13 @@ export class ChatService {
     };
 
     try {
+      // Emit the initial status without advancing the #868 turn stage: the turn is
+      // still "waiting" until the usage reservation succeeds, and a supersession
+      // during acquisition must keep reporting that stage.
+      if (shouldEmitStatus("interpreting")) {
+        yield { type: "status", stage: "interpreting" };
+        this.checkTurnCancellation(coordination);
+      }
       usageReservation = await this.usageLimitPolicy.reserveAnswer({
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -2253,10 +2302,18 @@ export class ChatService {
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
       if (isHumanOwned(ownership)) {
+        if (shouldEmitStatus("composing")) {
+          yield { type: "status", stage: "composing" };
+          this.checkTurnCancellation(coordination, "rendering");
+        }
         await releaseUsageReservation();
         const waitingMessage = await this.generateHandoffWaitingMessage(input, session);
         this.checkTurnCancellation(coordination, "rendering");
         this.beginTurnEmission(coordination);
+        for (const text of committedAnswerChunks(waitingMessage)) {
+          observeFirstAnswerChunk("other", "committed");
+          yield { type: "chunk", text };
+        }
         coordination.lease?.complete();
         yield { type: "done", ...suppressedHumanOwnedResponse(session, waitingMessage) };
         return;
@@ -2272,23 +2329,33 @@ export class ChatService {
         type: "conversation",
         conversationId: session.conversation.id,
       };
+      this.checkTurnCancellation(coordination, "routing");
 
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, stream its rendered reply and finish — no retrieval.
       const routineStartedAt = Date.now();
       this.checkTurnCancellation(coordination, "routing");
-      const routineTurn = suspendedRoutine
-        ? null
-        : await this.attemptRoutineTurn(
-            session,
-            input.accountId,
-            responseLanguagePromise,
-            activeRoutine,
-            coordination,
-            clarification,
-          );
+      const routineResult: { value: Awaited<ReturnType<ChatService["attemptRoutineTurn"]>> } = { value: null };
+      if (!suspendedRoutine) {
+        // A routine attempt is speculative: it may yield back to interpretation and
+        // retrieval. Keep its composing phase private until it claims the turn so the
+        // public sequence never backtracks from composing to interpreting/searching.
+        routineResult.value = await this.attemptRoutineTurn(
+          session,
+          input.accountId,
+          responseLanguagePromise,
+          activeRoutine,
+          coordination,
+          clarification,
+        );
+      }
+      const routineTurn = routineResult.value;
       this.checkTurnCancellation(coordination, "routing");
       if (routineTurn) {
+        if (shouldEmitStatus("composing")) {
+          yield { type: "status", stage: "composing" };
+          this.checkTurnCancellation(coordination, "rendering");
+        }
         session = this.withResponseLanguage(session, await responseLanguagePromise);
         const ownershipHandoff = routineTurn.handoff
           ? { reason: "routine_handoff" as const, ...routineTurn.handoff }
@@ -2334,8 +2401,9 @@ export class ChatService {
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
         usageReservationCommitted = true;
-        if (routineTurn.presentation.answer) {
-          yield { type: "chunk", text: routineTurn.presentation.answer };
+        for (const text of committedAnswerChunks(routineTurn.presentation.answer)) {
+          observeFirstAnswerChunk("routine", "committed");
+          yield { type: "chunk", text };
         }
         coordination.lease?.complete();
         yield { type: "done", ...completedTurn.response };
@@ -2384,6 +2452,10 @@ export class ChatService {
         );
         const groundTurn = resolvedRetrievalSense || routing.route === CHAT_TURN_ROUTE.RETRIEVAL;
         session = this.withResponseLanguage(session, await responseLanguagePromise);
+        if (groundTurn && shouldEmitStatus("searching")) {
+          yield { type: "status", stage: "searching" };
+          this.checkTurnCancellation(coordination, "routing");
+        }
         session = groundTurn
           ? await this.chatSessionPreparer.prepareRetrieval(preparedRetrievalInput, session, routing.framing)
           : await this.chatSessionPreparer.prepareDirect(retrievalInput, session, routing.framing);
@@ -2414,6 +2486,10 @@ export class ChatService {
           };
         }
         if (clarificationTurn?.kind === "ask") {
+          if (shouldEmitStatus("composing")) {
+            yield { type: "status", stage: "composing" };
+            this.checkTurnCancellation(coordination, "rendering");
+          }
           this.checkTurnCancellation(coordination, "rendering");
           this.beginTurnEmission(coordination);
           const completedTurn = await this.chatTurnLifecycle.completeAssistantTurn({
@@ -2431,7 +2507,10 @@ export class ChatService {
           assistantMessageId = completedTurn.assistantMessageId;
           await usageReservation.commit();
           usageReservationCommitted = true;
-          yield { type: "chunk", text: clarificationTurn.presentation.answer };
+          for (const text of committedAnswerChunks(clarificationTurn.presentation.answer)) {
+            observeFirstAnswerChunk("retrieval", "committed");
+            yield { type: "chunk", text };
+          }
           coordination.lease?.complete();
           yield { type: "done", ...completedTurn.response };
           return;
@@ -2466,11 +2545,19 @@ export class ChatService {
             coordination,
           });
       for await (const event of streamEvents) {
+        if (event.type === "status") {
+          if (shouldEmitStatus(event.stage)) {
+            yield event;
+            this.checkTurnCancellation(coordination);
+          }
+          continue;
+        }
         if (event.type === "chunk") {
           if (!emissionStarted) {
             this.beginTurnEmission(coordination);
             emissionStarted = true;
           }
+          observeFirstAnswerChunk(event.route, event.deliveryMode);
           yield {
             type: "chunk",
             text: event.text,

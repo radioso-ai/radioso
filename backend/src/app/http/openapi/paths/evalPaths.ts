@@ -66,6 +66,19 @@ const EvalOneOffRunRequestSchema = z
     agentConfigOverride: AgentConfigOverrideSchema.optional(),
   });
 
+const GroundingVerdictSchema = z.enum(["grounded", "degraded", "no_support"]);
+
+const GroundingDiagnosticsSchema = z
+  .object({
+    protocolVersion: z.union([z.literal(1), z.literal(2), z.null()]),
+    parseStatus: z.enum(["valid_v2", "legacy_v1", "missing", "malformed", "invalid_v2"]),
+    claimCount: z.number().int(),
+    sourcedClaimCount: z.number().int(),
+    unsourcedClaimCount: z.number().int(),
+    invalidSourceCount: z.number().int(),
+    assertionMismatch: z.boolean(),
+  });
+
 const EvalWorkbenchReplayRunResponseSchema = z
   .object({
     run: z.unknown(),
@@ -73,6 +86,8 @@ const EvalWorkbenchReplayRunResponseSchema = z
     answer: z.string().optional(),
     citations: z.array(z.unknown()).optional(),
     answerSegments: z.array(z.unknown()).optional(),
+    groundingVerdict: GroundingVerdictSchema.optional(),
+    groundingDiagnostics: GroundingDiagnosticsSchema.optional(),
     turnTrace: z.unknown().optional(),
     resolvedConfig: z.unknown(),
   });

@@ -680,6 +680,26 @@ describe("phraseRetrievalSenseAsk", () => {
     });
   });
 
+  it("falls back when the default clarifier appends options after a bare-label lead-in", async () => {
+    const result = await phraseRetrievalSenseAsk({
+      candidates: presentable,
+      askStage,
+      phraseQuestion: async () => "Posture practice\n\n1. Posture practice\n2. Meditation practice",
+    });
+    expect(result.kind).toBe("fallback");
+    expect(result.kind === "fallback" && result.documentScope).toEqual(["doc-left"]);
+  });
+
+  it("falls back when the phrased question is only the generated options list", async () => {
+    const result = await phraseRetrievalSenseAsk({
+      candidates: presentable,
+      askStage,
+      phraseQuestion: async () => "1. Posture practice\n2. Meditation practice",
+    });
+    expect(result.kind).toBe("fallback");
+    expect(result.kind === "fallback" && result.documentScope).toEqual(["doc-left"]);
+  });
+
   it("falls back when fewer than two options survive the presentable guard", async () => {
     const result = await phraseRetrievalSenseAsk({
       candidates: [

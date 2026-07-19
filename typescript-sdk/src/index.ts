@@ -9,6 +9,20 @@ import {
   type WorkspaceIngestionReprocessResponse,
 } from "./generated/client.js";
 import { streamChat, type RadiosoChatStreamEvent } from "./streaming/chatStream.js";
+import { createRoutinesResource } from "./resources/routines.js";
+import { createDirectivesResource } from "./resources/directives.js";
+import {
+  createAgentContextVariablesResource,
+  createContextVariablesResource,
+} from "./resources/contextVariables.js";
+import {
+  createEmailSkillsResource,
+  createExternalSkillsResource,
+  createSkillsResource,
+  createSlackSkillsResource,
+  createWebhookSkillsResource,
+} from "./resources/skills.js";
+import { createMcpConnectionsResource, createMcpConverseGrantsResource } from "./resources/mcp.js";
 
 export { RadiosoError } from "./core/errors.js";
 export type {
@@ -63,6 +77,80 @@ export type {
   RadiosoChatStreamEvent,
   RadiosoChatStreamStatusEvent,
 } from "./streaming/chatStream.js";
+export type {
+  RoutineDefinitionListResponse,
+  RoutineDefinitionGetResponse,
+  RoutineDefinitionCreateRequest,
+  RoutineDefinitionUpdateRequest,
+  RoutineDefinitionSaveResponse,
+  RoutineDefinitionLifecycleResponse,
+  RoutineDefinitionPublishResponse,
+  RoutineDefinitionValidateResponse,
+  PortableRoutineDocumentEnvelope,
+  PortableRoutineDocumentCreateResponse,
+  RoutineDraftAssistRequest,
+  RoutineDraftAssistResponse,
+  RoutineSkillCatalogResponse,
+} from "./resources/routines.js";
+export type {
+  DirectiveListResponse,
+  DirectiveDraftRequest,
+  DirectiveDraftResponse,
+  AuthoredDirectiveCreateRequest,
+  AuthoredDirectiveUpdateRequest,
+  AuthoredDirectiveSaveResponse,
+} from "./resources/directives.js";
+export type {
+  AgentContextVariableEnablementListResponse,
+  AgentContextVariableEnablementRequest,
+  AgentContextVariableEnablementResponse,
+  ContextVariableSigningKeyResponse,
+  ContextVariableListResponse,
+  ContextVariableCreateRequest,
+  ContextVariableUpdateRequest,
+  ContextVariableResponse,
+  ContextVariableValueUpsertRequest,
+  ContextVariableValueDeleteRequest,
+  ContextVariableValueResponse,
+  ContextVariableValueScopeQuery,
+} from "./resources/contextVariables.js";
+export type {
+  AgentSkillListResponse,
+  AgentSkillCreateRequest,
+  AgentSkillSaveResponse,
+  AgentSkillUpdateRequest,
+  AgentSkillCapabilitiesResponse,
+  AgentEmailSkillListResponse,
+  AgentEmailSkillCreateRequest,
+  AgentEmailSkillResponse,
+  AgentEmailSkillUpdateRequest,
+  ExternalSkillListResponse,
+  ExternalSkillCreateRequest,
+  ExternalSkillResponse,
+  ExternalSkillUpdateRequest,
+  WebhookSkillListResponse,
+  WebhookSkillCreateRequest,
+  WebhookSkillResponse,
+  WebhookSkillUpdateRequest,
+  SlackSkillListResponse,
+  SlackSkillCreateRequest,
+  SlackSkillResponse,
+  SlackSkillUpdateRequest,
+} from "./resources/skills.js";
+export type {
+  McpConnectionListResponse,
+  McpConnectionCreateRequest,
+  McpConnectionResponse,
+  McpConnectionUpdateRequest,
+  McpConnectionDiscoverResponse,
+  McpConnectionOauthStartResponse,
+  McpConnectionOauthCompleteRequest,
+  McpConnectionOauthCompleteResponse,
+  AgentMcpConverseGrantListResponse,
+  AgentMcpConverseGrantIssueRequest,
+  AgentMcpConverseGrantIssueResponse,
+  AgentMcpConverseGrantSecretResponse,
+} from "./resources/mcp.js";
 
 export interface DocumentImportFileRequest {
   file: Blob | Uint8Array | ArrayBuffer;
@@ -109,6 +197,18 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
   const config = createClientConfig(options);
   const generated = new GeneratedRadiosoClient(config);
 
+  const routines = createRoutinesResource(config);
+  const directives = createDirectivesResource(config);
+  const agentContextVariables = createAgentContextVariablesResource(config);
+  const contextVariables = createContextVariablesResource(config);
+  const skills = createSkillsResource(config);
+  const emailSkills = createEmailSkillsResource(config);
+  const externalSkills = createExternalSkillsResource(config);
+  const webhookSkills = createWebhookSkillsResource(config);
+  const slackSkills = createSlackSkillsResource(config);
+  const mcpConnections = createMcpConnectionsResource(config);
+  const mcpConverseGrants = createMcpConverseGrantsResource(config);
+
   return {
     settings: {
       getRetrievalDefaults: () => generated.getRetrievalDefaults(),
@@ -139,6 +239,20 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       update: (agentId: string, body: Parameters<GeneratedRadiosoClient["updateAgent"]>[1]) =>
         generated.updateAgent(agentId, body),
       setDefault: (agentId: string) => generated.setDefaultAgent(agentId),
+      routines,
+      directives,
+      contextVariables: agentContextVariables,
+      skills,
+      emailSkills,
+      externalSkills,
+      webhookSkills,
+      slackSkills,
+      mcpConnections,
+      mcpConverseGrants,
+    },
+    contextVariables,
+    routines: {
+      canonicalizePortable: routines.canonicalizePortable,
     },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),

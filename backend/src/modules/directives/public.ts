@@ -37,6 +37,11 @@ export {
   type SteeringBoundReason,
 } from "./steeringBound.js";
 export {
+  DEFAULT_DIRECTIVE_PRIORITY,
+  directiveMatchConfidence,
+  directiveMatchPriority,
+} from "./directiveMatchRanking.js";
+export {
   builtInAnswerDirectiveViews,
   conciseReadableFormattingDirective,
   defaultAnswerDirectives,

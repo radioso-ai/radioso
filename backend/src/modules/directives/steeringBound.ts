@@ -1,4 +1,5 @@
 import type { DirectiveMatch } from "./domain.js";
+import { directiveMatchConfidence, directiveMatchPriority } from "./directiveMatchRanking.js";
 
 /**
  * Caps on how much matched directive steering renders into the answer prompt.
@@ -26,21 +27,11 @@ export interface SteeringBoundResult {
   dropped: SteeringBoundDrop[];
 }
 
-// Mirrors the directive-binding ranking convention: an unset priority is neutral
-// rather than zero, so an unprioritised directive never scores 0 and sinks below
-// everything under the confidence × priority product.
-const DEFAULT_DIRECTIVE_PRIORITY = 50;
-
-// Deterministic (always-match) directives carry no matcher confidence; treat them
-// as fully confident so authored always-on steering is never ranked beneath a
-// merely-probable contextual match.
-const rankConfidence = (match: DirectiveMatch): number =>
-  match.selectionMode === "deterministic" ? 1 : match.selectionConfidence ?? 0;
-
-const rankPriority = (match: DirectiveMatch): number =>
-  match.directive.priority ?? DEFAULT_DIRECTIVE_PRIORITY;
-
-const boundScore = (match: DirectiveMatch): number => rankConfidence(match) * rankPriority(match);
+// Rank the rendered set by confidence × priority: a directive earns its place by
+// both holding this turn (confidence) and mattering (priority). The primitives are
+// shared with turn-skill binding — see directiveMatchRanking.
+const boundScore = (match: DirectiveMatch): number =>
+  directiveMatchConfidence(match) * directiveMatchPriority(match);
 
 // A rendered steering line is roughly "- {action} (when: {condition})". Estimate
 // its cost from character length at the repo-standard ~4 chars/token; exactness is

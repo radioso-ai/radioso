@@ -130,6 +130,14 @@ export const registerAssistantAuthenticatedChatPaths = (
           },
         },
       },
+      409: {
+        description: "Turn superseded by a newer message in the same conversation",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
       429: {
         description: "Expensive authenticated request rate limit exceeded",
         content: {
@@ -367,6 +375,14 @@ export const registerAssistantPublicChatPaths = (
       },
       404: {
         description: "Public chat link not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Turn superseded by a newer message in the same conversation",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

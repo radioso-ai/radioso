@@ -20,6 +20,7 @@ import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsR
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 import type { RoutineState, StagedContext, TurnContext } from "@radioso/conversation-contract";
+import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
 
@@ -407,6 +408,36 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(result).toEqual({ status: "completed", outputs: { ok: true }, answer: undefined });
     expect(gate).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("does not invoke the selected executor when cancellation lands during routine activation", async () => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" } as unknown as SkillOutcome,
+    }));
+    let cancelled = false;
+    const throwIfCancelled = vi.fn(() => {
+      if (cancelled) {
+        throw new ChatTurnSupersededError("session-1", "routing");
+      }
+    });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("crm_lookup", TEST_EXECUTION, [capabilityNames.externalSkills.invoke])]),
+      registryWith({ dispatch }),
+      {
+        capabilityGate: async () => {
+          cancelled = true;
+          return { allowed: true };
+        },
+        throwIfCancelled,
+      },
+    );
+
+    await expect(
+      dispatcher.dispatch({ skillName: "crm_lookup", state: routineState({}), turn }),
+    ).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    expect(throwIfCancelled).toHaveBeenCalledOnce();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("does not call the capability gate for a skill with no required capabilities", async () => {

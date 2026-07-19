@@ -17,6 +17,8 @@ import { PasswordResetService } from "../../src/modules/auth/services/passwordRe
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import {
   createRouteScopedDirectiveSteering,
+  InMemoryConversationTurnRegistry,
+  LoggingConversationTurnInterruptionObserver,
   RoutineNextStepSelector,
   RoutineRegistry,
   RoutineStepRenderer,
@@ -1412,6 +1414,10 @@ export const createTestDependencies = (overrides: {
       executorRegistry: skillExecutorRegistry,
       capabilityPolicy,
     }),
+    conversationTurnRegistry: new InMemoryConversationTurnRegistry(
+      new LoggingConversationTurnInterruptionObserver(logger, metricsRegistry),
+    ),
+    logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
     workspaceRepository,

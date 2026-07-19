@@ -2,6 +2,7 @@ import type {
   AnswerSegment,
   ChatResponse,
   ChatStreamChunk,
+  ChatStreamCancelled,
   ChatStreamCompletion,
   ChatStreamConversation,
   ChatStreamHandlers,
@@ -74,6 +75,7 @@ export const streamChatEvents = async (
     const payload = JSON.parse(data) as
       | (ChatStreamConversation & { type?: 'conversation' })
       | (ChatStreamChunk & { type?: 'chunk' })
+      | (ChatStreamCancelled & { type?: 'cancelled' })
       | (ChatStreamSuggestions & { type?: 'suggestions' })
       | (ChatStreamSkill & { type?: 'skill' })
       | (ChatStreamCompletion & { type?: 'done' })
@@ -94,6 +96,17 @@ export const streamChatEvents = async (
       const chunkPayload = payload as ChatStreamChunk
       answer = `${answer}${chunkPayload.text}`
       handlers.onChunk?.(chunkPayload)
+      return
+    }
+
+    if (normalizedEventName === 'cancelled') {
+      const cancelledPayload = payload as ChatStreamCancelled
+      conversationId = cancelledPayload.conversationId ?? conversationId
+      handlers.onCancelled?.({
+        conversationId,
+        reason: cancelledPayload.reason,
+        stage: cancelledPayload.stage,
+      })
       return
     }
 

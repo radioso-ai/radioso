@@ -4,6 +4,7 @@ import type { ConversationEngine, RoutineState } from "@radioso/conversation-con
 import { createConversationEngine } from "@radioso/conversation-engine";
 import {
   BlankChatAnswerError,
+  ChatTurnSupersededError,
   ChatService,
   type ChatGateway,
   type ChatServiceOptions,
@@ -30,6 +31,10 @@ import {
   InMemoryMessageRepository,
 } from "../support/fakes.js";
 import type { ConversationOwnershipRecord } from "../../src/modules/handoff/public.js";
+import {
+  RoutineSkillExecutorDispatcher,
+  StaticRoutineSkillResolver,
+} from "../../src/modules/routines/skillDispatcher.js";
 
 const assertionManifest = (answer: string): number[][] =>
   [...answer.matchAll(/(?:\[\[(?:\d+|\?)\]\])+/g)].flatMap((group) => {
@@ -145,6 +150,7 @@ const makeChatService = (
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"],
   turnInterpreter?: ChatServiceOptions["turnInterpreter"],
   retrievalSenseDetector?: ChatServiceOptions["retrievalSenseDetector"],
+  responseLanguageDetector?: ChatServiceOptions["responseLanguageDetector"],
 ): ChatService =>
   new ChatService({
     conversationRepository,
@@ -173,6 +179,7 @@ const makeChatService = (
     conversationOwnershipReader,
     handoffWaitingMessageGenerator,
     retrievalSenseDetector,
+    responseLanguageDetector,
     actionOutbox: routine?.actionOutbox,
     assistantTurnPersistence: routine?.assistantTurnPersistence,
   });
@@ -563,6 +570,116 @@ describe("chat service streaming", () => {
     expect(turnRouter.classify).not.toHaveBeenCalled();
     expect(retrievalTurn.interpret).toHaveBeenCalledWith(expect.objectContaining({
       precomputedRewriteProposal: rewriteProposal,
+    }));
+  });
+
+  it("passes detected response language into engine-prepared retrieval", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const auditService = createAuditService();
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    const turnRouter: ChatServiceOptions["turnRouter"] = {
+      classify: vi.fn(async () => {
+        throw new Error("merged turn interpreter should own routing");
+      }),
+    };
+    const turnInterpreter: ChatServiceOptions["turnInterpreter"] = {
+      interpretChatTurn: vi.fn(async () => ({
+        route: "retrieval" as const,
+        framing: { isIdentityQuestion: false },
+        rewriteProposal: {
+          rewrittenQuery: "known topic details",
+          semanticQuery: "known topic details",
+          lexicalQuery: "known topic",
+          queryShape: "general_grounding" as const,
+          temporalQueryMode: "none" as const,
+          retrievalSubqueries: [],
+          turnKind: "fresh_subject" as const,
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      })),
+    };
+    const responseLanguageDetector: ChatServiceOptions["responseLanguageDetector"] = {
+      detect: vi.fn(async () => ({ responseLanguage: "English" })),
+    };
+    const retrievalTurn: ChatServiceOptions["retrievalTurn"] = {
+      interpret: vi.fn(async (input) => ({
+        request: input,
+        traceStartedAtMs: Date.now(),
+        context: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {
+            request: input,
+            settings: {
+              workspaceId: input.workspaceId,
+              queryRewriteEnabled: true,
+              semanticRewriteInstructions: "",
+              lexicalRewriteInstructions: "",
+              suggestedQuestionsEnabled: true,
+              suggestedQuestionsCount: 3,
+              rerankEnabled: false,
+              vectorTopK: 20,
+              similarityThreshold: 0.1,
+              rerankTopK: 5,
+              citationDisplayEnabled: true,
+              customInstruction: "",
+              metadataRules: [],
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+            contextWindow: { selectedMessages: [], truncated: false, selectionReason: "full-history" },
+          },
+        },
+        interpretation: {
+          startedAt: Date.now(),
+          durationMs: 1,
+          result: {},
+        },
+      } as never)),
+      dispatch: vi.fn(async () => createGroundedPipeline().run() as never),
+    };
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => groundingEnvelope("The guide covers known topic details.[[1]]", "grounded")),
+      streamAnswer: vi.fn(async function* () {}),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      retrievalTurn,
+      chatGateway,
+      auditService,
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      groundedSkillCapabilities,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      turnRouter,
+      undefined,
+      undefined,
+      turnInterpreter,
+      undefined,
+      responseLanguageDetector,
+    );
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "How does the known topic work?",
+      stream: false,
+    });
+
+    expect(responseLanguageDetector.detect).toHaveBeenCalledOnce();
+    expect(retrievalTurn.interpret).toHaveBeenCalledWith(expect.objectContaining({
+      responseLanguage: "English",
     }));
   });
 
@@ -1278,6 +1395,105 @@ describe("chat service streaming", () => {
     expect(interpretCalls).toBe(0);
     const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("cancels during routine activation before the selected executor is invoked", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create("workspace-1", null);
+    let releaseActivation!: () => void;
+    let markActivationStarted!: () => void;
+    const activationStarted = new Promise<void>((resolve) => {
+      markActivationStarted = resolve;
+    });
+    const activationRelease = new Promise<void>((resolve) => {
+      releaseActivation = resolve;
+    });
+    let activationCalls = 0;
+    const executorDispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" as const },
+    }));
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async ({ throwIfCancelled }) => {
+        const dispatcher = new RoutineSkillExecutorDispatcher(
+          new StaticRoutineSkillResolver([{
+            name: "send_side_effect",
+            execution: { kind: "internal", adapter: "test" },
+          }] as never),
+          { resolve: () => ({ dispatch: executorDispatch }) } as never,
+          { throwIfCancelled },
+        );
+        return {
+          activator: {
+            activate: async () => {
+              activationCalls += 1;
+              if (activationCalls === 1) {
+                markActivationStarted();
+                await activationRelease;
+                return { kind: "activate" as const, routineId: "side_effect_routine" };
+              }
+              return null;
+            },
+          },
+          runner: {
+            resume: async () => {
+              await dispatcher.dispatch({
+                skillName: "send_side_effect",
+                state: {
+                  sessionId: conversation.id,
+                  routineId: "side_effect_routine",
+                  path: ["send"],
+                  variables: {},
+                  status: "active",
+                },
+                turn: {
+                  agent: { id: "workspace-1" },
+                  sessionId: conversation.id,
+                  stagedContext: [],
+                },
+              } as never);
+              return { response: { answer: "stale reply" }, nextState: null };
+            },
+          },
+        };
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(createIntentRoutedNoContextPipeline({ query: "hello" }) as never),
+      { async answer() { return "latest reply"; }, async *streamAnswer() { yield "latest reply"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined, undefined,
+      createConversationEngine(),
+      { routineStore, routineProvider },
+    );
+
+    const first = service.answer({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      query: "contact me",
+      stream: false,
+    });
+    await activationStarted;
+    const latest = service.answer({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      query: "hello",
+      stream: false,
+    });
+    releaseActivation();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: "latest reply" });
+    expect(executorDispatch).not.toHaveBeenCalled();
   });
 
   it("skips routine activation when a suspended routine exists for the conversation", async () => {

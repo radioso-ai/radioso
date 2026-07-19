@@ -172,6 +172,9 @@ export {
 export { documentScopeFromClarificationCandidate } from "./services/senseGroupingService.js";
 export {
   evaluateRetrievalSenseClarification,
+  phraseRetrievalSenseAsk,
+  presentableSenseCandidates,
+  type PhrasedSenseClarification,
   type RetrievalSenseClarificationEffect,
   type RetrievalSenseDetectorPort,
 } from "./services/retrievalSenseClarification.js";
@@ -244,5 +247,4 @@ export type { AgenticRetrievalToolFactory, AgenticRetrievalToolFactoryContext } 
 export { RetrieveRoutineSkillResolver } from "./services/retrieveRoutineSkillResolver.js";
 // Snippet building for chunk previews in skill-provider wiring; exposed here so
 // composition never reaches into retrieval service internals.
-export { buildSnippet } from "./services/agenticTools/chunkRegistry.js";
-export type { RegisteredChunk } from "./services/agenticTools/chunkRegistry.js";
+export { buildSnippet, type RegisteredChunk } from "./services/agenticTools/index.js";

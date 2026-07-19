@@ -99,6 +99,16 @@ export const sendChatSse = (
       return;
     }
 
+    if (event.type === "cancelled") {
+      res.write("event: cancelled\n");
+      res.write(`data: ${JSON.stringify({
+        conversationId: event.conversationId,
+        reason: event.reason,
+        stage: event.stage,
+      })}\n\n`);
+      return;
+    }
+
     if (event.type === "suggestions") {
       res.write("event: suggestions\n");
       res.write(`data: ${JSON.stringify({

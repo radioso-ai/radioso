@@ -98,4 +98,35 @@ describe("chat stream", () => {
       },
     ]);
   });
+
+  it("parses a terminal cancelled frame", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        streamFromText(
+          'event: cancelled\ndata: {"conversationId":"c1","reason":"superseded","stage":"routing"}\n\n',
+        ),
+        {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        },
+      ),
+    );
+    const client = createRadiosoClient({
+      baseUrl: "https://api.example.com",
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    const events = [];
+    for await (const event of client.chat.stream({ message: "hi", conversationId: "c1" })) {
+      events.push(event);
+    }
+
+    expect(events).toEqual([{
+      type: "cancelled",
+      conversationId: "c1",
+      reason: "superseded",
+      stage: "routing",
+    }]);
+  });
 });

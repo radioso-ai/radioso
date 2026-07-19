@@ -162,6 +162,7 @@ const makeService = (input: {
   routineStore?: ConversationRoutineStore;
   detector?: { detect: ReturnType<typeof vi.fn> };
   mapReply?: ConversationClarifier["mapReply"];
+  phraseQuestion?: ConversationClarifier["phraseQuestion"];
   route?: "retrieval" | "direct";
   chatGateway?: ChatGateway;
   directiveRuntime?: RouteScopedDirectiveRuntime;
@@ -196,7 +197,7 @@ const makeService = (input: {
     conversationEngine: createConversationEngine(),
     clarificationStore: input.clarificationStore,
     clarifier: {
-      phraseQuestion: vi.fn(async () => "Which yoga sense do you mean?"),
+      phraseQuestion: input.phraseQuestion ?? vi.fn(async () => "Which yoga sense do you mean?"),
       mapReply: input.mapReply ?? vi.fn(async () => ({ kind: "chosen" as const, id: "doc-hatha" })),
     },
     retrievalSenseDetector: input.detector as never,
@@ -464,6 +465,143 @@ describe("retrieval sense clarification", () => {
           decision: "auto_picked",
           reason: "label_fallback",
           chosenCandidateId: "doc-hatha",
+        }),
+      }),
+    ]));
+  });
+
+  it("silently auto-picks the top sense when the phrased clarifying question degenerates to a bare label", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", labelStatus: "generated", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", labelStatus: "generated", confidence: 0.59, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      // Reproduces the production degeneration: the lead-in collapses to one option
+      // label instead of an inviting question.
+      phraseQuestion: vi.fn(async () => "Hatha yoga"),
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(saved).toBeNull();
+    expect(answerInputs).toHaveLength(1);
+    expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
+      .toEqual(["tell me about yoga", "tell me about yoga"]);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "auto_picked",
+          reason: "phrasing_fallback",
+          chosenCandidateId: "doc-hatha",
+        }),
+      }),
+    ]));
+  });
+
+  it("answers compound complementary facets in one grounded turn without a menu", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "What Kriya Yoga is", labelStatus: "generated", relationship: "complementary", confidence: 0.61, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "How to begin Kriya Yoga", labelStatus: "generated", relationship: "complementary", confidence: 0.6, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "What is Kriya Yoga and how do I learn it?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(saved).toBeNull();
+    expect(answerInputs).toHaveLength(1);
+    // No document scoping: the combined answer spans both facet documents.
+    expect(capturedRequests.every((request) => request.documentScope === undefined)).toBe(true);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "none",
+          reason: "compatible_facets",
+        }),
+      }),
+    ]));
+  });
+
+  it("does not short-circuit to compatible_facets when only some senses are labeled complementary", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    // The gateway judged one sense complementary but left the other unlabeled: a
+    // partial signal must not suppress the ask — the un-judged (possibly exclusive)
+    // sense still deserves clarification.
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", labelStatus: "generated", relationship: "complementary", confidence: 0.61, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", labelStatus: "generated", confidence: 0.6, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    const clarificationStages = response.turnTrace?.spine.stages.filter((stage) => stage.kind === "clarification") ?? [];
+    expect(clarificationStages.map((stage) => stage.outputs?.reason)).not.toContain("compatible_facets");
+    expect(saved).toMatchObject({ source: "retrieval_sense", mode: "ask" });
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "asked",
         }),
       }),
     ]));

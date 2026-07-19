@@ -240,6 +240,7 @@ const runtimeSkillDefinitionForAgentSkill = (agentSkill: AgentSkillSpine): Runti
 const turnSkillForAgentSkill = (
   agentSkill: AgentSkillSpine,
   executorRegistry: SkillExecutorRegistry,
+  throwIfCancelled: () => void,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const renderer = new GenericTurnOutcomeRenderer();
@@ -254,6 +255,7 @@ const turnSkillForAgentSkill = (
       if (!executor) {
         return settledFailure(session, agentSkill.skillName, "no_executor");
       }
+      throwIfCancelled();
       const result = await executor.dispatch({
         skill,
         collected: collectedTurnInput(session),
@@ -299,6 +301,7 @@ const stagedToolFactoryForAgentSkill = (
   executorRegistry: SkillExecutorRegistry,
   session: PreparedSession,
   directiveNames: readonly string[],
+  throwIfCancelled: () => void,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const toolName = stagedToolNameForSkill(agentSkill.skillName);
@@ -320,6 +323,7 @@ const stagedToolFactoryForAgentSkill = (
         return { ok: false, skillName: agentSkill.skillName, directiveNames: [...directiveNames], error: "no_executor" };
       }
       const query = input.query?.trim() || session.effectiveQuery || session.userMessage.content;
+      throwIfCancelled();
       const result = await executor.dispatch({
         skill,
         collected: {
@@ -393,7 +397,11 @@ const stagedToolFactoryForAgentSkill = (
 export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkillProvider {
   constructor(private readonly options: RepositoryAgentSkillTurnSkillProviderOptions) {}
 
-  async forSession(session: PreparedSession): Promise<AgentSkillTurnRuntime> {
+  async forSession(
+    session: PreparedSession,
+    coordination?: { throwIfCancelled(): void },
+  ): Promise<AgentSkillTurnRuntime> {
+    const throwIfCancelled = coordination?.throwIfCancelled ?? (() => undefined);
     const records = await this.options.agentSkills.listByAgent(session.agent.workspaceId, session.agent.id);
     const skillStates = new Map<string, { enabled: boolean; turnCapable: boolean; stagingCapable: boolean; capabilityDenied?: boolean }>();
     const turnSkills: TurnSkill[] = [];
@@ -413,7 +421,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
         ...(capabilityDenied ? { capabilityDenied } : {}),
       });
       if (!capabilityDenied && turnCapable) {
-        turnSkills.push(turnSkillForAgentSkill(record, this.options.executorRegistry));
+        turnSkills.push(turnSkillForAgentSkill(record, this.options.executorRegistry, throwIfCancelled));
       }
       if (!capabilityDenied && stagingCapable) {
         stagedRecords.push(record);
@@ -425,7 +433,13 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
       agenticRetrievalToolFactories: (currentSession) => stagedRecords.flatMap((record) => {
         const directiveNames = matchedDirectiveNamesForSkill(currentSession, record.skillName);
         return directiveNames.length > 0
-          ? [stagedToolFactoryForAgentSkill(record, this.options.executorRegistry, currentSession, directiveNames)]
+          ? [stagedToolFactoryForAgentSkill(
+              record,
+              this.options.executorRegistry,
+              currentSession,
+              directiveNames,
+              throwIfCancelled,
+            )]
           : [];
       }),
     };

@@ -27,6 +27,10 @@ export interface EvalSnapshotOriginalRetrievalChunk {
   title: string;
   rank: number;
   similarity?: number;
+  fusedScore?: number;
+  semanticScore?: number;
+  lexicalScore?: number;
+  lexicalRankScore?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -158,6 +162,10 @@ export interface EvalRunRetrievedChunk {
   title: string;
   rank: number;
   similarity?: number;
+  fusedScore?: number;
+  semanticScore?: number;
+  lexicalScore?: number;
+  lexicalRankScore?: number;
   metadata?: Record<string, unknown>;
 }
 

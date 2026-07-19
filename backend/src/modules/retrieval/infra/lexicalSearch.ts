@@ -112,6 +112,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
       content: row.content,
       searchText: row.search_text,
       similarity: normalizeLexicalRank(Number(row.rank), maxRank),
+      lexicalRankScore: normalizeAbsoluteLexicalRank(Number(row.rank)),
       chunkIndex: row.chunk_index,
       startOffset: row.start_offset,
       endOffset: row.end_offset,
@@ -127,6 +128,9 @@ const normalizeLexicalRank = (rank: number, maxRank: number): number => {
 
   return Math.max(0, Math.min(1, rank / maxRank));
 };
+
+const normalizeAbsoluteLexicalRank = (rank: number): number =>
+  Number.isFinite(rank) && rank > 0 ? rank : 0;
 
 type CompiledLexicalPlan = {
   sql: {

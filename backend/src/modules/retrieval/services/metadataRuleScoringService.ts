@@ -8,6 +8,7 @@ import type {
 } from "../../settings/contracts/retrieval.js";
 import { getNormalizedMetadataConditions } from "../../settings/contracts/retrieval.js";
 import { isDynamicDateToken, resolveDynamicDateTokenToEpochMs } from "../../settings/contracts/dynamicDateToken.js";
+import { applyBoundedCandidateBoost, compareByFusedScore, getCandidateFusedScore } from "./candidateScoring.js";
 
 export class MetadataRuleScoringService {
   apply(input: {
@@ -42,14 +43,15 @@ export class MetadataRuleScoringService {
         const workingCandidate = candidate as typeof candidate & { matchesRule?: boolean };
         const matched = workingCandidate.matchesRule === true;
 
+        const boost = matched && rule.effect === "boost" ? RETRIEVAL_BEHAVIOR.metadataBoostWeight : 0;
+        const fusedScore = applyBoundedCandidateBoost(getCandidateFusedScore(workingCandidate), boost);
         return {
           ...workingCandidate,
           attributeMatchScore: workingCandidate.attributeMatchScore + (
-            matched && rule.effect === "boost" ? RETRIEVAL_BEHAVIOR.metadataBoostWeight : 0
+            boost
           ),
-          similarity: workingCandidate.similarity + (
-            matched && rule.effect === "boost" ? RETRIEVAL_BEHAVIOR.metadataBoostWeight : 0
-          ),
+          fusedScore,
+          similarity: fusedScore,
         };
       });
 
@@ -59,7 +61,7 @@ export class MetadataRuleScoringService {
     }
 
     return {
-      candidates: candidates.sort((left, right) => right.similarity - left.similarity),
+      candidates: candidates.sort(compareByFusedScore),
       appliedRules,
     };
   }

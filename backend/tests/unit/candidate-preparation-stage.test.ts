@@ -281,6 +281,8 @@ describe("candidate preparation stage", () => {
 
     expect(boosted.scoredCandidates[0]?.attributeMatchScore).toBeGreaterThan(0);
     expect(boosted.scoredCandidates[0]?.similarity).toBeGreaterThan(unboosted.scoredCandidates[0]?.similarity ?? 0);
+    expect(boosted.scoredCandidates[0]?.similarity).toBeLessThanOrEqual(1);
+    expect(boosted.scoredCandidates[0]?.fusedScore).toBe(boosted.scoredCandidates[0]?.similarity);
     expect(unboosted.scoredCandidates[0]?.attributeMatchScore).toBe(0);
   });
 
@@ -612,6 +614,65 @@ describe("candidate preparation stage", () => {
       summary: "category equals event",
     });
     expect(result.scoredCandidates).toHaveLength(4);
+  });
+
+  it("does not treat an all-junk lexical pool as useful hard-filter backoff support", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+    const lexicalContexts = Array.from({ length: 4 }, (_, index) =>
+      semanticChunk(index, {
+        similarity: 1 - index / 10,
+        lexicalRankScore: 0.001 - index / 10_000,
+        metadata: { category: index === 0 ? "event" : "article" },
+      }),
+    );
+
+    const result = await stage.execute({
+      ...buildInput([]),
+      lexicalContexts,
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [
+          {
+            id: "events-only",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact for event requests.",
+          },
+        ],
+      },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [
+          {
+            ruleId: "events-only",
+            matched: true,
+            matchStrength: 0.95,
+            reason: "The question asks about events.",
+            triggerInstructionPreview: "Enact for event requests.",
+          },
+        ],
+        matchedRuleIds: ["events-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+    });
+
+    expect(result.triggerBackoff).toEqual({
+      applied: false,
+      reason: undefined,
+      relaxedRuleIds: [],
+      restoredCandidateCount: undefined,
+    });
+    expect(result.scoredCandidates).toHaveLength(1);
   });
 
   it("does not relax trigger hard filters when an always-on filter is the bottleneck", async () => {

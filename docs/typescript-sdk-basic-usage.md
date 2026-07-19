@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
-description: "SDK tutorial covering documents, settings, skills, agents, chat, streaming, history, and error handling patterns."
-last_updated: 2026-07-02
+description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
+last_updated: 2026-07-19
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -183,10 +183,10 @@ await client.settings.updateGeneral({
 
 ## Skills
 
-The SDK exposes the read-only product skills catalog. Agent-authored skills use
-the agent skills REST endpoints until the generated SDK surface is promoted.
-Those agent skills are named capability instances such as `retrieve`, `email`,
-`slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
+The SDK exposes the read-only product skills catalog. Agent skills are named
+capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`,
+`mcp_tool`, and `notify`. Authoring those agent skills with an API token is
+covered in [Agent authoring](#agent-authoring).
 
 List skills:
 
@@ -199,28 +199,6 @@ Read one catalog skill:
 ```ts
 const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
-```
-
-To author an agent skill over REST:
-
-```ts
-const capabilities = await fetch(`/api/v1/agents/${agentId}/skill-capabilities`);
-const created = await fetch(`/api/v1/agents/${agentId}/skills`, {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    name: "send_followup",
-    capability: "email",
-    target: { kind: "customer_email_connection", id: connectionId },
-    config: {
-      mode: "draft",
-      exposedInputs: { to: { slotBinding: "email" }, bodyText: { slotBinding: "message" } },
-      boundInputs: { subject: "Follow-up" },
-    },
-    invocationMode: "routine_named",
-    enabled: true,
-  }),
-});
 ```
 
 Retrieval answer settings now live on the default-answer `retrieve` skill.
@@ -267,6 +245,122 @@ Edit that skill to configure retrieval behavior for one agent. Omitted fields
 inherit system/model defaults, and the dashboard shows those inherited values
 inline before saving only explicit overrides. Direct-only agents answer from their own
 instructions and return retrieval diagnostics with `retrievalInvoked: false`.
+
+## Agent authoring
+
+Authoring surfaces are available with a workspace API token. You can build and
+configure an agent the same way the dashboard does: write routines, directives,
+and context variables, and bind skills. All authoring calls are namespaced under
+`client.agents.*` and take the agent id as the first argument.
+
+The key point is that authoring and running are the same token. A script can
+provision an agent, then chat with it, without a session cookie.
+
+### Routines
+
+Routines are the multi-step flows an agent follows. Author them as portable
+markdown, or as relational definitions.
+
+Create a routine from portable markdown and publish it:
+
+```ts
+const draft = await client.agents.routines.createPortable(agentId, {
+  grammarVersion: 1,
+  content: [
+    "---",
+    "name: Book a demo",
+    "trigger: the visitor asks for a demo",
+    "---",
+    "Ask for their @work_email.",
+    "Then call #book_demo and confirm the time.",
+  ].join("\n"),
+});
+
+await client.agents.routines.publish(agentId, draft.routineId);
+```
+
+Read the portable document back, or normalize one without saving:
+
+```ts
+const current = await client.agents.routines.getPortable(agentId, routineId);
+const normalized = await client.routines.canonicalizePortable(current);
+```
+
+List, validate, and manage lifecycle:
+
+```ts
+const routines = await client.agents.routines.list(agentId);
+const check = await client.agents.routines.validate(agentId, routineId);
+await client.agents.routines.archive(agentId, routineId);
+```
+
+### Directives
+
+Directives (guidelines) steer behavior by condition. Draft one from a plain
+description, or create it directly:
+
+```ts
+const created = await client.agents.directives.create(agentId, {
+  name: "Escalate refunds",
+  condition: { kind: "contextual", description: "the customer asks for a refund" },
+  action: "Offer to connect them with a human agent.",
+});
+```
+
+### Context variables
+
+Workspace context variables hold values injected into turns. Define a variable,
+set a scoped value, then enable it on an agent:
+
+```ts
+const { contextVariable } = await client.contextVariables.create({
+  name: "plan_tier",
+  description: "The visitor's current plan",
+  valueType: "string",
+  trustTier: "unverified",
+  sensitivity: "normal",
+  defaultSurfacing: "always",
+});
+
+await client.contextVariables.upsertValue(contextVariable.id, {
+  scope: { type: "customer", id: customerId },
+  data: "pro",
+});
+
+await client.agents.contextVariables.upsert(agentId, contextVariable.id, {
+  source: "pushed",
+  surfacing: "always",
+  enabled: true,
+});
+```
+
+### Skills
+
+Bind a skill so a routine can act. Read the agent's capabilities first, then
+create the binding:
+
+```ts
+const capabilities = await client.agents.skills.capabilities(agentId);
+
+const skill = await client.agents.skills.create(agentId, {
+  name: "send_followup",
+  capability: "email",
+  target: { kind: "customer_email_connection", id: connectionId },
+  config: {
+    mode: "draft",
+    exposedInputs: { to: { slotBinding: "email" }, bodyText: { slotBinding: "message" } },
+    boundInputs: { subject: "Follow-up" },
+  },
+  invocationMode: "routine_named",
+  enabled: true,
+});
+```
+
+Capability-specific skills have their own namespaces:
+`client.agents.emailSkills`, `client.agents.externalSkills`,
+`client.agents.webhookSkills`, and `client.agents.slackSkills`. External skills
+connect to MCP servers through `client.agents.mcpConnections`, and
+`client.agents.mcpConverseGrants` issues grants for the converse surface.
 
 ## Non-Streaming Chat
 

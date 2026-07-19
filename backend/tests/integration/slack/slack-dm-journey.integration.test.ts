@@ -101,7 +101,9 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         agent_id UUID REFERENCES agents(id),
         source_channel TEXT,
         source_origin TEXT,
+        channel_context JSONB,
         anonymous_session_id TEXT,
+        verified_customer_id UUID,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )

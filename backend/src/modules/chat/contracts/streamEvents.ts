@@ -3,6 +3,7 @@ import type { SkillDisplayMetadata } from "../../skills/public.js";
 import type { AnswerSegment, ChatCitation } from "./answerTypes.js";
 import type { ChatOwnershipAck, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
 import type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
+import type { ConversationTurnStage } from "./interruption.js";
 
 export type SkillStreamPhase = "active" | "completed" | "failed";
 
@@ -26,6 +27,12 @@ export interface SkillStreamPayload {
 export type ChatStreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "chunk"; text: string }
+  | {
+      type: "cancelled";
+      conversationId: string;
+      reason: "superseded";
+      stage: ConversationTurnStage;
+    }
   | {
       type: "suggestions";
       conversationId: string;

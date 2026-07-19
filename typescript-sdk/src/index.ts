@@ -57,7 +57,10 @@ export type {
   WebsiteCrawlJobListQuery,
 } from "./generated/client.js";
 export type { RadiosoClientOptions } from "./core/config.js";
-export type { RadiosoChatStreamEvent } from "./streaming/chatStream.js";
+export type {
+  RadiosoChatStreamCancelledEvent,
+  RadiosoChatStreamEvent,
+} from "./streaming/chatStream.js";
 
 export interface DocumentImportFileRequest {
   file: Blob | Uint8Array | ArrayBuffer;

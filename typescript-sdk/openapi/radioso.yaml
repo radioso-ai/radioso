@@ -18216,6 +18216,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Turn superseded by a newer message in the same conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Expensive authenticated request rate limit exceeded
           content:
@@ -20076,6 +20082,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Turn superseded by a newer message in the same conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/mcp/converse/grounded-answer:
     post:
       tags:
@@ -20293,6 +20305,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Public chat link not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Turn superseded by a newer message in the same conversation
           content:
             application/json:
               schema:

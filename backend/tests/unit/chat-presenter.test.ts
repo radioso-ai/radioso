@@ -38,6 +38,26 @@ const createMockResponse = () => {
 };
 
 describe("chat presenter", () => {
+  it("writes a terminal cancelled event without assistant copy", async () => {
+    const { response, writes } = createMockResponse();
+    const cancelled: ChatStreamEvent = {
+      type: "cancelled",
+      conversationId: "conversation-1",
+      reason: "superseded",
+      stage: "rendering",
+    };
+
+    await sendChatSse(response as never, (async function* () {
+      yield cancelled;
+    })());
+
+    expect(writes).toContain("event: cancelled\n");
+    expect(writes).toContain(
+      'data: {"conversationId":"conversation-1","reason":"superseded","stage":"rendering"}\n\n',
+    );
+    expect(writes.join("")).not.toContain("answer");
+  });
+
   it("includes conversation mode metadata in streamed done events", async () => {
     const { response, writes } = createMockResponse();
     const events: ChatStreamEvent[] = [

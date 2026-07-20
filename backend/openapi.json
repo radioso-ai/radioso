@@ -3570,6 +3570,61 @@
         ],
         "additionalProperties": false
       },
+      "AuthoredDirectiveLifecycle": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "repeatable"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "once_per_conversation"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cooldown"
+                ]
+              },
+              "turns": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000
+              }
+            },
+            "required": [
+              "kind",
+              "turns"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
       "AuthoredDirectiveCreateRequest": {
         "type": "object",
         "properties": {
@@ -3638,6 +3693,19 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
               },
               {
                 "type": "null"
@@ -3727,6 +3795,19 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveBinding"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
               },
               {
                 "type": "null"
@@ -3919,6 +4000,19 @@
               }
             ]
           },
+          "lifecycle": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "metadata": {
             "type": "object",
             "additionalProperties": {}
@@ -3946,6 +4040,7 @@
           "tags",
           "description",
           "binding",
+          "lifecycle",
           "metadata",
           "createdAt",
           "updatedAt"

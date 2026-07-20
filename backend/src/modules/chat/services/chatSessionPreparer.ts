@@ -36,6 +36,7 @@ import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chat
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
+import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
 
@@ -63,6 +64,13 @@ export interface PreparedSession {
   responseLanguage?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
+  /**
+   * Per-turn directive firing memory, bound lazily by the directive matcher (issue
+   * #865). Rides on the session like {@link directiveSteering} so the routine
+   * attempt and process turn share one instance; the lifecycle commits it once at
+   * turn completion, advancing the conversation's firing state.
+   */
+  directiveStateStore?: DeferredDirectiveStateStore;
   /** Retrieval-sense alternatives to offer in the current grounded answer; labels only, never alternative chunks. */
   retrievalSenseOfferAlternatives?: ClarificationCandidate[];
   /**

@@ -114,6 +114,7 @@ export interface AgentDirectives {
   description: string | null;
   excludes: Generated<string[]>;
   id: Generated<string>;
+  lifecycle: Json | null;
   metadata: Generated<Json>;
   name: string;
   priority: number | null;
@@ -346,6 +347,15 @@ export interface Conversations {
   updated_at: Generated<Timestamp>;
   verified_customer_id: string | null;
   workspace_id: string;
+}
+
+export interface DirectiveStates {
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp | null;
+  firings: Generated<Json>;
+  session_id: string;
+  turn_seq: Generated<number>;
+  updated_at: Generated<Timestamp>;
 }
 
 export interface DocumentProcessingJobs {
@@ -951,6 +961,7 @@ export interface DB {
   context_variables: ContextVariables;
   conversation_ownership: ConversationOwnership;
   conversations: Conversations;
+  directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;
   documents: Documents;

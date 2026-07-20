@@ -76,6 +76,7 @@ import {
   noopRouteScopedDirectiveRuntime,
   type RouteScopedDirectiveRuntime,
 } from "./routeScopedDirectiveSteering.js";
+import { noopDirectiveStateStore, type DirectiveStateStore } from "../../directives/public.js";
 import {
   type TurnSkill,
   type TurnStreamSuggestions,
@@ -474,6 +475,8 @@ export interface ChatServiceOptions {
   /** Optional: resolves the agent's enabled host context variables per turn. */
   contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">;
   directiveSteering?: RouteScopedDirectiveRuntime;
+  /** Optional: durable per-conversation directive firing memory for lifecycle suppression (#865). */
+  directiveStateStore?: DirectiveStateStore;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
@@ -536,6 +539,7 @@ export class ChatService {
   private readonly turnSkills: TurnSkill[];
   private readonly agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
+  private readonly directiveStateStore: DirectiveStateStore;
   private readonly logger?: Pick<AppLogger, "warn">;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
@@ -570,6 +574,7 @@ export class ChatService {
       agentService,
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
+      directiveStateStore = noopDirectiveStateStore,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
       turnInterpreter,
@@ -623,6 +628,7 @@ export class ChatService {
     this.turnInterpreter = turnInterpreter;
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
+    this.directiveStateStore = directiveStateStore;
     this.agentSkillTurnSkillProvider = agentSkillTurnSkillProvider;
     this.conversationTurnRegistry = conversationTurnRegistry;
     this.logger = logger;
@@ -787,6 +793,7 @@ export class ChatService {
       session,
       accountId,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore: this.directiveStateStore,
       routineStore: deferredStore,
       routineRunner: routineTurnPorts.runner,
       routineActivator: activator,
@@ -1475,6 +1482,7 @@ export class ChatService {
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore: this.directiveStateStore,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
@@ -1623,6 +1631,7 @@ export class ChatService {
           ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
         };
         const directiveSteering = input.sessionRef.current.directiveSteering;
+        const directiveStateStore = input.sessionRef.current.directiveStateStore;
         input.sessionRef.current = this.withResponseLanguage(
           input.sessionRef.current,
           await input.responseLanguagePromise,
@@ -1639,6 +1648,12 @@ export class ChatService {
             directiveSteering,
           };
         }
+        if (directiveStateStore) {
+          input.sessionRef.current = {
+            ...input.sessionRef.current,
+            directiveStateStore,
+          };
+        }
         if (input.clarificationState && input.clarification) {
           input.clarificationState.current = await this.maybeClarifyRetrievalSense({
             session: input.sessionRef.current,
@@ -1647,6 +1662,8 @@ export class ChatService {
             activeRoutineAtTurnStart: input.activeRoutineAtTurnStart ?? false,
           });
           if (input.clarificationState.current?.kind === "continue" && input.clarificationState.current.documentScope) {
+            const directiveSteering = input.sessionRef.current.directiveSteering;
+            const directiveStateStore = input.sessionRef.current.directiveStateStore;
             input.sessionRef.current = await this.chatSessionPreparer.prepareRetrieval(
               {
                 ...preparedRetrievalInput,
@@ -1656,6 +1673,18 @@ export class ChatService {
               input.sessionRef.current.turnFraming,
             );
             this.checkTurnCancellation(input.coordination, "rendering");
+            if (directiveSteering) {
+              input.sessionRef.current = {
+                ...input.sessionRef.current,
+                directiveSteering,
+              };
+            }
+            if (directiveStateStore) {
+              input.sessionRef.current = {
+                ...input.sessionRef.current,
+                directiveStateStore,
+              };
+            }
           }
           if (input.clarificationState.current?.kind === "continue" && input.clarificationState.current.offerAlternatives) {
             input.sessionRef.current = {
@@ -1730,6 +1759,7 @@ export class ChatService {
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore: this.directiveStateStore,
       turnInterpreter,
       retrievalWork,
       beforeRender: async () => {
@@ -1765,6 +1795,7 @@ export class ChatService {
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore: this.directiveStateStore,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
@@ -1834,6 +1865,7 @@ export class ChatService {
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore: this.directiveStateStore,
       turnInterpreter,
       retrievalWork,
       beforeRender: async () => {

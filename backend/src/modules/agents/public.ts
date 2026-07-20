@@ -117,6 +117,7 @@ export {
   authoredDirectiveRouteValues,
   type AuthoredDirective,
   type AuthoredDirectiveBinding,
+  type AuthoredDirectiveLifecycle,
   type AuthoredDirectiveCapabilityValidationResult,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,

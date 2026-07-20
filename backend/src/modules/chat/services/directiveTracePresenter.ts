@@ -14,9 +14,13 @@ export const appendDirectiveSteeringStage = (
   steering: DirectiveSteeringResult | undefined,
 ): ActivityTrace => {
   const bounded = steering?.bounded ?? [];
+  const lifecycleSuppressed = steering?.lifecycleSuppressed ?? [];
   if (
     !steering ||
-    (steering.matches.length === 0 && steering.omissions.length === 0 && bounded.length === 0)
+    (steering.matches.length === 0 &&
+      steering.omissions.length === 0 &&
+      bounded.length === 0 &&
+      lifecycleSuppressed.length === 0)
   ) {
     return trace;
   }
@@ -46,6 +50,9 @@ export const appendDirectiveSteeringStage = (
           // cap or token budget — surfaced so builders see why a directive that
           // matched still did not steer this turn.
           bounded,
+          // Held back before matching by a once/cooldown lifecycle policy that
+          // already fired earlier in the conversation (#865).
+          lifecycleSuppressed,
         },
       },
     ],

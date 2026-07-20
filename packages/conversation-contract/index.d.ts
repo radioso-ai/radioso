@@ -100,12 +100,26 @@ export interface Directive {
    */
   tags?: string[];
   priority?: number;
+  /**
+   * Optional cross-turn firing policy. Absent means `repeatable` (the historical
+   * behavior): the directive may render on every turn its condition holds. The
+   * host remembers which directives have fired per conversation and suppresses
+   * `once_per_conversation` / `cooldown` re-fires before matching — matching
+   * itself stays stateless. A directive counts as "fired" on a turn only when it
+   * renders into the steering block, not when it merely matched.
+   */
+  lifecycle?: DirectiveLifecycle;
   requiredCapabilities?: string[];
   dependsOn?: string[];
   excludes?: string[];
   description?: string;
   metadata?: Record<string, unknown>;
 }
+
+export type DirectiveLifecycle =
+  | { kind: "repeatable" }
+  | { kind: "once_per_conversation" }
+  | { kind: "cooldown"; turns: number };
 
 export type DirectiveCondition =
   | { kind: "always" }

@@ -303,6 +303,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }).strict(),
   );
 
+  const AuthoredDirectiveLifecycleSchema = registry.register(
+    "AuthoredDirectiveLifecycle",
+    z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("repeatable") }).strict(),
+      z.object({ kind: z.literal("once_per_conversation") }).strict(),
+      z.object({ kind: z.literal("cooldown"), turns: z.number().int().min(1).max(1000) }).strict(),
+    ]),
+  );
+
   const AuthoredDirectiveRequestBaseSchema = z.object({
     name: z.string().min(1).max(200),
     condition: AuthoredDirectiveConditionSchema,
@@ -314,6 +323,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     tags: z.array(z.string().min(1).max(200)).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
+    lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]).optional(),
     metadata: z.record(z.unknown()).optional(),
   }).strict();
 
@@ -375,6 +385,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       tags: z.array(z.string()),
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
+      lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
       metadata: z.record(z.unknown()),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),

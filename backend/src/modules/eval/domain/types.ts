@@ -19,6 +19,7 @@ export interface EvalSnapshotMessage {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   groundingSummary?: GroundingSummary;
+  directiveFirings?: string[];
 }
 
 export interface EvalSnapshotOriginalRetrievalChunk {

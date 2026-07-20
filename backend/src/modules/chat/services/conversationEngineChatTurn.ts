@@ -25,6 +25,7 @@ import {
   createChatProcessTurnStreamInput,
 } from "./conversationProcessTurnInput.js";
 import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
+import type { DirectiveStateStore } from "../../directives/public.js";
 import {
   buildTurnRendererRegistry,
   committedAnswerChunks,
@@ -45,6 +46,8 @@ export interface RunPreparedChatTurnWithConversationEngineInput {
   turnSkills: TurnSkill[];
   /** Route-scoped directive catalog + matcher used by the engine's directive port. */
   directiveRuntime?: RouteScopedDirectiveRuntime;
+  /** Durable per-conversation directive firing memory for lifecycle suppression (#865). */
+  directiveStateStore?: DirectiveStateStore;
   query: string;
   userExpectedLocale?: string | null;
   accountId?: string;
@@ -140,6 +143,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
     accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
+    directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
     selector: {
@@ -209,6 +213,7 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
     accountId: input.accountId,
     skills: input.turnSkills.map((skill) => skill.definition),
     directiveRuntime: input.directiveRuntime,
+    directiveStateStore: input.directiveStateStore,
     turnInterpreter: input.turnInterpreter,
     retrievalWork: input.retrievalWork,
     progress: {
@@ -397,6 +402,7 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
   accountId?: string;
   directives?: Directive[];
   directiveRuntime?: RouteScopedDirectiveRuntime;
+  directiveStateStore?: DirectiveStateStore;
   routineStore: ConversationRoutineStore;
   routineRunner: ConversationRoutineRunner;
   routineActivator: ConversationRoutineActivator;
@@ -415,6 +421,7 @@ export const attemptRoutineTurnWithConversationEngine = async (input: {
       accountId: input.accountId,
       directives: input.directives,
       directiveRuntime: input.directiveRuntime,
+      directiveStateStore: input.directiveStateStore,
       routineStore: input.routineStore,
       routineRunner: input.routineRunner,
       routineActivator: input.routineActivator,

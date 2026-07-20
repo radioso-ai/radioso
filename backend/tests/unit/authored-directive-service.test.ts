@@ -60,6 +60,7 @@ const persistedDirective = (input: AuthoredDirectiveInput, overrides: Partial<Au
     routes: [],
     description: input.description ?? null,
     binding: input.binding ?? null,
+    lifecycle: null,
     metadata: {},
     createdAt: now,
     updatedAt: now,

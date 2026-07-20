@@ -8,6 +8,7 @@ import type {
 export type {
   Directive,
   DirectiveCondition,
+  DirectiveLifecycle,
   DirectiveMatch,
   DirectiveSelectionMode,
   SteeringRule,

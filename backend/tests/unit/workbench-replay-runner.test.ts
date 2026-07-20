@@ -12,6 +12,7 @@ import { projectInternalAgentConfig } from "../../src/modules/agents/agentConfig
 import { WorkbenchReplayRunner } from "../../src/modules/chat/services/workbenchReplayRunner.js";
 import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
@@ -315,6 +316,7 @@ describe("WorkbenchReplayRunner", () => {
         action: "Look up the order.",
         priority: null,
         binding: { kind: "skill", skillName: "order_lookup" },
+        lifecycle: null,
         requiredCapabilities: [],
         dependsOn: [],
         excludes: [],
@@ -353,6 +355,102 @@ describe("WorkbenchReplayRunner", () => {
     expect(selection?.outputs ?? {}).toMatchObject({ reason: "directive:order-status" });
   });
 
+  it("suppresses once_per_conversation directives that fired in replay history", async () => {
+    const boundSkill: TurnSkill = {
+      definition: { name: "order_lookup", outcomeKinds: ["agent_skill"] },
+      selects: () => false,
+      dispatch: (session) => ({
+        kind: "agent_skill",
+        skillName: "order_lookup",
+        outcome: { status: "completed", answer: "Order 123 is in transit." },
+        stagedContext: session.stagedContext,
+        steering: session.directiveSteering?.rules ?? [],
+        trace: session.turnTrace,
+      }),
+      renderer: {
+        supports: (outcome) => outcome.kind === "agent_skill",
+        render: async (outcome) => ({
+          answer: outcome.outcome.answer ?? "",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        }),
+      },
+    };
+    const provider: AgentSkillTurnSkillProvider = {
+      forSession: vi.fn(async () => ({
+        turnSkills: [boundSkill],
+        agenticRetrievalToolFactories: () => [],
+        skillStates: new Map([["order_lookup", { enabled: true, turnCapable: true, stagingCapable: false }]]),
+      })),
+    };
+    const boundAgent: ConversationAgent = {
+      ...agent(),
+      authoredDirectives: [{
+        id: "directive-1",
+        agentId: "agent-1",
+        name: "order-status",
+        condition: { kind: "always" },
+        action: "Look up the order.",
+        priority: null,
+        binding: { kind: "skill", skillName: "order_lookup" },
+        lifecycle: { kind: "once_per_conversation" },
+        requiredCapabilities: [],
+        dependsOn: [],
+        excludes: [],
+        routes: [],
+        tags: [],
+        description: null,
+        metadata: {},
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      }],
+    };
+    const history: MessageRecord[] = [
+      {
+        id: "history-user",
+        conversationId: "conv-1",
+        workspaceId: "ws-1",
+        role: "user",
+        content: "Where is order 123?",
+        createdAt: new Date(0),
+      },
+      {
+        id: "history-assistant",
+        conversationId: "conv-1",
+        workspaceId: "ws-1",
+        role: "assistant",
+        content: "Order lookup happened.",
+        metadata: { directiveFirings: ["order-status"] },
+        createdAt: new Date(0),
+      },
+    ];
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("direct"),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [],
+      }),
+      agentSkillTurnSkillProvider: provider,
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(boundAgent),
+      query: "Where is order 123 now?",
+      history,
+    });
+
+    expect(result.answer).toBe("Answered with Answer from the operator baseline.");
+    const selection = result.turnTrace?.spine.stages.find((stage) => stage.kind === "skill_selection");
+    expect(selection?.outputs?.reason).not.toBe("directive:order-status");
+  });
+
   it("stages directive-bound retrieval skills before replay grounding runs", async () => {
     const stagedFactory = vi.fn(() => []);
     const capturedRequests: RetrievalPipelineRequest[] = [];
@@ -372,6 +470,7 @@ describe("WorkbenchReplayRunner", () => {
         action: "Use the refund lookup skill.",
         priority: null,
         binding: { kind: "skill", skillName: "grounded_search" },
+        lifecycle: null,
         requiredCapabilities: [],
         dependsOn: [],
         excludes: [],

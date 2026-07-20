@@ -1,6 +1,7 @@
 export type {
   Directive,
   DirectiveCondition,
+  DirectiveLifecycle,
   DirectiveMatch,
   DirectiveOmission,
   DirectiveSelectionMode,

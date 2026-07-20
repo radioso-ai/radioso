@@ -287,6 +287,7 @@ export const buildTurnTraceForPresentation = (
   const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
   const contextVariablesSnapshot = input.session.resolvedContext.snapshot;
   const hasContextVariablesSnapshot = Object.keys(contextVariablesSnapshot).length > 0;
+  const directiveFirings = input.session.directiveStateStore?.capturedFiringNames() ?? [];
   // The conversation spine is the root span; retrieval rides as a typed leaf on
   // its dispatch stage, and the resolved (redacted) visitor context rides on the
   // gather stage. Engine always runs the assistant turn, so engineTrace is
@@ -346,6 +347,7 @@ export const buildTurnTraceForPresentation = (
       groundingVerdict: input.presentation.grounding,
       groundingProtocolVersion: input.presentation.groundingSummary?.protocolVersion,
       groundingDiagnostics: input.presentation.groundingDiagnostics,
+      ...(directiveFirings.length > 0 ? { directiveFirings } : {}),
     },
   };
   const successInput: AssistantTurnSuccessInput = {
@@ -591,6 +593,18 @@ export class ChatTurnLifecycle {
       if (input.additionalAuditEvent) {
         await this.auditService.record(input.additionalAuditEvent);
       }
+    }
+
+    // Advance the conversation's directive firing memory (#865) once the reply is
+    // durably persisted. Best-effort, off the answer path: a failure here only risks
+    // a once/cooldown directive re-firing next turn, so it must never fail the turn.
+    try {
+      await input.session.directiveStateStore?.commit();
+    } catch (error) {
+      this.logger?.warn(
+        { event: "directive_state_commit_failed", conversationId: input.session.conversation.id, error },
+        "Failed to persist directive firing state",
+      );
     }
 
     return {

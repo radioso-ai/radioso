@@ -78,6 +78,9 @@ const toMessageRecord = (
   workspaceId,
   role: message.role,
   content: message.content,
+  ...(message.directiveFirings && message.directiveFirings.length > 0
+    ? { metadata: { directiveFirings: [...message.directiveFirings] } }
+    : {}),
   createdAt: new Date(message.createdAt),
 });
 

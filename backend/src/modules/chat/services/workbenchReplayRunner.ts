@@ -53,6 +53,12 @@ import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type { TurnRouter } from "./turnRouter.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
+import {
+  commitDirectiveFirings,
+  emptyDirectiveFiringState,
+  type DirectiveFiringState,
+  type DirectiveStateStore,
+} from "../../directives/public.js";
 
 export interface WorkbenchReplayResolvedConfig {
   composedInstructions?: string;
@@ -203,6 +209,48 @@ const createNoopMessageRepository = (): MessageRepositoryPort => ({
   },
 });
 
+const cloneDirectiveFiringState = (state: DirectiveFiringState): DirectiveFiringState => ({
+  turnSeq: state.turnSeq,
+  firings: Object.fromEntries(
+    Object.entries(state.firings).map(([name, firing]) => [name, { ...firing }]),
+  ),
+});
+
+const directiveFiringNamesFromMetadata = (metadata: Record<string, unknown> | undefined): string[] => {
+  const value = metadata?.directiveFirings;
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [...new Set(value.filter((name): name is string => typeof name === "string" && name.length > 0))];
+};
+
+const replayDirectiveStateFromHistory = (history: readonly MessageRecord[]): DirectiveFiringState | null => {
+  let state: DirectiveFiringState | null = null;
+  for (const message of history) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+    const firedNames = directiveFiringNamesFromMetadata(message.metadata);
+    if (!state && firedNames.length === 0) {
+      continue;
+    }
+    state = commitDirectiveFirings(state ?? emptyDirectiveFiringState(), firedNames);
+  }
+  return state;
+};
+
+class ReplayDirectiveStateStore implements DirectiveStateStore {
+  constructor(private state: DirectiveFiringState | null) {}
+
+  async load(): Promise<DirectiveFiringState | null> {
+    return this.state ? cloneDirectiveFiringState(this.state) : null;
+  }
+
+  async save(input: { state: DirectiveFiringState }): Promise<void> {
+    this.state = cloneDirectiveFiringState(input.state);
+  }
+}
+
 export class WorkbenchReplayRunner {
   private readonly preparer: ChatSessionPreparer;
   private readonly selectionStrategy: TurnSelectionStrategy;
@@ -248,11 +296,14 @@ export class WorkbenchReplayRunner {
       preResolvedAgent: agent,
       preResolvedHistory: input.history,
     });
+    const directiveStateStore = new ReplayDirectiveStateStore(
+      replayDirectiveStateFromHistory(input.history),
+    );
 
     // Routines are a pre-grounding skill: attempt them first, exactly as the live turn
     // does. If a routine claims the turn (activation or mid-routine resume), its reply
     // is the answer and grounding never runs; otherwise fall through.
-    const routineResult = await this.attemptRoutine(session, input, agent);
+    const routineResult = await this.attemptRoutine(session, input, agent, directiveStateStore);
     if (routineResult) {
       return routineResult;
     }
@@ -281,6 +332,7 @@ export class WorkbenchReplayRunner {
       turnSkillSelector,
       turnSkills,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore,
       turnInterpreter,
       retrievalWork,
       query: input.query,
@@ -375,6 +427,7 @@ export class WorkbenchReplayRunner {
           ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
         };
         const directiveSteering = input.sessionRef.current.directiveSteering;
+        const directiveStateStore = input.sessionRef.current.directiveStateStore;
         input.sessionRef.current = await this.preparer.prepareRetrieval(
           preparedInput,
           input.sessionRef.current,
@@ -384,6 +437,12 @@ export class WorkbenchReplayRunner {
           input.sessionRef.current = {
             ...input.sessionRef.current,
             directiveSteering,
+          };
+        }
+        if (directiveStateStore) {
+          input.sessionRef.current = {
+            ...input.sessionRef.current,
+            directiveStateStore,
           };
         }
         return {
@@ -406,6 +465,7 @@ export class WorkbenchReplayRunner {
     session: PreparedSession,
     input: WorkbenchReplayInput,
     agent: ReturnType<typeof materializeAgentFromConfig>,
+    directiveStateStore: DirectiveStateStore,
   ): Promise<WorkbenchReplayResult | null> {
     const { routineProvider, chatGateway, chatAnswerPresenter } = this.options;
     if (!routineProvider || !chatGateway || !chatAnswerPresenter) {
@@ -453,6 +513,7 @@ export class WorkbenchReplayRunner {
       session,
       accountId: input.accountId ?? undefined,
       directiveRuntime: this.directiveRuntime,
+      directiveStateStore,
       routineStore: store,
       routineRunner: ports.runner,
       routineActivator: ports.activator,

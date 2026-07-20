@@ -21,6 +21,7 @@ export const authoredDirectiveToDirective = (
       ? options.defaultPriority === undefined ? {} : { priority: options.defaultPriority }
       : { priority }),
     binding: directive.binding,
+    ...(directive.lifecycle === null ? {} : { lifecycle: directive.lifecycle }),
     requiredCapabilities: directive.requiredCapabilities,
     dependsOn: directive.dependsOn,
     excludes: directive.excludes,

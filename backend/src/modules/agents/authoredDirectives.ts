@@ -12,6 +12,7 @@ export const AUTHORED_DIRECTIVE_LIMITS = {
   capabilityName: 200,
   bindingSkillName: 200,
   tag: 200,
+  cooldownTurns: 1000,
 } as const;
 
 /**
@@ -62,6 +63,20 @@ export const authoredDirectiveBindingSchema = z.object({
   skillName: trimmedText(AUTHORED_DIRECTIVE_LIMITS.bindingSkillName),
 }).strict();
 
+/**
+ * Cross-turn firing policy. Absent (`null`) means the historical repeatable
+ * behavior — the directive may render on every turn its condition holds. See
+ * `directiveLifecycle` for the runtime memory that enforces once/cooldown.
+ */
+export const authoredDirectiveLifecycleSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("repeatable") }).strict(),
+  z.object({ kind: z.literal("once_per_conversation") }).strict(),
+  z.object({
+    kind: z.literal("cooldown"),
+    turns: z.number().int().min(1).max(AUTHORED_DIRECTIVE_LIMITS.cooldownTurns),
+  }).strict(),
+]);
+
 export const authoredDirectiveInputSchema = z.object({
   name: trimmedText(AUTHORED_DIRECTIVE_LIMITS.name)
     .refine((name) => !builtInDirectiveNames.has(name), {
@@ -83,6 +98,7 @@ export const authoredDirectiveInputSchema = z.object({
   tags: uniqueTextArray(AUTHORED_DIRECTIVE_LIMITS.tag),
   description: optionalTrimmedText(AUTHORED_DIRECTIVE_LIMITS.description),
   binding: authoredDirectiveBindingSchema.nullable().optional().transform((value) => value ?? null),
+  lifecycle: authoredDirectiveLifecycleSchema.nullable().optional().transform((value) => value ?? null),
   metadata: z.record(z.unknown()).optional().default({}),
 }).strict();
 
@@ -93,6 +109,8 @@ export type NormalizedAuthoredDirectiveInput = z.infer<typeof authoredDirectiveI
 export type AuthoredDirectiveCondition = NormalizedAuthoredDirectiveInput["condition"];
 
 export type AuthoredDirectiveBinding = NormalizedAuthoredDirectiveInput["binding"];
+
+export type AuthoredDirectiveLifecycle = NormalizedAuthoredDirectiveInput["lifecycle"];
 
 export interface AuthoredDirective {
   id: string;
@@ -108,6 +126,7 @@ export interface AuthoredDirective {
   tags: string[];
   description: string | null;
   binding: AuthoredDirectiveBinding;
+  lifecycle: AuthoredDirectiveLifecycle;
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;

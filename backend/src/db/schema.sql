@@ -499,6 +499,7 @@ CREATE TABLE public.agent_directives (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     scope_tags text[] DEFAULT '{}'::text[] NOT NULL,
     binding jsonb,
+    lifecycle jsonb,
     CONSTRAINT agent_directives_check CHECK ((((condition_kind = 'always'::text) AND (condition_description IS NULL)) OR ((condition_kind = 'contextual'::text) AND (NULLIF(btrim(condition_description), ''::text) IS NOT NULL)))),
     CONSTRAINT agent_directives_condition_kind_check CHECK ((condition_kind = ANY (ARRAY['always'::text, 'contextual'::text])))
 );
@@ -1225,6 +1226,20 @@ CREATE TABLE public.conversations (
     agent_id uuid,
     channel_context jsonb,
     verified_customer_id text
+);
+
+
+--
+-- Name: directive_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.directive_states (
+    session_id uuid NOT NULL,
+    turn_seq integer DEFAULT 0 NOT NULL,
+    firings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2733,6 +2748,14 @@ ALTER TABLE ONLY public.conversation_ownership
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: directive_states directive_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.directive_states
+    ADD CONSTRAINT directive_states_pkey PRIMARY KEY (session_id);
 
 
 --

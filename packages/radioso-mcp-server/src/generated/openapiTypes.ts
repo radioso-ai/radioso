@@ -3675,6 +3675,17 @@ export interface components {
             kind: "skill";
             skillName: string;
         };
+        AuthoredDirectiveLifecycle: {
+            /** @enum {string} */
+            kind: "repeatable";
+        } | {
+            /** @enum {string} */
+            kind: "once_per_conversation";
+        } | {
+            /** @enum {string} */
+            kind: "cooldown";
+            turns: number;
+        };
         AuthoredDirectiveCreateRequest: {
             name: string;
             condition: components["schemas"]["AuthoredDirectiveCondition"];
@@ -3686,6 +3697,7 @@ export interface components {
             tags?: string[];
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3701,6 +3713,7 @@ export interface components {
             tags?: string[];
             description?: string | null;
             binding?: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle?: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
             metadata?: {
                 [key: string]: unknown;
             };
@@ -3742,6 +3755,7 @@ export interface components {
             tags: string[];
             description: string | null;
             binding: components["schemas"]["AuthoredDirectiveBinding"] | null;
+            lifecycle: components["schemas"]["AuthoredDirectiveLifecycle"] | null;
             metadata: {
                 [key: string]: unknown;
             };

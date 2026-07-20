@@ -8,6 +8,7 @@ import { ContextVariableRepository } from "../../db/repositories/contextVariable
 import { IdentityNonceRepository } from "../../db/repositories/identityNonceRepository.js";
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { DirectiveStateRepository } from "../../db/repositories/directiveStateRepository.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
@@ -1517,6 +1518,7 @@ export const buildChatServices = (input: {
     input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
   );
   const routineStateRepository = new RoutineStateRepository(input.database.kysely);
+  const directiveStateRepository = new DirectiveStateRepository(input.database.kysely);
   const contextVariableRepository = new ContextVariableRepository(input.database.kysely);
   const contextVariableResolver = new ContextVariableResolverService({
     repository: contextVariableRepository,
@@ -1584,6 +1586,8 @@ export const buildChatServices = (input: {
     // Routine resume/activate per turn — present only when routines are registered.
     routineStore: routineStateRepository,
     suspendedRoutineReader: routineStateRepository,
+    // Per-conversation directive firing memory for once/cooldown lifecycle (#865).
+    directiveStateStore: directiveStateRepository,
     conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(

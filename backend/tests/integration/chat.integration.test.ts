@@ -353,6 +353,106 @@ describe("chat integration", () => {
     expect(messages.at(-1)?.content).toBe("Routine intake reply from the published definition.");
   });
 
+  it("fires a once_per_conversation directive on the first turn and suppresses it thereafter (#865)", async () => {
+    const { app, dependencies, repositories, directiveStateStore } = createTestApp({
+      chatGateway: {
+        async answer() {
+          return "Hello, I can help with that.";
+        },
+        async *streamAnswer() {
+          yield "Hello, I can help with that.";
+        },
+      },
+      turnRouter: {
+        async classify() {
+          return { route: "direct" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
+    const { token, workspaceId } = await issueTestToken(app, "directive-lifecycle-once@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await dependencies.agentService.resolve(workspaceId);
+    await repositories.agentRepository.createDirective(agent.id, workspaceId, {
+      name: "introduce-once",
+      condition: { kind: "always" },
+      action: "Introduce yourself by name.",
+      lifecycle: { kind: "once_per_conversation" },
+    });
+
+    const first = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "hi", stream: false })
+      .expect(200);
+    const conversationId = first.body.conversationId as string;
+    expect(directiveStateStore.states.get(conversationId)).toEqual({
+      turnSeq: 1,
+      firings: { "introduce-once": { lastFiredTurn: 0, count: 1 } },
+    });
+
+    await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "are you still there?", stream: false, conversationId })
+      .expect(200);
+
+    // Two turns ran, but the once_per_conversation directive fired only on the first —
+    // its count stays 1 while the turn sequence advances to 2.
+    expect(directiveStateStore.states.get(conversationId)).toEqual({
+      turnSeq: 2,
+      firings: { "introduce-once": { lastFiredTurn: 0, count: 1 } },
+    });
+  });
+
+  it("commits once_per_conversation directive memory for retrieval turns (#865)", async () => {
+    const { app, dependencies, repositories, directiveStateStore } = createTestApp({
+      chatGateway: {
+        async answer() {
+          return "Grounded answer.";
+        },
+        async *streamAnswer() {
+          yield "Grounded answer.";
+        },
+      },
+      turnRouter: {
+        async classify() {
+          return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
+        },
+      },
+    });
+    const { token, workspaceId } = await issueTestToken(app, "directive-lifecycle-retrieval@example.com");
+    const authorization = `Bearer ${token}`;
+    const agent = await dependencies.agentService.resolve(workspaceId);
+    await repositories.agentRepository.createDirective(agent.id, workspaceId, {
+      name: "ground-once",
+      condition: { kind: "always" },
+      action: "Mention the grounding context once.",
+      lifecycle: { kind: "once_per_conversation" },
+    });
+
+    const first = await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "what do the docs say?", stream: false })
+      .expect(200);
+    const conversationId = first.body.conversationId as string;
+    expect(directiveStateStore.states.get(conversationId)).toEqual({
+      turnSeq: 1,
+      firings: { "ground-once": { lastFiredTurn: 0, count: 1 } },
+    });
+
+    await request(app)
+      .post("/api/v1/assistant/chat")
+      .set("Authorization", authorization)
+      .send({ message: "what else do the docs say?", stream: false, conversationId })
+      .expect(200);
+
+    expect(directiveStateStore.states.get(conversationId)).toEqual({
+      turnSeq: 2,
+      firings: { "ground-once": { lastFiredTurn: 0, count: 1 } },
+    });
+  });
+
   it("evaluates today() dynamically for date metadata rules", async () => {
     const { app, dependencies } = createTestApp();
     const { token, workspaceId } = await issueTestToken(app, "dynamic-date@example.com");

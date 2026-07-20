@@ -209,6 +209,7 @@ class StubAgentRepository implements AgentRepositoryPort {
       action: input.action,
       priority: null,
       binding: input.binding ?? null,
+      lifecycle: null,
       requiredCapabilities: input.requiredCapabilities ?? [],
       dependsOn: input.dependsOn ?? [],
       excludes: input.excludes ?? [],
@@ -235,6 +236,7 @@ class StubAgentRepository implements AgentRepositoryPort {
       action: input.action ?? "Act.",
       priority: null,
       binding: input.binding ?? null,
+      lifecycle: null,
       requiredCapabilities: input.requiredCapabilities ?? [],
       dependsOn: input.dependsOn ?? [],
       excludes: input.excludes ?? [],
@@ -363,6 +365,7 @@ describe("EvalSnapshotService.capture", () => {
         content: "First answer",
         createdAt: fixedDate,
         metadata: {
+          directiveFirings: ["intro-once"],
           groundingVerdict: "degraded",
           groundingProtocolVersion: 2,
           groundingDiagnostics: {
@@ -402,6 +405,7 @@ describe("EvalSnapshotService.capture", () => {
       verdict: "degraded",
       unsourcedClaimCount: 1,
     });
+    expect(snapshot.messages[1]?.directiveFirings).toEqual(["intro-once"]);
   });
 
   it("records a user-only replay target when the selected message is the user turn", async () => {

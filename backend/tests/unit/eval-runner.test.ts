@@ -51,5 +51,22 @@ describe("buildReplayInputs", () => {
     expect(replay?.query).toBe("Second question");
     expect(replay?.history.map((message) => message.id)).toEqual(["u1", "a1"]);
   });
-});
 
+  it("preserves directive firing markers in replay history", () => {
+    const replay = buildReplayInputs(snapshot({
+      messages: [
+        { id: "u1", role: "user", content: "First question", createdAt: fixedDate },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "First answer",
+          createdAt: fixedDate,
+          directiveFirings: ["intro-once"],
+        },
+        { id: "u2", role: "user", content: "Second question", createdAt: fixedDate },
+      ],
+    }));
+
+    expect(replay?.history.at(-1)?.metadata).toEqual({ directiveFirings: ["intro-once"] });
+  });
+});

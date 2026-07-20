@@ -19,9 +19,24 @@ import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/service
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import type {
   Directive,
+  DirectiveFiringState,
+  DirectiveStateStore,
   DirectiveSteerInput,
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
+
+const inMemoryDirectiveStateStore = (): DirectiveStateStore => {
+  const rows = new Map<string, DirectiveFiringState>();
+  return {
+    async load({ sessionId }) {
+      const state = rows.get(sessionId);
+      return state ? { turnSeq: state.turnSeq, firings: { ...state.firings } } : null;
+    },
+    async save({ sessionId, state }) {
+      rows.set(sessionId, { turnSeq: state.turnSeq, firings: { ...state.firings } });
+    },
+  };
+};
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -582,6 +597,7 @@ describe("createChatProcessTurnInput", () => {
         action: "Use the saved agent tone.",
         priority: null,
         binding: null,
+        lifecycle: null,
         requiredCapabilities: [],
         dependsOn: [],
         excludes: [],
@@ -675,5 +691,85 @@ describe("createAttemptRoutineInput", () => {
       matches: [expect.objectContaining({ directive })],
       omissions: [],
     });
+  });
+});
+
+describe("directive lifecycle memory (#865)", () => {
+  const onceDirective: Directive = {
+    name: "intro",
+    condition: { kind: "always" },
+    action: "Introduce yourself.",
+    lifecycle: { kind: "once_per_conversation" },
+  };
+
+  const matchOnce = async (session: PreparedSession, store: DirectiveStateStore) => {
+    const { runtime } = routeScopedDirectiveRuntime([onceDirective]);
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      directiveStateStore: store,
+      dispatcher,
+      selector,
+      composer,
+      getSession: () => session,
+    });
+    return input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: [onceDirective],
+    });
+  };
+
+  it("fires a once_per_conversation directive on the first turn, then suppresses it after commit", async () => {
+    const store = inMemoryDirectiveStateStore();
+
+    const firstTurn = preparedSession();
+    const firstMatches = await matchOnce(firstTurn, store);
+    expect(firstMatches.map((m) => m.directive.name)).toEqual(["intro"]);
+    // The lifecycle commit runs at turn completion; flush the per-turn deferred store.
+    await firstTurn.directiveStateStore?.commit();
+
+    const secondTurn = preparedSession();
+    const secondMatches = await matchOnce(secondTurn, store);
+    expect(secondMatches).toEqual([]);
+    expect(secondTurn.directiveSteering?.lifecycleSuppressed).toEqual([
+      { directiveName: "intro", lifecycle: { kind: "once_per_conversation" } },
+    ]);
+  });
+
+  it("does not persist firing memory for conversations without a tracked-lifecycle directive", async () => {
+    const store = inMemoryDirectiveStateStore();
+    const loadSpy = vi.spyOn(store, "save");
+    const repeatable: Directive = { name: "brief", condition: { kind: "always" }, action: "Be brief." };
+    const { runtime } = routeScopedDirectiveRuntime([repeatable]);
+    const session = preparedSession();
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      directiveStateStore: store,
+      dispatcher,
+      selector,
+      composer,
+      getSession: () => session,
+    });
+    await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: [repeatable],
+    });
+    await session.directiveStateStore?.commit();
+    expect(loadSpy).not.toHaveBeenCalled();
   });
 });

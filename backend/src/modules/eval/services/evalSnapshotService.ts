@@ -131,17 +131,32 @@ const extractGroundingSummary = (metadata: Record<string, unknown> | undefined):
   };
 };
 
-const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => ({
-  id: record.id,
-  role: record.role,
-  content: record.content,
-  createdAt: record.createdAt.toISOString(),
-  ...(record.role === "assistant" ? {
-    citations: extractCitations(record.metadata),
-    answerSegments: extractAnswerSegments(record.metadata),
-    groundingSummary: extractGroundingSummary(record.metadata),
-  } : {}),
-});
+const extractDirectiveFirings = (metadata: Record<string, unknown> | undefined): string[] | undefined => {
+  const value = metadata?.directiveFirings;
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const names = [...new Set(value.filter((name): name is string => typeof name === "string" && name.length > 0))];
+  return names.length > 0 ? names : undefined;
+};
+
+const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
+  const directiveFirings = record.role === "assistant"
+    ? extractDirectiveFirings(record.metadata)
+    : undefined;
+  return {
+    id: record.id,
+    role: record.role,
+    content: record.content,
+    createdAt: record.createdAt.toISOString(),
+    ...(record.role === "assistant" ? {
+      citations: extractCitations(record.metadata),
+      answerSegments: extractAnswerSegments(record.metadata),
+      groundingSummary: extractGroundingSummary(record.metadata),
+      ...(directiveFirings ? { directiveFirings } : {}),
+    } : {}),
+  };
+};
 
 const resolveReplayTarget = (messages: MessageRecord[], messageId: string | null | undefined): EvalSnapshotReplayTarget | null => {
   if (messages.length === 0) {

@@ -23,9 +23,11 @@ import {
   authoredDirectiveInputSchema,
   type AuthoredDirective,
   type AuthoredDirectiveBinding,
+  type AuthoredDirectiveLifecycle,
   type AuthoredDirectiveInput,
   type NormalizedAuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
+import { parseDirectiveLifecycle } from "../../modules/directives/public.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -67,6 +69,7 @@ interface AgentDirectiveRow {
   scope_tags: string[];
   description: string | null;
   binding: AuthoredDirectiveBinding;
+  lifecycle: AuthoredDirectiveLifecycle;
   metadata: Record<string, unknown>;
   created_at: Date;
   updated_at: Date;
@@ -86,6 +89,7 @@ interface LoadedDirectiveJson {
   tags?: unknown;
   description?: unknown;
   binding?: unknown;
+  lifecycle?: unknown;
   metadata?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
@@ -201,6 +205,7 @@ const agentColumns = sql`
           'tags', agent_directives.scope_tags,
           'description', agent_directives.description,
           'binding', agent_directives.binding,
+          'lifecycle', agent_directives.lifecycle,
           'metadata', agent_directives.metadata,
           'createdAt', agent_directives.created_at,
           'updatedAt', agent_directives.updated_at
@@ -282,6 +287,9 @@ const asDirectiveBinding = (value: unknown): AuthoredDirectiveBinding => {
     : null;
 };
 
+const asDirectiveLifecycle = (value: unknown): AuthoredDirectiveLifecycle =>
+  parseDirectiveLifecycle(value) ?? null;
+
 const readDate = (value: unknown): Date =>
   value instanceof Date ? value : new Date(String(value));
 
@@ -324,6 +332,7 @@ const mapDirectiveJson = (agentId: string, value: LoadedDirectiveJson): Authored
       : [],
     description: typeof value.description === "string" ? value.description : null,
     binding: asDirectiveBinding(value.binding),
+    lifecycle: asDirectiveLifecycle(value.lifecycle),
     metadata: asMetadata(value.metadata),
     createdAt: readDate(value.createdAt),
     updatedAt: readDate(value.updatedAt),
@@ -353,6 +362,7 @@ const mapDirectiveRow = (row: AgentDirectiveRow): AuthoredDirective => ({
   tags: row.scope_tags ?? [],
   description: row.description,
   binding: asDirectiveBinding(row.binding),
+  lifecycle: asDirectiveLifecycle(row.lifecycle),
   metadata: asMetadata(row.metadata),
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -751,6 +761,7 @@ export class AgentRepository implements AgentRepositoryPort {
             scope_tags,
             description,
             binding,
+            lifecycle,
             metadata
           )
           SELECT
@@ -767,6 +778,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${sql.val(directive.tags)}::text[],
             ${directive.description},
             ${toJsonb(directive.binding)},
+            ${toJsonb(directive.lifecycle)},
             ${toJsonb(directive.metadata)}
           FROM agents
           WHERE agents.id = ${agentId}
@@ -809,6 +821,7 @@ export class AgentRepository implements AgentRepositoryPort {
       tags: input.tags ?? existing.tags,
       description: hasOwn(input, "description") ? input.description : existing.description,
       binding: hasOwn(input, "binding") ? input.binding : existing.binding,
+      lifecycle: hasOwn(input, "lifecycle") ? input.lifecycle : existing.lifecycle,
       metadata: input.metadata ?? existing.metadata,
     });
     let rows: AgentDirectiveRow[];
@@ -827,6 +840,7 @@ export class AgentRepository implements AgentRepositoryPort {
             scope_tags = ${sql.val(directive.tags)}::text[],
             description = ${directive.description},
             binding = ${toJsonb(directive.binding)},
+            lifecycle = ${toJsonb(directive.lifecycle)},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
         FROM agents

@@ -99,6 +99,33 @@ describeIfDatabase("agent directives persistence", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("round-trips a directive lifecycle policy through create, update, and clear (#865)", async () => {
+    const { account, workspace, agent } = await createAgent();
+
+    const created = await agentRepository.createDirective(agent.id, workspace.id, {
+      name: "introduce-once",
+      condition: { kind: "always" },
+      action: "Introduce yourself.",
+      lifecycle: { kind: "once_per_conversation" },
+    });
+    expect(created.lifecycle).toEqual({ kind: "once_per_conversation" });
+    const loaded = await agentRepository.findByIdAndWorkspaceId(agent.id, workspace.id);
+    expect((loaded?.authoredDirectives ?? [])[0]?.lifecycle).toEqual({ kind: "once_per_conversation" });
+
+    const toCooldown = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      lifecycle: { kind: "cooldown", turns: 3 },
+    });
+    expect(toCooldown.lifecycle).toEqual({ kind: "cooldown", turns: 3 });
+
+    // An absent lifecycle (default repeatable) persists as null and clears the policy.
+    const cleared = await agentRepository.updateDirective(agent.id, workspace.id, created.id, {
+      lifecycle: null,
+    });
+    expect(cleared.lifecycle).toBeNull();
+
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("persists an authored priority and lets it be cleared back to the default", async () => {
     const { account, workspace, agent } = await createAgent();
 

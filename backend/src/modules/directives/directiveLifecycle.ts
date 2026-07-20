@@ -1,0 +1,138 @@
+import type { Directive, DirectiveLifecycle, DirectiveMatch } from "./domain.js";
+import type { SteeringBoundDrop } from "./steeringBound.js";
+
+/**
+ * Cross-turn directive firing memory. This is the structural fix for the
+ * repetition bug class (self-reintroduction, one-time guidance re-firing every
+ * turn): matching stays stateless per turn, and the host remembers — per
+ * conversation — which directives have already fired so `once_per_conversation`
+ * and `cooldown` directives can be suppressed before matching runs.
+ *
+ * A directive counts as "fired" on a turn only when it renders into the steering
+ * block (matched *and* not held back by the steering bound) — a directive the
+ * bound dropped never reached the model, so it did not fire.
+ */
+
+/** One directive's firing record within a conversation. */
+export interface DirectiveFiring {
+  /** The `turnSeq` at which the directive last rendered into steering. */
+  lastFiredTurn: number;
+  /** How many turns the directive has fired on in this conversation. */
+  count: number;
+}
+
+/** Per-conversation directive firing state, persisted keyed by conversation id. */
+export interface DirectiveFiringState {
+  /**
+   * The index of the *next* turn to be committed (equivalently, the count of
+   * turns already committed for this conversation). Stable within a turn — it
+   * advances exactly once, at turn completion — so the matcher closure may run
+   * more than once per turn (routine attempt + process turn) without drift.
+   */
+  turnSeq: number;
+  firings: Record<string, DirectiveFiring>;
+}
+
+export const emptyDirectiveFiringState = (): DirectiveFiringState => ({ turnSeq: 0, firings: {} });
+
+const repeatable: DirectiveLifecycle = { kind: "repeatable" };
+
+/**
+ * Narrow a persisted/authored lifecycle payload to a known kind. Returns
+ * `undefined` for absent or malformed values so callers can treat "no lifecycle"
+ * as the repeatable default and never persist a broken record.
+ */
+export const parseDirectiveLifecycle = (value: unknown): DirectiveLifecycle | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const kind = (value as { kind?: unknown }).kind;
+  if (kind === "repeatable" || kind === "once_per_conversation") {
+    return { kind };
+  }
+  if (kind === "cooldown") {
+    const turns = (value as { turns?: unknown }).turns;
+    if (typeof turns === "number" && Number.isInteger(turns) && turns > 0) {
+      return { kind, turns };
+    }
+  }
+  return undefined;
+};
+
+const lifecycleOf = (directive: Directive): DirectiveLifecycle => directive.lifecycle ?? repeatable;
+
+/**
+ * Whether a directive may fire this turn given its lifecycle and the
+ * conversation's firing memory. Repeatable directives (the default) are always
+ * eligible; `once_per_conversation` is eligible only until its first firing; a
+ * `cooldown` directive is eligible again strictly after `turns` turns have
+ * passed since it last fired (so `turns: 2` skips the two turns after a firing).
+ */
+export const isDirectiveLifecycleEligible = (
+  directive: Directive,
+  state: DirectiveFiringState,
+): boolean => {
+  const lifecycle = lifecycleOf(directive);
+  if (lifecycle.kind === "repeatable") {
+    return true;
+  }
+  const firing = state.firings[directive.name];
+  if (!firing) {
+    return true;
+  }
+  if (lifecycle.kind === "once_per_conversation") {
+    return false;
+  }
+  return state.turnSeq - firing.lastFiredTurn > lifecycle.turns;
+};
+
+/** True when a directive carries lifecycle worth remembering across turns. */
+export const directiveHasTrackedLifecycle = (directive: Directive): boolean =>
+  lifecycleOf(directive).kind !== "repeatable";
+
+/** A directive held back this turn by its lifecycle policy, for the turn trace. */
+export interface DirectiveLifecycleSuppression {
+  directiveName: string;
+  lifecycle: DirectiveLifecycle;
+}
+
+/**
+ * The tracked-lifecycle directives among `directives` that their firing memory
+ * suppresses this turn — the trace's record of why a directive that would
+ * otherwise match did not steer.
+ */
+export const lifecycleSuppressedDirectives = (
+  directives: readonly Directive[],
+  state: DirectiveFiringState,
+): DirectiveLifecycleSuppression[] =>
+  directives
+    .filter(directiveHasTrackedLifecycle)
+    .filter((directive) => !isDirectiveLifecycleEligible(directive, state))
+    .map((directive) => ({ directiveName: directive.name, lifecycle: lifecycleOf(directive) }));
+
+/** Matched directives that actually rendered — the matched set minus the bound drops. */
+export const renderedDirectiveNames = (result: {
+  matches: DirectiveMatch[];
+  bounded?: SteeringBoundDrop[];
+}): string[] => {
+  const held = new Set((result.bounded ?? []).map((drop) => drop.directiveName));
+  return result.matches.map((m) => m.directive.name).filter((name) => !held.has(name));
+};
+
+/**
+ * Fold the set of directives that fired on the current turn into the firing
+ * state and advance the turn sequence. Pure — returns a new state and never
+ * mutates the input, so the deferred store can capture across matcher calls and
+ * commit once at turn completion.
+ */
+export const commitDirectiveFirings = (
+  state: DirectiveFiringState,
+  firedNames: readonly string[],
+): DirectiveFiringState => {
+  const firings: Record<string, DirectiveFiring> = { ...state.firings };
+  for (const name of firedNames) {
+    const prior = firings[name];
+    firings[name] = { lastFiredTurn: state.turnSeq, count: (prior?.count ?? 0) + 1 };
+  }
+  return { turnSeq: state.turnSeq + 1, firings };
+};

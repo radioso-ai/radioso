@@ -16,6 +16,7 @@ import {
   type SteeringBoundConfig,
   type SteeringBoundDrop,
 } from "./steeringBound.js";
+import type { DirectiveLifecycleSuppression } from "./directiveLifecycle.js";
 
 /** Structural debug sink; a Pino logger satisfies it without an import. */
 export interface DirectiveSteeringLogger {
@@ -51,6 +52,12 @@ export interface DirectiveSteeringResult {
   omissions: DirectiveOmission[];
   /** Matches held back from rendering by the steering bound, for the trace. */
   bounded?: SteeringBoundDrop[];
+  /**
+   * Directives suppressed before matching by their cross-turn lifecycle policy
+   * (once/cooldown already fired). Populated by the host directive wiring, not the
+   * service — the service is stateless across turns. For the trace only.
+   */
+  lifecycleSuppressed?: DirectiveLifecycleSuppression[];
 }
 
 /**

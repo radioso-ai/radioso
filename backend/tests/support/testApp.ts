@@ -6,6 +6,7 @@ import type { Env } from "../../src/app/config/env.js";
 import { createMailService } from "../../src/modules/mail/public.js";
 import { randomUUID } from "node:crypto";
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
+import type { DirectiveFiringState, DirectiveStateStore } from "../../src/modules/directives/public.js";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../src/modules/accessGrants/public.js";
@@ -363,6 +364,19 @@ class InMemoryRoutineStateStore implements ConversationRoutineStore {
   }
 }
 
+class InMemoryDirectiveStateStore implements DirectiveStateStore {
+  readonly states = new Map<string, DirectiveFiringState>();
+
+  async load({ sessionId }: { sessionId: string }): Promise<DirectiveFiringState | null> {
+    const state = this.states.get(sessionId);
+    return state ? { turnSeq: state.turnSeq, firings: { ...state.firings } } : null;
+  }
+
+  async save({ sessionId, state }: { sessionId: string; state: DirectiveFiringState }): Promise<void> {
+    this.states.set(sessionId, { turnSeq: state.turnSeq, firings: { ...state.firings } });
+  }
+}
+
 class InMemoryContextVariableRepository implements ContextVariableRepositoryPort {
   readonly variables = new Map<string, ContextVariable>();
   readonly enablements = new Map<string, AgentContextVariableEnablement>();
@@ -527,7 +541,7 @@ export const createTestDependencies = (overrides: {
   logger?: AppDependencies["logger"];
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
-} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore } => {
+} = {}): { dependencies: AppDependencies; repositories: TestRepositories; routineStateStore: InMemoryRoutineStateStore; directiveStateStore: InMemoryDirectiveStateStore } => {
   const env = {
     ...createTestEnv(),
     ...overrides.envOverrides,
@@ -1284,6 +1298,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
   );
   const routineStateStore = new InMemoryRoutineStateStore();
+  const directiveStateStore = new InMemoryDirectiveStateStore();
   const conversationForkService = new ConversationForkService(
     conversationRepository,
     messageRepository,
@@ -1410,6 +1425,9 @@ export const createTestDependencies = (overrides: {
       capabilityPolicy,
       registrations: [],
     }),
+    // Per-conversation directive firing memory (#865) so lifecycle suppression is
+    // exercised end-to-end; exposed on the returned harness for assertions.
+    directiveStateStore,
     agentSkillTurnSkillProvider: overrides.agentSkillTurnSkillProvider ?? new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: agentSkillRepository,
       executorRegistry: skillExecutorRegistry,
@@ -1667,6 +1685,7 @@ export const createTestDependencies = (overrides: {
   return {
     dependencies,
     routineStateStore,
+    directiveStateStore,
     repositories: {
       auditEventRepository,
       accessGrantRepository,
@@ -1708,7 +1727,7 @@ export const createTestApp = (overrides: {
   skillExecutorRegistry?: SkillExecutorRegistry;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
 } = {}) => {
-  const { dependencies, repositories, routineStateStore } = createTestDependencies(overrides);
+  const { dependencies, repositories, routineStateStore, directiveStateStore } = createTestDependencies(overrides);
   const app = createApp(dependencies);
   appDependencyMap.set(app, dependencies);
   appRepositoryMap.set(app, repositories);
@@ -1717,6 +1736,7 @@ export const createTestApp = (overrides: {
     dependencies,
     repositories,
     routineStateStore,
+    directiveStateStore,
   };
 };
 

@@ -23,6 +23,7 @@ const baseDirective = (
   tags: [],
   description: null,
   binding: null,
+  lifecycle: null,
   metadata: {},
   createdAt: FIXED_DATE,
   updatedAt: FIXED_DATE,

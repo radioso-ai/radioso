@@ -3,6 +3,7 @@ export {
   resolveDirectiveRelationships,
   type Directive,
   type DirectiveCondition,
+  type DirectiveLifecycle,
   type DirectiveMatch,
   type DirectiveOmission,
   type DirectiveSelectionMode,
@@ -36,6 +37,22 @@ export {
   type SteeringBoundDrop,
   type SteeringBoundReason,
 } from "./steeringBound.js";
+export {
+  commitDirectiveFirings,
+  directiveHasTrackedLifecycle,
+  emptyDirectiveFiringState,
+  isDirectiveLifecycleEligible,
+  lifecycleSuppressedDirectives,
+  parseDirectiveLifecycle,
+  renderedDirectiveNames,
+  type DirectiveFiring,
+  type DirectiveFiringState,
+  type DirectiveLifecycleSuppression,
+} from "./directiveLifecycle.js";
+export {
+  noopDirectiveStateStore,
+  type DirectiveStateStore,
+} from "./directiveStateStore.js";
 export {
   DEFAULT_DIRECTIVE_PRIORITY,
   directiveMatchConfidence,

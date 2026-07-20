@@ -16,7 +16,7 @@ Every message runs through a plain loop: read it, decide what the turn needs, do
 ./run-dev.sh
 ```
 
-The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. Register, add a key if you skipped it, upload a document, ask a question — a working conversational assistant with context in a few minutes.
+The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. On a new open-source installation, register the first user to create the server's organization and default workspace. Add a key if you skipped it, upload a document, and ask a question.
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
@@ -121,19 +121,29 @@ There are five ways to reach an agent: the web app, the REST API, the TypeScript
 
 1. Run `./run-dev.sh`.
 2. Open `http://localhost:3000`.
-3. Register or sign in.
+3. On a new installation, register the first user. Otherwise, sign in or accept an invitation.
 4. If you skipped the provider key at startup, add one under Settings → Credentials. Chat and document processing both need a provider key.
 5. Let Radioso seed the starter documents for the workspace.
 6. Wait for document processing to finish.
 7. Ask one of the suggested questions in chat.
 
-Registration creates the account and default workspace, then sends a verification email. It does not create a session until the email is verified. Password reset and email verification are part of the open-source auth API, and sign-in requires a verified email address. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
+On an empty open-source server, the first registration creates the server's organization and default workspace, then sends a verification email. After that, open registration closes: organization owners and admins invite later users into the existing organization. Enterprise Edition keeps open registration and additional organization creation. Registration does not create a session; verify the email address and then sign in. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
+
+The organization limit does not limit workspaces. Authorized users can create additional workspaces inside the existing organization in either edition.
 
 Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
 ### REST API
 
-**Authentication and workspaces.** Register a user:
+**Authentication and workspaces.** Check whether open registration is currently available:
+
+```bash
+curl -sS http://localhost:8080/api/v1/auth/registration
+```
+
+The response is `{ "available": true }` or `{ "available": false }`. On an open-source deployment it is `true` only while the server has no organization. Enterprise Edition keeps open registration available.
+
+When registration is available, create a user:
 
 ```bash
 curl -sS \
@@ -142,7 +152,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-That response includes `workspaceId`, `workspacePublicRouteKey`, and a session cookie. You can also log in later to save a fresh session cookie:
+The response includes `workspaceId` and `workspacePublicRouteKey`, sends a verification email, and does not set a session cookie. Verify the email address, then log in to save a session cookie:
 
 ```bash
 curl -sS -c cookies.txt \

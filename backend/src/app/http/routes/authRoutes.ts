@@ -135,6 +135,16 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     windowMs: authWindowMs,
     resolveSubjectKey: (req) => String(req.ip ?? "unknown"),
   });
+  router.get("/registration", async (_req, res, next) => {
+    try {
+      const available = await dependencies.authService.isRegistrationAvailable();
+      res.setHeader("Cache-Control", "no-store");
+      res.status(200).json({ available });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post("/register", validateBody(registerSchema), registerRateLimit, async (req, res, next) => {
     try {
       const result = await dependencies.authService.register({

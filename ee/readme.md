@@ -82,10 +82,15 @@ Operator requests use `Authorization: Bearer <token>` against:
 The API can list or upsert profiles, assign or clear an account profile, and
 inspect an account's current usage for a UTC month.
 
-Enterprise also caps additional organization creation per user as an anti-abuse
-velocity control. This is separate from account usage limit profiles. Signup
-and the first organization are not capped. Deleting organizations does not
-refund the monthly counter.
+Enterprise keeps open signup available and lets signed-in users create
+additional organizations. The additional-organization path is capped per user
+as an anti-abuse velocity control. This is separate from account usage limit
+profiles. Signup does not consume the counter, even when other organizations
+already exist. Deleting organizations does not refund the monthly counter.
+
+Open-source deployments differ: the first signup creates the server's sole
+organization, then later users join it by invitation. Workspace creation remains
+available in both editions and does not consume the organization counter.
 
 Set the default monthly cap with:
 

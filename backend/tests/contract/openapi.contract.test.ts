@@ -21,6 +21,25 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents registration availability and edition-gated organization creation", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+
+    expect(paths["/api/v1/auth/registration"]?.get).toMatchObject({
+      operationId: "getRegistrationAvailability",
+      responses: { "200": expect.any(Object) },
+    });
+    expect(paths["/api/v1/auth/register"]?.post?.responses).toHaveProperty("403");
+    expect(paths["/api/v1/account/accounts"]?.post).toMatchObject({
+      operationId: "createAdditionalOrganization",
+      responses: {
+        "201": expect.any(Object),
+        "403": expect.any(Object),
+        "429": expect.any(Object),
+      },
+    });
+  });
+
   it("matches the checked-in generated yaml", () => {
     const yamlSpec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
 

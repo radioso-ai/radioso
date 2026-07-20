@@ -3,6 +3,8 @@ import { conflict, forbidden, serviceUnavailable, unauthorized } from "../../../
 import type { AccountAccessService, AccountInvitationService } from "../../account/public.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
+  OrganizationCoreProvisioner,
+  OrganizationCoreProvisioningResult,
   OrganizationCreationGuard,
   OrganizationCreationReservation,
 } from "../../../shared/domain/organizationCreationGuard.js";
@@ -100,6 +102,7 @@ interface AuthServiceDependencies {
   accountInvitationService: AccountInvitationService;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   organizationCreationGuard?: OrganizationCreationGuard;
+  organizationProvisioner: OrganizationCoreProvisioner;
   auditService: AuditService;
 }
 
@@ -148,53 +151,55 @@ export class AuthService {
     sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
-    const existing = await this.dependencies.userRepository.findByEmail(email);
-
-    if (existing) {
-      await this.dependencies.auditService.record({
-        eventType: "auth.register",
-        eventStatus: "failure",
-        metadata: { email },
-      });
-      throw conflict("Account already exists");
+    const passwordHash = await hashPassword(input.password);
+    let organizationCreationReservation: OrganizationCreationReservation;
+    try {
+      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
+        .reserve({ intent: "signup" });
+    } catch (error) {
+      await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
+      throw error;
     }
 
-    const passwordHash = await hashPassword(input.password);
     const organizationName = input.organizationName?.trim() || deriveOrganizationName(email);
-    const account = await this.dependencies.accountRepository.create({ name: organizationName, email, passwordHash });
-
+    let core: OrganizationCoreProvisioningResult | null = null;
     try {
-      const user = await this.dependencies.userRepository.create({
-        id: account.id,
+      core = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
+        .provision({
+        intent: "new_user",
+        organizationName,
         email,
         passwordHash,
         emailVerifiedAt: null,
       });
-      await this.dependencies.accountAccessService.ensureMembership({
-        accountId: account.id,
-        userId: user.id,
-        role: "owner",
-      });
-      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      await this.dependencies.onAccountCreated?.({ accountId: account.id });
+      await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
 
       await this.dependencies.auditService.record({
-        accountId: account.id,
+        accountId: core.account.id,
         eventType: "auth.register",
         eventStatus: "success",
         metadata: { email },
       });
+      await organizationCreationReservation.commit({ accountId: core.account.id });
 
       return {
-        userId: user.id,
-        accountId: account.id,
-        organizationName: account.name,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        workspacePublicRouteKey: workspace.publicRouteKey,
+        userId: core.userId,
+        accountId: core.account.id,
+        organizationName: core.account.name,
+        workspaceId: core.workspace.id,
+        workspaceName: core.workspace.name,
+        workspacePublicRouteKey: core.workspace.publicRouteKey,
       };
     } catch (error) {
-      await this.rollbackCreatedAccount(account.id, account.id);
+      try {
+        await this.recordDuplicateRegistration(email, error);
+        await this.recordOrganizationCreationDenied("auth.register", "registration_closed", null, error);
+        if (core) {
+          await this.rollbackCreatedAccount(core.account.id, core.userId);
+        }
+      } finally {
+        await organizationCreationReservation.release();
+      }
       throw error;
     }
   }
@@ -219,71 +224,109 @@ export class AuthService {
     let organizationCreationReservation: OrganizationCreationReservation | null = null;
     try {
       organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
-        .reserve({ userId: user.id });
+        .reserve({ intent: "additional", userId: user.id });
     } catch (error) {
-      await this.recordOrganizationCreationRateLimited(user.id, error);
+      await this.recordOrganizationCreationDenied(
+        "account.create",
+        "additional_organization_not_available",
+        user.id,
+        error,
+      );
       throw error;
     }
 
-    const account = await this.dependencies.accountRepository.create({
-      name: input.organizationName.trim(),
-      email: user.email,
-      passwordHash: user.passwordHash,
-    });
-
+    let core: OrganizationCoreProvisioningResult | null = null;
     try {
-      await this.dependencies.accountAccessService.ensureMembership({
-        accountId: account.id,
+      core = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
+        .provision({
+        intent: "existing_user",
         userId: user.id,
-        role: "owner",
+        organizationName: input.organizationName.trim(),
+        email: user.email,
+        passwordHash: user.passwordHash,
       });
-      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      await this.dependencies.onAccountCreated?.({ accountId: account.id });
-      const sessionCookie = await this.createSessionCookie(user.id, account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
+      const sessionCookie = await this.createSessionCookie(user.id, core.account.id);
 
       await this.dependencies.auditService.record({
-        accountId: account.id,
+        accountId: core.account.id,
         eventType: "account.create",
         eventStatus: "success",
         metadata: {
           actorUserId: user.id,
-          organizationName: account.name,
+          organizationName: core.account.name,
         },
       });
-      await organizationCreationReservation.commit();
+      await organizationCreationReservation.commit({ accountId: core.account.id });
 
       return {
         userId: user.id,
-        accountId: account.id,
-        organizationName: account.name,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        workspacePublicRouteKey: workspace.publicRouteKey,
+        accountId: core.account.id,
+        organizationName: core.account.name,
+        workspaceId: core.workspace.id,
+        workspaceName: core.workspace.name,
+        workspacePublicRouteKey: core.workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
-      await organizationCreationReservation.release();
-      await this.rollbackCreatedAccount(account.id);
+      try {
+        if (core) {
+          await this.rollbackCreatedAccount(core.account.id);
+        }
+      } finally {
+        await organizationCreationReservation.release();
+      }
       throw error;
     }
   }
 
-  private async recordOrganizationCreationRateLimited(userId: string, error: unknown): Promise<void> {
+  private async recordOrganizationCreationDenied(
+    eventType: "auth.register" | "auth.federated_login" | "account.create",
+    forbiddenReason: "registration_closed" | "additional_organization_not_available",
+    userId: string | null,
+    error: unknown,
+  ): Promise<void> {
     const candidate = error as { statusCode?: number; code?: string; details?: unknown };
-    if (candidate.statusCode !== 429 && candidate.code !== "rate_limit_exceeded") {
+    const rateLimited = candidate.statusCode === 429 || candidate.code === "rate_limit_exceeded";
+    const forbidden = candidate.statusCode === 403 || candidate.code === "forbidden";
+    if (!rateLimited && !forbidden) {
       return;
     }
 
+    const details = candidate.details as Partial<{
+      limit: number;
+      used: number;
+      periodStart: string;
+      resetAt: string;
+    }> | undefined;
+    const safeRateLimit = rateLimited && details
+      ? {
+          limit: details.limit,
+          used: details.used,
+          periodStart: details.periodStart,
+          resetAt: details.resetAt,
+        }
+      : null;
+
     await this.dependencies.auditService.record({
-      eventType: "account.create",
+      eventType,
       eventStatus: "failure",
       metadata: {
-        actorUserId: userId,
-        reason: "rate_limited",
-        ...(typeof candidate.details === "object" && candidate.details !== null
-          ? { rateLimit: candidate.details }
-          : {}),
+        ...(userId ? { actorUserId: userId } : {}),
+        reason: rateLimited ? "rate_limited" : forbiddenReason,
+        ...(safeRateLimit ? { rateLimit: safeRateLimit } : {}),
       },
+    });
+  }
+
+  private async recordDuplicateRegistration(email: string, error: unknown): Promise<void> {
+    const candidate = error as { statusCode?: number; code?: string };
+    if (candidate.statusCode !== 409 && candidate.code !== "conflict") return;
+
+    await this.dependencies.auditService.record({
+      eventType: "auth.register",
+      eventStatus: "failure",
+      metadata: { email },
     });
   }
 
@@ -442,46 +485,54 @@ export class AuthService {
     // reset flow. The email is verified by the provider, so mark it verified.
     const passwordHash = await hashPassword(generateSessionToken());
     const organizationName = deriveOrganizationName(input.email);
-    const account = await this.dependencies.accountRepository.create({
-      name: organizationName,
-      email: input.email,
-      passwordHash,
-    });
-
+    let organizationCreationReservation: OrganizationCreationReservation;
     try {
-      const user = await this.dependencies.userRepository.create({
-        id: account.id,
+      organizationCreationReservation = await (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard)
+        .reserve({ intent: "signup" });
+    } catch (error) {
+      await this.recordOrganizationCreationDenied("auth.federated_login", "registration_closed", null, error);
+      throw error;
+    }
+
+    let core: OrganizationCoreProvisioningResult | null = null;
+    try {
+      core = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
+        .provision({
+        intent: "new_user",
+        organizationName,
         email: input.email,
         passwordHash,
         emailVerifiedAt: new Date(),
       });
-      await this.dependencies.accountAccessService.ensureMembership({
-        accountId: account.id,
-        userId: user.id,
-        role: "owner",
-      });
-      const workspace = await this.dependencies.workspaceService.createDefault(account.id);
-      await this.dependencies.onAccountCreated?.({ accountId: account.id });
-      const sessionCookie = await this.createSessionCookie(user.id, account.id);
+      await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
+      const sessionCookie = await this.createSessionCookie(core.userId, core.account.id);
 
       await this.dependencies.auditService.record({
-        accountId: account.id,
+        accountId: core.account.id,
         eventType: "auth.federated_login",
         eventStatus: "success",
         metadata: { email: input.email, provider: input.provider, subject: input.subject, provisioned: true },
       });
+      await organizationCreationReservation.commit({ accountId: core.account.id });
 
       return {
-        userId: user.id,
-        accountId: account.id,
-        organizationName: account.name,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        workspacePublicRouteKey: workspace.publicRouteKey,
+        userId: core.userId,
+        accountId: core.account.id,
+        organizationName: core.account.name,
+        workspaceId: core.workspace.id,
+        workspaceName: core.workspace.name,
+        workspacePublicRouteKey: core.workspace.publicRouteKey,
         sessionCookie,
       };
     } catch (error) {
-      await this.rollbackCreatedAccount(account.id, account.id);
+      try {
+        await this.recordOrganizationCreationDenied("auth.federated_login", "registration_closed", null, error);
+        if (core) {
+          await this.rollbackCreatedAccount(core.account.id, core.userId);
+        }
+      } finally {
+        await organizationCreationReservation.release();
+      }
       throw error;
     }
   }
@@ -821,5 +872,9 @@ export class AuthService {
     if (createdUserId) {
       await this.dependencies.userRepository.deleteById(createdUserId);
     }
+  }
+
+  async isRegistrationAvailable(): Promise<boolean> {
+    return (this.dependencies.organizationCreationGuard ?? noopOrganizationCreationGuard).isSignupAvailable();
   }
 }

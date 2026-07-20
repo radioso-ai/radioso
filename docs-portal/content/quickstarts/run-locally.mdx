@@ -1,6 +1,6 @@
 ---
 title: Run locally in 5 minutes
-description: Start the full Radioso stack locally, create a workspace, upload a document, and ask the first question.
+description: Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question.
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -49,11 +49,11 @@ For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It buil
 <Steps>
 ### Goal 1: evaluate the product UI
 
-Open the app, create an account or sign in, upload a document, and ask a question.
+Open the app, register the first user on a new server or sign in, upload a document, and ask a question.
 
 ### Goal 2: test the API contract
 
-Use the local backend to register, log in, reveal a workspace token, and call document or chat routes directly.
+Use the local backend to check registration availability, register the first user if needed, log in, reveal a workspace token, and call document or chat routes directly.
 
 ### Goal 3: test the Enterprise website widget
 
@@ -63,14 +63,14 @@ Start the local embed harness and verify both an approved origin and a blocked o
 ## Verify first success in the app
 
 1. Open `http://localhost:3000`
-2. Register or sign in
+2. On a new server, register the first user. Otherwise, sign in or accept an invitation
 3. Upload a document or let the starter documents finish processing
 4. Ask one suggested question
 
 Success looks like this:
 
 - the frontend loads
-- you can register or sign in
+- you can initialize a new server or sign in to an existing one
 - you can upload a document
 - Radioso returns an answer grounded in that document
 
@@ -78,7 +78,13 @@ Success looks like this:
 
 You do not need to open the web app at all.
 
-Register a new user:
+Check whether this deployment currently allows open registration:
+
+```bash
+curl -sS http://localhost:8080/api/v1/auth/registration
+```
+
+On a new open-source server, this returns `{ "available": true }`. Register the first user:
 
 ```bash
 curl -sS \
@@ -87,7 +93,9 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-Registration returns workspace bootstrap data and sets the session cookie. Password reset and email verification endpoints are available in open source. Local mail delivery logs messages unless you configure a Resend API key.
+Registration creates the open-source server's sole organization and default workspace. It returns workspace bootstrap data and sends a verification email, but does not set a session cookie. Verify the email address, then log in. Local mail delivery logs messages unless you configure a Resend API key.
+
+After the first organization exists, open-source registration availability is `false`. Later users join the existing organization by invitation. Enterprise Edition keeps open registration available and supports additional organizations. In either edition, authorized users can create more workspaces inside an organization.
 
 Log in and save the session cookie:
 

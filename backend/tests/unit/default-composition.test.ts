@@ -67,6 +67,7 @@ describe("default application composition", () => {
       "radioso-quality",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
     ]);
@@ -92,7 +93,7 @@ describe("default application composition", () => {
     ]);
     expect(composition.actionCapabilityMap.has(WEBHOOK_SEND_ACTION_TYPE)).toBe(true);
     expect(composition.actionCapabilityMap.requiredCapabilitiesFor(WEBHOOK_SEND_ACTION_TYPE)).toEqual([]);
-    expect(composition.organizationCreationGuardRegistration).toBeUndefined();
+    expect(composition.organizationCreationGuardRegistration).toBeTypeOf("function");
     expect(composition.oauthProviders).toEqual([]);
   });
 
@@ -207,6 +208,7 @@ describe("default application composition", () => {
       "radioso-quality",
       "radioso-contact-routine",
       "radioso-webhook-send",
+      "radioso-oss-organization-creation",
       "radioso-customer-email",
       "radioso-slack",
       "connector-module",
@@ -242,6 +244,7 @@ describe("default application composition", () => {
         commit: vi.fn(),
         release: vi.fn(),
       })),
+      isSignupAvailable: vi.fn(async () => true),
     };
     const composition = createDefaultApplicationComposition({
       logger: createLogger(),

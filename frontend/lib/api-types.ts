@@ -23,6 +23,7 @@ export type RegisterRequest = ApiSchemas['RegisterRequest']
 export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
   requiresEmailVerification?: boolean
 }
+export type RegistrationAvailabilityResponse = ApiSchemas['RegistrationAvailabilityResponse']
 export type LoginRequest = ApiSchemas['LoginRequest']
 export type LoginResponse = ApiSchemas['LoginResponse']
 export type AcceptedResponse = ApiSchemas['AcceptedResponse']

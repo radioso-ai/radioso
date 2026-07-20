@@ -27,6 +27,18 @@ resolve the engine-produced matches through the same capability and relationship
 filtering used by `DirectiveSteeringPort`. Direct retrieval surfaces still use
 `DirectiveSteeringPort` directly.
 
+Matching stays **stateless per turn**. Cross-turn firing policy
+(`once_per_conversation` / `cooldown` / `repeatable`, the default) is an authored
+`Directive.lifecycle` field enforced *outside* the matcher: the chat host loads a
+conversation's firing memory, suppresses ineligible directives before matching,
+and advances the memory at turn completion. A directive counts as "fired" only
+when it renders into steering, not when it merely matched. See
+`directiveLifecycle.ts` (pure eligibility + firing-state helpers),
+`directiveStateStore.ts` (the `DirectiveStateStore` port), the host wiring in
+`../chat/services/conversationProcessTurnInput.ts` +
+`../chat/services/directives/deferredDirectiveStateStore.ts`, and the
+`directive_states` table (persistence in `db/repositories/directiveStateRepository.ts`).
+
 ## Public Surfaces
 
 - `public.ts`: the `Directive` contract, package re-exports for the catalog and

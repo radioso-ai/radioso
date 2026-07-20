@@ -26,6 +26,14 @@ import type {
 
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { RouteScopedDirectiveRuntime } from "./routeScopedDirectiveSteering.js";
+import { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
+import {
+  directiveHasTrackedLifecycle,
+  isDirectiveLifecycleEligible,
+  lifecycleSuppressedDirectives,
+  renderedDirectiveNames,
+  type DirectiveStateStore,
+} from "../../directives/public.js";
 import {
   toConversationAgentConfig,
   toConversationInputEvent,
@@ -49,6 +57,7 @@ export interface ChatProcessTurnInputOptions {
   selector: ConversationSkillSelector;
   composer: ConversationTurnComposer;
   directiveRuntime?: RouteScopedDirectiveRuntime;
+  directiveStateStore?: DirectiveStateStore;
   modelGateway?: ConversationModelGateway;
   appendEvent?: (event: ConversationEvent) => Promise<void>;
   // Routine machinery (optional, all three travel together). Present only when the
@@ -69,6 +78,24 @@ export interface ChatProcessTurnStreamInputOptions extends Omit<ChatProcessTurnI
   composer: ConversationTurnStreamComposer;
   progress?: ConversationProgressPort;
 }
+
+// Lazily bind a per-turn deferred directive-state store to the session, keyed by
+// the session object (which is stable for the turn once the answer runs). Returns
+// undefined when the host wired no durable store, leaving matching unchanged.
+const attachDirectiveStateStore = (
+  session: PreparedSession,
+  inner?: DirectiveStateStore,
+): DeferredDirectiveStateStore | undefined => {
+  if (session.directiveStateStore) {
+    return session.directiveStateStore;
+  }
+  if (!inner) {
+    return undefined;
+  }
+  const store = new DeferredDirectiveStateStore(inner, session.conversation.id);
+  session.directiveStateStore = store;
+  return store;
+};
 
 const directiveMatchesForSession = (session: PreparedSession): DirectiveMatch[] =>
   session.directiveSteering?.matches ?? [];
@@ -113,6 +140,7 @@ const buildDirectiveTurnWiring = (options: {
   accountId?: string;
   directives?: Directive[];
   directiveRuntime?: RouteScopedDirectiveRuntime;
+  directiveStateStore?: DirectiveStateStore;
 }): Pick<ProcessTurnInput, "directives" | "directiveMatcher"> => {
   const directivesForRoutes = (): Directive[] => {
     if (!options.directiveRuntime) {
@@ -141,8 +169,31 @@ const buildDirectiveTurnWiring = (options: {
         const steerInput = directiveSteerInputForSession(session, options.accountId, turn);
         const scopedDirectives = runtime.directivesFor(steerInput);
         const candidateByName = new Map(directives.map((directive) => [directive.name, directive]));
-        const currentRouteDirectives = scopedDirectives.filter((directive) => candidateByName.has(directive.name));
+        const scopeEligible = scopedDirectives.filter((directive) => candidateByName.has(directive.name));
+        // Cross-turn firing memory: suppress once/cooldown directives that already
+        // fired, before matching — this also skips the contextual-match LLM call
+        // for them. Directives without lifecycle stay eligible (repeatable default).
+        // The per-turn deferred store rides on the session (like directiveSteering)
+        // so the routine attempt and process turn share one instance, committed once
+        // at turn completion.
+        const store = attachDirectiveStateStore(session, options.directiveStateStore);
+        const firingState = store ? await store.load() : undefined;
+        const currentRouteDirectives = firingState
+          ? scopeEligible.filter((directive) => isDirectiveLifecycleEligible(directive, firingState))
+          : scopeEligible;
         const steering = await runtime.matchAndResolve(steerInput, currentRouteDirectives);
+        if (store && firingState) {
+          const tracked = new Set(
+            currentRouteDirectives.filter(directiveHasTrackedLifecycle).map((directive) => directive.name),
+          );
+          if (tracked.size > 0) {
+            store.capture(renderedDirectiveNames(steering).filter((name) => tracked.has(name)));
+          }
+          const suppressed = lifecycleSuppressedDirectives(scopeEligible, firingState);
+          if (suppressed.length > 0) {
+            steering.lifecycleSuppressed = suppressed;
+          }
+        }
         const currentSession = options.getSession?.() ?? session;
         currentSession.directiveSteering = steering;
         return steering.matches;
@@ -198,6 +249,7 @@ export interface AttemptRoutineInputOptions {
   accountId?: string;
   directives?: Directive[];
   directiveRuntime?: RouteScopedDirectiveRuntime;
+  directiveStateStore?: DirectiveStateStore;
   appendEvent?: (event: ConversationEvent) => Promise<void>;
   routineStore?: ConversationRoutineStore;
   routineRunner?: ConversationRoutineRunner;

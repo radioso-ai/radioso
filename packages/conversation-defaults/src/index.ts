@@ -4,6 +4,7 @@ export {
   resolveDirectiveRelationships,
   type Directive,
   type DirectiveCondition,
+  type DirectiveLifecycle,
   type DirectiveMatch,
   type DirectiveOmission,
   type DirectiveSelectionMode,

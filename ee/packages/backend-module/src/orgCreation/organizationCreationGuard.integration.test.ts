@@ -144,8 +144,8 @@ describeIfDatabase("EE organization creation guard integration", () => {
     });
 
     const results = await Promise.allSettled([
-      guard.reserve({ userId }),
-      guard.reserve({ userId }),
+      guard.reserve({ intent: "additional", userId }),
+      guard.reserve({ intent: "additional", userId }),
     ]);
 
     const fulfilled = results.filter((result) => result.status === "fulfilled");
@@ -172,9 +172,9 @@ describeIfDatabase("EE organization creation guard integration", () => {
       now: () => new Date("2026-06-09T12:00:00.000Z"),
     });
 
-    await guard.reserve({ userId });
+    await guard.reserve({ intent: "additional", userId });
 
-    await expect(guard.reserve({ userId })).rejects.toMatchObject({
+    await expect(guard.reserve({ intent: "additional", userId })).rejects.toMatchObject({
       details: {
         limit: 1,
         used: 1,
@@ -192,8 +192,8 @@ describeIfDatabase("EE organization creation guard integration", () => {
     });
     await guard.upsertOverride({ userId, monthlyLimit: null });
 
-    const reservation = await guard.reserve({ userId });
-    await reservation.commit();
+    const reservation = await guard.reserve({ intent: "additional", userId });
+    await reservation.commit({ accountId: randomUUID() });
 
     const rows = await database.query<{ used_count: number }>(
       `SELECT used_count
@@ -211,7 +211,7 @@ describeIfDatabase("EE organization creation guard integration", () => {
       now: () => new Date("2026-06-09T12:00:00.000Z"),
     });
 
-    const reservation = await guard.reserve({ userId });
+    const reservation = await guard.reserve({ intent: "additional", userId });
     let rows = await database.query<{ used_count: number }>(
       `SELECT used_count
        FROM ee_org_creation_counters

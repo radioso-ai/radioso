@@ -8,6 +8,25 @@ export const registerAuthPaths = (
   security: OpenApiSecurity,
 ) => {
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/auth/registration",
+    tags: ["Auth"],
+    summary: "Get registration availability",
+    description: "Reports whether open organization-creating registration is currently available for this deployment.",
+    operationId: "getRegistrationAvailability",
+    responses: {
+      200: {
+        description: "Registration availability returned",
+        content: {
+          "application/json": {
+            schema: schemas.RegistrationAvailabilityResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/auth/register",
     tags: ["Auth"],
@@ -34,6 +53,14 @@ export const registerAuthPaths = (
       },
       400: {
         description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Open registration is closed and an invitation is required",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

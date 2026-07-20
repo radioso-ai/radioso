@@ -10,11 +10,18 @@ import type {
   PasswordResetConfirmRequest,
   PasswordResetConfirmResponse,
   PasswordResetRequest,
+  RegistrationAvailabilityResponse,
   RegisterRequest,
   RegisterResponse,
 } from './api-types'
 
 export const authApi = {
+  async getRegistrationAvailability(): Promise<RegistrationAvailabilityResponse> {
+    return request<RegistrationAvailabilityResponse>('/auth/registration', {
+      method: 'GET',
+    })
+  },
+
   async register(data: RegisterRequest): Promise<RegisterResponse> {
     return request<RegisterResponse>("/auth/register", {
       method: "POST",

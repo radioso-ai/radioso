@@ -1,6 +1,6 @@
 ---
 title: Auth and sessions
-description: Register, log in, inspect invitations, and accept account invites with the session-authenticated API.
+description: Check registration availability, register, log in, and join an organization by invitation.
 ---
 
 import { Steps } from 'nextra/components'
@@ -12,6 +12,7 @@ These routes are the entry point for account creation, session establishment, in
 ## Relevant endpoints
 
 ```text
+GET  /api/v1/auth/registration
 POST /api/v1/auth/register
 POST /api/v1/auth/login
 GET  /api/v1/auth/invitations/{invitationToken}
@@ -21,9 +22,9 @@ POST /api/v1/auth/invitations/{invitationToken}/accept
 ## How it works
 
 <Steps>
-### Register or inspect an invitation
+### Check registration or inspect an invitation
 
-Registration creates the account and default workspace bootstrap data. Invitation inspection lets a user confirm the target account before joining it.
+Check registration availability before presenting open signup. Registration creates the initial organization and default workspace when the deployment permits it. Invitation inspection lets a user confirm the target organization before joining it.
 
 ### Establish the session
 
@@ -34,11 +35,21 @@ After registration, verify the email address. Login and invitation acceptance re
 Once the cookie is stored, use it for workspace management and token reveal flows.
 </Steps>
 
-The key point is that these routes establish browser or cookie-jar state. They are not the same as the workspace token flow used by the SDK.
+The key point is that registration does not establish browser or cookie-jar state. Login, invitation acceptance, and password reset confirmation do. These session flows are separate from the workspace token flow used by the SDK.
+
+## Check registration availability
+
+```bash
+curl -sS http://localhost:8080/api/v1/auth/registration
+```
+
+The endpoint returns `{ "available": true }` or `{ "available": false }` and uses `Cache-Control: no-store` because availability can change as the server is initialized.
+
+On an open-source server, registration is available only while the deployment has no organization. The first successful signup creates the server's sole organization and default workspace. Later users must join that organization through an invitation. Enterprise Edition keeps registration available even when organizations already exist.
 
 ## Register
 
-Use registration when you want to create a new account and initial user in one step.
+Use registration when `GET /api/v1/auth/registration` reports that open registration is available.
 
 ```bash
 curl -sS \
@@ -50,6 +61,8 @@ curl -sS \
 `organizationName` is optional. The required fields are `email` and `password`.
 
 Registration returns account and default workspace bootstrap data, sends a verification email, and does not set a session cookie. The response includes `requiresEmailVerification: true`.
+
+On an initialized open-source server, registration returns `403` with `code: "forbidden"`. An organization owner or admin must invite the new user instead. Invitation acceptance joins the existing organization and does not create another one.
 
 Password reset is also available from the open-source auth API:
 
@@ -91,6 +104,7 @@ The accept request establishes a session for the joined account.
 
 - `400` usually means the request body is incomplete or malformed.
 - `401` usually means the credentials are wrong, or the invitation accept flow is no longer valid.
+- `403` from registration means open registration is closed and the user needs an invitation. Login can also return `403` when email verification is required.
 - `404` means the invitation token does not exist.
 - `409` usually means the account or invitation state is in conflict with the requested action.
 

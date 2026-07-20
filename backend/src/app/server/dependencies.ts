@@ -459,11 +459,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const organizationCreationGuard = !organizationCreationGuardRegistration
     ? noopOrganizationCreationGuard
     : typeof organizationCreationGuardRegistration === "function"
-      ? organizationCreationGuardRegistration({ database: infrastructure.database, logger })
+      ? organizationCreationGuardRegistration({
+          auditService: infrastructure.auditService,
+          database: infrastructure.database,
+          logger,
+        })
       : organizationCreationGuardRegistration;
   const authService = buildAuthService({
     access,
     auditService: infrastructure.auditService,
+    database: infrastructure.database,
     env,
     organizationCreationGuard,
     onAccountCreated,

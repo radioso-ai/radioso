@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { createEeKysely, type EeDb } from "../db/eeSchema.js";
 import type {
   OrganizationCreationGuard,
+  OrganizationCreationRequest,
   OrganizationCreationReservation,
   UsageLimitDatabasePort,
 } from "../radiosoModuleTypes.js";
@@ -100,7 +101,11 @@ export class EnterpriseOrganizationCreationGuard implements OrganizationCreation
     this.now = options.now ?? (() => new Date());
   }
 
-  async reserve(input: { userId: string }): Promise<OrganizationCreationReservation> {
+  async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
+    if (input.intent === "signup") {
+      return noopReservation;
+    }
+
     const override = await this.getOverride(input.userId);
     if (override?.unlimited) {
       return noopReservation;
@@ -147,6 +152,10 @@ export class EnterpriseOrganizationCreationGuard implements OrganizationCreation
     }
 
     return new EnterpriseOrganizationCreationReservation(this.db, input.userId, periodStart);
+  }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return true;
   }
 
   async getOverride(userId: string): Promise<OrganizationCreationOverride | null> {

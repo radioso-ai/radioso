@@ -26,6 +26,7 @@ describe('editionController', () => {
   it('uses the shared activity surface in the OSS edition', async () => {
     const controller = await loadController()
 
+    expect(controller.canCreateAdditionalOrganizations()).toBe(false)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
     expect(controller.canUseAgentCreationExtensions()).toBe(true)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(true)
@@ -38,6 +39,7 @@ describe('editionController', () => {
   it('uses the shared activity surface in the enterprise edition', async () => {
     const controller = await loadController('enterprise')
 
+    expect(controller.canCreateAdditionalOrganizations()).toBe(true)
     expect(controller.canUseAssistantAnswerFeedback()).toBe(true)
     expect(controller.canUseAgentCreationExtensions()).toBe(true)
     expect(controller.shouldRenderWebsiteEmbedSettings('channels')).toBe(true)

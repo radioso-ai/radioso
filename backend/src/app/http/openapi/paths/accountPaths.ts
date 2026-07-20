@@ -49,6 +49,52 @@ export const registerAccountManagementPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/account/accounts",
+    tags: ["Account"],
+    summary: "Create an additional organization",
+    description: "Creates and switches to an additional organization. This capability is available in Enterprise Edition.",
+    operationId: "createAdditionalOrganization",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.CreateAccountRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: "Organization created and session switched",
+        content: {
+          "application/json": {
+            schema: schemas.LoginResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      401: {
+        description: "Authentication required",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      403: {
+        description: "Additional organization creation is unavailable in this edition",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      429: {
+        description: "Enterprise monthly organization creation limit reached",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/account/users",
     tags: ["Account"],

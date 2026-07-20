@@ -38,6 +38,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get registration availability
+         * @description Reports whether open organization-creating registration is currently available for this deployment.
+         */
+        get: operations["getRegistrationAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/register": {
         parameters: {
             query?: never;
@@ -194,23 +214,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/account/users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List active account users and invitations */
-        get: operations["listAccountUsers"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/account/accounts": {
         parameters: {
             query?: never;
@@ -220,6 +223,27 @@ export interface paths {
         };
         /** List accessible accounts for the current user */
         get: operations["listAccessibleAccounts"];
+        put?: never;
+        /**
+         * Create an additional organization
+         * @description Creates and switches to an additional organization. This capability is available in Enterprise Edition.
+         */
+        post: operations["createAdditionalOrganization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List active account users and invitations */
+        get: operations["listAccountUsers"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2801,6 +2825,9 @@ export interface components {
         ChatStatusEvent: {
             stage: components["schemas"]["ChatStatusStage"];
         };
+        RegistrationAvailabilityResponse: {
+            available: boolean;
+        };
         RegisterResponse: {
             /** Format: uuid */
             userId: string;
@@ -2893,6 +2920,9 @@ export interface components {
             email: string;
             password: string;
             organizationName?: string;
+        };
+        CreateAccountRequest: {
+            organizationName: string;
         };
         LoginRequest: {
             /** Format: email */
@@ -5977,6 +6007,26 @@ export interface operations {
             };
         };
     };
+    getRegistrationAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Registration availability returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegistrationAvailabilityResponse"];
+                };
+            };
+        };
+    };
     registerAccount: {
         parameters: {
             query?: never;
@@ -6001,6 +6051,15 @@ export interface operations {
             };
             /** @description Request validation failed */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Open registration is closed and an invitation is required */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6357,35 +6416,6 @@ export interface operations {
             };
         };
     };
-    listAccountUsers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Account users returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AccountUsersResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
     listAccessibleAccounts: {
         parameters: {
             query?: never;
@@ -6402,6 +6432,95 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccessibleAccountsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAdditionalOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Organization created and session switched */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Additional organization creation is unavailable in this edition */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Enterprise monthly organization creation limit reached */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAccountUsers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account users returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountUsersResponse"];
                 };
             };
             /** @description Authentication required */

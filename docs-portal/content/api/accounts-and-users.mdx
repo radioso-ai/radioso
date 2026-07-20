@@ -13,6 +13,7 @@ These routes manage who can access an account, which account the current session
 GET    /api/v1/account/users
 GET    /api/v1/account/accounts
 GET    /api/v1/account/usage-trends
+POST   /api/v1/account/accounts
 POST   /api/v1/account/invitations
 POST   /api/v1/account/switch
 PATCH  /api/v1/account/users/{membershipId}
@@ -38,7 +39,9 @@ Organization roles are scoped to one account:
 - `admin` can manage users, workspaces, settings, documents, ingestion, and tokens, but cannot remove or demote owners.
 - `member` can use workspaces broadly and reveal workspace tokens, but cannot manage users, rename the organization, create or delete workspaces, or rotate workspace tokens.
 
-When a signed-in user creates a new organization, that user becomes the `owner` of the new organization.
+Open-source deployments have one self-created organization per server. The first signup creates it, later users join it by invitation, and signed-in users cannot create another organization. This restriction does not apply to workspaces: owners and admins can continue to create workspaces inside the organization with `POST /api/v1/workspace`.
+
+Enterprise Edition allows signed-in users to create an additional organization with `POST /api/v1/account/accounts`. The creator becomes its `owner`, a default workspace is created, and the session switches to the new organization. The Enterprise monthly anti-abuse cap applies to this additional-organization path.
 
 ## Usage trends
 
@@ -119,7 +122,7 @@ DELETE /api/v1/account/users/{membershipId}
 ## Common failure modes
 
 - `401` means the session is missing or no longer valid.
-- `403` on delete means the caller is not allowed to remove that membership.
+- `403` means the caller lacks the required permission. It is also returned when an open-source user attempts to create an additional organization.
 - `404` means the membership does not exist in the current account.
 - `409` usually means the requested removal would violate an account rule.
 

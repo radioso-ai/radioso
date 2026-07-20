@@ -86,7 +86,8 @@ export type ApplicationUsageLimitPolicyRegistration =
 export type ApplicationOrganizationCreationGuardRegistration =
   | OrganizationCreationGuard
   | ((context: {
-      database: ApplicationDatabasePort;
+      auditService: AuditService;
+      database: Database;
       logger: AppLogger;
     }) => OrganizationCreationGuard);
 

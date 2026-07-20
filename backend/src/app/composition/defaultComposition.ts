@@ -54,6 +54,7 @@ import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineM
 import { createWebhookSendApplicationModule } from "./builtIn/webhookSendModule.js";
 import { createCustomerEmailApplicationModule } from "../../modules/customerEmail/composition.js";
 import { createSlackApplicationModule } from "../../modules/slack/composition.js";
+import { createOssOrganizationCreationApplicationModule } from "../../modules/auth/composition.js";
 import {
   createDefaultSkillCatalogRegistry,
   SkillExecutorRegistry,
@@ -139,6 +140,7 @@ export const createDefaultApplicationComposition = (options: {
     createQualityApplicationModule(),
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
+    createOssOrganizationCreationApplicationModule(),
     createCustomerEmailApplicationModule(options.env),
     createSlackApplicationModule(options.env),
     ...(options.modules ?? []),

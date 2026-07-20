@@ -107,6 +107,20 @@ export const transactionAdvisoryLock = (key: string): RawBuilder<unknown> =>
   sql`select pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
 
 /**
+ * Session-level advisory lock statements for adapters that must hold one lock
+ * on one pinned database connection across calls. The lock key is always bound
+ * as a parameter; callers must unlock on the same connection that acquired it.
+ */
+export const sessionAdvisoryLock = (key: string): RawBuilder<unknown> =>
+  sql`select pg_advisory_lock(hashtextextended(${key}, 0))`;
+
+export const trySessionAdvisoryLock = (key: string): RawBuilder<{ acquired: boolean }> =>
+  sql<{ acquired: boolean }>`select pg_try_advisory_lock(hashtextextended(${key}, 0)) as acquired`;
+
+export const sessionAdvisoryUnlock = (key: string): RawBuilder<{ released: boolean }> =>
+  sql<{ released: boolean }>`select pg_advisory_unlock(hashtextextended(${key}, 0)) as released`;
+
+/**
  * Whether a table (or other relation) currently exists, via `to_regclass`. Mirrors the
  * defensive guard some repositories use before querying a table that may be absent in a
  * partially-migrated schema (returns NULL rather than erroring on a missing relation).

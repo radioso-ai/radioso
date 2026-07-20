@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { resolveOrganizationCreationDefaultLimit } from "./organizationCreationGuard.js";
+import {
+  EnterpriseOrganizationCreationGuard,
+  resolveOrganizationCreationDefaultLimit,
+} from "./organizationCreationGuard.js";
 
 // The guard's data-access behavior (atomic increment boundary, limit error,
 // unlimited override, release decrement, override CRUD) is exercised against a
@@ -32,5 +35,15 @@ describe("resolveOrganizationCreationDefaultLimit", () => {
     process.env.EE_MAX_ORGS_PER_USER_PER_MONTH = "25";
 
     expect(resolveOrganizationCreationDefaultLimit()).toBe(25);
+  });
+});
+
+describe("EnterpriseOrganizationCreationGuard signup", () => {
+  it("keeps registration available and does not consult the additional-organization counter", async () => {
+    const guard = new EnterpriseOrganizationCreationGuard({ pool: {} as never });
+
+    await expect(guard.isSignupAvailable()).resolves.toBe(true);
+    const reservation = await guard.reserve({ intent: "signup" });
+    await expect(reservation.commit({ accountId: "account-1" })).resolves.toBeUndefined();
   });
 });

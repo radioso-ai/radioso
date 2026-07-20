@@ -18,8 +18,63 @@ import {
   InMemorySessionRepository,
 } from "../support/fakes.js";
 import { createTestEnv } from "../support/testApp.js";
+import { InMemoryOrganizationProvisioner } from "../support/organizationProvisioner.js";
+import type {
+  OrganizationCreationGuard,
+  OrganizationCreationRequest,
+  OrganizationCreationReservation,
+} from "../../src/shared/domain/organizationCreationGuard.js";
+
+class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
+  readonly requests: OrganizationCreationRequest[] = [];
+
+  async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
+    this.requests.push(input);
+    return { async commit() {}, async release() {} };
+  }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return true;
+  }
+}
+
+class OssAdditionalOrganizationGuard implements OrganizationCreationGuard {
+  async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
+    if (input.intent === "additional") {
+      throw {
+        statusCode: 403,
+        code: "forbidden",
+        message: "Additional organizations require Enterprise Edition.",
+      };
+    }
+    return { async commit() {}, async release() {} };
+  }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return true;
+  }
+}
 
 describe("auth integration", () => {
+  it("rejects direct OSS additional-organization requests without mutation", async () => {
+    const { app } = createTestApp({ organizationCreationGuard: new OssAdditionalOrganizationGuard() });
+    const session = await issueTestSession(app, "oss-direct-additional@example.com");
+    const before = await request(app).get("/api/v1/account/accounts").set("Cookie", session.cookie);
+
+    const response = await request(app)
+      .post("/api/v1/account/accounts")
+      .set("Cookie", session.cookie)
+      .send({ organizationName: "Forbidden second organization" });
+    const after = await request(app).get("/api/v1/account/accounts").set("Cookie", session.cookie);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toMatchObject({
+      code: "forbidden",
+      message: "Additional organizations require Enterprise Edition.",
+    });
+    expect(after.body).toEqual(before.body);
+  });
+
   it("rejects duplicate registrations", async () => {
     const { app } = createTestApp();
 
@@ -112,6 +167,21 @@ describe("auth integration", () => {
     expect(tokenRoute.body.token).toMatch(/^radioso_[a-f0-9]+$/);
   });
 
+  it("creates additional workspaces without consulting organization creation policy", async () => {
+    const organizationCreationGuard = new RecordingOrganizationCreationGuard();
+    const { app } = createTestApp({ organizationCreationGuard });
+    const registration = await issueTestSession(app, "workspace-policy-isolation@example.com");
+    organizationCreationGuard.requests.length = 0;
+
+    const created = await request(app)
+      .post("/api/v1/workspace")
+      .set("Cookie", registration.cookie)
+      .send({ name: "Second workspace" });
+
+    expect(created.status).toBe(201);
+    expect(organizationCreationGuard.requests).toEqual([]);
+  });
+
   it("rotates the workspace token on demand", async () => {
     const { app } = createTestApp();
     const registration = await issueTestSession(app, "rotate-token@example.com");
@@ -198,6 +268,12 @@ describe("auth integration", () => {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      organizationProvisioner: new InMemoryOrganizationProvisioner(
+        accountRepository,
+        userRepository,
+        accountAccessService,
+        workspaceService,
+      ),
     });
 
     const account = await accountRepository.create({
@@ -275,6 +351,12 @@ describe("auth integration", () => {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      organizationProvisioner: new InMemoryOrganizationProvisioner(
+        accountRepository,
+        userRepository,
+        accountAccessService,
+        workspaceService,
+      ),
     });
 
     const account = await accountRepository.create({
@@ -310,6 +392,12 @@ describe("auth integration", () => {
       workspaceService,
       accountAccessService,
       accountInvitationService,
+      organizationProvisioner: new InMemoryOrganizationProvisioner(
+        accountRepository,
+        userRepository,
+        accountAccessService,
+        workspaceService,
+      ),
     });
 
     const revealed = await rotatedSessionSecretAuthService.getTokenForWorkspace(workspace.id, account.id);
@@ -364,9 +452,11 @@ describe("auth integration", () => {
   });
 
   it("lets an invited user access the shared account workspaces", async () => {
-    const { app } = createTestApp();
+    const organizationCreationGuard = new RecordingOrganizationCreationGuard();
+    const { app } = createTestApp({ organizationCreationGuard });
 
     const owner = await issueTestSession(app, "owner-shared@example.com");
+    organizationCreationGuard.requests.length = 0;
     const ownerCookie = owner.cookie;
 
     const createdWorkspace = await request(app)
@@ -396,6 +486,7 @@ describe("auth integration", () => {
     expect(workspaces.body.workspaces.map((workspace: { id: string }) => workspace.id)).toEqual(
       expect.arrayContaining([owner.workspaceId, createdWorkspace.body.id]),
     );
+    expect(organizationCreationGuard.requests).toEqual([]);
   });
 
   it("creates a new organization for the signed-in user and switches the session to it", async () => {

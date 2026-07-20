@@ -8,7 +8,13 @@ import type {
 } from "../../src/shared/domain/organizationCreationGuard.js";
 
 class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
-  async reserve(): Promise<OrganizationCreationReservation> {
+  async reserve(input: { intent: "signup" } | { intent: "additional"; userId: string }): Promise<OrganizationCreationReservation> {
+    if (input.intent === "signup") {
+      return {
+        async commit() {},
+        async release() {},
+      };
+    }
     throw {
       statusCode: 429,
       code: "rate_limit_exceeded",
@@ -21,9 +27,57 @@ class BlockingOrganizationCreationGuard implements OrganizationCreationGuard {
       },
     };
   }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return true;
+  }
+}
+
+class ClosedRegistrationGuard implements OrganizationCreationGuard {
+  async reserve(input: { intent: "signup" } | { intent: "additional"; userId: string }): Promise<OrganizationCreationReservation> {
+    if (input.intent === "signup") {
+      throw {
+        statusCode: 403,
+        code: "forbidden",
+        message: "Registration is closed. Ask an organization owner for an invitation.",
+      };
+    }
+    return { async commit() {}, async release() {} };
+  }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return false;
+  }
 }
 
 describe("auth contract", () => {
+  it("reports public registration availability without caching initialization state", async () => {
+    const { app } = createTestApp({ organizationCreationGuard: new ClosedRegistrationGuard() });
+
+    const response = await request(app).get("/api/v1/auth/registration");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ available: false });
+    expect(response.headers["cache-control"]).toContain("no-store");
+  });
+
+  it("returns a stable invitation-required 403 for initialized OSS registration", async () => {
+    const { app } = createTestApp({ organizationCreationGuard: new ClosedRegistrationGuard() });
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      email: "closed@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      error: {
+        code: "forbidden",
+        message: "Registration is closed. Ask an organization owner for an invitation.",
+      },
+    });
+  });
+
   it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
     const { app } = createTestApp();
 

@@ -16,6 +16,19 @@ describe('authApi auth email flows', () => {
     vi.unstubAllGlobals()
   })
 
+  it('reads public registration availability without session credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ available: false }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(authApi.getRegistrationAvailability()).resolves.toEqual({ available: false })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/auth/registration',
+      expect.objectContaining({ method: 'GET' }),
+    )
+    expect(fetchMock.mock.calls[0]?.[1]).toHaveProperty('credentials', undefined)
+  })
+
   it('requests password reset through the OSS auth API', async () => {
     const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ accepted: true }, 202))
     vi.stubGlobal('fetch', fetchMock)

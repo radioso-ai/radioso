@@ -10,6 +10,9 @@ import { authApi, getStoredActiveWorkspaceId, seedWorkspaceSession } from '@/lib
 import { getStoredLastAccountId, useOptionalAuth } from '@/lib/auth-context'
 
 interface LoginFormProps {
+  registrationAvailable: boolean | null
+  registrationAvailabilityFailed: boolean
+  onRetryRegistrationAvailability: () => void
   onSwitchToRegister: () => void
 }
 
@@ -29,7 +32,12 @@ const getErrorMessage = (error: unknown) => {
   return 'Login failed. Please try again.'
 }
 
-export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
+export function LoginForm({
+  registrationAvailable,
+  registrationAvailabilityFailed,
+  onRetryRegistrationAvailability,
+  onSwitchToRegister,
+}: LoginFormProps) {
   const auth = useOptionalAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -126,16 +134,33 @@ export function LoginForm({ onSwitchToRegister }: LoginFormProps) {
           </Button>
         </>
       )}
-      <p className="text-center text-sm text-muted-foreground">
-        {"Don't have an account? "}
-        <button
-          type="button"
-          onClick={onSwitchToRegister}
-          className="text-primary hover:underline font-medium"
-        >
-          Register
-        </button>
-      </p>
+      {registrationAvailable === true ? (
+        <p className="text-center text-sm text-muted-foreground">
+          {"Don't have an account? "}
+          <button
+            type="button"
+            onClick={onSwitchToRegister}
+            className="text-primary hover:underline font-medium"
+          >
+            Register
+          </button>
+        </p>
+      ) : registrationAvailable === false ? (
+        <p className="text-center text-sm text-muted-foreground">
+          Registration is invitation-only. Ask an organization administrator for an invitation.
+        </p>
+      ) : registrationAvailabilityFailed ? (
+        <p className="text-center text-sm text-muted-foreground">
+          Unable to check registration availability.{' '}
+          <button
+            type="button"
+            onClick={onRetryRegistrationAvailability}
+            className="font-medium text-primary hover:underline"
+          >
+            Retry registration check
+          </button>
+        </p>
+      ) : null}
       <p className="text-center text-sm">
         <Link href="/reset-password" className="font-medium text-primary hover:underline">
           Forgot password?

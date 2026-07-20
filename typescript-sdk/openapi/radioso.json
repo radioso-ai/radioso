@@ -137,6 +137,17 @@
           "stage"
         ]
       },
+      "RegistrationAvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "available"
+        ]
+      },
       "RegisterResponse": {
         "type": "object",
         "properties": {
@@ -480,6 +491,19 @@
         "required": [
           "email",
           "password"
+        ]
+      },
+      "CreateAccountRequest": {
+        "type": "object",
+        "properties": {
+          "organizationName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "organizationName"
         ]
       },
       "LoginRequest": {
@@ -12890,6 +12914,28 @@
         }
       }
     },
+    "/api/v1/auth/registration": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Get registration availability",
+        "description": "Reports whether open organization-creating registration is currently available for this deployment.",
+        "operationId": "getRegistrationAvailability",
+        "responses": {
+          "200": {
+            "description": "Registration availability returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationAvailabilityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/register": {
       "post": {
         "tags": [
@@ -12920,6 +12966,16 @@
           },
           "400": {
             "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Open registration is closed and an invitation is required",
             "content": {
               "application/json": {
                 "schema": {
@@ -13408,6 +13464,117 @@
         }
       }
     },
+    "/api/v1/account/accounts": {
+      "post": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "Create an additional organization",
+        "description": "Creates and switches to an additional organization. This capability is available in Enterprise Edition.",
+        "operationId": "createAdditionalOrganization",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAccountRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organization created and session switched",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Additional organization creation is unavailable in this edition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Enterprise monthly organization creation limit reached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Account"
+        ],
+        "summary": "List accessible accounts for the current user",
+        "operationId": "listAccessibleAccounts",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accessible accounts returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessibleAccountsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/account/users": {
       "get": {
         "tags": [
@@ -13427,42 +13594,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AccountUsersResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/account/accounts": {
-      "get": {
-        "tags": [
-          "Account"
-        ],
-        "summary": "List accessible accounts for the current user",
-        "operationId": "listAccessibleAccounts",
-        "security": [
-          {
-            "sessionCookie": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Accessible accounts returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessibleAccountsResponse"
                 }
               }
             }

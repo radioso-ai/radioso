@@ -21,11 +21,16 @@ Use sessions when a person is interacting with the product UI.
 
 The main auth routes are:
 
+- registration availability
 - register
 - login
 - invitation accept
 
-Registration creates the account and default workspace, then sends a verification email. The backend sets the session cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address.
+Use `GET /api/v1/auth/registration` to check whether open registration is available. It returns `{ "available": true }` or `{ "available": false }` without requiring authentication.
+
+On an empty open-source server, the first registration creates the server's sole organization and default workspace. Open registration then closes, and later users join the existing organization by invitation. Enterprise Edition keeps open registration available and allows signed-in users to create additional organizations. Authorized users can create additional workspaces in either edition; the edition boundary applies to organizations, not workspaces.
+
+Registration sends a verification email and does not set a session cookie. The backend sets the cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address.
 
 ## Workspace API tokens
 

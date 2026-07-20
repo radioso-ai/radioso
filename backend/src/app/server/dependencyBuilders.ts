@@ -42,6 +42,7 @@ import { AuditService } from "../../modules/audit/composition.js";
 import { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { AuthService } from "../../modules/auth/services/authService.js";
+import { PostgresOrganizationProvisioner } from "../../modules/auth/infra/postgresOrganizationProvisioner.js";
 import { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
 import { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../modules/auth/services/workspaceSessionService.js";
@@ -1714,6 +1715,7 @@ export const buildConnectorRegistry = (input: {
 export const buildAuthService = (input: {
   access: ReturnType<typeof buildAccessServices>;
   auditService: AuditService;
+  database: Database;
   env: Env;
   organizationCreationGuard: OrganizationCreationGuard;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
@@ -1731,6 +1733,7 @@ export const buildAuthService = (input: {
     accountInvitationService: input.access.accountInvitationService,
     onAccountCreated: input.onAccountCreated,
     organizationCreationGuard: input.organizationCreationGuard,
+    organizationProvisioner: new PostgresOrganizationProvisioner(input.database, input.auditService),
     auditService: input.auditService,
   });
 

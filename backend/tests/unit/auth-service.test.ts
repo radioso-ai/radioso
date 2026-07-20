@@ -20,9 +20,12 @@ import {
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import type {
+  OrganizationCoreProvisioner,
   OrganizationCreationGuard,
+  OrganizationCreationRequest,
   OrganizationCreationReservation,
 } from "../../src/shared/domain/organizationCreationGuard.js";
+import { InMemoryOrganizationProvisioner } from "../support/organizationProvisioner.js";
 
 class TrackingAccountRepository implements AccountRepositoryPort {
   readonly items = new Map<string, AccountRecord>();
@@ -62,6 +65,12 @@ class TrackingAccountRepository implements AccountRepositoryPort {
   async deleteById(id: string): Promise<boolean> {
     this.deletedIds.push(id);
     return this.items.delete(id);
+  }
+}
+
+class FailingAccountRepository extends TrackingAccountRepository {
+  override async create(): Promise<never> {
+    throw new Error("account create failed");
   }
 }
 
@@ -127,26 +136,32 @@ class WorkingSessionRepository implements SessionRepositoryPort {
 
 class RecordingOrganizationCreationGuard implements OrganizationCreationGuard {
   readonly reservations: RecordingOrganizationCreationReservation[] = [];
+  readonly requests: OrganizationCreationRequest[] = [];
   shouldReject: unknown = null;
 
-  async reserve(input: { userId: string }): Promise<OrganizationCreationReservation> {
+  async reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation> {
+    this.requests.push(input);
     if (this.shouldReject) {
       throw this.shouldReject;
     }
-    const reservation = new RecordingOrganizationCreationReservation(input.userId);
+    const reservation = new RecordingOrganizationCreationReservation();
     this.reservations.push(reservation);
     return reservation;
+  }
+
+  async isSignupAvailable(): Promise<boolean> {
+    return !this.shouldReject;
   }
 }
 
 class RecordingOrganizationCreationReservation implements OrganizationCreationReservation {
   committed = false;
   released = false;
+  accountId: string | null = null;
 
-  constructor(readonly userId: string) {}
-
-  async commit(): Promise<void> {
+  async commit(input: { accountId: string }): Promise<void> {
     this.committed = true;
+    this.accountId = input.accountId;
   }
 
   async release(): Promise<void> {
@@ -162,6 +177,7 @@ const createAuthService = (options: {
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   organizationCreationGuard?: OrganizationCreationGuard;
+  organizationProvisioner?: OrganizationCoreProvisioner;
 }) => {
   const env = createTestEnv();
   const auditService = createAuditService();
@@ -192,6 +208,12 @@ const createAuthService = (options: {
       accountInvitationService,
       onAccountCreated: options.onAccountCreated,
       organizationCreationGuard: options.organizationCreationGuard,
+      organizationProvisioner: options.organizationProvisioner ?? new InMemoryOrganizationProvisioner(
+        accountRepository,
+        userRepository,
+        accountAccessService,
+        workspaceService,
+      ),
     }),
     accountRepository,
     userRepository,
@@ -340,10 +362,10 @@ describe("AuthService rollback", () => {
 
     expect(guard.reservations).toHaveLength(1);
     expect(guard.reservations[0]).toMatchObject({
-      userId: "user-1",
       committed: true,
       released: false,
     });
+    expect(guard.requests).toEqual([{ intent: "additional", userId: "user-1" }]);
   });
 
   it("releases the organization creation reservation when post-create provisioning fails", async () => {
@@ -368,6 +390,44 @@ describe("AuthService rollback", () => {
       committed: false,
       released: true,
     });
+  });
+
+  it("releases the organization creation reservation when account persistence fails", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "user-1",
+      email: "create-org-account-failure@example.com",
+      passwordHash: "hash",
+    });
+    const { authService: orgAuthService } = createAuthService({
+      accountRepository: new FailingAccountRepository(),
+      userRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(orgAuthService.createOrganization({
+      userId: "user-1",
+      organizationName: "Never Persisted",
+    })).rejects.toThrow("account create failed");
+
+    expect(guard.reservations[0]).toMatchObject({ committed: false, released: true });
+  });
+
+  it("releases the signup reservation when account persistence fails", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    const { authService } = createAuthService({
+      accountRepository: new FailingAccountRepository(),
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.register({
+      email: "register-account-failure@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("account create failed");
+
+    expect(guard.requests).toEqual([{ intent: "signup" }]);
+    expect(guard.reservations[0]).toMatchObject({ committed: false, released: true });
   });
 
   it("does not create account records when the organization creation guard rejects", async () => {
@@ -410,6 +470,62 @@ describe("AuthService rollback", () => {
         actorUserId: "user-1",
         reason: "rate_limited",
       },
+    });
+  });
+
+  it("records sanitized signup denial metadata without customer content", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = {
+      statusCode: 403,
+      code: "forbidden",
+      message: "Registration is closed",
+      details: { organizationName: "Sensitive Org", email: "owner@example.com" },
+    };
+    const accountRepository = new TrackingAccountRepository();
+    const { authService, auditService, userRepository } = createAuthService({
+      accountRepository,
+      organizationCreationGuard: guard,
+    });
+
+    await expect(authService.register({
+      email: "owner@example.com",
+      password: "verysecurepassword",
+      organizationName: "Sensitive Org",
+    })).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+
+    expect(accountRepository.items.size).toBe(0);
+    expect(await userRepository.findByEmail("owner@example.com")).toBeNull();
+    expect(auditService.events.at(-1)).toEqual({
+      eventType: "auth.register",
+      eventStatus: "failure",
+      metadata: { reason: "registration_closed" },
+    });
+  });
+
+  it("returns closed registration before duplicate-account handling on initialized OSS", async () => {
+    const guard = new RecordingOrganizationCreationGuard();
+    guard.shouldReject = {
+      statusCode: 403,
+      code: "forbidden",
+      message: "Registration is closed",
+    };
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({
+      id: "existing-user",
+      email: "existing@example.com",
+      passwordHash: "hash",
+    });
+    const { authService, auditService } = createAuthService({ userRepository, organizationCreationGuard: guard });
+
+    await expect(authService.register({
+      email: "existing@example.com",
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({ statusCode: 403, code: "forbidden" });
+
+    expect(auditService.events.at(-1)).toMatchObject({
+      eventType: "auth.register",
+      eventStatus: "failure",
+      metadata: { reason: "registration_closed" },
     });
   });
 
@@ -471,7 +587,7 @@ describe("AuthService rollback", () => {
     expect(user?.emailVerifiedAt).toBeNull();
   });
 
-  it("does not reserve organization creation while registering a first account", async () => {
+  it("reserves and commits signup organization creation while registering a first account", async () => {
     const guard = new RecordingOrganizationCreationGuard();
     const { authService } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),
@@ -483,13 +599,21 @@ describe("AuthService rollback", () => {
       password: "verysecurepassword",
     });
 
-    expect(guard.reservations).toEqual([]);
+    expect(guard.requests).toEqual([{ intent: "signup" }]);
+    expect(guard.reservations).toHaveLength(1);
+    expect(guard.reservations[0]).toMatchObject({
+      committed: true,
+      released: false,
+      accountId: "account-1",
+    });
   });
 
   it("provisions a new account and workspace on first federated sign-in", async () => {
     const accountIds: string[] = [];
+    const guard = new RecordingOrganizationCreationGuard();
     const { authService, userRepository } = createAuthService({
       sessionRepository: new WorkingSessionRepository(),
+      organizationCreationGuard: guard,
       onAccountCreated: async ({ accountId }) => {
         accountIds.push(accountId);
       },
@@ -509,6 +633,12 @@ describe("AuthService rollback", () => {
     expect(accountIds).toEqual([result.accountId]);
     expect(user?.emailVerifiedAt).not.toBeNull();
     expect(result.sessionCookie).toContain("radioso_session=");
+    expect(guard.requests).toEqual([{ intent: "signup" }]);
+    expect(guard.reservations[0]).toMatchObject({
+      committed: true,
+      released: false,
+      accountId: result.accountId,
+    });
   });
 
   it("logs an existing verified user in without creating a second account", async () => {

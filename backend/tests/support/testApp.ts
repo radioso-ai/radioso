@@ -222,6 +222,7 @@ import {
   InMemoryWebhookDestinationRepository,
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
+import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
 
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
@@ -1540,6 +1541,12 @@ export const createTestDependencies = (overrides: {
       accountAccessService,
       accountInvitationService,
       organizationCreationGuard,
+      organizationProvisioner: new InMemoryOrganizationProvisioner(
+        accountRepository,
+        userRepository,
+        accountAccessService,
+        workspaceService,
+      ),
     }),
     accessGrantService,
     passwordResetService: new PasswordResetService({

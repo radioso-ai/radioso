@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { useWorkspace } from '@/lib/workspace-context'
 import { accountApi, seedWorkspaceSession, setPendingAccountSwitchId } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
+import { editionController } from '@/lib/edition-controller'
 import {
   buildDashboardHref,
   retargetDashboardRouteToWorkspace,
@@ -56,6 +57,7 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
   const [isCreatingOrganization, setIsCreatingOrganization] = useState(false)
   const [createOrganizationError, setCreateOrganizationError] = useState<string | null>(null)
   const [isSwitchingAccountId, setIsSwitchingAccountId] = useState<string | null>(null)
+  const canCreateAdditionalOrganizations = editionController.canCreateAdditionalOrganizations()
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -240,11 +242,15 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
                   Loading organizations...
                 </DropdownMenuItem>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setIsCreateOrganizationOpen(true)}>
-                <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
-                New organization
-              </DropdownMenuItem>
+              {canCreateAdditionalOrganizations ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setIsCreateOrganizationOpen(true)}>
+                    <Plus className="w-4 h-4 mr-2 text-muted-foreground" />
+                    New organization
+                  </DropdownMenuItem>
+                </>
+              ) : null}
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -277,38 +283,40 @@ export function WorkspaceSwitcher({ accountId, currentView, routeState }: Worksp
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCreateOrganizationOpen} onOpenChange={setIsCreateOrganizationOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Create organization</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleCreateOrganization}>
-            <Input
-              value={newOrganizationName}
-              onChange={(event) => {
-                setNewOrganizationName(event.target.value)
-                setCreateOrganizationError(null)
-              }}
-              placeholder="Organization name"
-              maxLength={80}
-              autoFocus
-            />
-            {createOrganizationError ? <p className="mt-2 text-sm text-destructive">{createOrganizationError}</p> : null}
-            <DialogFooter className="mt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsCreateOrganizationOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={!newOrganizationName.trim() || isCreatingOrganization}>
-                {isCreatingOrganization ? 'Creating...' : 'Create'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {canCreateAdditionalOrganizations ? (
+        <Dialog open={isCreateOrganizationOpen} onOpenChange={setIsCreateOrganizationOpen}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Create organization</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateOrganization}>
+              <Input
+                value={newOrganizationName}
+                onChange={(event) => {
+                  setNewOrganizationName(event.target.value)
+                  setCreateOrganizationError(null)
+                }}
+                placeholder="Organization name"
+                maxLength={80}
+                autoFocus
+              />
+              {createOrganizationError ? <p className="mt-2 text-sm text-destructive">{createOrganizationError}</p> : null}
+              <DialogFooter className="mt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsCreateOrganizationOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!newOrganizationName.trim() || isCreatingOrganization}>
+                  {isCreatingOrganization ? 'Creating...' : 'Create'}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   )
 }

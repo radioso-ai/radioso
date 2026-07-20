@@ -1,12 +1,48 @@
 'use client'
 
 import Image from 'next/image'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { authApi } from '@/lib/api'
 import { LoginForm } from './login-form'
 import { RegisterForm } from './register-form'
 
 export function AuthPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [registrationAvailable, setRegistrationAvailable] = useState<boolean | null>(null)
+  const [registrationAvailabilityFailed, setRegistrationAvailabilityFailed] = useState(false)
+  const [registrationRetryKey, setRegistrationRetryKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null
+    let automaticRetries = 0
+
+    const loadAvailability = async () => {
+      try {
+        const { available } = await authApi.getRegistrationAvailability()
+        if (active) {
+          setRegistrationAvailable(available)
+          setRegistrationAvailabilityFailed(false)
+        }
+      } catch {
+        if (active) {
+          setRegistrationAvailable(null)
+          setRegistrationAvailabilityFailed(true)
+          if (automaticRetries < 2) {
+            automaticRetries += 1
+            retryTimeout = setTimeout(loadAvailability, 1_500)
+          }
+        }
+      }
+    }
+
+    void loadAvailability()
+
+    return () => {
+      active = false
+      if (retryTimeout) clearTimeout(retryTimeout)
+    }
+  }, [registrationRetryKey])
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -35,7 +71,15 @@ export function AuthPage() {
             {mode === 'login' ? 'Welcome back' : 'Create your account'}
           </h2>
           {mode === 'login' ? (
-            <LoginForm onSwitchToRegister={() => setMode('register')} />
+            <LoginForm
+              registrationAvailable={registrationAvailable}
+              registrationAvailabilityFailed={registrationAvailabilityFailed}
+              onRetryRegistrationAvailability={() => {
+                setRegistrationAvailabilityFailed(false)
+                setRegistrationRetryKey((key) => key + 1)
+              }}
+              onSwitchToRegister={() => setMode('register')}
+            />
           ) : (
             <RegisterForm onSwitchToLogin={() => setMode('login')} />
           )}

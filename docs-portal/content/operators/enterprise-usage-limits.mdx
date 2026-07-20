@@ -88,7 +88,9 @@ Requests that exceed a cap receive a `429` response with `code: "usage_limit_exc
 
 Enterprise deployments also include a per-user cap on creating additional organizations. This cap is an anti-abuse control, not a usage-limit profile dimension.
 
-The cap applies to `POST /api/v1/account/accounts`. It does not apply to signup or the first organization. The counter is per user, per UTC calendar month. Deleting organizations does not refund the counter.
+The cap applies only to the signed-in additional-organization path, `POST /api/v1/account/accounts`. Enterprise open signup remains available when other organizations exist, and `POST /api/v1/auth/register` does not consume this counter. The counter is per user, per UTC calendar month. Deleting organizations does not refund it.
+
+This is an Enterprise capability boundary as well as an anti-abuse limit. Open-source deployments allow the first signup to create one organization for the server, then require later users to join it by invitation. Open-source users cannot call the additional-organization path. Workspace creation remains available in both editions and does not consume the organization counter.
 
 Set the global default with:
 

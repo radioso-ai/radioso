@@ -1,10 +1,49 @@
+export type OrganizationCoreProvisioningRequest =
+  | {
+      intent: "new_user";
+      organizationName: string;
+      email: string;
+      passwordHash: string;
+      emailVerifiedAt: Date | null;
+    }
+  | {
+      intent: "existing_user";
+      userId: string;
+      organizationName: string;
+      email: string;
+      passwordHash: string;
+    };
+
+export interface OrganizationCoreProvisioningResult {
+  account: {
+    id: string;
+    name: string;
+  };
+  userId: string;
+  workspace: {
+    id: string;
+    name: string;
+    publicRouteKey: string;
+  };
+}
+
+export interface OrganizationCoreProvisioner {
+  provision(input: OrganizationCoreProvisioningRequest): Promise<OrganizationCoreProvisioningResult>;
+}
+
 export interface OrganizationCreationReservation {
-  commit(): Promise<void>;
+  coreProvisioner?: OrganizationCoreProvisioner;
+  commit(input: { accountId: string }): Promise<void>;
   release(): Promise<void>;
 }
 
+export type OrganizationCreationRequest =
+  | { intent: "signup" }
+  | { intent: "additional"; userId: string };
+
 export interface OrganizationCreationGuard {
-  reserve(input: { userId: string }): Promise<OrganizationCreationReservation>;
+  reserve(input: OrganizationCreationRequest): Promise<OrganizationCreationReservation>;
+  isSignupAvailable(): Promise<boolean>;
 }
 
 const noopReservation: OrganizationCreationReservation = {
@@ -13,12 +52,15 @@ const noopReservation: OrganizationCreationReservation = {
 };
 
 /**
- * Default OSS guard: organization creation is unlimited unless an Enterprise
- * guard is registered. A shared singleton so the no-op is referenced (not
- * re-instantiated) across composition, dependency wiring, and tests.
+ * Inert fallback for isolated service construction and tests. Runtime OSS
+ * composition registers its database-backed bootstrap guard explicitly, while
+ * Enterprise replaces that registration with its own policy.
  */
 export const noopOrganizationCreationGuard: OrganizationCreationGuard = {
   async reserve() {
     return noopReservation;
+  },
+  async isSignupAvailable() {
+    return true;
   },
 };

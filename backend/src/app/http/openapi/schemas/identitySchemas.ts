@@ -13,6 +13,7 @@ import {
   accountInvitationParamsSchema,
   accountMembershipParamsSchema,
   accountSwitchSchema,
+  createAccountSchema,
   createAccountInvitationSchema,
   updateMembershipRoleSchema,
   workspaceGrantParamsSchema,
@@ -29,6 +30,10 @@ import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 
 export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
+  const RegistrationAvailabilityResponseSchema = registry.register(
+    "RegistrationAvailabilityResponse",
+    z.object({ available: z.boolean() }),
+  );
   const RegisterResponseSchema = registry.register(
     "RegisterResponse",
     z.object({
@@ -136,6 +141,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
   );
 
   const RegisterRequestSchema = registry.register("RegisterRequest", registerSchema);
+  const CreateAccountRequestSchema = registry.register("CreateAccountRequest", createAccountSchema);
   const LoginRequestSchema = registry.register("LoginRequest", loginSchema);
   const PasswordResetRequestSchema = registry.register("PasswordResetRequest", passwordResetRequestSchema);
   const PasswordResetConfirmRequestSchema = registry.register("PasswordResetConfirmRequest", passwordResetConfirmSchema);
@@ -236,6 +242,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     accountInvitationParamsSchema,
     accountMembershipParamsSchema,
     accountSwitchSchema,
+    RegistrationAvailabilityResponseSchema,
     RegisterResponseSchema,
     LoginResponseSchema,
     AcceptedResponseSchema,
@@ -248,6 +255,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceTokenResponseSchema,
     WorkspaceMcpContextResponseSchema,
     RegisterRequestSchema,
+    CreateAccountRequestSchema,
     LoginRequestSchema,
     PasswordResetRequestSchema,
     PasswordResetConfirmRequestSchema,

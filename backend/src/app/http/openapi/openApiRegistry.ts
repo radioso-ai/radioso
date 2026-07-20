@@ -194,6 +194,7 @@ export interface OpenApiSchemaCatalog {
   EmailVerificationVerifyResponseSchema: z.ZodTypeAny;
   LoginRequestSchema: z.ZodTypeAny;
   LoginResponseSchema: z.ZodTypeAny;
+  RegistrationAvailabilityResponseSchema: z.ZodTypeAny;
   PasswordResetConfirmRequestSchema: z.ZodTypeAny;
   PasswordResetConfirmResponseSchema: z.ZodTypeAny;
   PasswordResetRequestSchema: z.ZodTypeAny;
@@ -211,6 +212,7 @@ export interface OpenApiSchemaCatalog {
   RateLimitExceededSchema: z.ZodTypeAny;
   RegisterRequestSchema: z.ZodTypeAny;
   RegisterResponseSchema: z.ZodTypeAny;
+  CreateAccountRequestSchema: z.ZodTypeAny;
   RetrievalAnswerEvidenceSchema: z.ZodTypeAny;
   RetrievalAnswerRequestSchema: z.ZodTypeAny;
   RetrievalAnswerResponseSchema: z.ZodTypeAny;

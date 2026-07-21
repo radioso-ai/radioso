@@ -64,6 +64,14 @@ export interface WorkbenchReplayResolvedConfig {
   composedInstructions?: string;
   modelProvider?: string;
   modelId?: string;
+  /**
+   * The frozen rolling summary (#866) this replayed turn was given, echoed so an
+   * operator can confirm the replay injected the same pre-window context a live
+   * turn would. Absent when the snapshot carried no summary. Also surfaced as a
+   * `conversation_summary` activity-trace stage; this echo lets the workbench
+   * compare live-vs-replay on the summary without walking the trace.
+   */
+  conversationSummary?: string;
   retrievedChunks: Array<{
     chunkId: string;
     documentId: string;
@@ -371,6 +379,7 @@ export class WorkbenchReplayRunner {
         composedInstructions: session.retrieval.systemPrompt,
         modelProvider: agent.chatModelOverride?.provider,
         modelId: agent.chatModelOverride?.model,
+        ...(session.conversationSummary ? { conversationSummary: session.conversationSummary } : {}),
         retrievedChunks: session.retrieval.contexts.map((ctx, index) => ({
           chunkId: ctx.chunkId,
           documentId: ctx.documentId,
@@ -556,6 +565,7 @@ export class WorkbenchReplayRunner {
         composedInstructions: session.retrieval.systemPrompt,
         modelProvider: agent.chatModelOverride?.provider,
         modelId: agent.chatModelOverride?.model,
+        ...(session.conversationSummary ? { conversationSummary: session.conversationSummary } : {}),
         // The routine path renders its own reply and does not run turn-level grounding,
         // so there are no turn-level retrieved chunks to report.
         retrievedChunks: [],

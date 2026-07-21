@@ -204,6 +204,10 @@ export interface EvalRunResolvedConfig {
   modelProvider?: string;
   modelId?: string;
   composedInstructions?: string;
+  /** The frozen rolling summary (#866) injected into this run's grounded prompt,
+   * echoed so an operator can confirm which pre-window context the run saw.
+   * full_assistant only — retrieval_only runs inject no summary. */
+  conversationSummary?: string;
 }
 
 export interface EvalRun {

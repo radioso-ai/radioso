@@ -203,6 +203,9 @@ export class EvalRunService {
         };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
         resolvedConfig.composedInstructions = result.composedInstructions;
+        if (replay.conversationSummary) {
+          resolvedConfig.conversationSummary = replay.conversationSummary;
+        }
         if (result.resolvedModel) {
           resolvedConfig.modelProvider = result.resolvedModel.provider;
           resolvedConfig.modelId = result.resolvedModel.model;
@@ -370,6 +373,9 @@ export class EvalRunService {
       resolvedConfig.composedInstructions = result.resolvedConfig.composedInstructions;
       resolvedConfig.modelProvider = result.resolvedConfig.modelProvider;
       resolvedConfig.modelId = result.resolvedConfig.modelId;
+      if (result.resolvedConfig.conversationSummary) {
+        resolvedConfig.conversationSummary = result.resolvedConfig.conversationSummary;
+      }
     } catch (error) {
       observed = {
         retrievedChunks: [],

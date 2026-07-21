@@ -34,6 +34,7 @@ const DISPLAY_LABELS: Record<string, string> = {
   delivery_dispatch: 'Notify team',
   audit_record: 'Audit log',
   skill_execute: 'Run workflow',
+  conversation_summary: 'Conversation summary',
 }
 
 type LayoutSection =

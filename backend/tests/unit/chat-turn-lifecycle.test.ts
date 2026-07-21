@@ -288,6 +288,44 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     vi.useRealTimers();
   });
 
+  it("appends a conversation_summary activity-trace stage when the session carries a rolling summary", () => {
+    const prepared = {
+      ...session(),
+      conversationSummary: "User is booking a trip to Osaka and asked about visas.",
+    } as PreparedSession;
+
+    const { activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    const summaryStage = activityTrace.stages.find((stage) => stage.kind === "conversation_summary");
+    expect(summaryStage).toBeDefined();
+    expect(summaryStage?.outputs?.summary).toBe(prepared.conversationSummary);
+    expect(summaryStage?.outputs?.injectedInto).toEqual([
+      "turn_interpretation",
+      "grounded_answer",
+      "direct_answer",
+    ]);
+  });
+
+  it("omits the conversation_summary stage when the session has no rolling summary", () => {
+    const { activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(activityTrace.stages.some((stage) => stage.kind === "conversation_summary")).toBe(false);
+  });
+
   it("reports retrieval as invoked when a direct-classified routine turn dispatches retrieval.context", async () => {
     const { lifecycle, records } = harness();
     const prepared = session();

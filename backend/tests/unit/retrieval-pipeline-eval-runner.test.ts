@@ -88,4 +88,32 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
 
     expect(captured.systemPrompt).not.toContain(SUMMARY);
   });
+
+  it("surfaces the frozen summary as a conversation_summary activity-trace stage", async () => {
+    const { runner } = buildRunner();
+
+    const result = await runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-1",
+      query: "How long do refunds take?",
+      history: [],
+      conversationSummary: SUMMARY,
+    });
+
+    const stage = result.activityTrace.stages.find((s) => s.kind === "conversation_summary");
+    expect(stage?.outputs?.summary).toBe(SUMMARY);
+  });
+
+  it("leaves the activity trace summary-free when the run carries no summary", async () => {
+    const { runner } = buildRunner();
+
+    const result = await runner.answer({
+      workspaceId: "ws-1",
+      runId: "run-1",
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(result.activityTrace.stages.some((s) => s.kind === "conversation_summary")).toBe(false);
+  });
 });

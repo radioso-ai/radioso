@@ -439,6 +439,10 @@ class StubWorkbenchReplayRunner implements EvalWorkbenchReplayRunnerPort {
         composedInstructions: "Resolved replay instructions.",
         modelProvider: "openai",
         modelId: "gpt-5-mini",
+        // Mirror the real runner: echo the frozen summary it was given so an operator
+        // can confirm the replay injected it. Conditional so summary-free replays match
+        // the pre-existing exact-equality assertions.
+        ...(input.conversationSummary ? { conversationSummary: input.conversationSummary } : {}),
         retrievedChunks: [{ chunkId: "chunk-1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }],
       },
     };
@@ -973,10 +977,22 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       "The user is comparing the Pro and Team plans.",
     );
 
-    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
+    const { run } = await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
     expect(runner.lastAnswerCall?.conversationSummary).toBe(
       "The user is comparing the Pro and Team plans.",
     );
+    // The injected summary is echoed on the run's resolvedConfig for operator review.
+    expect(run.resolvedConfig.conversationSummary).toBe(
+      "The user is comparing the Pro and Team plans.",
+    );
+
+    const { run: retrievalRun } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "retrieval_only",
+    });
+    // retrieval_only injects no summary, so it echoes none.
+    expect(retrievalRun.resolvedConfig.conversationSummary).toBeUndefined();
   });
 
   it("threads the frozen conversation summary into the workbench replay runner", async () => {
@@ -990,10 +1006,14 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     const workbench = new StubWorkbenchReplayRunner();
     const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
 
-    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
+    const { run } = await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
 
     expect(workbench.calls).toHaveLength(1);
     expect(workbench.calls[0]?.conversationSummary).toBe(
+      "The buyer already returned the item last week.",
+    );
+    // The replayed summary the runner reports back is echoed on the run's resolvedConfig.
+    expect(run.resolvedConfig.conversationSummary).toBe(
       "The buyer already returned the item last week.",
     );
   });

@@ -326,6 +326,10 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(seen.value).toBe("The buyer already returned the item last week.");
     expect(result.answer).toBe("summary:The buyer already returned the item last week.");
+    // Echoed on resolvedConfig so the workbench can confirm the replay used the frozen summary.
+    expect(result.resolvedConfig.conversationSummary).toBe(
+      "The buyer already returned the item last week.",
+    );
   });
 
   it("leaves the prepared session summary absent when the replay input carries none", async () => {
@@ -363,7 +367,7 @@ describe("WorkbenchReplayRunner", () => {
       turnRouter: stubTurnRouter(),
     });
 
-    await runner.run({
+    const result = await runner.run({
       workspaceId: "ws-1",
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
@@ -373,6 +377,7 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(seen.called).toBe(true);
     expect(seen.value).toBeUndefined();
+    expect(result.resolvedConfig.conversationSummary).toBeUndefined();
   });
 
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {

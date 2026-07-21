@@ -36,6 +36,7 @@ import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatRespo
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
+import { appendConversationSummaryStage } from "./conversationSummaryTracePresenter.js";
 import {
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
@@ -267,23 +268,26 @@ export const buildTurnTraceForPresentation = (
       isIdentityQuestion: input.session.turnFraming?.isIdentityQuestion ?? false,
     },
   };
-  const activityTrace = appendDirectiveSteeringStage(
-    activityTracePresenter.appendAnswerOutcome({
-      trace: retrieval.trace,
-      summary: activitySummary,
-      outcome: {
-        answer: input.presentation.answer,
-        stream: input.stream,
-        hadContexts: retrieval.contexts.length > 0,
-        retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
-        durationMs: Date.now() - input.answerStartedAt,
-        answerOutcome: input.presentation.answerOutcome,
-        skillName: skillTurnOutcome.skillName,
-        skillOutcome: skillTurnOutcome.outcome,
-        skillStatus: skillTurnOutcome.status,
-      },
-    }),
-    input.session.directiveSteering,
+  const activityTrace = appendConversationSummaryStage(
+    appendDirectiveSteeringStage(
+      activityTracePresenter.appendAnswerOutcome({
+        trace: retrieval.trace,
+        summary: activitySummary,
+        outcome: {
+          answer: input.presentation.answer,
+          stream: input.stream,
+          hadContexts: retrieval.contexts.length > 0,
+          retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
+          durationMs: Date.now() - input.answerStartedAt,
+          answerOutcome: input.presentation.answerOutcome,
+          skillName: skillTurnOutcome.skillName,
+          skillOutcome: skillTurnOutcome.outcome,
+          skillStatus: skillTurnOutcome.status,
+        },
+      }),
+      input.session.directiveSteering,
+    ),
+    input.session.conversationSummary,
   );
   const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
   const contextVariablesSnapshot = input.session.resolvedContext.snapshot;

@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { ChatGateway } from "../../chat/contracts/index.js";
+import { appendConversationSummaryStage, type ChatGateway } from "../../chat/contracts/index.js";
 import type {
   CitationEvidence,
   PresentedAnswer,
@@ -248,7 +248,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         input.retrievalSettingsOverride,
       ),
       resolvedModel: { provider: resolvedProvider, model: resolvedModel },
-      activityTrace: pipelineResult.trace,
+      // Surface the frozen summary (#866) that was injected into the grounded prompt
+      // above, so the eval activity trace shows the same pre-window context an
+      // operator sees on a live turn. Behavior-preserving when no summary was frozen.
+      activityTrace: appendConversationSummaryStage(pipelineResult.trace, input.conversationSummary),
     };
   }
 

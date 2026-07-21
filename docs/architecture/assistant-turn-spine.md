@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-07-19
+last_updated: 2026-07-22
 ---
 
 # Assistant Turn Spine
@@ -90,6 +90,50 @@ chat replies. Retrieval pipelines only consume a language label when chat passes
 one on the request; standalone retrieval, MCP, and eval retrieval surfaces do not
 run response-language detection. Query rewrite does not own response-language
 selection.
+
+## Fused turn planning
+
+The four fresh-turn classification calls — routine activation ranking, turn
+interpretation (route + rewrite), response-language detection, and contextual
+directive matching — can be fused into one chat-tier `turn_planning` call. The
+engine and its ports do not change. `TurnPlanService`
+(`backend/src/modules/chat/services/turnPlanService.ts`) owns the prompt
+(`backend/prompts/chat/turn-planning.md`), strict parsing, and semantic
+validation; `turnPlanCoordinator.ts` owns the eligibility bounds and the lazy,
+memoized per-turn handle that rides on the prepared session. Each existing port
+adapter consumes the shared plan instead of making its own call: the routine
+activator applies the plan's rankings through `RoutineRegistry`'s prepare/apply
+seams (including any activation variables extracted from the turn), the
+interpreter takes route and rewrite framing using the same effective workspace/
+agent rewrite instructions as staged interpretation, chat takes the response
+language, and the directive matcher resolves precomputed classifications through
+the same route-scoped runtime. Policy stays with the owning modules; the planner
+only sees candidate summaries.
+
+The key point is that fallback is the existing staged path, all-or-nothing per
+turn. A turn bypasses planning entirely (no planner call) when the env gate is
+off (`CHAT_TURN_PLANNING_ENABLED`, plus the optional
+`CHAT_TURN_PLANNING_WORKSPACES` allowlist), when a routine is active or parked,
+when a pending clarification or decision resolves this turn, when a routine
+explicitly claims the turn (including completed-routine correction or semantic
+reentry), or when candidate counts or the estimated prompt
+exceed the `turnPlanning` bounds in `behaviorConfig.ts`. A planner timeout,
+malformed output, or an unknown routine or directive id fails the whole plan,
+and every consumer falls back to its staged call — planner failure never drops a
+routine or directive behavior, and planner routing is never mixed with staged
+directive results.
+
+In practice a successful direct turn makes exactly two model calls (plan +
+answer); a retrieval turn makes the plan, retrieval-internal calls, and the
+grounded answer. The planner call appears in the turn's model-call trace as
+`turn_planning` with `pre_engine` attribution and records a usage event under
+the same operation. Classification stages carry `source: "planned"` or
+`source: "staged"` while the trace's stage shape stays unchanged; a rejected
+planner attempt followed by fallback is reported as staged. The coordinator
+also records a low-cardinality outcome counter and planner-latency histogram. The
+workbench replay runner receives the same coordinator and gate through composition
+and consumes the plan's route, rewrite, language, routine rankings, and directive
+classifications.
 
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
 compose stages) is the root of the versioned `metadata.turnTrace` envelope on

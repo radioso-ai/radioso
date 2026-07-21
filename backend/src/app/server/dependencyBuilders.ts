@@ -87,6 +87,13 @@ import {
   type RoutineRegistration,
   SkillRetrievalTurnDispatch,
   WorkbenchReplayRunner,
+  TurnPlanCoordinator,
+  TurnPlanService,
+  createTurnPlanningGate,
+  parseWorkspaceAllowlist,
+  planAwareRoutineActivator,
+  planAwareRoutineReentryGate,
+  planAwareRoutineSlotCorrection,
   AgentConverseAudit,
   AgentConverseService,
 } from "../../modules/chat/composition.js";
@@ -224,7 +231,7 @@ import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import { Database } from "../../shared/infra/database.js";
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
-import { ContextualDirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { ContextualDirectiveMatchGatewayFactory, ContextualTurnPlanGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import { TextGenerationClientCache } from "../../shared/infra/llm/textClientFactory.js";
 import { createMailService } from "../../modules/mail/public.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/public.js";
@@ -986,6 +993,20 @@ export const buildChatServices = (input: {
       },
       input.usageEventRecorder,
     );
+  const turnPlanningGate = createTurnPlanningGate({
+    enabled: input.env.CHAT_TURN_PLANNING_ENABLED,
+    workspaceAllowlist: parseWorkspaceAllowlist(input.env.CHAT_TURN_PLANNING_WORKSPACES),
+  });
+  const turnPlanCoordinator = new TurnPlanCoordinator(
+    new TurnPlanService(
+      new ContextualTurnPlanGatewayFactory(
+        { resolver: input.llmCapabilityResolver, clientCache: new TextGenerationClientCache() },
+        input.usageEventRecorder,
+      ),
+    ),
+    input.logger,
+    input.metricsRegistry,
+  );
   const answerPresentationService = new AnswerPresentationService();
   const answerPresentation = {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
@@ -1279,6 +1300,7 @@ export const buildChatServices = (input: {
       responseLanguage,
       groundedAnswerRenderer,
       throwIfCancelled,
+      turnPlan,
     }) {
       let publishedRegistrations: RoutineRegistration[];
       try {
@@ -1423,19 +1445,33 @@ export const buildChatServices = (input: {
         );
       }
       return {
+        // The plan-aware activator prepares candidates once through the registry's
+        // seam, feeds them to the shared turn plan (earliest consumer), and applies
+        // precomputed rankings; without a plan handle it is exactly the staged
+        // ranked-activation activator.
         activator: routineRegistry.isEmpty
           ? { activate: async () => null }
-          : routineRegistry.activator(modelGateway),
+          : planAwareRoutineActivator({
+              handle: turnPlan,
+              registry: routineRegistry,
+              fallback: routineRegistry.activator(modelGateway),
+            }),
         // Post-completion slot correction (issue #746): resolves the completed routine
         // from the same per-turn routine set and runs model-driven detection/confirmation.
-        slotCorrection: new RoutineSlotCorrector(routines, modelGateway, {
-          detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
-          confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
-          invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
+        slotCorrection: planAwareRoutineSlotCorrection({
+          handle: turnPlan,
+          fallback: new RoutineSlotCorrector(routines, modelGateway, {
+            detectPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-detect.md"),
+            confirmPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-confirm.md"),
+            invalidPromptTemplate: loadPromptTemplate("chat/routine-slot-correction-invalid.md"),
+          }),
         }),
         // Semantic reentry gate (issue #746): inert unless a routine opts into semantic mode.
-        reentryGate: new RoutineReentryGate(routines, modelGateway, {
-          promptTemplate: loadPromptTemplate("chat/routine-reentry-gate.md"),
+        reentryGate: planAwareRoutineReentryGate({
+          handle: turnPlan,
+          fallback: new RoutineReentryGate(routines, modelGateway, {
+            promptTemplate: loadPromptTemplate("chat/routine-reentry-gate.md"),
+          }),
         }),
         runner: new DefaultRoutineRunner(
           routines,
@@ -1563,6 +1599,12 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     turnRouter,
     turnInterpreter,
+    turnPlanCoordinator,
+    turnPlanningGate,
+    turnPlanRewriteSettings: {
+      retrievalDefaultsProvider: input.retrievalDefaultsProvider,
+      ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
+    },
     responseLanguageDetector,
     handoffWaitingMessageGenerator,
     // The reusable conversation engine is the chat turn spine in every
@@ -1663,6 +1705,14 @@ export const buildChatServices = (input: {
     chatGateway,
     chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
     agentSkillTurnSkillProvider,
+    // Same fused-planning coordinator + gate as live chat, so replay executes the
+    // identical planner-or-staged schedule under the same gating semantics.
+    turnPlanCoordinator,
+    turnPlanningGate,
+    turnPlanRewriteSettings: {
+      retrievalDefaultsProvider: input.retrievalDefaultsProvider,
+      ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
+    },
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

@@ -42,9 +42,10 @@ const stageForCall = (
   stages: ConversationTraceStage[],
   call: ModelCallTraceRecord,
 ): ConversationTraceStage | undefined => {
-  // Detection starts at the host boundary before the engine. Millisecond timestamps
-  // can otherwise make a zero-width call look enclosed by the first engine stage.
-  if (call.operation === "response_language_detection") {
+  // Detection and fused turn planning start at the host boundary before the engine.
+  // Millisecond timestamps can otherwise make a zero-width call look enclosed by the
+  // first engine stage, so both are pinned to the pre-engine attribution.
+  if (call.operation === "response_language_detection" || call.operation === "turn_planning") {
     return undefined;
   }
   const exactKind = call.operation === "turn_interpretation"
@@ -88,6 +89,25 @@ export const attachModelCallsToSpine = (
   }
 
   const stages = spine.stages.filter((stage) => stage.kind !== MODEL_CALLS_STAGE_ID);
+  const stagedClassificationOperations = new Set([
+    "turn_interpretation",
+    "response_language_detection",
+    "routine_activation",
+    "directive_match",
+  ]);
+  // A rejected/timed-out planner call is still captured, but all consumers then
+  // run their staged classifiers. Prefer those concrete fallback operations over
+  // the mere presence of a planner attempt so traces describe accepted behavior.
+  const usedStagedClassification = calls.some((call) => stagedClassificationOperations.has(call.operation));
+  const classificationSource = !usedStagedClassification
+    && calls.some((call) => call.operation === "turn_planning")
+    ? "planned"
+    : "staged";
+  const isClassificationStage = (stage: ConversationTraceStage): boolean =>
+    stage.kind === "turn_interpretation"
+    || stage.kind === "directive_match"
+    || stage.kind === "routine_activation"
+    || stage.kind === "response_language_detection";
   const byStageId = new Map<string, ModelCallTraceRecord[]>();
   const attributed: AttributedModelCallTraceRecord[] = calls.map((call) => {
     const target = stageForCall(stages, call);
@@ -113,7 +133,12 @@ export const attachModelCallsToSpine = (
   const enrichedStages = stages.map((stage) => {
     const assigned = byStageId.get(stage.id);
     if (!assigned) {
-      return stage;
+      return isClassificationStage(stage)
+        ? {
+            ...stage,
+            outputs: { ...(stage.outputs ?? {}), source: classificationSource },
+          }
+        : stage;
     }
     const models = [...new Set(assigned.map((call) => call.model))];
     const operations = [...new Set(assigned.map((call) => call.operation))];
@@ -126,6 +151,7 @@ export const attachModelCallsToSpine = (
       },
       outputs: {
         ...(stage.outputs ?? {}),
+        ...(isClassificationStage(stage) ? { source: classificationSource } : {}),
         modelCallIds: assigned.map((call) => call.id),
       },
       metrics: {

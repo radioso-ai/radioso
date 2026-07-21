@@ -790,6 +790,9 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
           omissions: [],
         };
       },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },

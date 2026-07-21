@@ -39,6 +39,7 @@ import type { DirectiveSteeringResult } from "../../directives/public.js";
 import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
+import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -71,6 +72,16 @@ export interface PreparedSession {
    * turn completion, advancing the conversation's firing state.
    */
   directiveStateStore?: DeferredDirectiveStateStore;
+  /**
+   * The fused turn plan for this turn: a lazy, memoized handle (issue:
+   * five-llm-calls). Rides on the session like {@link directiveSteering}: the
+   * earliest consumer (usually the routine activator, which supplies the prepared
+   * routine candidates) starts the single computation, all others await the same
+   * promise, and a `bypassed`/`failed` outcome sends every consumer to its staged
+   * fallback. Absent when the planning gate is off, the workspace is not
+   * allowlisted, or a pre-engine bypass signal holds.
+   */
+  turnPlan?: ChatTurnPlanHandle;
   /** Retrieval-sense alternatives to offer in the current grounded answer; labels only, never alternative chunks. */
   retrievalSenseOfferAlternatives?: ClarificationCandidate[];
   /**

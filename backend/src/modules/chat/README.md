@@ -100,6 +100,27 @@ imports from `services/`.
   mid-routine (unlike eval *replay*, which must NOT seed it). Route:
   `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
   (workspace-session auth). Powers the workbench's "Continue in test chat".
+- Fused turn planning: `turnPlanService.ts` (one chat-tier `turn_planning` call
+  + prompt `backend/prompts/chat/turn-planning.md`, strict parse and semantic
+  validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
+  `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
+  and the four plan-aware adapters). On eligible fresh turns the one plan
+  replaces the staged routine-activation, turn-interpretation,
+  response-language, and directive-match calls; a bypassed or invalid plan
+  sends every consumer back to its staged call, all-or-nothing. Gated by
+  `CHAT_TURN_PLANNING_ENABLED` / `CHAT_TURN_PLANNING_WORKSPACES`, resolved in
+  composition (`dependencyBuilders.ts`), which wires the same coordinator and
+  gate into `ChatService` and `workbenchReplayRunner.ts` so replay executes the
+  identical schedule. Policy stays with the owning modules: the routine
+  activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
+  `applyRankedDecision` (including extracted activation variables), completed-
+  routine correction/reentry adapters pin the plan as bypassed when they claim
+  the turn, retrieval rewrite guidance resolves through the same defaults/agent-
+  settings seam as staged interpretation, and the directive matcher resolves precomputed
+  classifications through `matchAndResolveWithClassifications`. Tests:
+  `tests/unit/turn-plan-service.test.ts`,
+  `tests/unit/turn-plan-coordinator.test.ts`,
+  `tests/unit/chat-service-turn-planning.test.ts`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.

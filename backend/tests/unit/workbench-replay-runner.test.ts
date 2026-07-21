@@ -18,6 +18,11 @@ import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrieva
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import {
+  TurnPlanCoordinator,
+  createTurnPlanningGate,
+} from "../../src/modules/chat/services/turnPlanCoordinator.js";
+import { TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
@@ -276,6 +281,119 @@ describe("WorkbenchReplayRunner", () => {
     });
     expect(capturedRequests[0]?.history).toEqual([]);
     expect(classify).toHaveBeenCalledOnce();
+  });
+
+  it("executes the fused turn-planning schedule when the same coordinator + gate are wired", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const planText = JSON.stringify({
+      route: "retrieval",
+      isIdentityQuestion: false,
+      intentTopic: null,
+      inScopeRequest: null,
+      outsideScopeRequest: null,
+      rewrite: {
+        rewrittenQuery: "refund processing duration",
+        semanticQuery: "refund processing duration",
+        lexicalQuery: "refund processing",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund processing",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.95,
+      },
+      responseLanguage: "English",
+      routineRankings: [],
+      directiveClassifications: [{ name: "refund-tone", matched: true, confidence: 0.9 }],
+    });
+    const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const throwingDirectiveGatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("directive gateway must not be created on the fused fast path");
+      }),
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [{
+          directive: {
+            name: "refund-tone",
+            condition: { kind: "contextual", description: "when the customer asks about refunds" },
+            action: "Use refund support tone.",
+          },
+        }],
+        directiveMatchGatewayFactory: throwingDirectiveGatewayFactory,
+      }),
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+      turnPlanningGate: createTurnPlanningGate({ enabled: true }),
+      turnPlanRewriteSettings: {
+        retrievalDefaultsProvider: { getDefaults: () => ({} as never) },
+        skillSettingsResolver: {
+          resolve: () => ({
+            semanticRewriteInstructions: "Replay semantic guidance.",
+            lexicalRewriteInstructions: "Replay lexical guidance.",
+          } as never),
+        },
+      },
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(result.answer).toBeTruthy();
+    // The planner ran once; the staged router and directive gateway never did —
+    // the identical fast-path schedule as live chat.
+    expect(plannerComplete).toHaveBeenCalledTimes(1);
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay semantic guidance.");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay lexical guidance.");
+    expect(classify).not.toHaveBeenCalled();
+    expect(throwingDirectiveGatewayFactory.create).not.toHaveBeenCalled();
+    expect(capturedRequests[0]?.precomputedRewriteProposal?.rewrittenQuery).toBe("refund processing duration");
+    expect(capturedRequests[0]?.responseLanguage).toBe("English");
+    // The trace keeps the unchanged schedule shape.
+    expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
+  });
+
+  it("keeps the staged replay schedule when the planning gate is off", async () => {
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const plannerComplete = vi.fn(async () => ({ text: "unused" }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+      turnPlanningGate: createTurnPlanningGate({ enabled: false }),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(plannerComplete).not.toHaveBeenCalled();
+    expect(classify).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {

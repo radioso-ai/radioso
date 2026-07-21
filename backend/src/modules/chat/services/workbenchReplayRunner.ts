@@ -11,9 +11,22 @@ import type { ConversationRecord, ConversationRepositoryPort } from "../../../db
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import {
   applyAgentConfigOverride,
+  authoredDirectiveToSteeringDirective,
   materializeAgentFromConfig,
   type InternalAgentConfig,
 } from "../../agents/public.js";
+import { SharedAnswerInstructionBuilder, type StructuredRewriteResult } from "../../retrieval/public.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import {
+  contextualDirectiveCandidates,
+  lazyPromise,
+  planAwareResponseLanguage,
+  resolveTurnPlanRewriteInstructions,
+  startTurnPlan,
+  type TurnPlanCoordinator,
+  type TurnPlanRewriteSettings,
+  type TurnPlanningGate,
+} from "./turnPlanCoordinator.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { AnswerSegment, ChatCitation } from "../contracts/answerTypes.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
@@ -108,6 +121,16 @@ export interface WorkbenchReplayRunnerOptions {
    * production. When omitted, only the static turn skills are selectable.
    */
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
+  /**
+   * Fused turn planning (paired with
+   * {@link WorkbenchReplayRunnerOptions.turnPlanningGate}). Composition wires the
+   * SAME coordinator + gate live chat uses, so a replayed turn executes the
+   * identical planner-or-staged schedule under the same gating semantics.
+   */
+  turnPlanCoordinator?: TurnPlanCoordinator;
+  turnPlanningGate?: TurnPlanningGate;
+  /** Retrieval-owned settings seams used to preserve custom rewrite guidance. */
+  turnPlanRewriteSettings?: TurnPlanRewriteSettings;
 }
 
 /**
@@ -257,6 +280,7 @@ export class WorkbenchReplayRunner {
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly turnRouter: TurnRouter;
   private readonly answerSupport: ChatAnswerSupport;
+  private readonly turnPlanScopeReferenceBuilder = new SharedAnswerInstructionBuilder();
   private readonly options: WorkbenchReplayRunnerOptions;
 
   constructor(options: WorkbenchReplayRunnerOptions) {
@@ -300,10 +324,23 @@ export class WorkbenchReplayRunner {
       replayDirectiveStateFromHistory(input.history),
     );
 
+    // Fused turn planning: create the same lazy plan handle live chat creates, under
+    // the same gate, so replay executes the identical planner-or-staged schedule.
+    // A seeded routine state (active or suspended) bypasses planning exactly like a
+    // live active/parked routine; replay has no pending-clarification concept.
+    this.startReplayTurnPlan(session, input);
+    const responseLanguagePromise = this.replayResponseLanguagePromise(session);
+
     // Routines are a pre-grounding skill: attempt them first, exactly as the live turn
     // does. If a routine claims the turn (activation or mid-routine resume), its reply
     // is the answer and grounding never runs; otherwise fall through.
-    const routineResult = await this.attemptRoutine(session, input, agent, directiveStateStore);
+    const routineResult = await this.attemptRoutine(
+      session,
+      input,
+      agent,
+      directiveStateStore,
+      responseLanguagePromise,
+    );
     if (routineResult) {
       return routineResult;
     }
@@ -321,6 +358,7 @@ export class WorkbenchReplayRunner {
       input,
       prepareInput,
       sessionRef,
+      responseLanguagePromise,
       agenticRetrievalToolFactories: agentSkillRuntime?.agenticRetrievalToolFactories,
     });
 
@@ -376,10 +414,83 @@ export class WorkbenchReplayRunner {
     };
   }
 
+  /**
+   * Mirrors {@link ChatService}'s plan start for replay: the same shared
+   * `startTurnPlan` helper, gate semantics, union-of-routes directive candidates,
+   * and usage attribution — so a replayed turn's planner call and consumption
+   * match the live schedule exactly.
+   */
+  private startReplayTurnPlan(session: PreparedSession, input: WorkbenchReplayInput): void {
+    const additionalDirectives = (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
+    const query = session.effectiveQuery ?? session.userMessage.content;
+    const handle = startTurnPlan({
+      coordinator: this.options.turnPlanCoordinator,
+      gate: this.options.turnPlanningGate,
+      workspaceId: session.agent.workspaceId,
+      bypass: {
+        activeRoutine: input.routineStartState?.status === "active",
+        suspendedRoutine: input.routineStartState != null && input.routineStartState.status !== "active",
+      },
+      plan: () => ({
+        query,
+        history: session.history,
+        answerScopeReference: this.turnPlanScopeReferenceBuilder.buildScopeReferenceBlock({
+          responseIdentity: session.retrieval.responseIdentity,
+          customInstruction: session.agent.customInstruction,
+        }),
+        ...(this.options.turnPlanRewriteSettings
+          ? resolveTurnPlanRewriteInstructions({
+              workspaceId: session.agent.workspaceId,
+              agentSkillSettings: session.agent.skillSettings,
+              settings: this.options.turnPlanRewriteSettings,
+            })
+          : {}),
+        directiveCandidates: contextualDirectiveCandidates({
+          routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
+          directivesForRoute: (route) =>
+            this.directiveRuntime.directivesFor({
+              workspaceId: session.agent.workspaceId,
+              accountId: input.accountId ?? undefined,
+              additionalDirectives,
+              turnContext: { query, route },
+            }),
+        }),
+        workspaceContext: { workspaceId: session.agent.workspaceId },
+        usageContext: {
+          accountId: input.accountId ?? undefined,
+          workspaceId: session.agent.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "turn_planning",
+          attemptKey: `${session.userMessage.id}:turn_planning`,
+        },
+      }),
+    });
+    if (handle) {
+      session.turnPlan = handle;
+    }
+  }
+
+  /** Use the fused plan's language on the fast path and preserve replay's staged value otherwise. */
+  private replayResponseLanguagePromise(session: PreparedSession): Promise<string | undefined> {
+    const handle = session.turnPlan;
+    if (!handle) {
+      return Promise.resolve(session.responseLanguage);
+    }
+    return lazyPromise(() =>
+      planAwareResponseLanguage({
+        handle: () => handle.resolve(null),
+        fallback: async () => session.responseLanguage,
+      }),
+    );
+  }
+
   private buildEnginePreparationPorts(input: {
     input: WorkbenchReplayInput;
     prepareInput: PrepareChatSessionInput;
     sessionRef: { current: PreparedSession };
+    responseLanguagePromise: Promise<string | undefined>;
     agenticRetrievalToolFactories?: AgentSkillTurnRuntime["agenticRetrievalToolFactories"];
   }): {
     turnInterpreter: ConversationTurnInterpreter;
@@ -388,6 +499,37 @@ export class WorkbenchReplayRunner {
     const turnInterpreter: ConversationTurnInterpreter = {
       interpret: async () => {
         const session = input.sessionRef.current;
+        // Planned fast path: route + framing come from the shared fused plan, as in
+        // live chat; the staged router classify below never runs on a planned turn.
+        const plannedOutcome = session.turnPlan ? await session.turnPlan.resolve(null) : undefined;
+        if (plannedOutcome?.status === "planned") {
+          const plannedRouting = {
+            route: plannedOutcome.plan.route,
+            framing: plannedOutcome.plan.framing,
+          };
+          input.sessionRef.current = {
+            ...session,
+            turnRoute: plannedRouting.route,
+            turnFraming: plannedRouting.framing,
+            responseLanguage: await input.responseLanguagePromise,
+          };
+          if (plannedRouting.route === CHAT_TURN_ROUTE.DIRECT) {
+            input.sessionRef.current = await this.preparer.prepareDirect(
+              input.prepareInput,
+              input.sessionRef.current,
+              plannedRouting.framing,
+            );
+          }
+          return {
+            ...plannedRouting,
+            metadata: {
+              source: "planned",
+              ...(plannedOutcome.plan.rewriteProposal
+                ? { rewriteProposal: plannedOutcome.plan.rewriteProposal }
+                : {}),
+            },
+          };
+        }
         const routing = await this.turnRouter.classify({
           query: input.input.query,
           history: session.history,
@@ -420,7 +562,7 @@ export class WorkbenchReplayRunner {
     };
 
     const retrievalWork: ConversationRetrievalWorkPort = {
-      run: async () => {
+      run: async ({ interpretation }) => {
         const agenticToolFactories = input.agenticRetrievalToolFactories?.(input.sessionRef.current) ?? [];
         const preparedInput = {
           ...input.prepareInput,
@@ -428,8 +570,16 @@ export class WorkbenchReplayRunner {
         };
         const directiveSteering = input.sessionRef.current.directiveSteering;
         const directiveStateStore = input.sessionRef.current.directiveStateStore;
+        const rewriteProposal =
+          interpretation.metadata?.rewriteProposal && typeof interpretation.metadata.rewriteProposal === "object"
+            ? interpretation.metadata.rewriteProposal as StructuredRewriteResult
+            : undefined;
+        input.sessionRef.current = {
+          ...input.sessionRef.current,
+          responseLanguage: await input.responseLanguagePromise,
+        };
         input.sessionRef.current = await this.preparer.prepareRetrieval(
-          preparedInput,
+          rewriteProposal ? { ...preparedInput, precomputedRewriteProposal: rewriteProposal } : preparedInput,
           input.sessionRef.current,
           input.sessionRef.current.turnFraming,
         );
@@ -466,6 +616,7 @@ export class WorkbenchReplayRunner {
     input: WorkbenchReplayInput,
     agent: ReturnType<typeof materializeAgentFromConfig>,
     directiveStateStore: DirectiveStateStore,
+    responseLanguagePromise: Promise<string | undefined>,
   ): Promise<WorkbenchReplayResult | null> {
     const { routineProvider, chatGateway, chatAnswerPresenter } = this.options;
     if (!routineProvider || !chatGateway || !chatAnswerPresenter) {
@@ -495,13 +646,14 @@ export class WorkbenchReplayRunner {
       // Pin the seeded routine so its resume-only registration loads even if it would
       // not be offered for fresh activation this turn.
       pinnedRoutineIds: activeRoutine?.status === "active" ? [activeRoutine.routineId] : [],
-      responseLanguage: Promise.resolve(session.responseLanguage ?? undefined),
+      responseLanguage: responseLanguagePromise,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,
         accountId: input.accountId ?? undefined,
-        responseLanguage: Promise.resolve(session.responseLanguage ?? undefined),
+        responseLanguage: responseLanguagePromise,
         turnSkills: this.options.turnSkills,
       }),
+      turnPlan: session.turnPlan,
     });
     if (!ports) {
       return null;

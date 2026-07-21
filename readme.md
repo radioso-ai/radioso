@@ -332,6 +332,12 @@ curl -sS -X PUT \
 
 Agents can override the chat model for a specific persona via `chatModelOverride` on `PUT /api/v1/agents/<agentId>`. Resolution order at chat time is agent override → workspace preference → env default. API keys come from the workspace credential first, then fall back to the matching environment variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` — a workspace selecting it without a base URL fails with a clear error instead of silently calling the default OpenAI endpoint.
 
+### Fused turn planning
+
+A fresh assistant turn normally runs four small classification calls before the answer: routine activation, turn routing and rewrite, response-language detection, and directive matching. Fused turn planning replaces those four with one chat-tier call on eligible turns, so a simple direct turn costs two model calls instead of five. If the fused call times out or returns an invalid plan, the turn falls back to the staged calls — behavior does not change, only cost and latency.
+
+The feature is off by default. Set `CHAT_TURN_PLANNING_ENABLED=true` to enable it, and optionally set `CHAT_TURN_PLANNING_WORKSPACES` to a comma-separated workspace-id allowlist to limit it to specific workspaces while rolling out. Leaving the allowlist unset applies planning to all workspaces when enabled.
+
 ### Worker dispatch
 
 Document ingestion always creates a durable PostgreSQL processing job first. Worker dispatch controls how the API wakes worker services after that durable job exists.

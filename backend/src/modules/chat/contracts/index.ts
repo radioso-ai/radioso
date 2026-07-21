@@ -18,6 +18,7 @@ export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js
 // here (not via chat/composition) so cross-module consumers stay off the app-wiring entrypoint.
 export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js";
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
+export { appendConversationSummaryStage } from "../services/conversationSummaryTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";
 export type { ChatStatusStage, ChatStreamEvent } from "./streamEvents.js";
 export type { ConversationTurnStage } from "./interruption.js";

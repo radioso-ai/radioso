@@ -5,6 +5,7 @@ import {
   type ConversationIntentSnapshot,
 } from "./conversationIntentSnapshot.js";
 import { renderSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 
 export interface GroundedAnswerSystemPromptInput {
   baseSystemPrompt: string;
@@ -12,6 +13,8 @@ export interface GroundedAnswerSystemPromptInput {
   suggestedQuestionsCount: number;
   hasRetrievedContexts: boolean;
   conversationIntentSnapshot: ConversationIntentSnapshot;
+  /** Rolling conversation summary (#866); absent/empty renders nothing. */
+  conversationSummary?: string;
   /** Behavioral steering matched for this turn (authored Directives + skill guidance). */
   steering?: SteeringRule[];
   /** Labels/descriptions for retrieval-sense alternatives to offer after the grounded answer. */
@@ -49,10 +52,12 @@ export const composeGroundedAnswerSystemPrompt = (
   const base = input.baseSystemPrompt ?? "";
   const steeringBlock = renderSteeringBlock(input.steering ?? []);
   const withSteering = steeringBlock ? joinBlocks(base, steeringBlock) : base;
+  const summarySection = renderConversationSummarySection(input.conversationSummary);
+  const withSummary = summarySection ? joinBlocks(withSteering, summarySection) : withSteering;
   const alternatives = formatOfferAlternatives(input.retrievalSenseOfferAlternatives);
   const grounded = alternatives
-    ? joinBlocks(withSteering, renderPromptTemplate("chat/retrieval-sense-offer.md", { alternatives }))
-    : withSteering;
+    ? joinBlocks(withSummary, renderPromptTemplate("chat/retrieval-sense-offer.md", { alternatives }))
+    : withSummary;
 
   const envelopeBlock = renderPromptTemplate("chat/answer-envelope.md", {});
   const withEnvelope = joinBlocks(grounded, envelopeBlock);

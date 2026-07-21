@@ -2,6 +2,7 @@ import type { MessageSource, RoutineState } from "@radioso/conversation-contract
 
 import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRole } from "../../../db/repositories/messageRepository.js";
+import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
 
 // Narrow ports: the fork only reads a source conversation + its messages and creates a
 // new conversation with copied turns. It must never learn the full repository surface.
@@ -18,6 +19,7 @@ export interface ForkMessageRepositoryPort {
     role: MessageRole;
     content: string;
     source?: MessageSource;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord>;
 }
 
@@ -25,6 +27,8 @@ export interface ForkRoutineStateRepositoryPort {
   loadActive(input: { sessionId: string }): Promise<RoutineState | null>;
   save(state: RoutineState): Promise<void>;
 }
+
+export type ForkConversationSummaryPort = Pick<ConversationSummaryStore, "load" | "save">;
 
 /** Raised when the source conversation is not owned by the caller's workspace. */
 export class ConversationForkSourceNotFoundError extends Error {
@@ -41,11 +45,25 @@ const TEST_SESSION_SOURCE_CHANNEL = "authenticated_chat";
 // wants to continue in the dashboard test chat.
 const COPYABLE_ROLES: ReadonlySet<MessageRole> = new Set<MessageRole>(["user", "assistant"]);
 
+const copyConversationSummaryMetadata = (
+  message: MessageRecord,
+): { metadata?: Record<string, unknown> } => {
+  if (message.role !== "assistant" || !message.metadata || !("conversationSummary" in message.metadata)) {
+    return {};
+  }
+  return {
+    metadata: {
+      conversationSummary: message.metadata.conversationSummary,
+    },
+  };
+};
+
 export class ConversationForkService {
   constructor(
     private readonly conversationRepository: ForkConversationRepositoryPort,
     private readonly messageRepository: ForkMessageRepositoryPort,
     private readonly routineStateRepository: ForkRoutineStateRepositoryPort,
+    private readonly conversationSummaryStore?: ForkConversationSummaryPort,
   ) {}
 
   async forkForTest(workspaceId: string, sourceConversationId: string): Promise<{ conversationId: string }> {
@@ -69,16 +87,38 @@ export class ConversationForkService {
     }
 
     // Sequential inserts preserve order: created_at is DB-generated per insert.
+    let copiedCount = 0;
+    let copiedThrough: Date | undefined;
     for (const message of messages) {
       if (!COPYABLE_ROLES.has(message.role)) {
         continue;
       }
-      await this.messageRepository.create({
+      const copied = await this.messageRepository.create({
         conversationId: fork.id,
         workspaceId,
         role: message.role,
         content: message.content,
         source: message.source,
+        ...copyConversationSummaryMetadata(message),
+      });
+      copiedCount += 1;
+      copiedThrough = copied.createdAt;
+    }
+
+    // Carry the rolling summary (#866) so a forked long conversation keeps the
+    // pre-window context the source had — without it, context older than the
+    // fork's first regeneration window is permanently lost. The watermark is
+    // re-based to the fork's own message count (system rows are not copied), so
+    // the fork's future regenerations are never blocked by the source's count.
+    const summary = await this.conversationSummaryStore?.load({ sessionId: sourceConversationId });
+    if (summary && this.conversationSummaryStore) {
+      await this.conversationSummaryStore.save({
+        sessionId: fork.id,
+        summary: {
+          ...summary,
+          coveredMessageCount: copiedCount,
+          coveredThrough: copiedThrough ?? summary.coveredThrough,
+        },
       });
     }
 

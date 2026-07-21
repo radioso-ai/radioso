@@ -21,6 +21,7 @@ import type { TurnTraceEnvelope } from "./turnTraceEnvelope.js";
 import { ChatAnswerSupport } from "./chatAnswerSupport.js";
 import type { ChatAnswerPresenter } from "./chatAnswerPresenter.js";
 import type { ChatRoutineProvider } from "./chatService.js";
+import type { ChatConversationTurnInterpreter } from "./conversationTurnInterpreter.js";
 import { RoutineChatModelGateway } from "./routines/routineChatModelGateway.js";
 import { InMemoryRoutineStore } from "./routines/inMemoryRoutineStore.js";
 import {
@@ -59,11 +60,20 @@ import {
   type DirectiveFiringState,
   type DirectiveStateStore,
 } from "../../directives/public.js";
+import type { StructuredRewriteResult } from "../../retrieval/public.js";
 
 export interface WorkbenchReplayResolvedConfig {
   composedInstructions?: string;
   modelProvider?: string;
   modelId?: string;
+  /**
+   * The frozen rolling summary (#866) this replayed turn was given, echoed so an
+   * operator can confirm the replay injected the same pre-window context a live
+   * turn would. Absent when the snapshot carried no summary. Also surfaced as a
+   * `conversation_summary` activity-trace stage; this echo lets the workbench
+   * compare live-vs-replay on the summary without walking the trace.
+   */
+  conversationSummary?: string;
   retrievedChunks: Array<{
     chunkId: string;
     documentId: string;
@@ -96,6 +106,11 @@ export interface WorkbenchReplayRunnerOptions {
   conversationEngine: ConversationEngine;
   /** Same classifier the live turn uses, so a replayed turn takes the same route. */
   turnRouter: TurnRouter;
+  /**
+   * Same interpretation path the live turn uses when wired. Unlike the legacy router,
+   * this consumes the frozen conversation summary and can return rewrite proposals.
+   */
+  turnInterpreter?: ChatConversationTurnInterpreter;
   // Routine ports — when supplied, a replayed turn attempts the agent's routines
   // before grounding, exactly as the live chat turn does. When omitted, replay runs
   // the grounding/compose path only (legacy behavior).
@@ -128,6 +143,13 @@ export interface WorkbenchReplayInput {
   history: MessageRecord[];
   userExpectedLocale?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
+  /**
+   * Rolling conversation summary (#866) frozen in the snapshot at capture time. Threaded
+   * into the prepared session so a replayed turn injects the same pre-window context a
+   * live turn would (turn interpretation + grounded/direct answer). Absent ⇒ no summary,
+   * exactly as a short conversation. Replay never regenerates or persists the summary.
+   */
+  conversationSummary?: string | null;
 }
 
 const ephemeralConversation = (
@@ -182,6 +204,9 @@ const createNoopMessageRepository = (): MessageRepositoryPort => ({
   },
   async listRecentByConversationId() {
     return [];
+  },
+  async countByConversationId() {
+    return 0;
   },
   async listWindowByConversationId() {
     return { messages: [], total: 0, nextCursor: null, hasMore: false };
@@ -256,12 +281,14 @@ export class WorkbenchReplayRunner {
   private readonly selectionStrategy: TurnSelectionStrategy;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly turnRouter: TurnRouter;
+  private readonly turnInterpreter?: ChatConversationTurnInterpreter;
   private readonly answerSupport: ChatAnswerSupport;
   private readonly options: WorkbenchReplayRunnerOptions;
 
   constructor(options: WorkbenchReplayRunnerOptions) {
     this.selectionStrategy = options.selectionStrategy ?? new DefaultTurnSelectionStrategy();
     this.turnRouter = options.turnRouter;
+    this.turnInterpreter = options.turnInterpreter;
     this.directiveRuntime = options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
     this.answerSupport = new ChatAnswerSupport();
     this.preparer = new ChatSessionPreparer(
@@ -295,6 +322,7 @@ export class WorkbenchReplayRunner {
       skipRetrieval: true,
       preResolvedAgent: agent,
       preResolvedHistory: input.history,
+      preResolvedConversationSummary: input.conversationSummary ?? undefined,
     });
     const directiveStateStore = new ReplayDirectiveStateStore(
       replayDirectiveStateFromHistory(input.history),
@@ -360,6 +388,7 @@ export class WorkbenchReplayRunner {
         composedInstructions: session.retrieval.systemPrompt,
         modelProvider: agent.chatModelOverride?.provider,
         modelId: agent.chatModelOverride?.model,
+        ...(session.conversationSummary ? { conversationSummary: session.conversationSummary } : {}),
         retrievedChunks: session.retrieval.contexts.map((ctx, index) => ({
           chunkId: ctx.chunkId,
           documentId: ctx.documentId,
@@ -388,21 +417,38 @@ export class WorkbenchReplayRunner {
     const turnInterpreter: ConversationTurnInterpreter = {
       interpret: async () => {
         const session = input.sessionRef.current;
-        const routing = await this.turnRouter.classify({
-          query: input.input.query,
-          history: session.history,
-          responseIdentity: session.retrieval.responseIdentity,
-          customInstruction: session.agent.customInstruction,
-          workspaceContext: { workspaceId: input.input.workspaceId },
-          usageContext: {
-            accountId: input.input.accountId ?? undefined,
+        const interpreted = this.turnInterpreter
+          ? await this.turnInterpreter.interpretChatTurn({
+            query: input.input.query,
+            history: session.history,
+            responseIdentity: session.retrieval.responseIdentity,
+            customInstruction: session.agent.customInstruction,
             workspaceId: input.input.workspaceId,
+            accountId: input.input.accountId ?? undefined,
             conversationId: session.conversation.id,
             messageId: session.userMessage.id,
-            surface: "assistant",
-            attemptKey: session.userMessage.id,
-          },
-        });
+            agentSkillSettings: session.agent.skillSettings,
+            conversationSummary: session.conversationSummary,
+          })
+          : await this.turnRouter.classify({
+            query: input.input.query,
+            history: session.history,
+            responseIdentity: session.retrieval.responseIdentity,
+            customInstruction: session.agent.customInstruction,
+            workspaceContext: { workspaceId: input.input.workspaceId },
+            usageContext: {
+              accountId: input.input.accountId ?? undefined,
+              workspaceId: input.input.workspaceId,
+              conversationId: session.conversation.id,
+              messageId: session.userMessage.id,
+              surface: "assistant",
+              attemptKey: session.userMessage.id,
+            },
+          });
+        const routing = {
+          route: interpreted.route,
+          framing: interpreted.framing,
+        };
         input.sessionRef.current = {
           ...session,
           turnRoute: routing.route,
@@ -415,15 +461,26 @@ export class WorkbenchReplayRunner {
             routing.framing,
           );
         }
-        return routing;
+        return {
+          route: routing.route,
+          framing: routing.framing,
+          metadata: "rewriteProposal" in interpreted && interpreted.rewriteProposal
+            ? { rewriteProposal: interpreted.rewriteProposal }
+            : undefined,
+        };
       },
     };
 
     const retrievalWork: ConversationRetrievalWorkPort = {
-      run: async () => {
+      run: async ({ interpretation }) => {
+        const rewriteProposal =
+          interpretation.metadata?.rewriteProposal && typeof interpretation.metadata.rewriteProposal === "object"
+            ? interpretation.metadata.rewriteProposal as StructuredRewriteResult
+            : undefined;
         const agenticToolFactories = input.agenticRetrievalToolFactories?.(input.sessionRef.current) ?? [];
         const preparedInput = {
           ...input.prepareInput,
+          ...(rewriteProposal ? { precomputedRewriteProposal: rewriteProposal } : {}),
           ...(agenticToolFactories.length > 0 ? { agenticToolFactories } : {}),
         };
         const directiveSteering = input.sessionRef.current.directiveSteering;
@@ -545,6 +602,7 @@ export class WorkbenchReplayRunner {
         composedInstructions: session.retrieval.systemPrompt,
         modelProvider: agent.chatModelOverride?.provider,
         modelId: agent.chatModelOverride?.model,
+        ...(session.conversationSummary ? { conversationSummary: session.conversationSummary } : {}),
         // The routine path renders its own reply and does not run turn-level grounding,
         // so there are no turn-level retrieved chunks to report.
         retrievedChunks: [],

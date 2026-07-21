@@ -3,6 +3,8 @@ Interpret the latest user turn for routing and retrieval query preparation.
 Conversation context:
 {{context_section}}
 
+{{conversation_summary_section}}
+
 Assistant answer scope reference:
 {{answer_scope_reference_section}}
 

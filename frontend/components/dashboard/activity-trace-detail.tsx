@@ -363,6 +363,14 @@ const deriveExplanation = (stage: ActivityStage): string | null => {
     }
     case 'audit_record':
       return 'Recorded this workflow in the audit log.'
+    case 'conversation_summary': {
+      if (stage.status === 'skipped')
+        return 'No rolling summary exists for this conversation yet; it is generated once the conversation outgrows the recent-message window.'
+      const chars = outputs.summaryChars as number | undefined
+      return chars
+        ? `A ${chars}-character rolling summary of earlier turns was available to this turn's prompts.`
+        : 'A rolling summary of earlier turns was available to this turn’s prompts.'
+    }
     default:
       return stage.reason ?? null
   }

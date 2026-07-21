@@ -3681,6 +3681,10 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       .slice(-limit);
   }
 
+  async countByConversationId(workspaceId: string, conversationId: string): Promise<number> {
+    return (this.items.get(conversationId) ?? []).filter((message) => message.workspaceId === workspaceId).length;
+  }
+
   async listWindowByConversationId(
     workspaceId: string,
     conversationId: string,

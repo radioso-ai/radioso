@@ -43,6 +43,7 @@ export class AssistantReplyComposer {
       framing: session.turnFraming,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       pageContextBlock: this.support.buildContextBlock(session),
+      conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
     });
   }

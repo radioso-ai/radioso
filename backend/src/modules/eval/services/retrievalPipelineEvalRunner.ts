@@ -1,5 +1,5 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { ChatGateway } from "../../chat/contracts/index.js";
+import { appendConversationSummaryStage, type ChatGateway } from "../../chat/contracts/index.js";
 import type {
   CitationEvidence,
   PresentedAnswer,
@@ -81,6 +81,9 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    // Retrieval composes no grounded prompt, so the frozen summary (#866) has no
+    // injection point here; accepted for port symmetry with `answer`.
+    conversationSummary?: string;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
     const result = await this.pipeline.run(
@@ -122,6 +125,9 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    // Frozen rolling summary (#866) injected into the grounded system prompt so the
+    // eval'd answer sees the same pre-window context a live turn would.
+    conversationSummary?: string;
     modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
@@ -164,6 +170,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 0,
       hasRetrievedContexts: pipelineResult.contexts.length > 0,
+      conversationSummary: input.conversationSummary,
       conversationIntentSnapshot: {
         recentTurns: input.history
           .filter((message) => message.role !== "system")
@@ -241,7 +248,10 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
         input.retrievalSettingsOverride,
       ),
       resolvedModel: { provider: resolvedProvider, model: resolvedModel },
-      activityTrace: pipelineResult.trace,
+      // Surface the frozen summary (#866) that was injected into the grounded prompt
+      // above, so the eval activity trace shows the same pre-window context an
+      // operator sees on a live turn. Behavior-preserving when no summary was frozen.
+      activityTrace: appendConversationSummaryStage(pipelineResult.trace, input.conversationSummary),
     };
   }
 

@@ -34,6 +34,9 @@ export interface EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    /** Frozen rolling summary (#866). Retrieval composes no grounded prompt, so this
+     * has no injection point here; accepted for port symmetry with `answer`. */
+    conversationSummary?: string;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }): Promise<{
     chunks: EvalRunRetrievedChunk[];
@@ -48,6 +51,9 @@ export interface EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    /** Frozen rolling summary (#866) injected into the grounded system prompt so the
+     * eval'd answer sees the same pre-window context a live turn would. */
+    conversationSummary?: string;
     modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }): Promise<{
@@ -66,6 +72,10 @@ export interface EvalRetrievalRunnerPort {
 export interface ReplayInputs {
   query: string;
   history: MessageRecord[];
+  /** Rolling conversation summary (#866) frozen at capture time; injected into the
+   * replay/eval turn's prompts exactly as the live turn's would be. Absent when the
+   * snapshot captured no summary. */
+  conversationSummary?: string;
 }
 
 const toMessageRecord = (
@@ -117,7 +127,11 @@ export const buildReplayInputs = (snapshot: EvalSnapshot): ReplayInputs | null =
   const history = snapshot.messages
     .slice(0, lastUserIdx)
     .map((m) => toMessageRecord(m, snapshot.workspaceId, snapshot.sourceConversationId));
-  return { query: queryMessage.content, history };
+  return {
+    query: queryMessage.content,
+    history,
+    ...(snapshot.conversationSummary ? { conversationSummary: snapshot.conversationSummary } : {}),
+  };
 };
 
 /**

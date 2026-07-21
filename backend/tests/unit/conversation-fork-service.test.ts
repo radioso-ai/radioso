@@ -53,7 +53,13 @@ describe("ConversationForkService", () => {
     findByIdAndWorkspaceId = vi.fn();
     createConversation = vi.fn();
     listByConversationId = vi.fn();
-    createMessage = vi.fn();
+    createMessage = vi.fn(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        source: input.source,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      }));
     loadActiveRoutineState = vi.fn().mockResolvedValue(null);
     saveRoutineState = vi.fn();
 
@@ -89,7 +95,12 @@ describe("ConversationForkService", () => {
       buildMessage({ role: "user", content: "another", source: "customer" }),
     ]);
     createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
-    createMessage.mockImplementation(async (input) => buildMessage({ role: input.role, content: input.content }));
+    createMessage.mockImplementation(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        createdAt: new Date(`2026-06-01T00:00:0${createMessage.mock.calls.length}.000Z`),
+      }));
 
     await service.forkForTest(workspaceId, sourceConversationId);
 
@@ -174,5 +185,98 @@ describe("ConversationForkService", () => {
     await expect(service.forkForTest(workspaceId, sourceConversationId)).rejects.toThrow();
     expect(createConversation).not.toHaveBeenCalled();
     expect(createMessage).not.toHaveBeenCalled();
+  });
+
+  it("carries the rolling summary into the fork with a re-based watermark", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    // Three copyable messages plus one system row (not copied).
+    listByConversationId.mockResolvedValue([
+      buildMessage({ role: "user", content: "q1" }),
+      buildMessage({ role: "assistant", content: "a1" }),
+      buildMessage({ role: "system", content: "internal" }),
+      buildMessage({ role: "user", content: "q2" }),
+    ]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+    createMessage.mockImplementation(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        source: input.source,
+        createdAt: new Date(`2026-06-01T00:00:0${createMessage.mock.calls.length}.000Z`),
+      }));
+    const coveredThrough = new Date("2026-06-01T00:00:00.000Z");
+    const loadSummary = vi.fn().mockResolvedValue({
+      summary: "Long conversation context.",
+      coveredMessageCount: 60,
+      coveredThrough,
+    });
+    const saveSummary = vi.fn();
+    service = new ConversationForkService(
+      { findByIdAndWorkspaceId, create: createConversation } as unknown as ForkConversationRepositoryPort,
+      { listByConversationId, create: createMessage } as unknown as ForkMessageRepositoryPort,
+      { loadActive: loadActiveRoutineState, save: saveRoutineState } as unknown as ForkRoutineStateRepositoryPort,
+      { load: loadSummary, save: saveSummary },
+    );
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(loadSummary).toHaveBeenCalledWith({ sessionId: sourceConversationId });
+    // Watermark re-based to the fork's own (copyable) message count so the
+    // source's higher count never blocks the fork's future regenerations.
+    expect(saveSummary).toHaveBeenCalledWith({
+      sessionId: forkConversationId,
+      summary: {
+        summary: "Long conversation context.",
+        coveredMessageCount: 3,
+        coveredThrough: new Date("2026-06-01T00:00:03.000Z"),
+      },
+    });
+  });
+
+  it("copies only per-turn conversation summary metadata needed for faithful eval capture", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    listByConversationId.mockResolvedValue([
+      buildMessage({ role: "user", content: "q1" }),
+      buildMessage({
+        role: "assistant",
+        content: "a1",
+        metadata: {
+          conversationSummary: "The turn saw this pre-answer summary.",
+          retrievedChunks: [{ chunkId: "source-only" }],
+        },
+      }),
+    ]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(createMessage.mock.calls[0]![0].metadata).toBeUndefined();
+    expect(createMessage.mock.calls[1]![0].metadata).toEqual({
+      conversationSummary: "The turn saw this pre-answer summary.",
+    });
+  });
+
+  it("does not write a summary when the source has none", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    listByConversationId.mockResolvedValue([]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+    const loadSummary = vi.fn().mockResolvedValue(null);
+    const saveSummary = vi.fn();
+    service = new ConversationForkService(
+      { findByIdAndWorkspaceId, create: createConversation } as unknown as ForkConversationRepositoryPort,
+      { listByConversationId, create: createMessage } as unknown as ForkMessageRepositoryPort,
+      { loadActive: loadActiveRoutineState, save: saveRoutineState } as unknown as ForkRoutineStateRepositoryPort,
+      { load: loadSummary, save: saveSummary },
+    );
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(saveSummary).not.toHaveBeenCalled();
   });
 });

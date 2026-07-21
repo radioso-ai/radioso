@@ -37,6 +37,8 @@ import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
 import type { DirectiveSteeringResult } from "../../directives/public.js";
 import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
+import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
 
@@ -71,6 +73,13 @@ export interface PreparedSession {
    * turn completion, advancing the conversation's firing state.
    */
   directiveStateStore?: DeferredDirectiveStateStore;
+  /**
+   * Rolling conversation summary text (issue #866), loaded once at prepare from the
+   * per-conversation summary store. Absent for new/short conversations. Injected
+   * alongside the recent-message window into turn interpretation and answer
+   * composition; renders nothing when absent.
+   */
+  conversationSummary?: string;
   /** Retrieval-sense alternatives to offer in the current grounded answer; labels only, never alternative chunks. */
   retrievalSenseOfferAlternatives?: ClarificationCandidate[];
   /**
@@ -118,6 +127,14 @@ export interface PrepareChatSessionOptions {
   skipRetrieval?: boolean;
   preResolvedAgent?: AgentRecord;
   preResolvedHistory?: MessageRecord[];
+  /**
+   * Rolling conversation summary (#866) supplied by a hermetic caller (workbench
+   * replay / eval) instead of loading it from the summary store. When provided it is
+   * used verbatim as {@link PreparedSession.conversationSummary}, so the summary flows
+   * to every injection point through the existing session field. Absent ⇒ the store is
+   * consulted exactly as the live turn does (unchanged behavior).
+   */
+  preResolvedConversationSummary?: string;
 }
 
 export class ChatSessionPreparer {
@@ -130,6 +147,8 @@ export class ChatSessionPreparer {
     private readonly agentService?: Pick<AgentService, "resolve">,
     private readonly bootstrapGreetingCacheRepository?: BootstrapGreetingCacheRepositoryPort,
     private readonly contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">,
+    private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">,
+    private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -151,9 +170,20 @@ export class ChatSessionPreparer {
           RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
         )
       : []);
-    const rewriteContinuityState = conversation
-      ? await this.loadRewriteContinuityState(input.workspaceId, conversation.id)
-      : undefined;
+    // Independent conversation-scoped continuity reads; batched so the summary
+    // load adds no serialized round-trip to the pre-answer critical path. A hermetic
+    // caller (replay/eval) can pre-resolve the summary, in which case the store is not
+    // consulted and the frozen capture-time summary is used verbatim.
+    const [rewriteContinuityState, conversationSummary] = await Promise.all([
+      conversation
+        ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
+        : Promise.resolve(undefined),
+      options.preResolvedConversationSummary !== undefined
+        ? Promise.resolve(options.preResolvedConversationSummary)
+        : conversation
+          ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
+          : Promise.resolve(undefined),
+    ]);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,
@@ -224,6 +254,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
+      conversationSummary,
       ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
     };
   }
@@ -704,4 +735,5 @@ export class ChatSessionPreparer {
 
     return normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
   }
+
 }

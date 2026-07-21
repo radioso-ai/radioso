@@ -446,6 +446,9 @@ Primary internals:
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
+- `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
+  per-conversation summary #866: regenerated post-turn, injected into interpretation
+  and answer prompts; state in `conversation_summaries`)
 - `backend/prompts/`
 
 Useful searches:

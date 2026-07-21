@@ -202,6 +202,27 @@ const extractStringField = (metadata: Record<string, unknown> | undefined, key: 
   return typeof value === "string" && value.length > 0 ? value : null;
 };
 
+/**
+ * The pre-answer rolling summary (#866) persisted on an assistant message.
+ * `absent` = legacy pre-feature message (no key); `present` with a null summary =
+ * the turn ran under summary-aware code and saw no summary. The distinction drives
+ * whether snapshot capture may fall back to the current summary row.
+ */
+type PerTurnConversationSummary =
+  | { kind: "present"; summary: string | null }
+  | { kind: "absent" };
+
+const readPerTurnConversationSummary = (
+  metadata: Record<string, unknown> | undefined,
+): PerTurnConversationSummary => {
+  if (!metadata || !("conversationSummary" in metadata)) {
+    return { kind: "absent" };
+  }
+  const value = metadata.conversationSummary;
+  const summary = typeof value === "string" ? value.trim() : "";
+  return { kind: "present", summary: summary.length > 0 ? summary : null };
+};
+
 const extractRetrievedChunks = (
   metadata: Record<string, unknown> | undefined,
 ): EvalSnapshotOriginalRetrievalChunk[] | null => {
@@ -323,15 +344,26 @@ export class EvalSnapshotService {
       ? (({ sessionId: _sessionId, ...rest }) => rest)(activeRoutine)
       : null;
 
-    // Freeze the current rolling summary (#866). Like the routine position above this
-    // is the summary as of capture time — the exact context the next live turn on this
-    // conversation would receive. Per-turn historical summaries are not persisted, so
-    // this is the faithful achievable parity for a replayed/eval'd turn. Best-effort:
-    // a missing store or read failure degrades to no summary (shared load helper).
-    const conversationSummary = await loadConversationSummaryText(
-      this.conversationSummaryStore,
-      conversation.id,
-    );
+    // Freeze the rolling summary (#866) that the captured turn actually saw.
+    //
+    // - Answered-turn capture: the per-turn pre-answer summary persisted on the
+    //   assistant message metadata is the faithful value — the exact text the turn's
+    //   prompts saw, recorded BEFORE that turn's own fire-and-forget regeneration could
+    //   distill the answer we are about to re-generate. The current summary row is NOT
+    //   used here (it typically already reflects the answer). A legacy pre-feature
+    //   message has no per-turn value, so we fall back to the current row only when it
+    //   provably predates the replayed turn (see resolveAnsweredTurnSummary).
+    // - Next-turn / conversation-level capture (no answered assistant turn): the current
+    //   row IS the faithful pre-window context the next live turn would receive, so it is
+    //   frozen as-is (best-effort; a missing store or read failure degrades to none).
+    const conversationSummary = assistantTurn
+      ? await this.resolveAnsweredTurnSummary({
+          conversationId: conversation.id,
+          assistantTurn,
+          replayTarget,
+          messages: sliced,
+        })
+      : await loadConversationSummaryText(this.conversationSummaryStore, conversation.id);
 
     const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
     const settingsSnapshot = freezeRetrievalSettings(
@@ -362,6 +394,63 @@ export class EvalSnapshotService {
       ...(conversationSummary ? { conversationSummary } : {}),
       capturedBy: input.capturedBy ?? null,
     });
+  }
+
+  /**
+   * The faithful pre-answer summary for an answered-turn capture. Prefers the per-turn
+   * value persisted on the assistant message; only a legacy (pre-feature) message falls
+   * back to the current row, and then only when that row provably predates the answer.
+   */
+  private async resolveAnsweredTurnSummary(input: {
+    conversationId: string;
+    assistantTurn: MessageRecord;
+    replayTarget: EvalSnapshotReplayTarget | null;
+    messages: MessageRecord[];
+  }): Promise<string | undefined> {
+    const perTurn = readPerTurnConversationSummary(input.assistantTurn.metadata);
+    if (perTurn.kind === "present") {
+      // The turn ran under summary-aware code: its persisted pre-answer value is
+      // authoritative — a string is frozen, an explicit null means the turn saw no
+      // summary (omit, with no fallback that could leak the answer).
+      return perTurn.summary ?? undefined;
+    }
+    return this.loadPreAnswerSummaryFallback(input);
+  }
+
+  /**
+   * Legacy fallback: no per-turn summary was recorded on the assistant message. Include
+   * the current summary row only if its watermark (`coveredThrough`) is strictly before
+   * the replayed user message — proof it derives solely from messages preceding the
+   * replayed turn and therefore cannot contain the answer being re-generated.
+   */
+  private async loadPreAnswerSummaryFallback(input: {
+    conversationId: string;
+    replayTarget: EvalSnapshotReplayTarget | null;
+    messages: MessageRecord[];
+  }): Promise<string | undefined> {
+    if (!this.conversationSummaryStore) {
+      return undefined;
+    }
+    const userMessageId = input.replayTarget?.userMessageId;
+    const replayedUserMessage = userMessageId
+      ? input.messages.find((message) => message.id === userMessageId)
+      : undefined;
+    if (!replayedUserMessage) {
+      return undefined;
+    }
+    try {
+      const record = await this.conversationSummaryStore.load({ sessionId: input.conversationId });
+      const summary = record?.summary.trim();
+      if (!record || !summary) {
+        return undefined;
+      }
+      return record.coveredThrough.getTime() < replayedUserMessage.createdAt.getTime()
+        ? summary
+        : undefined;
+    } catch {
+      // Best-effort, off the answer path: a read failure degrades to no summary.
+      return undefined;
+    }
   }
 
   private async loadExternalSkills(agentId: string): Promise<InternalAgentExternalSkillsConfig | null> {

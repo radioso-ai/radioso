@@ -114,10 +114,16 @@ imports from `services/`.
   adds a `conversation_summary` stage (text + char count + injection sites) to the turn's
   operator activity trace — the debug surface, distinct from logs/analytics — on live turns
   and eval/replay alike (`chatTurnLifecycle.buildTurnTraceForPresentation`,
-  `retrievalPipelineEvalRunner.answer`); absent/empty leaves the trace untouched.
-  Workbench replay and eval have summary parity: `evalSnapshotService` freezes the
-  conversation's current summary onto the snapshot (capture-time context, the same a
-  live turn would receive) and `chatSessionPreparer` accepts a
+  `retrievalPipelineEvalRunner.answer`); the stage appears on every turn — `applied`
+  with the text when a summary was available, `skipped` (`no_summary_yet`) when none
+  exists — so absence is visible rather than ambiguous.
+  Workbench replay and eval have summary parity: each answered turn persists the
+  pre-answer summary it saw in its assistant message metadata (`conversationSummary`:
+  text, or `null` when the summary-aware turn had none), and `evalSnapshotService`
+  prefers that per-turn value over the current row for an answered-turn capture (the
+  current row is regenerated after the answer, so it can distill it); the current row is
+  frozen only for next-turn captures or, for a legacy pre-feature message, when its
+  watermark provably predates the replayed turn. `chatSessionPreparer` accepts a
   `preResolvedConversationSummary` option so replay/eval thread that frozen text into
   `PreparedSession.conversationSummary` instead of loading the store. The applied summary
   is also echoed on `WorkbenchReplayResolvedConfig`/`EvalRunResolvedConfig.conversationSummary`

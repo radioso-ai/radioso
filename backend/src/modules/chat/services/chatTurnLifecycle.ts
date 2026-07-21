@@ -337,6 +337,14 @@ export const buildTurnTraceForPresentation = (
         metadata: ctx.metadata,
       })),
       composedInstructions: retrieval.systemPrompt,
+      // Pre-answer rolling summary (#866) the turn's prompts actually saw. Persisted
+      // per-turn so an eval snapshot of this answered turn can freeze THIS text rather
+      // than the post-turn regenerated row — that row is refreshed fire-and-forget
+      // after the answer persists, so it can distill the very answer an eval re-generates.
+      // Semantics: `null` = ran under summary-aware code and saw no summary; a MISSING
+      // key = legacy pre-feature message (snapshot capture then falls back to a
+      // provably-pre-answer current row).
+      conversationSummary: input.session.conversationSummary ?? null,
       // Best-effort: agent-level chat model override is what we know at
       // this layer. The workspace default chat model (when no override) is
       // not threaded through, so future snapshots from those turns will

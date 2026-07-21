@@ -58,6 +58,7 @@ const config = {
   minMessages: 10,
   refreshEveryMessages: 6,
   maxSourceMessages: 40,
+  maxInitialBackfillMessages: 160,
   maxSourceMessageChars: 500,
   maxSummaryChars: 1_500,
 };
@@ -121,6 +122,93 @@ describe("ConversationSummaryService", () => {
     // Watermark is the true total message count, not the tail length.
     expect(store.saved).toEqual({
       summary: "Fresh summary of the conversation.",
+      coveredMessageCount: messages.length,
+      coveredThrough: messages.at(-1)!.createdAt,
+    });
+  });
+
+  it("backfills a first summary from the whole conversation in bounded chronological chunks", async () => {
+    const messages = Array.from({ length: 9 }, (_, index) =>
+      message({
+        id: `m${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message ${index}`,
+        createdAt: new Date(2026, 0, 1, 0, index),
+      }),
+    );
+    const store = inMemoryStore();
+    const prompts: string[] = [];
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        prompts.push(prompt);
+        return `summary ${prompts.length}`;
+      }),
+    };
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, {
+      ...config,
+      minMessages: 3,
+      maxSourceMessages: 4,
+      refreshEveryMessages: 2,
+    });
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(generator.generate).toHaveBeenCalledTimes(3);
+    expect(prompts[0]).toContain("message 0");
+    expect(prompts[0]).toContain("message 3");
+    expect(prompts[0]).not.toContain("message 4");
+    expect(prompts[1]).toContain("summary 1");
+    expect(prompts[1]).toContain("message 4");
+    expect(prompts[1]).toContain("message 7");
+    expect(prompts[2]).toContain("summary 2");
+    expect(prompts[2]).toContain("message 8");
+    expect(store.saved).toEqual({
+      summary: "summary 3",
+      coveredMessageCount: messages.length,
+      coveredThrough: messages.at(-1)!.createdAt,
+    });
+  });
+
+  it("caps first-summary backfill to a bounded recent history window", async () => {
+    const messages = Array.from({ length: 13 }, (_, index) =>
+      message({
+        id: `m${index}`,
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message ${index}`,
+        createdAt: new Date(2026, 0, 1, 0, index),
+      }),
+    );
+    const store = inMemoryStore();
+    const prompts: string[] = [];
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        prompts.push(prompt);
+        return `summary ${prompts.length}`;
+      }),
+    };
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, undefined, {
+      ...config,
+      minMessages: 3,
+      maxSourceMessages: 4,
+      maxInitialBackfillMessages: 8,
+      refreshEveryMessages: 2,
+    });
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(generator.generate).toHaveBeenCalledTimes(2);
+    expect(prompts[0]).not.toContain("message 4");
+    expect(prompts[0]).toContain("message 5");
+    expect(prompts[0]).toContain("message 8");
+    expect(prompts[1]).toContain("summary 1");
+    expect(prompts[1]).toContain("message 9");
+    expect(prompts[1]).toContain("message 12");
+    expect(vi.mocked(generator.generate).mock.calls.map(([call]) => call.usageContext.attemptKey)).toEqual([
+      "conversation_summary:conv_1:13:backfill:0",
+      "conversation_summary:conv_1:13:backfill:1",
+    ]);
+    expect(store.saved).toEqual({
+      summary: "summary 2",
       coveredMessageCount: messages.length,
       coveredThrough: messages.at(-1)!.createdAt,
     });

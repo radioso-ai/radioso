@@ -81,6 +81,10 @@ export const CHAT_BEHAVIOR = {
     // Newest messages fed into a regeneration; older turns are represented by the
     // previous summary that seeds the call.
     maxSourceMessages: 40,
+    // First summary for pre-existing long conversations is allowed to backfill more
+    // than one source window, but still has a hard cap so one post-deploy turn cannot
+    // fan out into unbounded sequential model calls.
+    maxInitialBackfillMessages: 160,
     // Per-message excerpt clamp for the regeneration input (keeps a long single
     // message from dominating the prompt budget).
     maxSourceMessageChars: 500,

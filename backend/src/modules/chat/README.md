@@ -99,8 +99,10 @@ imports from `services/`.
   (the approval-resume path shares the same `loadConversationSummaryText` helper, so the
   "no summary" policy cannot drift); `chatTurnLifecycle.ts` regenerates it fire-and-forget
   after the turn is persisted (never awaited, self-heals on the next turn), debounced by
-  `refreshEveryMessages` so it does not pay an LLM call every turn. Rows FK-cascade with
-  their conversation (content, unlike the structural `routine_states`/`directive_states`),
+  `refreshEveryMessages` so it does not pay an LLM call every turn. The first summary for
+  a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
+  so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
+  with their conversation (content, unlike the structural `routine_states`/`directive_states`),
   and `forkForTest` carries the summary into a forked test session. Injected via
   `services/summary/conversationSummarySection.ts` into three prompts — turn
   interpretation (`conversationTurnInterpreter.ts`), grounded answer

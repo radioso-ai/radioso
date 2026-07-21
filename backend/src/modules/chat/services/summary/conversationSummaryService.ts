@@ -31,6 +31,7 @@ export interface ConversationSummaryConfig {
   minMessages: number;
   refreshEveryMessages: number;
   maxSourceMessages: number;
+  maxInitialBackfillMessages: number;
   maxSourceMessageChars: number;
   maxSummaryChars: number;
 }
@@ -72,8 +73,10 @@ const clampSummary = (value: string, maxLength: number): string =>
  * Regenerates (never appends) the rolling per-conversation summary (#866) off the
  * critical path after a turn completes. Below the message threshold the raw window
  * already carries the whole conversation, so it skips without an LLM call. Above it,
- * one LLM call rewrites the previous summary plus a bounded tail of recent messages
- * into a fresh, hard-clamped summary and upserts it under the watermark guard.
+   * one LLM call rewrites the previous summary plus a bounded tail of recent messages
+   * into a fresh, hard-clamped summary and upserts it under the watermark guard. The
+   * first summary for a legacy long conversation may use a capped multi-call backfill
+   * over recent history, never the unbounded full thread.
  *
  * All observability here is content-free: it records durations, counts, and reasons,
  * never the summary text, message content, or prompt.
@@ -92,6 +95,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       minMessages: CHAT_BEHAVIOR.conversationSummary.minMessages,
       refreshEveryMessages: CHAT_BEHAVIOR.conversationSummary.refreshEveryMessages,
       maxSourceMessages: CHAT_BEHAVIOR.conversationSummary.maxSourceMessages,
+      maxInitialBackfillMessages: CHAT_BEHAVIOR.conversationSummary.maxInitialBackfillMessages,
       maxSourceMessageChars: CHAT_BEHAVIOR.conversationSummary.maxSourceMessageChars,
       maxSummaryChars: CHAT_BEHAVIOR.conversationSummary.maxSummaryChars,
       ...config,
@@ -145,6 +149,10 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       // already proves the conversation outgrew the window.
       const conversationMessages = tail.filter((message) => message.role !== "system");
       const tailTruncated = tail.length >= this.config.maxSourceMessages;
+      if (!previous && tailTruncated) {
+        await this.refreshFirstSummaryFromInitialBackfill(input, messageCount, startedAt);
+        return;
+      }
       if (conversationMessages.length === 0 || (!tailTruncated && conversationMessages.length < this.config.minMessages)) {
         this.logger?.debug(
           {
@@ -161,18 +169,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       const prompt = this.buildPrompt(previous, conversationMessages);
       const generated = await this.generator.generate({
         prompt,
-        usageContext: {
-          workspaceId: input.workspaceId,
-          accountId: input.accountId ?? null,
-          conversationId: input.conversationId,
-          messageId: null,
-          surface: "assistant",
-          operation: "conversation_summary",
-          // The covered message count makes the usage-ledger idempotency key unique
-          // per regeneration (a fixed key would dedupe every call after the first)
-          // while keeping true retries of the same coverage idempotent.
-          attemptKey: `conversation_summary:${input.conversationId}:${messageCount}`,
-        },
+        usageContext: this.usageContext(input, messageCount),
       });
       const summary = clampSummary(generated, this.config.maxSummaryChars);
       if (!summary) {
@@ -220,6 +217,107 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         "Failed to regenerate conversation summary",
       );
     }
+  }
+
+  private async refreshFirstSummaryFromInitialBackfill(
+    input: { workspaceId: string; conversationId: string; accountId?: string },
+    messageCount: number,
+    startedAt: number,
+  ): Promise<void> {
+    const allMessages = await this.messages.listRecentByConversationId(
+      input.workspaceId,
+      input.conversationId,
+      Math.min(messageCount, this.config.maxInitialBackfillMessages),
+    );
+    const conversationMessages = allMessages.filter((message) => message.role !== "system");
+    if (conversationMessages.length < this.config.minMessages) {
+      this.logger?.debug(
+        {
+          event: "conversation_summary_skipped",
+          reason: "below_conversational_threshold",
+          conversationId: input.conversationId,
+          conversationalMessageCount: conversationMessages.length,
+        },
+        "Skipped conversation summary regeneration",
+      );
+      return;
+    }
+
+    let running: ConversationSummaryRecord | null = null;
+    for (let index = 0; index < conversationMessages.length; index += this.config.maxSourceMessages) {
+      const chunk = conversationMessages.slice(index, index + this.config.maxSourceMessages);
+      const generated = await this.generator.generate({
+        prompt: this.buildPrompt(running, chunk),
+        usageContext: this.usageContext(
+          input,
+          messageCount,
+          `backfill:${Math.floor(index / this.config.maxSourceMessages)}`,
+        ),
+      });
+      const summary = clampSummary(generated, this.config.maxSummaryChars);
+      if (!summary) {
+        this.logger?.debug(
+          {
+            event: "conversation_summary_skipped",
+            reason: "empty_generation",
+            conversationId: input.conversationId,
+          },
+          "Skipped conversation summary regeneration",
+        );
+        return;
+      }
+      running = {
+        summary,
+        // The first summary may intentionally use only a bounded recent backfill
+        // window. Advance the watermark to the current count so a legacy long
+        // conversation does not repeat the capped backfill on every turn.
+        coveredMessageCount: messageCount,
+        coveredThrough: chunk.at(-1)?.createdAt ?? allMessages.at(-1)?.createdAt ?? new Date(),
+      };
+    }
+
+    if (!running) {
+      return;
+    }
+    const record: ConversationSummaryRecord = {
+      ...running,
+      coveredMessageCount: messageCount,
+      coveredThrough: allMessages.at(-1)?.createdAt ?? running.coveredThrough,
+    };
+    await this.store.save({ sessionId: input.conversationId, summary: record });
+
+    this.logger?.debug(
+      {
+        event: "conversation_summary_regenerated",
+        conversationId: input.conversationId,
+        durationMs: Date.now() - startedAt,
+        sourceMessageCount: conversationMessages.length,
+        summaryChars: record.summary.length,
+      },
+      "Regenerated conversation summary",
+    );
+  }
+
+  private usageContext(
+    input: { workspaceId: string; conversationId: string; accountId?: string },
+    coveredMessageCount: number,
+    phase?: string,
+  ): ModelCallUsageContext {
+    return {
+      workspaceId: input.workspaceId,
+      accountId: input.accountId ?? null,
+      conversationId: input.conversationId,
+      messageId: null,
+      surface: "assistant",
+      operation: "conversation_summary",
+      // The covered message count makes the usage-ledger idempotency key unique
+      // per regeneration (a fixed key would dedupe every call after the first)
+      // while keeping true retries of the same coverage idempotent. Backfill chunks
+      // add a stable phase because one regeneration can require multiple model calls.
+      attemptKey: phase
+        ? `conversation_summary:${input.conversationId}:${coveredMessageCount}:${phase}`
+        : `conversation_summary:${input.conversationId}:${coveredMessageCount}`,
+    };
   }
 
   private buildPrompt(

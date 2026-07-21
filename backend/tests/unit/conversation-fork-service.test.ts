@@ -53,7 +53,13 @@ describe("ConversationForkService", () => {
     findByIdAndWorkspaceId = vi.fn();
     createConversation = vi.fn();
     listByConversationId = vi.fn();
-    createMessage = vi.fn();
+    createMessage = vi.fn(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        source: input.source,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      }));
     loadActiveRoutineState = vi.fn().mockResolvedValue(null);
     saveRoutineState = vi.fn();
 
@@ -89,7 +95,12 @@ describe("ConversationForkService", () => {
       buildMessage({ role: "user", content: "another", source: "customer" }),
     ]);
     createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
-    createMessage.mockImplementation(async (input) => buildMessage({ role: input.role, content: input.content }));
+    createMessage.mockImplementation(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        createdAt: new Date(`2026-06-01T00:00:0${createMessage.mock.calls.length}.000Z`),
+      }));
 
     await service.forkForTest(workspaceId, sourceConversationId);
 
@@ -188,6 +199,13 @@ describe("ConversationForkService", () => {
       buildMessage({ role: "user", content: "q2" }),
     ]);
     createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+    createMessage.mockImplementation(async (input) =>
+      buildMessage({
+        role: input.role,
+        content: input.content,
+        source: input.source,
+        createdAt: new Date(`2026-06-01T00:00:0${createMessage.mock.calls.length}.000Z`),
+      }));
     const coveredThrough = new Date("2026-06-01T00:00:00.000Z");
     const loadSummary = vi.fn().mockResolvedValue({
       summary: "Long conversation context.",
@@ -209,7 +227,36 @@ describe("ConversationForkService", () => {
     // source's higher count never blocks the fork's future regenerations.
     expect(saveSummary).toHaveBeenCalledWith({
       sessionId: forkConversationId,
-      summary: { summary: "Long conversation context.", coveredMessageCount: 3, coveredThrough },
+      summary: {
+        summary: "Long conversation context.",
+        coveredMessageCount: 3,
+        coveredThrough: new Date("2026-06-01T00:00:03.000Z"),
+      },
+    });
+  });
+
+  it("copies only per-turn conversation summary metadata needed for faithful eval capture", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    listByConversationId.mockResolvedValue([
+      buildMessage({ role: "user", content: "q1" }),
+      buildMessage({
+        role: "assistant",
+        content: "a1",
+        metadata: {
+          conversationSummary: "The turn saw this pre-answer summary.",
+          retrievedChunks: [{ chunkId: "source-only" }],
+        },
+      }),
+    ]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(createMessage.mock.calls[0]![0].metadata).toBeUndefined();
+    expect(createMessage.mock.calls[1]![0].metadata).toEqual({
+      conversationSummary: "The turn saw this pre-answer summary.",
     });
   });
 

@@ -1680,6 +1680,7 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     conversationEngine,
     turnRouter,
+    turnInterpreter,
     // Routine ports — let a replayed turn attempt routines before grounding, exactly
     // as the live chat turn does, so routine-driven behavior is faithfully evaluated.
     routineProvider,

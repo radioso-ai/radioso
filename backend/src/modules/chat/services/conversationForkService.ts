@@ -19,6 +19,7 @@ export interface ForkMessageRepositoryPort {
     role: MessageRole;
     content: string;
     source?: MessageSource;
+    metadata?: Record<string, unknown>;
   }): Promise<MessageRecord>;
 }
 
@@ -43,6 +44,19 @@ const TEST_SESSION_SOURCE_CHANNEL = "authenticated_chat";
 // System messages are runtime scaffolding, not part of the human-visible thread an operator
 // wants to continue in the dashboard test chat.
 const COPYABLE_ROLES: ReadonlySet<MessageRole> = new Set<MessageRole>(["user", "assistant"]);
+
+const copyConversationSummaryMetadata = (
+  message: MessageRecord,
+): { metadata?: Record<string, unknown> } => {
+  if (message.role !== "assistant" || !message.metadata || !("conversationSummary" in message.metadata)) {
+    return {};
+  }
+  return {
+    metadata: {
+      conversationSummary: message.metadata.conversationSummary,
+    },
+  };
+};
 
 export class ConversationForkService {
   constructor(
@@ -74,18 +88,21 @@ export class ConversationForkService {
 
     // Sequential inserts preserve order: created_at is DB-generated per insert.
     let copiedCount = 0;
+    let copiedThrough: Date | undefined;
     for (const message of messages) {
       if (!COPYABLE_ROLES.has(message.role)) {
         continue;
       }
-      await this.messageRepository.create({
+      const copied = await this.messageRepository.create({
         conversationId: fork.id,
         workspaceId,
         role: message.role,
         content: message.content,
         source: message.source,
+        ...copyConversationSummaryMetadata(message),
       });
       copiedCount += 1;
+      copiedThrough = copied.createdAt;
     }
 
     // Carry the rolling summary (#866) so a forked long conversation keeps the
@@ -97,7 +114,11 @@ export class ConversationForkService {
     if (summary && this.conversationSummaryStore) {
       await this.conversationSummaryStore.save({
         sessionId: fork.id,
-        summary: { ...summary, coveredMessageCount: copiedCount },
+        summary: {
+          ...summary,
+          coveredMessageCount: copiedCount,
+          coveredThrough: copiedThrough ?? summary.coveredThrough,
+        },
       });
     }
 

@@ -14,6 +14,7 @@ import type { ChatRoutineProvider } from "../../src/modules/chat/services/chatSe
 import type { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
+import type { ChatConversationTurnInterpreter } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
@@ -330,6 +331,54 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.resolvedConfig.conversationSummary).toBe(
       "The buyer already returned the item last week.",
     );
+  });
+
+  it("passes the frozen conversation summary into replay turn interpretation", async () => {
+    const interpretChatTurn = vi.fn(async () => ({
+      route: "retrieval" as const,
+      framing: { isIdentityQuestion: false },
+      rewriteProposal: {
+        rewrittenQuery: "refund timeline after returned item",
+        semanticQuery: "refund timeline after returned item",
+        lexicalQuery: "refund returned item timeline",
+        constraints: [],
+        responseLanguagePolicy: "match_user_question" as const,
+        turnKind: "referential_followup" as const,
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }));
+    const turnInterpreter: ChatConversationTurnInterpreter = { interpretChatTurn };
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter("direct"),
+      turnInterpreter,
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      accountId: "acct-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long will it take?",
+      history: [],
+      conversationSummary: "The buyer already returned the item last week.",
+    });
+
+    expect(interpretChatTurn).toHaveBeenCalledWith(expect.objectContaining({
+      accountId: "acct-1",
+      conversationSummary: "The buyer already returned the item last week.",
+      query: "How long will it take?",
+    }));
+    expect(capturedRequests[0]?.precomputedRewriteProposal).toMatchObject({
+      semanticQuery: "refund timeline after returned item",
+      lexicalQuery: "refund returned item timeline",
+    });
   });
 
   it("leaves the prepared session summary absent when the replay input carries none", async () => {

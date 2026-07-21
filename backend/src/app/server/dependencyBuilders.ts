@@ -1723,6 +1723,7 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnRouter,
     turnInterpreter,
+    responseLanguageDetector,
     // Routine ports — let a replayed turn attempt routines before grounding, exactly
     // as the live chat turn does, so routine-driven behavior is faithfully evaluated.
     routineProvider,

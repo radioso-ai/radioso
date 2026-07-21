@@ -152,13 +152,16 @@ imports from `services/`.
   `CHAT_TURN_PLANNING_ENABLED` / `CHAT_TURN_PLANNING_WORKSPACES`, resolved in
   composition (`dependencyBuilders.ts`), which wires the same coordinator and
   gate into `ChatService` and `workbenchReplayRunner.ts` so replay executes the
-  identical schedule. Policy stays with the owning modules: the routine
+  identical schedule, including the staged response-language detector on bypass
+  or planner failure. Policy stays with the owning modules: the routine
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim
   the turn, answer scope/retrieval rewrite guidance/rolling summary resolve through
   the same interpretation-context seam as the staged path, and the directive matcher resolves precomputed
-  classifications through `matchAndResolveWithClassifications`. Tests:
+  classifications through `matchAndResolveWithClassifications`.
+  `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
+  gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
   `tests/unit/turn-plan-service.test.ts`,
   `tests/unit/turn-plan-coordinator.test.ts`,
   `tests/unit/chat-service-turn-planning.test.ts`.

@@ -231,6 +231,21 @@ describe("TurnPlanCoordinator.plan", () => {
       expect.objectContaining({ labels: { outcome: "bypass", reason: "prompt_tokens_over_budget" } }),
     );
   });
+
+  it("records a host-known bypass without starting planning", () => {
+    const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
+    const service = serviceReturning(plan());
+    const coordinator = new TurnPlanCoordinator(service, undefined, metrics);
+
+    coordinator.recordBypass("pending_clarification");
+
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      "chat_turn_planning_outcomes_total",
+      expect.objectContaining({ labels: { outcome: "bypass", reason: "pending_clarification" } }),
+    );
+    expect(metrics.observeHistogram).not.toHaveBeenCalled();
+    expect(service.plan).not.toHaveBeenCalled();
+  });
 });
 
 describe("createTurnPlanHandle", () => {
@@ -246,10 +261,12 @@ describe("createTurnPlanHandle", () => {
 
   it("bypass pins a bypassed outcome before any computation", async () => {
     const compute = vi.fn();
-    const handle = createTurnPlanHandle(compute as never);
+    const onPinnedBypass = vi.fn();
+    const handle = createTurnPlanHandle(compute as never, onPinnedBypass);
     handle.bypass("routine_claim");
     await expect(handle.resolve(null)).resolves.toEqual({ status: "bypassed", reason: "routine_claim" });
     expect(compute).not.toHaveBeenCalled();
+    expect(onPinnedBypass).toHaveBeenCalledWith("routine_claim");
   });
 
   it("bypass after computation started is a no-op", async () => {
@@ -410,7 +427,10 @@ describe("completed-routine planner bypass adapters", () => {
 });
 
 describe("startTurnPlan", () => {
-  const coordinator = { plan: vi.fn(async (): Promise<TurnPlanOutcome> => ({ status: "planned", plan: plan(), prepared: null })) };
+  const coordinator = {
+    plan: vi.fn(async (): Promise<TurnPlanOutcome> => ({ status: "planned", plan: plan(), prepared: null })),
+    recordBypass: vi.fn(),
+  };
   const basePlanInputs = {
     query: "q",
     history: [],
@@ -426,20 +446,24 @@ describe("startTurnPlan", () => {
   };
 
   it("returns undefined when the gate is off or the workspace is not allowlisted", () => {
+    const planInputs = vi.fn(() => basePlanInputs);
     expect(startTurnPlan({
       coordinator: coordinator as never,
       gate: createTurnPlanningGate({ enabled: false }),
       workspaceId: "w1",
       bypass: {},
-      plan: () => basePlanInputs,
+      plan: planInputs,
     })).toBeUndefined();
     expect(startTurnPlan({
       coordinator: coordinator as never,
       gate: createTurnPlanningGate({ enabled: true, workspaceAllowlist: ["other"] }),
       workspaceId: "w1",
       bypass: {},
-      plan: () => basePlanInputs,
+      plan: planInputs,
     })).toBeUndefined();
+    expect(coordinator.recordBypass).toHaveBeenNthCalledWith(1, "gate_disabled");
+    expect(coordinator.recordBypass).toHaveBeenNthCalledWith(2, "workspace_not_allowlisted");
+    expect(planInputs).not.toHaveBeenCalled();
   });
 
   it("returns undefined on any pre-engine bypass signal", () => {
@@ -458,6 +482,9 @@ describe("startTurnPlan", () => {
       })).toBeUndefined();
     }
     expect(coordinator.plan).not.toHaveBeenCalled();
+    expect(coordinator.recordBypass).toHaveBeenCalledWith("active_routine");
+    expect(coordinator.recordBypass).toHaveBeenCalledWith("pending_clarification");
+    expect(coordinator.recordBypass).toHaveBeenCalledWith("suspended_routine");
   });
 
   it("creates a lazy handle that plans with the first resolver's preparation", async () => {

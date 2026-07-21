@@ -532,13 +532,16 @@ describe("WorkbenchReplayRunner", () => {
 
   it("keeps the staged replay schedule when the planning gate is off", async () => {
     const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const detect = vi.fn(async () => ({ responseLanguage: "Estonian" }));
     const plannerComplete = vi.fn(async () => ({ text: "unused" }));
+    const capturedRequests: RetrievalPipelineRequest[] = [];
     const runner = new WorkbenchReplayRunner({
-      retrievalTurn: retrievalTurn([]),
+      retrievalTurn: retrievalTurn(capturedRequests),
       auditService: createAuditService(),
       turnSkills: [answerSkill()],
       conversationEngine: new DefaultConversationEngine(),
       turnRouter: { classify },
+      responseLanguageDetector: { detect },
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
@@ -555,6 +558,40 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(plannerComplete).not.toHaveBeenCalled();
     expect(classify).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(capturedRequests[0]?.responseLanguage).toBe("Estonian");
+  });
+
+  it("restores staged response-language detection when the planner output is malformed", async () => {
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const detect = vi.fn(async () => ({ responseLanguage: "Spanish" }));
+    const plannerComplete = vi.fn(async () => ({ text: "<<<not-json>>>" }));
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      responseLanguageDetector: { detect },
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+      turnPlanningGate: createTurnPlanningGate({ enabled: true }),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "¿Cuánto tardan los reembolsos?",
+      history: [],
+    });
+
+    expect(plannerComplete).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(capturedRequests[0]?.responseLanguage).toBe("Spanish");
   });
 
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {

@@ -69,6 +69,7 @@ import { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { AgentSkillTurnRuntime, AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
 import type { TurnRouter } from "./turnRouter.js";
 import type { GroundingSummary } from "./groundingAssertions.js";
+import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
   commitDirectiveFirings,
   emptyDirectiveFiringState,
@@ -124,6 +125,8 @@ export interface WorkbenchReplayRunnerOptions {
    * this consumes the frozen conversation summary and can return rewrite proposals.
    */
   turnInterpreter?: ChatConversationTurnInterpreter;
+  /** Same staged response-language detector live chat uses. */
+  responseLanguageDetector?: ResponseLanguageDetector;
   // Routine ports — when supplied, a replayed turn attempts the agent's routines
   // before grounding, exactly as the live chat turn does. When omitted, replay runs
   // the grounding/compose path only (legacy behavior).
@@ -496,16 +499,35 @@ export class WorkbenchReplayRunner {
     }
   }
 
-  /** Use the fused plan's language on the fast path and preserve replay's staged value otherwise. */
+  /** Use the fused plan's language on the fast path and the live staged detector otherwise. */
   private replayResponseLanguagePromise(session: PreparedSession): Promise<string | undefined> {
+    const staged = async (): Promise<string | undefined> => {
+      if (!this.options.responseLanguageDetector) {
+        return session.responseLanguage;
+      }
+      const detection = await this.options.responseLanguageDetector.detect({
+        query: session.effectiveQuery ?? session.userMessage.content,
+        history: session.history,
+        workspaceContext: { workspaceId: session.agent.workspaceId },
+        usageContext: {
+          workspaceId: session.agent.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "response_language_detection",
+          attemptKey: `${session.userMessage.id}:response_language_detection`,
+        },
+      });
+      return detection.responseLanguage;
+    };
     const handle = session.turnPlan;
     if (!handle) {
-      return Promise.resolve(session.responseLanguage);
+      return staged();
     }
     return lazyPromise(() =>
       planAwareResponseLanguage({
         handle: () => handle.resolve(null),
-        fallback: async () => session.responseLanguage,
+        fallback: staged,
       }),
     );
   }

@@ -39,12 +39,14 @@
 - [X] T023 [P] Update architecture and usage docs in `docs/architecture/assistant-turn-spine.md` and `docs/architecture/usage-event-taxonomy.md`
 - [X] T024 [P] Add verification instructions in `specs/102-fused-turn-planning/quickstart.md`
 - [X] T025 Run focused tests and builds from `specs/102-fused-turn-planning/quickstart.md`
-- [X] T026 Run `pnpm run ci:local -- origin/main` from the repository root (the
-  all-buckets gate hit two unrelated nondeterministic integration 404s and one
-  Playwright layout miss; each failed case passed immediately in isolation, and
-  every remaining bucket passed when run directly)
+- [X] T026 Run `pnpm run ci:local -- origin/main` from the repository root (one
+  all-buckets run passed; the post-review rerun passed every backend bucket and
+  stopped on the unrelated nondeterministic `usage-trends` Playwright layout
+  assertion, which passed immediately in isolation)
 - [X] T027 Run live evals with planning disabled and enabled and review conversation quality
-- [ ] T028 Complete senior-engineer and engineering-manager review gates
+  (disabled: 9/12; enabled repeat: 10/12, fixing demo activation with the same two
+  pre-existing misses; one prior enabled sample had a transient zero-chunk retrieval miss)
+- [X] T028 Complete senior-engineer and engineering-manager review gates
 
 ## Dependencies
 

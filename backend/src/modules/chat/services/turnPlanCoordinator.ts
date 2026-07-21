@@ -34,6 +34,9 @@ import {
 export type TurnPlanBypassReason =
   | "gate_disabled"
   | "workspace_not_allowlisted"
+  | "active_routine"
+  | "pending_clarification"
+  | "suspended_routine"
   | "routine_claim"
   | "routine_candidates_over_bound"
   | "directive_candidates_over_bound"
@@ -72,6 +75,7 @@ export interface ChatTurnPlanHandle {
 
 export const createTurnPlanHandle = (
   compute: (routinePreparation: RankableRoutineCandidates | null) => Promise<TurnPlanOutcome>,
+  onPinnedBypass?: (reason: TurnPlanBypassReason) => void,
 ): ChatTurnPlanHandle => {
   let memo: Promise<TurnPlanOutcome> | undefined;
   return {
@@ -80,7 +84,10 @@ export const createTurnPlanHandle = (
       return memo;
     },
     bypass(reason) {
-      memo ??= Promise.resolve({ status: "bypassed", reason });
+      if (!memo) {
+        onPinnedBypass?.(reason);
+        memo = Promise.resolve({ status: "bypassed", reason });
+      }
     },
   };
 };
@@ -113,6 +120,7 @@ export const lazyPromise = <T>(compute: () => Promise<T>): Promise<T> => {
 
 export interface TurnPlanningGate {
   isEnabledForWorkspace(workspaceId: string): boolean;
+  bypassReasonForWorkspace(workspaceId: string): "gate_disabled" | "workspace_not_allowlisted" | undefined;
 }
 
 /**
@@ -127,11 +135,14 @@ export const createTurnPlanningGate = (config: {
     ? new Set(config.workspaceAllowlist)
     : null;
   return {
-    isEnabledForWorkspace(workspaceId: string): boolean {
+    bypassReasonForWorkspace(workspaceId) {
       if (!config.enabled) {
-        return false;
+        return "gate_disabled";
       }
-      return allowlist ? allowlist.has(workspaceId) : true;
+      return allowlist && !allowlist.has(workspaceId) ? "workspace_not_allowlisted" : undefined;
+    },
+    isEnabledForWorkspace(workspaceId: string): boolean {
+      return this.bypassReasonForWorkspace(workspaceId) === undefined;
     },
   };
 };
@@ -182,6 +193,11 @@ export class TurnPlanCoordinator {
     const outcome = await this.computePlan(input);
     this.recordOutcome(input, outcome, Date.now() - startedAt);
     return outcome;
+  }
+
+  /** Records a host-known bypass without forcing lazy plan-input assembly. */
+  recordBypass(reason: TurnPlanBypassReason): void {
+    this.recordOutcome(undefined, { status: "bypassed", reason }, 0);
   }
 
   private async computePlan(input: TurnPlanInputs): Promise<TurnPlanOutcome> {
@@ -235,7 +251,7 @@ export class TurnPlanCoordinator {
     return { status: "planned", plan, prepared };
   }
 
-  private recordOutcome(input: TurnPlanInputs, outcome: TurnPlanOutcome, latencyMs: number): void {
+  private recordOutcome(input: TurnPlanInputs | undefined, outcome: TurnPlanOutcome, latencyMs: number): void {
     const metricOutcome = outcome.status === "planned"
       ? "fastpath"
       : outcome.status === "bypassed"
@@ -258,7 +274,7 @@ export class TurnPlanCoordinator {
     }
 
     const routineCandidateCount =
-      input.routinePreparation && input.routinePreparation.kind === "rank"
+      input?.routinePreparation && input.routinePreparation.kind === "rank"
         ? input.routinePreparation.candidates.length
         : 0;
     this.logger?.info(
@@ -267,7 +283,7 @@ export class TurnPlanCoordinator {
         reason: outcome.status === "planned" ? undefined : outcome.reason,
         latencyMs,
         routineCandidateCount,
-        directiveCandidateCount: input.directiveCandidates.length,
+        directiveCandidateCount: input?.directiveCandidates.length ?? 0,
       },
       "chat.turn_planning.outcome",
     );
@@ -303,14 +319,25 @@ export const startTurnPlan = (input: {
   if (!coordinator || !gate) {
     return undefined;
   }
-  if (!gate.isEnabledForWorkspace(input.workspaceId)) {
+  const gateBypassReason = gate.bypassReasonForWorkspace(input.workspaceId);
+  if (gateBypassReason) {
+    coordinator.recordBypass(gateBypassReason);
     return undefined;
   }
-  if (input.bypass.activeRoutine || input.bypass.pendingClarification || input.bypass.suspendedRoutine) {
+  const stateBypassReason = input.bypass.activeRoutine
+    ? "active_routine"
+    : input.bypass.pendingClarification
+      ? "pending_clarification"
+      : input.bypass.suspendedRoutine
+        ? "suspended_routine"
+        : undefined;
+  if (stateBypassReason) {
+    coordinator.recordBypass(stateBypassReason);
     return undefined;
   }
-  return createTurnPlanHandle((routinePreparation) =>
-    coordinator.plan({ ...input.plan(), routinePreparation }),
+  return createTurnPlanHandle(
+    (routinePreparation) => coordinator.plan({ ...input.plan(), routinePreparation }),
+    (reason) => coordinator.recordBypass(reason),
   );
 };
 

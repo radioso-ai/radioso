@@ -1,4 +1,5 @@
 import type { ConversationTurnRoute, DirectiveClassification } from "@radioso/conversation-contract";
+import type { RankedRoutineMatch, RoutineCandidateSummary } from "@radioso/conversation-defaults";
 import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
@@ -30,22 +31,12 @@ export interface TurnPlan {
   /** Structured retrieval rewrite, present only for retrieval-routed turns. */
   rewriteProposal?: StructuredRewriteResult;
   responseLanguage?: string;
-  routineRankings: Array<{
-    routineId: string;
-    confidence: number;
-    /** Slot values extracted during activation, matching the legacy ranked call. */
-    variables?: Record<string, unknown>;
-  }>;
+  routineRankings: RankedRoutineMatch[];
   directiveClassifications: Array<{ name: string; matched: boolean; confidence: number }>;
 }
 
 /** Planner-consumable routine summary (no activation policy). */
-export interface TurnPlanRoutineCandidate {
-  routineId: string;
-  title: string;
-  triggerSummary: string;
-  priority: number;
-}
+export type TurnPlanRoutineCandidate = RoutineCandidateSummary;
 
 /** A contextual directive candidate: the name and the condition to evaluate. */
 export interface TurnPlanDirectiveCandidate {

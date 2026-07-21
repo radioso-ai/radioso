@@ -349,6 +349,15 @@ export interface Conversations {
   workspace_id: string;
 }
 
+export interface ConversationSummaries {
+  covered_message_count: number;
+  covered_through: Timestamp;
+  expires_at: Timestamp;
+  session_id: string;
+  summary: string;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface DirectiveStates {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp | null;
@@ -960,6 +969,7 @@ export interface DB {
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
   conversation_ownership: ConversationOwnership;
+  conversation_summaries: ConversationSummaries;
   conversations: Conversations;
   directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;

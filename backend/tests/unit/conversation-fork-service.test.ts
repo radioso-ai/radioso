@@ -175,4 +175,61 @@ describe("ConversationForkService", () => {
     expect(createConversation).not.toHaveBeenCalled();
     expect(createMessage).not.toHaveBeenCalled();
   });
+
+  it("carries the rolling summary into the fork with a re-based watermark", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    // Three copyable messages plus one system row (not copied).
+    listByConversationId.mockResolvedValue([
+      buildMessage({ role: "user", content: "q1" }),
+      buildMessage({ role: "assistant", content: "a1" }),
+      buildMessage({ role: "system", content: "internal" }),
+      buildMessage({ role: "user", content: "q2" }),
+    ]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+    const coveredThrough = new Date("2026-06-01T00:00:00.000Z");
+    const loadSummary = vi.fn().mockResolvedValue({
+      summary: "Long conversation context.",
+      coveredMessageCount: 60,
+      coveredThrough,
+    });
+    const saveSummary = vi.fn();
+    service = new ConversationForkService(
+      { findByIdAndWorkspaceId, create: createConversation } as unknown as ForkConversationRepositoryPort,
+      { listByConversationId, create: createMessage } as unknown as ForkMessageRepositoryPort,
+      { loadActive: loadActiveRoutineState, save: saveRoutineState } as unknown as ForkRoutineStateRepositoryPort,
+      { load: loadSummary, save: saveSummary },
+    );
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(loadSummary).toHaveBeenCalledWith({ sessionId: sourceConversationId });
+    // Watermark re-based to the fork's own (copyable) message count so the
+    // source's higher count never blocks the fork's future regenerations.
+    expect(saveSummary).toHaveBeenCalledWith({
+      sessionId: forkConversationId,
+      summary: { summary: "Long conversation context.", coveredMessageCount: 3, coveredThrough },
+    });
+  });
+
+  it("does not write a summary when the source has none", async () => {
+    findByIdAndWorkspaceId.mockResolvedValue(
+      buildConversation({ id: sourceConversationId, workspaceId, agentId: sourceAgentId }),
+    );
+    listByConversationId.mockResolvedValue([]);
+    createConversation.mockResolvedValue(buildConversation({ id: forkConversationId, workspaceId, agentId: sourceAgentId }));
+    const loadSummary = vi.fn().mockResolvedValue(null);
+    const saveSummary = vi.fn();
+    service = new ConversationForkService(
+      { findByIdAndWorkspaceId, create: createConversation } as unknown as ForkConversationRepositoryPort,
+      { listByConversationId, create: createMessage } as unknown as ForkMessageRepositoryPort,
+      { loadActive: loadActiveRoutineState, save: saveRoutineState } as unknown as ForkRoutineStateRepositoryPort,
+      { load: loadSummary, save: saveSummary },
+    );
+
+    await service.forkForTest(workspaceId, sourceConversationId);
+
+    expect(saveSummary).not.toHaveBeenCalled();
+  });
 });

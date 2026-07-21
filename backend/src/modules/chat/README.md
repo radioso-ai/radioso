@@ -90,6 +90,26 @@ imports from `services/`.
   operator's own testing never pollutes Activity, Quality, or Needs-Attention.
   The same NULL-safe exclusion lives in `historyItemsRepository`,
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
+- Conversation summary: `services/summary/conversationSummaryService.ts` maintains
+  a bounded, regenerated-per-update rolling summary per conversation (#866). State
+  lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,
+  PK `session_id` = conversation id, watermark-guarded upsert, TTL) behind the narrow
+  `contracts/conversationSummary.ts` `ConversationSummaryStore` port.
+  `chatSessionPreparer.ts` loads it at prepare into `PreparedSession.conversationSummary`
+  (the approval-resume path shares the same `loadConversationSummaryText` helper, so the
+  "no summary" policy cannot drift); `chatTurnLifecycle.ts` regenerates it fire-and-forget
+  after the turn is persisted (never awaited, self-heals on the next turn), debounced by
+  `refreshEveryMessages` so it does not pay an LLM call every turn. Rows FK-cascade with
+  their conversation (content, unlike the structural `routine_states`/`directive_states`),
+  and `forkForTest` carries the summary into a forked test session. Injected via
+  `services/summary/conversationSummarySection.ts` into three prompts — turn
+  interpretation (`conversationTurnInterpreter.ts`), grounded answer
+  (`groundedAnswerPromptComposer.ts`), and the direct answer
+  (`assistantReplyPromptBuilder.ts`); an absent/empty summary renders nothing.
+  Bounds and TTL are composition-owned in `CHAT_BEHAVIOR.conversationSummary`
+  (`shared/domain/behaviorConfig.ts`); the prompt is `prompts/chat/conversation-summary.md`.
+  Observability is content-free (`conversation_summary_regenerated | _skipped | _generation_failed`);
+  the summary text never enters logs, traces, or analytics.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
 - Fork a conversation into a test session: `services/conversationForkService.ts`

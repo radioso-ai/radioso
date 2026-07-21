@@ -65,6 +65,37 @@ export const CHAT_BEHAVIOR = {
     maxLiterals: 6,
     maxLiteralLength: 120,
   },
+  // Rolling per-conversation summary (#866). Regenerated off the critical path
+  // after a turn completes and injected alongside the fixed recent-message window
+  // so multi-turn conversations retain context beyond that window. All bounds are
+  // composition-owned; none encode product vocabulary.
+  conversationSummary: {
+    // Below this total message count the raw window already carries the whole
+    // conversation, so regeneration is skipped (no row, no LLM call).
+    minMessages: 10,
+    // Once a summary exists, regenerate only after this many new messages — the
+    // uncovered tail rides in the recent-message window anyway. Must stay below
+    // rewriteConversationContextMaxMessages or a coverage gap opens between the
+    // summary watermark and the window.
+    refreshEveryMessages: 6,
+    // Newest messages fed into a regeneration; older turns are represented by the
+    // previous summary that seeds the call.
+    maxSourceMessages: 40,
+    // Per-message excerpt clamp for the regeneration input (keeps a long single
+    // message from dominating the prompt budget).
+    maxSourceMessageChars: 500,
+    // Hard clamp applied to the generated summary before it is persisted or
+    // injected, so the summary can never grow the prompt without bound.
+    maxSummaryChars: 1_500,
+    // Generous TTL, refreshed on every write; an abandoned conversation's summary
+    // is eventually reclaimed and a revived conversation starts fresh.
+    ttlDays: 30,
+    // Cheap rewrite-tier reasoning effort; this is a background summarization pass,
+    // never on the answer latency budget. Ignored by non-reasoning providers.
+    reasoningEffort: "minimal",
+    // Output ceiling covering minimal hidden reasoning plus the bounded summary.
+    maxOutputTokens: 1_024,
+  },
 } as const;
 
 export const RETRIEVAL_BEHAVIOR = {

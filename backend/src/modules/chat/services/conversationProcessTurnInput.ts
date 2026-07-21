@@ -131,6 +131,7 @@ const directiveSteerInputForSession = (
     surface: "chat",
     operation: "directive_match",
     attemptKey: `${session.userMessage.id}:directive_match`,
+    ...session.usageAttribution,
   },
 });
 

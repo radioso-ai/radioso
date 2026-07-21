@@ -5,7 +5,10 @@ import type {
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type {
+  ModelCallUsageAttribution,
+  ModelCallUsageContext,
+} from "../../../shared/domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import {
@@ -29,6 +32,7 @@ export interface ConversationTurnInterpreterInput {
   conversationId?: string;
   messageId?: string;
   agentSkillSettings?: Record<string, unknown>;
+  usageAttribution?: ModelCallUsageAttribution;
   /** Rolling conversation summary (#866) injected as background context; absent renders nothing. */
   conversationSummary?: string;
 }
@@ -165,6 +169,7 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
           surface: "assistant",
           operation: "turn_interpretation",
           attemptKey: input.messageId ?? "turn_interpretation",
+          ...input.usageAttribution,
         },
       });
       const routing = normalizeTurnRouting(result);

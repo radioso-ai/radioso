@@ -41,6 +41,7 @@ import { loadConversationSummaryText, type ConversationSummaryStore } from "../c
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
+import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -99,6 +100,8 @@ export interface PreparedSession {
    * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
    */
   turnTrace: ConversationTrace;
+  /** Optional caller-owned usage attribution shared by every model call in this turn. */
+  usageAttribution?: ModelCallUsageAttribution;
 }
 
 export interface PrepareChatSessionInput {
@@ -121,6 +124,10 @@ export interface PrepareChatSessionInput {
   verifiedIdentity?: Record<string, unknown> | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
+  /** Ephemeral eval-only override; never persisted to workspace settings. */
+  retrievalSettingsOverride?: RetrievalPipelineRequest["retrievalSettingsOverride"];
+  /** Ephemeral caller attribution for model and retrieval usage emitted by this turn. */
+  usageAttribution?: ModelCallUsageAttribution;
 }
 
 export interface PrepareChatSessionOptions {
@@ -131,7 +138,7 @@ export interface PrepareChatSessionOptions {
    * Rolling conversation summary (#866) supplied by a hermetic caller (workbench
    * replay / eval) instead of loading it from the summary store. When provided it is
    * used verbatim as {@link PreparedSession.conversationSummary}, so the summary flows
-   * to every injection point through the existing session field. Absent ⇒ the store is
+   * to every injection point through the existing session field. Absent => the store is
    * consulted exactly as the live turn does (unchanged behavior).
    */
   preResolvedConversationSummary?: string;
@@ -170,10 +177,6 @@ export class ChatSessionPreparer {
           RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
         )
       : []);
-    // Independent conversation-scoped continuity reads; batched so the summary
-    // load adds no serialized round-trip to the pre-answer critical path. A hermetic
-    // caller (replay/eval) can pre-resolve the summary, in which case the store is not
-    // consulted and the frozen capture-time summary is used verbatim.
     const [rewriteContinuityState, conversationSummary] = await Promise.all([
       conversation
         ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
@@ -238,6 +241,8 @@ export class ChatSessionPreparer {
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
+          conversationSummary,
+          usageAttribution: input.usageAttribution,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
           ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext, hostVariables),
@@ -255,6 +260,7 @@ export class ChatSessionPreparer {
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
+      usageAttribution: input.usageAttribution,
       ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
     };
   }
@@ -485,12 +491,14 @@ export class ChatSessionPreparer {
       documentScope: input.documentScope,
       precomputedRewriteProposal: input.precomputedRewriteProposal,
       sourceScope: agent.sourceScope,
+      retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageContext: {
         workspaceId: input.workspaceId,
         conversationId: conversation?.id ?? null,
         messageId: userMessage?.id ?? null,
         surface: "assistant",
         attemptKey: userMessage?.id ?? conversation?.id ?? "chat_turn",
+        ...input.usageAttribution,
       },
     };
   }
@@ -735,5 +743,4 @@ export class ChatSessionPreparer {
 
     return normalizeRewriteContinuityState(metadata?.rewriteContinuityState);
   }
-
 }

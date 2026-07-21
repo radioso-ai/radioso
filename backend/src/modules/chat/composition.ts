@@ -13,6 +13,7 @@ export {
   ChatService,
   type ChatRoutineProvider,
 } from "./services/chatService.js";
+export { ChatTurnAssemblyFactory } from "./services/chatTurnAssembly.js";
 export type { PreparedSession } from "./services/chatSessionPreparer.js";
 export type {
   AgentSkillTurnRuntime,

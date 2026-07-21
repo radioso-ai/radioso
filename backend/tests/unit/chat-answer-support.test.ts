@@ -24,6 +24,17 @@ const session = (): PreparedSession =>
   }) as unknown as PreparedSession;
 
 describe("ChatAnswerSupport", () => {
+  it("uses per-turn usage attribution for eval-driven answer calls", () => {
+    const attributedSession = session();
+    attributedSession.usageAttribution = { surface: "eval", requestId: "run-123" };
+
+    expect(new ChatAnswerSupport().buildChatUsageContext(attributedSession, undefined, "answer")).toMatchObject({
+      surface: "eval",
+      requestId: "run-123",
+      operation: "answer",
+    });
+  });
+
   it("uses the shared per-turn response language instead of rewrite language", () => {
     const result = new ChatAnswerSupport().buildAnswerInstructionBlock(session());
 

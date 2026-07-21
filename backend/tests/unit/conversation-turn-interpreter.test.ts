@@ -113,6 +113,29 @@ describe("ConversationTurnInterpreter", () => {
     });
   });
 
+  it("uses per-turn usage attribution for eval-driven interpretation", async () => {
+    let usageContext: unknown;
+    const interpreter = new LlmConversationTurnInterpreter({
+      async interpret(input) {
+        usageContext = input.usageContext;
+        return { route: "direct" };
+      },
+    });
+
+    await interpreter.interpretChatTurn({
+      query: "Who are you?",
+      history: [],
+      workspaceId: "workspace-1",
+      usageAttribution: { surface: "eval", requestId: "run-123" },
+    });
+
+    expect(usageContext).toMatchObject({
+      surface: "eval",
+      requestId: "run-123",
+      operation: "turn_interpretation",
+    });
+  });
+
   it("renders both routing and rewrite instructions into the merged prompt", () => {
     const prompt = buildTurnInterpretationPrompt({
       context: "USER: Which retreats are next? [authoritative for grounding]",

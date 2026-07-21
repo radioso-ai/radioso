@@ -72,6 +72,12 @@ export interface EvalSnapshot {
   // seed a mid-routine replay.
   originalRoutineState: EvalRunRoutineStartState | null;
   originalRetrievalResult: EvalSnapshotOriginalRetrievalChunk[] | null;
+  // The rolling conversation summary (#866) frozen at capture time, so a workbench
+  // replay or eval run injects the same pre-window context a live turn would receive.
+  // This is the summary as of snapshot time — per-turn historical summaries are not
+  // persisted, so it is the faithful achievable parity. Absent for short/new
+  // conversations and for snapshots captured before the field existed.
+  conversationSummary?: string;
   capturedAt: string;
   capturedBy: string | null;
 }
@@ -198,6 +204,10 @@ export interface EvalRunResolvedConfig {
   modelProvider?: string;
   modelId?: string;
   composedInstructions?: string;
+  /** The frozen rolling summary (#866) injected into this run's grounded prompt,
+   * echoed so an operator can confirm which pre-window context the run saw.
+   * full_assistant only — retrieval_only runs inject no summary. */
+  conversationSummary?: string;
 }
 
 export interface EvalRun {

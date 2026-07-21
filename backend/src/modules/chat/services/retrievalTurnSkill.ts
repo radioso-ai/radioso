@@ -138,6 +138,7 @@ export class RetrievalAnswerComposer {
         session.retrieval.responseSettings?.suggestedQuestionsCount ?? DEFAULT_SUGGESTED_QUESTIONS_COUNT,
       hasRetrievedContexts: session.retrieval.contexts.length > 0,
       conversationIntentSnapshot,
+      conversationSummary: session.conversationSummary,
       steering: session.directiveSteering?.rules ?? [],
       retrievalSenseOfferAlternatives: session.retrievalSenseOfferAlternatives,
     }).systemPrompt;

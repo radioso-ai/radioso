@@ -16,6 +16,7 @@ import {
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouterGatewayResult, type TurnRouting } from "./turnRouter.js";
 
 export interface ConversationTurnInterpreterInput {
@@ -28,6 +29,8 @@ export interface ConversationTurnInterpreterInput {
   conversationId?: string;
   messageId?: string;
   agentSkillSettings?: Record<string, unknown>;
+  /** Rolling conversation summary (#866) injected as background context; absent renders nothing. */
+  conversationSummary?: string;
 }
 
 export interface ConversationTurnInterpretationResult extends TurnRouting {
@@ -44,6 +47,7 @@ export interface TurnInterpretationGatewayInput {
   answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
   usageContext: ModelCallUsageContext;
 }
 
@@ -69,10 +73,12 @@ export const buildTurnInterpretationPrompt = (input: {
   answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
   query: string;
 }): string =>
   renderPromptTemplate("chat/turn-interpretation.md", {
     context_section: input.context || "No prior context",
+    conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
     answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
@@ -109,6 +115,7 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
         answerScopeReference: input.answerScopeReference,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+        conversationSummary: input.conversationSummary,
         query: input.query,
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
@@ -149,6 +156,7 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
         answerScopeReference,
         semanticRewriteInstructions: settings?.semanticRewriteInstructions,
         lexicalRewriteInstructions: settings?.lexicalRewriteInstructions,
+        conversationSummary: input.conversationSummary,
         usageContext: {
           accountId: input.accountId,
           workspaceId: input.workspaceId,

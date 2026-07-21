@@ -25,8 +25,9 @@ credentials available:
 
 ```bash
 cd backend
-CHAT_TURN_PLANNING_ENABLED=false pnpm run evals
-CHAT_TURN_PLANNING_ENABLED=true pnpm run evals
+CHAT_TURN_PLANNING_WORKSPACES=00000000-0000-0000-0000-000000000000 \
+  pnpm run evals
+env -u CHAT_TURN_PLANNING_WORKSPACES pnpm run evals
 ```
 
 Compare routing, routine activation, directives, response language, grounding,

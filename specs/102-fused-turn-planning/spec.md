@@ -66,8 +66,8 @@ directives, language, grounding, and answer quality.
   policy MUST remain in `RoutineRegistry`.
 - **FR-008**: Directive scope, lifecycle eligibility, classification resolution,
   and steering MUST remain in the directives-owned runtime.
-- **FR-009**: Planning MUST be controlled by an environment kill switch and an
-  optional workspace allowlist.
+- **FR-009**: Planning MUST be enabled by default and MAY be restricted by an
+  optional environment-configured workspace allowlist.
 - **FR-010**: Planning MUST bypass active/claimed routine flows and candidate or
   estimated-prompt sizes above configured bounds.
 - **FR-011**: Planner calls MUST propagate cancellation and have a bounded

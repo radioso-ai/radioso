@@ -1000,7 +1000,6 @@ export const buildChatServices = (input: {
       input.usageEventRecorder,
     );
   const turnPlanningGate = createTurnPlanningGate({
-    enabled: input.env.CHAT_TURN_PLANNING_ENABLED,
     workspaceAllowlist: parseWorkspaceAllowlist(input.env.CHAT_TURN_PLANNING_WORKSPACES),
   });
   const turnPlanCoordinator = new TurnPlanCoordinator(

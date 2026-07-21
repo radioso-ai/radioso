@@ -37,10 +37,11 @@ implementations makes fallback behavior explicit and testable.
 **Alternatives considered**: Partially accepting planner fields could combine
 inconsistent routing, language, routine, and directive judgments.
 
-## Decision: Environment rollout and offline replay
+## Decision: Workspace-scoped rollout and offline replay
 
-**Rationale**: A kill switch and workspace allowlist support a low-risk rollout.
-Workbench replay exercises the real composition without doubling live model work.
+**Rationale**: Planning is the default path, while an optional workspace allowlist
+supports a scoped rollout. Workbench replay exercises the real composition without
+doubling live model work.
 
 **Alternatives considered**: Live shadow planning adds cost and can complicate
 usage attribution. Database/UI rollout is unnecessary for the first release.

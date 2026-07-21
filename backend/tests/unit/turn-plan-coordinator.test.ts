@@ -57,16 +57,12 @@ const handleFor = (outcome: TurnPlanOutcome | undefined) => () =>
   outcome === undefined ? undefined : Promise.resolve(outcome);
 
 describe("createTurnPlanningGate", () => {
-  it("is disabled when the switch is off", () => {
-    expect(createTurnPlanningGate({ enabled: false }).isEnabledForWorkspace("w1")).toBe(false);
+  it("allows all workspaces with no allowlist", () => {
+    expect(createTurnPlanningGate({}).isEnabledForWorkspace("w1")).toBe(true);
   });
 
-  it("allows all workspaces when enabled with no allowlist", () => {
-    expect(createTurnPlanningGate({ enabled: true }).isEnabledForWorkspace("w1")).toBe(true);
-  });
-
-  it("restricts to the allowlist when enabled with one", () => {
-    const gate = createTurnPlanningGate({ enabled: true, workspaceAllowlist: ["w1"] });
+  it("restricts to the allowlist when one is configured", () => {
+    const gate = createTurnPlanningGate({ workspaceAllowlist: ["w1"] });
     expect(gate.isEnabledForWorkspace("w1")).toBe(true);
     expect(gate.isEnabledForWorkspace("w2")).toBe(false);
   });
@@ -445,29 +441,21 @@ describe("startTurnPlan", () => {
     },
   };
 
-  it("returns undefined when the gate is off or the workspace is not allowlisted", () => {
+  it("returns undefined when the workspace is not allowlisted", () => {
     const planInputs = vi.fn(() => basePlanInputs);
     expect(startTurnPlan({
       coordinator: coordinator as never,
-      gate: createTurnPlanningGate({ enabled: false }),
+      gate: createTurnPlanningGate({ workspaceAllowlist: ["other"] }),
       workspaceId: "w1",
       bypass: {},
       plan: planInputs,
     })).toBeUndefined();
-    expect(startTurnPlan({
-      coordinator: coordinator as never,
-      gate: createTurnPlanningGate({ enabled: true, workspaceAllowlist: ["other"] }),
-      workspaceId: "w1",
-      bypass: {},
-      plan: planInputs,
-    })).toBeUndefined();
-    expect(coordinator.recordBypass).toHaveBeenNthCalledWith(1, "gate_disabled");
-    expect(coordinator.recordBypass).toHaveBeenNthCalledWith(2, "workspace_not_allowlisted");
+    expect(coordinator.recordBypass).toHaveBeenCalledWith("workspace_not_allowlisted");
     expect(planInputs).not.toHaveBeenCalled();
   });
 
   it("returns undefined on any pre-engine bypass signal", () => {
-    const gate = createTurnPlanningGate({ enabled: true });
+    const gate = createTurnPlanningGate({});
     for (const bypass of [
       { activeRoutine: true },
       { pendingClarification: true },
@@ -490,7 +478,7 @@ describe("startTurnPlan", () => {
   it("creates a lazy handle that plans with the first resolver's preparation", async () => {
     const handle = startTurnPlan({
       coordinator: coordinator as never,
-      gate: createTurnPlanningGate({ enabled: true, workspaceAllowlist: ["w1"] }),
+      gate: createTurnPlanningGate({ workspaceAllowlist: ["w1"] }),
       workspaceId: "w1",
       bypass: {},
       plan: () => basePlanInputs,
@@ -543,7 +531,7 @@ describe("planAwareTurnInterpreter", () => {
 
   it("falls back when bypassed", async () => {
     const interpreter = planAwareTurnInterpreter({
-      handle: handleFor({ status: "bypassed", reason: "gate_disabled" }),
+      handle: handleFor({ status: "bypassed", reason: "workspace_not_allowlisted" }),
       fallback,
     });
     await interpreter.interpret({ turn });

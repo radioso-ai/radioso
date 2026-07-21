@@ -140,12 +140,9 @@ const envSchema = z.object({
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
-  // Fused turn planning: replace the four staged fresh-turn classification calls
-  // with one chat-tier call on eligible turns. Kill switch defaults off; the
-  // optional comma-separated allowlist restricts it to named workspaces (unset =
-  // all workspaces when the switch is on). Split at the consumer, like the MCP
-  // tool allowlists.
-  CHAT_TURN_PLANNING_ENABLED: booleanish(false),
+  // Fused turn planning replaces the four staged fresh-turn classification calls
+  // with one chat-tier call on eligible turns. The optional comma-separated
+  // allowlist restricts it to named workspaces; unset means all workspaces.
   CHAT_TURN_PLANNING_WORKSPACES: emptyStringToUndefined(z.string().min(1)),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   GOOGLE_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),

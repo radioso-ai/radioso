@@ -18,7 +18,7 @@ engine and public contracts remain unchanged.
 - **Tests**: Vitest and the live conversation-quality eval harness
 - **Persistence**: none; turn plans are ephemeral per-turn state
 - **Prompt asset**: `backend/prompts/chat/turn-planning.md`
-- **Rollout**: `CHAT_TURN_PLANNING_ENABLED` plus optional workspace allowlist
+- **Rollout**: enabled by default, with an optional `CHAT_TURN_PLANNING_WORKSPACES` allowlist
 
 ## Module Knowledge and Boundaries
 
@@ -89,7 +89,7 @@ for behavioral quality, not only aggregate pass/fail.
 ## Risks and Mitigations
 
 - **Behavior drift from a larger classifier prompt**: strict validation,
-  owning-module policy, live A/B evals, and kill switch.
+  owning-module policy, live A/B evals, and workspace-scoped rollout.
 - **Split-brain decisions**: one memoized outcome and all-or-nothing fallback.
 - **Completed-routine interception**: correction and semantic-reentry adapters
   pin the plan as bypassed before their claimed reply or resumed routine can

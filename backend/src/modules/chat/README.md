@@ -148,10 +148,10 @@ imports from `services/`.
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,
   response-language, and directive-match calls; a bypassed or invalid plan
-  sends every consumer back to its staged call, all-or-nothing. Gated by
-  `CHAT_TURN_PLANNING_ENABLED` / `CHAT_TURN_PLANNING_WORKSPACES`, resolved in
-  composition (`dependencyBuilders.ts`), which wires the same coordinator and
-  gate into `ChatService` and `workbenchReplayRunner.ts`; their shared
+  sends every consumer back to its staged call, all-or-nothing. Enabled by
+  default and optionally restricted by `CHAT_TURN_PLANNING_WORKSPACES`, resolved
+  in composition (`dependencyBuilders.ts`), which wires the same coordinator
+  and gate into `ChatService` and `workbenchReplayRunner.ts`; their shared
   `chatTurnAssembly.ts` consumes the plan so replay executes the identical
   schedule, including the staged response-language detector on bypass or planner
   failure. Policy stays with the owning modules: the routine

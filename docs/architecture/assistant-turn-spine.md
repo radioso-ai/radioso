@@ -111,9 +111,9 @@ the same route-scoped runtime. Policy stays with the owning modules; the planner
 only sees candidate summaries.
 
 The key point is that fallback is the existing staged path, all-or-nothing per
-turn. A turn bypasses planning entirely (no planner call) when the env gate is
-off (`CHAT_TURN_PLANNING_ENABLED`, plus the optional
-`CHAT_TURN_PLANNING_WORKSPACES` allowlist), when a routine is active or parked,
+turn. Fused planning is enabled by default. A turn bypasses planning entirely
+(no planner call) when its workspace is excluded by the optional
+`CHAT_TURN_PLANNING_WORKSPACES` allowlist, when a routine is active or parked,
 when a pending clarification or decision resolves this turn, when a routine
 explicitly claims the turn (including completed-routine correction or semantic
 reentry), or when candidate counts or the estimated prompt

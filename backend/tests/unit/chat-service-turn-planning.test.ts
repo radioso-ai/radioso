@@ -248,7 +248,6 @@ const noPendingClarification = () => ({
 
 const buildService = (input: {
   planner?: TurnPlanGatewayFactory;
-  gateEnabled?: boolean;
   workspaceAllowlist?: string[];
   pipeline: Record<string, unknown>;
   chatGateway: ChatServiceOptions["chatGateway"];
@@ -298,7 +297,6 @@ const buildService = (input: {
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
           turnPlanningGate: createTurnPlanningGate({
-            enabled: input.gateEnabled ?? true,
             workspaceAllowlist: input.workspaceAllowlist,
           }),
         }
@@ -534,7 +532,7 @@ describe("chat service fused turn planning", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService(planner, { timeoutMs: 10 }),
       ),
-      turnPlanningGate: createTurnPlanningGate({ enabled: true }),
+      turnPlanningGate: createTurnPlanningGate({}),
     });
 
     const response = await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
@@ -545,12 +543,12 @@ describe("chat service fused turn planning", () => {
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
   });
 
-  it("never invokes the planner when the gate is off", async () => {
+  it("never invokes the planner when the workspace is not allowlisted", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({ completions: [planJson({ route: "retrieval" })] });
     const service = buildService({
       planner,
-      gateEnabled: false,
+      workspaceAllowlist: ["other-workspace"],
       pipeline: retrievalPipeline([]),
       chatGateway: pipelineChatGateway("Grounded [[1]]."),
       staged,

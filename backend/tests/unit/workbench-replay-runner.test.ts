@@ -556,7 +556,7 @@ describe("WorkbenchReplayRunner", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
-      turnPlanningGate: createTurnPlanningGate({ enabled: true }),
+      turnPlanningGate: createTurnPlanningGate({}),
       turnPlanInterpretationContextSettings: {
         retrievalDefaultsProvider: { getDefaults: () => ({} as never) },
         skillSettingsResolver: {
@@ -595,7 +595,7 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
   });
 
-  it("keeps the staged replay schedule when the planning gate is off", async () => {
+  it("keeps the staged replay schedule when the workspace is not allowlisted", async () => {
     const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
     const detect = vi.fn(async () => ({ responseLanguage: "Estonian" }));
     const plannerComplete = vi.fn(async () => ({ text: "unused" }));
@@ -610,7 +610,7 @@ describe("WorkbenchReplayRunner", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
-      turnPlanningGate: createTurnPlanningGate({ enabled: false }),
+      turnPlanningGate: createTurnPlanningGate({ workspaceAllowlist: ["other-workspace"] }),
     });
 
     await runner.run({
@@ -642,7 +642,7 @@ describe("WorkbenchReplayRunner", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
-      turnPlanningGate: createTurnPlanningGate({ enabled: true }),
+      turnPlanningGate: createTurnPlanningGate({}),
     });
 
     await runner.run({

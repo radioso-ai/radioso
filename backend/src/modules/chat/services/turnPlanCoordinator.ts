@@ -32,7 +32,6 @@ import {
 
 /** Why a turn never ran the fused planner (recorded for observability). */
 export type TurnPlanBypassReason =
-  | "gate_disabled"
   | "workspace_not_allowlisted"
   | "active_routine"
   | "pending_clarification"
@@ -120,15 +119,14 @@ export const lazyPromise = <T>(compute: () => Promise<T>): Promise<T> => {
 
 export interface TurnPlanningGate {
   isEnabledForWorkspace(workspaceId: string): boolean;
-  bypassReasonForWorkspace(workspaceId: string): "gate_disabled" | "workspace_not_allowlisted" | undefined;
+  bypassReasonForWorkspace(workspaceId: string): "workspace_not_allowlisted" | undefined;
 }
 
 /**
- * Composition-resolved gate: kill switch plus optional workspace allowlist. An
- * empty/absent allowlist means "all workspaces" when the switch is on.
+ * Composition-resolved gate for the optional workspace allowlist. An empty or
+ * absent allowlist enables fused planning for every workspace.
  */
 export const createTurnPlanningGate = (config: {
-  enabled: boolean;
   workspaceAllowlist?: readonly string[];
 }): TurnPlanningGate => {
   const allowlist = config.workspaceAllowlist && config.workspaceAllowlist.length > 0
@@ -136,9 +134,6 @@ export const createTurnPlanningGate = (config: {
     : null;
   return {
     bypassReasonForWorkspace(workspaceId) {
-      if (!config.enabled) {
-        return "gate_disabled";
-      }
       return allowlist && !allowlist.has(workspaceId) ? "workspace_not_allowlisted" : undefined;
     },
     isEnabledForWorkspace(workspaceId: string): boolean {

@@ -13,6 +13,8 @@ export type {
 } from "../services/publicChatActionAdvertiser.js";
 export type { ChatGateway } from "./chatGateway.js";
 export type { AssistantTurnOutcome } from "../services/assistantTurnOutcomeTypes.js";
+export type { WorkbenchReplayResult } from "../services/workbenchReplayRunner.js";
+export type { PublicConversationEventBus } from "../services/publicConversationEventBus.js";
 export { ASSISTANT_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 // The contact.send action type is a chat contract shared with the notify capability; exposed
 // here (not via chat/composition) so cross-module consumers stay off the app-wiring entrypoint.

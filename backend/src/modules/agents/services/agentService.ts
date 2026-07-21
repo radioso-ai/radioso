@@ -2,7 +2,7 @@ import type { AgentRepositoryPort } from "../../../db/repositories/agentReposito
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
-import type { AgentSkillRepositoryPort } from "../../agentSkills/repository.js";
+import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";

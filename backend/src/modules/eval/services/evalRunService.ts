@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { materializeAgentFromConfig } from "../../agents/public.js";
-import type { WorkbenchReplayResult } from "../../chat/composition.js";
+import type { WorkbenchReplayResult } from "../../chat/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {

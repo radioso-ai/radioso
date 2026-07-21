@@ -8,3 +8,5 @@ export interface ModelCallUsageContext {
   operation: string;
   attemptKey: string;
 }
+
+export type ModelCallUsageAttribution = Pick<ModelCallUsageContext, "surface" | "requestId">;

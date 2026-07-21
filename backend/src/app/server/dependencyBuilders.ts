@@ -65,6 +65,7 @@ import {
   ChatHistoryService,
   ConversationForkService,
   ChatService,
+  ChatTurnAssemblyFactory,
   InMemoryConversationTurnRegistry,
   LoggingConversationTurnInterruptionObserver,
   type ChatRoutineProvider,
@@ -1554,6 +1555,32 @@ export const buildChatServices = (input: {
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
   });
+  const turnClarificationPolicy = {
+    floor: 0,
+    margin: 0.15,
+    askMargin: retrievalSenseAnswerFirstAskMargin,
+    maxOptions: retrievalSensePolicy.maxOptions,
+  };
+  const clarificationDecisionRecorder = input.metricsRegistry
+    ? (decision: Parameters<typeof recordClarificationDecision>[1]) =>
+        recordClarificationDecision(input.metricsRegistry!, decision)
+    : undefined;
+  const chatTurnAssemblyFactory = new ChatTurnAssemblyFactory({
+    chatGateway,
+    chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
+    conversationEngine,
+    turnSkills: chatTurnRuntime.turnSkills,
+    selectionStrategy: input.composition.selectionStrategy,
+    directiveRuntime: directiveSteering,
+    turnRouter,
+    turnInterpreter,
+    routineProvider,
+    retrievalSenseDetector,
+    retrievalSenseClarificationPolicy: turnClarificationPolicy,
+    recordClarificationDecision: clarificationDecisionRecorder,
+    agentSkillTurnSkillProvider,
+    logger: input.logger,
+  });
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
@@ -1586,6 +1613,7 @@ export const buildChatServices = (input: {
     // environment. ChatService keeps an engine-less path for tests, but
     // composition always wires it.
     conversationEngine,
+    turnAssemblyFactory: chatTurnAssemblyFactory,
     // Turn-emitted action intents land here, persisted to the outbox and
     // dispatched out of band by `actionDispatchWorker` in the worker process.
     actionOutbox,
@@ -1627,17 +1655,9 @@ export const buildChatServices = (input: {
     ),
     clarificationStore,
     retrievalSenseDetector,
-    retrievalSenseClarificationPolicy: {
-      floor: 0,
-      margin: 0.15,
-      askMargin: retrievalSenseAnswerFirstAskMargin,
-      maxOptions: retrievalSensePolicy.maxOptions,
-    },
+    retrievalSenseClarificationPolicy: turnClarificationPolicy,
     agentSkillTurnSkillProvider,
-    ...(input.metricsRegistry
-      ? { recordClarificationDecision: (decision: Parameters<typeof recordClarificationDecision>[1]) =>
-          recordClarificationDecision(input.metricsRegistry!, decision) }
-      : {}),
+    recordClarificationDecision: clarificationDecisionRecorder,
   });
   const chatBootstrapService = new ChatBootstrapService(
     input.workspaceRepository,
@@ -1679,6 +1699,7 @@ export const buildChatServices = (input: {
     directiveSteering,
     selectionStrategy: input.composition.selectionStrategy,
     conversationEngine,
+    turnAssemblyFactory: chatTurnAssemblyFactory,
     turnRouter,
     turnInterpreter,
     // Routine ports — let a replayed turn attempt routines before grounding, exactly
@@ -1686,7 +1707,26 @@ export const buildChatServices = (input: {
     routineProvider,
     chatGateway,
     chatAnswerPresenter: chatTurnRuntime.chatAnswerPresenter,
+    clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
+      new RoutineChatModelGateway(chatGateway, {
+        workspaceContext: chatAnswerSupport.buildChatWorkspaceContext(session),
+        usageContext: {
+          ...chatAnswerSupport.buildChatUsageContext(session, accountId, "clarification"),
+          operation: "clarification",
+        },
+      }),
+      {
+        questionPromptTemplate: loadPromptTemplate("chat/clarification-question.md"),
+        replyMapPromptTemplate: loadPromptTemplate("chat/clarification-reply-map.md"),
+        offerReplyMapPromptTemplate: loadPromptTemplate("chat/clarification-offer-reply-map.md"),
+      },
+    ),
+    responseLanguageDetector,
+    retrievalSenseDetector,
+    retrievalSenseClarificationPolicy: turnClarificationPolicy,
+    recordClarificationDecision: clarificationDecisionRecorder,
     agentSkillTurnSkillProvider,
+    logger: input.logger,
   });
   const approvalDecisionService = new ApprovalDecisionService(
     new PendingDecisionRepository(input.database.kysely),

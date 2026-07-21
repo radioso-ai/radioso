@@ -234,6 +234,18 @@ const countingStagedPorts = () => {
   };
 };
 
+const noPendingClarification = () => ({
+  clarifier: {
+    phraseQuestion: vi.fn(async () => "Which one?"),
+    mapReply: vi.fn(async () => ({ kind: "unrelated" as const })),
+  },
+  clarificationStore: {
+    loadPending: vi.fn(async () => null),
+    save: vi.fn(async () => {}),
+    clear: vi.fn(async () => {}),
+  },
+});
+
 const buildService = (input: {
   planner?: TurnPlanGatewayFactory;
   gateEnabled?: boolean;
@@ -248,6 +260,10 @@ const buildService = (input: {
   };
   conversationSummary?: string;
   turnPlanInterpretationContextSettings?: ChatServiceOptions["turnPlanInterpretationContextSettings"];
+  clarification?: {
+    clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
+    clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
+  };
 }): ChatService =>
   new ChatService({
     conversationRepository: new InMemoryConversationRepository(),
@@ -266,6 +282,8 @@ const buildService = (input: {
     conversationEngine: createConversationEngine(),
     routineStore: input.routine?.routineStore,
     routineProvider: input.routine?.routineProvider,
+    clarifier: input.clarification?.clarifier,
+    clarificationStore: input.clarification?.clarificationStore,
     conversationSummaryStore: input.conversationSummary
       ? {
           load: vi.fn(async () => ({
@@ -288,6 +306,48 @@ const buildService = (input: {
   });
 
 describe("chat service fused turn planning", () => {
+  it("plans a fresh turn when clarification support is wired but nothing is pending", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged,
+      clarification: noPendingClarification(),
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "thanks!", stream: false });
+
+    expect(planner.completeCalls()).toBe(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("plans a fresh streaming turn when clarification support is wired but nothing is pending", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged,
+      clarification: noPendingClarification(),
+    });
+
+    for await (const _event of service.streamAnswer({
+      workspaceId: "workspace-1",
+      query: "thanks!",
+      stream: true,
+    })) {
+      // Drain the stream so the turn completes and its trace is finalized.
+    }
+
+    expect(planner.completeCalls()).toBe(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
   it("answers a planned direct turn with exactly two model calls (plan + answer)", async () => {
     const recorder = capturingUsageRecorder();
     const staged = countingStagedPorts();

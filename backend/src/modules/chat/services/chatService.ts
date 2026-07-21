@@ -1421,7 +1421,7 @@ export class ChatService {
       // consume it, falling back to their staged calls when it is absent or invalid.
       this.startTurnPlan(input, session, {
         activeRoutine: activeRoutineAtTurnStart,
-        pendingClarification: Boolean(clarification?.resolution),
+        pendingClarification: clarification.resolution?.resolvedPending === true,
         suspendedRoutine: Boolean(suspendedRoutine),
       }, coordination.lease?.signal);
       const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
@@ -1791,7 +1791,7 @@ export class ChatService {
       const suspendedRoutine = await this.loadSuspendedRoutine(session);
       this.startTurnPlan(input, session, {
         activeRoutine: activeRoutineAtTurnStart,
-        pendingClarification: Boolean(clarification?.resolution),
+        pendingClarification: clarification.resolution?.resolvedPending === true,
         suspendedRoutine: Boolean(suspendedRoutine),
       }, coordination.lease?.signal);
       const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);

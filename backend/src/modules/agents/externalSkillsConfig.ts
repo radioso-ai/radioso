@@ -1,4 +1,4 @@
-import type { McpAuthMethod } from "../externalSkills/domain.js";
+import type { McpAuthMethod } from "../externalSkills/public.js";
 import type { AgentConfigRefPlaceholder, AgentConfigSecretPlaceholder } from "./agentConfigPlaceholders.js";
 import { refPlaceholder, secretPlaceholder } from "./agentConfigPlaceholders.js";
 

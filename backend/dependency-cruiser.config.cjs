@@ -25,13 +25,15 @@ module.exports = {
       name: "no-cross-module-internals",
       severity: "error",
       comment:
-        "Generic module boundary: a module may import another module only through a recognized public entrypoint (public.ts, composition.ts, llmAdapters.ts, retrievalSupport.ts, historySupport.ts, contracts/, templates/). Covers every module — including new ones — by default, so a new module cannot silently skip the boundary check. The module-specific rules below add finer from-restrictions (e.g. composition only from app wiring); the redundant per-module no-external-*-nonpublic rules can be retired in a follow-up.",
+        "Generic module boundary: a module may import another module only through its public contract (public.ts, contracts/, templates/) or an explicitly sanctioned support API (retrievalSupport.ts, historySupport.ts). Composition entrypoints are application wiring, not module contracts. Covers every module — including new ones — by default, so a new module cannot silently skip the boundary check.",
       from: { path: "^src/modules/([^/]+)/" },
       to: {
         path: "^src/modules/([^/]+)/",
         pathNot: [
           "^src/modules/$1/",
-          "^src/modules/[^/]+/(public|composition|llmAdapters|retrievalSupport|historySupport)\\.ts$",
+          "^src/modules/[^/]+/public\\.ts$",
+          "^src/modules/chat/retrievalSupport\\.ts$",
+          "^src/modules/documents/historySupport\\.ts$",
           "^src/modules/[^/]+/(contracts|templates)/",
         ],
       },

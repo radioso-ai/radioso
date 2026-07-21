@@ -4,7 +4,7 @@ import type { SkillSelectionConsideration } from "@radioso/conversation-contract
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { TurnSkill } from "./turnOutcome.js";
 import type { TurnSelectionStrategy } from "./turnSelectionStrategy.js";
-import type { AgentSkillInvocationMode } from "../../agentSkills/domain.js";
+import type { AgentSkillInvocationMode } from "../../agentSkills/public.js";
 import {
   resolveDirectiveBinding,
   type DirectiveBindingResolution,

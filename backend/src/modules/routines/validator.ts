@@ -1,5 +1,5 @@
 import type { RoutineDefinition } from "./domain.js";
-import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/authoringDescriptor.js";
+import type { SkillAuthoringDescriptor, SkillAuthoringInput } from "../skills/public.js";
 import { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 
 export const routineValidationCodes = [

@@ -10,7 +10,7 @@
 import type {
   AgentSkillKind,
   AgentSkillSpine,
-} from "../agentSkills/domain.js";
+} from "../agentSkills/public.js";
 import type {
   SkillCapabilityDescriptor,
 } from "./capabilityRegistry.js";

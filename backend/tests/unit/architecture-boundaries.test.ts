@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +9,13 @@ const {
   validateImportRecords,
   validateRepositoryBoundaries,
 } = await import(moduleUrl.href) as any;
+const require = createRequire(import.meta.url);
+const dependencyCruiserConfig = require("../../dependency-cruiser.config.cjs") as {
+  forbidden: Array<{
+    name: string;
+    to: { pathNot?: string[] };
+  }>;
+};
 
 let tempRoot: string | null = null;
 
@@ -43,8 +51,12 @@ describe("architecture boundary validation", () => {
     ]);
   });
 
-  it("allows approved public contract imports", () => {
+  it("allows approved public entrypoint and contract imports", () => {
     const result = validateImportRecords([
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/public.js",
+      },
       {
         filePath: "backend/src/modules/chat/services/example.ts",
         specifier: "../../documents/contracts/index.js",
@@ -53,21 +65,84 @@ describe("architecture boundary validation", () => {
         filePath: "backend/src/modules/documents/services/example.ts",
         specifier: "../../chat/contracts/index.js",
       },
+      {
+        filePath: "backend/src/modules/auth/services/example.ts",
+        specifier: "../../mail/templates/passwordResetEmail.js",
+      },
+      {
+        filePath: "backend/src/modules/retrieval/services/example.ts",
+        specifier: "../../chat/retrievalSupport.js",
+      },
     ]);
 
     expect(result).toEqual({ valid: true, errors: [] });
   });
 
-  it("rejects representative private cross-module backend imports", () => {
+  it("keeps dependency-cruiser support entrypoints aligned with the validator", () => {
+    const rule = dependencyCruiserConfig.forbidden.find(
+      ({ name }) => name === "no-cross-module-internals",
+    );
+
+    expect(rule?.to.pathNot).toEqual([
+      "^src/modules/$1/",
+      "^src/modules/[^/]+/public\\.ts$",
+      "^src/modules/chat/retrievalSupport\\.ts$",
+      "^src/modules/documents/historySupport\\.ts$",
+      "^src/modules/[^/]+/(contracts|templates)/",
+    ]);
+  });
+
+  it("rejects cross-module composition imports outside application wiring", () => {
     const result = validateImportRecords([
       {
         filePath: "backend/src/modules/chat/services/example.ts",
-        specifier: "../../documents/services/documentIngestionService.js",
+        specifier: "../../documents/composition.js",
       },
     ]);
 
     expect(result.valid).toBe(false);
     expect(result.errors).toEqual([
+      expect.stringContaining(
+        "Backend module composition entrypoints are for application wiring only",
+      ),
+    ]);
+  });
+
+  it("rejects private cross-module imports regardless of their path shape", () => {
+    const result = validateImportRecords([
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/services/documentIngestionService.js",
+      },
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/repository.js",
+      },
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/domain.js",
+      },
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/services/public.js",
+      },
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/services/contracts/private.js",
+      },
+      {
+        filePath: "backend/src/modules/chat/services/example.ts",
+        specifier: "../../documents/retrievalSupport.js",
+      },
+    ]);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
+      expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
+      expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
+      expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
+      expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
       expect.stringContaining("Backend modules must use public contracts for cross-module imports"),
     ]);
   });

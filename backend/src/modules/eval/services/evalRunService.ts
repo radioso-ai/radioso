@@ -5,7 +5,7 @@ import {
   materializeAgentFromConfig,
   type InternalAgentConfig,
 } from "../../agents/public.js";
-import type { WorkbenchReplayResult } from "../../chat/composition.js";
+import type { WorkbenchReplayResult } from "../../chat/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";

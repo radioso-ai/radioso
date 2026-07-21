@@ -231,6 +231,11 @@ const summaryLine = (stage: ActivityStage): string => {
       const model = inputs.model as string | undefined
       return model ?? ''
     }
+    case 'conversation_summary': {
+      const chars = outputs.summaryChars as number | undefined
+      if (typeof chars === 'number') return `${chars} chars`
+      return stage.status === 'skipped' ? 'none yet' : ''
+    }
     default: {
       const count = chunkCount(stage)
       if (typeof count === 'number') return `${count}`

@@ -104,7 +104,7 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
     expect(stage?.outputs?.summary).toBe(SUMMARY);
   });
 
-  it("leaves the activity trace summary-free when the run carries no summary", async () => {
+  it("marks the conversation_summary stage skipped when the run carries no summary", async () => {
     const { runner } = buildRunner();
 
     const result = await runner.answer({
@@ -114,6 +114,8 @@ describe("RetrievalPipelineEvalRunner conversation summary (#866)", () => {
       history: [],
     });
 
-    expect(result.activityTrace.stages.some((s) => s.kind === "conversation_summary")).toBe(false);
+    const stage = result.activityTrace.stages.find((s) => s.kind === "conversation_summary");
+    expect(stage?.status).toBe("skipped");
+    expect(stage?.outputs?.summary).toBeUndefined();
   });
 });

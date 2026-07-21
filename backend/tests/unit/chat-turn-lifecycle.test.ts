@@ -313,7 +313,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     ]);
   });
 
-  it("omits the conversation_summary stage when the session has no rolling summary", () => {
+  it("marks the conversation_summary stage skipped when the session has no rolling summary", () => {
     const { activityTrace } = buildTurnTraceForPresentation({
       workspaceId: "workspace_1",
       session: session(),
@@ -323,7 +323,9 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       engineTrace: engineTrace(),
     });
 
-    expect(activityTrace.stages.some((stage) => stage.kind === "conversation_summary")).toBe(false);
+    const stage = activityTrace.stages.find((s) => s.kind === "conversation_summary");
+    expect(stage?.status).toBe("skipped");
+    expect(stage?.outputs?.summary).toBeUndefined();
   });
 
   it("reports retrieval as invoked when a direct-classified routine turn dispatches retrieval.context", async () => {

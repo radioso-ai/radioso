@@ -15,12 +15,15 @@ const baseTrace = (): ActivityTrace => ({
 });
 
 describe("appendConversationSummaryStage", () => {
-  it("leaves the trace untouched when there is no summary", () => {
-    const trace = baseTrace();
-    expect(appendConversationSummaryStage(trace, undefined)).toBe(trace);
-    expect(appendConversationSummaryStage(trace, null)).toBe(trace);
-    expect(appendConversationSummaryStage(trace, "")).toBe(trace);
-    expect(appendConversationSummaryStage(trace, "   ")).toBe(trace);
+  it("appends a skipped stage when there is no summary, so absence is visible", () => {
+    for (const absent of [undefined, null, "", "   "]) {
+      const traced = appendConversationSummaryStage(baseTrace(), absent);
+      const stage = traced.stages.at(-1)!;
+      expect(stage.kind).toBe("conversation_summary");
+      expect(stage.status).toBe("skipped");
+      expect(stage.reason).toBe("no_summary_yet");
+      expect(stage.outputs?.summary).toBeUndefined();
+    }
   });
 
   it("records the injected summary as a stage with its length and injection sites", () => {

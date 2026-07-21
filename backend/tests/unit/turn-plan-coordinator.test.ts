@@ -142,6 +142,18 @@ describe("TurnPlanCoordinator.plan", () => {
     expect(outcome).toEqual({ status: "bypassed", reason: "prompt_tokens_over_budget" });
   });
 
+  it("counts custom rewrite guidance and the rolling summary in the prompt budget", async () => {
+    const service = serviceReturning(plan());
+    const outcome = await new TurnPlanCoordinator(service).plan(inputs({
+      query: "x".repeat(20_000),
+      semanticRewriteInstructions: "s".repeat(2_000),
+      lexicalRewriteInstructions: "l".repeat(2_000),
+      conversationSummary: "c".repeat(1_000),
+    }));
+    expect(outcome).toEqual({ status: "bypassed", reason: "prompt_tokens_over_budget" });
+    expect(service.plan).not.toHaveBeenCalled();
+  });
+
   it("fails when the service returns no plan", async () => {
     const service = serviceReturning(null);
     const outcome = await new TurnPlanCoordinator(service).plan(inputs());

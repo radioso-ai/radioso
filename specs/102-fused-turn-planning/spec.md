@@ -52,7 +52,7 @@ directives, language, grounding, and answer quality.
   for eligible fresh turns using the workspace chat-tier model.
 - **FR-002**: A turn plan MUST include route/framing, an optional retrieval
   rewrite, an optional response language, routine rankings with any activation
-  variables already supplied by the user, and directive classifications.
+  variables supplied in the latest user message, and directive classifications.
 - **FR-003**: The planner MUST reject the whole plan when output is malformed or
   references a routine or directive outside the supplied candidate set.
 - **FR-004**: All planner consumers MUST share one lazy, memoized per-turn

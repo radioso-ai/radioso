@@ -12,6 +12,7 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
+import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouting } from "./turnRouter.js";
 
 /**
@@ -58,6 +59,7 @@ export interface TurnPlanRequest {
   answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
   routineCandidates: readonly TurnPlanRoutineCandidate[];
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
   workspaceContext: LlmCapabilityResolveInput;
@@ -121,12 +123,14 @@ export const buildTurnPlanningPrompt = (input: {
   answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
   routineCandidates: readonly TurnPlanRoutineCandidate[];
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
   query: string;
 }): string =>
   renderPromptTemplate("chat/turn-planning.md", {
     context_section: input.context || "No prior context",
+    conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
     answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
@@ -342,6 +346,7 @@ export class TurnPlanService {
           answerScopeReference: request.answerScopeReference,
           semanticRewriteInstructions: request.semanticRewriteInstructions,
           lexicalRewriteInstructions: request.lexicalRewriteInstructions,
+          conversationSummary: request.conversationSummary,
           routineCandidates: request.routineCandidates,
           directiveCandidates: request.directiveCandidates,
           query: request.query,

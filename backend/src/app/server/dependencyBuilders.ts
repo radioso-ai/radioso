@@ -9,6 +9,11 @@ import { IdentityNonceRepository } from "../../db/repositories/identityNonceRepo
 import { RoutineDefinitionRepository } from "../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
 import { DirectiveStateRepository } from "../../db/repositories/directiveStateRepository.js";
+import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
+import {
+  ConversationSummaryService,
+  ModelConversationSummaryGenerator,
+} from "../../modules/chat/composition.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
@@ -1556,6 +1561,18 @@ export const buildChatServices = (input: {
   );
   const routineStateRepository = new RoutineStateRepository(input.database.kysely);
   const directiveStateRepository = new DirectiveStateRepository(input.database.kysely);
+  const conversationSummaryRepository = new ConversationSummaryRepository(input.database.kysely);
+  // Rolling per-conversation summary (#866): read at prepare, regenerated
+  // fire-and-forget post-turn on the cheap rewrite-tier inference (a background
+  // summarization pass, never on the answer latency budget).
+  const conversationSummaryService = new ConversationSummaryService(
+    conversationSummaryRepository,
+    input.messageRepository,
+    new ModelConversationSummaryGenerator(
+      input.llmRegistry.createRewriteInferencePipeline(input.usageEventRecorder),
+    ),
+    input.logger,
+  );
   const contextVariableRepository = new ContextVariableRepository(input.database.kysely);
   const contextVariableResolver = new ContextVariableResolverService({
     repository: contextVariableRepository,
@@ -1601,7 +1618,7 @@ export const buildChatServices = (input: {
     turnInterpreter,
     turnPlanCoordinator,
     turnPlanningGate,
-    turnPlanRewriteSettings: {
+    turnPlanInterpretationContextSettings: {
       retrievalDefaultsProvider: input.retrievalDefaultsProvider,
       ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
     },
@@ -1631,6 +1648,9 @@ export const buildChatServices = (input: {
     suspendedRoutineReader: routineStateRepository,
     // Per-conversation directive firing memory for once/cooldown lifecycle (#865).
     directiveStateStore: directiveStateRepository,
+    // Rolling per-conversation summary (#866): read at prepare, regenerated post-turn.
+    conversationSummaryStore: conversationSummaryRepository,
+    conversationSummaryUpdater: conversationSummaryService,
     conversationOwnershipReader: input.conversationOwnershipRepository,
     routineProvider,
     clarifierFactory: ({ session, accountId }) => new DefaultClarifier(
@@ -1683,6 +1703,9 @@ export const buildChatServices = (input: {
     input.conversationRepository,
     input.messageRepository,
     routineStateRepository,
+    // Forks carry the rolling summary (#866) so long-conversation test sessions
+    // keep the pre-window context of their source.
+    conversationSummaryRepository,
   );
   const retrievalAnswerService = new RetrievalAnswerService({
     retrievalPipeline: input.retrievalPipeline,
@@ -1699,6 +1722,7 @@ export const buildChatServices = (input: {
     selectionStrategy: input.composition.selectionStrategy,
     conversationEngine,
     turnRouter,
+    turnInterpreter,
     // Routine ports — let a replayed turn attempt routines before grounding, exactly
     // as the live chat turn does, so routine-driven behavior is faithfully evaluated.
     routineProvider,
@@ -1709,7 +1733,7 @@ export const buildChatServices = (input: {
     // identical planner-or-staged schedule under the same gating semantics.
     turnPlanCoordinator,
     turnPlanningGate,
-    turnPlanRewriteSettings: {
+    turnPlanInterpretationContextSettings: {
       retrievalDefaultsProvider: input.retrievalDefaultsProvider,
       ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
     },

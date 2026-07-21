@@ -44,6 +44,7 @@ export interface ConversationMessageSummary {
 export interface MessageRepositoryPort {
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
   listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
+  countByConversationId(workspaceId: string, conversationId: string): Promise<number>;
   listWindowByConversationId(
     workspaceId: string,
     conversationId: string,
@@ -191,6 +192,16 @@ export class MessageRepository implements MessageRepositoryPort {
       .execute();
 
     return rows.map((row) => mapMessageRow(row as MessageRow)).reverse();
+  }
+
+  async countByConversationId(workspaceId: string, conversationId: string): Promise<number> {
+    const row = await this.db
+      .selectFrom("messages")
+      .select((eb) => eb.fn.countAll<string>().as("count"))
+      .where("workspace_id", "=", workspaceId)
+      .where("conversation_id", "=", conversationId)
+      .executeTakeFirst();
+    return Number(row?.count ?? "0");
   }
 
   async listWindowByConversationId(

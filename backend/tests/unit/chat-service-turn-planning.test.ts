@@ -246,7 +246,8 @@ const buildService = (input: {
     routineStore: ChatServiceOptions["routineStore"];
     routineProvider: ChatServiceOptions["routineProvider"];
   };
-  turnPlanRewriteSettings?: ChatServiceOptions["turnPlanRewriteSettings"];
+  conversationSummary?: string;
+  turnPlanInterpretationContextSettings?: ChatServiceOptions["turnPlanInterpretationContextSettings"];
 }): ChatService =>
   new ChatService({
     conversationRepository: new InMemoryConversationRepository(),
@@ -265,7 +266,16 @@ const buildService = (input: {
     conversationEngine: createConversationEngine(),
     routineStore: input.routine?.routineStore,
     routineProvider: input.routine?.routineProvider,
-    turnPlanRewriteSettings: input.turnPlanRewriteSettings,
+    conversationSummaryStore: input.conversationSummary
+      ? {
+          load: vi.fn(async () => ({
+            summary: input.conversationSummary!,
+            coveredMessageCount: 10,
+            coveredThrough: new Date("2026-01-01T00:00:00.000Z"),
+          })),
+        }
+      : undefined,
+    turnPlanInterpretationContextSettings: input.turnPlanInterpretationContextSettings,
     ...(input.planner
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
@@ -363,7 +373,7 @@ describe("chat service fused turn planning", () => {
       pipeline: retrievalPipeline([]),
       chatGateway: pipelineChatGateway("Grounded [[1]]."),
       staged,
-      turnPlanRewriteSettings: {
+      turnPlanInterpretationContextSettings: {
         retrievalDefaultsProvider: { getDefaults: vi.fn(() => ({} as never)) },
         skillSettingsResolver: { resolve: resolve as never },
       },
@@ -374,6 +384,31 @@ describe("chat service fused turn planning", () => {
     expect(resolve).toHaveBeenCalledWith("retrieval.answer", {}, undefined);
     expect(planner.prompts()[0]).toContain("Keep product concepts semantically distinct.");
     expect(planner.prompts()[0]).toContain("Preserve exact contract identifiers.");
+  });
+
+  it("passes the prepared conversation summary to the live planner", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [
+      planJson({ route: "retrieval" }),
+      planJson({ route: "retrieval" }),
+    ] });
+    const service = buildService({
+      planner,
+      pipeline: retrievalPipeline([]),
+      chatGateway: pipelineChatGateway("Grounded [[1]]."),
+      staged,
+      conversationSummary: "The buyer already returned the item last week.",
+    });
+
+    const first = await service.answer({ workspaceId: "workspace-1", query: "I returned the item.", stream: false });
+    await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: first.conversationId,
+      query: "What happens next?",
+      stream: false,
+    });
+
+    expect(planner.prompts()[1]).toContain("The buyer already returned the item last week.");
   });
 
   it("falls back to the full staged path when the planner returns malformed output", async () => {

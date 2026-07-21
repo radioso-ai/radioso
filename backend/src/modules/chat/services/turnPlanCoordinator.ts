@@ -21,7 +21,6 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../retrieval/public.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 import {
   TurnPlanService,
@@ -146,6 +145,7 @@ export interface TurnPlanInputs {
   answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
   /**
    * The owning module's prepared routine candidates for this turn (already
    * suppression/prefilter-bounded), or `null` when no routines are registered or
@@ -159,43 +159,14 @@ export interface TurnPlanInputs {
   signal?: AbortSignal;
 }
 
-/** Existing retrieval-owned settings seams needed to keep planner rewrites in parity. */
-export interface TurnPlanRewriteSettings {
-  retrievalDefaultsProvider: RetrievalDefaultsProvider;
-  skillSettingsResolver?: SkillSettingsResolver;
-}
-
-/**
- * Resolve the same effective retrieval.answer rewrite guidance used by the staged
- * conversation interpreter. Hosts call this only inside the lazy plan thunk.
- */
-export const resolveTurnPlanRewriteInstructions = (input: {
-  workspaceId: string;
-  agentSkillSettings?: Record<string, unknown>;
-  settings: TurnPlanRewriteSettings;
-}): Pick<TurnPlanInputs, "semanticRewriteInstructions" | "lexicalRewriteInstructions"> => {
-  const defaults = input.settings.retrievalDefaultsProvider.getDefaults(input.workspaceId);
-  const effective = input.settings.skillSettingsResolver
-    ? input.settings.skillSettingsResolver.resolve(
-        "retrieval.answer",
-        defaults,
-        input.agentSkillSettings?.["retrieval.answer"],
-      )
-    : defaults;
-  return {
-    ...(effective.semanticRewriteInstructions
-      ? { semanticRewriteInstructions: effective.semanticRewriteInstructions }
-      : {}),
-    ...(effective.lexicalRewriteInstructions
-      ? { lexicalRewriteInstructions: effective.lexicalRewriteInstructions }
-      : {}),
-  };
-};
-
 const APPROX_CHARS_PER_TOKEN = 4;
 
 const estimatePromptTokens = (input: TurnPlanInputs): number => {
-  let chars = input.query.length + input.answerScopeReference.length;
+  let chars = input.query.length
+    + input.answerScopeReference.length
+    + (input.semanticRewriteInstructions?.length ?? 0)
+    + (input.lexicalRewriteInstructions?.length ?? 0)
+    + (input.conversationSummary?.length ?? 0);
   for (const message of input.history) {
     chars += message.content.length;
   }
@@ -265,6 +236,7 @@ export class TurnPlanCoordinator {
       answerScopeReference: input.answerScopeReference,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
+      conversationSummary: input.conversationSummary,
       routineCandidates: prepared ? prepared.candidates : [],
       directiveCandidates: input.directiveCandidates,
       workspaceContext: input.workspaceContext,

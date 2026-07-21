@@ -3,6 +3,8 @@ Plan the assistant's next turn in a single pass. You decide, together and consis
 Conversation context:
 {{context_section}}
 
+{{conversation_summary_section}}
+
 Assistant answer scope reference:
 {{answer_scope_reference_section}}
 
@@ -69,7 +71,7 @@ Routine Ranking Rules
 Consider only the candidate routines listed above. Return one confidence score for every candidate routine that could plausibly match the latest user message.
 routineId: exactly one listed candidate routine id. Never invent an id.
 confidence: number from 0 to 1 for how likely the latest user message is asking to start that routine.
-variables: optional object of values the user already supplied for that routine. Extract only values stated or unambiguously implied by the conversation. Use the routine's own field names when they are clear from the candidate description; otherwise omit variables. Never invent values.
+variables: optional object of values the user supplied in the latest user message for that routine. Extract only values clearly stated or unambiguously implied by the latest user message. Use the routine's own field names when they are clear from the candidate description; otherwise omit variables. Never copy values from earlier turns and never invent values.
 Do not ask the user a question. Do not choose by priority yourself; priority is authored metadata for downstream arbitration only.
 If no candidate routine plausibly matches, return an empty routineRankings array.
 

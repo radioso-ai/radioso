@@ -90,6 +90,47 @@ imports from `services/`.
   operator's own testing never pollutes Activity, Quality, or Needs-Attention.
   The same NULL-safe exclusion lives in `historyItemsRepository`,
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
+- Conversation summary: `services/summary/conversationSummaryService.ts` maintains
+  a bounded, regenerated-per-update rolling summary per conversation (#866). State
+  lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,
+  PK `session_id` = conversation id, watermark-guarded upsert, TTL) behind the narrow
+  `contracts/conversationSummary.ts` `ConversationSummaryStore` port.
+  `chatSessionPreparer.ts` loads it at prepare into `PreparedSession.conversationSummary`
+  (the approval-resume path shares the same `loadConversationSummaryText` helper, so the
+  "no summary" policy cannot drift); `chatTurnLifecycle.ts` regenerates it fire-and-forget
+  after the turn is persisted (never awaited, self-heals on the next turn), debounced by
+  `refreshEveryMessages` so it does not pay an LLM call every turn. The first summary for
+  a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
+  so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
+  with their conversation (content, unlike the structural `routine_states`/`directive_states`),
+  and `forkForTest` carries the summary into a forked test session. Injected via
+  `services/summary/conversationSummarySection.ts` into four prompts — turn
+  interpretation (`conversationTurnInterpreter.ts`), grounded answer
+  (`groundedAnswerPromptComposer.ts`), and the direct answer
+  (`assistantReplyPromptBuilder.ts`), plus fused turn planning
+  (`turnPlanService.ts`); an absent/empty summary renders nothing.
+  Bounds and TTL are composition-owned in `CHAT_BEHAVIOR.conversationSummary`
+  (`shared/domain/behaviorConfig.ts`); the prompt is `prompts/chat/conversation-summary.md`.
+  Observability is content-free (`conversation_summary_regenerated | _skipped | _generation_failed`);
+  the summary text never enters logs, telemetry, or analytics.
+  Trace surfacing: `conversationSummaryTracePresenter.ts` `appendConversationSummaryStage`
+  adds a `conversation_summary` stage (text + char count + injection sites) to the turn's
+  operator activity trace — the debug surface, distinct from logs/analytics — on live turns
+  and eval/replay alike (`chatTurnLifecycle.buildTurnTraceForPresentation`,
+  `retrievalPipelineEvalRunner.answer`); the stage appears on every turn — `applied`
+  with the text when a summary was available, `skipped` (`no_summary_yet`) when none
+  exists — so absence is visible rather than ambiguous.
+  Workbench replay and eval have summary parity: each answered turn persists the
+  pre-answer summary it saw in its assistant message metadata (`conversationSummary`:
+  text, or `null` when the summary-aware turn had none), and `evalSnapshotService`
+  prefers that per-turn value over the current row for an answered-turn capture (the
+  current row is regenerated after the answer, so it can distill it); the current row is
+  frozen only for next-turn captures or, for a legacy pre-feature message, when its
+  watermark provably predates the replayed turn. `chatSessionPreparer` accepts a
+  `preResolvedConversationSummary` option so replay/eval thread that frozen text into
+  `PreparedSession.conversationSummary` instead of loading the store. The applied summary
+  is also echoed on `WorkbenchReplayResolvedConfig`/`EvalRunResolvedConfig.conversationSummary`
+  for live-vs-replay comparison. Replay is hermetic — it never regenerates or persists the summary.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
 - Fork a conversation into a test session: `services/conversationForkService.ts`
@@ -115,8 +156,8 @@ imports from `services/`.
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim
-  the turn, retrieval rewrite guidance resolves through the same defaults/agent-
-  settings seam as staged interpretation, and the directive matcher resolves precomputed
+  the turn, answer scope/retrieval rewrite guidance/rolling summary resolve through
+  the same interpretation-context seam as the staged path, and the directive matcher resolves precomputed
   classifications through `matchAndResolveWithClassifications`. Tests:
   `tests/unit/turn-plan-service.test.ts`,
   `tests/unit/turn-plan-coordinator.test.ts`,

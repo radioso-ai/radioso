@@ -224,7 +224,7 @@ describe("turnPlanDirectiveClassifications", () => {
 
 describe("TurnPlanService", () => {
   it("resolves a validated plan from one gateway call", async () => {
-    const client = { complete: vi.fn(async () => ({ text: validPlanJson() })) };
+    const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
     const gatewayFactory = factory(client);
     const service = new TurnPlanService(gatewayFactory);
 
@@ -244,6 +244,20 @@ describe("TurnPlanService", () => {
         usageContext: expect.objectContaining({ operation: "turn_planning" }),
       }),
     );
+  });
+
+  it("injects the rolling summary and limits routine-variable extraction to the latest message", async () => {
+    const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
+    await new TurnPlanService(factory(client)).plan(request({
+      history: [{ role: "user", content: "My company is OldCo." } as MessageRecord],
+      query: "Please book a call.",
+      conversationSummary: "The buyer previously discussed annual billing.",
+    }));
+
+    const prompt = client.complete.mock.calls[0]?.[0].prompt;
+    expect(prompt).toContain("The buyer previously discussed annual billing.");
+    expect(prompt).toContain("Never copy values from earlier turns");
+    expect(prompt).toContain("My company is OldCo.");
   });
 
   it("returns null on a provider error", async () => {

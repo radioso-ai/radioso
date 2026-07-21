@@ -57,6 +57,7 @@ import {
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
 import {
   ChatTurnAssembly,
+  type ChatTurnAssemblyFactory,
   buildChatTurnContext,
   type ChatRoutineProvider,
   type ChatTurnAssemblyCoordinationHook,
@@ -338,6 +339,8 @@ export interface ChatServiceOptions {
   turnInterpreter?: ChatConversationTurnInterpreter;
   /** The reusable conversation engine drives every chat turn; composition always wires it. */
   conversationEngine: ConversationEngine;
+  /** Shared durable/ephemeral engine assembly configured by application composition. */
+  turnAssemblyFactory?: ChatTurnAssemblyFactory;
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
   actionOutbox?: ChatActionOutboxPort;
   assistantTurnPersistence?: AssistantTurnPersistencePort;
@@ -430,6 +433,7 @@ export class ChatService {
       turnRouter,
       turnInterpreter,
       conversationEngine,
+      turnAssemblyFactory,
       actionOutbox,
       assistantTurnPersistence,
       actionCapabilities,
@@ -504,7 +508,11 @@ export class ChatService {
       bootstrapGreetingCacheRepository,
       contextVariableRepository,
     );
-    this.chatTurnAssembly = new ChatTurnAssembly({
+    this.chatTurnAssembly = turnAssemblyFactory?.create({
+      chatSessionPreparer: this.chatSessionPreparer,
+      directiveStateStore,
+      routineStore,
+    }) ?? new ChatTurnAssembly({
       chatGateway,
       chatAnswerPresenter: this.chatAnswerPresenter,
       chatSessionPreparer: this.chatSessionPreparer,

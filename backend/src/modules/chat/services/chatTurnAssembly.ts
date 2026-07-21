@@ -237,7 +237,7 @@ export type PreparedChatStreamTurnEvent =
     };
 
 export interface ChatTurnAssemblyOptions {
-  chatGateway: ChatGateway;
+  chatGateway: Pick<ChatGateway, "answer">;
   chatAnswerPresenter: ChatAnswerPresenter;
   chatSessionPreparer: ChatSessionPreparer;
   conversationEngine: ConversationEngine;
@@ -259,6 +259,29 @@ export interface ChatTurnAssemblyOptions {
   retrievalSenseClarificationPolicy: ClarificationPolicy;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   logger?: Pick<AppLogger, "warn">;
+}
+
+export type ChatTurnAssemblySharedOptions = Omit<
+  ChatTurnAssemblyOptions,
+  "chatSessionPreparer" | "directiveStateStore" | "routineStore"
+>;
+
+export interface ChatTurnAssemblyEffectPorts {
+  chatSessionPreparer: ChatSessionPreparer;
+  directiveStateStore: DirectiveStateStore;
+  routineStore?: ConversationRoutineStore;
+}
+
+/**
+ * Binds the runtime behavior shared by durable chat and ephemeral replay once.
+ * Each surface supplies only its persistence/state effect ports.
+ */
+export class ChatTurnAssemblyFactory {
+  constructor(private readonly shared: ChatTurnAssemblySharedOptions) {}
+
+  create(effects: ChatTurnAssemblyEffectPorts): ChatTurnAssembly {
+    return new ChatTurnAssembly({ ...this.shared, ...effects });
+  }
 }
 
 export class ChatTurnAssembly {

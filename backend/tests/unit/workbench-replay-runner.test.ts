@@ -278,6 +278,62 @@ describe("WorkbenchReplayRunner", () => {
     expect(classify).toHaveBeenCalledOnce();
   });
 
+  it("shares live turn interpretation, rewrite, response-language, and retrieval override assembly", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const rewriteProposal = {
+      rewrittenQuery: "refund processing time",
+      semanticQuery: "refund processing time",
+      lexicalQuery: "refund processing time",
+      responseLanguagePolicy: "match_user_question" as const,
+      turnKind: "fresh_subject" as const,
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    };
+    const classify = vi.fn(async () => ({
+      route: "direct" as const,
+      framing: { isIdentityQuestion: false },
+    }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      turnInterpreter: {
+        async interpretChatTurn() {
+          return {
+            route: "retrieval",
+            framing: { isIdentityQuestion: false },
+            rewriteProposal,
+          };
+        },
+      },
+      responseLanguageDetector: {
+        async detect() {
+          return { responseLanguage: "Estonian" };
+        },
+      },
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Kui kaua tagasimakse aega võtab?",
+      history: [],
+      retrievalSettingsOverride: { vectorTopK: 9 },
+    });
+
+    expect(classify).not.toHaveBeenCalled();
+    expect(capturedRequests[0]).toMatchObject({
+      query: "Kui kaua tagasimakse aega võtab?",
+      responseLanguage: "Estonian",
+      precomputedRewriteProposal: rewriteProposal,
+      retrievalSettingsOverride: { vectorTopK: 9 },
+    });
+  });
+
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {
     const boundSkill: TurnSkill = {
       definition: { name: "order_lookup", outcomeKinds: ["agent_skill"] },
@@ -573,6 +629,125 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(result.answer).toBe("It seems you'd like follow-up — what's your email?");
     expect(processTurn).not.toHaveBeenCalled();
+  });
+
+  it("provides an ephemeral clarification store and returns a routine clarification answer", async () => {
+    const pending = {
+      sessionId: "replaced-by-test",
+      source: "routine_activation",
+      candidates: [{
+        id: "candidate-1",
+        label: "Billing help",
+        confidence: 0.5,
+        payload: {},
+      }],
+      status: "pending" as const,
+      expiresAt: new Date(Date.now() + 60_000),
+    };
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        expect(input.clarificationStore).toBeDefined();
+        await input.clarificationStore!.save({ ...pending, sessionId: input.sessionId });
+        expect(await input.clarificationStore!.loadPending({ sessionId: input.sessionId })).toBeNull();
+        return {
+          response: { answer: "Do you mean billing help or account help?" },
+          trace: emptyTrace(),
+          decision: { reason: "routine_clarification" },
+          actions: [],
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when clarification claims the turn");
+      },
+    } as unknown as ConversationEngine;
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+      clarifier: {
+        async phraseQuestion() {
+          return "Do you mean billing help or account help?";
+        },
+        async mapReply() {
+          return { kind: "unrelated" } as const;
+        },
+      },
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "I need help",
+      history: [],
+    });
+
+    expect(result.answer).toBe("Do you mean billing help or account help?");
+  });
+
+  it("surfaces routine-declared actions, decisions, and handoff without dispatching them", async () => {
+    const fakeEngine = {
+      async attemptRoutine(input: AttemptRoutineInput): Promise<ProcessTurnResult | null> {
+        await input.routineStore!.save({
+          sessionId: input.sessionId,
+          routineId: "contact",
+          path: ["handoff", "approval"],
+          variables: {},
+          status: "suspended",
+        });
+        return {
+          response: { answer: "A teammate will follow up." },
+          trace: emptyTrace(),
+          decision: { reason: "routine_completed" },
+          actions: [{ type: "contact.send", payload: { email: "buyer@example.com" } }],
+          handoff: { routineId: "contact", stepId: "handoff" },
+          awaitingDecision: {
+            stepId: "approval",
+            captureKey: "approval_decision",
+            options: [{ id: "approve", label: "Approve" }],
+          },
+        } as unknown as ProcessTurnResult;
+      },
+      async processTurn(): Promise<ProcessTurnResult> {
+        throw new Error("grounding must not run when a routine claims the turn");
+      },
+    } as unknown as ConversationEngine;
+
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: fakeEngine,
+      turnRouter: stubTurnRouter("retrieval"),
+      routineProvider: routineProviderStub(),
+      chatGateway: chatGatewayStub(),
+      chatAnswerPresenter: presenterStub(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "Please contact me",
+      history: [],
+    });
+
+    expect(result.actions).toEqual(expect.arrayContaining([
+      { type: "contact.send", payload: { email: "buyer@example.com" } },
+      expect.objectContaining({ type: "approval.request" }),
+    ]));
+    expect(result.pendingDecisionTransition).toMatchObject({
+      routineId: "contact",
+      stepId: "approval",
+      options: [{ id: "approve", label: "Approve" }],
+    });
+    expect(result.handoff).toEqual({ routineId: "contact", stepId: "handoff" });
   });
 
   it("seeds the in-memory routine store so the engine resumes mid-routine", async () => {

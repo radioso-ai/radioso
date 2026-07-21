@@ -915,7 +915,11 @@ describe("EvalRunService.execute (retrieval_only)", () => {
   });
 
   it("supports full_assistant mode, capturing the generated answer in the run output", async () => {
-    const snapshot = makeSnapshot();
+    const fullAgent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: fullAgent.id,
+      originalAgentConfig: projectInternalAgentConfig(fullAgent),
+    });
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
     const evalCase = await repo.createCase({
       workspaceId: "ws-1",
@@ -932,7 +936,12 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       [{ documentId: "doc-refund", chunkId: "c1", title: "Refund Policy" }],
       [{ text: "Our refund window is 30 days from purchase.", citationIndices: [0] }],
     );
-    const service = new EvalRunService(repo, runner, passJudge());
+    const service = new EvalRunService(
+      repo,
+      runner,
+      passJudge(),
+      new StubWorkbenchReplayRunner(),
+    );
 
     const { run } = await service.execute({
       workspaceId: "ws-1",
@@ -942,14 +951,14 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     });
 
     expect(run.mode).toBe("full_assistant");
-    expect(run.observedOutput.answer).toBe("Our refund window is 30 days from purchase.");
+    expect(run.observedOutput.answer).toBe("Replay answer.");
     expect(run.observedOutput.citations).toEqual([
-      { documentId: "doc-refund", chunkId: "c1", title: "Refund Policy" },
+      { documentId: "doc-refund", chunkId: "chunk-1", title: "Refund Policy" },
     ]);
     expect(run.observedOutput.answerSegments).toEqual([
-      { text: "Our refund window is 30 days from purchase.", citationIndices: [0] },
+      { text: "Replay answer.", citationIndices: [0] },
     ]);
-    expect(run.observedOutput.activityTrace?.summary?.retrievalSkipped).toBe(false);
+    expect(run.observedOutput.turnTrace?.spine.traceId).toBe("engine-trace");
     expect(run.status).toBe("pass");
   });
 
@@ -1050,6 +1059,44 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     expect(run.observedOutput.turnTrace).toMatchObject({
       version: 1,
       spine: { traceId: "engine-trace" },
+    });
+  });
+
+  it("keeps legacy full-assistant overrides on the Workbench engine replay path", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+      originalRetrievalSettings: retrievalSettingsSnapshot({ vectorTopK: 4 }),
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const workbench = new StubWorkbenchReplayRunner();
+    const legacyRunner = new StubRunner(
+      [{ chunkId: "legacy", documentId: "legacy-doc", title: "Legacy", rank: 0 }],
+      undefined,
+      "Legacy answer.",
+    );
+    const service = new EvalRunService(repo, legacyRunner, passJudge(), workbench);
+
+    await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+      overrides: {
+        modelOverride: { provider: "openai", model: "gpt-5-mini" },
+        assistantInstructionsOverride: { customInstruction: "Reply tersely." },
+        retrievalSettingsOverride: { vectorTopK: 9 },
+      },
+    });
+
+    expect(legacyRunner.lastAnswerCall).toBeNull();
+    expect(workbench.calls).toHaveLength(1);
+    expect(workbench.calls[0]).toMatchObject({
+      agentConfigOverride: {
+        customInstruction: "Reply tersely.",
+        chatModelOverride: { provider: "openai", model: "gpt-5-mini" },
+      },
+      retrievalSettingsOverride: { vectorTopK: 9 },
     });
   });
 
@@ -1241,7 +1288,11 @@ describe("EvalRunService.execute (retrieval_only)", () => {
   });
 
   it("delegates llm_judge assertions to the judge port and records its verdict", async () => {
-    const snapshot = makeSnapshot();
+    const fullAgent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: fullAgent.id,
+      originalAgentConfig: projectInternalAgentConfig(fullAgent),
+    });
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
     const evalCase = await repo.createCase({
       workspaceId: "ws-1",
@@ -1257,7 +1308,12 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       "Our refund window is thirty days.",
     );
     const judge = passJudge();
-    const service = new EvalRunService(repo, runner, judge);
+    const service = new EvalRunService(
+      repo,
+      runner,
+      judge,
+      new StubWorkbenchReplayRunner(),
+    );
 
     const { run } = await service.execute({
       workspaceId: "ws-1",
@@ -1267,13 +1323,17 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     });
 
     expect(judge.calls).toHaveLength(1);
-    expect(judge.calls[0]!.observedAnswer).toBe("Our refund window is thirty days.");
+    expect(judge.calls[0]!.observedAnswer).toBe("Replay answer.");
     expect(run.status).toBe("pass");
     expect(run.assertionVerdicts[0]!.status).toBe("pass");
   });
 
   it("fails when the judge rejects the answer", async () => {
-    const snapshot = makeSnapshot();
+    const fullAgent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: fullAgent.id,
+      originalAgentConfig: projectInternalAgentConfig(fullAgent),
+    });
     const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
     const evalCase = await repo.createCase({
       workspaceId: "ws-1",
@@ -1282,7 +1342,12 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       assertions: [{ type: "llm_judge", expectedAnswer: "Refund window is 30 days." }],
     });
     const runner = new StubRunner([], undefined, "I don't know.");
-    const service = new EvalRunService(repo, runner, failJudge());
+    const service = new EvalRunService(
+      repo,
+      runner,
+      failJudge(),
+      new StubWorkbenchReplayRunner(),
+    );
 
     const { run, case: updated } = await service.execute({
       workspaceId: "ws-1",

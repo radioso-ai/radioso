@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { materializeAgentFromConfig } from "../../agents/public.js";
+import {
+  materializeAgentFromConfig,
+  type InternalAgentConfig,
+} from "../../agents/public.js";
 import type { WorkbenchReplayResult } from "../../chat/composition.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
@@ -30,6 +33,7 @@ export interface EvalWorkbenchReplayRunnerPort {
     query: string;
     history: MessageRecord[];
     routineStartState?: NonNullable<EvalRunOverrides["routineStartState"]>;
+    retrievalSettingsOverride?: EvalRunOverrides["retrievalSettingsOverride"];
   }): Promise<WorkbenchReplayResult>;
 }
 
@@ -110,12 +114,20 @@ const resolveReplayRetrievalSettingsOverride = (
   };
 };
 
-const hasLegacyOnlyFullAssistantOverride = (overrides: EvalRunOverrides): boolean =>
-  Boolean(
-    overrides.modelOverride
-      || overrides.assistantInstructionsOverride
-      || overrides.retrievalSettingsOverride,
-  );
+const workbenchAgentConfigOverride = (
+  overrides: EvalRunOverrides,
+): Partial<InternalAgentConfig> | undefined => {
+  const legacy: Partial<InternalAgentConfig> = {
+    ...(overrides.modelOverride
+      ? { chatModelOverride: overrides.modelOverride }
+      : {}),
+    ...(overrides.assistantInstructionsOverride?.customInstruction !== undefined
+      ? { customInstruction: overrides.assistantInstructionsOverride.customInstruction }
+      : {}),
+  };
+  const merged = { ...legacy, ...(overrides.agentConfigOverride ?? {}) };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+};
 
 export class EvalRunService {
   constructor(
@@ -143,13 +155,7 @@ export class EvalRunService {
     }
 
     const overrides = input.overrides ?? {};
-    if (
-      input.mode === "full_assistant"
-      && this.workbenchReplayRunner
-      && snapshot.originalAgentConfig
-      && snapshot.sourceAgentId
-      && !hasLegacyOnlyFullAssistantOverride(overrides)
-    ) {
+    if (input.mode === "full_assistant") {
       return this.executeWorkbenchReplay(input);
     }
 
@@ -178,45 +184,18 @@ export class EvalRunService {
     );
 
     try {
-      if (input.mode === "full_assistant") {
-        const result = await this.retrievalRunner.answer({
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
-          runId,
-          query: replay.query,
-          history: replay.history,
-          context: replayContext,
-          modelOverride: overrides.modelOverride,
-          retrievalSettingsOverride,
-        });
-        observed = {
-          retrievedChunks: result.chunks,
-          answer: result.answer,
-          citations: result.citations,
-          answerSegments: result.answerSegments,
-          ...toObservedGrounding(result.groundingSummary),
-          activityTrace: result.activityTrace,
-        };
-        resolvedConfig.retrievalSettings = result.resolvedSettings;
-        resolvedConfig.composedInstructions = result.composedInstructions;
-        if (result.resolvedModel) {
-          resolvedConfig.modelProvider = result.resolvedModel.provider;
-          resolvedConfig.modelId = result.resolvedModel.model;
-        }
-      } else {
-        const result = await this.retrievalRunner.retrieve({
-          workspaceId: input.workspaceId,
-          query: replay.query,
-          history: replay.history,
-          context: replayContext,
-          retrievalSettingsOverride,
-        });
-        observed = {
-          retrievedChunks: result.chunks,
-          activityTrace: result.activityTrace,
-        };
-        resolvedConfig.retrievalSettings = result.resolvedSettings;
-      }
+      const result = await this.retrievalRunner.retrieve({
+        workspaceId: input.workspaceId,
+        query: replay.query,
+        history: replay.history,
+        context: replayContext,
+        retrievalSettingsOverride,
+      });
+      observed = {
+        retrievedChunks: result.chunks,
+        activityTrace: result.activityTrace,
+      };
+      resolvedConfig.retrievalSettings = result.resolvedSettings;
     } catch (error) {
       observed = {
         retrievedChunks: [],
@@ -333,6 +312,11 @@ export class EvalRunService {
 
     const runId = randomUUID();
     const overrides = input.overrides ?? {};
+    const agentConfigOverride = workbenchAgentConfigOverride(overrides);
+    const retrievalSettingsOverride = resolveReplayRetrievalSettingsOverride(
+      snapshot.originalRetrievalSettings,
+      overrides.retrievalSettingsOverride,
+    );
     const resolvedConfig: EvalRunResolvedConfig = {};
     let observed: EvalRunObservedOutput;
 
@@ -342,7 +326,7 @@ export class EvalRunService {
         accountId: input.accountId,
         sourceAgentId: snapshot.sourceAgentId,
         baselineAgentConfig: snapshot.originalAgentConfig,
-        agentConfigOverride: overrides.agentConfigOverride,
+        agentConfigOverride,
         query: replay.query,
         history: replay.history,
         // Only an explicit override seeds the routine. We deliberately do NOT default
@@ -351,6 +335,7 @@ export class EvalRunService {
         // assistant turn from the preceding user message, so seeding it would start the
         // routine one or more steps ahead. There is no per-turn pre-turn state source.
         routineStartState: overrides.routineStartState,
+        retrievalSettingsOverride,
       });
       observed = {
         retrievedChunks: result.resolvedConfig.retrievedChunks,
@@ -363,6 +348,7 @@ export class EvalRunService {
       resolvedConfig.composedInstructions = result.resolvedConfig.composedInstructions;
       resolvedConfig.modelProvider = result.resolvedConfig.modelProvider;
       resolvedConfig.modelId = result.resolvedConfig.modelId;
+      resolvedConfig.retrievalSettings = result.resolvedConfig.retrievalSettings;
     } catch (error) {
       observed = {
         retrievedChunks: [],
@@ -432,7 +418,7 @@ export class EvalRunService {
         status: run.status,
         outcome: aggregate.status,
         latencyMs: Date.now() - startedAtMs,
-        overrideKeys: overrideKeyNames(overrides.agentConfigOverride),
+        overrideKeys: overrideKeyNames(agentConfigOverride),
       },
       "Workbench replay eval run completed",
     );

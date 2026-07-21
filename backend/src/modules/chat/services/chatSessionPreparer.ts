@@ -112,6 +112,8 @@ export interface PrepareChatSessionInput {
   verifiedIdentity?: Record<string, unknown> | null;
   precomputedRewriteProposal?: StructuredRewriteResult;
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
+  /** Ephemeral eval-only override; never persisted to workspace settings. */
+  retrievalSettingsOverride?: RetrievalPipelineRequest["retrievalSettingsOverride"];
 }
 
 export interface PrepareChatSessionOptions {
@@ -454,6 +456,7 @@ export class ChatSessionPreparer {
       documentScope: input.documentScope,
       precomputedRewriteProposal: input.precomputedRewriteProposal,
       sourceScope: agent.sourceScope,
+      retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageContext: {
         workspaceId: input.workspaceId,
         conversationId: conversation?.id ?? null,

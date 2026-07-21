@@ -101,8 +101,14 @@ imports from `services/`.
   `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
   (workspace-session auth). Powers the workbench's "Continue in test chat".
 - Reusable turn engine: `conversationContractMappers.ts`,
-  `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
+  `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
+  `chatTurnAssembly.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
+  Application composition creates one `ChatTurnAssemblyFactory` for production
+  chat and workbench replay. Production supplies durable state ports; replay
+  supplies the in-memory ports from `chatTurnEffectProfile.ts`. This keeps engine
+  features aligned while replay avoids conversation, audit, action, and decision
+  persistence.
   `conversationProcessTurnInput.ts` passes route-scoped directive matching, turn
   interpretation, and retrieval work to the engine through neutral ports;
   `chatSessionPreparer.ts` does not pre-resolve directive matches for terminal

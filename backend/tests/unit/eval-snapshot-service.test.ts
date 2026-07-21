@@ -697,6 +697,137 @@ describe("EvalSnapshotService.capture", () => {
     });
   });
 
+  it("freezes the rolling conversation summary (#866) onto the snapshot at capture time", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-summary",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Hi", createdAt: fixedDate },
+    ];
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+      undefined,
+      undefined,
+      {
+        load: async ({ sessionId }) =>
+          sessionId === conversation.id
+            ? {
+                summary: "The user booked the June retreat and paid the deposit.",
+                coveredMessageCount: 12,
+                coveredThrough: fixedDate,
+              }
+            : null,
+      },
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.conversationSummary).toBe(
+      "The user booked the June retreat and paid the deposit.",
+    );
+    expect(repository.lastCreateInput?.conversationSummary).toBe(
+      "The user booked the June retreat and paid the deposit.",
+    );
+  });
+
+  it("omits the summary when the store has no row for the conversation", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-no-summary",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Hi", createdAt: fixedDate },
+    ];
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+      undefined,
+      undefined,
+      { load: async () => null },
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.conversationSummary).toBeUndefined();
+    expect(repository.lastCreateInput?.conversationSummary).toBeUndefined();
+  });
+
+  it("captures no summary when no summary store is wired (backward compatible)", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-legacy",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "Hi", createdAt: fixedDate },
+    ];
+    const repository = new CapturingEvalRepository();
+    // Constructed without the summary-store dependency, exactly like a pre-#866 caller.
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    const snapshot = await service.capture({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      capturedBy: "account-1",
+    });
+
+    expect(snapshot.conversationSummary).toBeUndefined();
+    expect(repository.lastCreateInput?.conversationSummary).toBeUndefined();
+  });
+
   it("captures a null routine state when no routine is active", async () => {
     const conversation: ConversationRecord = {
       id: "conv-no-routine",

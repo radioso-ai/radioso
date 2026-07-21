@@ -7,6 +7,10 @@ import type { MessageRepositoryPort, MessageRecord } from "../../../db/repositor
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { projectInternalAgentConfig, type InternalAgentExternalSkillsConfig } from "../../agents/public.js";
 import type { AnswerSegment, ChatCitation } from "../../chat/contracts/answerTypes.js";
+import {
+  loadConversationSummaryText,
+  type ConversationSummaryStore,
+} from "../../chat/contracts/conversationSummary.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../retrieval/public.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
@@ -251,6 +255,9 @@ export class EvalSnapshotService {
     private readonly repository: EvalRepositoryPort,
     private readonly externalSkills?: EvalSnapshotExternalSkillsPort,
     private readonly routineStateReader?: EvalSnapshotRoutineStateReader,
+    // Freeze the rolling conversation summary (#866) at capture time so a replay/eval
+    // run sees the same pre-window context a live turn would. Narrow read-only port.
+    private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">,
   ) {}
 
   async getById(workspaceId: string, snapshotId: string): Promise<EvalSnapshot> {
@@ -316,6 +323,16 @@ export class EvalSnapshotService {
       ? (({ sessionId: _sessionId, ...rest }) => rest)(activeRoutine)
       : null;
 
+    // Freeze the current rolling summary (#866). Like the routine position above this
+    // is the summary as of capture time — the exact context the next live turn on this
+    // conversation would receive. Per-turn historical summaries are not persisted, so
+    // this is the faithful achievable parity for a replayed/eval'd turn. Best-effort:
+    // a missing store or read failure degrades to no summary (shared load helper).
+    const conversationSummary = await loadConversationSummaryText(
+      this.conversationSummaryStore,
+      conversation.id,
+    );
+
     const defaults = this.retrievalDefaultsProvider.getDefaults(input.workspaceId);
     const settingsSnapshot = freezeRetrievalSettings(
       agent
@@ -342,6 +359,7 @@ export class EvalSnapshotService {
       originalAgentConfig: agentConfig,
       sourceAgentId: agentConfig ? conversation.agentId : null,
       originalRoutineState,
+      ...(conversationSummary ? { conversationSummary } : {}),
       capturedBy: input.capturedBy ?? null,
     });
   }

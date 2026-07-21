@@ -331,6 +331,7 @@ type StubRunnerCall = {
   customInstruction?: string;
   retrievalSkillSettings?: unknown;
   retrievalSettingsOverride?: unknown;
+  conversationSummary?: string;
 };
 
 class StubRunner implements EvalRetrievalRunnerPort {
@@ -363,10 +364,12 @@ class StubRunner implements EvalRetrievalRunnerPort {
       } | null;
       customInstructionOverride?: string;
     };
+    conversationSummary?: string;
     retrievalSettingsOverride?: unknown;
   }): StubRunnerCall {
     return {
       query: input.query,
+      conversationSummary: input.conversationSummary,
       historyLength: input.history.length,
       historyRoles: input.history.map((m) => m.role),
       agentName: input.context?.agent?.name ?? null,
@@ -951,6 +954,48 @@ describe("EvalRunService.execute (retrieval_only)", () => {
     ]);
     expect(run.observedOutput.activityTrace?.summary?.retrievalSkipped).toBe(false);
     expect(run.status).toBe("pass");
+  });
+
+  it("threads the frozen conversation summary into retrieval_only and legacy full_assistant runs", async () => {
+    const snapshot = makeSnapshot({
+      conversationSummary: "The user is comparing the Pro and Team plans.",
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const runner = new StubRunner(
+      [{ chunkId: "c1", documentId: "doc-refund", title: "Refund Policy", rank: 0 }],
+      undefined,
+      "Answer.",
+    );
+    const service = new EvalRunService(repo, runner, passJudge());
+
+    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "retrieval_only" });
+    expect(runner.lastRetrieveCall?.conversationSummary).toBe(
+      "The user is comparing the Pro and Team plans.",
+    );
+
+    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
+    expect(runner.lastAnswerCall?.conversationSummary).toBe(
+      "The user is comparing the Pro and Team plans.",
+    );
+  });
+
+  it("threads the frozen conversation summary into the workbench replay runner", async () => {
+    const agent = configuredAgent();
+    const snapshot = makeSnapshot({
+      sourceAgentId: agent.id,
+      originalAgentConfig: projectInternalAgentConfig(agent),
+      conversationSummary: "The buyer already returned the item last week.",
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const workbench = new StubWorkbenchReplayRunner();
+    const service = new EvalRunService(repo, new StubRunner([]), passJudge(), workbench);
+
+    await service.execute({ workspaceId: "ws-1", snapshotId: snapshot.id, mode: "full_assistant" });
+
+    expect(workbench.calls).toHaveLength(1);
+    expect(workbench.calls[0]?.conversationSummary).toBe(
+      "The buyer already returned the item last week.",
+    );
   });
 
   it("runs the Workbench engine replay entry point and translates turn trace into the run record", async () => {

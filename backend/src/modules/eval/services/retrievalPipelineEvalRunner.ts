@@ -81,6 +81,9 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    // Retrieval composes no grounded prompt, so the frozen summary (#866) has no
+    // injection point here; accepted for port symmetry with `answer`.
+    conversationSummary?: string;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
     const result = await this.pipeline.run(
@@ -122,6 +125,9 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
     query: string;
     history: MessageRecord[];
     context?: EvalReplayContext;
+    // Frozen rolling summary (#866) injected into the grounded system prompt so the
+    // eval'd answer sees the same pre-window context a live turn would.
+    conversationSummary?: string;
     modelOverride?: EvalRunModelOverride;
     retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   }) {
@@ -164,6 +170,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
       suggestedQuestionsEnabled: false,
       suggestedQuestionsCount: 0,
       hasRetrievedContexts: pipelineResult.contexts.length > 0,
+      conversationSummary: input.conversationSummary,
       conversationIntentSnapshot: {
         recentTurns: input.history
           .filter((message) => message.role !== "system")

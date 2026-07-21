@@ -501,6 +501,7 @@ export interface EvalSnapshots {
   messages: Json;
   original_agent: Json | null;
   original_agent_config: Json | null;
+  original_conversation_summary: Json | null;
   original_instruction_block: Json | null;
   original_model_id: string | null;
   original_retrieval_result: Json | null;

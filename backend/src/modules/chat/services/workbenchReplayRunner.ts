@@ -128,6 +128,13 @@ export interface WorkbenchReplayInput {
   history: MessageRecord[];
   userExpectedLocale?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
+  /**
+   * Rolling conversation summary (#866) frozen in the snapshot at capture time. Threaded
+   * into the prepared session so a replayed turn injects the same pre-window context a
+   * live turn would (turn interpretation + grounded/direct answer). Absent ⇒ no summary,
+   * exactly as a short conversation. Replay never regenerates or persists the summary.
+   */
+  conversationSummary?: string | null;
 }
 
 const ephemeralConversation = (
@@ -298,6 +305,7 @@ export class WorkbenchReplayRunner {
       skipRetrieval: true,
       preResolvedAgent: agent,
       preResolvedHistory: input.history,
+      preResolvedConversationSummary: input.conversationSummary ?? undefined,
     });
     const directiveStateStore = new ReplayDirectiveStateStore(
       replayDirectiveStateFromHistory(input.history),

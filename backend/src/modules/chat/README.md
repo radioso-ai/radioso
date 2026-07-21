@@ -110,6 +110,12 @@ imports from `services/`.
   (`shared/domain/behaviorConfig.ts`); the prompt is `prompts/chat/conversation-summary.md`.
   Observability is content-free (`conversation_summary_regenerated | _skipped | _generation_failed`);
   the summary text never enters logs, traces, or analytics.
+  Workbench replay and eval have summary parity: `evalSnapshotService` freezes the
+  conversation's current summary onto the snapshot (capture-time context, the same a
+  live turn would receive) and `chatSessionPreparer` accepts a
+  `preResolvedConversationSummary` option so replay/eval thread that frozen text into
+  `PreparedSession.conversationSummary` instead of loading the store. Replay is hermetic —
+  it never regenerates or persists the summary.
 - Bootstrap and public chat: `chatBootstrapService.ts`,
   public chat routes and presenters.
 - Fork a conversation into a test session: `services/conversationForkService.ts`

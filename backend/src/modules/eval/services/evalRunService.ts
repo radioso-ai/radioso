@@ -30,6 +30,9 @@ export interface EvalWorkbenchReplayRunnerPort {
     query: string;
     history: MessageRecord[];
     routineStartState?: NonNullable<EvalRunOverrides["routineStartState"]>;
+    /** Frozen rolling summary (#866) from the snapshot, threaded so the replayed turn
+     * sees the same pre-window context a live turn would. */
+    conversationSummary?: string;
   }): Promise<WorkbenchReplayResult>;
 }
 
@@ -186,6 +189,7 @@ export class EvalRunService {
           query: replay.query,
           history: replay.history,
           context: replayContext,
+          conversationSummary: replay.conversationSummary,
           modelOverride: overrides.modelOverride,
           retrievalSettingsOverride,
         });
@@ -209,6 +213,7 @@ export class EvalRunService {
           query: replay.query,
           history: replay.history,
           context: replayContext,
+          conversationSummary: replay.conversationSummary,
           retrievalSettingsOverride,
         });
         observed = {
@@ -351,6 +356,8 @@ export class EvalRunService {
         // assistant turn from the preceding user message, so seeding it would start the
         // routine one or more steps ahead. There is no per-turn pre-turn state source.
         routineStartState: overrides.routineStartState,
+        // Frozen rolling summary (#866) — hermetically threaded, never regenerated.
+        conversationSummary: replay.conversationSummary,
       });
       observed = {
         retrievedChunks: result.resolvedConfig.retrievedChunks,

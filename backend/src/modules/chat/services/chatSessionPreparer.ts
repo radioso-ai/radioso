@@ -127,6 +127,14 @@ export interface PrepareChatSessionOptions {
   skipRetrieval?: boolean;
   preResolvedAgent?: AgentRecord;
   preResolvedHistory?: MessageRecord[];
+  /**
+   * Rolling conversation summary (#866) supplied by a hermetic caller (workbench
+   * replay / eval) instead of loading it from the summary store. When provided it is
+   * used verbatim as {@link PreparedSession.conversationSummary}, so the summary flows
+   * to every injection point through the existing session field. Absent ⇒ the store is
+   * consulted exactly as the live turn does (unchanged behavior).
+   */
+  preResolvedConversationSummary?: string;
 }
 
 export class ChatSessionPreparer {
@@ -163,13 +171,19 @@ export class ChatSessionPreparer {
         )
       : []);
     // Independent conversation-scoped continuity reads; batched so the summary
-    // load adds no serialized round-trip to the pre-answer critical path.
-    const [rewriteContinuityState, conversationSummary] = conversation
-      ? await Promise.all([
-          this.loadRewriteContinuityState(input.workspaceId, conversation.id),
-          loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger),
-        ])
-      : [undefined, undefined];
+    // load adds no serialized round-trip to the pre-answer critical path. A hermetic
+    // caller (replay/eval) can pre-resolve the summary, in which case the store is not
+    // consulted and the frozen capture-time summary is used verbatim.
+    const [rewriteContinuityState, conversationSummary] = await Promise.all([
+      conversation
+        ? this.loadRewriteContinuityState(input.workspaceId, conversation.id)
+        : Promise.resolve(undefined),
+      options.preResolvedConversationSummary !== undefined
+        ? Promise.resolve(options.preResolvedConversationSummary)
+        : conversation
+          ? loadConversationSummaryText(this.conversationSummaryStore, conversation.id, this.logger)
+          : Promise.resolve(undefined),
+    ]);
     const persistedConversation =
       conversation ?? await this.conversationRepository.create(
         input.workspaceId,

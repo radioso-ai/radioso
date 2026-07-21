@@ -278,6 +278,103 @@ describe("WorkbenchReplayRunner", () => {
     expect(classify).toHaveBeenCalledOnce();
   });
 
+  it("threads the frozen conversation summary (#866) into the prepared session", async () => {
+    // The summary rides on PreparedSession.conversationSummary, which the grounded and
+    // direct answer composers read. A skill that echoes it proves the thread-through.
+    const seen: { value?: string; called: boolean } = { called: false };
+    const summarySkill: TurnSkill = {
+      definition: { name: "replay.answer", outcomeKinds: ["replay"] },
+      selects: () => true,
+      dispatch: (session) => {
+        seen.value = session.conversationSummary;
+        seen.called = true;
+        return {
+          kind: "replay",
+          skillName: "replay.answer",
+          outcome: { status: "completed", answer: `summary:${session.conversationSummary ?? "none"}` },
+          stagedContext: session.stagedContext,
+          steering: session.directiveSteering?.rules ?? [],
+          trace: session.turnTrace,
+        };
+      },
+      renderer: {
+        supports: (outcome) => outcome.kind === "replay",
+        render: async (outcome) => ({
+          answer: outcome.outcome.answer ?? "",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        }),
+      },
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [summarySkill],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+      conversationSummary: "The buyer already returned the item last week.",
+    });
+
+    expect(seen.value).toBe("The buyer already returned the item last week.");
+    expect(result.answer).toBe("summary:The buyer already returned the item last week.");
+  });
+
+  it("leaves the prepared session summary absent when the replay input carries none", async () => {
+    const seen: { value?: string; called: boolean } = { called: false };
+    const summarySkill: TurnSkill = {
+      definition: { name: "replay.answer", outcomeKinds: ["replay"] },
+      selects: () => true,
+      dispatch: (session) => {
+        seen.value = session.conversationSummary;
+        seen.called = true;
+        return {
+          kind: "replay",
+          skillName: "replay.answer",
+          outcome: { status: "completed", answer: "ok" },
+          stagedContext: session.stagedContext,
+          steering: session.directiveSteering?.rules ?? [],
+          trace: session.turnTrace,
+        };
+      },
+      renderer: {
+        supports: (outcome) => outcome.kind === "replay",
+        render: async (outcome) => ({
+          answer: outcome.outcome.answer ?? "",
+          skillName: outcome.skillName,
+          skillOutcome: outcome.outcome.status,
+          skillStatus: outcome.outcome.status,
+        }),
+      },
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [summarySkill],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: [],
+    });
+
+    expect(seen.called).toBe(true);
+    expect(seen.value).toBeUndefined();
+  });
+
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {
     const boundSkill: TurnSkill = {
       definition: { name: "order_lookup", outcomeKinds: ["agent_skill"] },

@@ -116,6 +116,53 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
     expect(followUp.conversationSummary).toBeUndefined();
   });
 
+  it("prefers a pre-resolved summary over the store (replay/eval parity)", async () => {
+    const load = vi.fn(async () => ({
+      summary: "stored summary that must be ignored",
+      coveredMessageCount: 5,
+      coveredThrough: new Date("2026-01-02T00:00:00.000Z"),
+    }));
+    const { preparer, agent } = await preparerWith({ load });
+
+    const first = await preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" });
+    const followUp = await preparer.prepare(
+      {
+        workspaceId: "ws-1",
+        agentId: agent.id,
+        conversationId: first.conversation.id,
+        query: "And the schedule?",
+      },
+      { preResolvedConversationSummary: "frozen capture-time summary" },
+    );
+
+    expect(followUp.conversationSummary).toBe("frozen capture-time summary");
+    // The store is never consulted when the summary is pre-resolved.
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the store when no pre-resolved summary is supplied", async () => {
+    const load = vi.fn(async () => ({
+      summary: "stored summary",
+      coveredMessageCount: 3,
+      coveredThrough: new Date("2026-01-02T00:00:00.000Z"),
+    }));
+    const { preparer, agent } = await preparerWith({ load });
+
+    const first = await preparer.prepare({ workspaceId: "ws-1", agentId: agent.id, query: "Hi" });
+    const followUp = await preparer.prepare(
+      {
+        workspaceId: "ws-1",
+        agentId: agent.id,
+        conversationId: first.conversation.id,
+        query: "And the schedule?",
+      },
+      {},
+    );
+
+    expect(load).toHaveBeenCalledWith({ sessionId: first.conversation.id });
+    expect(followUp.conversationSummary).toBe("stored summary");
+  });
+
   it("leaves the summary absent when the store has no row", async () => {
     const { preparer, agent } = await preparerWith({ load: async () => null });
 

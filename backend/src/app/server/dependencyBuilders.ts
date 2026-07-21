@@ -13,7 +13,7 @@ import { ConversationSummaryRepository } from "../../db/repositories/conversatio
 import {
   ConversationSummaryService,
   ModelConversationSummaryGenerator,
-} from "../../modules/chat/services/summary/conversationSummaryService.js";
+} from "../../modules/chat/composition.js";
 import { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import { ClarificationStateRepository } from "../../db/repositories/clarificationStateRepository.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";

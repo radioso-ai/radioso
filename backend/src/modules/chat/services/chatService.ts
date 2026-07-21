@@ -55,6 +55,8 @@ import {
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import type { ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import {
   ChatTurnAssembly,
   type ChatTurnAssemblyFactory,
@@ -334,6 +336,10 @@ export interface ChatServiceOptions {
   directiveSteering?: RouteScopedDirectiveRuntime;
   /** Optional: durable per-conversation directive firing memory for lifecycle suppression (#865). */
   directiveStateStore?: DirectiveStateStore;
+  /** Optional: durable per-conversation summary read model for prompt injection. */
+  conversationSummaryStore?: Pick<ConversationSummaryStore, "load">;
+  /** Optional: fire-and-forget per-conversation summary refresh after persisted turns. */
+  conversationSummaryUpdater?: ConversationSummaryUpdater;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
@@ -429,6 +435,8 @@ export class ChatService {
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
+      conversationSummaryStore,
+      conversationSummaryUpdater,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
       turnInterpreter,
@@ -497,6 +505,7 @@ export class ChatService {
       logger,
       undefined,
       conversationOwnershipRepository,
+      conversationSummaryUpdater,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -507,6 +516,8 @@ export class ChatService {
       agentService,
       bootstrapGreetingCacheRepository,
       contextVariableRepository,
+      conversationSummaryStore,
+      logger,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

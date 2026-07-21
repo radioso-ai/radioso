@@ -820,6 +820,7 @@ export class ChatTurnAssembly {
         messageId: input.session.userMessage.id,
         agentSkillSettings: input.session.agent.skillSettings,
         usageAttribution: input.session.usageAttribution,
+        conversationSummary: input.session.conversationSummary,
       })
       : await this.routeTurn(input.request, input.session);
     return input.resolvedRetrievalSense

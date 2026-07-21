@@ -52,6 +52,20 @@ describe("buildReplayInputs", () => {
     expect(replay?.history.map((message) => message.id)).toEqual(["u1", "a1"]);
   });
 
+  it("surfaces the frozen conversation summary (#866) alongside query and history", () => {
+    const replay = buildReplayInputs(snapshot({
+      conversationSummary: "The user is comparing the Pro and Team plans.",
+    }));
+
+    expect(replay?.conversationSummary).toBe("The user is comparing the Pro and Team plans.");
+  });
+
+  it("omits the summary for snapshots that captured none", () => {
+    const replay = buildReplayInputs(snapshot());
+
+    expect(replay?.conversationSummary).toBeUndefined();
+  });
+
   it("preserves directive firing markers in replay history", () => {
     const replay = buildReplayInputs(snapshot({
       messages: [

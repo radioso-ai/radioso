@@ -1,4 +1,9 @@
 export { AssistantChatService } from "./services/assistantChatService.js";
+// Rolling conversation summary (#866): composed in app wiring, internals stay chat-owned.
+export {
+  ConversationSummaryService,
+  ModelConversationSummaryGenerator,
+} from "./services/summary/conversationSummaryService.js";
 // App-wiring entrypoints for the MCP converse surface (composed in app/composition).
 export { AgentConverseAudit } from "./services/agentConverseAudit.js";
 export { AgentConverseService } from "./services/agentConverseService.js";

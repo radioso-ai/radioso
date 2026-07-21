@@ -36,6 +36,9 @@ export interface EvalWorkbenchReplayRunnerPort {
     routineStartState?: NonNullable<EvalRunOverrides["routineStartState"]>;
     retrievalSettingsOverride?: EvalRunOverrides["retrievalSettingsOverride"];
     usageAttribution?: ModelCallUsageAttribution;
+    /** Frozen rolling summary from the snapshot, threaded so the replayed turn
+     * sees the same pre-window context a live turn would. */
+    conversationSummary?: string;
   }): Promise<WorkbenchReplayResult>;
 }
 
@@ -199,6 +202,7 @@ export class EvalRunService {
           query: replay.query,
           history: replay.history,
           context: replayContext,
+          conversationSummary: replay.conversationSummary,
           modelOverride: overrides.modelOverride,
           retrievalSettingsOverride,
         });
@@ -212,6 +216,9 @@ export class EvalRunService {
         };
         resolvedConfig.retrievalSettings = result.resolvedSettings;
         resolvedConfig.composedInstructions = result.composedInstructions;
+        if (replay.conversationSummary) {
+          resolvedConfig.conversationSummary = replay.conversationSummary;
+        }
         if (result.resolvedModel) {
           resolvedConfig.modelProvider = result.resolvedModel.provider;
           resolvedConfig.modelId = result.resolvedModel.model;
@@ -222,6 +229,7 @@ export class EvalRunService {
           query: replay.query,
           history: replay.history,
           context: replayContext,
+          conversationSummary: replay.conversationSummary,
           retrievalSettingsOverride,
         });
         observed = {
@@ -371,6 +379,8 @@ export class EvalRunService {
         routineStartState: overrides.routineStartState,
         retrievalSettingsOverride,
         usageAttribution: { surface: "eval", requestId: runId },
+        // Frozen rolling summary — hermetically threaded, never regenerated.
+        conversationSummary: replay.conversationSummary,
       });
       observed = {
         retrievedChunks: result.resolvedConfig.retrievedChunks,
@@ -384,6 +394,9 @@ export class EvalRunService {
       resolvedConfig.modelProvider = result.resolvedConfig.modelProvider;
       resolvedConfig.modelId = result.resolvedConfig.modelId;
       resolvedConfig.retrievalSettings = result.resolvedConfig.retrievalSettings;
+      if (result.resolvedConfig.conversationSummary) {
+        resolvedConfig.conversationSummary = result.resolvedConfig.conversationSummary;
+      }
     } catch (error) {
       observed = {
         retrievedChunks: [],

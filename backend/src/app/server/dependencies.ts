@@ -3,6 +3,7 @@ import { McpConnectionService } from "../../modules/externalSkills/services/mcpC
 import { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
 import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
+import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
 import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
@@ -590,6 +591,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     // Freeze the active routine position at capture time for faithful mid-routine replay.
     new RoutineStateRepository(infrastructure.database.kysely),
+    // Freeze the rolling conversation summary (#866) at capture time so replay/eval
+    // runs inject the same pre-window context a live turn would.
+    new ConversationSummaryRepository(infrastructure.database.kysely),
   );
   const evalCaseService = new EvalCaseService(evalRepository);
   const evalRunService = new EvalRunService(

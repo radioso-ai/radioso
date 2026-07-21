@@ -77,6 +77,9 @@ const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
   async listRecentByConversationId() {
     return [];
   },
+  async countByConversationId() {
+    return 0;
+  },
   async listWindowByConversationId() {
     return { messages: [], total: 0, nextCursor: null, hasMore: false };
   },

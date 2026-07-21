@@ -84,6 +84,11 @@ export interface WorkbenchReplayResolvedConfig {
   modelProvider?: string;
   modelId?: string;
   retrievalSettings?: Partial<RetrievalSettingsRecord>;
+  /**
+   * The frozen rolling summary this replayed turn was given, echoed so an operator
+   * can confirm replay injected the same pre-window context a live turn would.
+   */
+  conversationSummary?: string;
   retrievedChunks: Array<{
     chunkId: string;
     documentId: string;
@@ -157,6 +162,11 @@ export interface WorkbenchReplayInput {
   routineStartState?: WorkbenchReplayRoutineStartState | null;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
   usageAttribution?: ModelCallUsageAttribution;
+  /**
+   * Rolling conversation summary frozen in the snapshot at capture time. Replay uses
+   * it verbatim and never regenerates or persists the summary.
+   */
+  conversationSummary?: string | null;
 }
 
 export class WorkbenchReplayRunner {
@@ -192,6 +202,7 @@ export class WorkbenchReplayRunner {
       skipRetrieval: true,
       preResolvedAgent: agent,
       preResolvedHistory: input.history,
+      preResolvedConversationSummary: input.conversationSummary ?? undefined,
     });
     const routineStore = effects.routineStore(
       input.routineStartState
@@ -353,6 +364,9 @@ export class WorkbenchReplayRunner {
         modelProvider: input.agent.chatModelOverride?.provider,
         modelId: input.agent.chatModelOverride?.model,
         retrievalSettings: input.input.retrievalSettingsOverride,
+        ...(input.session.conversationSummary
+          ? { conversationSummary: input.session.conversationSummary }
+          : {}),
         retrievedChunks: input.session.retrieval.contexts.map((context, index) => ({
           chunkId: context.chunkId,
           documentId: context.documentId,

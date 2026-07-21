@@ -288,6 +288,79 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     vi.useRealTimers();
   });
 
+  it("appends a conversation_summary activity-trace stage when the session carries a rolling summary", () => {
+    const prepared = {
+      ...session(),
+      conversationSummary: "User is booking a trip to Osaka and asked about visas.",
+    } as PreparedSession;
+
+    const { activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    const summaryStage = activityTrace.stages.find((stage) => stage.kind === "conversation_summary");
+    expect(summaryStage).toBeDefined();
+    expect(summaryStage?.outputs?.summary).toBe(prepared.conversationSummary);
+    expect(summaryStage?.outputs?.injectedInto).toEqual([
+      "turn_interpretation",
+      "grounded_answer",
+      "direct_answer",
+    ]);
+  });
+
+  it("marks the conversation_summary stage skipped when the session has no rolling summary", () => {
+    const { activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    const stage = activityTrace.stages.find((s) => s.kind === "conversation_summary");
+    expect(stage?.status).toBe("skipped");
+    expect(stage?.outputs?.summary).toBeUndefined();
+  });
+
+  it("persists the pre-answer conversation summary the session saw on assistant metadata", () => {
+    const prepared = {
+      ...session(),
+      conversationSummary: "User is booking a trip to Osaka and asked about visas.",
+    } as PreparedSession;
+
+    const { assistantMessage } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: prepared,
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage.metadata?.conversationSummary).toBe(
+      "User is booking a trip to Osaka and asked about visas.",
+    );
+  });
+
+  it("persists an explicit null summary when the summary-aware session had none", () => {
+    const { assistantMessage } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage.metadata).toHaveProperty("conversationSummary", null);
+  });
+
   it("reports retrieval as invoked when a direct-classified routine turn dispatches retrieval.context", async () => {
     const { lifecycle, records } = harness();
     const prepared = session();

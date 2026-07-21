@@ -76,3 +76,10 @@ describe("appendConversationSummaryStage", () => {
     });
   });
 });
+
+describe("appendConversationSummaryStage without a trace", () => {
+  it("returns undefined when the run produced no activity trace", () => {
+    expect(appendConversationSummaryStage(undefined, "some summary")).toBeUndefined();
+    expect(appendConversationSummaryStage(undefined, undefined)).toBeUndefined();
+  });
+});

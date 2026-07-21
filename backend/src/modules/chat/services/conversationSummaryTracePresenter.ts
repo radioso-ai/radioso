@@ -24,18 +24,34 @@ const SUMMARY_INJECTION_SITES = [
  * not yet regenerated). An absent summary must still be visible — operators
  * cannot otherwise distinguish "no summary yet" from a broken feature.
  */
-export const appendConversationSummaryStage = (
+export function appendConversationSummaryStage(
   trace: ActivityTrace,
   summary: string | null | undefined,
-): ActivityTrace => {
+): ActivityTrace;
+export function appendConversationSummaryStage(
+  trace: ActivityTrace | undefined,
+  summary: string | null | undefined,
+): ActivityTrace | undefined;
+export function appendConversationSummaryStage(
+  trace: ActivityTrace | undefined,
+  summary: string | null | undefined,
+): ActivityTrace | undefined {
+  // Some eval/pipeline runs carry no activity trace at all; with no trace there
+  // is no debug surface to annotate.
+  if (!trace) {
+    return undefined;
+  }
   const trimmed = summary?.trim() ?? "";
   const stageId = "conversation_summary";
-  const previousStageId = trace.stages.at(-1)?.stageId;
+  // Eval fakes and partial pipeline traces may omit the stage/link arrays.
+  const stages = trace.stages ?? [];
+  const links = trace.links ?? [];
+  const previousStageId = stages.at(-1)?.stageId;
 
   return {
     ...trace,
     stages: [
-      ...trace.stages,
+      ...stages,
       trimmed
         ? {
           stageId,
@@ -64,7 +80,7 @@ export const appendConversationSummaryStage = (
         },
     ],
     links: previousStageId
-      ? [...trace.links, { fromStageId: previousStageId, toStageId: stageId, kind: "sequence" as const }]
-      : trace.links,
+      ? [...links, { fromStageId: previousStageId, toStageId: stageId, kind: "sequence" as const }]
+      : links,
   };
-};
+}

@@ -34,6 +34,7 @@ export class ChatAnswerSupport {
       surface: "assistant",
       operation: "answer",
       attemptKey,
+      ...session.usageAttribution,
     };
   }
 

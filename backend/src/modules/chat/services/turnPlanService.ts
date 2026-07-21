@@ -118,18 +118,22 @@ const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidat
   );
 };
 
-export const buildTurnPlanningPrompt = (input: {
-  context: string;
-  answerScopeReference: string;
-  semanticRewriteInstructions?: string;
-  lexicalRewriteInstructions?: string;
-  conversationSummary?: string;
-  routineCandidates: readonly TurnPlanRoutineCandidate[];
-  directiveCandidates: readonly TurnPlanDirectiveCandidate[];
-  query: string;
-}): string =>
+export type TurnPlanningPromptInput = Pick<
+  TurnPlanRequest,
+  | "query"
+  | "history"
+  | "answerScopeReference"
+  | "semanticRewriteInstructions"
+  | "lexicalRewriteInstructions"
+  | "conversationSummary"
+  | "routineCandidates"
+  | "directiveCandidates"
+>;
+
+/** Canonical prompt renderer shared by execution and the eligibility budget. */
+export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string =>
   renderPromptTemplate("chat/turn-planning.md", {
-    context_section: input.context || "No prior context",
+    context_section: formatConversationContext(input.history) || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
     answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
@@ -140,6 +144,9 @@ export const buildTurnPlanningPrompt = (input: {
     directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
     query: input.query,
   });
+
+export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number =>
+  Math.ceil(buildTurnPlanningPrompt(input).length / 4);
 
 const stripJsonFence = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
@@ -341,16 +348,7 @@ export class TurnPlanService {
         usageContext: request.usageContext,
       });
       const { text } = await client.complete({
-        prompt: buildTurnPlanningPrompt({
-          context: formatConversationContext(request.history),
-          answerScopeReference: request.answerScopeReference,
-          semanticRewriteInstructions: request.semanticRewriteInstructions,
-          lexicalRewriteInstructions: request.lexicalRewriteInstructions,
-          conversationSummary: request.conversationSummary,
-          routineCandidates: request.routineCandidates,
-          directiveCandidates: request.directiveCandidates,
-          query: request.query,
-        }),
+        prompt: buildTurnPlanningPrompt(request),
         reasoningEffort: this.options.reasoningEffort ?? CHAT_BEHAVIOR.turnPlanning.reasoningEffort,
         maxOutputTokens: this.options.maxOutputTokens ?? CHAT_BEHAVIOR.turnPlanning.maxOutputTokens,
         signal,

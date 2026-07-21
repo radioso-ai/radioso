@@ -9,6 +9,7 @@ import type {
   TurnContext,
 } from "@radioso/conversation-contract";
 import type { RankableRoutineCandidates } from "@radioso/conversation-defaults";
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 
 import {
   contextualDirectiveCandidates,
@@ -117,6 +118,20 @@ describe("TurnPlanCoordinator.plan", () => {
     expect(outcome).toMatchObject({ status: "planned", prepared: null });
   });
 
+  it("passes only the configured recent history tail to the planner", async () => {
+    const service = serviceReturning(plan());
+    const history = Array.from({ length: 12 }, (_, index) => ({
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `history-${index}`,
+    } as MessageRecord));
+
+    await new TurnPlanCoordinator(service).plan(inputs({ history }));
+
+    expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
+      history: history.slice(-10),
+    }));
+  });
+
   it("bypasses when routine candidates exceed the bound", async () => {
     const many: RankableRoutineCandidates = {
       kind: "rank",
@@ -145,11 +160,18 @@ describe("TurnPlanCoordinator.plan", () => {
   it("counts custom rewrite guidance and the rolling summary in the prompt budget", async () => {
     const service = serviceReturning(plan());
     const outcome = await new TurnPlanCoordinator(service).plan(inputs({
-      query: "x".repeat(20_000),
+      query: "x".repeat(11_000),
       semanticRewriteInstructions: "s".repeat(2_000),
       lexicalRewriteInstructions: "l".repeat(2_000),
       conversationSummary: "c".repeat(1_000),
     }));
+    expect(outcome).toEqual({ status: "bypassed", reason: "prompt_tokens_over_budget" });
+    expect(service.plan).not.toHaveBeenCalled();
+  });
+
+  it("counts the rendered template and serialization overhead near the prompt limit", async () => {
+    const service = serviceReturning(plan());
+    const outcome = await new TurnPlanCoordinator(service).plan(inputs({ query: "x".repeat(16_000) }));
     expect(outcome).toEqual({ status: "bypassed", reason: "prompt_tokens_over_budget" });
     expect(service.plan).not.toHaveBeenCalled();
   });

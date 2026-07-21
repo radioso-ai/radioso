@@ -91,6 +91,7 @@ export const attachModelCallsToSpine = (
   const stages = spine.stages.filter((stage) => stage.kind !== MODEL_CALLS_STAGE_ID);
   const stagedClassificationOperations = new Set([
     "turn_interpretation",
+    "turn_router",
     "response_language_detection",
     "routine_activation",
     "directive_match",

@@ -439,4 +439,39 @@ describe("attachModelCallsToSpine", () => {
       source: "staged",
     });
   });
+
+  it("marks classification stages as staged when failed planning falls back to the legacy router", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-planner-router-fallback",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [{ id: "turn_interpretation", kind: "turn_interpretation", status: "applied" }],
+    };
+    const result = attachModelCallsToSpine(spine, [
+      {
+        id: "model_call_1",
+        operation: "turn_planning",
+        model: "gpt-planner",
+        startedAt: at(1),
+        completedAt: at(20),
+        durationMs: 19,
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+      },
+      {
+        id: "model_call_2",
+        operation: "turn_router",
+        model: "gpt-router",
+        startedAt: at(21),
+        completedAt: at(40),
+        durationMs: 19,
+        inputTokens: 8,
+        outputTokens: 4,
+        totalTokens: 12,
+      },
+    ]);
+
+    expect(result.stages[0]?.outputs).toMatchObject({ source: "staged" });
+  });
 });

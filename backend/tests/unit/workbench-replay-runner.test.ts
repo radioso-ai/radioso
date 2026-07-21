@@ -433,6 +433,14 @@ describe("WorkbenchReplayRunner", () => {
 
   it("executes the fused turn-planning schedule when the same coordinator + gate are wired", async () => {
     const capturedRequests: RetrievalPipelineRequest[] = [];
+    const longHistory = Array.from({ length: 12 }, (_, index): MessageRecord => ({
+      id: `history-${index}`,
+      conversationId: "conv-1",
+      workspaceId: "ws-1",
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `history-message-${index}`,
+      createdAt: new Date(index),
+    }));
     const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
     const planText = JSON.stringify({
       route: "retrieval",
@@ -500,7 +508,7 @@ describe("WorkbenchReplayRunner", () => {
       sourceAgentId: "agent-1",
       baselineAgentConfig: projectInternalAgentConfig(agent()),
       query: "How long do refunds take?",
-      history: [],
+      history: longHistory,
       conversationSummary: "The buyer already returned the item last week.",
     });
 
@@ -511,6 +519,9 @@ describe("WorkbenchReplayRunner", () => {
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay semantic guidance.");
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay lexical guidance.");
     expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("The buyer already returned the item last week.");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("USER: history-message-0 [");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("ASSISTANT: history-message-1 [");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("history-message-11");
     expect(classify).not.toHaveBeenCalled();
     expect(throwingDirectiveGatewayFactory.create).not.toHaveBeenCalled();
     expect(capturedRequests[0]?.precomputedRewriteProposal?.rewrittenQuery).toBe("refund processing duration");

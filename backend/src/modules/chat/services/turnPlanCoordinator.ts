@@ -23,6 +23,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 import {
+  estimateTurnPlanningPromptTokens,
   TurnPlanService,
   turnPlanDirectiveClassifications,
   type TurnPlan,
@@ -159,28 +160,6 @@ export interface TurnPlanInputs {
   signal?: AbortSignal;
 }
 
-const APPROX_CHARS_PER_TOKEN = 4;
-
-const estimatePromptTokens = (input: TurnPlanInputs): number => {
-  let chars = input.query.length
-    + input.answerScopeReference.length
-    + (input.semanticRewriteInstructions?.length ?? 0)
-    + (input.lexicalRewriteInstructions?.length ?? 0)
-    + (input.conversationSummary?.length ?? 0);
-  for (const message of input.history) {
-    chars += message.content.length;
-  }
-  for (const candidate of input.directiveCandidates) {
-    chars += candidate.name.length + candidate.condition.length;
-  }
-  if (input.routinePreparation && input.routinePreparation.kind === "rank") {
-    for (const candidate of input.routinePreparation.candidates) {
-      chars += candidate.title.length + candidate.triggerSummary.length;
-    }
-  }
-  return Math.ceil(chars / APPROX_CHARS_PER_TOKEN);
-};
-
 /**
  * Builds and resolves the fused turn plan. Owns the fast-path eligibility bounds
  * (candidate counts, prompt-token budget) and the claim short-circuit; it does
@@ -222,17 +201,9 @@ export class TurnPlanCoordinator {
     if (input.directiveCandidates.length > this.bounds.maxDirectiveCandidates) {
       return { status: "bypassed", reason: "directive_candidates_over_bound" };
     }
-    if (estimatePromptTokens(input) > this.bounds.maxEstimatedPromptTokens) {
-      return { status: "bypassed", reason: "prompt_tokens_over_budget" };
-    }
-
-    if (input.signal?.aborted) {
-      throw input.signal.reason ?? new Error("chat_turn_aborted");
-    }
-
-    const plan = await this.service.plan({
+    const request = {
       query: input.query,
-      history: input.history,
+      history: input.history.slice(-this.bounds.historyTailMessages),
       answerScopeReference: input.answerScopeReference,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
@@ -242,7 +213,16 @@ export class TurnPlanCoordinator {
       workspaceContext: input.workspaceContext,
       usageContext: input.usageContext,
       signal: input.signal,
-    });
+    };
+    if (estimateTurnPlanningPromptTokens(request) > this.bounds.maxEstimatedPromptTokens) {
+      return { status: "bypassed", reason: "prompt_tokens_over_budget" };
+    }
+
+    if (input.signal?.aborted) {
+      throw input.signal.reason ?? new Error("chat_turn_aborted");
+    }
+
+    const plan = await this.service.plan(request);
     // An external turn cancellation is not a planner failure. Propagate it so the
     // host stops the turn instead of starting the four staged fallback calls after
     // the planner request was aborted.

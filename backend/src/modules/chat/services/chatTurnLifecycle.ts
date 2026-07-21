@@ -36,6 +36,7 @@ import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatRespo
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
+import { appendConversationSummaryStage } from "./conversationSummaryTracePresenter.js";
 import {
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
@@ -48,6 +49,7 @@ import {
 } from "./chatTraceLeaves.js";
 import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
+import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
@@ -266,23 +268,26 @@ export const buildTurnTraceForPresentation = (
       isIdentityQuestion: input.session.turnFraming?.isIdentityQuestion ?? false,
     },
   };
-  const activityTrace = appendDirectiveSteeringStage(
-    activityTracePresenter.appendAnswerOutcome({
-      trace: retrieval.trace,
-      summary: activitySummary,
-      outcome: {
-        answer: input.presentation.answer,
-        stream: input.stream,
-        hadContexts: retrieval.contexts.length > 0,
-        retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
-        durationMs: Date.now() - input.answerStartedAt,
-        answerOutcome: input.presentation.answerOutcome,
-        skillName: skillTurnOutcome.skillName,
-        skillOutcome: skillTurnOutcome.outcome,
-        skillStatus: skillTurnOutcome.status,
-      },
-    }),
-    input.session.directiveSteering,
+  const activityTrace = appendConversationSummaryStage(
+    appendDirectiveSteeringStage(
+      activityTracePresenter.appendAnswerOutcome({
+        trace: retrieval.trace,
+        summary: activitySummary,
+        outcome: {
+          answer: input.presentation.answer,
+          stream: input.stream,
+          hadContexts: retrieval.contexts.length > 0,
+          retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
+          durationMs: Date.now() - input.answerStartedAt,
+          answerOutcome: input.presentation.answerOutcome,
+          skillName: skillTurnOutcome.skillName,
+          skillOutcome: skillTurnOutcome.outcome,
+          skillStatus: skillTurnOutcome.status,
+        },
+      }),
+      input.session.directiveSteering,
+    ),
+    input.session.conversationSummary,
   );
   const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
   const contextVariablesSnapshot = input.session.resolvedContext.snapshot;
@@ -332,6 +337,14 @@ export const buildTurnTraceForPresentation = (
         metadata: ctx.metadata,
       })),
       composedInstructions: retrieval.systemPrompt,
+      // Pre-answer rolling summary (#866) the turn's prompts actually saw. Persisted
+      // per-turn so an eval snapshot of this answered turn can freeze THIS text rather
+      // than the post-turn regenerated row — that row is refreshed fire-and-forget
+      // after the answer persists, so it can distill the very answer an eval re-generates.
+      // Semantics: `null` = ran under summary-aware code and saw no summary; a MISSING
+      // key = legacy pre-feature message (snapshot capture then falls back to a
+      // provably-pre-answer current row).
+      conversationSummary: input.session.conversationSummary ?? null,
       // Best-effort: agent-level chat model override is what we know at
       // this layer. The workspace default chat model (when no override) is
       // not threaded through, so future snapshots from those turns will
@@ -405,6 +418,9 @@ export class ChatTurnLifecycle {
     private readonly logger?: Pick<AppLogger, "warn">,
     private readonly pendingDecisionRepository?: PendingDecisionWriterPort,
     private readonly conversationOwnershipRepository?: ConversationOwnershipWriterPort,
+    // Optional: when wired, the per-conversation rolling summary (#866) is
+    // regenerated fire-and-forget after the turn is durably persisted.
+    private readonly conversationSummaryUpdater?: ConversationSummaryUpdater,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -601,10 +617,41 @@ export class ChatTurnLifecycle {
     try {
       await input.session.directiveStateStore?.commit();
     } catch (error) {
+      // Name/message only: raw error objects can carry provider response bodies.
       this.logger?.warn(
-        { event: "directive_state_commit_failed", conversationId: input.session.conversation.id, error },
+        {
+          event: "directive_state_commit_failed",
+          conversationId: input.session.conversation.id,
+          errorType: error instanceof Error ? error.name : typeof error,
+          errorMessage: error instanceof Error ? error.message : undefined,
+        },
         "Failed to persist directive firing state",
       );
+    }
+
+    // Regenerate the rolling conversation summary (#866) off the critical path.
+    // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
+    // update self-heals on the next turn (each regeneration derives from current
+    // state). The updater swallows its own failures; this .catch is a backstop.
+    if (this.conversationSummaryUpdater) {
+      void this.conversationSummaryUpdater
+        .refresh({
+          workspaceId: input.workspaceId,
+          conversationId: input.session.conversation.id,
+          accountId: input.accountId,
+        })
+        .catch((error) => {
+          // Name/message only: raw error objects can carry provider response bodies.
+          this.logger?.warn(
+            {
+              event: "conversation_summary_generation_failed",
+              conversationId: input.session.conversation.id,
+              errorType: error instanceof Error ? error.name : typeof error,
+              errorMessage: error instanceof Error ? error.message : undefined,
+            },
+            "Failed to regenerate conversation summary",
+          );
+        });
     }
 
     return {

@@ -1212,6 +1212,20 @@ CREATE TABLE public.conversation_ownership (
 
 
 --
+-- Name: conversation_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.conversation_summaries (
+    session_id uuid NOT NULL,
+    summary text NOT NULL,
+    covered_message_count integer NOT NULL,
+    covered_through timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: conversations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1440,6 +1454,7 @@ CREATE TABLE public.eval_snapshots (
     source_agent_id uuid,
     original_routine_state jsonb,
     replay_target jsonb,
+    original_conversation_summary jsonb,
     CONSTRAINT eval_snapshots_fidelity_check CHECK ((fidelity = ANY (ARRAY['full'::text, 'messages_only'::text])))
 );
 
@@ -2740,6 +2755,14 @@ ALTER TABLE ONLY public.context_variables
 
 ALTER TABLE ONLY public.conversation_ownership
     ADD CONSTRAINT conversation_ownership_pkey PRIMARY KEY (conversation_id);
+
+
+--
+-- Name: conversation_summaries conversation_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_summaries
+    ADD CONSTRAINT conversation_summaries_pkey PRIMARY KEY (session_id);
 
 
 --
@@ -5781,6 +5804,14 @@ ALTER TABLE ONLY public.context_variable_values
 
 ALTER TABLE ONLY public.conversation_ownership
     ADD CONSTRAINT conversation_ownership_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: conversation_summaries conversation_summaries_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.conversation_summaries
+    ADD CONSTRAINT conversation_summaries_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --

@@ -66,6 +66,8 @@ import {
   type UsageLimitReservation,
 } from "../../../shared/domain/usageLimitPolicy.js";
 import { ChatSessionPreparer, type PreparedSession } from "./chatSessionPreparer.js";
+import { loadConversationSummaryText, type ConversationSummaryStore } from "../contracts/conversationSummary.js";
+import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import {
   attemptRoutineTurnWithConversationEngine,
   runPreparedChatTurnStreamWithConversationEngine,
@@ -477,6 +479,10 @@ export interface ChatServiceOptions {
   directiveSteering?: RouteScopedDirectiveRuntime;
   /** Optional: durable per-conversation directive firing memory for lifecycle suppression (#865). */
   directiveStateStore?: DirectiveStateStore;
+  /** Optional: durable per-conversation rolling summary store, read at prepare (#866). */
+  conversationSummaryStore?: Pick<ConversationSummaryStore, "load">;
+  /** Optional: regenerates the rolling summary fire-and-forget after a turn completes (#866). */
+  conversationSummaryUpdater?: ConversationSummaryUpdater;
   selectionStrategy?: TurnSelectionStrategy;
   turnRouter: TurnRouter;
   turnInterpreter?: ChatConversationTurnInterpreter;
@@ -540,6 +546,7 @@ export class ChatService {
   private readonly agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly directiveStateStore: DirectiveStateStore;
+  private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">;
   private readonly logger?: Pick<AppLogger, "warn">;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
@@ -575,6 +582,8 @@ export class ChatService {
       contextVariableRepository,
       directiveSteering = noopRouteScopedDirectiveRuntime,
       directiveStateStore = noopDirectiveStateStore,
+      conversationSummaryStore,
+      conversationSummaryUpdater,
       selectionStrategy = new DefaultTurnSelectionStrategy(),
       turnRouter,
       turnInterpreter,
@@ -629,6 +638,7 @@ export class ChatService {
     this.conversationEngine = conversationEngine;
     this.directiveRuntime = directiveSteering;
     this.directiveStateStore = directiveStateStore;
+    this.conversationSummaryStore = conversationSummaryStore;
     this.agentSkillTurnSkillProvider = agentSkillTurnSkillProvider;
     this.conversationTurnRegistry = conversationTurnRegistry;
     this.logger = logger;
@@ -647,6 +657,7 @@ export class ChatService {
       logger,
       undefined,
       conversationOwnershipRepository,
+      conversationSummaryUpdater,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -657,6 +668,8 @@ export class ChatService {
       agentService,
       bootstrapGreetingCacheRepository,
       contextVariableRepository,
+      conversationSummaryStore,
+      logger,
     );
   }
 
@@ -1096,11 +1109,15 @@ export class ChatService {
       throw new Error("approval_resume_conversation_not_found");
     }
     const agent = await this.agentService!.resolve(record.workspaceId, record.agentId);
-    const history = await this.messageRepository.listRecentByConversationId(
-      record.workspaceId,
-      record.conversationId,
-      RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
-    );
+    // Independent conversation-scoped reads, batched like the preparer's.
+    const [history, conversationSummary] = await Promise.all([
+      this.messageRepository.listRecentByConversationId(
+        record.workspaceId,
+        record.conversationId,
+        RETRIEVAL_BEHAVIOR.rewriteConversationContextMaxMessages,
+      ),
+      loadConversationSummaryText(this.conversationSummaryStore, record.conversationId, this.logger),
+    ]);
     const userMessage = [...history].reverse().find((message) => message.role === "user");
     if (!userMessage) {
       throw new Error("approval_resume_user_message_missing");
@@ -1116,6 +1133,7 @@ export class ChatService {
       userMessage,
       effectiveQuery: userMessage.content,
       pageContext: null,
+      conversationSummary,
       stagedContext: [toPreparedStagedContext(retrieval)],
       resolvedContext: resolveContextForTurn(null),
       turnTrace: {
@@ -1510,6 +1528,7 @@ export class ChatService {
         conversationId: input.session.conversation.id,
         messageId: input.session.userMessage.id,
         agentSkillSettings: input.session.agent.skillSettings,
+        conversationSummary: input.session.conversationSummary,
       })
       : await this.routeTurn(input.request, input.session);
     return input.resolvedRetrievalSense

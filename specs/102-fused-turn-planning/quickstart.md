@@ -38,4 +38,3 @@ unless a behavior change is intentional and reviewed.
 ```bash
 pnpm run ci:local -- origin/main
 ```
-

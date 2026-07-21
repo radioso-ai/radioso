@@ -44,4 +44,3 @@ Workbench replay exercises the real composition without doubling live model work
 
 **Alternatives considered**: Live shadow planning adds cost and can complicate
 usage attribution. Database/UI rollout is unnecessary for the first release.
-

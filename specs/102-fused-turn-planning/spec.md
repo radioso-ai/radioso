@@ -1,8 +1,8 @@
 # Feature Specification: Fused Turn Planning
 
-**Feature Branch**: `investigate-five-llm-calls`  
-**Created**: 2026-07-21  
-**Status**: Approved  
+**Feature Branch**: `investigate-five-llm-calls`
+**Created**: 2026-07-21
+**Status**: Approved
 **Source**: User-approved architecture in `.context/turn-planner-architecture.md`
 
 ## Goal

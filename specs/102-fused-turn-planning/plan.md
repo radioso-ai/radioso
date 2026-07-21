@@ -31,7 +31,8 @@ engine and public contracts remain unchanged.
   activation-variable application, and clarification policy.
 - The directives module owns scope/lifecycle filtering and classification-to-
   steering resolution.
-- `ChatService` and `WorkbenchReplayRunner` orchestrate the same narrow ports.
+- `ChatService` and `WorkbenchReplayRunner` start the same gated plan, while
+  `ChatTurnAssembly` consumes it through the shared live/replay execution path.
 - Application composition assembles the planner gateway, gate, coordinator, and
   existing fallback implementations.
 - `@radioso/conversation-engine` and `@radioso/conversation-contract` remain

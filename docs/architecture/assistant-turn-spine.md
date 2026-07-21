@@ -131,9 +131,10 @@ the same operation. Classification stages carry `source: "planned"` or
 `source: "staged"` while the trace's stage shape stays unchanged; a rejected
 planner attempt followed by fallback is reported as staged. The coordinator
 also records a low-cardinality outcome counter and planner-latency histogram. The
-workbench replay runner receives the same coordinator and gate through composition
-and consumes the plan's route, rewrite, language, routine rankings, and directive
-classifications.
+workbench replay runner receives the same coordinator and gate through
+composition. The shared `ChatTurnAssembly` consumes the plan's route, rewrite,
+routine rankings, and directive classifications for both live chat and replay;
+each host supplies the same plan-aware response-language fallback schedule.
 
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
 compose stages) is the root of the versioned `metadata.turnTrace` envelope on

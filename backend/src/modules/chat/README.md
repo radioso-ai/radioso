@@ -151,9 +151,10 @@ imports from `services/`.
   sends every consumer back to its staged call, all-or-nothing. Gated by
   `CHAT_TURN_PLANNING_ENABLED` / `CHAT_TURN_PLANNING_WORKSPACES`, resolved in
   composition (`dependencyBuilders.ts`), which wires the same coordinator and
-  gate into `ChatService` and `workbenchReplayRunner.ts` so replay executes the
-  identical schedule, including the staged response-language detector on bypass
-  or planner failure. Policy stays with the owning modules: the routine
+  gate into `ChatService` and `workbenchReplayRunner.ts`; their shared
+  `chatTurnAssembly.ts` consumes the plan so replay executes the identical
+  schedule, including the staged response-language detector on bypass or planner
+  failure. Policy stays with the owning modules: the routine
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim
@@ -166,8 +167,14 @@ imports from `services/`.
   `tests/unit/turn-plan-coordinator.test.ts`,
   `tests/unit/chat-service-turn-planning.test.ts`.
 - Reusable turn engine: `conversationContractMappers.ts`,
-  `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`, and
+  `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
+  `chatTurnAssembly.ts`, and
   application composition in `src/app/server/dependencyBuilders.ts`.
+  Application composition creates one `ChatTurnAssemblyFactory` for production
+  chat and workbench replay. Production supplies durable state ports; replay
+  supplies the in-memory ports from `chatTurnEffectProfile.ts`. This keeps engine
+  features aligned while replay avoids conversation, audit, action, and decision
+  persistence.
   `conversationProcessTurnInput.ts` passes route-scoped directive matching, turn
   interpretation, and retrieval work to the engine through neutral ports;
   `chatSessionPreparer.ts` does not pre-resolve directive matches for terminal

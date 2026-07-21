@@ -301,7 +301,8 @@ describe("createChatProcessTurnInput", () => {
     };
     const session = preparedSession();
     session.directiveSteering = undefined;
-    const { runtime, matchedTurnContexts } = routeScopedDirectiveRuntime([directive]);
+    session.usageAttribution = { surface: "eval", requestId: "run-123" };
+    const { runtime, matchedTurnContexts, directiveInputs } = routeScopedDirectiveRuntime([directive]);
     const input = createChatProcessTurnInput({
       session,
       directiveRuntime: runtime,
@@ -328,6 +329,11 @@ describe("createChatProcessTurnInput", () => {
       }),
     ]);
     expect(matchedTurnContexts).toEqual([{ query: "Where is my order?", route: "direct" }]);
+    expect(directiveInputs[0]?.usageContext).toMatchObject({
+      surface: "eval",
+      requestId: "run-123",
+      operation: "directive_match",
+    });
     expect(session.directiveSteering).toMatchObject({
       rules: [{ action: "Keep it brief.", source: "directive", lifespan: "response" }],
       matches: [expect.objectContaining({ directive })],

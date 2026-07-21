@@ -1,6 +1,6 @@
 import { z, type SafeParseReturnType, type ZodType } from "zod";
 
-import type { AgentSkillInvocationMode, AgentSkillKind } from "../agentSkills/domain.js";
+import type { AgentSkillInvocationMode, AgentSkillKind } from "../agentSkills/public.js";
 import { retrieveCapability } from "./capabilities/retrieve.js";
 import { mcpToolCapability } from "./capabilities/mcpTool.js";
 import { emailCapability } from "./capabilities/email.js";

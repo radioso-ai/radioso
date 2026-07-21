@@ -6,8 +6,7 @@ import {
   type SkillAuthoringDescriptor,
   type SkillCatalogDescriptorSource,
 } from "./authoringDescriptor.js";
-import type { AgentSkillSpine } from "../agentSkills/domain.js";
-import type { AgentSkillRepositoryPort } from "../agentSkills/repository.js";
+import type { AgentSkillRepositoryPort, AgentSkillSpine } from "../agentSkills/public.js";
 import type { SkillAvailability } from "./domain.js";
 import type { SkillCapabilityRegistry } from "./capabilityRegistry.js";
 import { isRoutineAuthoringBuiltInSkill } from "./routineAuthoringPolicy.js";

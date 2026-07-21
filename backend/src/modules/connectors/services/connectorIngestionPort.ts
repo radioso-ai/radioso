@@ -1,10 +1,21 @@
 import type { ConnectorIngestionPort, ConnectorSourceDescriptor } from "@radioso/connector-api";
 
 import type {
-  DocumentDeletionService,
-  DocumentIngestionService,
-} from "../../documents/composition.js";
-import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
+  DocumentIngestionPort,
+  DocumentRepositoryPort,
+  DocumentSourceResolverInput,
+} from "../../documents/contracts/index.js";
+
+interface ConnectorDocumentIngestionPort extends DocumentIngestionPort {
+  resolveSource(input: {
+    workspaceId: string;
+    source: DocumentSourceResolverInput;
+  }): Promise<{ id: string }>;
+}
+
+interface ConnectorDocumentDeletionPort {
+  delete(input: { workspaceId: string; documentId: string }): Promise<void>;
+}
 
 const toResolverInput = (source: ConnectorSourceDescriptor) =>
   ({
@@ -34,8 +45,8 @@ export interface HtmlContentNormalizer {
  * external id and we own the rest (upsert, queueing, audit, capability checks).
  */
 export const createConnectorIngestionPort = (deps: {
-  documentIngestionService: Pick<DocumentIngestionService, "ingest" | "resolveSource">;
-  documentDeletionService: Pick<DocumentDeletionService, "delete">;
+  documentIngestionService: ConnectorDocumentIngestionPort;
+  documentDeletionService: ConnectorDocumentDeletionPort;
   documentRepository: Pick<DocumentRepositoryPort, "findByExternalDocumentId">;
   htmlContentNormalizer: HtmlContentNormalizer;
 }): ConnectorIngestionPort => ({

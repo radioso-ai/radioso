@@ -2,7 +2,7 @@ import { notFound } from "../../shared/domain/errors.js";
 import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { AuditService } from "../audit/contracts/index.js";
-import type { PublicConversationEventBus } from "../chat/composition.js";
+import type { PublicConversationEventBus } from "../chat/contracts/index.js";
 import type { CustomerChannelReplyDeliverer } from "../customerReplyDelivery/public.js";
 
 export class OperatorReplyService {

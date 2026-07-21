@@ -821,12 +821,16 @@ Primary paths:
   through `WorkbenchReplayRunner`, scores, and gates on the baseline
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
-Full-assistant runs use the same conversation turn assembly as production chat.
+Full-assistant runs use the same conversation turn assembly as production chat
+when the Workbench runner and a full agent-config snapshot are available.
 `WorkbenchReplayRunner` supplies in-memory conversation, message, routine,
 clarification, and directive state adapters, so engine behavior is exercised
 without writing conversation history, audit events, actions, or decisions.
-`retrieval_only` runs keep the retrieval pipeline path because they measure
-retrieval independently of assistant behavior.
+Eval-driven Workbench turns carry the eval run ID and `eval` surface through
+the prepared session so retrieval and model usage remain attributed to the run.
+Legacy snapshots and hosts without Workbench replay configured retain the
+legacy full-assistant path. `retrieval_only` runs keep the retrieval pipeline
+path because they measure retrieval independently of assistant behavior.
 
 Useful searches:
 

@@ -271,7 +271,7 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
       this.deleteCaseBeforeCreateRun = false;
       await this.deleteCase(input.workspaceId, input.caseId);
     }
-    const id = this.nextId("run");
+    const id = input.id ?? this.nextId("run");
     const run: EvalRun = {
       id,
       workspaceId: input.workspaceId,
@@ -1054,12 +1054,61 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       workspaceId: "ws-1",
       sourceAgentId: agent.id,
       query: "what is the refund policy?",
+      usageAttribution: {
+        surface: "eval",
+        requestId: run.id,
+      },
     });
     expect(run.observedOutput.answer).toBe("Replay answer.");
     expect(run.observedOutput.turnTrace).toMatchObject({
       version: 1,
       spine: { traceId: "engine-trace" },
     });
+  });
+
+  it("falls back to the legacy full-assistant runner when Workbench replay is not configured", async () => {
+    const snapshot = makeSnapshot();
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const legacyRunner = new StubRunner(
+      [{ chunkId: "legacy", documentId: "legacy-doc", title: "Legacy", rank: 0 }],
+      undefined,
+      "Legacy answer.",
+    );
+    const service = new EvalRunService(repo, legacyRunner, passJudge());
+
+    const { run } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+    });
+
+    expect(legacyRunner.lastAnswerCall).not.toBeNull();
+    expect(run.observedOutput.answer).toBe("Legacy answer.");
+  });
+
+  it("falls back to the legacy full-assistant runner for snapshots without full agent config", async () => {
+    const snapshot = makeSnapshot({
+      originalAgentConfig: null,
+      sourceAgentId: null,
+    });
+    const repo = new InMemoryEvalRepository({ snapshots: [snapshot] });
+    const workbench = new StubWorkbenchReplayRunner();
+    const legacyRunner = new StubRunner(
+      [{ chunkId: "legacy", documentId: "legacy-doc", title: "Legacy", rank: 0 }],
+      undefined,
+      "Legacy snapshot answer.",
+    );
+    const service = new EvalRunService(repo, legacyRunner, passJudge(), workbench);
+
+    const { run } = await service.execute({
+      workspaceId: "ws-1",
+      snapshotId: snapshot.id,
+      mode: "full_assistant",
+    });
+
+    expect(workbench.calls).toHaveLength(0);
+    expect(legacyRunner.lastAnswerCall).not.toBeNull();
+    expect(run.observedOutput.answer).toBe("Legacy snapshot answer.");
   });
 
   it("keeps legacy full-assistant overrides on the Workbench engine replay path", async () => {

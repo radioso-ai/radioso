@@ -8,6 +8,7 @@ import type {
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
   applyAgentConfigOverride,
@@ -155,6 +156,7 @@ export interface WorkbenchReplayInput {
   userExpectedLocale?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
+  usageAttribution?: ModelCallUsageAttribution;
 }
 
 export class WorkbenchReplayRunner {
@@ -184,6 +186,7 @@ export class WorkbenchReplayRunner {
       query: input.query,
       sourceChannel: "workbench_replay",
       retrievalSettingsOverride: input.retrievalSettingsOverride,
+      usageAttribution: input.usageAttribution,
     };
     const session = await preparer.prepare(prepareInput, {
       skipRetrieval: true,
@@ -307,6 +310,7 @@ export class WorkbenchReplayRunner {
           surface: "assistant",
           operation: "response_language_detection",
           attemptKey: "response_language",
+          ...input.usageAttribution,
         },
       });
       return result.responseLanguage;

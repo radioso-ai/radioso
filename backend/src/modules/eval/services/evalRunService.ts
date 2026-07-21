@@ -7,6 +7,7 @@ import {
 } from "../../agents/public.js";
 import type { WorkbenchReplayResult } from "../../chat/composition.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 import { combineVerdicts, evaluateAssertion, isLlmJudgeAssertion } from "../domain/outcomes.js";
 import type {
   AssertionVerdict,
@@ -34,6 +35,7 @@ export interface EvalWorkbenchReplayRunnerPort {
     history: MessageRecord[];
     routineStartState?: NonNullable<EvalRunOverrides["routineStartState"]>;
     retrievalSettingsOverride?: EvalRunOverrides["retrievalSettingsOverride"];
+    usageAttribution?: ModelCallUsageAttribution;
   }): Promise<WorkbenchReplayResult>;
 }
 
@@ -155,7 +157,12 @@ export class EvalRunService {
     }
 
     const overrides = input.overrides ?? {};
-    if (input.mode === "full_assistant") {
+    if (
+      input.mode === "full_assistant"
+      && this.workbenchReplayRunner
+      && snapshot.originalAgentConfig
+      && snapshot.sourceAgentId
+    ) {
       return this.executeWorkbenchReplay(input);
     }
 
@@ -184,18 +191,45 @@ export class EvalRunService {
     );
 
     try {
-      const result = await this.retrievalRunner.retrieve({
-        workspaceId: input.workspaceId,
-        query: replay.query,
-        history: replay.history,
-        context: replayContext,
-        retrievalSettingsOverride,
-      });
-      observed = {
-        retrievedChunks: result.chunks,
-        activityTrace: result.activityTrace,
-      };
-      resolvedConfig.retrievalSettings = result.resolvedSettings;
+      if (input.mode === "full_assistant") {
+        const result = await this.retrievalRunner.answer({
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          runId,
+          query: replay.query,
+          history: replay.history,
+          context: replayContext,
+          modelOverride: overrides.modelOverride,
+          retrievalSettingsOverride,
+        });
+        observed = {
+          retrievedChunks: result.chunks,
+          answer: result.answer,
+          citations: result.citations,
+          answerSegments: result.answerSegments,
+          ...toObservedGrounding(result.groundingSummary),
+          activityTrace: result.activityTrace,
+        };
+        resolvedConfig.retrievalSettings = result.resolvedSettings;
+        resolvedConfig.composedInstructions = result.composedInstructions;
+        if (result.resolvedModel) {
+          resolvedConfig.modelProvider = result.resolvedModel.provider;
+          resolvedConfig.modelId = result.resolvedModel.model;
+        }
+      } else {
+        const result = await this.retrievalRunner.retrieve({
+          workspaceId: input.workspaceId,
+          query: replay.query,
+          history: replay.history,
+          context: replayContext,
+          retrievalSettingsOverride,
+        });
+        observed = {
+          retrievedChunks: result.chunks,
+          activityTrace: result.activityTrace,
+        };
+        resolvedConfig.retrievalSettings = result.resolvedSettings;
+      }
     } catch (error) {
       observed = {
         retrievedChunks: [],
@@ -336,6 +370,7 @@ export class EvalRunService {
         // routine one or more steps ahead. There is no per-turn pre-turn state source.
         routineStartState: overrides.routineStartState,
         retrievalSettingsOverride,
+        usageAttribution: { surface: "eval", requestId: runId },
       });
       observed = {
         retrievedChunks: result.resolvedConfig.retrievedChunks,

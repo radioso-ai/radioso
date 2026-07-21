@@ -17,8 +17,10 @@ import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
+import type { ConversationTurnInterpreterInput } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
 
@@ -242,6 +244,7 @@ describe("WorkbenchReplayRunner", () => {
       },
       query: "How long do refunds take?",
       history: [],
+      usageAttribution: { surface: "eval", requestId: "run-123" },
     });
 
     expect(result.answer).toBe("Answered with Replay override.");
@@ -275,7 +278,9 @@ describe("WorkbenchReplayRunner", () => {
       }],
     });
     expect(capturedRequests[0]?.history).toEqual([]);
-    expect(classify).toHaveBeenCalledOnce();
+    expect(classify).toHaveBeenCalledWith(expect.objectContaining({
+      usageContext: expect.objectContaining({ surface: "eval", requestId: "run-123" }),
+    }));
   });
 
   it("shares live turn interpretation, rewrite, response-language, and retrieval override assembly", async () => {
@@ -294,26 +299,22 @@ describe("WorkbenchReplayRunner", () => {
       route: "direct" as const,
       framing: { isIdentityQuestion: false },
     }));
+    const interpretChatTurn = vi.fn(async (_input: ConversationTurnInterpreterInput) => ({
+      route: "retrieval" as const,
+      framing: { isIdentityQuestion: false },
+      rewriteProposal,
+    }));
+    const detect = vi.fn(async (_input: ResponseLanguageDetectorInput) => ({
+      responseLanguage: "Estonian",
+    }));
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn(capturedRequests),
       auditService: createAuditService(),
       turnSkills: [answerSkill()],
       conversationEngine: new DefaultConversationEngine(),
       turnRouter: { classify },
-      turnInterpreter: {
-        async interpretChatTurn() {
-          return {
-            route: "retrieval",
-            framing: { isIdentityQuestion: false },
-            rewriteProposal,
-          };
-        },
-      },
-      responseLanguageDetector: {
-        async detect() {
-          return { responseLanguage: "Estonian" };
-        },
-      },
+      turnInterpreter: { interpretChatTurn },
+      responseLanguageDetector: { detect },
     });
 
     await runner.run({
@@ -323,6 +324,7 @@ describe("WorkbenchReplayRunner", () => {
       query: "Kui kaua tagasimakse aega võtab?",
       history: [],
       retrievalSettingsOverride: { vectorTopK: 9 },
+      usageAttribution: { surface: "eval", requestId: "run-123" },
     });
 
     expect(classify).not.toHaveBeenCalled();
@@ -331,7 +333,14 @@ describe("WorkbenchReplayRunner", () => {
       responseLanguage: "Estonian",
       precomputedRewriteProposal: rewriteProposal,
       retrievalSettingsOverride: { vectorTopK: 9 },
+      usageContext: expect.objectContaining({ surface: "eval", requestId: "run-123" }),
     });
+    expect(interpretChatTurn).toHaveBeenCalledWith(expect.objectContaining({
+      usageAttribution: { surface: "eval", requestId: "run-123" },
+    }));
+    expect(detect).toHaveBeenCalledWith(expect.objectContaining({
+      usageContext: expect.objectContaining({ surface: "eval", requestId: "run-123" }),
+    }));
   });
 
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {

@@ -39,6 +39,7 @@ import type { DirectiveSteeringResult } from "../../directives/public.js";
 import type { DeferredDirectiveStateStore } from "./directives/deferredDirectiveStateStore.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import type { TurnRouting } from "./turnRouter.js";
+import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -90,6 +91,8 @@ export interface PreparedSession {
    * outcome. Distinct from the lifecycle's post-answer `ActivityTrace`.
    */
   turnTrace: ConversationTrace;
+  /** Optional caller-owned usage attribution shared by every model call in this turn. */
+  usageAttribution?: ModelCallUsageAttribution;
 }
 
 export interface PrepareChatSessionInput {
@@ -114,6 +117,8 @@ export interface PrepareChatSessionInput {
   agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
   /** Ephemeral eval-only override; never persisted to workspace settings. */
   retrievalSettingsOverride?: RetrievalPipelineRequest["retrievalSettingsOverride"];
+  /** Ephemeral caller attribution for model and retrieval usage emitted by this turn. */
+  usageAttribution?: ModelCallUsageAttribution;
 }
 
 export interface PrepareChatSessionOptions {
@@ -210,6 +215,7 @@ export class ChatSessionPreparer {
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
+          usageAttribution: input.usageAttribution,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
           ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext, hostVariables),
@@ -226,6 +232,7 @@ export class ChatSessionPreparer {
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
+      usageAttribution: input.usageAttribution,
       ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
     };
   }
@@ -463,6 +470,7 @@ export class ChatSessionPreparer {
         messageId: userMessage?.id ?? null,
         surface: "assistant",
         attemptKey: userMessage?.id ?? conversation?.id ?? "chat_turn",
+        ...input.usageAttribution,
       },
     };
   }

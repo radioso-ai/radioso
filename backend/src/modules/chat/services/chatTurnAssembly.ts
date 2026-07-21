@@ -819,6 +819,7 @@ export class ChatTurnAssembly {
         conversationId: input.session.conversation.id,
         messageId: input.session.userMessage.id,
         agentSkillSettings: input.session.agent.skillSettings,
+        usageAttribution: input.session.usageAttribution,
       })
       : await this.routeTurn(input.request, input.session);
     return input.resolvedRetrievalSense
@@ -895,6 +896,7 @@ export class ChatTurnAssembly {
         surface: "assistant",
         operation: "clarification",
         attemptKey: input.session.userMessage.id,
+        ...input.session.usageAttribution,
       },
       policy: this.options.retrievalSenseClarificationPolicy,
       suppressAsk: input.activeRoutineAtTurnStart,
@@ -1031,6 +1033,7 @@ export class ChatTurnAssembly {
         messageId: session.userMessage.id,
         surface: "assistant",
         attemptKey: session.userMessage.id,
+        ...session.usageAttribution,
       },
     });
     return {

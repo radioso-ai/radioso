@@ -136,6 +136,18 @@ export const CHAT_BEHAVIOR = {
     // Output ceiling covering minimal hidden reasoning plus the bounded summary.
     maxOutputTokens: 1_024,
   },
+  // Perceived-performance budget — "don't keep the user waiting" made checkable.
+  // Not model tuning: these are UX guarantees the existing turn telemetry is
+  // measured AGAINST. firstTokenTargetMs turns the
+  // chat_stream_first_answer_chunk_latency_ms histogram from an un-anchored
+  // observation into an SLO. Composition-owned; never tuned per phrase.
+  perceivedPerformance: {
+    // Target time from stream open to the first answer chunk (time-to-first-
+    // token). A budget the histogram is compared to, NOT a hard cap on the model:
+    // a turn slower than this increments chat_stream_ttft_budget_exceeded_total
+    // (labeled by route) for SLO/alerting, but is never failed or truncated.
+    firstTokenTargetMs: 2_500,
+  },
 } as const;
 
 export const RETRIEVAL_BEHAVIOR = {

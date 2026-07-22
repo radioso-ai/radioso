@@ -65,6 +65,42 @@ export const CHAT_BEHAVIOR = {
     maxLiterals: 6,
     maxLiteralLength: 120,
   },
+  // Fused turn planning replaces the four fresh-turn classification calls
+  // (routine activation, turn interpretation, response-language detection,
+  // directive match) with a single chat-tier LLM call on eligible turns. These
+  // bounds are the fast-path eligibility gate: above any of them the turn
+  // bypasses planning and runs the existing staged path unchanged. Kept small so
+  // a large candidate set (which degrades single-call classification recall) or
+  // an oversized prompt never rides the fused path. Composition-owned; never
+  // tuned per phrase.
+  turnPlanning: {
+    // Reasoning effort for the planner call. Classification, not deliberation —
+    // none keeps the fused call off the critical-path latency budget and is
+    // accepted by the workspace nano planner; "minimal" forces an unsupported-
+    // value retry on gpt-5.4-nano and can consume the whole planner timeout.
+    reasoningEffort: "none",
+    // Output ceiling for the plan JSON (route + rewrite framing + rankings +
+    // classifications). Generous enough for a multi-branch retrieval rewrite plus
+    // several routine/directive verdicts; still a real bound.
+    maxOutputTokens: 1_536,
+    // Max routine candidates the planner may rank in one call. Above this the
+    // turn bypasses to staged ranked activation (which has its own prefilter).
+    maxRoutineCandidates: 8,
+    // Max contextual-directive candidates the planner may classify in one call.
+    // Mirrors the directive matcher's large-candidate warning threshold so the
+    // fused call never scores a set the staged matcher itself would warn about.
+    maxDirectiveCandidates: 40,
+    // Estimated planner prompt token budget. Above this the turn bypasses to the
+    // staged path rather than risk an over-long fused prompt degrading quality.
+    maxEstimatedPromptTokens: 6_000,
+    // Wall-clock timeout for the planner call. The fused structured response is
+    // larger than a staged classifier response; allow its observed slow tail to
+    // finish instead of multiplying calls through the staged fallback.
+    timeoutMs: 12_000,
+    // History tail (most-recent messages) included in the planner prompt, matching
+    // the retrieval rewrite context window so routing parity carries over.
+    historyTailMessages: 10,
+  },
   // Rolling per-conversation summary (#866). Regenerated off the critical path
   // after a turn completes and injected alongside the fixed recent-message window
   // so multi-turn conversations retain context beyond that window. All bounds are

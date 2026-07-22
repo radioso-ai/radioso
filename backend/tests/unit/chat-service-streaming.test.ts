@@ -3798,7 +3798,7 @@ describe("chat service streaming", () => {
     expect(done?.answer).not.toBe(focusedGroundedMiss);
   });
 
-  it("holds unsupported grounded drafts and releases the focused grounded miss at finalize", async () => {
+  it("holds uncited grounded drafts until finalize and then releases them as degraded", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -3874,8 +3874,8 @@ describe("chat service streaming", () => {
     const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
 
     expect(streamedText).toBe(done?.answer);
-    expect(done?.answer).toBe(focusedGroundedMiss);
-    expect((done as unknown as { skillOutcome?: string } | undefined)?.skillOutcome).toBe("no_context");
+    expect(done?.answer).toBe(unsupportedDraft);
+    expect((done as unknown as { skillOutcome?: string } | undefined)?.skillOutcome).toBe("grounded_degraded");
   });
 
   it("fails blank grounded streams instead of persisting an empty assistant turn", async () => {
@@ -4616,7 +4616,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("suppresses a draft when a malformed anchor is truncated during streaming", async () => {
+  it("sanitizes a malformed anchor and preserves the draft as degraded", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4688,14 +4688,14 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
+    expect(chunkTexts.join("")).toBe("full answer  marker");
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
-      answer: focusedGroundedMiss,
+      answer: "full answer  marker",
       citations: undefined,
       answerSegments: undefined,
-      skillOutcome: "no_context",
+      skillOutcome: "grounded_degraded",
       activitySummary: expect.objectContaining({
         candidateCounts: {
           semantic: 1,
@@ -4720,11 +4720,11 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: focusedGroundedMiss,
+      content: "full answer  marker",
     });
   });
 
-  it("suppresses a draft with trailing incomplete citation syntax", async () => {
+  it("sanitizes trailing incomplete citation syntax and preserves the draft as degraded", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -4795,7 +4795,7 @@ describe("chat service streaming", () => {
       }
     }
 
-    expect(chunkTexts).toEqual([focusedGroundedMiss]);
+    expect(chunkTexts).toEqual(["full answer"]);
     expect(doneEvent).toEqual(expect.objectContaining({
       type: "done",
       conversationId: expect.any(String),
@@ -4806,9 +4806,9 @@ describe("chat service streaming", () => {
         type: "retrieval",
         reason: "evidence_required",
       },
-      answer: focusedGroundedMiss,
-      skillOutcome: "no_context",
-      answerOutcome: "no_context_refusal",
+      answer: "full answer",
+      skillOutcome: "grounded_degraded",
+      answerOutcome: "grounded_success",
       citations: undefined,
       answerSegments: undefined,
       suggestions: undefined,
@@ -4847,7 +4847,7 @@ describe("chat service streaming", () => {
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
     expect(persisted.at(-1)).toMatchObject({
       role: "assistant",
-      content: focusedGroundedMiss,
+      content: "full answer",
     });
   });
 
@@ -5189,7 +5189,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("suppresses an anchor-free degraded answer with a focused grounded miss", async () => {
+  it("preserves an anchor-free degraded answer without a second refusal call", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -5225,8 +5225,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        // An ignored assertion protocol must never expose an unsupported draft.
-        return groundingEnvelope("We don't have specific details on that.", "degraded");
+        return groundingEnvelope("The available material gives a partial description.", "degraded");
       },
       async *streamAnswer() {
         yield "unused";
@@ -5258,12 +5257,12 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
-    expect(response.answer).toBe(focusedDecline);
-    expect(response.skillOutcome).toBe("no_context");
-    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
+    expect(response.answer).toBe("The available material gives a partial description.");
+    expect(response.skillOutcome).toBe("grounded_degraded");
+    expect(declineAttemptKeys).toEqual([]);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
-      skillOutcome: "no_context",
+      skillOutcome: "grounded_degraded",
     });
   });
 
@@ -5640,7 +5639,7 @@ describe("chat service streaming", () => {
     );
   });
 
-  it("suppresses an uncited warn-mode draft with a focused decline", async () => {
+  it("preserves an uncited warn-mode draft as degraded", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -5713,19 +5712,19 @@ describe("chat service streaming", () => {
       .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
       .map((event) => event.text);
 
-    expect(chunkTexts.join("")).toBe(focusedGroundedMiss);
+    expect(chunkTexts.join("")).toBe("Narayani is a teacher and author.");
     expect(events.at(-1)).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: focusedGroundedMiss,
-        skillOutcome: "no_context",
+        answer: "Narayani is a teacher and author.",
+        skillOutcome: "grounded_degraded",
         activityTrace: expect.objectContaining({
           stages: expect.arrayContaining([
             expect.objectContaining({
               stageId: "answer",
               kind: "answer_outcome",
               outputs: expect.objectContaining({
-                outcome: "no_context_refusal",
+                outcome: "grounded_success",
               }),
             }),
           ]),

@@ -71,11 +71,57 @@ export interface RoutineRegistryOptions {
   activationPrefilter?: RoutineActivationPrefilter;
 }
 
-interface RankedRoutineMatch {
+/**
+ * One ranked routine verdict — exactly the shape the ranked-activation model step
+ * produces today. {@link RoutineRegistry.applyRankedDecision} consumes an array of
+ * these, so a future planner that ranks the same candidates can conform to it
+ * without a new score model.
+ */
+export interface RankedRoutineMatch {
   routineId: string;
   confidence: number;
   variables?: Record<string, unknown>;
 }
+
+/**
+ * Planner-consumable summary of one prepared candidate: enough to build a ranking
+ * prompt (title, trigger, priority) without exposing any activation policy.
+ */
+export interface RoutineCandidateSummary {
+  routineId: string;
+  title: string;
+  triggerSummary: string;
+  priority: number;
+}
+
+/** The activator's non-null outcome (activate or clarify). */
+export type RoutineActivationResult = NonNullable<
+  Awaited<ReturnType<ConversationRoutineActivator["activate"]>>
+>;
+
+/** The activate arm of {@link RoutineActivationResult}. */
+type RoutineActivateOutcome = Extract<RoutineActivationResult, { kind: "activate" }>;
+
+/**
+ * The rankable subset of a candidate preparation: the eligible, prefilter-bounded
+ * registrations plus their planner summaries. Held so
+ * {@link RoutineRegistry.applyRankedDecision} can rebuild clarification candidates
+ * from either the legacy ranked-activation call or a planner's precomputed scores.
+ */
+export interface RankableRoutineCandidates {
+  kind: "rank";
+  registrations: readonly RoutineRegistration[];
+  candidates: readonly RoutineCandidateSummary[];
+}
+
+/**
+ * Outcome of the pre-rank eligibility pipeline. `claim` and `none` are resolved
+ * without any ranking call; only `rank` proceeds to the ranked-activation step.
+ */
+export type PreparedRoutineCandidates =
+  | RankableRoutineCandidates
+  | { kind: "claim"; activation: RoutineActivationResult }
+  | { kind: "none" };
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -216,6 +262,145 @@ export class RoutineRegistry {
     return this.registrations.length === 0;
   }
 
+  /**
+   * The eligibility pipeline that runs before the ranked-activation call:
+   * completed-state suppression (honoring `always` reentry), per-registration
+   * eligibility gates, explicit claims (which short-circuit without ranking), and
+   * the embedding prefilter with its min-score/top-K bounds. Returns the bounded
+   * registrations plus planner-consumable summaries; exposes no activation policy.
+   */
+  async prepareCandidates(
+    turn: TurnContext,
+    options: { suppressedRoutineIds?: readonly string[] } = {},
+  ): Promise<PreparedRoutineCandidates> {
+    // `suppressedRoutineIds` are the routines that already completed this
+    // conversation. Whether a completed routine actually stays suppressed is the
+    // routine's reentry policy: `always` reopens to re-activation, every other mode
+    // (incl. the default and the not-yet-implemented `semantic`) stays suppressed.
+    const suppressed = new Set(options.suppressedRoutineIds ?? []);
+    const eligibleRegistrations = this.registrations.filter((registration) =>
+      (!suppressed.has(registration.routine.id) || registration.trigger.reentryMode === "always") &&
+      (registration.trigger.eligible?.({ turn }) ?? true)
+    );
+    if (eligibleRegistrations.length === 0) {
+      return { kind: "none" };
+    }
+    for (const registration of eligibleRegistrations) {
+      const claim = registration.trigger.explicitClaim?.({ turn });
+      if (claim) {
+        return {
+          kind: "claim",
+          activation: {
+            kind: "activate",
+            routineId: registration.routine.id,
+            variables: claim.variables,
+          },
+        };
+      }
+    }
+    const rankedRegistrations = await filterRegistrationsByPrefilter(
+      eligibleRegistrations,
+      turn,
+      this.activationPrefilter,
+    );
+    if (rankedRegistrations.length === 0) {
+      return { kind: "none" };
+    }
+    return {
+      kind: "rank",
+      registrations: rankedRegistrations,
+      candidates: rankedRegistrations.map((registration) => ({
+        routineId: registration.routine.id,
+        title: routineLabel(registration.routine),
+        triggerSummary: registration.trigger.description,
+        priority: registration.trigger.priority,
+      })),
+    };
+  }
+
+  /**
+   * The post-rank policy: map ranked matches to clarification candidates, apply the
+   * registry's clarification policy (floor / margin / priority tie-breaks), and
+   * produce the activate/clarify/decline outcome with the same `consideredCandidates`
+   * payload the activator produces today. Runs identically on the legacy
+   * ranked-activation call's output or a planner's precomputed scores.
+   */
+  async applyRankedDecision(
+    prepared: RankableRoutineCandidates,
+    rankings: readonly RankedRoutineMatch[],
+    options: {
+      turn: TurnContext;
+      loopGuardCandidateIds?: string[];
+      suppressClarificationAsk?: boolean;
+    },
+  ): Promise<RoutineActivationResult | null> {
+    const byId = new Map(prepared.registrations.map((registration) => [registration.routine.id, registration]));
+    const candidates: ClarificationCandidate[] = rankings.map((match) => {
+      const registration = byId.get(match.routineId)!;
+      return {
+        id: registration.routine.id,
+        label: routineLabel(registration.routine),
+        description: registration.trigger.description,
+        confidence: match.confidence,
+        payload: {
+          routineId: registration.routine.id,
+          ...(match.variables ? { variables: match.variables } : {}),
+        },
+      };
+    });
+    const priorities = Object.fromEntries(
+      prepared.registrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
+    );
+    const decision = decideClarification(candidates, this.policy, {
+      priorities,
+      loopGuardCandidateIds: options.loopGuardCandidateIds,
+      suppressAsk: options.suppressClarificationAsk,
+    });
+    if (decision.kind === "none") {
+      return null;
+    }
+    if (decision.kind === "ask") {
+      return { kind: "clarify", candidates: decision.candidates };
+    }
+    if (decision.kind === "soft_pick") {
+      // Slice 4 implements offer behavior; band is empty in slice 3 so this
+      // is unreachable at runtime.
+      const activation = await this.pickActivation(decision.candidate, options.turn);
+      return {
+        ...activation,
+        decisionMetadata: {
+          consideredCandidates: candidates,
+          decision,
+        },
+      };
+    }
+    const activation = await this.pickActivation(decision.candidate, options.turn);
+    return {
+      ...activation,
+      decisionMetadata: {
+        consideredCandidates: candidates,
+        decision,
+        reason: decision.reason,
+      },
+    };
+  }
+
+  /**
+   * Resolve a chosen clarification candidate into its activation. The candidate
+   * activator only ever yields an activate outcome (never clarify), so the result
+   * carries the `routineId`/`variables` the decision metadata is spread onto.
+   */
+  private async pickActivation(
+    candidate: ClarificationCandidate,
+    turn: TurnContext,
+  ): Promise<RoutineActivateOutcome> {
+    const picked = await conversationRoutineActivatorFromCandidate(candidate)?.activate({ turn });
+    if (picked && picked.kind === "activate") {
+      return picked;
+    }
+    return { kind: "activate", routineId: candidate.id, variables: undefined };
+  }
+
   activator(modelGateway: ConversationModelGateway): ConversationRoutineActivator {
     return {
       activate: async ({ turn, loopGuardCandidateIds, suppressedRoutineIds, suppressClarificationAsk }: {
@@ -224,42 +409,18 @@ export class RoutineRegistry {
         suppressedRoutineIds?: string[];
         suppressClarificationAsk?: boolean;
       }) => {
-        // `suppressedRoutineIds` are the routines that already completed this
-        // conversation. Whether a completed routine actually stays suppressed is the
-        // routine's reentry policy: `always` reopens to re-activation, every other mode
-        // (incl. the default and the not-yet-implemented `semantic`) stays suppressed.
-        const suppressed = new Set(suppressedRoutineIds ?? []);
-        const eligibleRegistrations = this.registrations.filter((registration) =>
-          (!suppressed.has(registration.routine.id) || registration.trigger.reentryMode === "always") &&
-          (registration.trigger.eligible?.({ turn }) ?? true)
-        );
-        if (eligibleRegistrations.length === 0) {
+        const prepared = await this.prepareCandidates(turn, { suppressedRoutineIds });
+        if (prepared.kind === "claim") {
+          return prepared.activation;
+        }
+        if (prepared.kind === "none") {
           return null;
         }
-        for (const registration of eligibleRegistrations) {
-          const claim = registration.trigger.explicitClaim?.({ turn });
-          if (claim) {
-            return {
-              kind: "activate",
-              routineId: registration.routine.id,
-              variables: claim.variables,
-            };
-          }
-        }
-        const rankedRegistrations = await filterRegistrationsByPrefilter(
-          eligibleRegistrations,
-          turn,
-          this.activationPrefilter,
-        );
-        if (rankedRegistrations.length === 0) {
-          return null;
-        }
-        const knownIds = new Set(rankedRegistrations.map((registration) => registration.routine.id));
-        const byId = new Map(rankedRegistrations.map((registration) => [registration.routine.id, registration]));
+        const knownIds = new Set(prepared.registrations.map((registration) => registration.routine.id));
         const { text } = await modelGateway.complete({
           messages: turnMessages(turn),
           systemPrompt: renderPromptTemplate("chat/routine-ranked-activation.md", this.promptTemplate, {
-            routines: routinesBlock(rankedRegistrations),
+            routines: routinesBlock(prepared.registrations),
             latestMessage: turn.inputEvent.content,
           }),
           metadata: {
@@ -267,60 +428,15 @@ export class RoutineRegistry {
             agentId: turn.agent.id,
           },
         });
-        const matches = parseRankedMatches(text, knownIds);
-        if (!matches) {
+        const rankings = parseRankedMatches(text, knownIds);
+        if (!rankings) {
           return null;
         }
-        const candidates: ClarificationCandidate[] = matches.map((match) => {
-          const registration = byId.get(match.routineId)!;
-          return {
-            id: registration.routine.id,
-            label: routineLabel(registration.routine),
-            description: registration.trigger.description,
-            confidence: match.confidence,
-            payload: {
-              routineId: registration.routine.id,
-              ...(match.variables ? { variables: match.variables } : {}),
-            },
-          };
-        });
-        const priorities = Object.fromEntries(
-          rankedRegistrations.map((registration) => [registration.routine.id, registration.trigger.priority]),
-        );
-        const decision = decideClarification(candidates, this.policy, {
-          priorities,
+        return this.applyRankedDecision(prepared, rankings, {
+          turn,
           loopGuardCandidateIds,
-          suppressAsk: suppressClarificationAsk,
+          suppressClarificationAsk,
         });
-        if (decision.kind === "none") {
-          return null;
-        }
-        if (decision.kind === "ask") {
-          return { kind: "clarify", candidates: decision.candidates };
-        }
-        if (decision.kind === "soft_pick") {
-          // Slice 4 implements offer behavior; band is empty in slice 3 so this
-          // is unreachable at runtime.
-          const activation = (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
-            ?? { kind: "activate" as const, routineId: decision.candidate.id, variables: undefined };
-          return {
-            ...activation,
-            decisionMetadata: {
-              consideredCandidates: candidates,
-              decision,
-            },
-          };
-        }
-        const activation = (await conversationRoutineActivatorFromCandidate(decision.candidate)?.activate({ turn }))
-          ?? { kind: "activate" as const, routineId: decision.candidate.id, variables: undefined };
-        return {
-          ...activation,
-          decisionMetadata: {
-            consideredCandidates: candidates,
-            decision,
-            reason: decision.reason,
-          },
-        };
       },
     };
   }

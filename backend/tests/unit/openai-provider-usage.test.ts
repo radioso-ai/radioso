@@ -35,6 +35,18 @@ const embeddingConfig: LlmCapabilityConfig = {
   apiKey: "sk-test",
 };
 
+const responseFormat = {
+  type: "json_schema" as const,
+  name: "answer_envelope",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["answer"],
+    properties: { answer: { type: "string" } },
+  },
+};
+
 const asyncIterableOf = <T>(items: T[]): AsyncIterable<T> => ({
   async *[Symbol.asyncIterator]() {
     for (const item of items) {
@@ -49,6 +61,37 @@ beforeEach(() => {
 });
 
 describe("OpenAITextGenerationClient.complete", () => {
+  it("forwards strict JSON schema output to chat completions", async () => {
+    createMock.mockResolvedValue({
+      id: "resp-structured",
+      choices: [{ message: { content: '{"answer":"Hello"}' } }],
+    });
+
+    await new OpenAITextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: responseFormat.name,
+          strict: true,
+          schema: responseFormat.schema,
+        },
+      },
+    }));
+  });
+
+  it("omits strict JSON schema output for OpenAI-compatible completions", async () => {
+    createMock.mockResolvedValue({
+      id: "resp-compatible-structured",
+      choices: [{ message: { content: '{"answer":"Hello"}' } }],
+    });
+
+    await new OpenAITextGenerationClient(compatibleChatConfig).complete({ prompt: "Hi", responseFormat });
+
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
+  });
+
   it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s completion requests", async (config) => {
     createMock.mockResolvedValue({
       id: "resp-signal",
@@ -102,6 +145,44 @@ describe("OpenAITextGenerationClient.complete", () => {
 });
 
 describe("OpenAITextGenerationClient.stream", () => {
+  it("forwards strict JSON schema output to streaming chat completions", async () => {
+    createMock.mockResolvedValue(asyncIterableOf([]));
+
+    const { textStream } = new OpenAITextGenerationClient(chatConfig).stream({
+      prompt: "Hi",
+      responseFormat,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(createMock).toHaveBeenCalledWith(expect.objectContaining({
+      stream: true,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: responseFormat.name,
+          strict: true,
+          schema: responseFormat.schema,
+        },
+      },
+    }));
+  });
+
+  it("omits strict JSON schema output for OpenAI-compatible streams", async () => {
+    createMock.mockResolvedValue(asyncIterableOf([]));
+
+    const { textStream } = new OpenAITextGenerationClient(compatibleChatConfig).stream({
+      prompt: "Hi",
+      responseFormat,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
+  });
+
   it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s streaming requests", async (config) => {
     createMock.mockResolvedValue(asyncIterableOf([]));
     const controller = new AbortController();

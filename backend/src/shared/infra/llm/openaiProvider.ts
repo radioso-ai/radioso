@@ -169,8 +169,11 @@ const buildStreamUsageOptions = (
     ? { stream_options: { include_usage: true } }
     : {};
 
-const buildResponseFormat = (input: TextGenerationRequest) => {
-  if (!input.responseFormat) {
+const buildResponseFormat = (
+  provider: LlmCapabilityConfig["provider"],
+  input: TextGenerationRequest,
+) => {
+  if (provider !== "openai" || !input.responseFormat) {
     return {};
   }
   const { type, ...jsonSchema } = input.responseFormat;
@@ -279,7 +282,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       const request = {
         model: this.config.model,
         ...toSdkSampling(samplingParams),
-        ...buildResponseFormat(input),
+        ...buildResponseFormat(this.config.provider, input),
         messages,
       };
       return (input.signal
@@ -322,7 +325,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         // Ask OpenAI to append a final usage-only chunk after the content chunks.
         ...buildStreamUsageOptions(config.provider),
         ...toSdkSampling(samplingParams),
-        ...buildResponseFormat(input),
+        ...buildResponseFormat(config.provider, input),
         messages,
       };
       return (input.signal

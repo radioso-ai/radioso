@@ -57,11 +57,14 @@ imports from `services/`.
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
   reusable engine.
-- Grounded retrieval answers: `groundedAnswerEnvelope.ts` defines the provider-
-  enforced v2 JSON schema and retains the older sentinel parser for compatibility.
+- Grounded retrieval answers: `groundedAnswerEnvelope.ts` defines the v2 JSON
+  schema and retains the older sentinel parser for compatibility. First-party
   OpenAI and Gemini use native JSON-schema output; Claude uses an equivalent forced
-  schema tool. The incremental envelope reader emits only the decoded `answer`
-  field, so claims and follow-up suggestions never enter visible streaming text.
+  schema tool. OpenAI-compatible endpoints keep the schema-oriented prompt but do
+  not receive an API-level strict-format parameter because arbitrary compatible
+  backends do not share that capability. The incremental envelope reader emits
+  only the decoded `answer` field, so claims and follow-up suggestions never enter
+  visible streaming text.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths. A valid in-range `[[n]]`

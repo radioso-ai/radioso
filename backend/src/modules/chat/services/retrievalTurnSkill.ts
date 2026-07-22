@@ -247,6 +247,9 @@ export class RetrievalAnswerComposer {
       // This is a model-authored scope-policy response, not an ordinary answer.
       // Use the standard fallback chat tier rather than an agent's lightweight
       // answer override, which may not follow the non-answer contract reliably.
+      // Keep the workspace id so stored credentials and workspace provider
+      // preferences still resolve instead of falling back to process-wide env.
+      workspaceContext: { workspaceId: session.agent.workspaceId },
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
       ...(signal ? { signal } : {}),
     });

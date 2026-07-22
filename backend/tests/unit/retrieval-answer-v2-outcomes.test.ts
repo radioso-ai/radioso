@@ -252,9 +252,11 @@ describe("retrieval answer envelope v2", () => {
 
   it("abandons an anchor-free candidate at the cap, aborts upstream, and returns only a focused decline", async () => {
     const privateDraft = "PRIVATE DOCUMENT DRAFT ".repeat(300);
-    const { composer, counts, metricWrites, gateAbortObserved } = buildComposer(privateDraft);
+    const { composer, counts, metricWrites, gateAbortObserved, fallbackWorkspaceContext } = buildComposer(privateDraft);
+    const session = baseSession();
+    session.agent.chatModelOverride = { provider: "openai", model: "agent-override" };
 
-    const { chunks, result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
+    const { chunks, result } = await drain(composer.streamAnswer(session, "Question?", undefined, undefined));
 
     expect(chunks).toEqual([]);
     expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
@@ -263,6 +265,7 @@ describe("retrieval answer envelope v2", () => {
     expect(JSON.stringify(result)).not.toContain("PRIVATE DOCUMENT DRAFT");
     expect(gateAbortObserved()).toBe(true);
     expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 1 });
+    expect(fallbackWorkspaceContext()).toEqual({ workspaceId: "workspace-1" });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
       labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true" },

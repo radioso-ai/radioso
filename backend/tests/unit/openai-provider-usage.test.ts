@@ -81,6 +81,17 @@ describe("OpenAITextGenerationClient.complete", () => {
     }));
   });
 
+  it("omits strict JSON schema output for OpenAI-compatible completions", async () => {
+    createMock.mockResolvedValue({
+      id: "resp-compatible-structured",
+      choices: [{ message: { content: '{"answer":"Hello"}' } }],
+    });
+
+    await new OpenAITextGenerationClient(compatibleChatConfig).complete({ prompt: "Hi", responseFormat });
+
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
+  });
+
   it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s completion requests", async (config) => {
     createMock.mockResolvedValue({
       id: "resp-signal",
@@ -156,6 +167,20 @@ describe("OpenAITextGenerationClient.stream", () => {
         },
       },
     }));
+  });
+
+  it("omits strict JSON schema output for OpenAI-compatible streams", async () => {
+    createMock.mockResolvedValue(asyncIterableOf([]));
+
+    const { textStream } = new OpenAITextGenerationClient(compatibleChatConfig).stream({
+      prompt: "Hi",
+      responseFormat,
+    });
+    for await (const _chunk of textStream) {
+      // drain
+    }
+
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("response_format");
   });
 
   it.each([chatConfig, compatibleChatConfig])("passes AbortSignal to %s streaming requests", async (config) => {

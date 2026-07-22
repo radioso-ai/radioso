@@ -65,11 +65,10 @@ imports from `services/`.
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
   returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
-  answer or malformed result with no valid sourced assertion suppresses the draft
-  and invokes the focused, locale-aware grounded-miss composer with typed
-  `no_context`; its static asset is only the composer's last resort for provider or
-  blank-output failure. Partial answers with at least one valid assertion remain
-  visible and degraded. Raw envelope JSON is never emitted or persisted.
+  answer or malformed result with no valid sourced assertion remains visible with a
+  computed `degraded` verdict; it is not replaced by a second generated refusal.
+  Partial answers with at least one valid assertion remain visible and degraded.
+  Raw envelope JSON is never emitted or persisted.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
@@ -158,9 +157,12 @@ imports from `services/`.
   activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
   `applyRankedDecision` (including extracted activation variables), completed-
   routine correction/reentry adapters pin the plan as bypassed when they claim
-  the turn, answer scope/retrieval rewrite guidance/rolling summary resolve through
-  the same interpretation-context seam as the staged path, and the directive matcher resolves precomputed
+  the turn, retrieval rewrite guidance/rolling summary resolve through the same
+  interpretation-context seam as the staged path, and the directive matcher resolves precomputed
   classifications through `matchAndResolveWithClassifications`.
+  Pre-retrieval planning never receives response identity or answer instructions,
+  and any model-proposed scope fields are ignored. Retrieved evidence decides
+  whether the grounded answer has support.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
   gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
   `tests/unit/turn-plan-service.test.ts`,

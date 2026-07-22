@@ -62,8 +62,6 @@ describe("TurnRouter", () => {
     })).toEqual({
       route: "retrieval",
       framing: {
-        inScopeRequest: "Tell me about meditation retreats",
-        outsideScopeRequest: "solve a math problem",
         isIdentityQuestion: false,
       },
     });
@@ -86,7 +84,8 @@ describe("TurnRouter", () => {
     });
 
     expect(result.route).toBe("retrieval");
-    expect(result.framing.inScopeRequest).toBe("show the first retreat");
+    expect(result.framing.inScopeRequest).toBeUndefined();
+    expect(result.framing.outsideScopeRequest).toBeUndefined();
   });
 
   it("runs the classifier at the cheap intent-routing effort and token ceiling, not answer-grade", async () => {
@@ -103,7 +102,6 @@ describe("TurnRouter", () => {
     await gateway.classify({
       query: "thanks",
       contextMessages: [],
-      answerScopeReference: "scope",
       usageContext: { workspaceId: "w", surface: "assistant", operation: "turn_router", attemptKey: "x" },
     });
 
@@ -122,13 +120,13 @@ describe("TurnRouter", () => {
     });
   });
 
-  it("truncates over-long scope framing and drops literal \"null\" values", () => {
+  it("ignores scope framing proposed by the classifier", () => {
     const normalized = normalizeTurnRouting({
       route: "retrieval",
       inScopeRequest: "a".repeat(300),
       outsideScopeRequest: "null",
     });
-    expect(normalized.framing.inScopeRequest).toHaveLength(240);
+    expect(normalized.framing.inScopeRequest).toBeUndefined();
     expect(normalized.framing.outsideScopeRequest).toBeUndefined();
   });
 
@@ -145,16 +143,15 @@ describe("TurnRouter", () => {
     });
   });
 
-  it("renders scope reference and multilingual rescue guidance into the prompt", () => {
+  it("keeps custom instructions out of routing and leaves support to retrieval", () => {
     const prompt = buildTurnRouterPrompt({
       context: "ASSISTANT: I can show the retreat.",
-      answerScopeReference: "Configured response instructions:\nHelp visitors choose retreats.",
       query: "jah, näita seda",
     });
 
-    expect(prompt).toContain("Configured response instructions:");
-    expect(prompt).toContain("Mixed turns (in-scope + out-of-scope): route to retrieval");
-    expect(prompt).toContain("Vague in-scope context + a request for an answer/action: route to retrieval");
+    expect(prompt).not.toContain("Configured response instructions:");
+    expect(prompt).toContain("Retrieval evidence decides whether the assistant has support");
+    expect(prompt).toContain("Always return null for inScopeRequest and outsideScopeRequest");
     expect(prompt).toContain("Do not rely on English keyword matching");
     expect(prompt).toContain('"route":"retrieval|direct"');
   });

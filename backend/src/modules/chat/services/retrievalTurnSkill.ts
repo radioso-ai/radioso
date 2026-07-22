@@ -47,30 +47,6 @@ export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome
   buildPreparedTurnOutcome(session, { kind: RETRIEVAL_OUTCOME_KIND, skillName: RETRIEVAL_TURN_SKILL });
 
 /**
- * True when the turn router judged the request wholly outside the agent's scope: it
- * named an out-of-scope request and no in-scope one. Mixed turns (both present) fall
- * through to grounded answering, which answers the in-scope part and declines the rest.
- */
-const isOutOfScopeOnly = (session: PreparedSession): boolean => {
-  const framing = session.turnFraming;
-  return Boolean(framing?.outsideScopeRequest?.trim()) && !framing?.inScopeRequest?.trim();
-};
-
-const shouldSuppressUnsupportedDraft = (
-  session: PreparedSession,
-  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
-  summary: GroundingSummary,
-): boolean =>
-  session.retrieval.contexts.length > 0
-  && summary.sourcedClaimCount === 0
-  && (
-    envelope.outcome === "answer"
-    || envelope.parseStatus === "missing"
-    || envelope.parseStatus === "malformed"
-    || envelope.parseStatus === "invalid_v2"
-  );
-
-/**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
  * envelope call, the page-context fallback, and computed grounding presentation.
  * Grounding is retrieval's *private* business — this only
@@ -168,30 +144,6 @@ export class RetrievalAnswerComposer {
     return envelope;
   }
 
-  private async presentSuppressedUnsupportedDraft(
-    session: PreparedSession,
-    summary: GroundingSummary,
-    query: string,
-    userExpectedLocale: string | null | undefined,
-    accountId: string | undefined,
-    signal?: AbortSignal,
-  ): Promise<ChatPresentedAnswer> {
-    const decline = await this.composeFocusedDecline(
-      session,
-      query,
-      userExpectedLocale,
-      accountId,
-      "grounded_suppressed_decline",
-      signal,
-    );
-    return {
-      ...this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
-      grounding: summary.verdict,
-      groundingSummary: summary,
-      effectiveRetrieval: session.retrieval,
-    };
-  }
-
   async generateAnswerWithPageContext(
     session: PreparedSession,
     query: string,
@@ -220,18 +172,9 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
   ): Promise<ChatPresentedAnswer> {
-    // When semantic turn interpretation found only outside-scope requested work,
-    // ask the focused composer for a model-authored scoped response. The classifier
-    // applies the configured scope by meaning; this path contains no phrase matching
-    // or canned refusal.
-    if (isOutOfScopeOnly(session)) {
-      return this.declineOutOfScope(session, query, userExpectedLocale, accountId, "out_of_scope");
-    }
-
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
-    let suppressUnsupportedDraft = false;
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -270,17 +213,6 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
       });
       this.recordGroundingOutcome(grounding, envelope, false);
-      suppressUnsupportedDraft = shouldSuppressUnsupportedDraft(session, envelope, grounding);
-    }
-
-    if (suppressUnsupportedDraft && typeof grounding !== "string") {
-      return this.presentSuppressedUnsupportedDraft(
-        session,
-        grounding,
-        query,
-        userExpectedLocale,
-        accountId,
-      );
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -318,17 +250,6 @@ export class RetrievalAnswerComposer {
     });
   }
 
-  private async declineOutOfScope(
-    session: PreparedSession,
-    query: string,
-    userExpectedLocale: string | null | undefined,
-    accountId: string | undefined,
-    attemptKey: string,
-  ): Promise<ChatPresentedAnswer> {
-    const decline = await this.composeFocusedDecline(session, query, userExpectedLocale, accountId, attemptKey);
-    return this.chatAnswerPresenter.presentGroundedMissAnswer(decline);
-  }
-
   /**
    * Streams the grounded answer: a no-context fallback yielded as one chunk, or the
    * token loop that holds unasserted prose until the first valid sourced assertion,
@@ -343,32 +264,11 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
   ): AsyncGenerator<string, TurnStreamResult> {
-    // Scope gate (mirrors composeAnswer): a wholly out-of-scope turn declines via the
-    // focused grounded-miss composer instead of streaming a grounded answer.
-    if (isOutOfScopeOnly(session)) {
-      const decline = await this.composeFocusedDecline(
-        session,
-        query,
-        userExpectedLocale,
-        accountId,
-        "stream_out_of_scope",
-        signal,
-      );
-      return {
-        finalPresentation: await this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
-        suggestions: { mode: "assistant", planned: [] },
-        hasStreamedAnswer: false,
-        streamedAnswer: "",
-        deliveryMode: "committed",
-      };
-    }
-
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
-    let suppressUnsupportedDraft = false;
     let groundingGateWaitMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
@@ -471,25 +371,6 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
       });
       this.recordGroundingOutcome(grounding, finalized, true);
-      suppressUnsupportedDraft = shouldSuppressUnsupportedDraft(session, finalized, grounding);
-    }
-
-    if (suppressUnsupportedDraft && typeof grounding !== "string") {
-      return {
-        finalPresentation: await this.presentSuppressedUnsupportedDraft(
-          session,
-          grounding,
-          query,
-          userExpectedLocale,
-          accountId,
-          signal,
-        ),
-        suggestions: { mode: "assistant", planned: [] },
-        hasStreamedAnswer,
-        streamedAnswer,
-        deliveryMode: hasStreamedAnswer ? "live" : "committed",
-        ...(groundingGateWaitMs === undefined ? {} : { traceMetrics: { groundingGateWaitMs } }),
-      };
     }
 
     // Present the same generated body from its computed assertion verdict. Suggestions

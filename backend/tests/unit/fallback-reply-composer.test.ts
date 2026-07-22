@@ -33,30 +33,23 @@ const usageContext = {
   attemptKey: "grounded_miss",
 } as const;
 
-describe("scope classification prompt contract", () => {
-  it("preserves the established standalone-task distinction in staged and fused interpretation", () => {
-    const scope = "Configured response instructions:\nHelp visitors choose retreats.";
+describe("scope-neutral interpretation prompt contract", () => {
+  it("leaves support decisions to retrieval in staged and fused interpretation", () => {
     const prompts = [
-      buildTurnInterpretationPrompt({ context: "", answerScopeReference: scope, query: "sqrt(5)" }),
+      buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)" }),
       buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
-        answerScopeReference: scope,
         routineCandidates: [],
         directiveCandidates: [],
       }),
     ];
 
     for (const prompt of prompts) {
-      expect(prompt).toContain("A self-contained task that does not ask about content within the configured assistant scope is outside-scope requested work.");
-      expect(prompt).toContain("calculations, code syntax questions, translations, general trivia");
-      expect(prompt).toContain("leave inScopeRequest null unless the user also asks for concrete work within the configured scope");
-      expect(prompt).toContain("If the scope reference is empty or vague, do not mark a request outside scope merely because it is standalone");
-      expect(prompt).toContain("When the assistant answer scope reference is exactly `No configured answer scope.`, outsideScopeRequest must be null");
-      expect(prompt).toContain("Apply these distinctions by meaning in every language; do not use keyword matching.");
-      expect(prompt).toContain("a standalone outside-scope answer or action request still uses route: retrieval");
-      expect(prompt).toContain("Put requested work inside that configured scope in inScopeRequest");
-      expect(prompt).toContain("Never put the same requested work in both scope fields");
+      expect(prompt).not.toContain("Configured response instructions:");
+      expect(prompt).toContain("Do not classify scope from the question, conversation, or assistant instructions");
+      expect(prompt).toContain("Retrieval evidence decides whether the assistant has support");
+      expect(prompt).toContain("Always return null for inScopeRequest and outsideScopeRequest");
       expect(prompt).toContain("definition_lookup: identification or one discrete fact or attribute about a named entity");
       expect(prompt).toContain("policy_answer: a procedural, compliance, eligibility, or support-policy question");
       expect(prompt).toContain("Do not use policy_answer merely because the assistant has a behavioral directive about the topic");
@@ -118,7 +111,8 @@ describe("grounded miss response composer", () => {
     expect(observedRequest.reasoningEffort).toBe("minimal");
     expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
     expect(observedRequest.systemPrompt).toContain("Never answer from general knowledge when support is absent");
-    expect(observedRequest.systemPrompt).toContain("Do not reconsider or answer it");
+    expect(observedRequest.systemPrompt).toContain("Retrieval found no support for the requested answer");
+    expect(observedRequest.systemPrompt).toContain("Do not answer it from the question or configured instructions");
     expect(observedRequest.systemPrompt).toContain("give no solution, explanation, summary, translation, calculation");
     expect(observedRequest.systemPrompt).toContain("result, formula, code, facts, draft, or reasoning");
     expect(observedRequest.systemPrompt).toContain("team's first-person voice");

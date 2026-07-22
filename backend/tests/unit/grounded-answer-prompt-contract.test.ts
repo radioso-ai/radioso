@@ -87,12 +87,12 @@ describe("grounded answer prompt contract", () => {
     expect(loadPromptTemplate("chat/grounded-decline-rules.md")).toContain(canonicalSentence);
   });
 
-  it("preserves the established outside-scope guard in the normal answer path", () => {
+  it("decides answer support from retrieved findings rather than question wording or instructions", () => {
     const prompt = loadPromptTemplate("retrieval/answer.md");
 
-    expect(prompt).toContain("Outside-scope subrequests include standalone calculations");
-    expect(prompt).toContain("Never include their result, formula, code output, factual answer, draft, joke, or reasoning");
-    expect(prompt).toContain("even if in-scope context or findings are present");
+    expect(prompt).toContain("The presence or absence of supporting findings decides whether the question can be answered");
+    expect(prompt).toContain("never infer support from the wording of the question or from configured answer instructions");
+    expect(prompt).not.toContain("Outside-scope subrequests include");
   });
 
   it("keeps the protocol assets within their locked word budgets", () => {

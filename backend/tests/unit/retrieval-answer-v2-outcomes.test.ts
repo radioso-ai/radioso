@@ -110,25 +110,26 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
 };
 
 describe("retrieval answer envelope v2", () => {
-  it("keeps focused scope-policy generation off a lightweight agent answer override", async () => {
+  it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {
     const session = baseSession();
     session.agent.chatModelOverride = { provider: "openai", model: "gpt-5-nano" };
     session.turnFraming = { outsideScopeRequest: "Calculate sqrt(5).", isIdentityQuestion: false };
-    const { composer, counts, fallbackWorkspaceContext } = buildComposer("must not run");
+    const { composer, counts, fallbackWorkspaceContext } = buildComposer(groundedV2Envelope());
 
     const presented = await composer.composeAnswer(session, "sqrt(5)", undefined, undefined);
 
-    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
-    expect(counts()).toEqual({ answerCalls: 0, streamCalls: 0, fallbackCalls: 1 });
+    expect(presented.answer).toBe(GROUNDED_V2_VISIBLE);
+    expect(presented.skillOutcome).toBe("grounded");
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
     expect(fallbackWorkspaceContext()).toBeUndefined();
   });
 
   const cases = [
-    { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3, suppressed: false },
-    { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1, suppressed: false },
-    { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0, suppressed: false },
-    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "FOCUSED GROUNDED MISS", verdict: "degraded", outcome: "no_context", citations: 0, suppressed: true },
-    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "FOCUSED GROUNDED MISS", verdict: "degraded", outcome: "no_context", citations: 0, suppressed: true },
+    { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3 },
+    { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1 },
+    { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0 },
+    { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "Visible malformed answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
+    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "Visible anchor-free answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
   ] as const;
 
   for (const testCase of cases) {
@@ -140,10 +141,8 @@ describe("retrieval answer envelope v2", () => {
       expect(presented.grounding).toBe(testCase.verdict);
       expect(presented.skillOutcome).toBe(testCase.outcome);
       expect(presented.citations ?? []).toHaveLength(testCase.citations);
-      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: testCase.suppressed ? 1 : 0 });
-      expect(attemptKeys).toEqual(testCase.suppressed
-        ? ["grounded", "grounded_suppressed_decline"]
-        : ["grounded"]);
+      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+      expect(attemptKeys).toEqual(["grounded"]);
       expect(attemptKeys).not.toContain("grounded_unsupported");
     });
 
@@ -157,10 +156,8 @@ describe("retrieval answer envelope v2", () => {
       expect(result.finalPresentation.citations ?? []).toHaveLength(testCase.citations);
       expect(chunks.join("")).not.toContain("RADIOSO_FOLLOWUPS_JSON");
       expect(chunks.join("")).not.toContain("[[");
-      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: testCase.suppressed ? 1 : 0 });
-      expect(attemptKeys).toEqual(testCase.suppressed
-        ? ["stream_grounded", "grounded_suppressed_decline"]
-        : ["stream_grounded"]);
+      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 0 });
+      expect(attemptKeys).toEqual(["stream_grounded"]);
       expect(attemptKeys).not.toContain("stream_grounded_unsupported");
     });
   }
@@ -291,7 +288,7 @@ describe("retrieval answer envelope v2", () => {
     expect(JSON.stringify(metricWrites)).not.toContain("workshop");
   });
 
-  it("records anchor_free while suppressing the unsupported presentation", async () => {
+  it("records anchor_free while preserving the degraded presentation", async () => {
     const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
       outcome: "answer",
@@ -303,17 +300,17 @@ describe("retrieval answer envelope v2", () => {
 
     const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
 
-    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
-    expect(presented.skillOutcome).toBe("no_context");
+    expect(presented.answer).toBe("Unsupported draft.");
+    expect(presented.skillOutcome).toBe("grounded_degraded");
     expect(presented.groundingSummary).toMatchObject({ verdict: "degraded", sourcedClaimCount: 0 });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
       labels: { protocol: "v2", verdict: "degraded", reason: "anchor_free", stream: "false" },
     }]);
-    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
   });
 
-  it("presents the static asset only when the focused decline composer returns its failure fallback", async () => {
+  it("does not replace a degraded answer with the grounded-miss static asset", async () => {
     const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
       outcome: "answer",
@@ -325,9 +322,9 @@ describe("retrieval answer envelope v2", () => {
 
     const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
 
-    expect(presented.answer).toBe(getGroundedMissFallback());
-    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 1 });
-    expect(attemptKeys).toEqual(["grounded", "grounded_suppressed_decline"]);
+    expect(presented.answer).toBe("Unsupported draft.");
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+    expect(attemptKeys).toEqual(["grounded"]);
   });
 
   it("does not start a second semantic call after a blank page-context generation", async () => {

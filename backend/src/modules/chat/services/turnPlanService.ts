@@ -47,7 +47,6 @@ export interface TurnPlanDirectiveCandidate {
 export interface TurnPlanRequest {
   query: string;
   history: MessageRecord[];
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -113,7 +112,6 @@ export type TurnPlanningPromptInput = Pick<
   TurnPlanRequest,
   | "query"
   | "history"
-  | "answerScopeReference"
   | "semanticRewriteInstructions"
   | "lexicalRewriteInstructions"
   | "conversationSummary"
@@ -126,7 +124,6 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string 
   renderPromptTemplate("chat/turn-planning.md", {
     context_section: formatConversationContext(input.history) || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
-    answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:

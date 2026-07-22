@@ -119,7 +119,6 @@ export const lazyPromise = <T>(compute: () => Promise<T>): Promise<T> => {
 export interface TurnPlanInputs {
   query: string;
   history: MessageRecord[];
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -185,7 +184,6 @@ export class TurnPlanCoordinator {
     const request = {
       query: input.query,
       history: input.history.slice(-this.bounds.historyTailMessages),
-      answerScopeReference: input.answerScopeReference,
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       conversationSummary: input.conversationSummary,

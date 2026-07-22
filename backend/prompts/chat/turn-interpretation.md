@@ -5,9 +5,6 @@ Conversation context:
 
 {{conversation_summary_section}}
 
-Assistant answer scope reference:
-{{answer_scope_reference_section}}
-
 Semantic rewrite guidance:
 {{semantic_rewrite_instructions}}
 
@@ -18,22 +15,13 @@ Latest user question:
 {{query}}
 
 Routing Rules
-route: retrieval - any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, a format/language transformation of a previous answer, or any other answer/action. Use retrieval even when the request may be outside the assistant answer scope; scope is decided after retrieval evidence or direct scope framing.
+route: retrieval - any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, a format/language transformation of a previous answer, or any other answer/action.
 route: direct - only turns where the user does not want an answer or action, such as appreciation, acknowledgement, cancellation, ending the conversation, or a greeting with no other request.
 Identity questions about the assistant's configured name, role, purpose, or what it can do are route: direct and set isIdentityQuestion true.
-For every answer/action request, compare it with the assistant answer scope reference. Put requested work inside that configured scope in inScopeRequest. Put requested work outside that configured scope in outsideScopeRequest. Whether the model could answer a task from general knowledge does not make it in scope. Use null for the side that has no requested work. Never put the same requested work in both scope fields.
-A self-contained task that does not ask about content within the configured assistant scope is outside-scope requested work. This includes calculations, code syntax questions, translations, general trivia, and similar standalone tasks. Put that task in outsideScopeRequest and leave inScopeRequest null unless the user also asks for concrete work within the configured scope.
-Do not treat a standalone outside-scope task as in scope merely because it mentions a configured-scope place, course, retreat, or concept as context.
-Broad turns about a configured domain topic remain in-scope requests.
-Apply the standalone-task distinction only when the assistant answer scope reference defines a concrete organization, domain, or supported topic. If the scope reference is empty or vague, do not mark a request outside scope merely because it is standalone; keep it eligible for retrieval so available evidence decides support.
-When the assistant answer scope reference is exactly `No configured answer scope.`, outsideScopeRequest must be null. Retrieval evidence, not scope classification, decides whether the request can be answered.
-Apply these distinctions by meaning in every language; do not use keyword matching.
-This scope classification does not change routing: a standalone outside-scope answer or action request still uses route: retrieval.
-Mixed turns (in-scope + out-of-scope): route to retrieval; put the out-of-scope task in outsideScopeRequest.
-Vague in-scope context + a request for an answer/action: route to retrieval.
+Do not classify scope from the question, conversation, or assistant instructions. Retrieval evidence decides whether the assistant has support. Always return null for inScopeRequest and outsideScopeRequest.
 Short acknowledgements or confirmations require the immediately preceding assistant message and the latest user wording together. If the latest wording is only gratitude or acknowledgement, route direct even when the assistant offered options. If the latest wording explicitly accepts or chooses an offered action, route retrieval. Route direct when the acknowledgement closes the exchange or does not accept any offered action.
 If the user accepts or chooses a concrete option proposed by the assistant, route retrieval and let retrieval resolve the query from that offered material.
-Do not rely on English keyword matching. Apply these routing rules across languages using meaning, context, and the configured scope reference.
+Do not rely on English keyword matching. Apply these routing rules across languages using meaning and context.
 
 Retrieval Rewrite Rules
 If route is direct, set rewrite to null.

@@ -78,10 +78,11 @@ candidate is not rejected because of provider pacing. The compose trace records
 only the numeric gate wait duration, never the candidate text.
 
 Turn routing is a chat-owned step above retrieval. `TurnRouter` classifies the
-latest user turn as `retrieval` or `direct` from the raw query, recent history,
-assistant identity, and configured answer scope. Retrieval query rewrite runs only
-after a turn has been routed to retrieval; it no longer returns response intent or
-direct-answer framing.
+latest user turn as `retrieval` or `direct` from the raw query and recent history.
+It does not receive response identity or answer instructions, and scope fields
+returned by a model are ignored. Retrieval evidence determines whether the
+assistant has support. Retrieval query rewrite runs only after a turn has been
+routed to retrieval.
 
 Response language is detected once per turn from the latest user message and
 recent history. Chat starts that detector as soon as the user message is
@@ -108,7 +109,8 @@ interpreter takes route and rewrite framing using the same effective workspace/
 agent rewrite instructions as staged interpretation, chat takes the response
 language, and the directive matcher resolves precomputed classifications through
 the same route-scoped runtime. Policy stays with the owning modules; the planner
-only sees candidate summaries.
+only sees candidate summaries. Neither fused nor staged interpretation receives
+configured answer instructions or decides scope before retrieval.
 
 The key point is that fallback is the existing staged path, all-or-nothing per
 turn. Fused planning is standard behavior. A turn bypasses planning entirely

@@ -57,7 +57,6 @@ const handleFor = (outcome: TurnPlanOutcome | undefined) => () =>
 const inputs = (overrides: Partial<TurnPlanInputs> = {}): TurnPlanInputs => ({
   query: "q",
   history: [],
-  answerScopeReference: "scope",
   routinePreparation: preparedRank,
   directiveCandidates: [{ name: "d1", condition: "c1" }],
   workspaceContext: { workspaceId: "w1" },
@@ -407,7 +406,6 @@ describe("startTurnPlan", () => {
   const basePlanInputs = {
     query: "q",
     history: [],
-    answerScopeReference: "scope",
     directiveCandidates: [],
     workspaceContext: { workspaceId: "w1" },
     usageContext: {

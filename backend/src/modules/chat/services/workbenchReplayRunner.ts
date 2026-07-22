@@ -334,8 +334,6 @@ export class WorkbenchReplayRunner {
         history: session.history,
         ...resolveConversationTurnInterpretationContext({
           workspaceId: session.agent.workspaceId,
-          responseIdentity: session.retrieval.responseIdentity,
-          customInstruction: session.agent.customInstruction,
           agentSkillSettings: session.agent.skillSettings,
           conversationSummary: session.conversationSummary,
         }, this.options.turnPlanInterpretationContextSettings),

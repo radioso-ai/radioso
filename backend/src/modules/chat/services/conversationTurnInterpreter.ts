@@ -13,7 +13,6 @@ import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInfe
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import {
   parseStructuredRewrite,
-  SharedAnswerInstructionBuilder,
   type RetrievalDefaultsProvider,
   type SkillSettingsResolver,
   type StructuredRewriteResult,
@@ -52,23 +51,20 @@ export interface TurnInterpretationContextSettings {
 }
 
 export interface ResolvedTurnInterpretationContext {
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
 }
 
-const answerInstructionBuilder = new SharedAnswerInstructionBuilder();
-
 /**
- * One shared resolution seam for staged and fused interpretation: configured
- * answer scope, effective retrieval.answer rewrite guidance, and the frozen
- * rolling summary. Keeping this here prevents the two prompt paths from drifting.
+ * One shared resolution seam for staged and fused interpretation: effective
+ * retrieval.answer rewrite guidance and the frozen rolling summary. Answer
+ * instructions intentionally stay out of pre-retrieval interpretation.
  */
 export const resolveConversationTurnInterpretationContext = (
   input: Pick<
     ConversationTurnInterpreterInput,
-    "workspaceId" | "responseIdentity" | "customInstruction" | "agentSkillSettings" | "conversationSummary"
+    "workspaceId" | "agentSkillSettings" | "conversationSummary"
   >,
   settings?: TurnInterpretationContextSettings,
 ): ResolvedTurnInterpretationContext => {
@@ -81,10 +77,6 @@ export const resolveConversationTurnInterpretationContext = (
       )
     : defaults;
   return {
-    answerScopeReference: answerInstructionBuilder.buildScopeReferenceBlock({
-      responseIdentity: input.responseIdentity,
-      customInstruction: input.customInstruction,
-    }),
     ...(effective?.semanticRewriteInstructions
       ? { semanticRewriteInstructions: effective.semanticRewriteInstructions }
       : {}),
@@ -98,7 +90,6 @@ export const resolveConversationTurnInterpretationContext = (
 export interface TurnInterpretationGatewayInput {
   query: string;
   contextMessages: MessageRecord[];
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -124,7 +115,6 @@ const formatConversationContext = (messages: MessageRecord[]): string =>
 
 export const buildTurnInterpretationPrompt = (input: {
   context: string;
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -133,7 +123,6 @@ export const buildTurnInterpretationPrompt = (input: {
   renderPromptTemplate("chat/turn-interpretation.md", {
     context_section: input.context || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
-    answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
@@ -166,7 +155,6 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
       operation: input.usageContext,
       prompt: buildTurnInterpretationPrompt({
         context: formatConversationContext(input.contextMessages),
-        answerScopeReference: input.answerScopeReference,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         conversationSummary: input.conversationSummary,

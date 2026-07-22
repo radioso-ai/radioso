@@ -49,7 +49,6 @@ const history: MessageRecord[] = [];
 const request = (overrides: Partial<TurnPlanRequest> = {}): TurnPlanRequest => ({
   query: "How long is the refund window?",
   history,
-  answerScopeReference: "Refund support assistant.",
   routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
   directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
   workspaceContext: { workspaceId: "w1" },
@@ -72,6 +71,8 @@ describe("parseTurnPlan", () => {
     const plan = parseTurnPlan(validPlanJson(), candidates);
     expect(plan).not.toBeNull();
     expect(plan?.route).toBe("retrieval");
+    expect(plan?.framing.inScopeRequest).toBeUndefined();
+    expect(plan?.framing.outsideScopeRequest).toBeUndefined();
     expect(plan?.responseLanguage).toBe("English");
     expect(plan?.rewriteProposal?.rewrittenQuery).toBe("What is the refund window?");
     expect(plan?.routineRankings).toEqual([{
@@ -258,6 +259,7 @@ describe("TurnPlanService", () => {
     expect(prompt).toContain("The buyer previously discussed annual billing.");
     expect(prompt).toContain("Never copy values from earlier turns");
     expect(prompt).toContain("My company is OldCo.");
+    expect(prompt).toContain("Retrieval evidence decides whether the assistant has support");
   });
 
   it("returns null on a provider error", async () => {

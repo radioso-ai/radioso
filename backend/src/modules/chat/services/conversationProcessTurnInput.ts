@@ -180,12 +180,13 @@ const buildDirectiveTurnWiring = (options: {
         const firingState = store ? await store.load() : undefined;
         const { eligible: currentRouteDirectives, trackedNames, suppressed } =
           partitionDirectivesByLifecycle(scopeEligible, firingState);
-        // Fused turn planning already classified the union of contextual directives.
-        // When a plan is present, resolve steering from those precomputed
-        // classifications (route + lifecycle already narrowed `currentRouteDirectives`,
-        // and the runtime keys classifications by name) — no directive-match model call.
+        // Fused turn planning already classified the route-scoped union of
+        // contextual directives. When a plan is present, narrow its opaque
+        // identities to this route and resolve steering from the resulting real
+        // directive names — no directive-match model call.
         const plannedClassifications = await planAwareDirectiveClassifications(
           () => session.turnPlan?.resolve(null),
+          session.turnRoute,
         );
         const steering = plannedClassifications
           ? await runtime.matchAndResolveWithClassifications(steerInput, currentRouteDirectives, plannedClassifications)

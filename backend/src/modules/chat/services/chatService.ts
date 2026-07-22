@@ -1084,9 +1084,9 @@ export class ChatService {
 
   /**
    * The union-of-routes contextual directive candidates for the fused planner:
-   * the same route-agnostic candidate set the directive matcher scopes at match
-   * time (direct + retrieval + the turn's provisional route). Route + lifecycle
-   * narrowing happens later at resolution, so the planner classifies the union.
+   * direct + retrieval + the turn's provisional route. Candidate identities
+   * preserve route scope so same-named directives are classified independently;
+   * lifecycle narrowing remains owned by the directive runtime.
    */
   private buildTurnPlanDirectiveCandidates(
     session: PreparedSession,

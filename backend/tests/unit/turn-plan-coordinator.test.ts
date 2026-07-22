@@ -451,21 +451,36 @@ describe("startTurnPlan", () => {
 });
 
 describe("contextualDirectiveCandidates", () => {
-  it("unions contextual candidates across routes by name", () => {
-    const contextual = (name: string): Directive => ({
+  it("preserves route identity for same-named contextual candidates", () => {
+    const contextual = (name: string, condition: string): Directive => ({
       name,
-      condition: { kind: "contextual", description: `when ${name}` },
+      condition: { kind: "contextual", description: condition },
       action: "act",
     });
     const always: Directive = { name: "always", condition: { kind: "always" }, action: "act" };
     const candidates = contextualDirectiveCandidates({
       routes: ["direct", "retrieval", "direct"],
-      directivesForRoute: (route) => (route === "direct" ? [contextual("a"), always] : [contextual("a"), contextual("b")]),
+      directivesForRoute: (route) => route === "direct"
+        ? [contextual("a", "when acknowledging"), always]
+        : [contextual("a", "when asking for records"), contextual("b", "when b")],
     });
     expect(candidates).toEqual([
-      { name: "a", condition: "when a" },
+      { name: 'route:["direct","a"]', condition: "when acknowledging" },
+      { name: 'route:["retrieval","a"]', condition: "when asking for records" },
       { name: "b", condition: "when b" },
     ]);
+  });
+
+  it("keeps same-name same-condition directives as one planner candidate", () => {
+    const shared: Directive = {
+      name: "shared",
+      condition: { kind: "contextual", description: "when shared applies" },
+      action: "act",
+    };
+    expect(contextualDirectiveCandidates({
+      routes: ["direct", "retrieval"],
+      directivesForRoute: () => [shared],
+    })).toEqual([{ name: "shared", condition: "when shared applies" }]);
   });
 });
 
@@ -520,6 +535,23 @@ describe("planAwareDirectiveClassifications", () => {
       handleFor({ status: "planned", plan: plan(), prepared: preparedRank }),
     );
     expect(result).toEqual([{ name: "d1", confidence: 0.7 }]);
+  });
+
+  it("returns only classifications for the resolved route using real directive names", async () => {
+    const result = await planAwareDirectiveClassifications(
+      handleFor({
+        status: "planned",
+        plan: plan({
+          directiveClassifications: [
+            { name: 'route:["direct","shared"]', matched: true, confidence: 0.9 },
+            { name: 'route:["retrieval","shared"]', matched: true, confidence: 0.8 },
+          ],
+        }),
+        prepared: preparedRank,
+      }),
+      "direct",
+    );
+    expect(result).toEqual([{ name: "shared", confidence: 0.9 }]);
   });
 
   it("returns null when not planned so the matcher runs its gateway", async () => {

@@ -297,26 +297,64 @@ export const startTurnPlan = (input: {
   );
 };
 
+const ROUTE_SCOPED_DIRECTIVE_PREFIX = "route:";
+
+const routeScopedDirectiveCandidateName = (route: string, name: string): string =>
+  `${ROUTE_SCOPED_DIRECTIVE_PREFIX}${JSON.stringify([route, name])}`;
+
+const parseRouteScopedDirectiveCandidateName = (
+  candidateName: string,
+): { route: string; name: string } | null => {
+  if (!candidateName.startsWith(ROUTE_SCOPED_DIRECTIVE_PREFIX)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(candidateName.slice(ROUTE_SCOPED_DIRECTIVE_PREFIX.length));
+    return Array.isArray(parsed)
+      && parsed.length === 2
+      && typeof parsed[0] === "string"
+      && typeof parsed[1] === "string"
+      ? { route: parsed[0], name: parsed[1] }
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * The union-of-routes contextual directive candidate set for the planner: the
- * same route-agnostic union `conversationProcessTurnInput` builds for the engine
- * (`directivesForRoutes`). Route and lifecycle narrowing happen later at
- * resolution time, so the planner classifies the union and the runtime keeps
- * ownership of scope, lifecycle, and steering policy.
+ * The union-of-routes contextual directive candidate set for the planner. The
+ * planner-facing name is an opaque route-scoped identity, so unrelated
+ * directives may safely reuse a display name on different routes. Lifecycle
+ * narrowing and steering policy remain owned by the directive runtime.
  */
 export const contextualDirectiveCandidates = (input: {
   routes: Iterable<string>;
   directivesForRoute: (route: string) => Directive[];
 }): TurnPlanDirectiveCandidate[] => {
-  const byName = new Map<string, TurnPlanDirectiveCandidate>();
+  const entriesByName = new Map<string, Array<{ route: string; condition: string }>>();
   for (const route of new Set(input.routes)) {
     for (const directive of input.directivesForRoute(route)) {
       if (directive.condition.kind === "contextual") {
-        byName.set(directive.name, { name: directive.name, condition: directive.condition.description });
+        const entries = entriesByName.get(directive.name) ?? [];
+        entries.push({ route, condition: directive.condition.description });
+        entriesByName.set(directive.name, entries);
       }
     }
   }
-  return [...byName.values()];
+  const candidates: TurnPlanDirectiveCandidate[] = [];
+  for (const [name, entries] of entriesByName) {
+    if (new Set(entries.map((entry) => entry.condition)).size === 1) {
+      candidates.push({ name, condition: entries[0]!.condition });
+      continue;
+    }
+    const byIdentity = new Map<string, TurnPlanDirectiveCandidate>();
+    for (const entry of entries) {
+      const identity = routeScopedDirectiveCandidateName(entry.route, name);
+      byIdentity.set(identity, { name: identity, condition: entry.condition });
+    }
+    candidates.push(...byIdentity.values());
+  }
+  return candidates;
 };
 
 const rankedMatchesFromPlan = (plan: TurnPlan): RankedRoutineMatch[] =>
@@ -474,16 +512,29 @@ export const planAwareResponseLanguage = async (deps: {
 
 /**
  * The plan's contextual directive classifications when planned, else `null` so
- * the directive matcher runs its staged gateway call. The union-of-routes
- * classifications are keyed by name; route + lifecycle narrowing happens at
- * resolution time in the runtime, so returning the full set here is correct.
+ * the directive matcher runs its staged gateway call. Route-scoped planner
+ * identities are narrowed to the resolved route and translated back to the
+ * directive names consumed by the runtime.
  */
 export const planAwareDirectiveClassifications = async (
   handle: PlanHandle,
+  route?: string,
 ): Promise<DirectiveClassification[] | null> => {
   const outcome = await handle();
   if (!outcome || outcome.status !== "planned") {
     return null;
   }
-  return turnPlanDirectiveClassifications(outcome.plan);
+  const classifications = turnPlanDirectiveClassifications(outcome.plan);
+  if (route === undefined) {
+    return classifications;
+  }
+  return classifications.flatMap((classification) => {
+    const identity = parseRouteScopedDirectiveCandidateName(classification.name);
+    if (!identity) {
+      return [classification];
+    }
+    return identity.route === route
+      ? [{ name: identity.name, confidence: classification.confidence }]
+      : [];
+  });
 };

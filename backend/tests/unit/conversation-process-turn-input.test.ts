@@ -834,6 +834,74 @@ describe("directive lifecycle memory (#865)", () => {
     expect(throwingGatewayFactory.create).not.toHaveBeenCalled();
   });
 
+  it("applies a same-named contextual classification only to its current route", async () => {
+    const directDirective: Directive = {
+      name: "shared-name",
+      condition: { kind: "contextual", description: "when the user acknowledges the answer" },
+      action: "Use the direct-route response style.",
+    };
+    const retrievalDirective: Directive = {
+      name: "shared-name",
+      condition: { kind: "contextual", description: "when the user asks for account records" },
+      action: "Use the retrieval-route response style.",
+    };
+    const throwingGatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("directive gateway must not be created on the fused fast path");
+      }),
+    };
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: directDirective, routes: ["direct"] },
+        { directive: retrievalDirective, routes: ["retrieval"] },
+      ],
+      directiveMatchGatewayFactory: throwingGatewayFactory,
+    });
+    const session = preparedSession();
+    session.turnRoute = "direct";
+    session.turnPlan = {
+      resolve: async () => ({
+        status: "planned",
+        plan: {
+          route: "direct",
+          framing: { isIdentityQuestion: false },
+          routineRankings: [],
+          directiveClassifications: [
+            { name: 'route:["direct","shared-name"]', matched: true, confidence: 0.9 },
+            { name: 'route:["retrieval","shared-name"]', matched: false, confidence: 0.9 },
+          ],
+        },
+        prepared: null,
+      }),
+      bypass: () => {},
+    };
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    const matches = await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    });
+
+    expect(matches.map((match) => match.directive.action)).toEqual([
+      "Use the direct-route response style.",
+    ]);
+    expect(throwingGatewayFactory.create).not.toHaveBeenCalled();
+  });
+
   it("does not persist firing memory for conversations without a tracked-lifecycle directive", async () => {
     const store = inMemoryDirectiveStateStore();
     const loadSpy = vi.spyOn(store, "save");

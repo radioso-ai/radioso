@@ -23,6 +23,21 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).toContain("[[?]]");
   });
 
+  it("states the source-anchor authoring rule once, in the base prompt, not the envelope", () => {
+    const base = loadPromptTemplate("retrieval/answer.md");
+    const envelope = loadPromptTemplate("chat/answer-envelope.md");
+
+    // The detailed [[n]]/[[?]] authoring rule is owned by the base prompt's Citations section.
+    expect(base).toMatch(/append a sourced assertion/i);
+    // The envelope must not duplicate that authoring rule; it only references it.
+    expect(envelope).not.toMatch(/append a sourced assertion/i);
+    expect(envelope).toMatch(/as the Citations rule above requires/i);
+
+    // Fields the strict provider schema already locks must not be re-stated as prose.
+    expect(envelope).not.toMatch(/set `?v`? to/i);
+    expect(envelope).not.toMatch(/always emit .*grounding/i);
+  });
+
   it("always appends the v2 core and only appends suggestion policy when enabled", () => {
     const disabled = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: "BASE",
@@ -117,8 +132,10 @@ describe("grounded answer prompt contract", () => {
 
   it("keeps the protocol assets within their locked word budgets", () => {
     const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(260);
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(340);
+    // Tightened in #863: the #903 provider schema enforces the field set and the
+    // v/outcome/kind/grounding value sets, so the envelope no longer restates them.
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(200);
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(260);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeLessThanOrEqual(650);
     expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(760);

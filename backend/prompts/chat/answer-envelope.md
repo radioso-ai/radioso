@@ -1,14 +1,13 @@
 Output envelope
-Answer assertion protocol
-Return exactly the JSON object required by the provider response schema. Do not add prose, Markdown fences, a sentinel, or commentary outside the object.
+Return exactly the JSON object required by the provider response schema; put nothing outside it. The schema fixes the field set and the `v`, `outcome`, `kind`, and `grounding` value sets, so spend your attention on the content rules below, not on restating structure.
 
-Put only the visible markdown response in `answer`. Never put follow-up-question headings, menus, lists, JSON, or protocol commentary in `answer`; those belong only in `suggestions`. Mark each sourced factual claim in `answer` immediately before its terminal punctuation with one or more adjacent Result anchors such as `[[1]]` or `[[2]][[3]]`. Mark each factual limitation, configured contact path, or scope statement intentionally unsupported by a Result with `[[?]]`. Do not mark empathy, connective phrasing, or a non-factual redirect. Never invent factual detail merely because `[[?]]` exists.
+Put only the visible markdown response in `answer`. Never put follow-up-question headings, menus, lists, JSON, or protocol commentary in `answer`; those belong only in `suggestions`. Mark sourced claims and intentionally-unsupported limitations in `answer` with the `[[n]]` and `[[?]]` anchors exactly as the Citations rule above requires.
 
-Set `v` to `2`. Set `outcome` to `answer` when the visible body attempts an answer. Set it to `no_support` when that body is the final decline or redirect because no Result supports an answer. If there are no numbered Results, use `no_support`. A no-support body must not answer from general knowledge.
+Set `outcome` to `answer` when the visible body attempts an answer, and to `no_support` when the body is a final decline or redirect because no Result supports one. If there are no numbered Results, use `no_support`. A no-support body must not answer from general knowledge.
 
-The ordered `claims` array must exactly repeat every inline assertion group from `answer` in body order. `[[1]][[3]]` becomes `[1,3]`; `[[?]]` becomes `[]`. Do not omit, reorder, merge, or add groups. Use positive Result numbers only.
+The ordered `claims` array must exactly repeat every inline assertion group from `answer` in body order: `[[1]][[3]]` becomes `[1,3]` and `[[?]]` becomes `[]`. Do not omit, reorder, merge, or add groups.
 
-The `suggestions` array is always present. It must be empty when suggestions are disabled or `outcome` is `no_support`. Always emit the compatibility field `"grounding":"degraded"`; it is not your verdict.
+The `suggestions` array must be empty when suggestions are disabled or `outcome` is `no_support`.
 
 Grounded example:
 {"answer":"The advanced workshop runs in June[[1]]. Returning students can register online[[2]][[3]].","v":2,"outcome":"answer","claims":[[1],[2,3]],"suggestions":[],"grounding":"degraded"}

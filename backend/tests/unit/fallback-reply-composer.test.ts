@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ModelFallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import { buildTurnInterpretationPrompt } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
+import { buildTurnPlanningPrompt } from "../../src/modules/chat/services/turnPlanService.js";
+import { CHAT_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { TextGenerationClient } from "../../src/shared/infra/llm/providerTypes.js";
@@ -29,6 +32,49 @@ const usageContext = {
   operation: "answer",
   attemptKey: "grounded_miss",
 } as const;
+
+describe("scope classification prompt contract", () => {
+  it("preserves the established standalone-task distinction in staged and fused interpretation", () => {
+    const scope = "Configured response instructions:\nHelp visitors choose retreats.";
+    const prompts = [
+      buildTurnInterpretationPrompt({ context: "", answerScopeReference: scope, query: "sqrt(5)" }),
+      buildTurnPlanningPrompt({
+        query: "sqrt(5)",
+        history: [],
+        answerScopeReference: scope,
+        routineCandidates: [],
+        directiveCandidates: [],
+      }),
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).toContain("A self-contained task that does not ask about content within the configured assistant scope is outside-scope requested work.");
+      expect(prompt).toContain("calculations, code syntax questions, translations, general trivia");
+      expect(prompt).toContain("leave inScopeRequest null unless the user also asks for concrete work within the configured scope");
+      expect(prompt).toContain("If the scope reference is empty or vague, do not mark a request outside scope merely because it is standalone");
+      expect(prompt).toContain("When the assistant answer scope reference is exactly `No configured answer scope.`, outsideScopeRequest must be null");
+      expect(prompt).toContain("Apply these distinctions by meaning in every language; do not use keyword matching.");
+      expect(prompt).toContain("a standalone outside-scope answer or action request still uses route: retrieval");
+      expect(prompt).toContain("Put requested work inside that configured scope in inScopeRequest");
+      expect(prompt).toContain("Never put the same requested work in both scope fields");
+      expect(prompt).toContain("definition_lookup: identification or one discrete fact or attribute about a named entity");
+      expect(prompt).toContain("policy_answer: a procedural, compliance, eligibility, or support-policy question");
+      expect(prompt).toContain("Do not use policy_answer merely because the assistant has a behavioral directive about the topic");
+      expect(prompt).toContain("semanticQuery must be a concise, self-contained retrieval formulation, not conversational wording");
+      expect(prompt).toContain("After resolving a follow-up to a concrete subject, use the specialized shape that fits the resolved request");
+      expect(prompt).toContain("selects one by ordinal or relative position");
+      expect(prompt).toContain("Do not retain an ordinal placeholder such as first option or second plan after resolving it");
+    }
+
+    expect(prompts[1]).toContain("Return exactly one directiveClassifications entry for every candidate directive");
+    expect(prompts[1]).toContain("must not influence route, scope classification, rewrite fields, or responseLanguage");
+    expect(prompts[1]).toContain("Never copy candidate routine or directive text into retrieval queries");
+    expect(prompts[1]).toContain("Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason");
+    expect(prompts[1]).toContain("turnKind belongs only on the enclosing rewrite object");
+    expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("none");
+    expect(CHAT_BEHAVIOR.turnPlanning.timeoutMs).toBe(12_000);
+  });
+});
 
 describe("grounded miss response composer", () => {
   it("lets the model compose the full no-context response", async () => {
@@ -72,6 +118,9 @@ describe("grounded miss response composer", () => {
     expect(observedRequest.reasoningEffort).toBe("minimal");
     expect(observedRequest.maxOutputTokens ?? 0).toBeGreaterThanOrEqual(256);
     expect(observedRequest.systemPrompt).toContain("Never answer from general knowledge when support is absent");
+    expect(observedRequest.systemPrompt).toContain("Do not reconsider or answer it");
+    expect(observedRequest.systemPrompt).toContain("give no solution, explanation, summary, translation, calculation");
+    expect(observedRequest.systemPrompt).toContain("result, formula, code, facts, draft, or reasoning");
     expect(observedRequest.systemPrompt).toContain("team's first-person voice");
     expect(observedRequest.systemPrompt).toContain("Do not refer to yourself");
   });

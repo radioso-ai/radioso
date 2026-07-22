@@ -87,6 +87,14 @@ describe("grounded answer prompt contract", () => {
     expect(loadPromptTemplate("chat/grounded-decline-rules.md")).toContain(canonicalSentence);
   });
 
+  it("preserves the established outside-scope guard in the normal answer path", () => {
+    const prompt = loadPromptTemplate("retrieval/answer.md");
+
+    expect(prompt).toContain("Outside-scope subrequests include standalone calculations");
+    expect(prompt).toContain("Never include their result, formula, code output, factual answer, draft, joke, or reasoning");
+    expect(prompt).toContain("even if in-scope context or findings are present");
+  });
+
   it("keeps the protocol assets within their locked word budgets", () => {
     const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(260);

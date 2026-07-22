@@ -21,7 +21,14 @@ Routing Rules
 route: retrieval - any turn where the user wants information, an explanation, advice, comparison, calculation, drafting, transformation, troubleshooting, instructions, a continuation, a format/language transformation of a previous answer, or any other answer/action. Use retrieval even when the request may be outside the assistant answer scope; scope is decided after retrieval evidence or direct scope framing.
 route: direct - only turns where the user does not want an answer or action, such as appreciation, acknowledgement, cancellation, ending the conversation, or a greeting with no other request.
 Identity questions about the assistant's configured name, role, purpose, or what it can do are route: direct and set isIdentityQuestion true.
-For every answer/action request, compare it with the assistant answer scope reference. Put answerable requested work in inScopeRequest. Put requested work outside that scope in outsideScopeRequest. Use null for the side that has no requested work.
+For every answer/action request, compare it with the assistant answer scope reference. Put requested work inside that configured scope in inScopeRequest. Put requested work outside that configured scope in outsideScopeRequest. Whether the model could answer a task from general knowledge does not make it in scope. Use null for the side that has no requested work. Never put the same requested work in both scope fields.
+A self-contained task that does not ask about content within the configured assistant scope is outside-scope requested work. This includes calculations, code syntax questions, translations, general trivia, and similar standalone tasks. Put that task in outsideScopeRequest and leave inScopeRequest null unless the user also asks for concrete work within the configured scope.
+Do not treat a standalone outside-scope task as in scope merely because it mentions a configured-scope place, course, retreat, or concept as context.
+Broad turns about a configured domain topic remain in-scope requests.
+Apply the standalone-task distinction only when the assistant answer scope reference defines a concrete organization, domain, or supported topic. If the scope reference is empty or vague, do not mark a request outside scope merely because it is standalone; keep it eligible for retrieval so available evidence decides support.
+When the assistant answer scope reference is exactly `No configured answer scope.`, outsideScopeRequest must be null. Retrieval evidence, not scope classification, decides whether the request can be answered.
+Apply these distinctions by meaning in every language; do not use keyword matching.
+This scope classification does not change routing: a standalone outside-scope answer or action request still uses route: retrieval.
 Mixed turns (in-scope + out-of-scope): route to retrieval; put the out-of-scope task in outsideScopeRequest.
 Vague in-scope context + a request for an answer/action: route to retrieval.
 Short acknowledgements or confirmations require the immediately preceding assistant message and the latest user wording together. If the latest wording is only gratitude or acknowledgement, route direct even when the assistant offered options. If the latest wording explicitly accepts or chooses an offered action, route retrieval. Route direct when the acknowledgement closes the exchange or does not accept any offered action.
@@ -38,6 +45,7 @@ Never output vague placeholders ("continue the current topic", "the previous top
 Continuation-only follow-ups ("tell me more", "go on", "continue") -> anchor to the main topic of the immediately preceding USER turn.
 If the user accepts or chooses a concrete option proposed by the assistant, resolve the rewrite from that offered material.
 If the user accepts without choosing among multiple offered options, keep options separate in retrievalSubqueries.
+If the immediately preceding assistant message lists concrete options in order and the user selects one by ordinal or relative position, resolve the reference to the corresponding concrete option from that list. Copy that option's name into rewrittenQuery, semanticQuery, lexicalQuery, and proposedActiveSubject. Do not retain an ordinal placeholder such as first option or second plan after resolving it.
 Do not guess one branch and do not collapse several branches into one bag-of-terms rewrite.
 Format/language-only follow-ups that ask for an answer transformation are requests; resolve them from the immediately preceding assistant answer.
 Short confirmations are acceptance requests only when they explicitly accept or choose an offered next topic, action, or option; build the query/subqueries from the accepted offered material.
@@ -45,11 +53,19 @@ Self-correction turns ("wait, I meant X, not Y", "actually I'm asking about X", 
 Do not broaden into extra subtopics the user didn't ask for.
 Do not include backend-specific query syntax.
 Use retrievalSubqueries when distinct entities, aliases, acronyms, or concrete options should stay separate.
-semanticQuery should capture answer intent and retrieval meaning.
-lexicalQuery should preserve exact surface forms that are likely to appear in source text.
+semanticQuery must be a concise, self-contained retrieval formulation, not conversational wording. Express the concrete subject plus the requested fact, attribute, relation, or procedure; do not merely copy a question when it can be normalized without losing meaning.
+lexicalQuery should preserve the exact named subject, phrase, identifier, or surface form most likely to appear in source text. Do not pad it with conversational request wording.
 When you resolve a concrete proposedActiveSubject, make the relevant lexicalQuery the subject itself, not the surrounding request/action wording.
 For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
-queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
+queryShape: use the semantic definitions below. Apply them by meaning in every language, not by matching words.
+- definition_lookup: identification or one discrete fact or attribute about a named entity, term, acronym, product, plan, or concept, including its meaning, price, or included feature.
+- event_date_lookup: the date, time, schedule, or ordering of an event.
+- policy_answer: a procedural, compliance, eligibility, or support-policy question.
+- exploratory_summary: a broad overview, synthesis, or comparison across material.
+- follow_up_grounding: a follow-up whose subject must be resolved from conversation context and that does not fit a more specific shape.
+- general_grounding: a grounded answer that does not fit a specialized shape. Use default_hybrid only when the default retrieval strategy itself is the intended shape.
+Do not use policy_answer merely because the assistant has a behavioral directive about the topic. Classify the user's requested answer, not the instructions for how to answer it.
+After resolving a follow-up to a concrete subject, use the specialized shape that fits the resolved request. For example, a follow-up asking for one discrete attribute remains definition_lookup; use follow_up_grounding only when no specialized shape applies.
 temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 

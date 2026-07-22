@@ -75,9 +75,10 @@ export const CHAT_BEHAVIOR = {
   // tuned per phrase.
   turnPlanning: {
     // Reasoning effort for the planner call. Classification, not deliberation —
-    // minimal keeps the fused call off the critical-path latency budget on
-    // reasoning models, matching the sibling interpretation/router calls.
-    reasoningEffort: "minimal",
+    // none keeps the fused call off the critical-path latency budget and is
+    // accepted by the workspace nano planner; "minimal" forces an unsupported-
+    // value retry on gpt-5.4-nano and can consume the whole planner timeout.
+    reasoningEffort: "none",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
     // classifications). Generous enough for a multi-branch retrieval rewrite plus
     // several routine/directive verdicts; still a real bound.
@@ -92,9 +93,10 @@ export const CHAT_BEHAVIOR = {
     // Estimated planner prompt token budget. Above this the turn bypasses to the
     // staged path rather than risk an over-long fused prompt degrading quality.
     maxEstimatedPromptTokens: 6_000,
-    // Wall-clock timeout for the planner call. On timeout the plan resolves
-    // failed and every adapter falls back to its staged call.
-    timeoutMs: 8_000,
+    // Wall-clock timeout for the planner call. The fused structured response is
+    // larger than a staged classifier response; allow its observed slow tail to
+    // finish instead of multiplying calls through the staged fallback.
+    timeoutMs: 12_000,
     // History tail (most-recent messages) included in the planner prompt, matching
     // the retrieval rewrite context window so routing parity carries over.
     historyTailMessages: 10,

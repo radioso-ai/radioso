@@ -220,10 +220,10 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
   ): Promise<ChatPresentedAnswer> {
-    // Scope gate: when the turn router judged the request wholly outside the agent's
-    // configured scope (no in-scope part), decline deterministically via the focused
-    // grounded-miss composer rather than generating a grounded answer — the answer
-    // model otherwise leaks off-scope general knowledge despite the prompt's scope rule.
+    // When semantic turn interpretation found only outside-scope requested work,
+    // ask the focused composer for a model-authored scoped response. The classifier
+    // applies the configured scope by meaning; this path contains no phrase matching
+    // or canned refusal.
     if (isOutOfScopeOnly(session)) {
       return this.declineOutOfScope(session, query, userExpectedLocale, accountId, "out_of_scope");
     }
@@ -310,7 +310,9 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
       steering: session.directiveSteering?.rules ?? [],
-      workspaceContext: this.support.buildChatWorkspaceContext(session),
+      // This is a model-authored scope-policy response, not an ordinary answer.
+      // Use the standard fallback chat tier rather than an agent's lightweight
+      // answer override, which may not follow the non-answer contract reliably.
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
       ...(signal ? { signal } : {}),
     });

@@ -65,6 +65,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
   let answerCalls = 0;
   let streamCalls = 0;
   let fallbackCalls = 0;
+  let fallbackWorkspaceContext: unknown;
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
   let gateAbortObserved = false;
@@ -89,6 +90,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
   const fallback: FallbackReplyComposer = {
     async composeNoContext(input) {
       fallbackCalls += 1;
+      fallbackWorkspaceContext = input.workspaceContext;
       attemptKeys.push(input.usageContext.attemptKey);
       return decline;
     },
@@ -100,6 +102,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
       },
     }),
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
+    fallbackWorkspaceContext: () => fallbackWorkspaceContext,
     attemptKeys,
     metricWrites,
     gateAbortObserved: () => gateAbortObserved,
@@ -107,6 +110,19 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
 };
 
 describe("retrieval answer envelope v2", () => {
+  it("keeps focused scope-policy generation off a lightweight agent answer override", async () => {
+    const session = baseSession();
+    session.agent.chatModelOverride = { provider: "openai", model: "gpt-5-nano" };
+    session.turnFraming = { outsideScopeRequest: "Calculate sqrt(5).", isIdentityQuestion: false };
+    const { composer, counts, fallbackWorkspaceContext } = buildComposer("must not run");
+
+    const presented = await composer.composeAnswer(session, "sqrt(5)", undefined, undefined);
+
+    expect(presented.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(counts()).toEqual({ answerCalls: 0, streamCalls: 0, fallbackCalls: 1 });
+    expect(fallbackWorkspaceContext()).toBeUndefined();
+  });
+
   const cases = [
     { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3, suppressed: false },
     { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1, suppressed: false },

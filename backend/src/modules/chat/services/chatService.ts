@@ -40,6 +40,7 @@ import type { AgentService } from "../../agents/public.js";
 import type { ResumeRunner } from "../../approvals/public.js";
 import type { ChatGateway, ChatGatewayInput } from "../contracts/chatGateway.js";
 import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents.js";
+import { observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -441,7 +442,7 @@ export class ChatService {
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   private readonly conversationTurnRegistry: ConversationTurnRegistry;
-  private readonly streamMetrics?: Pick<MetricsRegistry, "observeHistogram"> | null;
+  private readonly streamMetrics?: Pick<MetricsRegistry, "observeHistogram" | "incrementCounter"> | null;
 
   constructor(options: ChatServiceOptions) {
     const {
@@ -1708,10 +1709,9 @@ export class ChatService {
         return;
       }
       firstAnswerChunkObserved = true;
-      this.streamMetrics?.observeHistogram("chat_stream_first_answer_chunk_latency_ms", {
-        help: "Latency from chat stream start to the first assistant answer chunk",
-        labels: { route, delivery_mode: deliveryMode },
-        value: Date.now() - streamStartedAt,
+      observeFirstAnswerChunkLatency(this.streamMetrics, Date.now() - streamStartedAt, {
+        route,
+        delivery_mode: deliveryMode,
       });
     };
     let session: PreparedSession | null = null;

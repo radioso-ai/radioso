@@ -21,6 +21,7 @@ const buildGenerateBody = (input: {
   systemPrompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  responseFormat?: TextGenerationRequest["responseFormat"];
 }) => ({
   contents: [
     {
@@ -38,6 +39,12 @@ const buildGenerateBody = (input: {
   generationConfig: {
     temperature: input.temperature,
     maxOutputTokens: input.maxOutputTokens,
+    ...(input.responseFormat
+      ? {
+          responseMimeType: "application/json",
+          responseJsonSchema: input.responseFormat.schema,
+        }
+      : {}),
   },
 });
 

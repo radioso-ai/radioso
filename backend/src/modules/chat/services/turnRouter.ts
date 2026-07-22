@@ -8,7 +8,6 @@ import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.j
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { SharedAnswerInstructionBuilder } from "../../retrieval/public.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 
 export interface TurnRouting {
@@ -37,7 +36,6 @@ export interface TurnRouter {
 export interface TurnRouterGatewayInput {
   query: string;
   contextMessages: MessageRecord[];
-  answerScopeReference: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
 }
@@ -56,12 +54,10 @@ export interface TurnRouterGateway {
 
 export const buildTurnRouterPrompt = (input: {
   context: string;
-  answerScopeReference: string;
   query: string;
 }): string =>
   renderPromptTemplate("chat/turn-router.md", {
     context_section: input.context || "No prior context",
-    answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     query: input.query,
   });
 
@@ -94,7 +90,6 @@ export class ModelTurnRouterGateway implements TurnRouterGateway {
       operation: input.usageContext,
       prompt: buildTurnRouterPrompt({
         context: formatConversationContext(input.contextMessages),
-        answerScopeReference: input.answerScopeReference,
         query: input.query,
       }),
       // Router is a small structured classifier. This adds a serial LLM call on
@@ -116,7 +111,6 @@ export class ChatGatewayTurnRouterGateway implements TurnRouterGateway {
       history: input.contextMessages,
       prompt: buildTurnRouterPrompt({
         context: formatConversationContext(input.contextMessages),
-        answerScopeReference: input.answerScopeReference,
         query: input.query,
       }),
       workspaceContext: input.workspaceContext,
@@ -141,20 +135,13 @@ const fallbackUsageContext = (
 });
 
 export class LlmTurnRouter implements TurnRouter {
-  private readonly answerInstructionBuilder = new SharedAnswerInstructionBuilder();
-
   constructor(private readonly gateway: TurnRouterGateway) {}
 
   async classify(input: TurnRouterInput): Promise<TurnRouting> {
-    const answerScopeReference = this.answerInstructionBuilder.buildScopeReferenceBlock({
-      responseIdentity: input.responseIdentity,
-      customInstruction: input.customInstruction,
-    });
     try {
       return normalizeTurnRouting(await this.gateway.classify({
         query: input.query,
         contextMessages: input.history,
-        answerScopeReference,
         workspaceContext: input.workspaceContext,
         usageContext: fallbackUsageContext(input),
       }));
@@ -173,29 +160,9 @@ export const normalizeTurnRouting = (result: TurnRouterGatewayResult): TurnRouti
   route: result.route === "direct" ? "direct" : "retrieval",
   framing: {
     intentTopic: normalizeOptionalClassifierLabel(result.intentTopic),
-    inScopeRequest: normalizeScopeRequest(result.inScopeRequest),
-    outsideScopeRequest: normalizeScopeRequest(result.outsideScopeRequest),
     isIdentityQuestion: Boolean(result.isIdentityQuestion),
   },
 });
 
 const normalizeOptionalClassifierLabel = (value?: string | null): string | undefined =>
   typeof value === "string" ? normalizeLlmClassifierLabel(value) : undefined;
-
-const normalizeScopeRequest = (value?: string | null): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value
-    .replace(/[`#_~[\]()]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 240)
-    .trim();
-
-  if (!normalized || normalized.toLowerCase() === "null") {
-    return undefined;
-  }
-
-  return normalized;
-};

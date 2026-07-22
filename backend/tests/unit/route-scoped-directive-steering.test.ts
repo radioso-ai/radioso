@@ -6,6 +6,7 @@ import {
   inlineSupportedLinksDirective,
   representOrganizationDirective,
   type Directive,
+  type DirectiveClassification,
 } from "../../src/modules/directives/public.js";
 import { appendDirectiveSteeringStage } from "../../src/modules/chat/services/directiveTracePresenter.js";
 import { composeGroundedAnswerSystemPrompt } from "../../src/modules/chat/services/groundedAnswerPromptComposer.js";
@@ -407,5 +408,108 @@ describe("route-scoped directive steering", () => {
 
     expect(result.rules.map((rule) => rule.action)).toEqual([conciseReadableFormattingDirective.action]);
     expect(result.omissions).toEqual([{ directiveName: authored.name, reason: "capability_denied" }]);
+  });
+});
+
+describe("route-scoped directive steering — precomputed classifications parity", () => {
+  const contextualDirective: Directive = {
+    name: "refund-tone",
+    condition: { kind: "contextual", description: "when the customer asks for a refund" },
+    action: "Use refund support tone.",
+  };
+  const steerInput = {
+    workspaceId: "w1",
+    turnContext: { route: "retrieval", query: "Can I get a refund?" },
+    usageContext: {
+      workspaceId: "w1",
+      conversationId: "conv-1",
+      messageId: "msg-1",
+      surface: "chat" as const,
+      operation: "directive_match",
+      attemptKey: "msg-1:directive_match",
+    },
+  };
+
+  it("resolves contextual directives via one gateway call through matchAndResolve", async () => {
+    const gateway = {
+      match: vi.fn(async () => [{ name: contextualDirective.name, confidence: 0.92, reason: "refund request" }]),
+    };
+    const gatewayFactory = { create: vi.fn(async () => gateway) };
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: directive("always-on", "Always apply.") },
+        { directive: contextualDirective },
+      ],
+      directiveMatchGatewayFactory: gatewayFactory,
+    });
+
+    const directives = runtime.directivesFor(steerInput);
+    const result = await runtime.matchAndResolve(steerInput, directives);
+
+    expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
+    expect(gateway.match).toHaveBeenCalledTimes(1);
+    expect(result.matches.map((match) => match.directive.name)).toEqual(["always-on", "refund-tone"]);
+    expect(result.rules.map((rule) => rule.action)).toContain("Use refund support tone.");
+  });
+
+  it("produces identical steering from precomputed classifications with zero gateway calls", async () => {
+    const gateway = {
+      match: vi.fn(async () => [{ name: contextualDirective.name, confidence: 0.92, reason: "refund request" }]),
+    };
+    const gatewayFactory = { create: vi.fn(async () => gateway) };
+    const registrations = [
+      { directive: directive("always-on", "Always apply.") },
+      { directive: contextualDirective },
+    ];
+    const viaGatewayRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations,
+      directiveMatchGatewayFactory: gatewayFactory,
+    });
+    const directives = viaGatewayRuntime.directivesFor(steerInput);
+    const viaGateway = await viaGatewayRuntime.matchAndResolve(steerInput, directives);
+
+    const throwingFactory = {
+      create: vi.fn(async () => {
+        throw new Error("gateway must not be created on the precomputed path");
+      }),
+    };
+    const viaClassificationsRuntime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations,
+      directiveMatchGatewayFactory: throwingFactory,
+    });
+    const classifications: DirectiveClassification[] = [
+      { name: contextualDirective.name, confidence: 0.92, reason: "refund request" },
+    ];
+    const viaClassifications = await viaClassificationsRuntime.matchAndResolveWithClassifications(
+      steerInput,
+      viaClassificationsRuntime.directivesFor(steerInput),
+      classifications,
+    );
+
+    expect(throwingFactory.create).not.toHaveBeenCalled();
+    expect(viaClassifications).toEqual(viaGateway);
+  });
+
+  it("omits precomputed classifications below the contextual confidence threshold", async () => {
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: directive("always-on", "Always apply.") },
+        { directive: contextualDirective },
+      ],
+    });
+
+    const belowThreshold: DirectiveClassification[] = [{ name: contextualDirective.name, confidence: 0.1 }];
+    const result = await runtime.matchAndResolveWithClassifications(
+      steerInput,
+      runtime.directivesFor(steerInput),
+      belowThreshold,
+    );
+
+    expect(result.matches.map((match) => match.directive.name)).toEqual(["always-on"]);
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Always apply."]);
   });
 });

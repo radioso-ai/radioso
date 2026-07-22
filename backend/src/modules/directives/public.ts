@@ -44,9 +44,11 @@ export {
   isDirectiveLifecycleEligible,
   lifecycleSuppressedDirectives,
   parseDirectiveLifecycle,
+  partitionDirectivesByLifecycle,
   renderedDirectiveNames,
   type DirectiveFiring,
   type DirectiveFiringState,
+  type DirectiveLifecyclePartition,
   type DirectiveLifecycleSuppression,
 } from "./directiveLifecycle.js";
 export {

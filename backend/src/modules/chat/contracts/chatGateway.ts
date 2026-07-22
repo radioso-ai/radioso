@@ -1,6 +1,6 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
-import type { ReasoningEffort } from "../../../shared/infra/llm/providerTypes.js";
+import type { JsonSchemaResponseFormat, ReasoningEffort } from "../../../shared/infra/llm/providerTypes.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 
 export type ChatGatewayUsageContext = ModelCallUsageContext;
@@ -8,6 +8,7 @@ export type ChatGatewayUsageContext = ModelCallUsageContext;
 export interface ChatGatewayGenerationOptions {
   maxOutputTokens?: number;
   reasoningEffort?: ReasoningEffort;
+  responseFormat?: JsonSchemaResponseFormat;
 }
 
 export interface ChatGatewayInput {

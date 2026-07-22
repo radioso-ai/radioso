@@ -20,6 +20,10 @@ import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import type { AgentSkillTurnSkillProvider } from "../../src/modules/chat/services/agentSkillTurnSkillProvider.js";
 import type { ConversationTurnInterpreterInput } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import {
+  TurnPlanCoordinator,
+} from "../../src/modules/chat/services/turnPlanCoordinator.js";
+import { TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
@@ -345,8 +349,6 @@ describe("WorkbenchReplayRunner", () => {
   });
 
   it("threads the frozen conversation summary (#866) into the prepared session", async () => {
-    // The summary rides on PreparedSession.conversationSummary, which the grounded and
-    // direct answer composers read. A skill that echoes it proves the thread-through.
     const seen: { value?: string; called: boolean } = { called: false };
     const summarySkill: TurnSkill = {
       definition: { name: "replay.answer", outcomeKinds: ["replay"] },
@@ -392,7 +394,6 @@ describe("WorkbenchReplayRunner", () => {
 
     expect(seen.value).toBe("The buyer already returned the item last week.");
     expect(result.answer).toBe("summary:The buyer already returned the item last week.");
-    // Echoed on resolvedConfig so the workbench can confirm the replay used the frozen summary.
     expect(result.resolvedConfig.conversationSummary).toBe(
       "The buyer already returned the item last week.",
     );
@@ -492,6 +493,135 @@ describe("WorkbenchReplayRunner", () => {
     expect(seen.called).toBe(true);
     expect(seen.value).toBeUndefined();
     expect(result.resolvedConfig.conversationSummary).toBeUndefined();
+  });
+
+  it("executes the fused turn-planning schedule when the same coordinator + gate are wired", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const longHistory = Array.from({ length: 12 }, (_, index): MessageRecord => ({
+      id: `history-${index}`,
+      conversationId: "conv-1",
+      workspaceId: "ws-1",
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `history-message-${index}`,
+      createdAt: new Date(index),
+    }));
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const planText = JSON.stringify({
+      route: "retrieval",
+      isIdentityQuestion: false,
+      intentTopic: null,
+      inScopeRequest: null,
+      outsideScopeRequest: null,
+      rewrite: {
+        rewrittenQuery: "refund processing duration",
+        semanticQuery: "refund processing duration",
+        lexicalQuery: "refund processing",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "refund processing",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.95,
+      },
+      responseLanguage: "English",
+      routineRankings: [],
+      directiveClassifications: [{ name: "refund-tone", matched: true, confidence: 0.9 }],
+    });
+    const plannerComplete = vi.fn(async (_request: { prompt: string }) => ({ text: planText }));
+    const throwingDirectiveGatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("directive gateway must not be created on the fused fast path");
+      }),
+    };
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [{
+          directive: {
+            name: "refund-tone",
+            condition: { kind: "contextual", description: "when the customer asks about refunds" },
+            action: "Use refund support tone.",
+          },
+        }],
+        directiveMatchGatewayFactory: throwingDirectiveGatewayFactory,
+      }),
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+      turnPlanInterpretationContextSettings: {
+        retrievalDefaultsProvider: { getDefaults: () => ({} as never) },
+        skillSettingsResolver: {
+          resolve: () => ({
+            semanticRewriteInstructions: "Replay semantic guidance.",
+            lexicalRewriteInstructions: "Replay lexical guidance.",
+          } as never),
+        },
+      },
+    });
+
+    const result = await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "How long do refunds take?",
+      history: longHistory,
+      conversationSummary: "The buyer already returned the item last week.",
+    });
+
+    expect(result.answer).toBeTruthy();
+    // The planner ran once; the staged router and directive gateway never did —
+    // the identical fast-path schedule as live chat.
+    expect(plannerComplete).toHaveBeenCalledTimes(1);
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay semantic guidance.");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("Replay lexical guidance.");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("The buyer already returned the item last week.");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("USER: history-message-0 [");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).not.toContain("ASSISTANT: history-message-1 [");
+    expect(plannerComplete.mock.calls[0]?.[0].prompt).toContain("history-message-11");
+    expect(classify).not.toHaveBeenCalled();
+    expect(throwingDirectiveGatewayFactory.create).not.toHaveBeenCalled();
+    expect(capturedRequests[0]?.precomputedRewriteProposal?.rewrittenQuery).toBe("refund processing duration");
+    expect(capturedRequests[0]?.responseLanguage).toBe("English");
+    // The trace keeps the unchanged schedule shape.
+    expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
+  });
+
+  it("restores staged response-language detection when the planner output is malformed", async () => {
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const detect = vi.fn(async () => ({ responseLanguage: "Spanish" }));
+    const plannerComplete = vi.fn(async () => ({ text: "<<<not-json>>>" }));
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(capturedRequests),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      responseLanguageDetector: { detect },
+      turnPlanCoordinator: new TurnPlanCoordinator(
+        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
+      ),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "¿Cuánto tardan los reembolsos?",
+      history: [],
+    });
+
+    expect(plannerComplete).toHaveBeenCalledTimes(1);
+    expect(classify).toHaveBeenCalledTimes(1);
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(capturedRequests[0]?.responseLanguage).toBe("Spanish");
   });
 
   it("hydrates directive-bound agent skills so replay selects like live chat", async () => {

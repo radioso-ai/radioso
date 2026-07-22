@@ -32,8 +32,10 @@ Matching stays **stateless per turn**. Cross-turn firing policy
 `Directive.lifecycle` field enforced *outside* the matcher: the chat host loads a
 conversation's firing memory, suppresses ineligible directives before matching,
 and advances the memory at turn completion. A directive counts as "fired" only
-when it renders into steering, not when it merely matched. See
-`directiveLifecycle.ts` (pure eligibility + firing-state helpers),
+when it renders into steering, not when it merely matched. The host calls the
+named `partitionDirectivesByLifecycle` seam (eligible / tracked-for-capture /
+suppressed split) rather than composing the eligibility primitives inline. See
+`directiveLifecycle.ts` (pure eligibility + firing-state helpers + partition),
 `directiveStateStore.ts` (the `DirectiveStateStore` port), the host wiring in
 `../chat/services/conversationProcessTurnInput.ts` +
 `../chat/services/directives/deferredDirectiveStateStore.ts`, and the
@@ -70,6 +72,7 @@ skill-emitted `SkillTransientGuidance` so the composer reads one steering set.
 
 - `cd backend && pnpm test -- tests/unit/directives.test.ts`
 - `cd backend && pnpm test -- tests/unit/default-composition.test.ts`
+- `cd backend && pnpm test -- tests/unit/directive-lifecycle-partition.test.ts` (lifecycle partition seam)
 - `cd backend && pnpm test -- tests/unit/route-scoped-directive-steering.test.ts`
 - `cd backend && pnpm test -- tests/unit/steering-rule.test.ts`
 - `cd backend && pnpm test -- tests/unit/grounded-answer-steering.test.ts` (compose injection)

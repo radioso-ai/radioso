@@ -136,16 +136,16 @@ describe("ConversationTurnInterpreter", () => {
     });
   });
 
-  it("renders both routing and rewrite instructions into the merged prompt", () => {
+  it("keeps custom instructions out of interpretation while rendering rewrite guidance", () => {
     const prompt = buildTurnInterpretationPrompt({
       context: "USER: Which retreats are next? [authoritative for grounding]",
-      answerScopeReference: "Configured response instructions:\nHelp with retreats.",
       semanticRewriteInstructions: "Semantic custom guidance.",
       lexicalRewriteInstructions: "Lexical custom guidance.",
       query: "the first one",
     });
 
-    expect(prompt).toContain("Mixed turns (in-scope + out-of-scope): route to retrieval");
+    expect(prompt).not.toContain("Configured response instructions:");
+    expect(prompt).toContain("Retrieval evidence decides whether the assistant has support");
     expect(prompt).toContain("Do not rely on English keyword matching");
     expect(prompt).toContain("Semantic custom guidance.");
     expect(prompt).toContain("Lexical custom guidance.");

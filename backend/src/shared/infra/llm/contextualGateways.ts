@@ -29,6 +29,10 @@ import { createOpenAIClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import type { ModelCallUsageContext } from "../../domain/modelCallUsageContext.js";
+import type {
+  TurnPlanGatewayFactory,
+  TurnPlanInferenceClient,
+} from "../../../modules/chat/services/turnPlanService.js";
 import { loadPromptTemplate } from "../prompts/promptLoader.js";
 
 interface ContextualGatewayDependencies {
@@ -60,6 +64,37 @@ export interface DirectiveMatchGatewayFactory {
     workspaceContext: LlmCapabilityResolveInput;
     usageContext: ModelCallUsageContext;
   }): Promise<DirectiveMatchGateway>;
+}
+
+/**
+ * Resolves the workspace chat-tier model for the fused turn-planning call and
+ * binds the `turn_planning` usage operation, mirroring
+ * {@link ContextualDirectiveMatchGatewayFactory}. The `TurnPlanService` owns the
+ * prompt, parsing, and validation; this factory owns only per-workspace client
+ * resolution and usage attribution.
+ */
+export class ContextualTurnPlanGatewayFactory implements TurnPlanGatewayFactory {
+  private readonly cache: TextGenerationClientCache;
+
+  constructor(
+    private readonly deps: ContextualGatewayDependencies,
+    private readonly usageEventRecorder?: UsageEventRecorder,
+  ) {
+    this.cache = deps.clientCache ?? new TextGenerationClientCache();
+  }
+
+  async create(input: {
+    workspaceContext: LlmCapabilityResolveInput;
+    usageContext: ModelCallUsageContext;
+  }): Promise<TurnPlanInferenceClient> {
+    const client = await resolveClient(this.cache, this.deps.resolver, "chat", input.workspaceContext);
+    const inference = toInferencePipeline(client, this.usageEventRecorder);
+    return {
+      complete(request) {
+        return inference.complete({ ...request, operation: input.usageContext });
+      },
+    };
+  }
 }
 
 export class ContextualDirectiveMatchGatewayFactory implements DirectiveMatchGatewayFactory {

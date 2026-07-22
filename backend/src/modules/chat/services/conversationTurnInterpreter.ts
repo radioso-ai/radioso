@@ -13,7 +13,6 @@ import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInfe
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import {
   parseStructuredRewrite,
-  SharedAnswerInstructionBuilder,
   type RetrievalDefaultsProvider,
   type SkillSettingsResolver,
   type StructuredRewriteResult,
@@ -45,10 +44,52 @@ export interface ChatConversationTurnInterpreter {
   interpretChatTurn(input: ConversationTurnInterpreterInput): Promise<ConversationTurnInterpretationResult>;
 }
 
+/** Retrieval-owned dependencies used to resolve effective interpretation context. */
+export interface TurnInterpretationContextSettings {
+  retrievalDefaultsProvider: RetrievalDefaultsProvider;
+  skillSettingsResolver?: SkillSettingsResolver;
+}
+
+export interface ResolvedTurnInterpretationContext {
+  semanticRewriteInstructions?: string;
+  lexicalRewriteInstructions?: string;
+  conversationSummary?: string;
+}
+
+/**
+ * One shared resolution seam for staged and fused interpretation: effective
+ * retrieval.answer rewrite guidance and the frozen rolling summary. Answer
+ * instructions intentionally stay out of pre-retrieval interpretation.
+ */
+export const resolveConversationTurnInterpretationContext = (
+  input: Pick<
+    ConversationTurnInterpreterInput,
+    "workspaceId" | "agentSkillSettings" | "conversationSummary"
+  >,
+  settings?: TurnInterpretationContextSettings,
+): ResolvedTurnInterpretationContext => {
+  const defaults = settings?.retrievalDefaultsProvider.getDefaults(input.workspaceId);
+  const effective = defaults && settings?.skillSettingsResolver
+    ? settings.skillSettingsResolver.resolve(
+        "retrieval.answer",
+        defaults,
+        input.agentSkillSettings?.["retrieval.answer"],
+      )
+    : defaults;
+  return {
+    ...(effective?.semanticRewriteInstructions
+      ? { semanticRewriteInstructions: effective.semanticRewriteInstructions }
+      : {}),
+    ...(effective?.lexicalRewriteInstructions
+      ? { lexicalRewriteInstructions: effective.lexicalRewriteInstructions }
+      : {}),
+    ...(input.conversationSummary ? { conversationSummary: input.conversationSummary } : {}),
+  };
+};
+
 export interface TurnInterpretationGatewayInput {
   query: string;
   contextMessages: MessageRecord[];
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -74,7 +115,6 @@ const formatConversationContext = (messages: MessageRecord[]): string =>
 
 export const buildTurnInterpretationPrompt = (input: {
   context: string;
-  answerScopeReference: string;
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -83,7 +123,6 @@ export const buildTurnInterpretationPrompt = (input: {
   renderPromptTemplate("chat/turn-interpretation.md", {
     context_section: input.context || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
-    answer_scope_reference_section: input.answerScopeReference || "No configured answer scope.",
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
@@ -116,7 +155,6 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
       operation: input.usageContext,
       prompt: buildTurnInterpretationPrompt({
         context: formatConversationContext(input.contextMessages),
-        answerScopeReference: input.answerScopeReference,
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         conversationSummary: input.conversationSummary,
@@ -131,8 +169,6 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
 }
 
 export class LlmConversationTurnInterpreter implements ChatConversationTurnInterpreter {
-  private readonly answerInstructionBuilder = new SharedAnswerInstructionBuilder();
-
   constructor(
     private readonly gateway: TurnInterpretationGateway,
     private readonly retrievalDefaultsProvider?: RetrievalDefaultsProvider,
@@ -140,27 +176,17 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
   ) {}
 
   async interpretChatTurn(input: ConversationTurnInterpreterInput): Promise<ConversationTurnInterpretationResult> {
-    const answerScopeReference = this.answerInstructionBuilder.buildScopeReferenceBlock({
-      responseIdentity: input.responseIdentity,
-      customInstruction: input.customInstruction,
-    });
-    const settings = this.retrievalDefaultsProvider
-      ? this.skillSettingsResolver
-        ? this.skillSettingsResolver.resolve(
-            "retrieval.answer",
-            this.retrievalDefaultsProvider.getDefaults(input.workspaceId),
-            input.agentSkillSettings?.["retrieval.answer"],
-          )
-        : this.retrievalDefaultsProvider.getDefaults(input.workspaceId)
-      : undefined;
+    const context = resolveConversationTurnInterpretationContext(input, this.retrievalDefaultsProvider
+      ? {
+          retrievalDefaultsProvider: this.retrievalDefaultsProvider,
+          ...(this.skillSettingsResolver ? { skillSettingsResolver: this.skillSettingsResolver } : {}),
+        }
+      : undefined);
     try {
       const result = await this.gateway.interpret({
         query: input.query,
         contextMessages: input.history,
-        answerScopeReference,
-        semanticRewriteInstructions: settings?.semanticRewriteInstructions,
-        lexicalRewriteInstructions: settings?.lexicalRewriteInstructions,
-        conversationSummary: input.conversationSummary,
+        ...context,
         usageContext: {
           accountId: input.accountId,
           workspaceId: input.workspaceId,

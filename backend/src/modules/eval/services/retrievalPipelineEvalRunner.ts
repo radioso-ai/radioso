@@ -8,6 +8,7 @@ import {
   composeGroundedAnswerSystemPrompt,
   computeGroundingSummary,
   BlankChatAnswerError,
+  GROUNDED_ANSWER_RESPONSE_FORMAT,
   parseGroundedAnswerEnvelope,
 } from "../../chat/retrievalSupport.js";
 import {
@@ -200,6 +201,7 @@ export class RetrievalPipelineEvalRunner implements EvalRetrievalRunnerPort {
           operation: "full_assistant",
           attemptKey: "answer",
         },
+        generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
       });
     } catch (err) {
       callError = err;

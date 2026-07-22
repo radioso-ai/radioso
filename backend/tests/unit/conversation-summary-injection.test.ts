@@ -15,7 +15,6 @@ describe("rolling conversation summary injection (#866)", () => {
     it("renders the summary section when a summary is present", () => {
       const prompt = buildTurnInterpretationPrompt({
         context: "USER: hello",
-        answerScopeReference: "Scope",
         conversationSummary: SUMMARY,
         query: "and then?",
       });
@@ -26,7 +25,6 @@ describe("rolling conversation summary injection (#866)", () => {
     it("renders no summary section when the summary is absent", () => {
       const prompt = buildTurnInterpretationPrompt({
         context: "USER: hello",
-        answerScopeReference: "Scope",
         query: "and then?",
       });
       expect(prompt).not.toContain(SUMMARY_MARKER);

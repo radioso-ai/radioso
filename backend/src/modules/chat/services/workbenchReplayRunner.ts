@@ -12,9 +12,18 @@ import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCall
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import {
   applyAgentConfigOverride,
+  authoredDirectiveToSteeringDirective,
   materializeAgentFromConfig,
   type InternalAgentConfig,
 } from "../../agents/public.js";
+import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import {
+  contextualDirectiveCandidates,
+  lazyPromise,
+  planAwareResponseLanguage,
+  startTurnPlan,
+  type TurnPlanCoordinator,
+} from "./turnPlanCoordinator.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   RetrievalSenseDetectorPort,
@@ -40,7 +49,11 @@ import {
 } from "./chatTurnAssembly.js";
 import { createEphemeralChatTurnEffectProfile } from "./chatTurnEffectProfile.js";
 import { buildTurnTraceForPresentation } from "./chatTurnLifecycle.js";
-import type { ChatConversationTurnInterpreter } from "./conversationTurnInterpreter.js";
+import {
+  resolveConversationTurnInterpretationContext,
+  type ChatConversationTurnInterpreter,
+  type TurnInterpretationContextSettings,
+} from "./conversationTurnInterpreter.js";
 import {
   noopRouteScopedDirectiveRuntime,
   type RouteScopedDirectiveRuntime,
@@ -141,6 +154,8 @@ export interface WorkbenchReplayRunnerOptions {
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
   recordClarificationDecision?: ChatTurnAssemblyOptions["recordClarificationDecision"];
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
+  turnPlanCoordinator?: TurnPlanCoordinator;
+  turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -204,6 +219,7 @@ export class WorkbenchReplayRunner {
       preResolvedHistory: input.history,
       preResolvedConversationSummary: input.conversationSummary ?? undefined,
     });
+    this.startReplayTurnPlan(session, input);
     const routineStore = effects.routineStore(
       input.routineStartState
         ? { ...input.routineStartState, sessionId: session.conversation.id }
@@ -252,7 +268,7 @@ export class WorkbenchReplayRunner {
       agentSkillTurnSkillProvider: this.options.agentSkillTurnSkillProvider,
       logger: this.options.logger,
     });
-    const responseLanguagePromise = this.detectResponseLanguage(input, session);
+    const responseLanguagePromise = this.replayResponseLanguagePromise(input, session);
     const activeRoutine = await routineStore.loadActive({
       sessionId: session.conversation.id,
     });
@@ -299,6 +315,71 @@ export class WorkbenchReplayRunner {
       answerStartedAt,
       actions: rendered.actions,
     });
+  }
+
+  private startReplayTurnPlan(session: PreparedSession, input: WorkbenchReplayInput): void {
+    const additionalDirectives = (session.agent.authoredDirectives ?? [])
+      .map(authoredDirectiveToSteeringDirective);
+    const query = session.effectiveQuery ?? session.userMessage.content;
+    const directiveRuntime = this.options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
+    const handle = startTurnPlan({
+      coordinator: this.options.turnPlanCoordinator,
+      bypass: {
+        activeRoutine: input.routineStartState?.status === "active",
+        suspendedRoutine:
+          input.routineStartState != null && input.routineStartState.status !== "active",
+      },
+      plan: () => ({
+        query,
+        history: session.history,
+        ...resolveConversationTurnInterpretationContext({
+          workspaceId: session.agent.workspaceId,
+          agentSkillSettings: session.agent.skillSettings,
+          conversationSummary: session.conversationSummary,
+        }, this.options.turnPlanInterpretationContextSettings),
+        directiveCandidates: contextualDirectiveCandidates({
+          routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
+          directivesForRoute: (route) =>
+            directiveRuntime.directivesFor({
+              workspaceId: session.agent.workspaceId,
+              accountId: input.accountId ?? undefined,
+              additionalDirectives,
+              turnContext: { query, route },
+            }),
+        }),
+        workspaceContext: { workspaceId: session.agent.workspaceId },
+        usageContext: {
+          accountId: input.accountId ?? undefined,
+          workspaceId: session.agent.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "turn_planning",
+          attemptKey: `${session.userMessage.id}:turn_planning`,
+          ...input.usageAttribution,
+        },
+      }),
+    });
+    if (handle) {
+      session.turnPlan = handle;
+    }
+  }
+
+  private replayResponseLanguagePromise(
+    input: WorkbenchReplayInput,
+    session: PreparedSession,
+  ): Promise<string | undefined> {
+    const fallback = () => this.detectResponseLanguage(input, session);
+    const handle = session.turnPlan;
+    if (!handle) {
+      return fallback();
+    }
+    return lazyPromise(() =>
+      planAwareResponseLanguage({
+        handle: () => handle.resolve(null),
+        fallback,
+      }),
+    );
   }
 
   private async detectResponseLanguage(

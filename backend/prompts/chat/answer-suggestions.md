@@ -1,5 +1,7 @@
-Suggestions
+Follow-up field rules
 Because suggestions are enabled, an `answer` envelope should contain exactly {{max_suggestions}} suggestions when the Result excerpts support that many genuinely distinct next questions. Never add suggestions to a `no_support` envelope. If the visible answer is a decline, no-information response, or unsupported redirect, emit an empty array. Suggestions cannot extend, justify, or substitute for an answer.
+
+Never append a heading or list of follow-up questions to the visible markdown body. Put follow-ups only in the top-level `suggestions` array.
 
 Ground every suggestion in exactly one numbered Result excerpt from the user message and set `contextIndex` to that Result number. Use `kind:"deeper"` to explore a supported concept more fully. Use `kind:"broader"` only to widen into an adjacent direction that is still supported and fits the conversation intent. Do not suggest tasks for the assistant, hypothetical artifacts, or facts absent from the excerpts. Broader suggestions are optional; prefer another deeper question when support is uncertain.
 
@@ -26,4 +28,7 @@ Active subject:
 Active goal:
 {{active_goal}}
 
-Output each item as a compact object with only `text`, `kind`, and `contextIndex`. Keep the order intentional: put the most useful continuation first, then distinct supported alternatives. Do not duplicate questions through synonyms. Do not add commentary before or after the JSON envelope, and do not place suggestion text in the visible answer merely to satisfy the requested count.
+Output each item as a compact object with only `text`, `kind`, and `contextIndex`. Keep the order intentional: put the most useful continuation first, then distinct supported alternatives. Do not duplicate questions through synonyms. Do not add commentary outside the JSON object.
+
+Correct placement example:
+{"answer":"The practice begins with a brief centering exercise[[1]].","v":2,"outcome":"answer","claims":[[1]],"suggestions":[{"text":"How does the practice begin?","kind":"deeper","contextIndex":1}],"grounding":"degraded"}

@@ -19,6 +19,7 @@ const buildClaudeBody = (config: LlmCapabilityConfig, input: {
   systemPrompt?: string;
   temperature?: number;
   maxOutputTokens?: number;
+  responseFormat?: TextGenerationRequest["responseFormat"];
   stream?: boolean;
 }) => ({
   model: config.model,
@@ -32,10 +33,26 @@ const buildClaudeBody = (config: LlmCapabilityConfig, input: {
       content: input.prompt,
     },
   ],
+  ...(input.responseFormat
+    ? {
+        tools: [{
+          name: input.responseFormat.name,
+          description: "Return the final response in the required schema.",
+          input_schema: input.responseFormat.schema,
+        }],
+        tool_choice: { type: "tool", name: input.responseFormat.name },
+      }
+    : {}),
 });
 
 const extractClaudeText = (payload: unknown): string => {
-  const content = (payload as { content?: Array<{ type?: string; text?: string }> })?.content ?? [];
+  const content = (payload as {
+    content?: Array<{ type?: string; text?: string; input?: unknown }>;
+  })?.content ?? [];
+  const toolInput = content.find((part) => part.type === "tool_use" && part.input !== undefined)?.input;
+  if (toolInput !== undefined) {
+    return JSON.stringify(toolInput);
+  }
   return content
     .filter((part) => part.type === "text" && typeof part.text === "string")
     .map((part) => part.text)
@@ -141,7 +158,7 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
 
         const payload = JSON.parse(data) as {
           type?: string;
-          delta?: { type?: string; text?: string };
+          delta?: { type?: string; text?: string; partial_json?: string };
           message?: { id?: string; usage?: ClaudeUsagePayload };
           usage?: ClaudeUsagePayload;
         };
@@ -162,8 +179,15 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
           payload.type === "content_block_delta"
           && payload.delta?.type === "text_delta"
           && payload.delta.text
+          && !input.responseFormat
         ) {
           yield payload.delta.text;
+        } else if (
+          payload.type === "content_block_delta"
+          && payload.delta?.type === "input_json_delta"
+          && payload.delta.partial_json
+        ) {
+          yield payload.delta.partial_json;
         }
       }
 

@@ -25,6 +25,13 @@ export {
   type WorkbenchReplayResolvedConfig,
   type WorkbenchReplayResult,
 } from "./services/workbenchReplayRunner.js";
+export { TurnPlanService } from "./services/turnPlanService.js";
+export {
+  TurnPlanCoordinator,
+  planAwareRoutineActivator,
+  planAwareRoutineReentryGate,
+  planAwareRoutineSlotCorrection,
+} from "./services/turnPlanCoordinator.js";
 export {
   RoutineNextStepSelector,
   RoutineRegistry,

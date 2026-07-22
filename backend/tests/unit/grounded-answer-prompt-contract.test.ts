@@ -40,7 +40,8 @@ describe("grounded answer prompt contract", () => {
     });
 
     for (const result of [disabled, enabled]) {
-      expect(result.systemPrompt).toContain("<<<RADIOSO_FOLLOWUPS_JSON>>>");
+      expect(result.systemPrompt).toContain("Return exactly the JSON object required by the provider response schema");
+      expect(result.systemPrompt).toContain('"answer":');
       expect(result.systemPrompt).toContain('"v":2');
       expect(result.systemPrompt).toContain('"outcome":"answer"');
       expect(result.systemPrompt).toContain('"outcome":"no_support"');
@@ -51,6 +52,25 @@ describe("grounded answer prompt contract", () => {
     expect(enabled.suggestionsExpected).toBe(true);
     expect(enabled.systemPrompt).toContain("Output envelope");
     expect(enabled.systemPrompt).toContain("Suggestion quality");
+    expect(enabled.systemPrompt).not.toContain("<<<RADIOSO_FOLLOWUPS_JSON>>>");
+  });
+
+  it("shows enabled suggestions only inside a non-empty v2 envelope", () => {
+    const enabled = composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt: "BASE",
+      suggestedQuestionsEnabled: true,
+      suggestedQuestionsCount: 3,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+    });
+
+    expect(enabled.systemPrompt).toContain(
+      '"suggestions":[{"text":"How does the practice begin?","kind":"deeper","contextIndex":1}]',
+    );
+    expect(enabled.systemPrompt).toContain(
+      "Never append a heading or list of follow-up questions to the visible markdown body",
+    );
+    expect(enabled.systemPrompt).not.toContain("\nSuggestions\n");
   });
 
   it("renders conversation-intent context inside the conditional suggestion block", () => {
@@ -85,6 +105,14 @@ describe("grounded answer prompt contract", () => {
     expect(main).toContain(canonicalSentence);
     expect(focused).toContain("{{decline_rules}}");
     expect(loadPromptTemplate("chat/grounded-decline-rules.md")).toContain(canonicalSentence);
+  });
+
+  it("decides answer support from retrieved findings rather than question wording or instructions", () => {
+    const prompt = loadPromptTemplate("retrieval/answer.md");
+
+    expect(prompt).toContain("The presence or absence of supporting findings decides whether the question can be answered");
+    expect(prompt).toContain("never infer support from the wording of the question or from configured answer instructions");
+    expect(prompt).not.toContain("Outside-scope subrequests include");
   });
 
   it("keeps the protocol assets within their locked word budgets", () => {

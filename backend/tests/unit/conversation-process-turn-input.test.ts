@@ -15,7 +15,11 @@ import {
   createChatProcessTurnInput,
 } from "../../src/modules/chat/services/conversationProcessTurnInput.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import type { RouteScopedDirectiveRuntime } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import {
+  createRouteScopedDirectiveSteering,
+  type RouteScopedDirectiveRuntime,
+} from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import type {
   Directive,
@@ -217,6 +221,9 @@ const routeScopedDirectiveRuntime = (directives: Directive[]): {
           omissions: [],
         };
       },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },
@@ -372,6 +379,9 @@ describe("createChatProcessTurnInput", () => {
           omissions: [],
         };
       },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },
@@ -458,6 +468,9 @@ describe("createChatProcessTurnInput", () => {
           omissions: [],
         };
       },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
+      },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
       },
@@ -540,6 +553,9 @@ describe("createChatProcessTurnInput", () => {
           matches,
           omissions: [],
         };
+      },
+      async matchAndResolveWithClassifications(): Promise<DirectiveSteeringResult> {
+        throw new Error("matchAndResolveWithClassifications not used in this test");
       },
       async steer(): Promise<DirectiveSteeringResult> {
         throw new Error("steer should not pre-resolve chat engine directives");
@@ -747,6 +763,143 @@ describe("directive lifecycle memory (#865)", () => {
     expect(secondTurn.directiveSteering?.lifecycleSuppressed).toEqual([
       { directiveName: "intro", lifecycle: { kind: "once_per_conversation" } },
     ]);
+  });
+
+  it("captures and suppresses once_per_conversation firing on the fused-plan fast path with zero gateway calls", async () => {
+    const store = inMemoryDirectiveStateStore();
+    const contextualOnce: Directive = {
+      name: "refund-intro",
+      condition: { kind: "contextual", description: "when the customer first asks about refunds" },
+      action: "Introduce the refund policy.",
+      lifecycle: { kind: "once_per_conversation" },
+    };
+    const throwingGatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("directive gateway must not be created on the fused fast path");
+      }),
+    };
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [{ directive: contextualOnce }],
+      directiveMatchGatewayFactory: throwingGatewayFactory,
+    });
+    const plannedHandle: NonNullable<PreparedSession["turnPlan"]> = {
+      resolve: async () => ({
+        status: "planned",
+        plan: {
+          route: "direct",
+          framing: { isIdentityQuestion: false },
+          routineRankings: [],
+          directiveClassifications: [{ name: "refund-intro", matched: true, confidence: 0.9 }],
+        },
+        prepared: null,
+      }),
+      bypass: () => {},
+    };
+    const matchPlanned = async (session: PreparedSession) => {
+      session.turnPlan = plannedHandle;
+      const input = createChatProcessTurnInput({
+        session,
+        directiveRuntime: runtime,
+        directiveStateStore: store,
+        dispatcher,
+        selector,
+        composer,
+        getSession: () => session,
+      });
+      return input.directiveMatcher.match({
+        turn: {
+          agent: input.agent,
+          sessionId: input.sessionId,
+          inputEvent: input.inputEvent,
+          history: [],
+          stagedContext: [],
+          steering: [],
+        },
+        directives: [contextualOnce],
+      });
+    };
+
+    const firstTurn = preparedSession();
+    const firstMatches = await matchPlanned(firstTurn);
+    expect(firstMatches.map((m) => m.directive.name)).toEqual(["refund-intro"]);
+    await firstTurn.directiveStateStore?.commit();
+
+    const secondTurn = preparedSession();
+    const secondMatches = await matchPlanned(secondTurn);
+    expect(secondMatches).toEqual([]);
+    expect(secondTurn.directiveSteering?.lifecycleSuppressed).toEqual([
+      { directiveName: "refund-intro", lifecycle: { kind: "once_per_conversation" } },
+    ]);
+    expect(throwingGatewayFactory.create).not.toHaveBeenCalled();
+  });
+
+  it("applies a same-named contextual classification only to its current route", async () => {
+    const directDirective: Directive = {
+      name: "shared-name",
+      condition: { kind: "contextual", description: "when the user acknowledges the answer" },
+      action: "Use the direct-route response style.",
+    };
+    const retrievalDirective: Directive = {
+      name: "shared-name",
+      condition: { kind: "contextual", description: "when the user asks for account records" },
+      action: "Use the retrieval-route response style.",
+    };
+    const throwingGatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("directive gateway must not be created on the fused fast path");
+      }),
+    };
+    const runtime = createRouteScopedDirectiveSteering({
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      registrations: [
+        { directive: directDirective, routes: ["direct"] },
+        { directive: retrievalDirective, routes: ["retrieval"] },
+      ],
+      directiveMatchGatewayFactory: throwingGatewayFactory,
+    });
+    const session = preparedSession();
+    session.turnRoute = "direct";
+    session.turnPlan = {
+      resolve: async () => ({
+        status: "planned",
+        plan: {
+          route: "direct",
+          framing: { isIdentityQuestion: false },
+          routineRankings: [],
+          directiveClassifications: [
+            { name: 'route:["direct","shared-name"]', matched: true, confidence: 0.9 },
+            { name: 'route:["retrieval","shared-name"]', matched: false, confidence: 0.9 },
+          ],
+        },
+        prepared: null,
+      }),
+      bypass: () => {},
+    };
+    const input = createChatProcessTurnInput({
+      session,
+      directiveRuntime: runtime,
+      dispatcher,
+      selector,
+      composer,
+    });
+
+    const matches = await input.directiveMatcher.match({
+      turn: {
+        agent: input.agent,
+        sessionId: input.sessionId,
+        inputEvent: input.inputEvent,
+        history: [],
+        stagedContext: [],
+        steering: [],
+      },
+      directives: input.directives,
+    });
+
+    expect(matches.map((match) => match.directive.action)).toEqual([
+      "Use the direct-route response style.",
+    ]);
+    expect(throwingGatewayFactory.create).not.toHaveBeenCalled();
   });
 
   it("does not persist firing memory for conversations without a tracked-lifecycle directive", async () => {

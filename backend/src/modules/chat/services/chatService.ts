@@ -83,7 +83,11 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import type { AgentSkillTurnSkillProvider } from "./agentSkillTurnSkillProvider.js";
-import type { ChatConversationTurnInterpreter } from "./conversationTurnInterpreter.js";
+import {
+  resolveConversationTurnInterpretationContext,
+  type ChatConversationTurnInterpreter,
+  type TurnInterpretationContextSettings,
+} from "./conversationTurnInterpreter.js";
 import type {
   ChatAnswerPresenter,
   ChatPresentedAnswer,
@@ -111,6 +115,16 @@ import {
   type RetrievalSenseDetectorPort,
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
+import {
+  contextualDirectiveCandidates,
+  lazyPromise,
+  planAwareResponseLanguage,
+  startTurnPlan,
+  type ChatTurnPlanHandle,
+  type TurnPlanCoordinator,
+} from "./turnPlanCoordinator.js";
+import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
+import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
 import {
   type ClarificationMetricDecision,
   type ClarificationMetricReason,
@@ -165,6 +179,7 @@ export class ModelChatGateway implements ChatGateway {
     return {
       maxOutputTokens: input.generation?.maxOutputTokens ?? CHAT_BEHAVIOR.answer.maxOutputTokens,
       reasoningEffort: input.generation?.reasoningEffort ?? CHAT_BEHAVIOR.answer.reasoningEffort,
+      responseFormat: input.generation?.responseFormat,
     };
   }
 
@@ -176,6 +191,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      responseFormat: generation.responseFormat,
       signal: input.signal,
       validateResult(result) {
         if (!result.text?.trim()) {
@@ -194,6 +210,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      responseFormat: generation.responseFormat,
       signal: input.signal,
     });
     for await (const chunk of textStream) {
@@ -373,6 +390,10 @@ export interface ChatServiceOptions {
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
+  /** Optional: fused turn-planning coordinator. */
+  turnPlanCoordinator?: TurnPlanCoordinator;
+  /** Retrieval-owned settings seams used to preserve custom rewrite guidance. */
+  turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   /** Per-conversation turn coordinator; application composition wires one process-wide instance. */
   conversationTurnRegistry?: ConversationTurnRegistry;
 }
@@ -413,7 +434,10 @@ export class ChatService {
   private readonly clarificationStore?: ConversationClarificationStore & Partial<RecentClarificationReader>;
   private readonly recordClarificationDecision?: (input: { surface: string; decision: ClarificationMetricDecision; reason?: ClarificationMetricReason }) => void;
   private readonly retrievalSenseDetector?: RetrievalSenseDetectorPort;
+  private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly turnInterpreter?: ChatConversationTurnInterpreter;
+  private readonly turnPlanCoordinator?: TurnPlanCoordinator;
+  private readonly turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
   private readonly conversationTurnRegistry: ConversationTurnRegistry;
@@ -461,6 +485,8 @@ export class ChatService {
       retrievalSenseDetector,
       retrievalSenseClarificationPolicy,
       agentSkillTurnSkillProvider,
+      turnPlanCoordinator,
+      turnPlanInterpretationContextSettings,
       conversationTurnRegistry = new InMemoryConversationTurnRegistry(),
     } = options;
     this.conversationRepository = conversationRepository;
@@ -477,6 +503,7 @@ export class ChatService {
     this.clarificationStore = clarificationStore;
     this.recordClarificationDecision = recordClarificationDecision;
     this.retrievalSenseDetector = retrievalSenseDetector;
+    this.directiveRuntime = directiveSteering;
     const effectiveRetrievalSenseClarificationPolicy = retrievalSenseClarificationPolicy ?? {
       floor: 0,
       margin: 0.15,
@@ -487,6 +514,8 @@ export class ChatService {
     this.auditService = auditService;
     this.usageLimitPolicy = usageLimitPolicy;
     this.turnInterpreter = turnInterpreter;
+    this.turnPlanCoordinator = turnPlanCoordinator;
+    this.turnPlanInterpretationContextSettings = turnPlanInterpretationContextSettings;
     this.conversationEngine = conversationEngine;
     this.conversationTurnRegistry = conversationTurnRegistry;
     this.logger = logger;
@@ -1030,6 +1059,99 @@ export class ChatService {
   }
 
   /**
+   * The turn's response language, sourced from the fused plan on the fast path and
+   * from the staged detector otherwise. On the fast path the detector call is never
+   * made, which is the fusion's response-language saving. The promise is lazy
+   * (start-on-first-await): creating it must not resolve the plan, because the
+   * routine activator — which supplies the routine candidates — has to be the
+   * first resolver on turns with routines.
+   */
+  private planAwareResponseLanguagePromise(
+    input: { workspaceId: string; accountId?: string; query: string },
+    session: PreparedSession,
+  ): Promise<string | undefined> {
+    const handle = session.turnPlan;
+    if (!handle) {
+      return this.detectResponseLanguage(input, session);
+    }
+    return lazyPromise(() =>
+      planAwareResponseLanguage({
+        handle: () => handle.resolve(null),
+        fallback: () => this.detectResponseLanguage(input, session),
+      }),
+    );
+  }
+
+  /**
+   * The union-of-routes contextual directive candidates for the fused planner:
+   * direct + retrieval + the turn's provisional route. Candidate identities
+   * preserve route scope so same-named directives are classified independently;
+   * lifecycle narrowing remains owned by the directive runtime.
+   */
+  private buildTurnPlanDirectiveCandidates(
+    session: PreparedSession,
+    accountId: string | undefined,
+  ): TurnPlanDirectiveCandidate[] {
+    const additionalDirectives = (session.agent.authoredDirectives ?? []).map(authoredDirectiveToSteeringDirective);
+    const query = session.effectiveQuery ?? session.userMessage.content;
+    return contextualDirectiveCandidates({
+      routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
+      directivesForRoute: (route) =>
+        this.directiveRuntime.directivesFor({
+          workspaceId: session.agent.workspaceId,
+          accountId,
+          additionalDirectives,
+          turnContext: { query, route },
+        }),
+    });
+  }
+
+  /**
+   * Creates the lazy fused turn-plan handle for this turn when no pre-engine
+   * bypass signal holds (active routine, pending clarification or
+   * decision, or a parked routine). The handle is memoized on the session; the
+   * earliest consumer (the plan-aware routine activator when routines are wired,
+   * otherwise the turn interpreter / language / directive adapters) starts the one
+   * planner call. A `bypassed`/`failed` outcome sends every adapter to its staged
+   * fallback — all-or-nothing per turn.
+   */
+  private startTurnPlan(
+    input: { workspaceId: string; accountId?: string; query: string },
+    session: PreparedSession,
+    bypass: { activeRoutine?: boolean; pendingClarification?: boolean; suspendedRoutine?: boolean },
+    signal?: AbortSignal,
+  ): void {
+    const handle = startTurnPlan({
+      coordinator: this.turnPlanCoordinator,
+      bypass,
+      plan: () => ({
+        query: input.query,
+        history: session.history,
+        ...resolveConversationTurnInterpretationContext({
+          workspaceId: session.agent.workspaceId,
+          agentSkillSettings: session.agent.skillSettings,
+          conversationSummary: session.conversationSummary,
+        }, this.turnPlanInterpretationContextSettings),
+        directiveCandidates: this.buildTurnPlanDirectiveCandidates(session, input.accountId),
+        workspaceContext: { workspaceId: session.agent.workspaceId },
+        usageContext: {
+          accountId: input.accountId,
+          workspaceId: session.agent.workspaceId,
+          conversationId: session.conversation.id,
+          messageId: session.userMessage.id,
+          surface: "assistant",
+          operation: "turn_planning",
+          attemptKey: `${session.userMessage.id}:turn_planning`,
+        },
+        signal,
+      }),
+    });
+    if (handle) {
+      session.turnPlan = handle;
+    }
+  }
+
+  /**
    * Builds the localized "a teammate is joining, please wait" line shown on a
    * human-owned (suppressed) turn. Generation is best-effort: on any failure this
    * returns "" and the caller renders nothing rather than failing the turn.
@@ -1283,11 +1405,19 @@ export class ChatService {
         return suppressedHumanOwnedResponse(session, waitingMessage);
       }
 
-      const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutine = await this.loadActiveRoutine(session);
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
       const suspendedRoutine = await this.loadSuspendedRoutine(session);
+      // Fuse this turn's classification calls into one plan (memoized on the session)
+      // when eligible; the interpreter, response-language, and directive adapters then
+      // consume it, falling back to their staged calls when it is absent or invalid.
+      this.startTurnPlan(input, session, {
+        activeRoutine: activeRoutineAtTurnStart,
+        pendingClarification: clarification.resolution?.resolvedPending === true,
+        suspendedRoutine: Boolean(suspendedRoutine),
+      }, coordination.lease?.signal);
+      const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();
@@ -1648,11 +1778,16 @@ export class ChatService {
         return;
       }
 
-      const responseLanguagePromise = this.detectResponseLanguage(input, session);
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
       const activeRoutine = await this.loadActiveRoutine(session);
       const activeRoutineAtTurnStart = activeRoutine?.status === "active";
       const suspendedRoutine = await this.loadSuspendedRoutine(session);
+      this.startTurnPlan(input, session, {
+        activeRoutine: activeRoutineAtTurnStart,
+        pendingClarification: clarification.resolution?.resolvedPending === true,
+        suspendedRoutine: Boolean(suspendedRoutine),
+      }, coordination.lease?.signal);
+      const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
 
       // Match main's complete JSON preflight boundary: all state reads above must
       // succeed before the first SSE event commits the response.

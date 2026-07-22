@@ -105,6 +105,7 @@ const stripOperation = (input: ModelInferenceRequest): TextGenerationRequest => 
     temperature: input.temperature,
     maxOutputTokens: input.maxOutputTokens,
     reasoningEffort: input.reasoningEffort,
+    responseFormat: input.responseFormat,
     signal: input.signal,
   };
 };

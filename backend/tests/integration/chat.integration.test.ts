@@ -1185,7 +1185,7 @@ describe("chat integration", () => {
     ]);
   });
 
-  it("turns fully unsupported grounded drafts into a conversational grounded miss", async () => {
+  it("preserves an uncited grounded draft as degraded without a second refusal call", async () => {
     const focusedDecline = "I don't have supporting material for that. Ask me about the guide instead.";
     const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
@@ -1220,12 +1220,12 @@ describe("chat integration", () => {
       .send({ message: "What does the page explain?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe(focusedDecline);
-    expect(response.body.answer).not.toContain("discount code");
-    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
+    expect(response.body.answer).toBe("It also offers 24/7 phone support and a discount code.");
+    expect(response.body.skillOutcome).toBe("grounded_degraded");
+    expect(declineAttemptKeys).toEqual([]);
   });
 
-  it("uses exploratory recovery without leaking unsupported claims", async () => {
+  it("preserves an uncited exploratory answer as degraded without recovery generation", async () => {
     const focusedDecline = "I couldn't support that from these documents. Ask about testing or parser validation.";
     const declineAttemptKeys: string[] = [];
     const unsupportedGateway: ChatGateway = {
@@ -1273,11 +1273,10 @@ describe("chat integration", () => {
       .send({ message: "What do the testing docs cover?", stream: false, includeDebug: true });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe(focusedDecline);
+    expect(response.body.answer).toBe("It also offers 24/7 phone support and a discount code.");
+    expect(response.body.skillOutcome).toBe("grounded_degraded");
     expect(response.body.answer).not.toContain("\n- ");
-    expect(response.body.answer).not.toContain("discount code");
-    expect(response.body.answer).not.toContain("24/7 phone support");
-    expect(declineAttemptKeys).toEqual(["grounded_suppressed_decline"]);
+    expect(declineAttemptKeys).toEqual([]);
   });
 
   it("keeps conversations account scoped", async () => {

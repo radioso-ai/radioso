@@ -57,19 +57,25 @@ imports from `services/`.
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
   reusable engine.
-- Grounded retrieval answers: `groundedAnswerEnvelope.ts` frames the v1/v2
-  terminal envelope, `groundingAssertions.ts` structurally computes
+- Grounded retrieval answers: `groundedAnswerEnvelope.ts` defines the v2 JSON
+  schema and retains the older sentinel parser for compatibility. First-party
+  OpenAI and Gemini use native JSON-schema output; Claude uses an equivalent forced
+  schema tool. OpenAI-compatible endpoints keep the schema-oriented prompt but do
+  not receive an API-level strict-format parameter because arbitrary compatible
+  backends do not share that capability. The incremental envelope reader emits
+  only the decoded `answer` field, so claims and follow-up suggestions never enter
+  visible streaming text.
+  `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths. A valid in-range `[[n]]`
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
   returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
-  answer or malformed result with no valid sourced assertion suppresses the draft
-  and invokes the focused, locale-aware grounded-miss composer with typed
-  `no_context`; its static asset is only the composer's last resort for provider or
-  blank-output failure. Partial answers with at least one valid assertion remain
-  visible and degraded. Raw envelope JSON is never emitted or persisted.
+  answer or malformed result with no valid sourced assertion remains visible with a
+  computed `degraded` verdict; it is not replaced by a second generated refusal.
+  Partial answers with at least one valid assertion remain visible and degraded.
+  Raw envelope JSON is never emitted or persisted.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
@@ -104,10 +110,11 @@ imports from `services/`.
   so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
   with their conversation (content, unlike the structural `routine_states`/`directive_states`),
   and `forkForTest` carries the summary into a forked test session. Injected via
-  `services/summary/conversationSummarySection.ts` into three prompts — turn
+  `services/summary/conversationSummarySection.ts` into four prompts — turn
   interpretation (`conversationTurnInterpreter.ts`), grounded answer
   (`groundedAnswerPromptComposer.ts`), and the direct answer
-  (`assistantReplyPromptBuilder.ts`); an absent/empty summary renders nothing.
+  (`assistantReplyPromptBuilder.ts`), plus fused turn planning
+  (`turnPlanService.ts`); an absent/empty summary renders nothing.
   Bounds and TTL are composition-owned in `CHAT_BEHAVIOR.conversationSummary`
   (`shared/domain/behaviorConfig.ts`); the prompt is `prompts/chat/conversation-summary.md`.
   Observability is content-free (`conversation_summary_regenerated | _skipped | _generation_failed`);
@@ -140,6 +147,34 @@ imports from `services/`.
   mid-routine (unlike eval *replay*, which must NOT seed it). Route:
   `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
   (workspace-session auth). Powers the workbench's "Continue in test chat".
+- Fused turn planning: `turnPlanService.ts` (one chat-tier `turn_planning` call
+  + prompt `backend/prompts/chat/turn-planning.md`, strict parse and semantic
+  validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from
+  `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
+  and the four plan-aware adapters). On eligible fresh turns the one plan
+  replaces the staged routine-activation, turn-interpretation,
+  response-language, and directive-match calls; a bypassed or invalid plan
+  sends every consumer back to its staged call, all-or-nothing. This is standard
+  behavior with no rollout configuration. Composition (`dependencyBuilders.ts`)
+  wires the same coordinator into `ChatService` and
+  `workbenchReplayRunner.ts`; their shared
+  `chatTurnAssembly.ts` consumes the plan so replay executes the identical
+  schedule, including the staged response-language detector on bypass or planner
+  failure. Policy stays with the owning modules: the routine
+  activator applies plan rankings through `RoutineRegistry.prepareCandidates` /
+  `applyRankedDecision` (including extracted activation variables), completed-
+  routine correction/reentry adapters pin the plan as bypassed when they claim
+  the turn, retrieval rewrite guidance/rolling summary resolve through the same
+  interpretation-context seam as the staged path, and the directive matcher resolves precomputed
+  classifications through `matchAndResolveWithClassifications`.
+  Pre-retrieval planning never receives response identity or answer instructions,
+  and any model-proposed scope fields are ignored. Retrieved evidence decides
+  whether the grounded answer has support.
+  `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
+  gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
+  `tests/unit/turn-plan-service.test.ts`,
+  `tests/unit/turn-plan-coordinator.test.ts`,
+  `tests/unit/chat-service-turn-planning.test.ts`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
   `chatTurnAssembly.ts`, and

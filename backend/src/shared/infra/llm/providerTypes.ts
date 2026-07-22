@@ -9,6 +9,13 @@ export interface LlmProviderMetadata {
 
 export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
+export interface JsonSchemaResponseFormat {
+  type: "json_schema";
+  name: string;
+  strict: boolean;
+  schema: Record<string, unknown>;
+}
+
 export interface TextGenerationRequest {
   prompt: string;
   systemPrompt?: string;
@@ -20,6 +27,9 @@ export interface TextGenerationRequest {
   // temperature so reasoning models don't spend the whole output budget on
   // hidden reasoning and return empty visible text.
   reasoningEffort?: ReasoningEffort;
+  /** Provider-enforced final response shape. Official providers map this to
+   * strict JSON-schema output (or an equivalent forced schema tool). */
+  responseFormat?: JsonSchemaResponseFormat;
   signal?: AbortSignal;
 }
 

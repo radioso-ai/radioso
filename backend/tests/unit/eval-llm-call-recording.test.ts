@@ -307,7 +307,12 @@ describe("eval LLM-call usage recording end-to-end", () => {
       { text: "." },
     ]);
     expect(result.groundingSummary).toMatchObject({ verdict: "grounded", parseStatus: "valid_v2" });
-    expect(chat.calls[0]!.systemPrompt).toContain("<<<RADIOSO_FOLLOWUPS_JSON>>>");
+    expect(chat.calls[0]!.systemPrompt).toContain("Return exactly the JSON object required by the provider response schema");
+    expect(chat.calls[0]!.generation?.responseFormat).toMatchObject({
+      type: "json_schema",
+      name: "grounded_answer_envelope",
+      strict: true,
+    });
     expect(chat.calls[0]!.systemPrompt).not.toContain("Suggestion quality");
   });
 

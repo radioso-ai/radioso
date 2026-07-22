@@ -324,4 +324,154 @@ describe("attachModelCallsToSpine", () => {
     expect(JSON.stringify(modelCalls)).not.toContain("attemptKey");
     expect(spine.stages.find((stage) => stage.kind === "compose")?.outputs?.modelCalls).toBeUndefined();
   });
+
+  it("marks classification stages as planned when a fused planner call is present", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-planned",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [
+        { id: "turn_interpretation", kind: "turn_interpretation", status: "applied" },
+        { id: "directives", kind: "directive_match", status: "skipped" },
+      ],
+    };
+    const result = attachModelCallsToSpine(spine, [{
+      id: "model_call_1",
+      operation: "turn_planning",
+      model: "gpt-planner",
+      startedAt: at(1),
+      completedAt: at(50),
+      durationMs: 49,
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+    }]);
+    expect(result.stages.find((stage) => stage.kind === "turn_interpretation")?.outputs).toMatchObject({
+      source: "planned",
+    });
+    expect(result.stages.find((stage) => stage.kind === "directive_match")?.outputs).toMatchObject({
+      source: "planned",
+    });
+  });
+
+  it("marks classification stages as staged when no fused planner call is present", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-staged",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [{ id: "turn_interpretation", kind: "turn_interpretation", status: "applied" }],
+    };
+    const result = attachModelCallsToSpine(spine, [{
+      id: "model_call_1",
+      operation: "turn_interpretation",
+      model: "gpt-route",
+      startedAt: at(1),
+      completedAt: at(50),
+      durationMs: 49,
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+    }]);
+    expect(result.stages[0]?.outputs).toMatchObject({ source: "staged" });
+  });
+
+  it("marks classification stages as staged when a failed planner is followed by staged calls", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-planner-fallback",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [
+        { id: "turn_interpretation", kind: "turn_interpretation", status: "applied" },
+        { id: "directives", kind: "directive_match", status: "applied" },
+      ],
+    };
+    const result = attachModelCallsToSpine(spine, [
+      {
+        id: "model_call_1",
+        operation: "turn_planning",
+        model: "gpt-planner",
+        startedAt: at(1),
+        completedAt: at(20),
+        durationMs: 19,
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+      },
+      {
+        id: "model_call_2",
+        operation: "turn_interpretation",
+        model: "gpt-route",
+        startedAt: at(21),
+        completedAt: at(40),
+        durationMs: 19,
+        inputTokens: 8,
+        outputTokens: 4,
+        totalTokens: 12,
+      },
+      {
+        id: "model_call_3",
+        operation: "response_language_detection",
+        model: "gpt-language",
+        startedAt: at(41),
+        completedAt: at(50),
+        durationMs: 9,
+        inputTokens: 4,
+        outputTokens: 2,
+        totalTokens: 6,
+      },
+      {
+        id: "model_call_4",
+        operation: "directive_match",
+        model: "gpt-directive",
+        startedAt: at(51),
+        completedAt: at(70),
+        durationMs: 19,
+        inputTokens: 8,
+        outputTokens: 4,
+        totalTokens: 12,
+      },
+    ]);
+
+    expect(result.stages.find((stage) => stage.kind === "turn_interpretation")?.outputs).toMatchObject({
+      source: "staged",
+    });
+    expect(result.stages.find((stage) => stage.kind === "directive_match")?.outputs).toMatchObject({
+      source: "staged",
+    });
+  });
+
+  it("marks classification stages as staged when failed planning falls back to the legacy router", () => {
+    const spine: ConversationTrace = {
+      traceId: "turn-planner-router-fallback",
+      startedAt: at(0),
+      completedAt: at(100),
+      stages: [{ id: "turn_interpretation", kind: "turn_interpretation", status: "applied" }],
+    };
+    const result = attachModelCallsToSpine(spine, [
+      {
+        id: "model_call_1",
+        operation: "turn_planning",
+        model: "gpt-planner",
+        startedAt: at(1),
+        completedAt: at(20),
+        durationMs: 19,
+        inputTokens: 10,
+        outputTokens: 5,
+        totalTokens: 15,
+      },
+      {
+        id: "model_call_2",
+        operation: "turn_router",
+        model: "gpt-router",
+        startedAt: at(21),
+        completedAt: at(40),
+        durationMs: 19,
+        inputTokens: 8,
+        outputTokens: 4,
+        totalTokens: 12,
+      },
+    ]);
+
+    expect(result.stages[0]?.outputs).toMatchObject({ source: "staged" });
+  });
 });

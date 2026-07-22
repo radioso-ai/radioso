@@ -110,6 +110,43 @@ export const lifecycleSuppressedDirectives = (
     .filter((directive) => !isDirectiveLifecycleEligible(directive, state))
     .map((directive) => ({ directiveName: directive.name, lifecycle: lifecycleOf(directive) }));
 
+/**
+ * The lifecycle-eligibility split for a turn's scope-eligible directive set,
+ * given the conversation's firing memory. Owns the partition the chat host
+ * previously composed inline from the primitives above: which directives may
+ * match this turn, which tracked names to capture if they render, and which the
+ * lifecycle policy suppressed (for the trace).
+ */
+export interface DirectiveLifecyclePartition {
+  /** Directives that may be matched this turn (lifecycle-eligible). */
+  eligible: Directive[];
+  /**
+   * Tracked-lifecycle directive names among the eligible set — the names whose
+   * firing must be captured when they render into steering.
+   */
+  trackedNames: Set<string>;
+  /** Tracked directives the firing memory suppresses this turn, for the trace. */
+  suppressed: DirectiveLifecycleSuppression[];
+}
+
+/**
+ * Partition a turn's scope-eligible directives by their cross-turn lifecycle
+ * policy. With no firing memory every directive stays eligible and nothing is
+ * tracked or suppressed (behavior-preserving for hosts without a durable store).
+ */
+export const partitionDirectivesByLifecycle = (
+  scopeEligible: readonly Directive[],
+  firingState: DirectiveFiringState | undefined,
+): DirectiveLifecyclePartition => {
+  if (!firingState) {
+    return { eligible: [...scopeEligible], trackedNames: new Set(), suppressed: [] };
+  }
+  const eligible = scopeEligible.filter((directive) => isDirectiveLifecycleEligible(directive, firingState));
+  const trackedNames = new Set(eligible.filter(directiveHasTrackedLifecycle).map((directive) => directive.name));
+  const suppressed = lifecycleSuppressedDirectives(scopeEligible, firingState);
+  return { eligible, trackedNames, suppressed };
+};
+
 /** Matched directives that actually rendered — the matched set minus the bound drops. */
 export const renderedDirectiveNames = (result: {
   matches: DirectiveMatch[];

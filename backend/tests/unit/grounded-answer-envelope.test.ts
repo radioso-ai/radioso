@@ -11,6 +11,28 @@ import {
 } from "../support/answerEnvelopeV2Fixtures.js";
 
 describe("parseGroundedAnswerEnvelope", () => {
+  it("parses a provider-enforced structured envelope", () => {
+    expect(parseGroundedAnswerEnvelope(JSON.stringify({
+      answer: "The practice begins gently[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [
+        { text: "How does the practice begin?", kind: "deeper", contextIndex: 1 },
+      ],
+      grounding: "degraded",
+    }))).toEqual({
+      answer: "The practice begins gently[[1]].",
+      protocolVersion: 2,
+      parseStatus: "valid_v2",
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [
+        { text: "How does the practice begin?", kind: "deeper", contextIndex: 1 },
+      ],
+    });
+  });
+
   it("parses the v2 protocol without trusting the compatibility grounding field", () => {
     expect(parseGroundedAnswerEnvelope(groundedV2Envelope())).toEqual({
       answer: GROUNDED_V2_BODY,
@@ -63,6 +85,49 @@ describe("parseGroundedAnswerEnvelope", () => {
 });
 
 describe("GroundedAnswerEnvelopeReader", () => {
+  it("streams only the decoded answer field from structured JSON at every chunk boundary", () => {
+    const answer = "Line one.\nA quoted \"detail\" and snowman ☃[[1]].";
+    const raw = JSON.stringify({
+      answer,
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [
+        { text: "What comes after line one?", kind: "deeper", contextIndex: 1 },
+      ],
+      grounding: "degraded",
+    });
+
+    for (let split = 1; split < raw.length; split += 1) {
+      const reader = new GroundedAnswerEnvelopeReader();
+      const emitted = reader.push(raw.slice(0, split)) + reader.push(raw.slice(split));
+      const finalized = reader.finalize();
+      expect(emitted + finalized.trailingAnswer, `split at ${split}`).toBe(answer);
+      expect(finalized).toMatchObject({
+        fullAnswer: answer,
+        parseStatus: "valid_v2",
+        outcome: "answer",
+        claims: [[1]],
+        suggestions: [
+          { text: "What comes after line one?", kind: "deeper", contextIndex: 1 },
+        ],
+      });
+    }
+  });
+
+  it("decodes escaped surrogate pairs across every chunk boundary", () => {
+    const answer = "Smile 😀[[1]].";
+    const raw = '{"answer":"Smile \\uD83D\\uDE00[[1]].","v":2,"outcome":"answer","claims":[[1]],"suggestions":[],"grounding":"degraded"}';
+
+    for (let split = 1; split < raw.length; split += 1) {
+      const reader = new GroundedAnswerEnvelopeReader();
+      const emitted = reader.push(raw.slice(0, split)) + reader.push(raw.slice(split));
+      const finalized = reader.finalize();
+      expect(emitted + finalized.trailingAnswer, `split at ${split}`).toBe(answer);
+      expect(finalized.fullAnswer).toBe(answer);
+    }
+  });
+
   it("never leaks a sentinel split at any boundary", () => {
     const tail = JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [] });
     for (let split = 1; split < SUGGESTIONS_SENTINEL.length; split += 1) {

@@ -84,6 +84,7 @@ import {
 } from "./conversationContractMappers.js";
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
+import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
@@ -133,6 +134,7 @@ export interface ChatRoutineProvider {
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
+    turnPlan?: ChatTurnPlanHandle;
   }): Promise<{
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
@@ -324,6 +326,7 @@ export class ChatTurnAssembly {
       throwIfCancelled: input.coordination
         ? () => input.coordination?.checkpoint("routing")
         : undefined,
+      turnPlan: session.turnPlan,
     });
     if (!routineTurnPorts) {
       return null;
@@ -705,12 +708,16 @@ export class ChatTurnAssembly {
           );
           input.coordination?.checkpoint("rendering");
         }
+        const metadata: Record<string, unknown> = {
+          ...(interpreted.source ? { source: interpreted.source } : {}),
+          ...("rewriteProposal" in interpreted && interpreted.rewriteProposal
+            ? { rewriteProposal: interpreted.rewriteProposal }
+            : {}),
+        };
         return {
           route: routing.route,
           framing: routing.framing,
-          metadata: "rewriteProposal" in interpreted && interpreted.rewriteProposal
-            ? { rewriteProposal: interpreted.rewriteProposal }
-            : undefined,
+          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         };
       },
     };
@@ -807,8 +814,12 @@ export class ChatTurnAssembly {
     };
     session: PreparedSession;
     resolvedRetrievalSense: boolean;
-  }): Promise<ConversationTurnInterpretationResult> {
-    const interpreted = this.options.turnInterpreter
+  }): Promise<ConversationTurnInterpretationResult & { source?: "planned" }> {
+    const planned = await this.plannedInterpretation(
+      input.session,
+      input.resolvedRetrievalSense,
+    );
+    const interpreted = planned ?? (this.options.turnInterpreter
       ? await this.options.turnInterpreter.interpretChatTurn({
         query: input.request.query,
         history: input.session.history,
@@ -822,10 +833,29 @@ export class ChatTurnAssembly {
         usageAttribution: input.session.usageAttribution,
         conversationSummary: input.session.conversationSummary,
       })
-      : await this.routeTurn(input.request, input.session);
+      : await this.routeTurn(input.request, input.session));
     return input.resolvedRetrievalSense
       ? { ...interpreted, route: CHAT_TURN_ROUTE.RETRIEVAL }
       : interpreted;
+  }
+
+  private async plannedInterpretation(
+    session: PreparedSession,
+    resolvedRetrievalSense: boolean,
+  ): Promise<(ConversationTurnInterpretationResult & { source: "planned" }) | null> {
+    const outcome = session.turnPlan ? await session.turnPlan.resolve(null) : undefined;
+    if (!outcome || outcome.status !== "planned") {
+      return null;
+    }
+    const route = resolvedRetrievalSense ? CHAT_TURN_ROUTE.RETRIEVAL : outcome.plan.route;
+    return {
+      source: "planned",
+      route,
+      framing: outcome.plan.framing,
+      ...(route === CHAT_TURN_ROUTE.RETRIEVAL && outcome.plan.rewriteProposal
+        ? { rewriteProposal: outcome.plan.rewriteProposal }
+        : {}),
+    };
   }
 
   retrievalInputWithRewriteProposal(

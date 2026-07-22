@@ -17,6 +17,17 @@ const embeddingConfig: LlmCapabilityConfig = {
   apiKey: "key-test",
 };
 
+const responseFormat = {
+  type: "json_schema" as const,
+  name: "answer_envelope",
+  strict: true,
+  schema: {
+    type: "object",
+    required: ["answer"],
+    properties: { answer: { type: "string" } },
+  },
+};
+
 const jsonResponse = (payload: unknown) =>
   ({ ok: true, async json() { return payload; } }) as unknown as Response;
 
@@ -40,6 +51,22 @@ afterEach(() => {
 });
 
 describe("GeminiTextGenerationClient.complete", () => {
+  it("forwards JSON schema output through generationConfig", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ candidates: [{ content: { parts: [{ text: '{"answer":"Hi"}' }] } }] }),
+    );
+
+    await new GeminiTextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseJsonSchema: responseFormat.schema,
+      },
+    });
+  });
+
   it("passes AbortSignal to fetch", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),

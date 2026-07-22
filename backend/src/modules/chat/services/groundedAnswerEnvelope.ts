@@ -1,4 +1,6 @@
 import type { ChatSuggestionKind } from "../types/chatResponses.js";
+import type { JsonSchemaResponseFormat } from "../../../shared/infra/llm/providerTypes.js";
+import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 
 export const SUGGESTIONS_SENTINEL = "<<<RADIOSO_FOLLOWUPS_JSON>>>";
 
@@ -25,6 +27,47 @@ export interface GroundedAnswerEnvelope {
   claims: unknown[][];
   suggestions: PlannedEnvelopeSuggestion[];
 }
+
+export const GROUNDED_ANSWER_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+  type: "json_schema",
+  name: "grounded_answer_envelope",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["answer", "v", "outcome", "claims", "suggestions", "grounding"],
+    properties: {
+      answer: {
+        type: "string",
+        description: "Visible markdown answer only. Never include a follow-up-question heading, menu, or list here.",
+      },
+      v: { type: "integer", enum: [2] },
+      outcome: { type: "string", enum: ["answer", "no_support"] },
+      claims: {
+        type: "array",
+        items: {
+          type: "array",
+          items: { type: "integer", minimum: 1 },
+        },
+      },
+      suggestions: {
+        type: "array",
+        description: "Follow-up questions belong only in this array, never in answer.",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["text", "kind", "contextIndex"],
+          properties: {
+            text: { type: "string" },
+            kind: { type: "string", enum: ["deeper", "broader"] },
+            contextIndex: { type: "integer", minimum: 1 },
+          },
+        },
+      },
+      grounding: { type: "string", enum: ["degraded"] },
+    },
+  },
+};
 
 interface ParsedEnvelopeTail extends Omit<GroundedAnswerEnvelope, "answer"> {}
 
@@ -72,19 +115,7 @@ const readSuggestionsArray = (raw: unknown): PlannedEnvelopeSuggestion[] => {
   });
 };
 
-const parseEnvelopeTail = (buffer: string): ParsedEnvelopeTail => {
-  const trimmed = buffer.trim();
-  if (!trimmed) {
-    return emptyTail("malformed");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return emptyTail("malformed");
-  }
-
+const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
   if (Array.isArray(parsed)) {
     return {
       protocolVersion: 1,
@@ -138,7 +169,44 @@ const parseEnvelopeTail = (buffer: string): ParsedEnvelopeTail => {
   };
 };
 
+const parseEnvelopeTail = (buffer: string): ParsedEnvelopeTail => {
+  const trimmed = buffer.trim();
+  if (!trimmed) {
+    return emptyTail("malformed");
+  }
+
+  try {
+    return parseEnvelopeValue(JSON.parse(trimmed));
+  } catch {
+    return emptyTail("malformed");
+  }
+};
+
+const parseStructuredEnvelope = (raw: string): GroundedAnswerEnvelope | null => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.trim());
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.answer !== "string") {
+    return null;
+  }
+  return {
+    answer: record.answer.trim(),
+    ...parseEnvelopeValue(record),
+  };
+};
+
 export const parseGroundedAnswerEnvelope = (raw: string): GroundedAnswerEnvelope => {
+  const structured = parseStructuredEnvelope(raw);
+  if (structured) {
+    return structured;
+  }
   const sentinelIndex = raw.indexOf(SUGGESTIONS_SENTINEL);
   if (sentinelIndex === -1) {
     return { answer: raw.trim(), ...emptyTail("missing") };
@@ -158,6 +226,9 @@ export interface ReaderFinalizeResult extends Omit<GroundedAnswerEnvelope, "answ
 }
 
 export class GroundedAnswerEnvelopeReader {
+  private mode: "undecided" | "structured" | "legacy" = "undecided";
+  private undecidedBuffer = "";
+  private readonly structuredReader = new StructuredAnswerFieldReader();
   private buffer = "";
   private tailChunks: string[] = [];
   private inTail = false;
@@ -167,6 +238,26 @@ export class GroundedAnswerEnvelopeReader {
     if (!chunk) {
       return "";
     }
+    if (this.mode === "undecided") {
+      this.undecidedBuffer += chunk;
+      const first = this.undecidedBuffer.match(/\S/)?.[0];
+      if (!first) {
+        return "";
+      }
+      this.mode = first === "{" ? "structured" : "legacy";
+      const initial = this.undecidedBuffer;
+      this.undecidedBuffer = "";
+      return this.mode === "structured"
+        ? this.structuredReader.push(initial)
+        : this.pushLegacy(initial);
+    }
+    if (this.mode === "structured") {
+      return this.structuredReader.push(chunk);
+    }
+    return this.pushLegacy(chunk);
+  }
+
+  private pushLegacy(chunk: string): string {
     if (this.inTail) {
       this.tailChunks.push(chunk);
       return "";
@@ -198,6 +289,31 @@ export class GroundedAnswerEnvelopeReader {
   }
 
   finalize(): ReaderFinalizeResult {
+    if (this.mode === "undecided" && this.undecidedBuffer) {
+      const initial = this.undecidedBuffer;
+      this.undecidedBuffer = "";
+      this.push(initial);
+    }
+    if (this.mode === "structured") {
+      const parsed = parseStructuredEnvelope(this.structuredReader.raw);
+      if (!parsed) {
+        return {
+          trailingAnswer: "",
+          fullAnswer: this.structuredReader.answer,
+          ...emptyTail("malformed"),
+        };
+      }
+      const trailingAnswer = parsed.answer.slice(this.structuredReader.answer.length);
+      return {
+        trailingAnswer,
+        fullAnswer: parsed.answer,
+        protocolVersion: parsed.protocolVersion,
+        parseStatus: parsed.parseStatus,
+        outcome: parsed.outcome,
+        claims: parsed.claims,
+        suggestions: parsed.suggestions,
+      };
+    }
     if (this.inTail) {
       return {
         trailingAnswer: "",

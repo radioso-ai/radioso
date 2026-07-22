@@ -5311,7 +5311,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "The guide covers parser setup and onboarding workflows[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "How do import audits work?", kind: "deeper", contextIndex: 1 },
           ]);
@@ -5406,7 +5406,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Thanks for asking.";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           // Envelope is requested even when the answer ends up uncited; the presenter
           // gating drops suggestions for uncited answers.
           return envelope(answerText, [
@@ -5781,7 +5781,7 @@ describe("chat service streaming", () => {
           "- You can also inspect the onboarding FAQ[[1]].",
           "- The notes include worked examples[[1]].",
         ].join("\n");
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, []);
         }
         return answerText;
@@ -5870,7 +5870,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Mahiya is a teacher and author[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "What does the interview say about Mahiya's spiritual path?", kind: "deeper", contextIndex: 1 },
             { text: "Which books or projects is Mahiya associated with?", kind: "broader", contextIndex: 2 },
@@ -5982,7 +5982,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Mahiya is a teacher and author[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "What does the interview say about Mahiya's spiritual path?", contextIndex: 1 },
           ]);
@@ -6197,7 +6197,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Narayani ha scritto La mia anima ricorda Swami Kriyananda[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "Quale altro libro o progetto è collegato a Narayani?", kind: "broader", contextIndex: 1 },
           ]);
@@ -6293,7 +6293,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Yes — here's the next page of the Assisi videos archive: https://anandaeurope.org/category/video-from-assisi/page/3/[[1]]";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             // Near-paraphrase of the user's query — should be filtered.
             { text: "Where are the next Assisi videos links?", kind: "deeper", contextIndex: 2 },
@@ -6394,7 +6394,7 @@ describe("chat service streaming", () => {
           query === "What should I include next?"
             ? "You should include orientation and meals[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "What should a beginner retreat schedule include?", kind: "deeper", contextIndex: 1 },
             { text: "How should retreat facilitators support attendees?", kind: "broader", contextIndex: 2 },
@@ -6547,7 +6547,7 @@ describe("chat service streaming", () => {
           query === "What about facilitator support?"
             ? "Facilitators should balance logistics and attendee care[[1]]."
             : "Start with a beginner retreat schedule[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           if (systemPrompt.includes("Active subject:\nFacilitator support")) {
             return envelope(answerText, [
               { text: "How should facilitators support retreat attendees?", kind: "deeper", contextIndex: 1 },
@@ -6657,7 +6657,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "The guide covers testing, onboarding, and parser rules[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           suggestionCallCount += 1;
           return envelope(answerText, [
             { text: "How should teams apply these rules?", kind: "deeper", contextIndex: 1 },
@@ -6760,7 +6760,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "The archive covers videos, audio, and retreat notes[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "What does the archive cover?", kind: "deeper", contextIndex: 1 },
             { text: "How is the archive organized?", kind: "broader", contextIndex: 2 },
@@ -6870,7 +6870,7 @@ describe("chat service streaming", () => {
     const chatGateway: ChatGateway = {
       async answer({ systemPrompt }) {
         const answerText = "Start with the retreat schedule and day-one orientation[[1]].";
-        if (systemPrompt?.includes("Answer assertion protocol")) {
+        if (systemPrompt?.includes("Output envelope")) {
           return envelope(answerText, [
             { text: "What should the retreat schedule include?", kind: "deeper", contextIndex: 1 },
             { text: "How should retreat meals fit the schedule?", kind: "deeper", contextIndex: 2 },

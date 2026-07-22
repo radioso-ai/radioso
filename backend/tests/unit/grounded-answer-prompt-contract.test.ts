@@ -68,7 +68,7 @@ describe("grounded answer prompt contract", () => {
       '"suggestions":[{"text":"How does the practice begin?","kind":"deeper","contextIndex":1}]',
     );
     expect(enabled.systemPrompt).toContain(
-      "Never append a heading or list of follow-up questions to the visible markdown body",
+      "never appended to the visible markdown body",
     );
     expect(enabled.systemPrompt).not.toContain("\nSuggestions\n");
   });

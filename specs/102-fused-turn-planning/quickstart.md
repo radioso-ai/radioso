@@ -18,19 +18,17 @@ pnpm exec vitest run tests/routineRegistrySeams.test.ts
 pnpm run build
 ```
 
-## Live quality comparison
+## Live quality verification
 
 Run against a disposable workspace with Postgres, the document worker, and model
 credentials available:
 
 ```bash
 cd backend
-CHAT_TURN_PLANNING_WORKSPACES=00000000-0000-0000-0000-000000000000 \
-  pnpm run evals
-env -u CHAT_TURN_PLANNING_WORKSPACES pnpm run evals
+pnpm run evals
 ```
 
-Compare routing, routine activation, directives, response language, grounding,
+Review routing, routine activation, directives, response language, grounding,
 answer quality, and model-call traces. Do not update the committed baseline
 unless a behavior change is intentional and reviewed.
 

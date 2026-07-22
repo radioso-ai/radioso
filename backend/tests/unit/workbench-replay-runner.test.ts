@@ -22,7 +22,6 @@ import type { ConversationTurnInterpreterInput } from "../../src/modules/chat/se
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import {
   TurnPlanCoordinator,
-  createTurnPlanningGate,
 } from "../../src/modules/chat/services/turnPlanCoordinator.js";
 import { TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
@@ -556,7 +555,6 @@ describe("WorkbenchReplayRunner", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
-      turnPlanningGate: createTurnPlanningGate({}),
       turnPlanInterpretationContextSettings: {
         retrievalDefaultsProvider: { getDefaults: () => ({} as never) },
         skillSettingsResolver: {
@@ -595,38 +593,6 @@ describe("WorkbenchReplayRunner", () => {
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
   });
 
-  it("keeps the staged replay schedule when the workspace is not allowlisted", async () => {
-    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
-    const detect = vi.fn(async () => ({ responseLanguage: "Estonian" }));
-    const plannerComplete = vi.fn(async () => ({ text: "unused" }));
-    const capturedRequests: RetrievalPipelineRequest[] = [];
-    const runner = new WorkbenchReplayRunner({
-      retrievalTurn: retrievalTurn(capturedRequests),
-      auditService: createAuditService(),
-      turnSkills: [answerSkill()],
-      conversationEngine: new DefaultConversationEngine(),
-      turnRouter: { classify },
-      responseLanguageDetector: { detect },
-      turnPlanCoordinator: new TurnPlanCoordinator(
-        new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
-      ),
-      turnPlanningGate: createTurnPlanningGate({ workspaceAllowlist: ["other-workspace"] }),
-    });
-
-    await runner.run({
-      workspaceId: "ws-1",
-      sourceAgentId: "agent-1",
-      baselineAgentConfig: projectInternalAgentConfig(agent()),
-      query: "How long do refunds take?",
-      history: [],
-    });
-
-    expect(plannerComplete).not.toHaveBeenCalled();
-    expect(classify).toHaveBeenCalledTimes(1);
-    expect(detect).toHaveBeenCalledTimes(1);
-    expect(capturedRequests[0]?.responseLanguage).toBe("Estonian");
-  });
-
   it("restores staged response-language detection when the planner output is malformed", async () => {
     const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
     const detect = vi.fn(async () => ({ responseLanguage: "Spanish" }));
@@ -642,7 +608,6 @@ describe("WorkbenchReplayRunner", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService({ create: async () => ({ complete: plannerComplete }) }),
       ),
-      turnPlanningGate: createTurnPlanningGate({}),
     });
 
     await runner.run({

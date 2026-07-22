@@ -336,7 +336,7 @@ Agents can override the chat model for a specific persona via `chatModelOverride
 
 A fresh assistant turn normally runs four small classification calls before the answer: routine activation, turn routing and rewrite, response-language detection, and directive matching. Fused turn planning replaces those four with one chat-tier call on eligible turns, so a simple direct turn costs two model calls instead of five. If the fused call times out or returns an invalid plan, the turn falls back to the staged calls — behavior does not change, only cost and latency.
 
-Fused planning is enabled by default. Optionally set `CHAT_TURN_PLANNING_WORKSPACES` to a comma-separated workspace-id allowlist to limit it to specific workspaces. Leaving the allowlist unset applies planning to all workspaces.
+Fused planning is standard behavior and requires no configuration.
 
 ### Worker dispatch
 

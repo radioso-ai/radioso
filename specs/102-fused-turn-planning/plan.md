@@ -18,22 +18,22 @@ engine and public contracts remain unchanged.
 - **Tests**: Vitest and the live conversation-quality eval harness
 - **Persistence**: none; turn plans are ephemeral per-turn state
 - **Prompt asset**: `backend/prompts/chat/turn-planning.md`
-- **Rollout**: enabled by default, with an optional `CHAT_TURN_PLANNING_WORKSPACES` allowlist
+- **Runtime**: standard behavior with no rollout configuration
 
 ## Module Knowledge and Boundaries
 
 - `TurnPlanService` knows the prompt, output schema, normalization, and semantic
   candidate validation. It does not decide routine activation or directive
   steering.
-- `TurnPlanCoordinator` knows rollout eligibility, input bounds, memoization,
+- `TurnPlanCoordinator` knows input bounds, memoization,
   and adapter selection. It does not reproduce owning-module policy.
 - `RoutineRegistry` owns candidate eligibility, prefiltering, ranking decision,
   activation-variable application, and clarification policy.
 - The directives module owns scope/lifecycle filtering and classification-to-
   steering resolution.
-- `ChatService` and `WorkbenchReplayRunner` start the same gated plan, while
+- `ChatService` and `WorkbenchReplayRunner` start the same plan, while
   `ChatTurnAssembly` consumes it through the shared live/replay execution path.
-- Application composition assembles the planner gateway, gate, coordinator, and
+- Application composition assembles the planner gateway, coordinator, and
   existing fallback implementations.
 - `@radioso/conversation-engine` and `@radioso/conversation-contract` remain
   capability-neutral and unaware of fused planning.
@@ -49,19 +49,19 @@ existing decisions with characterization tests.
 
 ### Phase 2 - Planner and plan-aware adapters
 
-Create the prompt, service, strict parser, eligibility gate, lazy per-turn
+Create the prompt, service, strict parser, lazy per-turn
 handle, and adapters. Wire live and replay execution through application
 composition. Preserve an all-or-nothing fallback to the existing staged calls.
 
-### Phase 3 - Rollout, observability, and documentation
+### Phase 3 - Runtime wiring, observability, and documentation
 
-Add environment configuration, behavior bounds, `turn_planning` usage/trace
-attribution, source annotations, module documentation, and architecture docs.
+Add behavior bounds, `turn_planning` usage/trace attribution, source annotations,
+module documentation, and architecture docs.
 
 ### Phase 4 - Verification
 
 Run focused unit/integration tests, builds, deterministic local CI, then live
-conversation-quality evals with planning disabled and enabled. Review outputs
+conversation-quality evals across planned and staged-fallback turns. Review outputs
 for behavioral quality, not only aggregate pass/fail.
 
 ## Constitution Check
@@ -71,8 +71,7 @@ for behavioral quality, not only aggregate pass/fail.
 - **Backend TDD**: Characterization and planner/adapter tests cover the extracted
   seams and behavior before delivery is accepted.
 - **Stack discipline**: TypeScript/Node and existing provider abstractions only.
-- **Secrets/configuration**: no secrets added; new environment keys are documented
-  and represented in example/runtime configuration.
+- **Secrets/configuration**: no secrets or environment setup added.
 - **Modularity**: product policy remains in the routine and directive owners;
   broad orchestration only coordinates narrow ports.
 - **Reliability**: failures degrade to the complete staged path; cancellation and
@@ -89,7 +88,7 @@ for behavioral quality, not only aggregate pass/fail.
 ## Risks and Mitigations
 
 - **Behavior drift from a larger classifier prompt**: strict validation,
-  owning-module policy, live A/B evals, and workspace-scoped rollout.
+  owning-module policy, and sampled live evals.
 - **Split-brain decisions**: one memoized outcome and all-or-nothing fallback.
 - **Completed-routine interception**: correction and semantic-reentry adapters
   pin the plan as bypassed before their claimed reply or resumed routine can

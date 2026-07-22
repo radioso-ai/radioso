@@ -28,8 +28,6 @@ export {
 export { TurnPlanService } from "./services/turnPlanService.js";
 export {
   TurnPlanCoordinator,
-  createTurnPlanningGate,
-  parseWorkspaceAllowlist,
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,

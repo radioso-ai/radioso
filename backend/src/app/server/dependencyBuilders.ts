@@ -95,8 +95,6 @@ import {
   WorkbenchReplayRunner,
   TurnPlanCoordinator,
   TurnPlanService,
-  createTurnPlanningGate,
-  parseWorkspaceAllowlist,
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,
@@ -999,9 +997,6 @@ export const buildChatServices = (input: {
       },
       input.usageEventRecorder,
     );
-  const turnPlanningGate = createTurnPlanningGate({
-    workspaceAllowlist: parseWorkspaceAllowlist(input.env.CHAT_TURN_PLANNING_WORKSPACES),
-  });
   const turnPlanCoordinator = new TurnPlanCoordinator(
     new TurnPlanService(
       new ContextualTurnPlanGatewayFactory(
@@ -1643,7 +1638,6 @@ export const buildChatServices = (input: {
     turnRouter,
     turnInterpreter,
     turnPlanCoordinator,
-    turnPlanningGate,
     turnPlanInterpretationContextSettings: {
       retrievalDefaultsProvider: input.retrievalDefaultsProvider,
       ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),
@@ -1767,10 +1761,9 @@ export const buildChatServices = (input: {
     retrievalSenseClarificationPolicy: turnClarificationPolicy,
     recordClarificationDecision: clarificationDecisionRecorder,
     agentSkillTurnSkillProvider,
-    // Same fused-planning coordinator + gate as live chat, so replay executes the
-    // identical planner-or-staged schedule under the same gating semantics.
+    // Same fused-planning coordinator as live chat, so replay executes the
+    // identical planner-or-staged schedule under the same bypass semantics.
     turnPlanCoordinator,
-    turnPlanningGate,
     turnPlanInterpretationContextSettings: {
       retrievalDefaultsProvider: input.retrievalDefaultsProvider,
       ...(input.skillSettingsResolver ? { skillSettingsResolver: input.skillSettingsResolver } : {}),

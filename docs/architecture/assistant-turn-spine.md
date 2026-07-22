@@ -111,10 +111,9 @@ the same route-scoped runtime. Policy stays with the owning modules; the planner
 only sees candidate summaries.
 
 The key point is that fallback is the existing staged path, all-or-nothing per
-turn. Fused planning is enabled by default. A turn bypasses planning entirely
-(no planner call) when its workspace is excluded by the optional
-`CHAT_TURN_PLANNING_WORKSPACES` allowlist, when a routine is active or parked,
-when a pending clarification or decision resolves this turn, when a routine
+turn. Fused planning is standard behavior. A turn bypasses planning entirely
+(no planner call) when a routine is active or parked, when a pending
+clarification or decision resolves this turn, when a routine
 explicitly claims the turn (including completed-routine correction or semantic
 reentry), or when candidate counts or the estimated prompt
 exceed the `turnPlanning` bounds in `behaviorConfig.ts`. A planner timeout,

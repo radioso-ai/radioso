@@ -32,7 +32,6 @@ import {
 
 /** Why a turn never ran the fused planner (recorded for observability). */
 export type TurnPlanBypassReason =
-  | "workspace_not_allowlisted"
   | "active_routine"
   | "pending_clarification"
   | "suspended_routine"
@@ -116,35 +115,6 @@ export const lazyPromise = <T>(compute: () => Promise<T>): Promise<T> => {
   };
   return thenable as Promise<T>;
 };
-
-export interface TurnPlanningGate {
-  isEnabledForWorkspace(workspaceId: string): boolean;
-  bypassReasonForWorkspace(workspaceId: string): "workspace_not_allowlisted" | undefined;
-}
-
-/**
- * Composition-resolved gate for the optional workspace allowlist. An empty or
- * absent allowlist enables fused planning for every workspace.
- */
-export const createTurnPlanningGate = (config: {
-  workspaceAllowlist?: readonly string[];
-}): TurnPlanningGate => {
-  const allowlist = config.workspaceAllowlist && config.workspaceAllowlist.length > 0
-    ? new Set(config.workspaceAllowlist)
-    : null;
-  return {
-    bypassReasonForWorkspace(workspaceId) {
-      return allowlist && !allowlist.has(workspaceId) ? "workspace_not_allowlisted" : undefined;
-    },
-    isEnabledForWorkspace(workspaceId: string): boolean {
-      return this.bypassReasonForWorkspace(workspaceId) === undefined;
-    },
-  };
-};
-
-/** Parse a comma-separated workspace allowlist (mirrors the MCP tool-list split). */
-export const parseWorkspaceAllowlist = (value: string | undefined): string[] | undefined =>
-  value ? value.split(",").map((part) => part.trim()).filter((part) => part.length > 0) : undefined;
 
 export interface TurnPlanInputs {
   query: string;
@@ -288,8 +258,8 @@ export class TurnPlanCoordinator {
 /**
  * Shared host entry point (live chat + workbench replay run the identical
  * schedule through it): create the lazy plan handle for a turn, or return
- * `undefined` (all consumers staged) when the gate is off, the workspace is not
- * allowlisted, or a pre-engine bypass signal holds — an active routine, a
+ * `undefined` (all consumers staged) when the coordinator is absent or a
+ * pre-engine bypass signal holds — an active routine, a
  * pending clarification/decision being resolved this turn, or a parked
  * (suspended) routine. Those states are read from what the host already loaded;
  * bypass detection never adds model or DB work. Slot-correction turns cannot be
@@ -300,8 +270,6 @@ export class TurnPlanCoordinator {
  */
 export const startTurnPlan = (input: {
   coordinator: TurnPlanCoordinator | undefined;
-  gate: TurnPlanningGate | undefined;
-  workspaceId: string;
   bypass: { activeRoutine?: boolean; pendingClarification?: boolean; suspendedRoutine?: boolean };
   /**
    * Thunk so plan-input assembly (directive candidate collection, scope-reference
@@ -310,13 +278,8 @@ export const startTurnPlan = (input: {
    */
   plan: () => Omit<TurnPlanInputs, "routinePreparation">;
 }): ChatTurnPlanHandle | undefined => {
-  const { coordinator, gate } = input;
-  if (!coordinator || !gate) {
-    return undefined;
-  }
-  const gateBypassReason = gate.bypassReasonForWorkspace(input.workspaceId);
-  if (gateBypassReason) {
-    coordinator.recordBypass(gateBypassReason);
+  const { coordinator } = input;
+  if (!coordinator) {
     return undefined;
   }
   const stateBypassReason = input.bypass.activeRoutine

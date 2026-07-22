@@ -3,7 +3,7 @@
 ## Phase 1: Setup and design
 
 - [X] T001 Record the approved behavior and success criteria in `specs/102-fused-turn-planning/spec.md`
-- [X] T002 Record boundaries, rollout, queue impact, and verification in `specs/102-fused-turn-planning/plan.md`
+- [X] T002 Record boundaries, runtime behavior, queue impact, and verification in `specs/102-fused-turn-planning/plan.md`
 - [X] T003 [P] Record architecture decisions in `specs/102-fused-turn-planning/research.md`
 - [X] T004 [P] Record ephemeral runtime types in `specs/102-fused-turn-planning/data-model.md`
 
@@ -18,23 +18,23 @@
 
 - [X] T009 [US1] Add failing strict parsing, timeout, and semantic validation tests in `backend/tests/unit/turn-plan-service.test.ts`
 - [X] T010 [US1] Add the canonical prompt and planner implementation in `backend/prompts/chat/turn-planning.md` and `backend/src/modules/chat/services/turnPlanService.ts`
-- [X] T011 [US1] Add failing gate, memoization, bound, and adapter tests in `backend/tests/unit/turn-plan-coordinator.test.ts`
+- [X] T011 [US1] Add failing memoization, bound, and adapter tests in `backend/tests/unit/turn-plan-coordinator.test.ts`
 - [X] T012 [US1] Implement the plan handle, eligibility bounds, and four adapters in `backend/src/modules/chat/services/turnPlanCoordinator.ts`
 - [X] T013 [US1] Wire plan-aware live turn execution in `backend/src/modules/chat/services/chatService.ts`, `chatSessionPreparer.ts`, and `conversationProcessTurnInput.ts`
 - [X] T014 [US1] Add streamed/non-streamed call-count and retrieval reuse coverage in `backend/tests/unit/chat-service-turn-planning.test.ts`
 
-## Phase 4: Safe rollout and replay parity
+## Phase 4: Safe fallback and replay parity
 
 - [X] T015 [US2] Add failure, bypass, cancellation, and all-or-nothing fallback coverage in `backend/tests/unit/turn-plan-service.test.ts`, `turn-plan-coordinator.test.ts`, and `chat-service-turn-planning.test.ts`
-- [X] T016 [US2] Add configuration and bounded defaults in `backend/src/app/config/env.ts` and `backend/src/shared/domain/behaviorConfig.ts`
-- [X] T017 [US2] Assemble the gateway, gate, coordinator, and staged fallbacks in `backend/src/app/server/dependencyBuilders.ts`
+- [X] T016 [US2] Add bounded defaults in `backend/src/shared/domain/behaviorConfig.ts`
+- [X] T017 [US2] Assemble the gateway, coordinator, and staged fallbacks in `backend/src/app/server/dependencyBuilders.ts`
 - [X] T018 [US3] Add replay parity tests in `backend/tests/unit/workbench-replay-runner.test.ts`
 - [X] T019 [US3] Wire the same planning coordinator into `backend/src/modules/chat/services/workbenchReplayRunner.ts`
 - [X] T020 [US3] Add `turn_planning` usage and trace attribution in `backend/src/shared/infra/llm/contextualGateways.ts` and `backend/src/modules/chat/services/turnTraceModelCalls.ts`
 
 ## Phase 5: Documentation and verification
 
-- [X] T021 [P] Update operator configuration in `readme.md`
+- [X] T021 [P] Document standard runtime behavior in `readme.md`
 - [X] T022 [P] Update module briefs in `backend/src/modules/chat/README.md` and `backend/src/modules/directives/README.md`
 - [X] T023 [P] Update architecture and usage docs in `docs/architecture/assistant-turn-spine.md` and `docs/architecture/usage-event-taxonomy.md`
 - [X] T024 [P] Add verification instructions in `specs/102-fused-turn-planning/quickstart.md`
@@ -43,9 +43,9 @@
   all-buckets run passed; the post-review rerun passed every backend bucket and
   stopped on the unrelated nondeterministic `usage-trends` Playwright layout
   assertion, which passed immediately in isolation)
-- [X] T027 Run live evals with planning disabled and enabled and review conversation quality
-  (disabled: 9/12; enabled repeat: 10/12, fixing demo activation with the same two
-  pre-existing misses; one prior enabled sample had a transient zero-chunk retrieval miss)
+- [X] T027 Run live evals and review conversation quality across planned and
+  staged-fallback turns (repeat: 10/12, with the same two pre-existing routine
+  misses; one prior sample had a transient zero-chunk retrieval miss)
 - [X] T028 Complete senior-engineer and engineering-manager review gates
 
 ## Dependencies
@@ -56,6 +56,6 @@ verifiable through workbench replay after US1 is complete.
 
 ## Delivery Strategy
 
-The mergeable unit includes all three stories because rollout safety and replay
+The mergeable unit includes all three stories because fallback safety and replay
 parity are required to ship the P1 optimization. Validation and review tasks are
 the only remaining work.

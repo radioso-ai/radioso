@@ -23,7 +23,6 @@ import {
   planAwareResponseLanguage,
   startTurnPlan,
   type TurnPlanCoordinator,
-  type TurnPlanningGate,
 } from "./turnPlanCoordinator.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
@@ -156,7 +155,6 @@ export interface WorkbenchReplayRunnerOptions {
   recordClarificationDecision?: ChatTurnAssemblyOptions["recordClarificationDecision"];
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
   turnPlanCoordinator?: TurnPlanCoordinator;
-  turnPlanningGate?: TurnPlanningGate;
   turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   logger?: Pick<AppLogger, "warn">;
 }
@@ -326,8 +324,6 @@ export class WorkbenchReplayRunner {
     const directiveRuntime = this.options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
     const handle = startTurnPlan({
       coordinator: this.options.turnPlanCoordinator,
-      gate: this.options.turnPlanningGate,
-      workspaceId: session.agent.workspaceId,
       bypass: {
         activeRoutine: input.routineStartState?.status === "active",
         suspendedRoutine:

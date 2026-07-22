@@ -16,7 +16,6 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import {
   TurnPlanCoordinator,
-  createTurnPlanningGate,
   planAwareRoutineActivator,
   planAwareRoutineReentryGate,
   planAwareRoutineSlotCorrection,
@@ -248,7 +247,6 @@ const noPendingClarification = () => ({
 
 const buildService = (input: {
   planner?: TurnPlanGatewayFactory;
-  workspaceAllowlist?: string[];
   pipeline: Record<string, unknown>;
   chatGateway: ChatServiceOptions["chatGateway"];
   staged: ReturnType<typeof countingStagedPorts>;
@@ -296,9 +294,6 @@ const buildService = (input: {
     ...(input.planner
       ? {
           turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
-          turnPlanningGate: createTurnPlanningGate({
-            workspaceAllowlist: input.workspaceAllowlist,
-          }),
         }
       : {}),
   });
@@ -532,7 +527,6 @@ describe("chat service fused turn planning", () => {
       turnPlanCoordinator: new TurnPlanCoordinator(
         new TurnPlanService(planner, { timeoutMs: 10 }),
       ),
-      turnPlanningGate: createTurnPlanningGate({}),
     });
 
     const response = await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
@@ -541,41 +535,6 @@ describe("chat service fused turn planning", () => {
     expect(planner.completeCalls()).toBe(1);
     expect(staged.routerClassify).toHaveBeenCalledTimes(1);
     expect(staged.languageDetect).toHaveBeenCalledTimes(1);
-  });
-
-  it("never invokes the planner when the workspace is not allowlisted", async () => {
-    const staged = countingStagedPorts();
-    const planner = plannerFactory({ completions: [planJson({ route: "retrieval" })] });
-    const service = buildService({
-      planner,
-      workspaceAllowlist: ["other-workspace"],
-      pipeline: retrievalPipeline([]),
-      chatGateway: pipelineChatGateway("Grounded [[1]]."),
-      staged,
-    });
-
-    await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
-
-    expect(planner.completeCalls()).toBe(0);
-    expect(staged.routerClassify).toHaveBeenCalledTimes(1);
-    expect(staged.languageDetect).toHaveBeenCalledTimes(1);
-  });
-
-  it("never invokes the planner for a workspace outside the allowlist", async () => {
-    const staged = countingStagedPorts();
-    const planner = plannerFactory({ completions: [planJson({ route: "retrieval" })] });
-    const service = buildService({
-      planner,
-      workspaceAllowlist: ["other-workspace"],
-      pipeline: retrievalPipeline([]),
-      chatGateway: pipelineChatGateway("Grounded [[1]]."),
-      staged,
-    });
-
-    await service.answer({ workspaceId: "workspace-1", query: "refund window?", stream: false });
-
-    expect(planner.completeCalls()).toBe(0);
-    expect(staged.routerClassify).toHaveBeenCalledTimes(1);
   });
 
   it("never invokes the planner while a routine is active for the conversation", async () => {

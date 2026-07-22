@@ -122,7 +122,6 @@ import {
   startTurnPlan,
   type ChatTurnPlanHandle,
   type TurnPlanCoordinator,
-  type TurnPlanningGate,
 } from "./turnPlanCoordinator.js";
 import type { TurnPlanDirectiveCandidate } from "./turnPlanService.js";
 import { authoredDirectiveToSteeringDirective } from "../../agents/public.js";
@@ -388,10 +387,8 @@ export interface ChatServiceOptions {
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy?: ClarificationPolicy;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
-  /** Optional: fused turn-planning coordinator (with {@link turnPlanningGate}). */
+  /** Optional: fused turn-planning coordinator. */
   turnPlanCoordinator?: TurnPlanCoordinator;
-  /** Optional: gate deciding whether fused turn planning runs for a workspace. */
-  turnPlanningGate?: TurnPlanningGate;
   /** Retrieval-owned settings seams used to preserve custom rewrite guidance. */
   turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   /** Per-conversation turn coordinator; application composition wires one process-wide instance. */
@@ -437,7 +434,6 @@ export class ChatService {
   private readonly directiveRuntime: RouteScopedDirectiveRuntime;
   private readonly turnInterpreter?: ChatConversationTurnInterpreter;
   private readonly turnPlanCoordinator?: TurnPlanCoordinator;
-  private readonly turnPlanningGate?: TurnPlanningGate;
   private readonly turnPlanInterpretationContextSettings?: TurnInterpretationContextSettings;
   private readonly responseLanguageDetector?: ResponseLanguageDetector;
   private readonly handoffWaitingMessageGenerator?: HandoffWaitingMessageGenerator;
@@ -487,7 +483,6 @@ export class ChatService {
       retrievalSenseClarificationPolicy,
       agentSkillTurnSkillProvider,
       turnPlanCoordinator,
-      turnPlanningGate,
       turnPlanInterpretationContextSettings,
       conversationTurnRegistry = new InMemoryConversationTurnRegistry(),
     } = options;
@@ -517,7 +512,6 @@ export class ChatService {
     this.usageLimitPolicy = usageLimitPolicy;
     this.turnInterpreter = turnInterpreter;
     this.turnPlanCoordinator = turnPlanCoordinator;
-    this.turnPlanningGate = turnPlanningGate;
     this.turnPlanInterpretationContextSettings = turnPlanInterpretationContextSettings;
     this.conversationEngine = conversationEngine;
     this.conversationTurnRegistry = conversationTurnRegistry;
@@ -1110,8 +1104,8 @@ export class ChatService {
   }
 
   /**
-   * Creates the lazy fused turn-plan handle for this turn when the gate allows and
-   * no pre-engine bypass signal holds (active routine, pending clarification or
+   * Creates the lazy fused turn-plan handle for this turn when no pre-engine
+   * bypass signal holds (active routine, pending clarification or
    * decision, or a parked routine). The handle is memoized on the session; the
    * earliest consumer (the plan-aware routine activator when routines are wired,
    * otherwise the turn interpreter / language / directive adapters) starts the one
@@ -1126,8 +1120,6 @@ export class ChatService {
   ): void {
     const handle = startTurnPlan({
       coordinator: this.turnPlanCoordinator,
-      gate: this.turnPlanningGate,
-      workspaceId: session.agent.workspaceId,
       bypass,
       plan: () => ({
         query: input.query,

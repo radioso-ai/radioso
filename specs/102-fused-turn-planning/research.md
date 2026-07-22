@@ -17,7 +17,7 @@ structured-output contract. Strict parsing and semantic candidate validation
 provide a portable all-or-nothing boundary.
 
 **Alternatives considered**: Provider-native structured output would require a
-new cross-provider abstraction. A new model capability would add rollout and
+new cross-provider abstraction. A new model capability would add operational
 configuration surface without evidence it is needed.
 
 ## Decision: Owning modules prepare and apply decisions
@@ -37,11 +37,11 @@ implementations makes fallback behavior explicit and testable.
 **Alternatives considered**: Partially accepting planner fields could combine
 inconsistent routing, language, routine, and directive judgments.
 
-## Decision: Workspace-scoped rollout and offline replay
+## Decision: Standard runtime path and offline replay
 
-**Rationale**: Planning is the default path, while an optional workspace allowlist
-supports a scoped rollout. Workbench replay exercises the real composition without
-doubling live model work.
+**Rationale**: Planning is standard behavior and requires no setup. Workbench
+replay exercises the real composition without doubling live model work.
 
 **Alternatives considered**: Live shadow planning adds cost and can complicate
-usage attribution. Database/UI rollout is unnecessary for the first release.
+usage attribution. A separate rollout control would add configuration without
+changing the intended runtime behavior.

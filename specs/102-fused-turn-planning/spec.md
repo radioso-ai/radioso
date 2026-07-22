@@ -26,14 +26,14 @@ answer-generation call, with no staged classification calls.
 
 ### User Story 2 - Safe degradation (Priority: P1)
 
-As an operator, I can enable fused planning incrementally and know that invalid,
-timed-out, cancelled, or ineligible planning attempts preserve the existing
+As an operator, I know that invalid, timed-out, cancelled, or ineligible
+planning attempts preserve the existing
 staged behavior rather than silently losing routines, directives, language, or
 routing behavior.
 
 **Independent Test**: Exercise malformed output, unknown candidate identifiers,
-provider errors, timeouts, cancellation, disabled rollout, non-allowlisted
-workspaces, and over-bound candidate/input sets; verify typed outcomes and the
+provider errors, timeouts, cancellation, pre-engine bypasses, and over-bound
+candidate/input sets; verify typed outcomes and the
 complete staged fallback where applicable.
 
 ### User Story 3 - Observable replay parity (Priority: P2)
@@ -43,7 +43,7 @@ through the production composition and observe whether a turn used planned or
 staged classification, including usage attribution for the planner call.
 
 **Independent Test**: Run the workbench replay and conversation-quality eval
-paths with planning disabled and enabled, then compare routing, routines,
+paths through planned and staged-fallback turns, then compare routing, routines,
 directives, language, grounding, and answer quality.
 
 ## Functional Requirements
@@ -66,8 +66,8 @@ directives, language, grounding, and answer quality.
   policy MUST remain in `RoutineRegistry`.
 - **FR-008**: Directive scope, lifecycle eligibility, classification resolution,
   and steering MUST remain in the directives-owned runtime.
-- **FR-009**: Planning MUST be enabled by default and MAY be restricted by an
-  optional environment-configured workspace allowlist.
+- **FR-009**: Planning MUST be standard behavior and require no rollout
+  configuration.
 - **FR-010**: Planning MUST bypass active/claimed routine flows and candidate or
   estimated-prompt sizes above configured bounds.
 - **FR-011**: Planner calls MUST propagate cancellation and have a bounded
@@ -89,8 +89,6 @@ directives, language, grounding, and answer quality.
 - The planner returns duplicate, missing, or unknown candidate identifiers.
 - Retrieval routing has an unusable rewrite while the remaining plan is valid.
 - The caller aborts before or during the planning request.
-- A configured allowlist is empty, contains whitespace, or excludes the current
-  workspace.
 - Prompt estimation or candidate counts are exactly at their configured bounds.
 
 ## Success Criteria
@@ -102,7 +100,7 @@ directives, language, grounding, and answer quality.
 - **SC-003**: All failure and bypass cases retain staged behavior with no lost
   routine or directive decisions.
 - **SC-004**: Deterministic tests, backend build, local CI, and live conversation
-  quality evals pass with planning disabled and enabled.
+  quality evals pass across planned, bypassed, and failed turns.
 - **SC-005**: Conversation review finds no material regression in routing,
   grounding, directive adherence, routine behavior, or response language.
 
@@ -111,5 +109,4 @@ directives, language, grounding, and answer quality.
 - Collapsing active-routine, pending-clarification, or slot-correction flows.
 - Guaranteeing two calls for retrieval turns.
 - Provider-native structured-output APIs.
-- Database-backed or UI-managed rollout configuration.
 - Public or cross-service contract changes.

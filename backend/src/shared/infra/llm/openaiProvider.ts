@@ -169,6 +169,19 @@ const buildStreamUsageOptions = (
     ? { stream_options: { include_usage: true } }
     : {};
 
+const buildResponseFormat = (input: TextGenerationRequest) => {
+  if (!input.responseFormat) {
+    return {};
+  }
+  const { type, ...jsonSchema } = input.responseFormat;
+  return {
+    response_format: {
+      type,
+      json_schema: jsonSchema,
+    },
+  };
+};
+
 const withoutReasoningEffort = ({ reasoning_effort: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
 
 const withLowReasoningEffort = (model: string, sampling: ChatSamplingParams): ChatSamplingParams => ({
@@ -266,6 +279,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       const request = {
         model: this.config.model,
         ...toSdkSampling(samplingParams),
+        ...buildResponseFormat(input),
         messages,
       };
       return (input.signal
@@ -308,6 +322,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         // Ask OpenAI to append a final usage-only chunk after the content chunks.
         ...buildStreamUsageOptions(config.provider),
         ...toSdkSampling(samplingParams),
+        ...buildResponseFormat(input),
         messages,
       };
       return (input.signal

@@ -7,6 +7,7 @@ import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
   GroundedAnswerEnvelopeReader,
+  GROUNDED_ANSWER_RESPONSE_FORMAT,
   parseGroundedAnswerEnvelope,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
@@ -135,6 +136,7 @@ export class RetrievalAnswerComposer {
       prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
+      generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
       ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
@@ -303,6 +305,7 @@ export class RetrievalAnswerComposer {
         prompt: this.support.buildPromptWithContext(session.retrieval.prompt, session),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
+        generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
         signal: combineAbortSignals(signal, gateController.signal),
       });
       let gateBound = false;

@@ -17,7 +17,7 @@ describe("composeGroundedAnswerSystemPrompt — directive steering", () => {
     const withEmpty = composeGroundedAnswerSystemPrompt({ ...baseInput, steering: [] });
     expect(withEmpty.systemPrompt).toBe(without.systemPrompt);
     expect(withEmpty.systemPrompt).toContain("You are a helpful assistant.");
-    expect(withEmpty.systemPrompt).toContain("<<<RADIOSO_FOLLOWUPS_JSON>>>");
+    expect(withEmpty.systemPrompt).toContain("Return exactly the JSON object required by the provider response schema");
   });
 
   it("renders matched directive actions into the system prompt", () => {

@@ -179,6 +179,7 @@ export class ModelChatGateway implements ChatGateway {
     return {
       maxOutputTokens: input.generation?.maxOutputTokens ?? CHAT_BEHAVIOR.answer.maxOutputTokens,
       reasoningEffort: input.generation?.reasoningEffort ?? CHAT_BEHAVIOR.answer.reasoningEffort,
+      responseFormat: input.generation?.responseFormat,
     };
   }
 
@@ -190,6 +191,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      responseFormat: generation.responseFormat,
       signal: input.signal,
       validateResult(result) {
         if (!result.text?.trim()) {
@@ -208,6 +210,7 @@ export class ModelChatGateway implements ChatGateway {
       systemPrompt: input.systemPrompt,
       maxOutputTokens: generation.maxOutputTokens,
       reasoningEffort: generation.reasoningEffort,
+      responseFormat: generation.responseFormat,
       signal: input.signal,
     });
     for await (const chunk of textStream) {

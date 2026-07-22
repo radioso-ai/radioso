@@ -10,6 +10,17 @@ const chatConfig: LlmCapabilityConfig = {
   apiKey: "sk-ant-test",
 };
 
+const responseFormat = {
+  type: "json_schema" as const,
+  name: "answer_envelope",
+  strict: true,
+  schema: {
+    type: "object",
+    required: ["answer"],
+    properties: { answer: { type: "string" } },
+  },
+};
+
 const jsonResponse = (payload: unknown) =>
   ({ ok: true, async json() { return payload; } }) as unknown as Response;
 
@@ -33,6 +44,21 @@ afterEach(() => {
 });
 
 describe("ClaudeTextGenerationClient.complete", () => {
+  it("forces a schema-backed tool and returns its input as structured JSON", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({ content: [{ type: "tool_use", input: { answer: "Hi" } }] }),
+    );
+
+    const result = await new ClaudeTextGenerationClient(chatConfig).complete({ prompt: "Hi", responseFormat });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      tools: [{ name: "answer_envelope", input_schema: responseFormat.schema }],
+      tool_choice: { type: "tool", name: "answer_envelope" },
+    });
+    expect(result.text).toBe('{"answer":"Hi"}');
+  });
+
   it("passes AbortSignal to fetch", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ content: [{ type: "text", text: "Hi" }] }),
@@ -78,6 +104,24 @@ describe("ClaudeTextGenerationClient.complete", () => {
 });
 
 describe("ClaudeTextGenerationClient.stream", () => {
+  it("streams schema-backed tool input JSON", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      sseResponse([
+        JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "Preamble" } }),
+        JSON.stringify({ type: "content_block_delta", delta: { type: "input_json_delta", partial_json: '{"answer":"' } }),
+        JSON.stringify({ type: "content_block_delta", delta: { type: "input_json_delta", partial_json: 'Hi"}' } }),
+      ]),
+    );
+
+    const { textStream } = new ClaudeTextGenerationClient(chatConfig).stream({ prompt: "Hi", responseFormat });
+    const chunks: string[] = [];
+    for await (const chunk of textStream) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual(['{"answer":"', 'Hi"}']);
+  });
+
   it("passes AbortSignal to streaming fetch", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(sseResponse([]));
     const controller = new AbortController();

@@ -7,7 +7,10 @@ import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSup
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { getGroundedMissFallback } from "../../src/modules/chat/services/fallbackReplyComposer.js";
-import { SUGGESTIONS_SENTINEL } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
+import {
+  GROUNDED_ANSWER_RESPONSE_FORMAT,
+  SUGGESTIONS_SENTINEL,
+} from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
@@ -68,16 +71,19 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
   let fallbackWorkspaceContext: unknown;
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
+  const responseFormats: unknown[] = [];
   let gateAbortObserved = false;
   const gateway: ChatGateway = {
     async answer(input) {
       answerCalls += 1;
       attemptKeys.push(input.usageContext.attemptKey);
+      responseFormats.push(input.generation?.responseFormat);
       return raw;
     },
     async *streamAnswer(input) {
       streamCalls += 1;
       attemptKeys.push(input.usageContext.attemptKey);
+      responseFormats.push(input.generation?.responseFormat);
       try {
         for (let offset = 0; offset < raw.length; offset += 7) {
           yield raw.slice(offset, offset + 7);
@@ -105,11 +111,61 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
     fallbackWorkspaceContext: () => fallbackWorkspaceContext,
     attemptKeys,
     metricWrites,
+    responseFormats: () => responseFormats,
     gateAbortObserved: () => gateAbortObserved,
   };
 };
 
 describe("retrieval answer envelope v2", () => {
+  it("keeps provider-enforced suggestions out of visible answer text", async () => {
+    const raw = JSON.stringify({
+      answer: "The workshop begins in June[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [
+        { text: "How does registration work?", kind: "deeper", contextIndex: 1 },
+      ],
+      grounding: "degraded",
+    });
+    const { composer, responseFormats } = buildComposer(raw);
+
+    const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
+
+    expect(presented.answer).toBe("The workshop begins in June.");
+    expect(presented.answer).not.toContain("How does registration work?");
+    expect(presented.suggestions).toMatchObject([
+      { text: "How does registration work?", kind: "deeper" },
+    ]);
+    expect(responseFormats()).toEqual([GROUNDED_ANSWER_RESPONSE_FORMAT]);
+  });
+
+  it("streams only a structured answer and returns its suggestions separately", async () => {
+    const raw = JSON.stringify({
+      answer: "The workshop begins in June[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [
+        { text: "How does registration work?", kind: "deeper", contextIndex: 1 },
+      ],
+      grounding: "degraded",
+    });
+    const { composer, responseFormats } = buildComposer(raw);
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(baseSession(), "Question?", undefined, undefined),
+    );
+
+    expect(chunks.join("")).toBe("The workshop begins in June.");
+    expect(chunks.join("")).not.toContain("How does registration work?");
+    expect(result.suggestions).toEqual({
+      mode: "assistant",
+      planned: [{ text: "How does registration work?", kind: "deeper", contextIndex: 1 }],
+    });
+    expect(responseFormats()).toEqual([GROUNDED_ANSWER_RESPONSE_FORMAT]);
+  });
+
   it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {
     const session = baseSession();
     session.agent.chatModelOverride = { provider: "openai", model: "gpt-5-nano" };

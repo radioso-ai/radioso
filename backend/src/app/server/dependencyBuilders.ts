@@ -1262,6 +1262,16 @@ export const buildChatServices = (input: {
         "Pinned routine definition failed to load or compile; skipping resume-only registration",
       );
     },
+    onPreviewDefinitionError: ({ agentId, routineId, error }) => {
+      input.logger.warn(
+        {
+          agentId,
+          routineId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
+      );
+    },
     resolveCompletionExport: async (definition) => {
       const [skill] = await input.database.query<{
         target_id: string | null;

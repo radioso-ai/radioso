@@ -60,7 +60,10 @@ export class PromptBuilder {
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
         today: formatIsoDateUtc(this.clock()),
-        decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
+        // The grounded answer prompt answers or declines inline; it carries only the
+        // compact guard-case essentials. The full decline ruleset stays scoped to the
+        // dedicated focused-miss path (#863 split-by-turn-type).
+        decline_rules: loadPromptTemplate("chat/grounded-inline-decline.md"),
       }),
       prompt: renderPromptTemplate("retrieval/answer-user.md", {
         history_section: historySection || "No prior history",

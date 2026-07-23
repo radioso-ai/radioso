@@ -107,19 +107,37 @@ describe("grounded answer prompt contract", () => {
     expect(enabled.systemPrompt).toContain("Active goal:\nPlan the next retreat");
   });
 
-  it("renders the canonical decline rules in main retrieval and focused miss prompts", () => {
+  it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
       query: "What?",
       history: [],
       contexts: [],
       settings: {},
     }).systemPrompt;
+    const inline = loadPromptTemplate("chat/grounded-inline-decline.md");
     const focused = loadPromptTemplate("chat/grounded-miss.md");
-    const canonicalSentence = "Never answer from general knowledge when support is absent.";
+    const fullRules = loadPromptTemplate("chat/grounded-decline-rules.md");
 
-    expect(main).toContain(canonicalSentence);
+    // The grounded answer prompt (#863) folds in the compact inline-decline guard,
+    // not the full focused-miss ruleset. It keeps the guard-case essentials.
+    expect(main).toContain("Never answer from general knowledge when support is absent");
+    expect(main).toContain(inline.split("\n")[0]);
+    expect(main).not.toContain("{{decline_rules}}");
+    // The full focused-miss elaborations must not ride on every grounded answer turn.
+    expect(main).not.toContain("give no solution, explanation, summary, translation, calculation, result, formula, code, facts, draft, or reasoning");
+
+    // The focused-miss path still folds in the full canonical decline ruleset.
     expect(focused).toContain("{{decline_rules}}");
-    expect(loadPromptTemplate("chat/grounded-decline-rules.md")).toContain(canonicalSentence);
+    expect(fullRules).toContain("Never answer from general knowledge when support is absent");
+    expect(fullRules).toContain("draft, or reasoning");
+
+    // The compact inline guard preserves the guard-case protections that live
+    // declines regress on: no outside knowledge, no internals leakage, no librarian
+    // phrasing, team voice, and distress warmth.
+    expect(inline).toMatch(/team's first-person voice/i);
+    expect(inline).toMatch(/librarian phrasing/i);
+    expect(inline).toMatch(/documents, sources, search, retrieval, Result labels/i);
+    expect(inline).toMatch(/distress/i);
   });
 
   it("decides answer support from retrieved findings rather than question wording or instructions", () => {
@@ -137,11 +155,61 @@ describe("grounded answer prompt contract", () => {
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(200);
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(260);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
-    expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeLessThanOrEqual(650);
-    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(760);
-    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeLessThanOrEqual(850);
+    // Tightened in #863: the strict provider schema hard-enforces the item field
+    // set (additionalProperties:false + required) and JSON-only output, so the
+    // "compact object with only …" / "no commentary outside the JSON" prose is gone.
+    expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeLessThanOrEqual(640);
+    // The grounded answer base folds in the compact inline-decline guard (#863),
+    // not the full focused-miss ruleset.
+    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeGreaterThanOrEqual(690);
+    expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeLessThanOrEqual(760);
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(300);
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeLessThanOrEqual(380);
+  });
+
+  it("budgets the composed instruction sheet per turn type (#863)", () => {
+    // #863 asks for a per-turn-type instruction budget so guard-creep on one turn
+    // type is caught without re-inspecting every prompt. Each entry is the composed
+    // template stack a turn type actually ships (base folds {{decline_rules}} in).
+    const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
+    const stack = (...files: string[]) =>
+      files.reduce((total, file) => total + countWords(loadPromptTemplate(file)), 0);
+
+    // Grounded answer, suggestions enabled — the hottest and heaviest sheet. It folds
+    // in the compact inline-decline guard (#863), not the full focused-miss ruleset.
+    const groundedWithSuggestions = stack(
+      "retrieval/answer.md",
+      "chat/grounded-inline-decline.md",
+      "chat/answer-envelope.md",
+      "chat/answer-suggestions.md",
+    );
+    expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1450);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(1600);
+
+    // Grounded answer, suggestions disabled.
+    const groundedNoSuggestions = stack(
+      "retrieval/answer.md",
+      "chat/grounded-inline-decline.md",
+      "chat/answer-envelope.md",
+    );
+    expect(groundedNoSuggestions).toBeGreaterThanOrEqual(900);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(980);
+
+    // Focused decline / grounded-miss owns the full decline ruleset.
+    const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");
+    expect(focusedDecline).toBeGreaterThanOrEqual(300);
+    expect(focusedDecline).toBeLessThanOrEqual(380);
+
+    // Clarification and direct/non-retrieval turns each stay lean and, by AC,
+    // carry no citation/link/suggestion authoring rules.
+    expect(stack("chat/clarification-question.md")).toBeLessThanOrEqual(130);
+    expect(stack("chat/non-retrieval-answer.md")).toBeLessThanOrEqual(700);
+    for (const file of ["chat/clarification-question.md", "chat/non-retrieval-answer.md", "chat/grounded-miss.md"]) {
+      const template = loadPromptTemplate(file);
+      expect(template).not.toMatch(/append a sourced assertion/i);
+      expect(template).not.toMatch(/\[\[1\]\]/);
+      expect(template).not.toMatch(/Source URL/i);
+    }
   });
 
   it("keeps reusable answer behavior out of the base prompt so directives own it", () => {

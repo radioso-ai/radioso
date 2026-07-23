@@ -28,7 +28,7 @@ Active subject:
 Active goal:
 {{active_goal}}
 
-Output each item as a compact object with only `text`, `kind`, and `contextIndex`. Keep the order intentional: put the most useful continuation first, then distinct supported alternatives. Do not duplicate questions through synonyms. Do not add commentary outside the JSON object.
+Keep the order intentional: put the most useful continuation first, then distinct supported alternatives. Do not duplicate questions through synonyms.
 
 Correct placement example:
 {"answer":"The practice begins with a brief centering exercise[[1]].","v":2,"outcome":"answer","claims":[[1]],"suggestions":[{"text":"How does the practice begin?","kind":"deeper","contextIndex":1}],"grounding":"degraded"}

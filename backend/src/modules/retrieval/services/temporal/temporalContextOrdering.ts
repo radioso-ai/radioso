@@ -47,7 +47,7 @@ export const orderTemporalPromptContexts = (input: {
     orderedContexts: [
       ...upcoming.sort((left, right) => compareDatedContexts(left, right)),
       ...undated,
-      ...past.sort((left, right) => compareDatedContexts(right, left)),
+      ...past.sort((left, right) => comparePastDatedContexts(left, right)),
     ].map((entry) => entry.context),
     applied: true,
     today: input.today,
@@ -79,10 +79,14 @@ const normalizeIsoDate = (value: unknown): string | undefined => {
   return new Date(parsed).toISOString().slice(0, 10) === date ? date : undefined;
 };
 
-const compareDatedContexts = (
-  left: { dateFrom?: string; dateTo?: string; context: RerankedCandidate; index: number },
-  right: { dateFrom?: string; dateTo?: string; context: RerankedCandidate; index: number },
-): number => {
+interface DatedContextEntry {
+  dateFrom?: string;
+  dateTo?: string;
+  context: RerankedCandidate;
+  index: number;
+}
+
+const compareDatedContexts = (left: DatedContextEntry, right: DatedContextEntry): number => {
   const startComparison = compareStrings(left.dateFrom, right.dateFrom);
   if (startComparison !== 0) {
     return startComparison;
@@ -93,6 +97,26 @@ const compareDatedContexts = (
     return endComparison;
   }
 
+  return compareByRerankThenIndex(left, right);
+};
+
+// Past events surface most-recent-first (dates descending), but on identical dates we still
+// keep the stronger rerank result ahead — reversing the whole comparator would demote it.
+const comparePastDatedContexts = (left: DatedContextEntry, right: DatedContextEntry): number => {
+  const startComparison = compareStrings(right.dateFrom, left.dateFrom);
+  if (startComparison !== 0) {
+    return startComparison;
+  }
+
+  const endComparison = compareStrings(right.dateTo, left.dateTo);
+  if (endComparison !== 0) {
+    return endComparison;
+  }
+
+  return compareByRerankThenIndex(left, right);
+};
+
+const compareByRerankThenIndex = (left: DatedContextEntry, right: DatedContextEntry): number => {
   const leftRank = Number.isFinite(left.context.rerankPosition) ? left.context.rerankPosition : left.index;
   const rightRank = Number.isFinite(right.context.rerankPosition) ? right.context.rerankPosition : right.index;
   if (leftRank !== rightRank) {

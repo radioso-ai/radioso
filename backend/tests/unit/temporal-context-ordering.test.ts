@@ -98,6 +98,27 @@ describe("temporal context ordering", () => {
     ]);
   });
 
+  it("keeps the stronger rerank result ahead among past events sharing the same dates", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "past-weak", rank: 5, dateFrom: "2025-08-23", dateTo: "2025-08-23" }),
+        candidate({ chunkId: "past-strong", rank: 1, dateFrom: "2025-08-23", dateTo: "2025-08-23" }),
+        candidate({ chunkId: "upcoming", rank: 3, dateFrom: "2026-08-21", dateTo: "2026-08-23" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      today: "2026-07-23",
+    });
+
+    // Past events stay below the upcoming one; on identical dates the better rerank leads.
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual([
+      "upcoming",
+      "past-strong",
+      "past-weak",
+    ]);
+  });
+
   it("preserves rerank ordering when disabled or not an event date lookup", () => {
     const contexts = [
       candidate({ chunkId: "undated", rank: 0 }),

@@ -337,6 +337,23 @@ const redistributeLeadingPunctuation = (
   for (let index = 0; index < cloned.length; index += 1) {
     const current = cloned[index]
     if (getSegmentCitationIndices(current, citations).length === 0) {
+      // An uncited clause carries no marker, so trailing sentence punctuation the
+      // model split onto its own segment can fold straight back into the prose.
+      // Left alone it renders as a bare "." after the clause's block, dropping it
+      // onto its own line.
+      const next = cloned[index + 1]
+      if (
+        next &&
+        current.text.length > 0 &&
+        isSentencePunctuationOnly(next.text) &&
+        getSegmentCitationIndices(next, citations).length === 0
+      ) {
+        const punct = stripWhitespace(next.text)
+        if (punct) {
+          current.text += punct
+          next.text = ''
+        }
+      }
       continue
     }
 
@@ -359,8 +376,28 @@ const redistributeLeadingPunctuation = (
       if (leadingMatch) {
         const leadingWhitespace = leadingMatch[1]
         const leadingPunct = leadingMatch[2]
-        current.trailingText = (current.trailingText ?? '') + leadingPunct
-        next.text = leadingWhitespace + next.text.slice(leadingMatch[0].length)
+        const rest = next.text.slice(leadingMatch[0].length)
+        const inlineRest = rest.replace(/^[ \t]+/, '')
+        // When the cited clause's punctuation is followed by more of the same line,
+        // a single space belongs between them. Each segment renders through its own
+        // markdown pass, which strips block-edge whitespace, so any space left on
+        // the next segment vanishes and glues the punctuation to the next word
+        // ("2026[1].The", or "level[1],and" when the model itself dropped the
+        // space). Normalize to exactly one separator carried in trailingText —
+        // rendered as raw text after the marker — and strip the next segment's
+        // leading inline whitespace so it never doubles up. A leading newline is a
+        // block boundary and must stay on the next segment.
+        const continuesInline = inlineRest.length > 0 && !/^[\r\n]/.test(inlineRest)
+        // But an anchor can land inside a number ("EUR 18[[1]],00", "1[[1]].2"),
+        // where the punctuation is a decimal/grouping mark, not a sentence break.
+        // A digit immediately after it (no separating space in the source) means
+        // the two sides are one number, so keep them tight — inserting a space
+        // would change the value. A space before the digit is a real sentence
+        // boundary and still gets the separator.
+        const isNumericPunctuation = /^[\p{Nd}]/u.test(rest)
+        const separator = continuesInline && !isNumericPunctuation ? ' ' : ''
+        current.trailingText = (current.trailingText ?? '') + leadingPunct + separator
+        next.text = continuesInline ? leadingWhitespace + inlineRest : leadingWhitespace + rest
       }
       break
     }

@@ -37,9 +37,11 @@ export const orderTemporalPromptContexts = (input: {
   const undated = indexed.filter((entry) => !entry.dateFrom);
 
   // An event is "past" only once its end date has elapsed, so a multi-day event that is
-  // still ongoing today counts as upcoming. Past events are kept as a fallback (better than
-  // an empty answer when a topic only has elapsed events) but pushed below upcoming and
-  // undated context so recency-appropriate results win the final top-K selection.
+  // still ongoing today counts as upcoming. Past events are demoted below upcoming and
+  // undated context (not dropped here) so recency-appropriate results win the final top-K
+  // selection; when the context set exceeds the selector's top-K / token budget the
+  // demoted past events are the first to be trimmed. This ordering assumes upcoming intent
+  // and does not yet special-case queries that explicitly ask about a past period.
   const upcoming = dated.filter((entry) => !isPastEvent(entry.dateTo, input.today));
   const past = dated.filter((entry) => isPastEvent(entry.dateTo, input.today));
 

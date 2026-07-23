@@ -81,6 +81,12 @@ export class InMemoryEvalRepository implements EvalRepositoryPort {
         const latest = this.runs
           .filter((r) => r.workspaceId === workspaceId && r.caseId === evalCase.id)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        // No agents table in-memory: resolve the captured agent straight off the
+        // snapshot (full config first, then the legacy thin AgentSnapshot).
+        const snapshot = this.snapshots.get(evalCase.snapshotId);
+        const agentId = snapshot?.sourceAgentId ?? null;
+        const name =
+          snapshot?.originalAgentConfig?.name ?? snapshot?.originalAgent?.name ?? null;
         return {
           ...evalCase,
           latestRun: latest
@@ -94,6 +100,7 @@ export class InMemoryEvalRepository implements EvalRepositoryPort {
                 outcomeReason: latest.outcomeReason,
               }
             : null,
+          agent: { agentId, name, deleted: false },
         };
       });
   }

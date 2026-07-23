@@ -223,6 +223,7 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
         const latest = this.runs
           .filter((r) => r.workspaceId === workspaceId && r.caseId === evalCase.id)
           .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+        const snapshot = this.snapshots.get(evalCase.snapshotId);
         return {
           ...evalCase,
           latestRun: latest
@@ -236,6 +237,11 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
                 outcomeReason: latest.outcomeReason,
               }
             : null,
+          agent: {
+            agentId: snapshot?.sourceAgentId ?? null,
+            name: snapshot?.originalAgentConfig?.name ?? snapshot?.originalAgent?.name ?? null,
+            deleted: false,
+          },
         };
       });
   }

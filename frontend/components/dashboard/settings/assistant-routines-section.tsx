@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Eye,
+  FlaskConical,
   FormInput,
   History,
   Pencil,
@@ -21,6 +22,7 @@ import {
   WandSparkles,
 } from 'lucide-react'
 
+import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workbench-drawer'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
@@ -533,6 +535,7 @@ function RoutineEditorScreen({
   const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
+  const [testDrawerOpen, setTestDrawerOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
   const routineEditorDirtyRef = useRef(false)
@@ -1102,6 +1105,19 @@ function RoutineEditorScreen({
       {editingRoutine?.status === 'draft' ? (
         <Button
           type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setTestDrawerOpen(true)}
+          disabled={isSaving}
+          title="Open a live test chat where this draft can activate, run, and hand back — without publishing it"
+        >
+          <FlaskConical className="mr-2 h-4 w-4" />
+          Test draft
+        </Button>
+      ) : null}
+      {editingRoutine?.status === 'draft' ? (
+        <Button
+          type="button"
           variant="ghost"
           size="icon"
           onClick={() => actionHandlersRef.current.openDeleteDraftDialog()}
@@ -1142,6 +1158,15 @@ function RoutineEditorScreen({
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
       />
+      {editingRoutine && editingRoutine.status === 'draft' ? (
+        <ChatWorkbenchDrawer
+          open={testDrawerOpen}
+          onOpenChange={setTestDrawerOpen}
+          accountId={accountId}
+          agentId={agentId}
+          previewRoutineIds={[editingRoutine.id]}
+        />
+      ) : null}
       <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
         <div className="space-y-5 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">

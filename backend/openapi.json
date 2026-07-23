@@ -10392,6 +10392,14 @@
           "metadataFilter": {
             "type": "object",
             "additionalProperties": {}
+          },
+          "previewRoutineIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 20
           }
         },
         "description": "`message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`."

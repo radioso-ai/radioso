@@ -828,4 +828,42 @@ describe("chat service fused turn planning", () => {
       state: expect.objectContaining({ variables: { company: "Acme" }, status: "active" }),
     }));
   });
+
+  it("forwards the request's previewRoutineIds to the routine provider (workbench draft test)", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => null,
+      loadCompleted: async () => [],
+      save: async () => {},
+      clear: async () => {},
+    };
+    let receivedPreviewRoutineIds: string[] | undefined;
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async ({ previewRoutineIds }) => {
+        receivedPreviewRoutineIds = previewRoutineIds;
+        // No activation — the draft under test does not claim this turn, so the
+        // request falls through to a normal direct answer.
+        return { activator: { activate: async () => null }, runner: { resume: vi.fn() as never } };
+      },
+    };
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hello"),
+      chatGateway: pipelineChatGateway("Hi there!"),
+      staged,
+      routine: { routineStore, routineProvider },
+    });
+
+    const draftRoutineId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "hello",
+      stream: false,
+      previewRoutineIds: [draftRoutineId],
+    });
+
+    expect(response.answer).toContain("Hi there!");
+    expect(receivedPreviewRoutineIds).toEqual([draftRoutineId]);
+  });
 });

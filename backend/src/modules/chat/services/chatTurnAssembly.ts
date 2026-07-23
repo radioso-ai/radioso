@@ -131,6 +131,12 @@ export interface ChatRoutineProvider {
     workspaceId?: string;
     accountId?: string;
     pinnedRoutineIds?: string[];
+    /**
+     * Operator-only workbench test override: routine definition ids (drafts included)
+     * to make eligible for this turn, bypassing the published-only gate. Empty/absent
+     * for every live end-user turn.
+     */
+    previewRoutineIds?: string[];
     responseLanguage?: string | Promise<string | undefined>;
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
@@ -316,6 +322,7 @@ export class ChatTurnAssembly {
       workspaceId: session.conversation.workspaceId,
       accountId: input.accountId,
       pinnedRoutineIds: await this.routineCatalogPinIds(session, input.activeRoutine),
+      previewRoutineIds: session.previewRoutineIds,
       responseLanguage: input.responseLanguage,
       groundedAnswerRenderer: createRoutineGroundedAnswerRenderer({
         session,

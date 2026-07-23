@@ -5293,6 +5293,7 @@ export interface components {
             metadataFilter?: {
                 [key: string]: unknown;
             };
+            previewRoutineIds?: string[];
         };
         /** @description `message` is required unless `startConversation` is true; bootstrap requests cannot include `conversationId`. */
         PublicChatRequest: {

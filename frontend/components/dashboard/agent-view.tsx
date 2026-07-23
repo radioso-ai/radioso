@@ -479,6 +479,9 @@ export function AgentView({
           onOpenDocument={onOpenDocument}
           onboarding={onboarding}
           adoptConversationId={routeState.agentChatConversationId}
+          previewRoutineIds={
+            routeState.agentChatPreviewRoutineId ? [routeState.agentChatPreviewRoutineId] : undefined
+          }
         />
         {wizard}
       </>

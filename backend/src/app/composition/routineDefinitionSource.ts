@@ -10,11 +10,18 @@ import {
 export interface PublishedRoutineRegistrationSource {
   load(input: { agentId: string }): Promise<RoutineRegistration[]>;
   loadPinned(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
+  /**
+   * Loads specific definitions by id regardless of lifecycle status (including
+   * `draft`), for operator test-runs in the workbench. Never used by the live
+   * end-user turn path — the published-only gate (`load`) stays authoritative there.
+   */
+  loadPreview(input: { agentId: string; routineIds: string[] }): Promise<RoutineRegistration[]>;
 }
 
 export interface PublishedRoutineRegistrationSourceOptions {
   onDefinitionError?: (input: { agentId: string; definitionId: string; error: unknown }) => void;
   onPinnedDefinitionError?: (input: { agentId: string; routineId: string; definitionId?: string; error: unknown }) => void;
+  onPreviewDefinitionError?: (input: { agentId: string; routineId: string; error: unknown }) => void;
   resolveCompletionExport?: (definition: RoutineDefinition) => Promise<RoutineCompletionExport | null>;
 }
 
@@ -63,7 +70,7 @@ const shouldReplacePinnedCandidate = (current: RoutineDefinition, candidate: Rou
 };
 
 export const createPublishedRoutineRegistrationSource = (
-  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById">,
+  repository: Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">,
   options: PublishedRoutineRegistrationSourceOptions = {},
 ): PublishedRoutineRegistrationSource => ({
   async load({ agentId }) {
@@ -74,6 +81,29 @@ export const createPublishedRoutineRegistrationSource = (
         registrations.push(await registrationFromDefinition(definition, options));
       } catch (error) {
         options.onDefinitionError?.({ agentId, definitionId: definition.id, error });
+      }
+    }
+    return registrations;
+  },
+  async loadPreview({ agentId, routineIds }) {
+    const uniqueRoutineIds = [...new Set(routineIds)].filter((routineId) => routineId.length > 0);
+    const registrations: RoutineRegistration[] = [];
+    for (const routineId of uniqueRoutineIds) {
+      try {
+        // findById returns any lifecycle status (drafts included); this is the one
+        // path that deliberately bypasses the published-only gate.
+        const definition = await repository.findById(agentId, routineId);
+        if (!definition) {
+          options.onPreviewDefinitionError?.({
+            agentId,
+            routineId,
+            error: new Error(`preview_routine_definition_not_found:${routineId}`),
+          });
+          continue;
+        }
+        registrations.push(await registrationFromDefinition(definition, options));
+      } catch (error) {
+        options.onPreviewDefinitionError?.({ agentId, routineId, error });
       }
     }
     return registrations;

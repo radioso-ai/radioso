@@ -48,6 +48,8 @@ describeIntegration("EvalRepository (Postgres)", () => {
     await database.query(`DELETE FROM eval_runs WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
     await database.query(`DELETE FROM eval_cases WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
     await database.query(`DELETE FROM eval_snapshots WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
+    await database.query(`UPDATE workspaces SET default_agent_id = NULL WHERE id = $1`, [workspaceId]).catch(() => undefined);
+    await database.query(`DELETE FROM agents WHERE workspace_id = $1`, [workspaceId]).catch(() => undefined);
     await database.query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
   });
@@ -174,6 +176,64 @@ describeIntegration("EvalRepository (Postgres)", () => {
     });
     // A case that has never run reports no latest run.
     expect(byId.get(neverRun.id)?.latestRun).toBeNull();
+
+    // The snapshot here has no source_agent_id and a config without a name, so
+    // the agent ref falls back to the legacy thin original_agent name.
+    expect(byId.get(scored.id)?.agent).toEqual({
+      agentId: null,
+      name: "Support",
+      deleted: false,
+    });
+  });
+
+  it("attributes cases to the live agent, and marks a removed agent's frozen name", async () => {
+    const agentId = randomUUID();
+    await database.query(
+      `INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`,
+      [agentId, workspaceId, "Concierge"],
+    );
+
+    const snapshot = await repository.createSnapshot({
+      workspaceId,
+      sourceConversationId: conversationId,
+      sourceMessageId: null,
+      replayTarget: null,
+      fidelity: "full",
+      messages: [{ role: "user", content: "hi" }] as never,
+      originalInstructionBlock: null,
+      originalModelId: null,
+      originalRetrievalSettings: null,
+      originalRetrievalResult: null,
+      // Capture-time name differs from the live row so we can tell which one wins.
+      originalAgent: { id: agentId, name: "Concierge (old)" } as never,
+      originalAgentConfig: { name: "Concierge (frozen)" } as never,
+      sourceAgentId: agentId,
+      originalRoutineState: null,
+      capturedBy: null,
+    });
+    const evalCase = await repository.createCase({
+      workspaceId,
+      snapshotId: snapshot.id,
+      name: "Attributed",
+      assertions: [],
+    });
+
+    const findAgent = async () =>
+      (await repository.listCasesWithLatestRun(workspaceId)).find((item) => item.id === evalCase.id)
+        ?.agent;
+
+    // Live agent present: current name wins, not deleted.
+    expect(await findAgent()).toEqual({ agentId, name: "Concierge", deleted: false });
+
+    // Remove the agent row (source_agent_id has no FK, so it survives on the
+    // snapshot): the ref keeps the id, falls back to the frozen name, marks removed.
+    await database.query(`UPDATE workspaces SET default_agent_id = NULL WHERE id = $1`, [workspaceId]);
+    await database.query(`DELETE FROM agents WHERE id = $1`, [agentId]);
+    expect(await findAgent()).toEqual({
+      agentId,
+      name: "Concierge (frozen)",
+      deleted: true,
+    });
   });
 
   it("resets status and clears last_run_id when assertions are edited", async () => {

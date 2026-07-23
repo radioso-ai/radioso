@@ -26,6 +26,13 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
   DashboardTable,
@@ -110,6 +117,20 @@ const formatRelative = (iso: string): string => {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
   return d.toLocaleString()
+}
+
+// Sentinel for the "all agents" option — Radix Select can't hold an empty value.
+const ALL_AGENTS_FILTER = '__all__'
+const UNKNOWN_AGENT_FILTER = '__unknown__'
+
+// Stable filter key for a case's responsible agent: the agent id when known,
+// else a name-scoped key so distinct frozen-name agents don't collapse together.
+const agentFilterKey = (agent: EvalCaseListItem['agent']): string =>
+  agent.agentId ?? (agent.name ? `name:${agent.name}` : UNKNOWN_AGENT_FILTER)
+
+const agentLabel = (agent: EvalCaseListItem['agent']): string => {
+  const name = agent.name ?? 'Unknown agent'
+  return agent.deleted ? `${name} (removed)` : name
 }
 
 const assertionSummary = (a: EvalAssertion, titleFor: (id: string) => string | undefined): string => {
@@ -440,6 +461,9 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const [deleteCandidate, setDeleteCandidate] = useState<EvalCase | null>(null)
   const [deletingCaseId, setDeletingCaseId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  // View-only filter by responsible agent. The pass-rate summary and "Run all"
+  // stay workspace-wide (the regression gate); this only narrows what's shown.
+  const [agentFilter, setAgentFilter] = useState<string>(ALL_AGENTS_FILTER)
 
   const loadCases = useCallback(async (signal?: { cancelled: boolean }) => {
     try {
@@ -549,14 +573,41 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   }
   const passRateDetail = passRateDetailParts.join(' · ')
   const hasCases = cases !== null && cases.length > 0
+
+  // Distinct responsible agents present in the suite, for the view filter.
+  const agentOptions = useMemo(() => {
+    const byKey = new Map<string, { key: string; label: string }>()
+    for (const c of cases ?? []) {
+      const key = agentFilterKey(c.agent)
+      if (!byKey.has(key)) byKey.set(key, { key, label: agentLabel(c.agent) })
+    }
+    return [...byKey.values()].sort((a, b) => a.label.localeCompare(b.label))
+  }, [cases])
+  const hasMultipleAgents = agentOptions.length > 1
+  // Drop a stale filter if the selected agent no longer has cases.
+  const activeAgentFilter =
+    agentFilter !== ALL_AGENTS_FILTER && agentOptions.some((o) => o.key === agentFilter)
+      ? agentFilter
+      : ALL_AGENTS_FILTER
+  const visibleCases = useMemo(() => {
+    if (!cases) return cases
+    if (activeAgentFilter === ALL_AGENTS_FILTER) return cases
+    return cases.filter((c) => agentFilterKey(c.agent) === activeAgentFilter)
+  }, [cases, activeAgentFilter])
+
   const canRunAll = (summary?.scored ?? 0) > 0
   // Only scored cases (with expectations) are selectable — running a case with
-  // no expectations would do nothing.
-  const scoredIds = (cases ?? []).filter((c) => c.assertions.length > 0).map((c) => c.id)
+  // no expectations would do nothing. Scoped to the visible (filtered) rows so
+  // "select all" matches what the operator sees.
+  const scoredIds = (visibleCases ?? []).filter((c) => c.assertions.length > 0).map((c) => c.id)
   const allScoredSelected = scoredIds.length > 0 && scoredIds.every((id) => selected.has(id))
   const toggleSelectAll = () => {
     setSelected(allScoredSelected ? new Set() : new Set(scoredIds))
   }
+  // Selection persists across filter changes, so restrict "Run selected" to the
+  // cases currently visible — never submit (or count) a case hidden by the
+  // filter, whether the operator switched it or it reset on a reload.
+  const visibleSelectedIds = scoredIds.filter((id) => selected.has(id))
 
   return (
     <DashboardPage
@@ -567,21 +618,36 @@ function EvalList({ accountId, routeState }: EvalListProps) {
       {error ? <p className="mb-4 text-sm text-rose-600">{error}</p> : null}
       {hasCases ? (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="font-medium text-foreground">{passRateText}</span>
             {passRateDetail ? <span className="text-muted-foreground">{passRateDetail}</span> : null}
+            {hasMultipleAgents ? (
+              <Select value={activeAgentFilter} onValueChange={setAgentFilter}>
+                <SelectTrigger className="h-8 w-[200px]" aria-label="Filter by agent">
+                  <SelectValue placeholder="All agents" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_AGENTS_FILTER}>All agents</SelectItem>
+                  {agentOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
           </div>
           <div className="flex items-center gap-3">
             {runError ? <span className="text-sm text-rose-600">{runError}</span> : null}
-            {selected.size > 0 ? (
+            {visibleSelectedIds.length > 0 ? (
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => runSuite([...selected])}
+                onClick={() => runSuite(visibleSelectedIds)}
                 disabled={running}
               >
                 <Play className="mr-2 h-4 w-4" />
-                Run selected ({selected.size})
+                Run selected ({visibleSelectedIds.length})
               </Button>
             ) : null}
             <Button type="button" onClick={() => runSuite()} disabled={running || !canRunAll}>
@@ -621,7 +687,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           No eval cases yet. Capture one from chat or activity using the steps above.
         </div>
       ) : (
-        <DashboardTable aria-label="Eval cases" minWidth="min-w-[800px]">
+        <DashboardTable aria-label="Eval cases" minWidth="min-w-[940px]">
           <DashboardTableHead>
             <DashboardTableHeader className="w-10">
               <input
@@ -634,6 +700,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
               />
             </DashboardTableHeader>
             <DashboardTableHeader>Case</DashboardTableHeader>
+            <DashboardTableHeader className="w-44">Agent</DashboardTableHeader>
             <DashboardTableHeader className="w-32">Status</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Last run</DashboardTableHeader>
             <DashboardTableHeader className="w-40">Expectations</DashboardTableHeader>
@@ -643,7 +710,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
             </DashboardTableHeader>
           </DashboardTableHead>
           <DashboardTableBody>
-            {cases.map((c) => (
+            {(visibleCases ?? []).map((c) => (
               <DashboardTableRow
                 key={c.id}
                 role="button"
@@ -671,6 +738,18 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                 </DashboardTableCell>
                 <DashboardTableCell>
                   <span className="block truncate font-medium text-foreground">{c.name}</span>
+                </DashboardTableCell>
+                <DashboardTableCell className="w-44">
+                  {c.agent.name ? (
+                    <span
+                      className="block truncate text-muted-foreground"
+                      title={`Captured from ${agentLabel(c.agent)}`}
+                    >
+                      {agentLabel(c.agent)}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </DashboardTableCell>
                 <DashboardTableCell className="w-32">
                   <Badge variant="outline" className={statusBadgeClass(c.status)}>{c.status}</Badge>
@@ -724,6 +803,11 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           </DashboardTableBody>
         </DashboardTable>
       )}
+      {cases !== null && cases.length > 0 && (visibleCases?.length ?? 0) === 0 ? (
+        <div className="mt-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+          No eval cases for this agent.
+        </div>
+      ) : null}
     </DashboardPage>
   )
 }

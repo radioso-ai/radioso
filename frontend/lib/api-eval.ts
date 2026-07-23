@@ -181,8 +181,20 @@ export interface EvalRunSummary {
   outcomeReason: string | null
 }
 
+// The agent a case was captured from / replays against. A case pins to an
+// immutable snapshot; this surfaces which agent is being tested. Labelled as
+// "captured from" — replay uses the frozen snapshot config, not the live agent.
+export interface EvalCaseAgentRef {
+  agentId: string | null
+  // Current agent name when it still exists, else the frozen capture-time name.
+  name: string | null
+  // agentId known but the agent row is gone; name is the frozen capture-time one.
+  deleted: boolean
+}
+
 export interface EvalCaseListItem extends EvalCase {
   latestRun: EvalRunSummary | null
+  agent: EvalCaseAgentRef
 }
 
 // Aggregate over the workspace's cases. Only cases with at least one expectation

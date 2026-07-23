@@ -604,6 +604,10 @@ function EvalList({ accountId, routeState }: EvalListProps) {
   const toggleSelectAll = () => {
     setSelected(allScoredSelected ? new Set() : new Set(scoredIds))
   }
+  // Selection persists across filter changes, so restrict "Run selected" to the
+  // cases currently visible — never submit (or count) a case hidden by the
+  // filter, whether the operator switched it or it reset on a reload.
+  const visibleSelectedIds = scoredIds.filter((id) => selected.has(id))
 
   return (
     <DashboardPage
@@ -635,15 +639,15 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           </div>
           <div className="flex items-center gap-3">
             {runError ? <span className="text-sm text-rose-600">{runError}</span> : null}
-            {selected.size > 0 ? (
+            {visibleSelectedIds.length > 0 ? (
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => runSuite([...selected])}
+                onClick={() => runSuite(visibleSelectedIds)}
                 disabled={running}
               >
                 <Play className="mr-2 h-4 w-4" />
-                Run selected ({selected.size})
+                Run selected ({visibleSelectedIds.length})
               </Button>
             ) : null}
             <Button type="button" onClick={() => runSuite()} disabled={running || !canRunAll}>

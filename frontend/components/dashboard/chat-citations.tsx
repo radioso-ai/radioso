@@ -388,7 +388,14 @@ const redistributeLeadingPunctuation = (
         // leading inline whitespace so it never doubles up. A leading newline is a
         // block boundary and must stay on the next segment.
         const continuesInline = inlineRest.length > 0 && !/^[\r\n]/.test(inlineRest)
-        const separator = continuesInline ? ' ' : ''
+        // But an anchor can land inside a number ("EUR 18[[1]],00", "1[[1]].2"),
+        // where the punctuation is a decimal/grouping mark, not a sentence break.
+        // A digit immediately after it (no separating space in the source) means
+        // the two sides are one number, so keep them tight — inserting a space
+        // would change the value. A space before the digit is a real sentence
+        // boundary and still gets the separator.
+        const isNumericPunctuation = /^[\p{Nd}]/u.test(rest)
+        const separator = continuesInline && !isNumericPunctuation ? ' ' : ''
         current.trailingText = (current.trailingText ?? '') + leadingPunct + separator
         next.text = continuesInline ? leadingWhitespace + inlineRest : leadingWhitespace + rest
       }

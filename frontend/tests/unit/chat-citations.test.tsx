@@ -562,6 +562,54 @@ describe('AssistantMessageContent', () => {
     expect(textContent(comma)).not.toContain(',and the higher')
   })
 
+  it('does not insert a space inside a number split by a citation anchor', async () => {
+    const decimal = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'the retreat costs EUR 18', citationIndices: [0] },
+          { text: ',00 per person.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+    // The marker renders between "18" and ",00", so assert on the punctuation
+    // seam itself: the decimal stays tight, with no injected space.
+    expect(textContent(decimal)).toContain(',00 per person')
+    expect(textContent(decimal)).not.toContain(', 00')
+
+    const version = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'runs on version 1', citationIndices: [0] },
+          { text: '.2 of the platform.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+    expect(textContent(version)).toContain('.2 of the platform')
+    expect(textContent(version)).not.toContain('. 2')
+
+    // A space before the digit is a genuine sentence boundary, not a number, so
+    // the separator is still restored.
+    const sentence = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'attendance grew in 2026', citationIndices: [0] },
+          { text: '. 3 sessions ran that week.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+    expect(textContent(sentence)).toContain('. 3 sessions ran')
+    expect(textContent(sentence)).not.toContain('.3 sessions')
+  })
+
   it('does not orphan a trailing period after an uncited continuation', async () => {
     const html = renderToStaticMarkup(
       <AssistantMessageContent

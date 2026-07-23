@@ -1,7 +1,11 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import { formatIsoDateUtc } from "../../src/shared/domain/clock.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+
+const isoDateFromToday = (offsetDays: number): string =>
+  formatIsoDateUtc(new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000));
 
 describe("retrieval answer integration", () => {
   it("answers from retrieval without creating assistant conversation history", async () => {
@@ -219,10 +223,13 @@ describe("retrieval answer integration", () => {
       },
       rerankGateway: {
         async rerank(input) {
+          // Deliberately anti-correlated with the expected temporal order: the past
+          // event scores highest and the later upcoming event outscores the sooner
+          // one, so the asserted order can only come from the temporal sort.
           const order = new Map([
             ["Morning Retreat", 0.98],
-            ["Summer Workshop", 0.97],
-            ["Autumn Intensive", 0.96],
+            ["Autumn Intensive", 0.97],
+            ["Summer Workshop", 0.96],
           ]);
           return input.contexts.map((context) => ({
             chunkId: context.chunkId,
@@ -234,10 +241,16 @@ describe("retrieval answer integration", () => {
     const session = await issueTestSession(app, "retrieval-answer-actuality-sort@example.com");
     const headers = adminSessionHeaders(session);
 
+    // Fixture dates are relative to the wall clock (the pipeline sorts against the
+    // system clock, which createTestApp cannot freeze), so the test cannot rot when
+    // real time passes a fixed date. ±30-day offsets stay clear of UTC-midnight races.
+    const laterUpcomingDate = isoDateFromToday(60);
+    const soonerUpcomingDate = isoDateFromToday(30);
+    const pastDate = isoDateFromToday(-30);
     for (const event of [
-      { title: "Autumn Intensive", date: "2026-09-12", content: "Event schedule: Autumn Intensive happens on September 12, 2026." },
-      { title: "Summer Workshop", date: "2026-08-10", content: "Event schedule: Summer Workshop happens on August 10, 2026." },
-      { title: "Morning Retreat", date: "2026-07-05", content: "Event schedule: Morning Retreat happens on July 5, 2026." },
+      { title: "Autumn Intensive", date: laterUpcomingDate, content: `Event schedule: Autumn Intensive happens on ${laterUpcomingDate}.` },
+      { title: "Summer Workshop", date: soonerUpcomingDate, content: `Event schedule: Summer Workshop happens on ${soonerUpcomingDate}.` },
+      { title: "Morning Retreat", date: pastDate, content: `Event schedule: Morning Retreat happens on ${pastDate}.` },
     ]) {
       await request(app)
         .post("/api/v1/document/")
@@ -267,10 +280,13 @@ describe("retrieval answer integration", () => {
       });
     }
 
+    // Upcoming events lead soonest-first and the past event is demoted to the
+    // bottom despite winning the rerank stub (0.98) — the #910 temporal ordering
+    // contract overrides rerank order for dated contexts.
     expect(observedOrders).toEqual([
-      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
-      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
-      ["Morning Retreat", "Summer Workshop", "Autumn Intensive"],
+      ["Summer Workshop", "Autumn Intensive", "Morning Retreat"],
+      ["Summer Workshop", "Autumn Intensive", "Morning Retreat"],
+      ["Summer Workshop", "Autumn Intensive", "Morning Retreat"],
     ]);
   });
 });

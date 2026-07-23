@@ -246,6 +246,32 @@ export interface EvalRunSummary {
   outcomeReason: string | null;
 }
 
+/**
+ * The agent a case's replay runs against. A case has no agent column of its
+ * own — it pins to an immutable snapshot, and the snapshot carries the agent
+ * identity (captured from the source conversation) plus the frozen config the
+ * replay actually uses. This ref surfaces "which agent is being tested" in the
+ * suite list. It is deliberately labelled as *captured from* an agent, not a
+ * live link: replay uses the frozen snapshot config, so a renamed or edited
+ * agent is not reflected in what the case exercises.
+ */
+export interface EvalCaseAgentRef {
+  /** `source_agent_id` from the snapshot. Null for legacy thin snapshots
+   * captured before full-config capture existed. */
+  agentId: string | null;
+  /** Display name. Prefers the current agent row (stable identity, current
+   * name); falls back to the name frozen on the snapshot when the agent was
+   * deleted or was never recorded. Null when nothing is known. */
+  name: string | null;
+  /** True when `agentId` is known but the agent row no longer exists in the
+   * workspace — the shown name is the frozen capture-time name, so the UI can
+   * mark it as removed. */
+  deleted: boolean;
+}
+
 export interface EvalCaseListItem extends EvalCase {
   latestRun: EvalRunSummary | null;
+  /** The agent this case was captured from / replays against. Always present:
+   * every case pins to a snapshot, though the resolved name may be null. */
+  agent: EvalCaseAgentRef;
 }

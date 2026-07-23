@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine } from "../src/index.js";
+import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   ClarificationCandidate,
   ConversationEvent,
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   ProcessTurnInput,
+  Routine,
   RoutineState,
   TurnOutcome,
 } from "@radioso/conversation-contract";
@@ -743,6 +745,68 @@ describe("DefaultConversationEngine routines (resume-first substrate)", () => {
       "routine_activate",
       "directive_steering",
     ]);
+  });
+
+  it("claims the activation turn even when the next-step selector reads the trigger as off-topic", async () => {
+    // End-to-end: no active state, the activator claims the turn, and the routine's root
+    // step runs a next-step selector that (seeing the trigger message as an off-topic reply
+    // to a question never asked) returns a yield. On the activation turn the engine passes
+    // activationTurn: true, so the runner lands on the root step instead of yielding — the
+    // routine must not be silently dropped to a normal answer.
+    const routine: Routine = {
+      id: "contact",
+      rootStepId: "ask_email",
+      steps: [
+        { id: "ask_email", kind: "chat", action: "Ask the user for their email address." },
+        { id: "done", kind: "terminal", action: "Confirm." },
+      ],
+      transitions: [{ from: "ask_email", to: "done", condition: "a valid email was provided" }],
+    };
+    const routineRunner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render: vi.fn(async ({ step, steering }) => ({ answer: `[${step.id}] ${steering[0]?.action ?? ""}`, metadata: {} })) },
+    );
+    const save = vi.fn(async () => {});
+    const input: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save, clear: vi.fn(async () => {}) },
+      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
+      routineRunner,
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    // The routine claimed the turn (non-null result), rendered the root step, and its
+    // state was persisted — the activation was not dropped to a normal answer.
+    expect(result).not.toBeNull();
+    expect(result.trace.stages.map((stage) => stage.kind)).toContain("routine_activate");
+    expect(result.response.answer).toContain("ask_email");
+    // A stay on the root step (empty path) keeps the routine active for the next turn.
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      routineId: "contact",
+      path: [],
+      status: "active",
+    }));
+    expect(input.selector.select).not.toHaveBeenCalled();
+  });
+
+  it("passes activationTurn true to the runner on a fresh activation and false on a resume", async () => {
+    const started: RoutineState = { ...activeState, path: ["ask_email"] };
+    const activation: ProcessTurnInput = {
+      ...createInput(),
+      routineStore: { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) },
+      routineActivator: { activate: vi.fn(async () => ({ kind: "activate", routineId: "contact" })) },
+      routineRunner: { resume: vi.fn(async () => ({ response: { answer: "What's your email?" }, nextState: started })) },
+    };
+    await new DefaultConversationEngine().processTurn(activation);
+    expect(activation.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: true }));
+
+    const resume = withRoutine({
+      resume: vi.fn(async () => ({ response: { answer: "What's your message?" }, nextState: started })),
+    });
+    await new DefaultConversationEngine().processTurn(resume);
+    expect(resume.routineRunner!.resume).toHaveBeenCalledWith(expect.objectContaining({ activationTurn: false }));
   });
 
   it("passes completed routine ids to the activator on idle turns", async () => {

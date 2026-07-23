@@ -328,6 +328,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     turn: TurnContext;
     state: RoutineState;
     steeringResolver?: ConversationRoutineSteeringResolver;
+    activationTurn?: boolean;
   }): Promise<ConversationRoutineResumeResult> {
     const { turn, state } = input;
     const now = this.clock();
@@ -401,14 +402,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           return false;
       }
     };
-    const selectNext = async (input: {
+    type SelectNextInput = {
       step: RoutineStep;
       transitions: RoutineTransition[];
       variables: Record<string, unknown>;
       state: RoutineState;
       skillResult?: RoutineSkillResult;
       defaultOnDecline?: boolean;
-    }): Promise<RoutineNextStepDecision> => {
+    };
+    const selectNextRaw = async (input: SelectNextInput): Promise<RoutineNextStepDecision> => {
       lastSelectorRan = false;
       const defaultTransition = input.transitions.find(isDefaultTransition);
       const conditionedTransitions = input.transitions.filter((transition) => !isDefaultTransition(transition));
@@ -491,6 +493,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         return { ...decision, nextStepId: defaultTransition.to };
       }
       return { ...decision, nextStepId: chosen };
+    };
+    const selectNext = async (selectInput: SelectNextInput): Promise<RoutineNextStepDecision> => {
+      const decision = await selectNextRaw(selectInput);
+      // On the activation turn the user's message is the routine's trigger, not a reply
+      // to the current step (which has never been rendered) — an off-topic yield here
+      // would silently drop the activation, so land on the step and render it instead.
+      return decision.yieldTurn && input.activationTurn
+        ? { nextStepId: selectInput.step.id }
+        : decision;
     };
 
     let step: RoutineStep;

@@ -3,6 +3,15 @@ import { describe, expect, it } from 'vitest'
 
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
 
+// Collapses rendered markup to its visible text so assertions can check the
+// spacing a reader actually sees, independent of element boundaries.
+const textContent = (html: string) =>
+  html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x27;/g, "'")
+    .replace(/&quot;/g, '"')
+
 describe('AssistantMessageContent', () => {
   it('keeps citation markers attached to markdown-rendered segments', async () => {
     const html = renderToStaticMarkup(
@@ -477,6 +486,102 @@ describe('AssistantMessageContent', () => {
     )
 
     expect(html).toContain('href="https://example.com"')
+  })
+
+  it('keeps a space between a citation marker and the following sentence', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'all from 21 to 23 August 2026', citationIndices: [0] },
+          { text: '. The first-Kriya programs are limited.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // The period must not glue to the next sentence ("2026[1].The").
+    expect(textContent(html)).toContain('. The first-Kriya')
+    expect(textContent(html)).not.toContain('.The first-Kriya')
+  })
+
+  it('keeps a space between a citation marker and a following clause after a comma', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'initiated at that level', citationIndices: [0] },
+          { text: ', and the higher-Kriya weekend is separate.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(textContent(html)).toContain(', and the higher-Kriya')
+    expect(textContent(html)).not.toContain(',and the higher-Kriya')
+  })
+
+  it('normalizes seam spacing the model or anchor removal mangled', async () => {
+    // Segments the backend actually emits when the model writes a space before the
+    // anchor / punctuation and drops the one after: " . We…" and " ,and…".
+    const period = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'from 17:00 to 19:30', citationIndices: [0] },
+          { text: ' . We also have a residential course.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+    expect(textContent(period)).toContain('19:30')
+    expect(textContent(period)).toContain('. We also have')
+    expect(textContent(period)).not.toContain(' . We also have')
+    expect(textContent(period)).not.toContain('.We also have')
+
+    const comma = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'initiated at that level', citationIndices: [0] },
+          { text: ' ,and the higher-Kriya weekend is separate.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+    expect(textContent(comma)).toContain(', and the higher-Kriya')
+    expect(textContent(comma)).not.toContain(' ,and')
+    expect(textContent(comma)).not.toContain(',and the higher')
+  })
+
+  it('does not orphan a trailing period after an uncited continuation', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+        ]}
+        answerSegments={[
+          { text: 'RESIDENTIAL COURSE January 2025', citationIndices: [0] },
+          { text: ', but the excerpt available here does not show its dates' },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // The final period must stay inside the clause's block, not render as a bare
+    // text node after the closing </p> (which drops it onto its own line).
+    expect(html).toContain('its dates.')
+    expect(html).not.toMatch(/dates<\/p>\s*\./)
   })
 
   it('does not crash on out-of-range numeric entities in titles', async () => {

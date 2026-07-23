@@ -36,16 +36,29 @@ export const orderTemporalPromptContexts = (input: {
   const dated = indexed.filter((entry) => entry.dateFrom);
   const undated = indexed.filter((entry) => !entry.dateFrom);
 
+  // An event is "past" only once its end date has elapsed, so a multi-day event that is
+  // still ongoing today counts as upcoming. Past events are demoted below upcoming and
+  // undated context (not dropped here) so recency-appropriate results win the final top-K
+  // selection; when the context set exceeds the selector's top-K / token budget the
+  // demoted past events are the first to be trimmed. This ordering assumes upcoming intent
+  // and does not yet special-case queries that explicitly ask about a past period.
+  const upcoming = dated.filter((entry) => !isPastEvent(entry.dateTo, input.today));
+  const past = dated.filter((entry) => isPastEvent(entry.dateTo, input.today));
+
   return {
     orderedContexts: [
-      ...dated.sort((left, right) => compareDatedContexts(left, right)),
+      ...upcoming.sort((left, right) => compareDatedContexts(left, right)),
       ...undated,
+      ...past.sort((left, right) => comparePastDatedContexts(left, right)),
     ].map((entry) => entry.context),
     applied: true,
     today: input.today,
     datedContextCount: dated.length,
   };
 };
+
+const isPastEvent = (dateTo: string | undefined, today: string): boolean =>
+  Boolean(dateTo && dateTo < today);
 
 const shouldApplyTemporalOrdering = (input: {
   enabled: boolean;
@@ -68,10 +81,14 @@ const normalizeIsoDate = (value: unknown): string | undefined => {
   return new Date(parsed).toISOString().slice(0, 10) === date ? date : undefined;
 };
 
-const compareDatedContexts = (
-  left: { dateFrom?: string; dateTo?: string; context: RerankedCandidate; index: number },
-  right: { dateFrom?: string; dateTo?: string; context: RerankedCandidate; index: number },
-): number => {
+interface DatedContextEntry {
+  dateFrom?: string;
+  dateTo?: string;
+  context: RerankedCandidate;
+  index: number;
+}
+
+const compareDatedContexts = (left: DatedContextEntry, right: DatedContextEntry): number => {
   const startComparison = compareStrings(left.dateFrom, right.dateFrom);
   if (startComparison !== 0) {
     return startComparison;
@@ -82,6 +99,26 @@ const compareDatedContexts = (
     return endComparison;
   }
 
+  return compareByRerankThenIndex(left, right);
+};
+
+// Past events surface most-recent-first (dates descending), but on identical dates we still
+// keep the stronger rerank result ahead — reversing the whole comparator would demote it.
+const comparePastDatedContexts = (left: DatedContextEntry, right: DatedContextEntry): number => {
+  const startComparison = compareStrings(right.dateFrom, left.dateFrom);
+  if (startComparison !== 0) {
+    return startComparison;
+  }
+
+  const endComparison = compareStrings(right.dateTo, left.dateTo);
+  if (endComparison !== 0) {
+    return endComparison;
+  }
+
+  return compareByRerankThenIndex(left, right);
+};
+
+const compareByRerankThenIndex = (left: DatedContextEntry, right: DatedContextEntry): number => {
   const leftRank = Number.isFinite(left.context.rerankPosition) ? left.context.rerankPosition : left.index;
   const rightRank = Number.isFinite(right.context.rerankPosition) ? right.context.rerankPosition : right.index;
   if (leftRank !== rightRank) {

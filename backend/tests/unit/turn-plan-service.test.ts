@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import {
   TurnPlanService,
+  buildTurnPlanResponseFormat,
+  buildTurnPlanningPrompt,
   parseTurnPlan,
   turnPlanDirectiveClassifications,
   type TurnPlanGatewayFactory,
@@ -33,7 +35,10 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
     routineRankings: [{
       routineId: "book-call",
       confidence: 0.2,
-      variables: { company: "Acme", seats: 25 },
+      variables: [
+        { field: "company", value: "Acme" },
+        { field: "seats", value: "25" },
+      ],
     }],
     directiveClassifications: [{ name: "refund-tone", matched: true, confidence: 0.8 }],
     ...overrides,
@@ -78,7 +83,7 @@ describe("parseTurnPlan", () => {
     expect(plan?.routineRankings).toEqual([{
       routineId: "book-call",
       confidence: 0.2,
-      variables: { company: "Acme", seats: 25 },
+      variables: { company: "Acme", seats: "25" },
     }]);
     expect(plan?.directiveClassifications).toEqual([{ name: "refund-tone", matched: true, confidence: 0.8 }]);
   });
@@ -151,15 +156,80 @@ describe("parseTurnPlan", () => {
     ).toBeNull();
   });
 
-  it("rejects non-object routine variables", () => {
+  it("rejects a variables value that is not a field/value pair array", () => {
     expect(
       parseTurnPlan(
         validPlanJson({
-          routineRankings: [{ routineId: "book-call", confidence: 0.7, variables: "Acme" }],
+          routineRankings: [{ routineId: "book-call", confidence: 0.7, variables: { company: "Acme" } }],
         }),
         candidates,
       ),
     ).toBeNull();
+  });
+
+  it("folds variable pairs into a record and omits an empty pair array", () => {
+    const withVars = parseTurnPlan(
+      validPlanJson({
+        routineRankings: [{
+          routineId: "book-call",
+          confidence: 0.7,
+          variables: [{ field: "company", value: "Acme" }],
+        }],
+      }),
+      candidates,
+    );
+    expect(withVars?.routineRankings[0]?.variables).toEqual({ company: "Acme" });
+
+    const withoutVars = parseTurnPlan(
+      validPlanJson({
+        routineRankings: [{ routineId: "book-call", confidence: 0.7, variables: [] }],
+      }),
+      candidates,
+    );
+    expect(withoutVars?.routineRankings[0]).not.toHaveProperty("variables");
+  });
+
+  it("rejects duplicate field names within one ranking entry", () => {
+    expect(
+      parseTurnPlan(
+        validPlanJson({
+          routineRankings: [{
+            routineId: "book-call",
+            confidence: 0.7,
+            variables: [
+              { field: "company", value: "Acme" },
+              { field: "company", value: "OtherCo" },
+            ],
+          }],
+        }),
+        candidates,
+      ),
+    ).toBeNull();
+  });
+
+  it("accepts absent ranking/classification arrays when there are no candidates", () => {
+    const noCandidates = { routineIds: new Set<string>(), directiveNames: new Set<string>() };
+    const plan = parseTurnPlan(
+      JSON.stringify({
+        route: "direct",
+        isIdentityQuestion: false,
+        intentTopic: null,
+        inScopeRequest: null,
+        outsideScopeRequest: null,
+        rewrite: null,
+        responseLanguage: "English",
+      }),
+      noCandidates,
+    );
+    expect(plan).not.toBeNull();
+    expect(plan?.routineRankings).toEqual([]);
+    expect(plan?.directiveClassifications).toEqual([]);
+  });
+
+  it("still rejects an absent classification array when directive candidates exist", () => {
+    const plan = JSON.parse(validPlanJson()) as Record<string, unknown>;
+    delete plan.directiveClassifications;
+    expect(parseTurnPlan(JSON.stringify(plan), candidates)).toBeNull();
   });
 
   it("rejects missing or duplicate directive classifications", () => {
@@ -223,6 +293,105 @@ describe("turnPlanDirectiveClassifications", () => {
   });
 });
 
+const schemaProperty = (
+  format: ReturnType<typeof buildTurnPlanResponseFormat>,
+  key: string,
+): Record<string, unknown> | undefined => {
+  const properties = (format.schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+  return properties[key];
+};
+
+describe("buildTurnPlanResponseFormat", () => {
+  it("emits a strict json_schema envelope with a closed object", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    expect(format).toMatchObject({ type: "json_schema", name: "turn_plan", strict: true });
+    expect(format.schema.additionalProperties).toBe(false);
+  });
+
+  it("constrains routineId and directive name to exactly the candidate values", () => {
+    const format = buildTurnPlanResponseFormat({
+      routineIds: ["book-call", "cancel"],
+      directiveNames: ["refund-tone"],
+    });
+    const rankingItems = (schemaProperty(format, "routineRankings")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
+    expect(rankingItems.properties.routineId.enum).toEqual(["book-call", "cancel"]);
+    const classificationItems = (schemaProperty(format, "directiveClassifications")?.items ?? {}) as Record<string, Record<string, Record<string, unknown>>>;
+    expect(classificationItems.properties.name.enum).toEqual(["refund-tone"]);
+  });
+
+  it("models routine variables as a required field/value pair array", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: ["book-call"], directiveNames: [] });
+    const rankingItems = (schemaProperty(format, "routineRankings")?.items ?? {}) as Record<string, unknown>;
+    const variables = (rankingItems.properties as Record<string, Record<string, unknown>>).variables;
+    expect(variables.type).toBe("array");
+    const pairItem = variables.items as Record<string, unknown>;
+    expect(pairItem.required).toEqual(["field", "value"]);
+    expect(rankingItems.required).toEqual(["routineId", "confidence", "variables"]);
+  });
+
+  it("omits ranking/classification properties (and required entries) when a list is empty", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    expect(schemaProperty(format, "routineRankings")).toBeUndefined();
+    expect(schemaProperty(format, "directiveClassifications")).toBeUndefined();
+    expect(format.schema.required).not.toContain("routineRankings");
+    expect(format.schema.required).not.toContain("directiveClassifications");
+  });
+
+  it("uses nullable type unions rather than string for optional fields", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    expect(schemaProperty(format, "responseLanguage")?.type).toEqual(["string", "null"]);
+    expect(schemaProperty(format, "rewrite")?.type).toEqual(["object", "null"]);
+  });
+});
+
+describe("buildTurnPlanningPrompt", () => {
+  const promptInput = (overrides: Partial<Parameters<typeof buildTurnPlanningPrompt>[0]> = {}) => ({
+    query: "How long is the refund window?",
+    history,
+    // A summary keeps the (pre-existing) summary placeholder filled so the
+    // no-candidates blank-line assertion isolates the routine/directive sections.
+    conversationSummary: "The buyer previously discussed annual billing.",
+    routineCandidates: [],
+    directiveCandidates: [],
+    ...overrides,
+  });
+
+  it("renders routine, directive, and decision-independence sections only with candidates", () => {
+    const withBoth = buildTurnPlanningPrompt(promptInput({
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+    }));
+    expect(withBoth).toContain("Routine Ranking Rules");
+    expect(withBoth).toContain("Directive Rules");
+    expect(withBoth).toContain("Decision Independence");
+
+    const bare = buildTurnPlanningPrompt(promptInput());
+    expect(bare).not.toContain("Routine Ranking Rules");
+    expect(bare).not.toContain("Directive Rules");
+    expect(bare).not.toContain("Decision Independence");
+    expect(bare).not.toMatch(/\n\n\n/);
+  });
+
+  it("renders a compact output shape so schema-less compatible providers still have a JSON contract", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput({
+      routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+      directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+    }));
+    expect(prompt).toContain("Output Shape Rules");
+    expect(prompt).toContain("Do not wrap in markdown fences");
+    expect(prompt).toContain('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
+    expect(prompt).toContain('"directiveClassifications":[{"name":"string","matched":false,"confidence":0.0}]');
+    expect(prompt).toContain("field/value pairs");
+  });
+
+  it("omits candidate-dependent fields from the fallback output shape when candidates are absent", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput());
+    expect(prompt).toContain("Output Shape Rules");
+    expect(prompt).not.toContain('"routineRankings"');
+    expect(prompt).not.toContain('"directiveClassifications"');
+  });
+});
+
 describe("TurnPlanService", () => {
   it("resolves a validated plan from one gateway call", async () => {
     const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
@@ -234,6 +403,23 @@ describe("TurnPlanService", () => {
     expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
     expect(client.complete).toHaveBeenCalledTimes(1);
     expect(plan?.route).toBe("retrieval");
+  });
+
+  it("passes a per-call response format whose enums list this turn's candidates", async () => {
+    const client = {
+      complete: vi.fn(
+        async (_request: { prompt: string; responseFormat?: ReturnType<typeof buildTurnPlanResponseFormat> }) =>
+          ({ text: validPlanJson() }),
+      ),
+    };
+    await new TurnPlanService(factory(client)).plan(request());
+    const responseFormat = client.complete.mock.calls[0]?.[0].responseFormat;
+    expect(responseFormat).toMatchObject({ type: "json_schema", name: "turn_plan", strict: true });
+    const properties = (responseFormat?.schema.properties ?? {}) as Record<string, Record<string, unknown>>;
+    const rankingItems = properties.routineRankings.items as Record<string, Record<string, Record<string, unknown>>>;
+    expect(rankingItems.properties.routineId.enum).toEqual(["book-call"]);
+    const classificationItems = properties.directiveClassifications.items as Record<string, Record<string, Record<string, unknown>>>;
+    expect(classificationItems.properties.name.enum).toEqual(["refund-tone"]);
   });
 
   it("passes the bound usage operation through the factory", async () => {

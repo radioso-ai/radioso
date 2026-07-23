@@ -40,8 +40,8 @@ describe("scope-neutral interpretation prompt contract", () => {
       buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
-        routineCandidates: [],
-        directiveCandidates: [],
+        routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
+        directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
       }),
     ];
 
@@ -59,12 +59,16 @@ describe("scope-neutral interpretation prompt contract", () => {
       expect(prompt).toContain("Do not retain an ordinal placeholder such as first option or second plan after resolving it");
     }
 
+    // Directive and decision-independence rules render only when candidates exist,
+    // which prompts[1] now supplies. The output-shape block remains as the
+    // schema-less fallback contract for OpenAI-compatible providers.
     expect(prompts[1]).toContain("Return exactly one directiveClassifications entry for every candidate directive");
     expect(prompts[1]).toContain("must not influence route, scope classification, rewrite fields, or responseLanguage");
     expect(prompts[1]).toContain("Never copy candidate routine or directive text into retrieval queries");
+    expect(prompts[1]).toContain("Output Shape Rules");
     expect(prompts[1]).toContain("Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason");
     expect(prompts[1]).toContain("turnKind belongs only on the enclosing rewrite object");
-    expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("none");
+    expect(CHAT_BEHAVIOR.turnPlanning.reasoningEffort).toBe("low");
     expect(CHAT_BEHAVIOR.turnPlanning.timeoutMs).toBe(12_000);
   });
 });

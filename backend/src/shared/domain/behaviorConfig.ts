@@ -74,11 +74,16 @@ export const CHAT_BEHAVIOR = {
   // an oversized prompt never rides the fused path. Composition-owned; never
   // tuned per phrase.
   turnPlanning: {
-    // Reasoning effort for the planner call. Classification, not deliberation —
-    // none keeps the fused call off the critical-path latency budget and is
-    // accepted by the workspace nano planner; "minimal" forces an unsupported-
-    // value retry on gpt-5.4-nano and can consume the whole planner timeout.
-    reasoningEffort: "none",
+    // Reasoning effort for the planner call. "low", not "none": a live A/B on
+    // the conversation-quality suite showed referential rewrite resolution (an
+    // ordinal follow-up resolving to a listed option) collapsing under strict
+    // schema-constrained decoding at "none" (≤6/20 resolved) while "low"
+    // resolved 20/20 at roughly +400ms per call — still far cheaper than the
+    // staged calls this replaces. "minimal" forces an unsupported-value retry
+    // on gpt-5.4-nano and can consume the whole planner timeout; "low" is the
+    // retry floor the OpenAI provider downgrades unsupported values to, so it
+    // is safe across the gpt-5.4 family.
+    reasoningEffort: "low",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
     // classifications). Generous enough for a multi-branch retrieval rewrite plus
     // several routine/directive verdicts; still a real bound.

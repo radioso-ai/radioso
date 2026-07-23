@@ -8,6 +8,7 @@ import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsag
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type {
+  JsonSchemaResponseFormat,
   TextGenerationRequest,
   TextGenerationResult,
 } from "../../../shared/infra/llm/providerTypes.js";
@@ -83,11 +84,10 @@ const formatConversationContext = (messages: MessageRecord[]): string =>
     )
     .join("\n");
 
-const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[]): string => {
-  if (candidates.length === 0) {
-    return "No candidate routines this turn.";
-  }
-  return candidates
+// Only rendered when the candidate list is non-empty; the empty case omits the
+// whole routine/directive sub-section rather than emitting a "none" stub.
+const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[]): string =>
+  candidates
     .map((candidate, index) =>
       `${index + 1}. id: ${candidate.routineId}\n` +
       `Title: ${candidate.title}\n` +
@@ -95,18 +95,13 @@ const routineCandidatesBlock = (candidates: readonly TurnPlanRoutineCandidate[])
       `Trigger: ${candidate.triggerSummary}`,
     )
     .join("\n\n");
-};
 
-const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidate[]): string => {
-  if (candidates.length === 0) {
-    return "No candidate directives this turn.";
-  }
-  return JSON.stringify(
+const directiveCandidatesBlock = (candidates: readonly TurnPlanDirectiveCandidate[]): string =>
+  JSON.stringify(
     candidates.map((candidate) => ({ name: candidate.name, condition: candidate.condition })),
     null,
     2,
   );
-};
 
 export type TurnPlanningPromptInput = Pick<
   TurnPlanRequest,
@@ -119,19 +114,67 @@ export type TurnPlanningPromptInput = Pick<
   | "directiveCandidates"
 >;
 
+// Optional sub-sections render only when their candidate list has entries. Each
+// carries a leading blank-line separator so the main template can splice them
+// directly against the preceding content without leaving stray blank-line runs
+// in the common no-candidates case.
+const optionalSection = (rendered: string): string => `\n\n${rendered}`;
+
+const turnPlanOutputShapeBlock = (input: {
+  hasRoutineCandidates: boolean;
+  hasDirectiveCandidates: boolean;
+}): string => {
+  const optionalFields: string[] = [];
+  if (input.hasRoutineCandidates) {
+    optionalFields.push('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
+  }
+  if (input.hasDirectiveCandidates) {
+    optionalFields.push('"directiveClassifications":[{"name":"string","matched":false,"confidence":0.0}]');
+  }
+  return "Output Shape Rules\n" +
+    "Return strict JSON only. Do not wrap in markdown fences. Follow this field structure exactly.\n" +
+    "Each retrievalSubqueries item contains only label, semanticQuery, lexicalQuery, and reason. turnKind belongs only on the enclosing rewrite object.\n" +
+    "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
+    "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
+    "Shape:\n" +
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+};
+
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
-export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string =>
-  renderPromptTemplate("chat/turn-planning.md", {
+export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string => {
+  const hasRoutineCandidates = input.routineCandidates.length > 0;
+  const hasDirectiveCandidates = input.directiveCandidates.length > 0;
+  return renderPromptTemplate("chat/turn-planning.md", {
     context_section: formatConversationContext(input.history) || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
-    routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
-    directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
+    // Decision independence only earns prompt space when there are candidates to
+    // firewall from the routing/rewrite/language decisions.
+    decision_independence_section:
+      hasRoutineCandidates || hasDirectiveCandidates
+        ? optionalSection(renderPromptTemplate("chat/turn-planning-decision-independence.md", {}))
+        : "",
+    routine_section: hasRoutineCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-routines.md", {
+            routine_candidates_section: routineCandidatesBlock(input.routineCandidates),
+          }),
+        )
+      : "",
+    directive_section: hasDirectiveCandidates
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-directives.md", {
+            directive_candidates_section: directiveCandidatesBlock(input.directiveCandidates),
+          }),
+        )
+      : "",
+    output_shape_section: optionalSection(turnPlanOutputShapeBlock({ hasRoutineCandidates, hasDirectiveCandidates })),
     query: input.query,
   });
+};
 
 export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number =>
   Math.ceil(buildTurnPlanningPrompt(input).length / 4);
@@ -139,44 +182,64 @@ export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput)
 const stripJsonFence = (raw: string): string =>
   raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
 
+// Enum value sets shared by the zod parse (belt) and the provider response schema
+// (braces), so the two can never drift apart.
+const ROUTE_VALUES = ["retrieval", "direct"] as const;
+const QUERY_SHAPE_VALUES = [
+  "definition_lookup",
+  "event_date_lookup",
+  "policy_answer",
+  "exploratory_summary",
+  "follow_up_grounding",
+  "default_hybrid",
+  "general_grounding",
+] as const;
+const TEMPORAL_QUERY_MODE_VALUES = ["none", "listing", "topic_refinement"] as const;
+const TURN_KIND_VALUES = [
+  "fresh_subject",
+  "referential_followup",
+  "referential_relation",
+  "explicit_recenter",
+  "comparative",
+  "ambiguous",
+] as const;
+
 const confidenceSchema = z.number().finite().min(0).max(1);
 
 const rewriteSchema = z.object({
   rewrittenQuery: z.string(),
   semanticQuery: z.string(),
   lexicalQuery: z.string(),
-  queryShape: z.enum([
-    "definition_lookup",
-    "event_date_lookup",
-    "policy_answer",
-    "exploratory_summary",
-    "follow_up_grounding",
-    "default_hybrid",
-    "general_grounding",
-  ]),
-  temporalQueryMode: z.enum(["none", "listing", "topic_refinement"]),
+  queryShape: z.enum(QUERY_SHAPE_VALUES),
+  temporalQueryMode: z.enum(TEMPORAL_QUERY_MODE_VALUES),
   retrievalSubqueries: z.array(z.object({
     label: z.string(),
     semanticQuery: z.string(),
     lexicalQuery: z.string(),
     reason: z.string().nullable(),
   }).strict()),
-  turnKind: z.enum([
-    "fresh_subject",
-    "referential_followup",
-    "referential_relation",
-    "explicit_recenter",
-    "comparative",
-    "ambiguous",
-  ]),
+  turnKind: z.enum(TURN_KIND_VALUES),
   proposedActiveSubject: z.string().nullable(),
   relatedEntities: z.array(z.string()),
   unresolved: z.boolean(),
   confidence: confidenceSchema,
 }).strict();
 
+// OpenAI strict mode forbids free-form objects, so the wire carries routine slot
+// values as field/value pairs. `parseTurnPlan` folds them back into the Record the
+// activation seams consume. The schema constrains `value` to a string, matching how
+// the staged ranked-activation parser also treats extracted slot values as verbatim
+// strings — planner slot values are strings by construction.
+const variablePairSchema = z.object({
+  field: z.string(),
+  value: z.string(),
+}).strict();
+
+// `routineRankings`/`directiveClassifications` are absent from the provider schema
+// when their candidate list is empty, so both are optional here; parse treats an
+// absent array as an empty one and re-applies the directive-completeness check.
 const rawTurnPlanSchema = z.object({
-  route: z.enum(["direct", "retrieval"]),
+  route: z.enum(ROUTE_VALUES),
   isIdentityQuestion: z.boolean(),
   intentTopic: z.string().nullable(),
   inScopeRequest: z.string().nullable(),
@@ -186,14 +249,172 @@ const rawTurnPlanSchema = z.object({
   routineRankings: z.array(z.object({
     routineId: z.string().min(1),
     confidence: confidenceSchema,
-    variables: z.record(z.string(), z.unknown()).optional(),
-  }).strict()),
+    variables: z.array(variablePairSchema).optional(),
+  }).strict()).optional(),
   directiveClassifications: z.array(z.object({
     name: z.string().min(1),
     matched: z.boolean(),
     confidence: confidenceSchema,
-  }).strict()),
+  }).strict()).optional(),
 }).strict();
+
+const confidenceJsonSchema = { type: "number", minimum: 0, maximum: 1 } as const;
+const nullableStringJsonSchema = { type: ["string", "null"] } as const;
+
+const rewriteJsonSchema = {
+  type: ["object", "null"],
+  additionalProperties: false,
+  required: [
+    "rewrittenQuery",
+    "semanticQuery",
+    "lexicalQuery",
+    "queryShape",
+    "temporalQueryMode",
+    "retrievalSubqueries",
+    "turnKind",
+    "proposedActiveSubject",
+    "relatedEntities",
+    "unresolved",
+    "confidence",
+  ],
+  properties: {
+    rewrittenQuery: { type: "string" },
+    semanticQuery: { type: "string" },
+    lexicalQuery: { type: "string" },
+    queryShape: { type: "string", enum: [...QUERY_SHAPE_VALUES] },
+    temporalQueryMode: { type: "string", enum: [...TEMPORAL_QUERY_MODE_VALUES] },
+    retrievalSubqueries: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["label", "semanticQuery", "lexicalQuery", "reason"],
+        properties: {
+          label: { type: "string" },
+          semanticQuery: { type: "string" },
+          lexicalQuery: { type: "string" },
+          reason: nullableStringJsonSchema,
+        },
+      },
+    },
+    turnKind: { type: "string", enum: [...TURN_KIND_VALUES] },
+    proposedActiveSubject: nullableStringJsonSchema,
+    relatedEntities: { type: "array", items: { type: "string" } },
+    unresolved: { type: "boolean" },
+    confidence: confidenceJsonSchema,
+  },
+} as const;
+
+/**
+ * Builds the per-call provider response schema for the planner. Turning "never
+ * invent an id/name" into structure, `routineId`/`name` are enums of exactly the
+ * candidate ids/names, and each ranking/classification property is present only
+ * when its candidate list is non-empty — strict mode plus `additionalProperties:
+ * false` then forbids the model from emitting it at all. `variables` is a
+ * field/value pair array because strict mode rejects free-form objects.
+ */
+export const buildTurnPlanResponseFormat = (candidates: {
+  routineIds: readonly string[];
+  directiveNames: readonly string[];
+}): JsonSchemaResponseFormat => {
+  const properties: Record<string, unknown> = {
+    route: { type: "string", enum: [...ROUTE_VALUES] },
+    isIdentityQuestion: { type: "boolean" },
+    intentTopic: nullableStringJsonSchema,
+    inScopeRequest: nullableStringJsonSchema,
+    outsideScopeRequest: nullableStringJsonSchema,
+    rewrite: rewriteJsonSchema,
+    responseLanguage: nullableStringJsonSchema,
+  };
+  const required = [
+    "route",
+    "isIdentityQuestion",
+    "intentTopic",
+    "inScopeRequest",
+    "outsideScopeRequest",
+    "rewrite",
+    "responseLanguage",
+  ];
+
+  if (candidates.routineIds.length > 0) {
+    properties.routineRankings = {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["routineId", "confidence", "variables"],
+        properties: {
+          routineId: { type: "string", enum: [...candidates.routineIds] },
+          confidence: confidenceJsonSchema,
+          variables: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["field", "value"],
+              properties: {
+                field: { type: "string" },
+                value: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+    };
+    required.push("routineRankings");
+  }
+
+  if (candidates.directiveNames.length > 0) {
+    properties.directiveClassifications = {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "matched", "confidence"],
+        properties: {
+          name: { type: "string", enum: [...candidates.directiveNames] },
+          matched: { type: "boolean" },
+          confidence: confidenceJsonSchema,
+        },
+      },
+    };
+    required.push("directiveClassifications");
+  }
+
+  return {
+    type: "json_schema",
+    name: "turn_plan",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      required,
+      properties,
+    },
+  };
+};
+
+/**
+ * Folds the wire's field/value pairs into the `Record` the activation seams
+ * consume. Returns `undefined` when there are no pairs (variables omitted) and
+ * `null` on a duplicate field name (whole-plan rejection, consistent with the
+ * other semantic checks).
+ */
+const variablesFromPairs = (
+  pairs: ReadonlyArray<{ field: string; value: string }> | undefined,
+): Record<string, unknown> | undefined | null => {
+  if (!pairs || pairs.length === 0) {
+    return undefined;
+  }
+  const record: Record<string, unknown> = {};
+  for (const pair of pairs) {
+    if (Object.prototype.hasOwnProperty.call(record, pair.field)) {
+      return null;
+    }
+    record[pair.field] = pair.value;
+  }
+  return record;
+};
 
 /**
  * Strict parse + semantic validation. Any structural or semantic problem returns
@@ -241,21 +462,25 @@ export const parseTurnPlan = (
 
   const routineRankings: TurnPlan["routineRankings"] = [];
   const seenRoutineIds = new Set<string>();
-  for (const entry of parsed.routineRankings) {
+  for (const entry of parsed.routineRankings ?? []) {
     if (!candidates.routineIds.has(entry.routineId) || seenRoutineIds.has(entry.routineId)) {
       return null;
     }
     seenRoutineIds.add(entry.routineId);
+    const variables = variablesFromPairs(entry.variables);
+    if (variables === null) {
+      return null;
+    }
     routineRankings.push({
       routineId: entry.routineId,
       confidence: entry.confidence,
-      ...(entry.variables ? { variables: entry.variables } : {}),
+      ...(variables ? { variables } : {}),
     });
   }
 
   const directiveClassifications: Array<{ name: string; matched: boolean; confidence: number }> = [];
   const seenDirectiveNames = new Set<string>();
-  for (const entry of parsed.directiveClassifications) {
+  for (const entry of parsed.directiveClassifications ?? []) {
     if (!candidates.directiveNames.has(entry.name) || seenDirectiveNames.has(entry.name)) {
       return null;
     }
@@ -335,16 +560,20 @@ export class TurnPlanService {
         workspaceContext: request.workspaceContext,
         usageContext: request.usageContext,
       });
+      const routineIds = request.routineCandidates.map((candidate) => candidate.routineId);
+      const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
       const { text } = await client.complete({
         prompt: buildTurnPlanningPrompt(request),
+        responseFormat: buildTurnPlanResponseFormat({ routineIds, directiveNames }),
         reasoningEffort: this.options.reasoningEffort ?? CHAT_BEHAVIOR.turnPlanning.reasoningEffort,
         maxOutputTokens: this.options.maxOutputTokens ?? CHAT_BEHAVIOR.turnPlanning.maxOutputTokens,
         signal,
       });
-      return parseTurnPlan(text, {
-        routineIds: new Set(request.routineCandidates.map((candidate) => candidate.routineId)),
-        directiveNames: new Set(request.directiveCandidates.map((candidate) => candidate.name)),
+      const plan = parseTurnPlan(text, {
+        routineIds: new Set(routineIds),
+        directiveNames: new Set(directiveNames),
       });
+      return plan;
     } catch {
       return null;
     } finally {

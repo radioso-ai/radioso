@@ -69,7 +69,20 @@ const planJson = (input: {
         }
       : null,
     responseLanguage: input.responseLanguage ?? "English",
-    routineRankings: input.routineRankings ?? [],
+    // The planner wire format carries slot values as field/value pairs, not a
+    // free-form object (strict provider schema). Convert the fixture's record here.
+    routineRankings: (input.routineRankings ?? []).map((ranking) => ({
+      routineId: ranking.routineId,
+      confidence: ranking.confidence,
+      ...(ranking.variables
+        ? {
+            variables: Object.entries(ranking.variables).map(([field, value]) => ({
+              field,
+              value: String(value),
+            })),
+          }
+        : {}),
+    })),
     directiveClassifications: input.directiveClassifications ?? [],
   });
 

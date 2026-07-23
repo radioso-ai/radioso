@@ -957,7 +957,16 @@ export class DefaultConversationEngine implements ConversationEngine {
     // then the input event is left for the normal path and the routine's position is
     // untouched, so it resumes on a later turn.
     reportProgress(input, "routine");
-    const result = await input.routineRunner.resume({ turn, state, steeringResolver: routineSteeringResolver });
+    // When not resuming, `state` was built this turn — by fresh activation or by
+    // `tryCompletedRoutineReentry` (both start from `path: []`) — so the input message is
+    // the routine's trigger, not a reply to a rendered step. Tell the runner so a next-step
+    // selector that reads the trigger as off-topic can't yield and silently drop the routine.
+    const result = await input.routineRunner.resume({
+      turn,
+      state,
+      steeringResolver: routineSteeringResolver,
+      activationTurn: !resuming,
+    });
     if (result.yielded) {
       return null;
     }

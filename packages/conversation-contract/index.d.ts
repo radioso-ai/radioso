@@ -1002,6 +1002,16 @@ export interface ConversationRoutineRunner {
     turn: TurnContext;
     state: RoutineState;
     steeringResolver?: ConversationRoutineSteeringResolver;
+    /**
+     * True when this routine's `state` was created by this very turn (a fresh
+     * activation or a completed-routine reentry — both start from `path: []`), i.e.
+     * the user's message is the trigger that started/reopened the routine, not a reply
+     * to a step the routine has already rendered. On such a turn a next-step selector
+     * that reads the message as an off-topic reply must not be allowed to yield and
+     * silently drop the activation; the runner lands on (renders) the current step
+     * instead. Absent/false on a normal resume, where the message is a reply.
+     */
+    activationTurn?: boolean;
   }): Promise<ConversationRoutineResumeResult>;
 }
 

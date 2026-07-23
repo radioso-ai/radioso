@@ -393,6 +393,129 @@ describe("DefaultRoutineRunner", () => {
     expect(render).not.toHaveBeenCalled();
   });
 
+  it("does not yield on the activation turn — lands on (renders) the current step instead", async () => {
+    // Fresh activation: state was built this turn (path []), so the user's message is the
+    // routine's trigger, not a reply to ask_email. A selector that reads it as off-topic
+    // and yields must be overridden to stay on the root step so the activation isn't dropped.
+    const render = vi.fn(async ({ step }: { step: { id: string } }) => ({ answer: `[${step.id}]`, metadata: {} }));
+    const runner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render },
+    );
+
+    const result = await runner.resume({ turn, state: state([]), activationTurn: true });
+
+    expect(result.yielded).toBeFalsy();
+    expect(render).toHaveBeenCalledWith(expect.objectContaining({
+      step: expect.objectContaining({ id: "ask_email" }),
+    }));
+    expect(result.response.answer).toContain("ask_email");
+    // Staying on the root step keeps the (empty) path stable and the routine active.
+    expect(result.nextState).toMatchObject({ path: [], status: "active" });
+  });
+
+  it("still yields off-topic mid-routine when it is not an activation turn (activationTurn false)", async () => {
+    const render = vi.fn();
+    const runner = new DefaultRoutineRunner(
+      [routine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_message", yieldTurn: true })) },
+      { render },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: state(["ask_email"]),
+      activationTurn: false,
+    });
+
+    expect(result.yielded).toBe(true);
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("converts a main-selection yield and fast-forwards past the satisfied root on the activation turn", async () => {
+    // Activation seeds the root slot (name). The main selection's yield is converted to a
+    // stay on ask_name, which is satisfied and has a single outgoing edge, so the routine
+    // fast-forwards deterministically and renders the unsatisfied ask_email step.
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+        { id: "bail", kind: "terminal", action: "Bail out." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+        { from: "ask_email", to: "bail", condition: "the user gave up" },
+      ],
+    };
+    const render = vi.fn(async ({ step }: { step: { id: string } }) => ({ answer: `[${step.id}]`, metadata: {} }));
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: { ...state([], { name: "Alex" }), routineId: "intake" },
+      activationTurn: true,
+    });
+
+    expect(result.yielded).toBeFalsy();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]![0]!.step.id).toBe("ask_email");
+    expect(result.response.answer).toContain("ask_email");
+  });
+
+  it("does not yield when the fast-forward selector itself yields on the activation turn", async () => {
+    // The satisfied root has TWO outgoing edges, so the fast-forward walk consults the
+    // selector; its yield is converted to a stay, which stops the walk and renders the
+    // step the routine is on (degrade-don't-throw) instead of dropping the activation.
+    const slotRoutine: Routine = {
+      id: "intake",
+      rootStepId: "ask_name",
+      slots: [
+        { id: "slot_name", key: "name", type: "text", required: true },
+        { id: "slot_email", key: "email", type: "email", required: true },
+      ],
+      steps: [
+        { id: "ask_name", kind: "chat", action: "Ask for name.", metadata: { collectsSlots: ["name"] } },
+        { id: "ask_email", kind: "chat", action: "Ask for email.", metadata: { collectsSlots: ["email"] } },
+        { id: "done", kind: "terminal", action: "Confirm intake." },
+        { id: "bail", kind: "terminal", action: "Bail out." },
+      ],
+      transitions: [
+        { from: "ask_name", to: "ask_email", condition: "name was provided" },
+        { from: "ask_name", to: "bail", condition: "the user gave up" },
+        { from: "ask_email", to: "done", condition: "email was provided" },
+      ],
+    };
+    const render = vi.fn(async ({ step }: { step: { id: string } }) => ({ answer: `[${step.id}]`, metadata: {} }));
+    const runner = new DefaultRoutineRunner(
+      [slotRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "ask_email", yieldTurn: true })) },
+      { render },
+    );
+
+    const result = await runner.resume({
+      turn,
+      state: { ...state([], { name: "Alex" }), routineId: "intake" },
+      activationTurn: true,
+    });
+
+    expect(result.yielded).toBeFalsy();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]![0]!.step.id).toBe("ask_name");
+  });
+
   it("resumes from the last step in a multi-element path, not the root", async () => {
     const select = vi.fn(async () => ({ nextStepId: "done" }));
     const runner = new DefaultRoutineRunner([routine], { select }, { render: vi.fn(echoRenderer.render) });

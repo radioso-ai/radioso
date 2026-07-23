@@ -54,6 +54,50 @@ describe("temporal context ordering", () => {
     ]);
   });
 
+  it("pushes past events below upcoming and undated context instead of surfacing them first", () => {
+    // Reproduces eval 93560082: a stale past event ("Kriya initiation" 2025-08-23) shares the
+    // topic of a live 2026 event and, being the earliest date, was ascending-sorted to the top.
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "past-2025", rank: 0, dateFrom: "2025-08-23", dateTo: "2025-08-23" }),
+        candidate({ chunkId: "topic-info", rank: 1 }),
+        candidate({ chunkId: "upcoming-2026", rank: 2, dateFrom: "2026-08-21", dateTo: "2026-08-23" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      today: "2026-07-23",
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.datedContextCount).toBe(2);
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual([
+      "upcoming-2026",
+      "topic-info",
+      "past-2025",
+    ]);
+  });
+
+  it("keeps a multi-day event that ends today or later as upcoming and orders past events most-recent first", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "old-2023", rank: 0, dateFrom: "2023-09-13", dateTo: "2023-09-13" }),
+        candidate({ chunkId: "ended-yesterday", rank: 1, dateFrom: "2026-07-20", dateTo: "2026-07-22" }),
+        candidate({ chunkId: "ongoing", rank: 2, dateFrom: "2026-07-20", dateTo: "2026-07-25" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      today: "2026-07-23",
+    });
+
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual([
+      "ongoing",
+      "ended-yesterday",
+      "old-2023",
+    ]);
+  });
+
   it("preserves rerank ordering when disabled or not an event date lookup", () => {
     const contexts = [
       candidate({ chunkId: "undated", rank: 0 }),

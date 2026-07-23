@@ -36,16 +36,27 @@ export const orderTemporalPromptContexts = (input: {
   const dated = indexed.filter((entry) => entry.dateFrom);
   const undated = indexed.filter((entry) => !entry.dateFrom);
 
+  // An event is "past" only once its end date has elapsed, so a multi-day event that is
+  // still ongoing today counts as upcoming. Past events are kept as a fallback (better than
+  // an empty answer when a topic only has elapsed events) but pushed below upcoming and
+  // undated context so recency-appropriate results win the final top-K selection.
+  const upcoming = dated.filter((entry) => !isPastEvent(entry.dateTo, input.today));
+  const past = dated.filter((entry) => isPastEvent(entry.dateTo, input.today));
+
   return {
     orderedContexts: [
-      ...dated.sort((left, right) => compareDatedContexts(left, right)),
+      ...upcoming.sort((left, right) => compareDatedContexts(left, right)),
       ...undated,
+      ...past.sort((left, right) => compareDatedContexts(right, left)),
     ].map((entry) => entry.context),
     applied: true,
     today: input.today,
     datedContextCount: dated.length,
   };
 };
+
+const isPastEvent = (dateTo: string | undefined, today: string): boolean =>
+  Boolean(dateTo && dateTo < today);
 
 const shouldApplyTemporalOrdering = (input: {
   enabled: boolean;

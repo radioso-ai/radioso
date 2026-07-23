@@ -8,8 +8,8 @@
     "retrieval-pricing-pro": "pass",
     "retrieval-refund-window": "pass",
     "retrieval-security-soc2": "pass",
-    "routine-book-demo-activate": "fail",
-    "routine-contact-activate": "fail",
+    "routine-book-demo-activate": "pass",
+    "routine-contact-activate": "pass",
     "routine-contact-resume": "pass",
     "routing-greeting-direct": "pass",
     "routing-identity-direct": "pass"

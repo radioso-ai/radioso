@@ -46,12 +46,14 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
+  connectorsApi,
   documentsApi,
   settingsApi,
   type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
+import type { ConnectorDetail } from '@/lib/api-connectors'
 import {
   applySourceResumeResult,
   getCrawlPageIssueSummaries,
@@ -235,22 +237,40 @@ function SourceExpandedPanel({
   onSourceUpdated: (source: DocumentSourceListItem) => void
   workspaceEnrichmentEnabled?: boolean
 }) {
+  const connectorId = source.kind === 'connector'
+    ? connectorIdFromExternalId(source.externalId)
+    : null
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
-  const [isLoading, setIsLoading] = useState(source.kind === 'website')
+  const [connectorDetail, setConnectorDetail] = useState<ConnectorDetail | null>(null)
+  const [isLoading, setIsLoading] = useState(source.kind === 'website' || connectorId !== null)
   const [isSavingEnrichmentOverride, setIsSavingEnrichmentOverride] = useState(false)
   const [isReprocessingSource, setIsReprocessingSource] = useState(false)
   const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null)
   const [sourceActionError, setSourceActionError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (source.kind === 'connector') {
+      if (!connectorId) return
+      let cancelled = false
+      void connectorsApi
+        .get(connectorId)
+        .then((detail) => {
+          if (!cancelled) setConnectorDetail(detail)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setIsLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     if (source.kind !== 'website') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync derived loading flag when source kind has no crawl data to load.
-      setIsLoading(false)
       return
     }
     let cancelled = false
 
-    setIsLoading(true)
     void documentsApi
       .listCrawlJobs({ sourceId: source.id, limit: 1 })
       .then((response) => {
@@ -267,7 +287,7 @@ function SourceExpandedPanel({
     return () => {
       cancelled = true
     }
-  }, [source.id, source.kind, crawlStatusVersion])
+  }, [connectorId, source.id, source.kind, crawlStatusVersion])
 
   const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing' || isResumePending
   const crawlPaused = crawlJob?.status === 'paused' && !isResumePending
@@ -336,6 +356,11 @@ function SourceExpandedPanel({
             ))}
             {crawlFailed && crawlJob?.lastError ? (
               <span className="text-destructive">Crawl failed: {crawlJob.lastError}</span>
+            ) : null}
+            {connectorDetail?.syncState.lastError ? (
+              <span className="text-destructive">
+                Sync failed: {connectorDetail.syncState.lastError}
+              </span>
             ) : null}
           </>
         )}

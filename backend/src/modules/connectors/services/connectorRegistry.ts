@@ -245,13 +245,15 @@ export class ConnectorRegistry {
       last_run_at: string | null;
       last_modified_at: string | null;
       last_ingested_count: number | null;
+      last_error: string | null;
     }>(
       `SELECT backfill_completed_at::text AS backfill_completed_at,
               sync_requested_at::text AS sync_requested_at,
               sync_started_at::text AS sync_started_at,
               last_run_at::text AS last_run_at,
               last_modified_at::text AS last_modified_at,
-              last_ingested_count
+              last_ingested_count,
+              last_error
          FROM connector_sync_state
         WHERE workspace_id = $1 AND connector_id = $2`,
       [workspaceId, connectorId],
@@ -264,6 +266,7 @@ export class ConnectorRegistry {
       lastRunAt: row?.last_run_at ?? null,
       lastModifiedAt: row?.last_modified_at ?? null,
       lastIngestedCount: row?.last_ingested_count ?? null,
+      lastError: row?.last_error ?? null,
     };
   }
 

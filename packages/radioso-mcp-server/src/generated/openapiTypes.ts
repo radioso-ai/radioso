@@ -5655,6 +5655,7 @@ export interface components {
                 lastRunAt: string | null;
                 lastModifiedAt: string | null;
                 lastIngestedCount: number | null;
+                lastError: string | null;
             };
         };
         ConnectorSyncResponse: {

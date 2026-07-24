@@ -1,6 +1,7 @@
 ---
-title: Connectors
-description: Read connector state, save connector config, enable or disable connectors, and run manual syncs.
+title: "Connectors"
+description: "Read connector state, save connector config, enable or disable connectors, and run manual syncs."
+last_updated: 2026-07-24
 ---
 
 # Connectors
@@ -28,7 +29,7 @@ POST /api/v1/connectors/{connectorId}/sync
 
 The key point is that connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
 
-Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, and count ingested by the last sync.
+Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, count ingested by the last sync, and the operator-safe `lastError` from the latest failed sync. A successful sync clears `lastError`.
 
 ## Built-in connectors
 
@@ -80,6 +81,8 @@ The response returns `202` when the sync has been accepted:
 ```
 
 The sync continues after the HTTP request returns. Re-read the connector detail to see updated `syncState`. Not every connector supports manual sync. Unsupported or already-running syncs return `409`.
+
+For WordPress, the connector creates its source record before it calls the WordPress REST API. This keeps failed syncs visible under **Knowledge → Sources**, including failures that happen before WordPress returns the first post.
 
 ## Common failure modes
 

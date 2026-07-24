@@ -102,6 +102,7 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
           lastRunAt: null,
           lastModifiedAt: null,
           lastIngestedCount: null,
+          lastError: null,
         },
       }),
     });

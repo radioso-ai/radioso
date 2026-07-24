@@ -213,6 +213,8 @@ export interface ConnectorSyncState {
   lastRunAt: string | null;
   lastModifiedAt: string | null;
   lastIngestedCount: number | null;
+  /** Operator-safe reason for the latest failed sync; cleared after success. */
+  lastError: string | null;
 }
 
 /**

@@ -261,6 +261,7 @@ export interface ConnectorMigrations {
 export interface ConnectorSyncState {
   backfill_completed_at: Timestamp | null;
   connector_id: string;
+  last_error: string | null;
   last_ingested_count: number | null;
   last_modified_at: Timestamp | null;
   last_run_at: Timestamp | null;

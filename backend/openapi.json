@@ -11849,6 +11849,12 @@
                       "integer",
                       "null"
                     ]
+                  },
+                  "lastError": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
@@ -11857,7 +11863,8 @@
                   "syncStartedAt",
                   "lastRunAt",
                   "lastModifiedAt",
-                  "lastIngestedCount"
+                  "lastIngestedCount",
+                  "lastError"
                 ]
               }
             },

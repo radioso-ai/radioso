@@ -6902,6 +6902,46 @@
                 "maxLength": 6000
               }
             }
+          },
+          "clientContextCapabilities": {
+            "type": "object",
+            "properties": {
+              "page.read": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "metadata",
+                      "content"
+                    ]
+                  },
+                  "supportedOperations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "metadata",
+                        "lookup",
+                        "summarize"
+                      ]
+                    },
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "available",
+                  "mode",
+                  "supportedOperations"
+                ]
+              }
+            }
           }
         },
         "required": [
@@ -10460,6 +10500,46 @@
                   "null"
                 ],
                 "maxLength": 6000
+              }
+            }
+          },
+          "clientContextCapabilities": {
+            "type": "object",
+            "properties": {
+              "page.read": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "metadata",
+                      "content"
+                    ]
+                  },
+                  "supportedOperations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "metadata",
+                        "lookup",
+                        "summarize"
+                      ]
+                    },
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "available",
+                  "mode",
+                  "supportedOperations"
+                ]
               }
             }
           },

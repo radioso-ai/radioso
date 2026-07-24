@@ -67,6 +67,11 @@ import {
   type TurnSelectionStrategy,
 } from "./turnSelectionStrategy.js";
 import type { TurnRouter } from "./turnRouter.js";
+import type {
+  AssistantClientContextCapabilities,
+  AssistantPageContext,
+} from "../types/assistantApi.js";
+import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 
 const DEFAULT_RETRIEVAL_SENSE_CLARIFICATION_POLICY: ClarificationPolicy = {
   floor: 0,
@@ -173,6 +178,8 @@ export interface WorkbenchReplayInput {
   agentConfigOverride?: Partial<InternalAgentConfig>;
   query: string;
   history: MessageRecord[];
+  pageContext?: AssistantPageContext | null;
+  clientContextCapabilities?: AssistantClientContextCapabilities;
   userExpectedLocale?: string | null;
   routineStartState?: WorkbenchReplayRoutineStartState | null;
   retrievalSettingsOverride?: Partial<RetrievalSettingsRecord>;
@@ -209,6 +216,11 @@ export class WorkbenchReplayRunner {
       workspaceId: input.workspaceId,
       agentId: agent.id,
       query: input.query,
+      pageContext: input.pageContext ?? null,
+      pageReadCapability: pageReadCapabilityFromRequest(
+        input.clientContextCapabilities,
+        input.pageContext,
+      ),
       sourceChannel: "workbench_replay",
       retrievalSettingsOverride: input.retrievalSettingsOverride,
       usageAttribution: input.usageAttribution,
@@ -337,6 +349,7 @@ export class WorkbenchReplayRunner {
           agentSkillSettings: session.agent.skillSettings,
           conversationSummary: session.conversationSummary,
         }, this.options.turnPlanInterpretationContextSettings),
+        pageReadCapability: session.pageReadCapability,
         directiveCandidates: contextualDirectiveCandidates({
           routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
           directivesForRoute: (route) =>

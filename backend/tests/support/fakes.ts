@@ -3325,6 +3325,38 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     this.messageRepository = messageRepository;
   }
 
+  async getOrCreateByAnonymousSession(input: {
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: string;
+    anonymousSessionId: string;
+    sourceOrigin?: string | null;
+  }): Promise<ConversationRecord> {
+    const existing = [...this.items.values()]
+      .filter((item) =>
+        item.workspaceId === input.workspaceId &&
+        item.agentId === input.agentId &&
+        item.sourceChannel === input.sourceChannel &&
+        item.anonymousSessionId === input.anonymousSessionId
+      )
+      .sort((left, right) => {
+        const updatedDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        if (updatedDiff !== 0) return updatedDiff;
+        const createdDiff = right.createdAt.getTime() - left.createdAt.getTime();
+        return createdDiff !== 0 ? createdDiff : right.id.localeCompare(left.id);
+      })[0];
+    if (existing) {
+      return existing;
+    }
+    return this.create(
+      input.workspaceId,
+      input.agentId,
+      input.sourceChannel,
+      input.anonymousSessionId,
+      input.sourceOrigin ?? null,
+    );
+  }
+
   async create(
     workspaceId: string,
     agentId: string | null = null,

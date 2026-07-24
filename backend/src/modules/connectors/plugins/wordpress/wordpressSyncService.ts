@@ -53,6 +53,77 @@ const postTypesFromConfig = (config: Record<string, string>): string[] =>
     .map((t) => t.trim())
     .filter((t) => t.length > 0);
 
+const normalizeErrorText = (value: string): string =>
+  value.replace(/\s+/g, " ").trim().slice(0, 300);
+
+const safeWordpressEndpoint = (raw: string): string | null => {
+  try {
+    const url = new URL(raw);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Convert a sync exception into bounded operator-facing detail.
+ *
+ * WordPress HTTP failures are safe to persist after credentials/query strings
+ * are removed. Network failures retain a small diagnostic code/message.
+ * Unexpected internal failures stay in server logs so SQL, paths, or other
+ * implementation details never cross the operator trust boundary.
+ */
+export const wordpressSyncErrorMessage = (error: unknown): string => {
+  const message = normalizeErrorText(error instanceof Error ? error.message : String(error));
+  const restFailure = /^WordPress REST returned (\d{3})(?: (.*?))? for (https?:\/\/\S+)$/i.exec(message);
+  if (restFailure) {
+    const endpoint = safeWordpressEndpoint(restFailure[3] ?? "");
+    const statusText = normalizeErrorText(restFailure[2] ?? "");
+    const status = [restFailure[1], statusText].filter(Boolean).join(" ");
+    return endpoint
+      ? `WordPress REST returned ${status} for ${endpoint}`
+      : `WordPress REST returned ${status}.`;
+  }
+
+  const cause = error instanceof Error
+    ? (error as Error & { cause?: { code?: unknown } }).cause
+    : undefined;
+  const causeCode = typeof cause?.code === "string" ? normalizeErrorText(cause.code) : "";
+  const looksLikeNetworkFailure =
+    error instanceof TypeError ||
+    /(?:fetch failed|offline|network|timed? ?out|econn|enotfound|eai_again|socket)/i.test(message) ||
+    /^(?:E[A-Z_]+|UND_ERR_[A-Z_]+)$/.test(causeCode);
+  if (looksLikeNetworkFailure) {
+    const safeMessage =
+      /offline/i.test(message) ? "offline"
+      : /timed? ?out/i.test(message) ? "timeout"
+      : /(?:fetch failed|network)/i.test(message) ? "fetch failed"
+      : "";
+    const diagnostic = [causeCode, safeMessage].filter(Boolean).join(": ");
+    return diagnostic
+      ? `Unable to reach the WordPress REST API (${diagnostic}).`
+      : "Unable to reach the WordPress REST API.";
+  }
+
+  return "WordPress sync failed due to an internal error. Check the server logs for the matching workspace and sync time.";
+};
+
+const ensureWordpressSource = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  config: Record<string, string>,
+) => {
+  const source = wordpressSourceFor(config);
+  if (source) {
+    await deps.ingestion.ensureSource({ workspaceId, source });
+  }
+  return source;
+};
+
 /**
  * One-shot backfill of every published page/post for a workspace.
  *
@@ -72,6 +143,7 @@ export const runBackfill = async (
   try {
     const config = await deps.state.getConfig(workspaceId);
     if (!config?.enabled) return { ingested: 0 };
+    const source = await ensureWordpressSource(deps, workspaceId, config.config);
 
     if (!options?.force) {
       const stateRow = await deps.db
@@ -94,7 +166,6 @@ export const runBackfill = async (
 
     const client = (deps.buildClient ?? defaultBuildClient)(config.config);
     const types = postTypesFromConfig(config.config);
-    const source = wordpressSourceFor(config.config);
     let ingested = 0;
     let highWaterMark: string | null = null;
 
@@ -155,8 +226,61 @@ export const runBackfillWithErrorStatus = async (
     }
     return result;
   } catch (error) {
-    await deps.state.setErrorStatus(workspaceId, WORDPRESS_SYNC_FAILED_STATUS);
+    await markSyncFailed(deps, workspaceId, error);
     throw error;
+  }
+};
+
+const recordSyncFailure = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  error: unknown,
+): Promise<void> => {
+  const lastError = wordpressSyncErrorMessage(error);
+  await deps.db
+    .insertInto("connector_sync_state")
+    .values({
+      connector_id: CONNECTOR_ID,
+      workspace_id: workspaceId,
+      last_run_at: currentTimestamp(),
+      last_error: lastError,
+    })
+    .onConflict((oc) =>
+      oc.columns(["connector_id", "workspace_id"]).doUpdateSet({
+        last_run_at: currentTimestamp(),
+        last_error: lastError,
+      }),
+    )
+    .execute();
+};
+
+const markSyncFailed = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+  error: unknown,
+): Promise<void> => {
+  try {
+    await recordSyncFailure(deps, workspaceId, error);
+  } catch (persistenceError) {
+    deps.logger.error(
+      {
+        workspaceId,
+        err: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+      },
+      "wordpress sync failure detail could not be persisted",
+    );
+  }
+
+  try {
+    await deps.state.setErrorStatus(workspaceId, WORDPRESS_SYNC_FAILED_STATUS);
+  } catch (persistenceError) {
+    deps.logger.error(
+      {
+        workspaceId,
+        err: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+      },
+      "wordpress sync failure status could not be persisted",
+    );
   }
 };
 
@@ -164,6 +288,13 @@ const clearSyncFailedStatus = async (
   deps: WordpressSyncDeps,
   workspaceId: string,
 ): Promise<void> => {
+  await deps.db
+    .updateTable("connector_sync_state")
+    .set({ last_error: null })
+    .where("workspace_id", "=", workspaceId)
+    .where("connector_id", "=", CONNECTOR_ID)
+    .execute();
+
   await deps.db
     .updateTable("connector_configs")
     .set({ error_status: null, updated_at: currentTimestamp() })
@@ -177,6 +308,11 @@ export const requestBackfill = async (
   deps: WordpressSyncDeps,
   workspaceId: string,
 ): Promise<{ accepted: boolean; alreadyRunning?: boolean }> => {
+  const config = await deps.state.getConfig(workspaceId);
+  if (config?.enabled) {
+    await ensureWordpressSource(deps, workspaceId, config.config);
+  }
+
   // Conditional upsert: only (re)request a backfill when none is already requested and
   // no recent run is in flight. The `DO UPDATE ... WHERE` predicate against the existing
   // row plus the `::interval` cast cannot be expressed by the query builder, so this is a
@@ -304,6 +440,7 @@ export const runPoll = async (
 ): Promise<{ ingested: number }> => {
   const config = await deps.state.getConfig(workspaceId);
   if (!config?.enabled) return { ingested: 0 };
+  const source = await ensureWordpressSource(deps, workspaceId, config.config);
 
   const cursorRow = await deps.db
     .selectFrom("connector_sync_state")
@@ -315,7 +452,6 @@ export const runPoll = async (
 
   const client = (deps.buildClient ?? defaultBuildClient)(config.config);
   const types = postTypesFromConfig(config.config);
-  const source = wordpressSourceFor(config.config);
   let ingested = 0;
   let newCursor = cursor;
 
@@ -371,6 +507,20 @@ export const runPoll = async (
     deps.logger.info({ workspaceId, ingested }, "wordpress poll ingested updates");
   }
   return { ingested };
+};
+
+const runPollWithErrorStatus = async (
+  deps: WordpressSyncDeps,
+  workspaceId: string,
+): Promise<{ ingested: number }> => {
+  try {
+    const result = await runPoll(deps, workspaceId);
+    await clearSyncFailedStatus(deps, workspaceId);
+    return result;
+  } catch (error) {
+    await markSyncFailed(deps, workspaceId, error);
+    throw error;
+  }
 };
 
 // ── Background loop ─────────────────────────────────────────────────────────
@@ -449,7 +599,7 @@ const tick = async (deps: WordpressSyncDeps): Promise<void> => {
 
   for (const row of due.rows) {
     try {
-      await runPoll(deps, row.workspace_id);
+      await runPollWithErrorStatus(deps, row.workspace_id);
     } catch (error) {
       deps.logger.error(
         {

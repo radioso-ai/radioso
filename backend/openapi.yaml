@@ -8020,6 +8020,10 @@ components:
                   type:
                     - integer
                     - "null"
+                lastError:
+                  type:
+                    - string
+                    - "null"
               required:
                 - backfillCompletedAt
                 - syncRequestedAt
@@ -8027,6 +8031,7 @@ components:
                 - lastRunAt
                 - lastModifiedAt
                 - lastIngestedCount
+                - lastError
           required:
             - schema
             - config

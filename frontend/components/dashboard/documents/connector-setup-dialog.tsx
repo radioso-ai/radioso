@@ -97,6 +97,11 @@ const formatIngestedCount = (value: number | null): string => {
   return `${value} ${value === 1 ? 'document' : 'documents'}`
 }
 
+const formatConnectorErrorStatus = (value: string): string => {
+  if (value === 'sync_failed') return 'Sync failed'
+  return value
+}
+
 interface FieldGroup {
   primary: ConnectorConfigFieldDefinition[]
   polling: ConnectorConfigFieldDefinition[]
@@ -158,7 +163,9 @@ function WordpressSetupGuide() {
 function ConnectorSyncStatus({ detail }: { detail: ConnectorDetail }) {
   const state = detail.syncState
   const status = (() => {
-    if (detail.errorStatus) return { label: detail.errorStatus, className: 'text-destructive' }
+    if (detail.errorStatus) {
+      return { label: formatConnectorErrorStatus(detail.errorStatus), className: 'text-destructive' }
+    }
     if (!detail.enabled) return { label: 'Disabled', className: 'text-muted-foreground' }
     if (state.syncRequestedAt) {
       return { label: 'Sync queued', className: 'text-muted-foreground' }
@@ -199,6 +206,12 @@ function ConnectorSyncStatus({ detail }: { detail: ConnectorDetail }) {
           <dd>{formatIngestedCount(state.lastIngestedCount)}</dd>
         </div>
       </dl>
+      {state.lastError ? (
+        <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <p className="text-xs font-medium text-destructive">Latest sync error</p>
+          <p className="mt-1 text-xs text-destructive/90">{state.lastError}</p>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -507,7 +520,7 @@ export function ConnectorSetupDialog({
       return (
         <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
           <AlertCircle className="h-3 w-3" />
-          {detail.errorStatus}
+          {formatConnectorErrorStatus(detail.errorStatus)}
         </span>
       )
     }

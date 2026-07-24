@@ -187,6 +187,7 @@ describe("ConnectorRegistry", () => {
             last_run_at: "2026-05-21T12:00:00.000Z",
             last_modified_at: "2026-05-19T12:00:00.000Z",
             last_ingested_count: 7,
+            last_error: "WordPress REST returned 401 Unauthorized",
           } as T];
         }
         return [];
@@ -202,6 +203,7 @@ describe("ConnectorRegistry", () => {
       lastRunAt: "2026-05-21T12:00:00.000Z",
       lastModifiedAt: "2026-05-19T12:00:00.000Z",
       lastIngestedCount: 7,
+      lastError: "WordPress REST returned 401 Unauthorized",
     });
   });
 

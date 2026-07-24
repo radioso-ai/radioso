@@ -7,6 +7,7 @@ import type {
 } from "@radioso/connector-api";
 
 import { WordpressConnector } from "../../../../src/modules/connectors/plugins/wordpress/wordpressConnector.js";
+import { wordpressSyncErrorMessage } from "../../../../src/modules/connectors/plugins/wordpress/wordpressSyncService.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -171,5 +172,27 @@ describe("WordpressConnector.onEnable", () => {
 
     await expect(connector.onEnable!({ workspaceId: "ws-1" })).resolves.toBeUndefined();
     expect(ensureSource).toHaveBeenCalled();
+  });
+});
+
+describe("wordpressSyncErrorMessage", () => {
+  it("keeps actionable HTTP status and strips credentials and query parameters", () => {
+    const message = wordpressSyncErrorMessage(
+      new Error("WordPress REST returned 401 Unauthorized for https://alice:secret@example.com/wp-json/wp/v2/posts?page=1"),
+    );
+
+    expect(message).toBe("WordPress REST returned 401 Unauthorized for https://example.com/wp-json/wp/v2/posts");
+    expect(message).not.toContain("alice");
+    expect(message).not.toContain("secret");
+    expect(message).not.toContain("page=1");
+  });
+
+  it("keeps a bounded network diagnostic without exposing unexpected internal errors", () => {
+    expect(wordpressSyncErrorMessage(new Error("offline"))).toBe(
+      "Unable to reach the WordPress REST API (offline).",
+    );
+    expect(wordpressSyncErrorMessage(new Error("relation connector_sync_state does not exist"))).toBe(
+      "WordPress sync failed due to an internal error. Check the server logs for the matching workspace and sync time.",
+    );
   });
 });

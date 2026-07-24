@@ -47,6 +47,7 @@ export const registerConnectorSchemas = (registry: OpenAPIRegistry, schemas: Ope
         lastRunAt: z.string().nullable(),
         lastModifiedAt: z.string().nullable(),
         lastIngestedCount: z.number().int().nullable(),
+        lastError: z.string().nullable(),
       }),
     }),
   );

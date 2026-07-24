@@ -1104,7 +1104,8 @@ CREATE TABLE public.connector_sync_state (
     last_ingested_count integer,
     sync_requested_at timestamp with time zone,
     sync_started_at timestamp with time zone,
-    sync_lock_token text
+    sync_lock_token text,
+    last_error text
 );
 
 

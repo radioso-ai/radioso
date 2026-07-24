@@ -178,6 +178,7 @@ interface InMemoryConnectorSyncStateRecord {
   lastRunAt: Date | null;
   lastModifiedAt: Date | null;
   lastIngestedCount: number | null;
+  lastError: string | null;
 }
 
 export class InMemoryAccountRepository implements AccountRepositoryPort {
@@ -1896,6 +1897,7 @@ export class InMemoryConnectorDatabase {
               last_run_at: state.lastRunAt?.toISOString() ?? null,
               last_modified_at: state.lastModifiedAt?.toISOString() ?? null,
               last_ingested_count: state.lastIngestedCount,
+              last_error: state.lastError,
             } as T,
           ]
         : [];
@@ -1958,6 +1960,7 @@ export class InMemoryConnectorDatabase {
           lastRunAt: existing?.lastRunAt ?? null,
           lastModifiedAt: existing?.lastModifiedAt ?? null,
           lastIngestedCount: existing?.lastIngestedCount ?? null,
+          lastError: existing?.lastError ?? null,
         });
         return [{ workspace_id: workspaceId } as T];
       }
@@ -1976,6 +1979,7 @@ export class InMemoryConnectorDatabase {
           lastRunAt: new Date(),
           lastModifiedAt: existing?.lastModifiedAt ?? null,
           lastIngestedCount: existing?.lastIngestedCount ?? null,
+          lastError: existing?.lastError ?? null,
         });
         return [{ sync_lock_token: lockToken } as T];
       }
@@ -2009,6 +2013,7 @@ export class InMemoryConnectorDatabase {
           ? new Date()
           : existing?.lastModifiedAt ?? null,
         lastIngestedCount: ingestedCount,
+        lastError: existing?.lastError ?? null,
       });
       return [];
     }

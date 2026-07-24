@@ -129,17 +129,32 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
 
     await expect(built.connector.backfillNow(workspaceId)).rejects.toThrow("offline");
 
+    // The source must exist even when WordPress fails before returning its first post.
+    // This keeps failed connectors visible and inspectable in Knowledge → Sources.
+    expect(built.ensureSource).toHaveBeenCalledWith({
+      workspaceId,
+      source: expect.objectContaining({
+        externalId: "wordpress:https://example.com",
+        name: "example.com",
+      }),
+    });
+
     // Connector orchestration: the failure is recorded as a durable sync_failed status.
     expect(built.setErrorStatus).toHaveBeenCalledWith(workspaceId, "sync_failed");
 
     // And the claimed lock was released by the runBackfill finally block.
-    const [row] = await database.query<{ sync_lock_token: string | null; sync_started_at: string | null }>(
-      `SELECT sync_lock_token, sync_started_at FROM connector_sync_state
+    const [row] = await database.query<{
+      sync_lock_token: string | null;
+      sync_started_at: string | null;
+      last_error: string | null;
+    }>(
+      `SELECT sync_lock_token, sync_started_at, last_error FROM connector_sync_state
          WHERE connector_id = $1 AND workspace_id = $2`,
       [CONNECTOR_ID, workspaceId],
     );
     expect(row?.sync_lock_token).toBeNull();
     expect(row?.sync_started_at).toBeNull();
+    expect(row?.last_error).toBe("Unable to reach the WordPress REST API (offline).");
   });
 
   it("clears only sync-owned failure status after a successful backfill", async () => {
@@ -168,8 +183,12 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
     // the sync-owned status is cleared by the connector's own scoped UPDATE.
     expect(built.setErrorStatus).not.toHaveBeenCalledWith(workspaceId, null);
 
-    const [row] = await database.query<{ error_status: string | null; backfill_completed_at: string | null }>(
-      `SELECT cc.error_status, s.backfill_completed_at
+    const [row] = await database.query<{
+      error_status: string | null;
+      backfill_completed_at: string | null;
+      last_error: string | null;
+    }>(
+      `SELECT cc.error_status, s.backfill_completed_at, s.last_error
          FROM connector_configs cc
          JOIN connector_sync_state s
            ON s.workspace_id = cc.workspace_id AND s.connector_id = cc.connector_id
@@ -178,6 +197,7 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
     );
     expect(row?.error_status).toBeNull();
     expect(row?.backfill_completed_at).not.toBeNull();
+    expect(row?.last_error).toBeNull();
   });
 
   it("only clears the failure status when it is sync-owned", async () => {
@@ -218,6 +238,12 @@ describeIntegration("WordpressConnector orchestration (Postgres)", () => {
     connector = built.connector;
 
     await expect(built.connector.syncNow!({ workspaceId })).resolves.toEqual({ accepted: true });
+    expect(built.ensureSource).toHaveBeenCalledWith({
+      workspaceId,
+      source: expect.objectContaining({
+        externalId: "wordpress:https://example.com",
+      }),
+    });
 
     const [row] = await database.query<{ sync_requested_at: string | null }>(
       `SELECT sync_requested_at FROM connector_sync_state

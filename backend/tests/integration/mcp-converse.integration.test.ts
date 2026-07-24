@@ -1,13 +1,26 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 import { createMcpConverseRoutes } from "../../src/app/http/routes/mcpConverseRoutes.js";
 import { buildMcpConverseServices } from "../../src/app/server/dependencyBuilders.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
+import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import { createTestApp, issueTestSession } from "../support/testApp.js";
 
-const createAppWithMcpConverse = () =>
+const deferred = () => {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
+const createAppWithMcpConverse = (overrides: {
+  chatGateway?: ChatGateway;
+  turnRouter?: TurnRouter;
+} = {}) =>
   createTestApp({
-    chatGateway: {
+    chatGateway: overrides.chatGateway ?? {
       async answer(input) {
         return `agent:${input.query}`;
       },
@@ -15,6 +28,7 @@ const createAppWithMcpConverse = () =>
         yield "unused";
       },
     },
+    turnRouter: overrides.turnRouter,
     applicationRouteMounts: [{
       path: "/api/v1/mcp/converse",
       createRouter: (dependencies) => createMcpConverseRoutes(dependencies, buildMcpConverseServices(dependencies)),
@@ -79,5 +93,80 @@ describe("MCP converse session and ask flow", () => {
       { limit: 10, agentId: agent.id },
     );
     expect(conversations.total).toBe(1);
+  });
+
+  it("binds concurrent first asks to one conversation and persists only the latest answer", async () => {
+    const firstRoutingStarted = deferred();
+    const releaseFirstRouting = deferred();
+    const turnRouter: TurnRouter = {
+      async classify(input) {
+        if (input.query === "first") {
+          firstRoutingStarted.resolve();
+          await releaseFirstRouting.promise;
+        }
+        return { route: "direct", framing: { isIdentityQuestion: false } };
+      },
+    };
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        const earlierUsers = input.history
+          .filter((message) => message.role === "user")
+          .map((message) => message.content)
+          .join(" | ");
+        return `latest=${input.query}; history=${earlierUsers}`;
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const ctx = createAppWithMcpConverse({ chatGateway, turnRouter });
+    const latestAnswerStarted = deferred();
+    const answer = ctx.dependencies.assistantChatService.answer.bind(ctx.dependencies.assistantChatService);
+    vi.spyOn(ctx.dependencies.assistantChatService, "answer").mockImplementation((input) => {
+      const result = answer(input);
+      if (input.message === "latest") {
+        latestAnswerStarted.resolve();
+      }
+      return result;
+    });
+    const { agent, launchToken } = await issueConverseGrant(ctx);
+    const exchange = await request(ctx.app)
+      .post("/api/v1/mcp/converse/session")
+      .send({ launchToken, client: { name: "vitest" } });
+
+    const first = request(ctx.app)
+      .post("/api/v1/mcp/converse/ask")
+      .set("Authorization", `Bearer ${exchange.body.sessionToken}`)
+      .send({ message: "first" })
+      .then((response) => response);
+    await firstRoutingStarted.promise;
+    const latest = request(ctx.app)
+      .post("/api/v1/mcp/converse/ask")
+      .set("Authorization", `Bearer ${exchange.body.sessionToken}`)
+      .send({ message: "latest" })
+      .then((response) => response);
+    await latestAnswerStarted.promise;
+    releaseFirstRouting.resolve();
+
+    const responses = await Promise.all([first, latest]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+
+    const conversations = await ctx.repositories.conversationRepository.listPageByAnonymousSession(
+      agent.workspaceId,
+      exchange.body.conversationId,
+      { limit: 10, agentId: agent.id },
+    );
+    expect(conversations.total).toBe(1);
+    const conversation = conversations.conversations[0];
+    expect(conversation).toBeDefined();
+    const messages = await ctx.repositories.messageRepository.listByConversationId(
+      agent.workspaceId,
+      conversation!.id,
+    );
+    expect(messages.map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: "user", content: "first" },
+      { role: "user", content: "latest" },
+      { role: "assistant", content: "latest=latest; history=first" },
+    ]);
   });
 });

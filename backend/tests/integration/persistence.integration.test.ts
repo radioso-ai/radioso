@@ -393,6 +393,50 @@ describeIfDatabase("persistence integration", () => {
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
 
+  it("atomically binds concurrent first asks to one anonymous-session conversation", async () => {
+    const accountRepository = new AccountRepository(database.kysely);
+    const conversationRepository = new ConversationRepository(database.kysely);
+    const account = await accountRepository.create({
+      name: "Concurrent Conversation Organization",
+      email: `conversation-binding-${randomUUID()}@example.com`,
+      passwordHash: "hash-conversation-binding",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Concurrent Conversation Workspace");
+    const agentId = randomUUID();
+    const anonymousSessionId = randomUUID();
+    await database.query(
+      `INSERT INTO agents (id, workspace_id, name)
+       VALUES ($1, $2, $3)`,
+      [agentId, workspace.id, "Concurrent Conversation Agent"],
+    );
+    const input = {
+      workspaceId: workspace.id,
+      agentId,
+      sourceChannel: "mcp",
+      anonymousSessionId,
+      sourceOrigin: null,
+    };
+
+    const [first, second] = await Promise.all([
+      conversationRepository.getOrCreateByAnonymousSession(input),
+      conversationRepository.getOrCreateByAnonymousSession(input),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    const conversations = await database.query<{ id: string }>(
+      `SELECT id
+       FROM conversations
+       WHERE workspace_id = $1
+         AND agent_id = $2
+         AND source_channel = 'mcp'
+         AND anonymous_session_id = $3`,
+      [workspace.id, agentId, anonymousSessionId],
+    );
+    expect(conversations).toEqual([{ id: first.id }]);
+
+    await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
+  });
+
   it("orders merged history items by chat updates and search audit timestamps", async () => {
     const accountRepository = new AccountRepository(database.kysely);
     const historyItemsRepository = new HistoryItemsRepository(database.kysely);

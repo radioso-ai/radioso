@@ -1,8 +1,17 @@
-import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import { serviceUnavailable } from "../../../shared/domain/errors.js";
 import type { AssistantChatService } from "./assistantChatService.js";
 import type { AgentConversePrincipal } from "../../settings/contracts/agentConverseSession.js";
 import type { AgentConverseAudit } from "./agentConverseAudit.js";
+
+export interface AgentConverseConversationStore {
+  getOrCreateByAnonymousSession?(input: {
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: string;
+    anonymousSessionId: string;
+    sourceOrigin?: string | null;
+  }): Promise<{ id: string }>;
+}
 
 export interface AgentConverseAskResult {
   conversationId: string;
@@ -17,25 +26,35 @@ export class AgentConverseService {
   constructor(
     private readonly dependencies: {
       assistantChatService: Pick<AssistantChatService, "answer">;
-      conversationRepository: Pick<ConversationRepositoryPort, "listPageByAnonymousSession">;
+      conversationRepository: AgentConverseConversationStore;
       audit?: AgentConverseAudit;
     },
   ) {}
 
   async askAgent(principal: AgentConversePrincipal, input: { message: string; stream?: boolean }): Promise<AgentConverseAskResult> {
     try {
-      const existing = await this.dependencies.conversationRepository.listPageByAnonymousSession(
-        principal.workspaceId,
-        principal.publicSessionId,
-        { limit: 1, agentId: principal.agentId },
-      );
-      const conversationId = existing.conversations[0]?.id;
+      const getOrCreateConversation =
+        this.dependencies.conversationRepository.getOrCreateByAnonymousSession?.bind(
+          this.dependencies.conversationRepository,
+        );
+      if (!getOrCreateConversation) {
+        throw serviceUnavailable("MCP converse conversation binding is unavailable.", {
+          code: "mcp_converse_conversation_binding_unavailable",
+        });
+      }
+      const conversation = await getOrCreateConversation({
+        workspaceId: principal.workspaceId,
+        agentId: principal.agentId,
+        sourceChannel: "mcp",
+        anonymousSessionId: principal.publicSessionId,
+        sourceOrigin: null,
+      });
       const response = await this.dependencies.assistantChatService.answer({
         workspaceId: principal.workspaceId,
         agentId: principal.agentId,
         message: input.message,
         stream: false,
-        conversationId,
+        conversationId: conversation.id,
         anonymousSessionId: principal.publicSessionId,
         sourceChannel: "mcp",
         sourceOrigin: null,

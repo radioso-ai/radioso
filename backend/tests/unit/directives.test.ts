@@ -89,6 +89,10 @@ describe("DirectiveSteeringService", () => {
     ]);
     const result = await service.steer({ workspaceId: "w1" });
     expect(result.rules.map((r) => r.action)).toEqual(["high", "low"]);
+    expect(result.rules.map((r) => ({ id: r.id, directiveName: r.directiveName }))).toEqual([
+      { id: "d1", directiveName: "high" },
+      { id: "d2", directiveName: "low" },
+    ]);
     expect(result.matches).toHaveLength(2);
     expect(result.omissions).toHaveLength(0);
   });

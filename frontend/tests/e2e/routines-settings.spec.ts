@@ -298,9 +298,15 @@ test("agent routines revise and publish a new version without duplicating the li
   await page.getByRole("button", { name: "Publish", exact: true }).click();
 
   await expect(page.getByText("published v2 (read-only)", { exact: true })).toBeVisible();
-  const versionHistory = page.getByText("Version history").locator("..");
-  await expect(versionHistory.getByRole("button", { name: /v1/ })).toContainText("superseded");
-  await expect(versionHistory.getByRole("button", { name: /v2/ })).toContainText("published");
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await page.getByRole("menuitem", { name: "Version history" }).click();
+  const versionHistory = page.getByRole("dialog", { name: "Version history" });
+  await expect(versionHistory).toContainText("v1");
+  await expect(versionHistory).toContainText("superseded");
+  await expect(versionHistory).toContainText("v2");
+  await expect(versionHistory).toContainText("published");
+  await page.keyboard.press("Escape");
+  await expect(versionHistory).toBeHidden();
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
   const revisionSave = routineUpdates.find((update) => {
     const body = update.body as { activation?: { triggerDescription?: string } } | undefined;

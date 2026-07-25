@@ -14,6 +14,12 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
+import {
+  PAGE_READ_INTENTS,
+  parsePageReadDecision,
+  type PageReadCapability,
+  type PageReadDecision,
+} from "./pageRead/pageReadDecision.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouting } from "./turnRouter.js";
 
@@ -34,6 +40,7 @@ export interface TurnPlan {
   responseLanguage?: string;
   routineRankings: RankedRoutineMatch[];
   directiveClassifications: Array<{ name: string; matched: boolean; confidence: number }>;
+  pageRead?: PageReadDecision;
 }
 
 /** Planner-consumable routine summary (no activation policy). */
@@ -51,6 +58,7 @@ export interface TurnPlanRequest {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
+  pageReadCapability?: PageReadCapability | null;
   routineCandidates: readonly TurnPlanRoutineCandidate[];
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
   workspaceContext: LlmCapabilityResolveInput;
@@ -110,6 +118,7 @@ export type TurnPlanningPromptInput = Pick<
   | "semanticRewriteInstructions"
   | "lexicalRewriteInstructions"
   | "conversationSummary"
+  | "pageReadCapability"
   | "routineCandidates"
   | "directiveCandidates"
 >;
@@ -123,8 +132,12 @@ const optionalSection = (rendered: string): string => `\n\n${rendered}`;
 const turnPlanOutputShapeBlock = (input: {
   hasRoutineCandidates: boolean;
   hasDirectiveCandidates: boolean;
+  hasPageReadCapability: boolean;
 }): string => {
   const optionalFields: string[] = [];
+  if (input.hasPageReadCapability) {
+    optionalFields.push('"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}');
+  }
   if (input.hasRoutineCandidates) {
     optionalFields.push('"routineRankings":[{"routineId":"string","confidence":0.0,"variables":[{"field":"string","value":"string"}]}]');
   }
@@ -144,6 +157,7 @@ const turnPlanOutputShapeBlock = (input: {
 export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
   const hasDirectiveCandidates = input.directiveCandidates.length > 0;
+  const pageReadCapability = input.pageReadCapability ?? null;
   return renderPromptTemplate("chat/turn-planning.md", {
     context_section: formatConversationContext(input.history) || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
@@ -171,7 +185,22 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): string 
           }),
         )
       : "",
-    output_shape_section: optionalSection(turnPlanOutputShapeBlock({ hasRoutineCandidates, hasDirectiveCandidates })),
+    page_read_section: pageReadCapability
+      ? optionalSection(
+          renderPromptTemplate("chat/turn-planning-page-read.md", {
+            page_read_mode: pageReadCapability.mode ?? "none",
+            page_read_supported_operations:
+              pageReadCapability.supportedOperations.length > 0
+                ? pageReadCapability.supportedOperations.join(", ")
+                : "none",
+          }),
+        )
+      : "",
+    output_shape_section: optionalSection(turnPlanOutputShapeBlock({
+      hasRoutineCandidates,
+      hasDirectiveCandidates,
+      hasPageReadCapability: Boolean(pageReadCapability),
+    })),
     query: input.query,
   });
 };
@@ -256,10 +285,28 @@ const rawTurnPlanSchema = z.object({
     matched: z.boolean(),
     confidence: confidenceSchema,
   }).strict()).optional(),
+  pageRead: z.object({
+    required: z.boolean(),
+    operation: z.enum(PAGE_READ_INTENTS).nullable(),
+    resolvedRequest: z.string().nullable(),
+  }).strict().optional(),
 }).strict();
 
 const confidenceJsonSchema = { type: "number", minimum: 0, maximum: 1 } as const;
 const nullableStringJsonSchema = { type: ["string", "null"] } as const;
+const pageReadJsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["required", "operation", "resolvedRequest"],
+  properties: {
+    required: { type: "boolean" },
+    operation: {
+      type: ["string", "null"],
+      enum: [...PAGE_READ_INTENTS, null],
+    },
+    resolvedRequest: nullableStringJsonSchema,
+  },
+} as const;
 
 const rewriteJsonSchema = {
   type: ["object", "null"],
@@ -316,6 +363,7 @@ const rewriteJsonSchema = {
 export const buildTurnPlanResponseFormat = (candidates: {
   routineIds: readonly string[];
   directiveNames: readonly string[];
+  pageReadCapability?: PageReadCapability | null;
 }): JsonSchemaResponseFormat => {
   const properties: Record<string, unknown> = {
     route: { type: "string", enum: [...ROUTE_VALUES] },
@@ -381,6 +429,11 @@ export const buildTurnPlanResponseFormat = (candidates: {
     required.push("directiveClassifications");
   }
 
+  if (candidates.pageReadCapability != null) {
+    properties.pageRead = pageReadJsonSchema;
+    required.push("pageRead");
+  }
+
   return {
     type: "json_schema",
     name: "turn_plan",
@@ -427,6 +480,7 @@ export const parseTurnPlan = (
   candidates: {
     routineIds: ReadonlySet<string>;
     directiveNames: ReadonlySet<string>;
+    pageReadCapability?: PageReadCapability | null;
   },
 ): TurnPlan | null => {
   let decoded: unknown;
@@ -440,6 +494,11 @@ export const parseTurnPlan = (
     return null;
   }
   const parsed = result.data;
+  const expectsPageRead = candidates.pageReadCapability != null;
+  const pageRead = parsed.pageRead === undefined ? null : parsePageReadDecision(parsed.pageRead);
+  if ((expectsPageRead && !pageRead) || (!expectsPageRead && parsed.pageRead !== undefined)) {
+    return null;
+  }
 
   if (parsed.route === "retrieval" && !parsed.rewrite) {
     return null;
@@ -498,6 +557,7 @@ export const parseTurnPlan = (
     ...(responseLanguage ? { responseLanguage } : {}),
     routineRankings,
     directiveClassifications,
+    ...(pageRead ? { pageRead } : {}),
   };
 };
 
@@ -564,7 +624,11 @@ export class TurnPlanService {
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
       const { text } = await client.complete({
         prompt: buildTurnPlanningPrompt(request),
-        responseFormat: buildTurnPlanResponseFormat({ routineIds, directiveNames }),
+        responseFormat: buildTurnPlanResponseFormat({
+          routineIds,
+          directiveNames,
+          pageReadCapability: request.pageReadCapability,
+        }),
         reasoningEffort: this.options.reasoningEffort ?? CHAT_BEHAVIOR.turnPlanning.reasoningEffort,
         maxOutputTokens: this.options.maxOutputTokens ?? CHAT_BEHAVIOR.turnPlanning.maxOutputTokens,
         signal,
@@ -572,6 +636,7 @@ export class TurnPlanService {
       const plan = parseTurnPlan(text, {
         routineIds: new Set(routineIds),
         directiveNames: new Set(directiveNames),
+        pageReadCapability: request.pageReadCapability,
       });
       return plan;
     } catch {

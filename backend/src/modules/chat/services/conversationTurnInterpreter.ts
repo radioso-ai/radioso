@@ -18,6 +18,11 @@ import {
   type StructuredRewriteResult,
 } from "../../retrieval/public.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import {
+  parsePageReadDecision,
+  type PageReadCapability,
+  type PageReadDecision,
+} from "./pageRead/pageReadDecision.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouterGatewayResult, type TurnRouting } from "./turnRouter.js";
 
@@ -34,10 +39,12 @@ export interface ConversationTurnInterpreterInput {
   usageAttribution?: ModelCallUsageAttribution;
   /** Rolling conversation summary (#866) injected as background context; absent renders nothing. */
   conversationSummary?: string;
+  pageReadCapability?: PageReadCapability | null;
 }
 
 export interface ConversationTurnInterpretationResult extends TurnRouting {
   rewriteProposal?: StructuredRewriteResult;
+  pageRead?: PageReadDecision;
 }
 
 export interface ChatConversationTurnInterpreter {
@@ -93,11 +100,13 @@ export interface TurnInterpretationGatewayInput {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
+  pageReadCapability?: PageReadCapability | null;
   usageContext: ModelCallUsageContext;
 }
 
 export interface TurnInterpretationGatewayResult extends TurnRouterGatewayResult {
   rewrite?: StructuredRewriteResult | null;
+  pageRead?: PageReadDecision;
 }
 
 export interface TurnInterpretationGateway {
@@ -118,21 +127,45 @@ export const buildTurnInterpretationPrompt = (input: {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
+  pageReadCapability?: PageReadCapability | null;
   query: string;
-}): string =>
-  renderPromptTemplate("chat/turn-interpretation.md", {
+}): string => {
+  const pageReadCapability = input.pageReadCapability ?? null;
+  return renderPromptTemplate("chat/turn-interpretation.md", {
     context_section: input.context || "No prior context",
     conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
     semantic_rewrite_instructions:
       input.semanticRewriteInstructions ?? "Use the system default semantic rewrite behavior.",
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
+    page_read_section: pageReadCapability
+      ? `\n\n${renderPromptTemplate("chat/turn-planning-page-read.md", {
+          page_read_mode: pageReadCapability.mode ?? "none",
+          page_read_supported_operations:
+            pageReadCapability.supportedOperations.length > 0
+              ? pageReadCapability.supportedOperations.join(", ")
+              : "none",
+        })}`
+      : "",
+    page_read_output_field: pageReadCapability
+      ? ',"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}'
+      : "",
     query: input.query,
   });
+};
 
-export const parseTurnInterpretation = (raw: string): TurnInterpretationGatewayResult => {
+export const parseTurnInterpretation = (
+  raw: string,
+  pageReadCapability?: PageReadCapability | null,
+): TurnInterpretationGatewayResult => {
   const trimmed = raw.trim().replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
   const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+  const expectsPageRead = pageReadCapability != null;
+  const hasPageRead = Object.hasOwn(parsed, "pageRead");
+  const pageRead = hasPageRead ? parsePageReadDecision(parsed.pageRead) : null;
+  if ((expectsPageRead && !pageRead) || (!expectsPageRead && hasPageRead)) {
+    throw new Error("invalid_page_read_decision");
+  }
   const rewriteRaw = parsed.rewrite;
   return {
     route: typeof parsed.route === "string" ? parsed.route : undefined,
@@ -144,6 +177,7 @@ export const parseTurnInterpretation = (raw: string): TurnInterpretationGatewayR
       rewriteRaw && typeof rewriteRaw === "object"
         ? parseStructuredRewrite(JSON.stringify(rewriteRaw))
         : null,
+    ...(pageRead ? { pageRead } : {}),
   };
 };
 
@@ -158,13 +192,14 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         conversationSummary: input.conversationSummary,
+        pageReadCapability: input.pageReadCapability,
         query: input.query,
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
       maxOutputTokens: CHAT_BEHAVIOR.intentRouting.maxOutputTokens + 768,
     });
 
-    return parseTurnInterpretation(text);
+    return parseTurnInterpretation(text, input.pageReadCapability);
   }
 }
 
@@ -186,6 +221,7 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
       const result = await this.gateway.interpret({
         query: input.query,
         contextMessages: input.history,
+        pageReadCapability: input.pageReadCapability,
         ...context,
         usageContext: {
           accountId: input.accountId,
@@ -202,6 +238,7 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
       return {
         ...routing,
         ...(routing.route === "retrieval" && result.rewrite ? { rewriteProposal: result.rewrite } : {}),
+        ...(result.pageRead ? { pageRead: result.pageRead } : {}),
       };
     } catch {
       return {

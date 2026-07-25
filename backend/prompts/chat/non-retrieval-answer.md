@@ -38,6 +38,7 @@ If you include a URL, format it as an inline Markdown link with descriptive link
 Answer Instructions:
 {{answer_instruction_block}}
 {{page_context_block}}
+{{page_context_condition_block}}
 {{conversation_summary_block}}
 Conversation History:
 {{history_section}}

@@ -7,6 +7,8 @@ import { getActiveTraceCorrelation } from "../../../shared/observability/tracing
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import { attachModelCallsToSpine } from "./turnTraceModelCalls.js";
 import { buildTurnTraceSummary } from "./turnTraceSummary.js";
+import type { PageReadCapability, PageReadIntent } from "./pageRead/pageReadDecision.js";
+import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 /**
  * Versioned envelope persisted per chat turn. The conversation spine is the root
@@ -58,6 +60,32 @@ export interface TurnTraceOpenTelemetryCorrelation {
 export interface TurnTraceOpenTelemetryCorrelationReader {
   getActiveOpenTelemetryCorrelation(): TurnTraceOpenTelemetryCorrelation | undefined;
 }
+
+export interface PageReadTraceDiagnostic {
+  schemaVersion: 1;
+  available: boolean;
+  required: boolean;
+  requested: false;
+  resolved: boolean;
+  operation: PageReadIntent | null;
+  outcome: "not_required" | "context_ready" | "unavailable" | "unsupported_operation";
+}
+
+export const buildPageReadTraceDiagnostic = (input: {
+  capability: PageReadCapability;
+  outcome: PageReadOutcome;
+  resolved: boolean;
+}): PageReadTraceDiagnostic => ({
+  schemaVersion: 1,
+  available: input.capability.available,
+  required: input.outcome.merged.decision.required,
+  requested: false,
+  resolved: input.outcome.gate.kind === "capture" && input.resolved,
+  operation: input.outcome.merged.decision.operation,
+  outcome: input.outcome.gate.kind === "capture"
+    ? "context_ready"
+    : input.outcome.gate.kind,
+});
 
 const defaultOpenTelemetryCorrelationReader: TurnTraceOpenTelemetryCorrelationReader = {
   getActiveOpenTelemetryCorrelation: getActiveTraceCorrelation,
@@ -127,25 +155,37 @@ export const attachCapabilitySubTrace = (
 };
 
 /**
- * Surface the turn's resolved visitor context variables on the spine's `gather`
- * stage so they are part of the activity trace (observable in the debug panel),
- * not only on the assistant message metadata. Returns a new spine (input is not
- * mutated); no-ops when there is no gather stage or no context. The snapshot MUST
+ * Surface resolved host variables and the content-free page-read diagnostic on
+ * the spine's `gather` stage. Raw `page_context` stays only in assistant message
+ * metadata and is always removed here. Returns a new spine (input is not mutated);
+ * no-ops when there is no gather stage or no attachable output. The snapshot MUST
  * already be redacted (sensitive values masked) — pass `resolvedContext.snapshot`,
  * never the raw staged context.
  */
 export const attachContextVariablesToGather = (
   spine: ConversationTrace,
   contextVariables: Record<string, unknown>,
+  pageRead?: PageReadTraceDiagnostic,
 ): ConversationTrace => {
-  if (Object.keys(contextVariables).length === 0) {
+  const hostContextVariables = Object.fromEntries(
+    Object.entries(contextVariables).filter(([key]) => key !== "page_context"),
+  );
+  const hasHostContextVariables = Object.keys(hostContextVariables).length > 0;
+  if (!hasHostContextVariables && !pageRead) {
     return spine;
   }
   let attached = false;
   const stages = spine.stages.map((stage) => {
     if (!attached && stage.kind === "gather") {
       attached = true;
-      return { ...stage, outputs: { ...(stage.outputs ?? {}), contextVariables } };
+      return {
+        ...stage,
+        outputs: {
+          ...(stage.outputs ?? {}),
+          ...(hasHostContextVariables ? { contextVariables: hostContextVariables } : {}),
+          ...(pageRead ? { pageRead } : {}),
+        },
+      };
     }
     return stage;
   });

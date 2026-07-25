@@ -141,7 +141,7 @@ test("connector sources reopen setup with sync status and manual sync", async ({
     name: "WordPress",
     description: "Auto-ingest WordPress pages and posts.",
     enabled: true,
-    errorStatus: null,
+    errorStatus: "sync_failed",
     supportsManualSync: true,
     schema: [
       {
@@ -162,6 +162,7 @@ test("connector sources reopen setup with sync status and manual sync", async ({
       lastRunAt: nowIso,
       lastModifiedAt: nowIso,
       lastIngestedCount: 4,
+      lastError: "WordPress REST returned 401 Unauthorized.",
     },
   };
 
@@ -215,12 +216,14 @@ test("connector sources reopen setup with sync status and manual sync", async ({
   await page.goto(`/w/${workspaceKey}/knowledge?tab=sources`);
 
   await page.getByText("wordpress:https://example.com").click();
+  await expect(page.getByText("Sync failed: WordPress REST returned 401 Unauthorized.")).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   const dialog = page.getByRole("dialog", { name: /WordPress/ });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText("Sync status")).toBeVisible();
   await expect(dialog.getByText("4 documents")).toBeVisible();
+  await expect(dialog.getByText("WordPress REST returned 401 Unauthorized.")).toBeVisible();
 
   await page.getByRole("button", { name: "Sync now" }).click();
   await expect(page.getByText("Sync started.")).toBeVisible();

@@ -32,6 +32,8 @@ import type { AgentRecord, AgentService } from "../../agents/public.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, isAgentRetrievalEnabled } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
+import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
+import type { PageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 import { CHAT_TURN_ROUTE, type ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { normalizeRewriteContinuityState } from "./rewriteContinuityState.js";
 import type { RetrievalTurnPort } from "./retrievalTurnDispatch.js";
@@ -62,7 +64,11 @@ export interface PreparedSession {
   userMessage: MessageRecord;
   /** What the user is effectively asking this turn; differs from the persisted user message for resolved selectors. */
   effectiveQuery: string;
+  /** Raw host input held aside until the page-read gate admits it. */
   pageContext?: AssistantPageContext | null;
+  pageReadCapability?: PageReadCapability | null;
+  /** First-write-wins page-read decision and gate result shared by every downstream sink. */
+  pageReadOutcome?: PageReadOutcome;
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Shared per-turn response language label detected from the user message and history. */
   responseLanguage?: string;
@@ -131,6 +137,7 @@ export interface PrepareChatSessionInput {
   metadataFilter?: Record<string, unknown>;
   documentScope?: string[];
   pageContext?: AssistantPageContext | null;
+  pageReadCapability?: PageReadCapability | null;
   sourceChannel?: string | null;
   channelContext?: ConversationChannelContext | null;
   chatSessionId?: string | null;
@@ -263,12 +270,13 @@ export class ChatSessionPreparer {
           userMessage,
           effectiveQuery: input.query,
           pageContext: input.pageContext ?? null,
+          pageReadCapability: input.pageReadCapability ?? null,
           priorRewriteContinuityState: rewriteContinuityState,
           conversationSummary,
           usageAttribution: input.usageAttribution,
           // Only present to satisfy the PreparedSession shape; prepareRetrieval
           // recomputes the spine from the real retrieval result.
-          ...this.stagedSpineFor(directOnlyTurn.retrieval, input.pageContext, hostVariables),
+          ...this.stagedSpineFor(directOnlyTurn.retrieval, null, hostVariables),
         }, defaultTurnFraming(), hostVariables);
 
     return {
@@ -281,11 +289,12 @@ export class ChatSessionPreparer {
       userMessage,
       effectiveQuery: input.query,
       pageContext: input.pageContext ?? null,
+      pageReadCapability: input.pageReadCapability ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
       usageAttribution: input.usageAttribution,
       previewRoutineIds: input.previewRoutineIds,
-      ...this.stagedSpineFor(retrieval, input.pageContext, hostVariables),
+      ...this.stagedSpineFor(retrieval, null, hostVariables),
     };
   }
 
@@ -334,6 +343,70 @@ export class ChatSessionPreparer {
       resolvedContext,
       turnTrace: toConversationTrace(retrieval.trace),
     };
+  }
+
+  private gatedPageContext(session: PreparedSession): AssistantPageContext | null {
+    return session.pageReadOutcome?.gate.kind === "capture"
+      ? session.pageContext ?? null
+      : null;
+  }
+
+  /**
+   * A routine-scoped staged view for a *tentative* capture outcome. The session
+   * is not mutated: a routine may still yield the turn off-topic, and a yielded
+   * turn must fall through to normal answering with zero page-derived context.
+   */
+  stagedPageContextFor(session: PreparedSession, outcome: PageReadOutcome): StagedContext[] {
+    if (outcome.gate.kind !== "capture" || !session.pageContext) {
+      return [...session.stagedContext];
+    }
+    const page = resolveContextForTurn(session.pageContext);
+    return [
+      ...page.staged,
+      ...session.stagedContext.filter(
+        (entry) => !(entry.kind === "context_variable" && entry.id === "page_context"),
+      ),
+    ];
+  }
+
+  /**
+   * Routine execution happens before direct/retrieval preparation re-runs the
+   * spine. Admit the frozen page fragment there without re-resolving or changing
+   * the already-prepared host variables.
+   */
+  applyFrozenPageReadOutcome(session: PreparedSession): void {
+    if (session.pageReadOutcome?.gate.kind !== "capture" || !session.pageContext) {
+      return;
+    }
+    const page = resolveContextForTurn(session.pageContext);
+    const isPageFragment = (fragment: ResolvedTurnContext["fragments"][number]): boolean =>
+      fragment.kind === "page_context";
+    const isPageStaged = (entry: StagedContext): boolean =>
+      entry.kind === "context_variable" && entry.id === "page_context";
+    const snapshot = { ...session.resolvedContext.snapshot };
+    delete snapshot.page_context;
+    session.resolvedContext = {
+      fragments: [
+        ...page.fragments,
+        ...session.resolvedContext.fragments.filter((fragment) => !isPageFragment(fragment)),
+      ],
+      renderFragments: [
+        ...page.renderFragments,
+        ...session.resolvedContext.renderFragments.filter((fragment) => !isPageFragment(fragment)),
+      ],
+      staged: [
+        ...page.staged,
+        ...session.resolvedContext.staged.filter((entry) => !isPageStaged(entry)),
+      ],
+      snapshot: {
+        ...page.snapshot,
+        ...snapshot,
+      },
+    };
+    session.stagedContext = [
+      ...session.stagedContext.filter((entry) => entry.kind !== "context_variable"),
+      ...session.resolvedContext.staged,
+    ];
   }
 
   /**
@@ -422,7 +495,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
     };
   }
 
@@ -464,7 +537,7 @@ export class ChatSessionPreparer {
         turnRoute,
         turnFraming: framing,
         effectiveQuery: input.query,
-        ...this.stagedSpineFor(retrieval, input.pageContext, variables),
+        ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
       };
     }
     const interpretation = await this.retrievalTurn.interpret(pipelineInput);
@@ -486,7 +559,7 @@ export class ChatSessionPreparer {
       turnRoute: CHAT_TURN_ROUTE.DIRECT,
       turnFraming: framing,
       effectiveQuery: input.query,
-      ...this.stagedSpineFor(retrieval, input.pageContext, variables),
+      ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
     };
   }
 

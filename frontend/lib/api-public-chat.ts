@@ -18,6 +18,7 @@ import type {
   ChatResponse,
   ChatStreamHandlers,
   ChatUserInputMetadata,
+  ClientContextCapabilities,
   PublicChatSessionResponse,
   WebsiteEmbedPageContext,
 } from './api-types'
@@ -46,6 +47,7 @@ export const publicChatApi = {
       anonymousSessionId?: string | null
       resumeToken?: string | null
       pageContext?: WebsiteEmbedPageContext | null
+      clientContextCapabilities?: ClientContextCapabilities
     },
   ): Promise<PublicChatSessionResponse> {
     const exchange = async (resumeToken?: string | null) => {
@@ -63,6 +65,7 @@ export const publicChatApi = {
           chatSessionId: data.chatSessionId ?? data.anonymousSessionId ?? undefined,
           anonymousSessionId: data.anonymousSessionId ?? undefined,
           pageContext: data.pageContext,
+          clientContextCapabilities: data.clientContextCapabilities,
         }),
       })
 
@@ -93,7 +96,7 @@ export const publicChatApi = {
 
   async sendMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; signedIdentity?: string | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities; signedIdentity?: string | null },
   ): Promise<ChatResponse> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',
@@ -116,7 +119,7 @@ export const publicChatApi = {
 
   async streamMessage(
     token: string,
-    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; signedIdentity?: string | null },
+    data: { message: string; stream: boolean; conversationId?: string; bootstrapGreetingId?: string; inputMetadata?: ChatUserInputMetadata; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities; signedIdentity?: string | null },
     handlers: ChatStreamHandlers = {},
   ): Promise<ChatResponse> {
     const response = await fetch(`${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}`, {
@@ -165,7 +168,7 @@ export const publicChatApi = {
 
   async bootstrapConversation(
     token: string,
-    data: { stream: boolean; startConversation: true; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null },
+    data: { stream: boolean; startConversation: true; userExpectedLocale?: string; pageContext?: WebsiteEmbedPageContext | null; clientContextCapabilities?: ClientContextCapabilities },
   ): Promise<ChatResponse | undefined> {
     const response = await fetch(`${API_BASE}/public/chat/${token}`, {
       method: 'POST',

@@ -113,6 +113,7 @@ describe("connector management contract", () => {
       lastRunAt: new Date("2026-05-21T12:00:00.000Z"),
       lastModifiedAt: new Date("2026-05-19T12:00:00.000Z"),
       lastIngestedCount: 4,
+      lastError: "WordPress REST returned 401 Unauthorized.",
     });
 
     const detail = await request(app)
@@ -125,6 +126,7 @@ describe("connector management contract", () => {
     expect(detail.status).toBe(200);
     expect(detail.body.syncState).toEqual(expect.objectContaining({
       lastIngestedCount: 4,
+      lastError: "WordPress REST returned 401 Unauthorized.",
     }));
     expect(detail.body.errorStatus).toBe("last_error");
     expect(sync.status).toBe(202);

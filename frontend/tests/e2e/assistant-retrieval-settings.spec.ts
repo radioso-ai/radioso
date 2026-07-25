@@ -102,6 +102,7 @@ test("agent channels menu exposes the WhatsApp connector", async ({ page }) => {
           lastRunAt: null,
           lastModifiedAt: null,
           lastIngestedCount: null,
+          lastError: null,
         },
       }),
     });
@@ -153,7 +154,7 @@ test("retrieval skill settings expose individual temporal event toggles", async 
   await expect(page.getByRole("switch", { name: "Temporal structured lookup" })).not.toBeChecked();
   await page.getByRole("button", { name: "Create skill" }).click();
 
-  await expect(page.getByText("@retrieve_events")).toBeVisible();
+  await expect(page.getByText("@retrieve_events", { exact: true })).toBeVisible();
   await expect.poll(() => agentSkillRequests.length).toBeGreaterThanOrEqual(1);
   expect(agentSkillRequests.at(-1)).toMatchObject({
     method: "POST",

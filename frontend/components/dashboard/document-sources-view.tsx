@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -8,7 +8,6 @@ import {
   FileText,
   Pause,
   Play,
-  Plus,
   RefreshCw,
   ScrollText,
   Settings2,
@@ -46,12 +45,14 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { CrawlPolicyFields } from '@/components/dashboard/documents/crawl-policy-fields'
 import {
+  connectorsApi,
   documentsApi,
   settingsApi,
   type DocumentSourceCrawlSettings,
   type DocumentSourceListItem,
   type WebsiteCrawlJobSummary,
 } from '@/lib/api'
+import type { ConnectorDetail } from '@/lib/api-connectors'
 import {
   applySourceResumeResult,
   getCrawlPageIssueSummaries,
@@ -106,9 +107,9 @@ const connectorIdFromExternalId = (externalId: string | null): string | null => 
 
 interface DocumentSourcesViewProps {
   onViewDocumentsForSource: (sourceId: string) => void
-  // Optional add-source entry point (opens the website-crawl flow). Omitted when
-  // crawling is unavailable for the workspace.
-  onAddSource?: () => void
+  // Add-source affordance rendered in the empty state. The same menu shown in
+  // the Sources header, passed down so both entry points stay identical.
+  addSourceMenu?: ReactNode
 }
 
 const splitPatterns = (value: string): string[] =>
@@ -235,22 +236,40 @@ function SourceExpandedPanel({
   onSourceUpdated: (source: DocumentSourceListItem) => void
   workspaceEnrichmentEnabled?: boolean
 }) {
+  const connectorId = source.kind === 'connector'
+    ? connectorIdFromExternalId(source.externalId)
+    : null
   const [crawlJob, setCrawlJob] = useState<WebsiteCrawlJobSummary | null>(null)
-  const [isLoading, setIsLoading] = useState(source.kind === 'website')
+  const [connectorDetail, setConnectorDetail] = useState<ConnectorDetail | null>(null)
+  const [isLoading, setIsLoading] = useState(source.kind === 'website' || connectorId !== null)
   const [isSavingEnrichmentOverride, setIsSavingEnrichmentOverride] = useState(false)
   const [isReprocessingSource, setIsReprocessingSource] = useState(false)
   const [sourceActionMessage, setSourceActionMessage] = useState<string | null>(null)
   const [sourceActionError, setSourceActionError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (source.kind === 'connector') {
+      if (!connectorId) return
+      let cancelled = false
+      void connectorsApi
+        .get(connectorId)
+        .then((detail) => {
+          if (!cancelled) setConnectorDetail(detail)
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) setIsLoading(false)
+        })
+      return () => {
+        cancelled = true
+      }
+    }
+
     if (source.kind !== 'website') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync derived loading flag when source kind has no crawl data to load.
-      setIsLoading(false)
       return
     }
     let cancelled = false
 
-    setIsLoading(true)
     void documentsApi
       .listCrawlJobs({ sourceId: source.id, limit: 1 })
       .then((response) => {
@@ -267,7 +286,7 @@ function SourceExpandedPanel({
     return () => {
       cancelled = true
     }
-  }, [source.id, source.kind, crawlStatusVersion])
+  }, [connectorId, source.id, source.kind, crawlStatusVersion])
 
   const crawlInProgress = crawlJob?.status === 'queued' || crawlJob?.status === 'processing' || isResumePending
   const crawlPaused = crawlJob?.status === 'paused' && !isResumePending
@@ -336,6 +355,11 @@ function SourceExpandedPanel({
             ))}
             {crawlFailed && crawlJob?.lastError ? (
               <span className="text-destructive">Crawl failed: {crawlJob.lastError}</span>
+            ) : null}
+            {connectorDetail?.syncState.lastError ? (
+              <span className="text-destructive">
+                Sync failed: {connectorDetail.syncState.lastError}
+              </span>
             ) : null}
           </>
         )}
@@ -427,7 +451,7 @@ function SourceExpandedPanel({
   )
 }
 
-export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: DocumentSourcesViewProps) {
+export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }: DocumentSourcesViewProps) {
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [sources, setSources] = useState<DocumentSourceListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -705,12 +729,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
             Sources appear after website crawls or uploaded files create persisted source records.
           </p>
         </div>
-        {onAddSource ? (
-          <Button type="button" size="sm" onClick={onAddSource}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add source
-          </Button>
-        ) : null}
+        {addSourceMenu}
       </div>
     )
   }

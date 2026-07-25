@@ -4356,6 +4356,14 @@ export interface components {
                 browserLocale?: string | null;
                 content?: string | null;
             };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+            };
         };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
@@ -5313,6 +5321,14 @@ export interface components {
                 browserLocale?: string | null;
                 content?: string | null;
             };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+            };
             signedIdentity?: string;
             inputMetadata?: {
                 /** @enum {string} */
@@ -5656,6 +5672,7 @@ export interface components {
                 lastRunAt: string | null;
                 lastModifiedAt: string | null;
                 lastIngestedCount: number | null;
+                lastError: string | null;
             };
         };
         ConnectorSyncResponse: {

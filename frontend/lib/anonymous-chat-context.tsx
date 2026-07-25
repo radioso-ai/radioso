@@ -35,6 +35,7 @@ import {
   type ChatConversationDetail,
   type ChatStreamCompletion,
   type ChatUserInputMetadata,
+  type ClientContextCapabilities,
   type PublicChatIntakeAction,
   type ErrorResponse,
   type ActivitySummary,
@@ -318,6 +319,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff,
   localeOverride,
   pageContext,
+  clientContextCapabilities,
   signedIdentity,
   onAnalyticsEvent,
   children,
@@ -327,6 +329,7 @@ export function AnonymousChatProvider({
   consumeSessionHandoff?: boolean
   localeOverride?: string | null
   pageContext?: WebsiteEmbedPageContext | null
+  clientContextCapabilities?: ClientContextCapabilities
   signedIdentity?: string | null
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
   children: ReactNode
@@ -372,6 +375,7 @@ export function AnonymousChatProvider({
         channel: sessionChannel,
         resumeToken: input?.resetSession ? null : readStoredPublicSessionResumeToken(activeToken),
         pageContext,
+        clientContextCapabilities,
       })
       publicChatTokenRef.current = session.publicChatToken
       setEffectivePublicChatToken(session.publicChatToken)
@@ -383,7 +387,7 @@ export function AnonymousChatProvider({
       setIntakeActions(session.intakeActions ?? [])
       return session
     },
-    [pageContext, sessionChannel],
+    [clientContextCapabilities, pageContext, sessionChannel],
   )
 
   const ensurePublicLaunchSession = useCallback(async (): Promise<string> => {
@@ -449,6 +453,7 @@ export function AnonymousChatProvider({
                   : [],
             }),
             pageContext,
+            clientContextCapabilities,
           }),
         )
 
@@ -495,7 +500,7 @@ export function AnonymousChatProvider({
         return null
       }
     },
-    [localeOverride, pageContext, withPublicSessionRetry],
+    [clientContextCapabilities, localeOverride, pageContext, withPublicSessionRetry],
   )
 
   const hydrateConversation = useCallback(async () => {
@@ -900,6 +905,7 @@ export function AnonymousChatProvider({
                   pageContext,
                 }),
                 pageContext,
+                clientContextCapabilities,
                 signedIdentity,
               },
               {
@@ -1145,7 +1151,7 @@ export function AnonymousChatProvider({
         sendInFlightRef.current = false
       }
     },
-    [applyCompletion, bootstrapGreetingId, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, signedIdentity, withPublicSessionRetry],
+    [applyCompletion, bootstrapGreetingId, clientContextCapabilities, conversationId, isHydrating, isLoading, isUnavailable, localeOverride, messages, onAnalyticsEvent, pageContext, recoverAssistantMessage, signedIdentity, withPublicSessionRetry],
   )
 
   const loadOlderMessages = useCallback(async () => {

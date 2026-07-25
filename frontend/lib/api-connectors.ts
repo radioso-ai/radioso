@@ -29,6 +29,7 @@ export interface ConnectorSyncState {
   lastRunAt: string | null
   lastModifiedAt: string | null
   lastIngestedCount: number | null
+  lastError: string | null
 }
 
 export interface ConnectorDetail extends ConnectorSummary {

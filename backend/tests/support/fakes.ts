@@ -178,6 +178,7 @@ interface InMemoryConnectorSyncStateRecord {
   lastRunAt: Date | null;
   lastModifiedAt: Date | null;
   lastIngestedCount: number | null;
+  lastError: string | null;
 }
 
 export class InMemoryAccountRepository implements AccountRepositoryPort {
@@ -1896,6 +1897,7 @@ export class InMemoryConnectorDatabase {
               last_run_at: state.lastRunAt?.toISOString() ?? null,
               last_modified_at: state.lastModifiedAt?.toISOString() ?? null,
               last_ingested_count: state.lastIngestedCount,
+              last_error: state.lastError,
             } as T,
           ]
         : [];
@@ -1958,6 +1960,7 @@ export class InMemoryConnectorDatabase {
           lastRunAt: existing?.lastRunAt ?? null,
           lastModifiedAt: existing?.lastModifiedAt ?? null,
           lastIngestedCount: existing?.lastIngestedCount ?? null,
+          lastError: existing?.lastError ?? null,
         });
         return [{ workspace_id: workspaceId } as T];
       }
@@ -1976,6 +1979,7 @@ export class InMemoryConnectorDatabase {
           lastRunAt: new Date(),
           lastModifiedAt: existing?.lastModifiedAt ?? null,
           lastIngestedCount: existing?.lastIngestedCount ?? null,
+          lastError: existing?.lastError ?? null,
         });
         return [{ sync_lock_token: lockToken } as T];
       }
@@ -2009,6 +2013,7 @@ export class InMemoryConnectorDatabase {
           ? new Date()
           : existing?.lastModifiedAt ?? null,
         lastIngestedCount: ingestedCount,
+        lastError: existing?.lastError ?? null,
       });
       return [];
     }
@@ -3323,6 +3328,38 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   setMessageRepository(messageRepository: InMemoryMessageRepository): void {
     this.messageRepository = messageRepository;
+  }
+
+  async getOrCreateByAnonymousSession(input: {
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: string;
+    anonymousSessionId: string;
+    sourceOrigin?: string | null;
+  }): Promise<ConversationRecord> {
+    const existing = [...this.items.values()]
+      .filter((item) =>
+        item.workspaceId === input.workspaceId &&
+        item.agentId === input.agentId &&
+        item.sourceChannel === input.sourceChannel &&
+        item.anonymousSessionId === input.anonymousSessionId
+      )
+      .sort((left, right) => {
+        const updatedDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
+        if (updatedDiff !== 0) return updatedDiff;
+        const createdDiff = right.createdAt.getTime() - left.createdAt.getTime();
+        return createdDiff !== 0 ? createdDiff : right.id.localeCompare(left.id);
+      })[0];
+    if (existing) {
+      return existing;
+    }
+    return this.create(
+      input.workspaceId,
+      input.agentId,
+      input.sourceChannel,
+      input.anonymousSessionId,
+      input.sourceOrigin ?? null,
+    );
   }
 
   async create(

@@ -6902,6 +6902,46 @@
                 "maxLength": 6000
               }
             }
+          },
+          "clientContextCapabilities": {
+            "type": "object",
+            "properties": {
+              "page.read": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "metadata",
+                      "content"
+                    ]
+                  },
+                  "supportedOperations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "metadata",
+                        "lookup",
+                        "summarize"
+                      ]
+                    },
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "available",
+                  "mode",
+                  "supportedOperations"
+                ]
+              }
+            }
           }
         },
         "required": [
@@ -10471,6 +10511,46 @@
               }
             }
           },
+          "clientContextCapabilities": {
+            "type": "object",
+            "properties": {
+              "page.read": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "mode": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "metadata",
+                      "content"
+                    ]
+                  },
+                  "supportedOperations": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "metadata",
+                        "lookup",
+                        "summarize"
+                      ]
+                    },
+                    "maxItems": 3
+                  }
+                },
+                "required": [
+                  "available",
+                  "mode",
+                  "supportedOperations"
+                ]
+              }
+            }
+          },
           "signedIdentity": {
             "type": "string",
             "maxLength": 8192
@@ -11857,6 +11937,12 @@
                       "integer",
                       "null"
                     ]
+                  },
+                  "lastError": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   }
                 },
                 "required": [
@@ -11865,7 +11951,8 @@
                   "syncStartedAt",
                   "lastRunAt",
                   "lastModifiedAt",
-                  "lastIngestedCount"
+                  "lastIngestedCount",
+                  "lastError"
                 ]
               }
             },

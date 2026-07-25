@@ -7,7 +7,11 @@ import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import {
+  currentTimestamp,
+  toJsonb,
+  transactionAdvisoryLock,
+} from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface ConversationRecord {
@@ -25,6 +29,15 @@ export interface ConversationRecord {
 }
 
 export interface ConversationRepositoryPort {
+  // MCP converse requires this capability, while replay/eval repository doubles do not.
+  // AgentConverseService fails closed when an application adapter omits it.
+  getOrCreateByAnonymousSession?(input: {
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: string;
+    anonymousSessionId: string;
+    sourceOrigin?: string | null;
+  }): Promise<ConversationRecord>;
   create(
     workspaceId: string,
     agentId?: string | null,
@@ -146,6 +159,54 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
 
 export class ConversationRepository implements ConversationRepositoryPort {
   constructor(private readonly db: Db) {}
+
+  async getOrCreateByAnonymousSession(input: {
+    workspaceId: string;
+    agentId: string;
+    sourceChannel: string;
+    anonymousSessionId: string;
+    sourceOrigin?: string | null;
+  }): Promise<ConversationRecord> {
+    return this.db.transaction().execute(async (trx) => {
+      const lockKey = [
+        "anonymous_conversation",
+        input.workspaceId,
+        input.agentId,
+        input.sourceChannel,
+        input.anonymousSessionId,
+      ].join(":");
+      await transactionAdvisoryLock(lockKey).execute(trx);
+
+      const existing = await trx
+        .selectFrom("conversations")
+        .select(conversationColumns)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("agent_id", "=", input.agentId)
+        .where("source_channel", "=", input.sourceChannel)
+        .where("anonymous_session_id", "=", input.anonymousSessionId)
+        .orderBy("updated_at", "desc")
+        .orderBy("created_at", "desc")
+        .orderBy("id", "desc")
+        .executeTakeFirst();
+      if (existing) {
+        return mapConversation(existing as ConversationRow);
+      }
+
+      const created = await trx
+        .insertInto("conversations")
+        .values({
+          id: randomUUID(),
+          workspace_id: input.workspaceId,
+          agent_id: input.agentId,
+          source_channel: input.sourceChannel,
+          source_origin: input.sourceOrigin ?? null,
+          anonymous_session_id: input.anonymousSessionId,
+        })
+        .returning(conversationColumns)
+        .executeTakeFirstOrThrow();
+      return mapConversation(created as ConversationRow);
+    });
+  }
 
   async create(
     workspaceId: string,

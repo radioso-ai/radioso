@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
+
 import { currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
@@ -257,6 +259,13 @@ const caseColumns = [
   "updated_at",
 ] as const;
 
+// eval_cases columns qualified for queries that join eval_snapshots / agents,
+// where bare `id` / `workspace_id` / `created_at` / `updated_at` are ambiguous.
+// Kysely aliases `eval_cases.id` back to the `id` key, so mapCase still applies.
+const qualifiedCaseColumns = caseColumns.map(
+  (col) => `eval_cases.${col}` as `eval_cases.${(typeof caseColumns)[number]}`,
+);
+
 const runColumns = [
   "id",
   "workspace_id",
@@ -358,12 +367,26 @@ export class EvalRepository implements EvalRepositoryPort {
   }
 
   async listCasesWithLatestRun(workspaceId: string): Promise<EvalCaseListItem[]> {
+    // Join the snapshot for the captured agent identity/name, and left-join the
+    // live agents row so a still-present agent shows its current name while a
+    // deleted one falls back to the frozen capture-time name. JSON extraction
+    // (`->> 'name'`) avoids pulling the large original_agent_config blob.
     const caseRows = await this.db
       .selectFrom("eval_cases")
-      .select(caseColumns)
-      .where("workspace_id", "=", workspaceId)
-      .orderBy("updated_at", "desc")
-      .orderBy("id", "desc")
+      .innerJoin("eval_snapshots", "eval_snapshots.id", "eval_cases.snapshot_id")
+      .leftJoin("agents", "agents.id", "eval_snapshots.source_agent_id")
+      .select(qualifiedCaseColumns)
+      .select([
+        "eval_snapshots.source_agent_id as source_agent_id",
+        "agents.name as live_agent_name",
+        sql<string | null>`eval_snapshots.original_agent_config ->> 'name'`.as(
+          "frozen_config_agent_name",
+        ),
+        sql<string | null>`eval_snapshots.original_agent ->> 'name'`.as("frozen_agent_name"),
+      ])
+      .where("eval_cases.workspace_id", "=", workspaceId)
+      .orderBy("eval_cases.updated_at", "desc")
+      .orderBy("eval_cases.id", "desc")
       .execute();
 
     // One row per case: the most recent run, via DISTINCT ON. The case_id is the
@@ -403,10 +426,25 @@ export class EvalRepository implements EvalRepositoryPort {
       });
     }
 
-    return caseRows.map((row) => ({
-      ...mapCase(row as CaseRow),
-      latestRun: latestByCase.get((row as CaseRow).id) ?? null,
-    }));
+    return caseRows.map((row) => {
+      const sourceAgentId = (row.source_agent_id as string | null) ?? null;
+      const liveName = (row.live_agent_name as string | null) ?? null;
+      // Live name when the agent still exists; otherwise the name frozen on the
+      // snapshot (full config first, then the legacy thin AgentSnapshot).
+      const frozenName =
+        (row.frozen_config_agent_name as string | null) ??
+        (row.frozen_agent_name as string | null) ??
+        null;
+      return {
+        ...mapCase(row as CaseRow),
+        latestRun: latestByCase.get((row as CaseRow).id) ?? null,
+        agent: {
+          agentId: sourceAgentId,
+          name: liveName ?? frozenName,
+          deleted: sourceAgentId !== null && liveName === null,
+        },
+      };
+    });
   }
 
   async deleteCase(workspaceId: string, caseId: string): Promise<boolean> {

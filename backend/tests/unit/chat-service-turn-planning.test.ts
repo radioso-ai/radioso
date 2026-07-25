@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createConversationEngine } from "@radioso/conversation-engine";
 import { RoutineRegistry, type RoutineRegistration } from "@radioso/conversation-defaults";
+import type { ConversationRoutineRunner, Routine, StagedContext } from "@radioso/conversation-contract";
 
 import {
   ChatService,
@@ -46,6 +47,11 @@ const planJson = (input: {
   responseLanguage?: string;
   routineRankings?: Array<{ routineId: string; confidence: number; variables?: Record<string, unknown> }>;
   directiveClassifications?: Array<{ name: string; matched: boolean; confidence: number }>;
+  pageRead?: {
+    required: boolean;
+    operation: "metadata" | "lookup" | "summarize" | "transform" | null;
+    resolvedRequest: string | null;
+  };
 }): string =>
   JSON.stringify({
     route: input.route,
@@ -84,6 +90,7 @@ const planJson = (input: {
         : {}),
     })),
     directiveClassifications: input.directiveClassifications ?? [],
+    ...(input.pageRead ? { pageRead: input.pageRead } : {}),
   });
 
 const capturingUsageRecorder = (): UsageEventRecorder & { events: ModelUsageEvent[] } => {
@@ -477,6 +484,52 @@ describe("chat service fused turn planning", () => {
     expect(planner.prompts()[1]).toContain("The buyer already returned the item last week.");
   });
 
+  it("passes the legacy-derived content capability to the live planner", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [
+      planJson({
+        route: "direct",
+        pageRead: { required: false, operation: null, resolvedRequest: null },
+      }),
+    ] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("summarize this page"),
+      chatGateway: pipelineChatGateway("Page summary."),
+      staged,
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "summarize this page",
+      stream: false,
+      pageContext: {
+        pageUrl: "https://example.com/docs",
+        content: "The current page contents.",
+      },
+    });
+
+    expect(planner.prompts()[0]).toContain("Advertised page-read capability:");
+    expect(planner.prompts()[0]).toContain("- mode: content");
+    expect(planner.prompts()[0]).toContain("- supported operations: metadata, lookup, summarize");
+  });
+
+  it("keeps planner page-read capability null without page context or an advertisement", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct" })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged,
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "thanks!", stream: false });
+
+    expect(planner.prompts()[0]).not.toContain("Advertised page-read capability:");
+    expect(planner.prompts()[0]).not.toContain('"pageRead"');
+  });
+
   it("falls back to the full staged path when the planner returns malformed output", async () => {
     const staged = countingStagedPorts();
     const planner = plannerFactory({ completions: ["<<<not json>>>"] });
@@ -587,6 +640,235 @@ describe("chat service fused turn planning", () => {
 
     expect(response.answer).toContain("What is your email?");
     expect(planner.completeCalls()).toBe(0);
+  });
+
+  it("stages the held-aside page for an active routine that binds page_context without planner help", async () => {
+    const staged = countingStagedPorts();
+    const routine: Routine = {
+      id: "page.checkout",
+      rootStepId: "inspect_page",
+      steps: [{
+        id: "inspect_page",
+        kind: "skill",
+        skillName: "checkout_lookup",
+        inputBindings: {
+          page: { kind: "contextVariableRef", contextVariable: "page_context" },
+        },
+      }],
+      transitions: [],
+    };
+    let routineStagedContext: readonly StagedContext[] = [];
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => ({
+        sessionId: "s",
+        routineId: routine.id,
+        path: [routine.rootStepId],
+        variables: {},
+        status: "active",
+      }),
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        routines: [routine],
+        activator: { activate: async () => null },
+        runner: {
+          resume: async ({ turn }: Parameters<ConversationRoutineRunner["resume"]>[0]) => {
+            routineStagedContext = turn.stagedContext;
+            return {
+              response: { answer: "I inspected the checkout page." },
+              nextState: null,
+            };
+          },
+        },
+      } as unknown as NonNullable<Awaited<ReturnType<
+        NonNullable<ChatServiceOptions["routineProvider"]>["forTurn"]
+      >>>),
+    };
+    const service = buildService({
+      pipeline: directPipeline("inspect this checkout"),
+      chatGateway: pipelineChatGateway("unused"),
+      staged,
+      routine: { routineStore, routineProvider },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "inspect this checkout",
+      stream: false,
+      pageContext: {
+        pageUrl: "https://example.test/checkout",
+        content: "Checkout total: 42 EUR",
+      },
+    });
+
+    expect(routineStagedContext).toContainEqual({
+      kind: "context_variable",
+      id: "page_context",
+      data: {
+        kind: "page_context",
+        pageUrl: "https://example.test/checkout",
+        content: "Checkout total: 42 EUR",
+      },
+      metadata: {
+        variableName: "page_context",
+        trustTier: "unverified",
+      },
+    });
+  });
+
+  it("does not leak the page into normal answering after a page-bound routine yields off-topic", async () => {
+    const staged = countingStagedPorts();
+    // The yielded turn falls through to normal answering on the direct path.
+    staged.routerClassify.mockResolvedValue(
+      { route: "direct", framing: { isIdentityQuestion: false } } as unknown as Awaited<
+        ReturnType<typeof staged.routerClassify>
+      >,
+    );
+    const routine: Routine = {
+      id: "page.checkout",
+      rootStepId: "inspect_page",
+      steps: [{
+        id: "inspect_page",
+        kind: "skill",
+        skillName: "checkout_lookup",
+        inputBindings: {
+          page: { kind: "contextVariableRef", contextVariable: "page_context" },
+        },
+      }],
+      transitions: [],
+    };
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => ({
+        sessionId: "s",
+        routineId: routine.id,
+        path: [routine.rootStepId],
+        variables: {},
+        status: "active",
+      }),
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        routines: [routine],
+        activator: { activate: async () => null },
+        runner: {
+          resume: async () => ({
+            // Off-topic decline: response/nextState are inert placeholders.
+            response: { answer: "" },
+            nextState: null,
+            yielded: true,
+          }),
+        },
+      } as unknown as NonNullable<Awaited<ReturnType<
+        NonNullable<ChatServiceOptions["routineProvider"]>["forTurn"]
+      >>>),
+    };
+    const complete = vi.fn(async (request: unknown) => {
+      void request;
+      return {
+        text: "Our opening hours are 9-17.",
+        usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15, quality: "actual" as const },
+      };
+    });
+    const chatGateway = new ModelChatGateway(
+      new ModelInferencePipelineService({
+        metadata: { capability: "chat", provider: "openai", model: "gpt-answer" },
+        complete,
+        stream: vi.fn(() => ({
+          textStream: (async function* () {
+            yield "Our opening hours are 9-17.";
+          })(),
+          usage: Promise.resolve({ inputTokens: 10, outputTokens: 5, totalTokens: 15, quality: "actual" as const }),
+        })),
+      }),
+    );
+    const service = buildService({
+      pipeline: directPipeline("what are your opening hours?"),
+      chatGateway,
+      staged,
+      routine: { routineStore, routineProvider },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "what are your opening hours?",
+      stream: false,
+      pageContext: {
+        pageUrl: "https://example.test/checkout",
+        content: "Checkout total: 42 EUR",
+      },
+    });
+
+    const answerPrompts = complete.mock.calls
+      .map((call) => JSON.stringify(call[0] ?? ""))
+      .join("\n");
+    expect(answerPrompts).not.toContain("Checkout total: 42 EUR");
+    expect(answerPrompts).not.toContain("example.test/checkout");
+  });
+
+  it("does not stage the held-aside page for an active routine without a page_context binding", async () => {
+    const staged = countingStagedPorts();
+    const routine: Routine = {
+      id: "account.lookup",
+      rootStepId: "inspect_account",
+      steps: [{
+        id: "inspect_account",
+        kind: "skill",
+        skillName: "account_lookup",
+        inputBindings: {
+          plan: { kind: "contextVariableRef", contextVariable: "plan" },
+        },
+      }],
+      transitions: [],
+    };
+    let routineStagedContext: readonly StagedContext[] = [];
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => ({
+        sessionId: "s",
+        routineId: routine.id,
+        path: [routine.rootStepId],
+        variables: {},
+        status: "active",
+      }),
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        routines: [routine],
+        activator: { activate: async () => null },
+        runner: {
+          resume: async ({ turn }: Parameters<ConversationRoutineRunner["resume"]>[0]) => {
+            routineStagedContext = turn.stagedContext;
+            return {
+              response: { answer: "I inspected the account." },
+              nextState: null,
+            };
+          },
+        },
+      }),
+    };
+    const service = buildService({
+      pipeline: directPipeline("inspect my account"),
+      chatGateway: pipelineChatGateway("unused"),
+      staged,
+      routine: { routineStore, routineProvider },
+    });
+
+    await service.answer({
+      workspaceId: "workspace-1",
+      query: "inspect my account",
+      stream: false,
+      pageContext: {
+        pageUrl: "https://example.test/checkout",
+        content: "Checkout total: 42 EUR",
+      },
+    });
+
+    expect(routineStagedContext.some((entry) => entry.id === "page_context")).toBe(false);
   });
 
   it("resolves contextual directives from the plan with zero directive-match gateway calls, and restores the gateway on fallback", async () => {

@@ -43,7 +43,10 @@ import type { ChatStatusStage, ChatStreamEvent } from "../contracts/streamEvents
 import { observeFirstAnswerChunkLatency } from "./streamPerformanceMetrics.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
-import type { AssistantPageContext } from "../types/assistantApi.js";
+import type {
+  AssistantClientContextCapabilities,
+  AssistantPageContext,
+} from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import {
@@ -138,6 +141,7 @@ import { resolveContextForTurn } from "../../context-variables/public.js";
 import type { TurnRouter } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
+import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import {
   isHumanOwned,
   type ConversationOwnershipReader,
@@ -536,6 +540,7 @@ export class ChatService {
       undefined,
       conversationOwnershipRepository,
       conversationSummaryUpdater,
+      turnRuntime.metrics,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -1133,6 +1138,7 @@ export class ChatService {
           agentSkillSettings: session.agent.skillSettings,
           conversationSummary: session.conversationSummary,
         }, this.turnPlanInterpretationContextSettings),
+        pageReadCapability: session.pageReadCapability,
         directiveCandidates: this.buildTurnPlanDirectiveCandidates(session, input.accountId),
         workspaceContext: { workspaceId: session.agent.workspaceId },
         usageContext: {
@@ -1328,6 +1334,7 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
     chatSessionId?: string | null;
@@ -1371,6 +1378,7 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
     chatSessionId?: string | null;
@@ -1393,7 +1401,13 @@ export class ChatService {
         surface: input.sourceChannel ?? "assistant",
       });
       this.setTurnStage(coordination, "preparing");
-      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      session = await this.chatSessionPreparer.prepare({
+        ...input,
+        pageReadCapability: pageReadCapabilityFromRequest(
+          input.clientContextCapabilities,
+          input.pageContext,
+        ),
+      }, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");
@@ -1647,6 +1661,7 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
     chatSessionId?: string | null;
@@ -1694,6 +1709,7 @@ export class ChatService {
     inputMetadata?: UserMessageInputMetadata;
     metadataFilter?: Record<string, unknown>;
     pageContext?: AssistantPageContext | null;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
     chatSessionId?: string | null;
@@ -1756,7 +1772,13 @@ export class ChatService {
         surface: input.sourceChannel ?? "assistant",
       });
       this.setTurnStage(coordination, "preparing");
-      session = await this.chatSessionPreparer.prepare(input, { skipRetrieval: true });
+      session = await this.chatSessionPreparer.prepare({
+        ...input,
+        pageReadCapability: pageReadCapabilityFromRequest(
+          input.clientContextCapabilities,
+          input.pageContext,
+        ),
+      }, { skipRetrieval: true });
       await this.registerPreparedTurn(coordination, session.conversation.id);
       const ownership = await this.conversationOwnershipReader?.load(session.conversation.id) ?? null;
       this.checkTurnCancellation(coordination, "routing");

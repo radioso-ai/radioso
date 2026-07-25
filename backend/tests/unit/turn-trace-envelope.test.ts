@@ -7,10 +7,16 @@ import {
   TURN_TRACE_ENVELOPE_VERSION,
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
+  buildPageReadTraceDiagnostic,
   buildTurnTraceEnvelope,
   setTurnTraceOpenTelemetryCorrelationReader,
   synthesizeDispatchSpine,
+  type PageReadTraceDiagnostic,
 } from "../../src/modules/chat/services/turnTraceEnvelope.js";
+import type {
+  PageReadDecision,
+  PageReadGateOutcome,
+} from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 
 const spine = (): ConversationTrace => ({
   traceId: "conversation-turn-1",
@@ -25,17 +31,28 @@ const spine = (): ConversationTrace => ({
 });
 
 describe("attachContextVariablesToGather", () => {
-  it("attaches the redacted context snapshot onto the gather stage outputs", () => {
+  const pageReadDiagnostic: PageReadTraceDiagnostic = {
+    schemaVersion: 1,
+    available: true,
+    required: true,
+    requested: false,
+    resolved: true,
+    operation: "lookup",
+    outcome: "context_ready",
+  };
+
+  it("keeps host variables but excludes page context from the gather stage on every turn", () => {
     const result = attachContextVariablesToGather(spine(), {
       page_context: { kind: "page_context", pageUrl: "https://x.test" },
       ssn: "[redacted]",
-    });
+    }, pageReadDiagnostic);
 
     const gather = result.stages.find((stage) => stage.id === "gather");
     expect(gather?.outputs?.contextVariables).toEqual({
-      page_context: { kind: "page_context", pageUrl: "https://x.test" },
       ssn: "[redacted]",
     });
+    expect(gather?.outputs?.pageRead).toEqual(pageReadDiagnostic);
+    expect(JSON.stringify(gather)).not.toContain("https://x.test");
     // Other stages untouched.
     expect(result.stages.find((stage) => stage.id === "compose")?.outputs).toBeUndefined();
   });
@@ -49,12 +66,172 @@ describe("attachContextVariablesToGather", () => {
     expect(result.stages[0]?.outputs).toEqual({ historyCount: 3, contextVariables: { cart: { items: 2 } } });
   });
 
-  it("no-ops for an empty snapshot or when there is no gather stage", () => {
+  it("attaches a page-read diagnostic even when no host variables are present", () => {
+    const result = attachContextVariablesToGather(spine(), {
+      page_context: { kind: "page_context", content: "page bytes" },
+    }, pageReadDiagnostic);
+
+    expect(result.stages[0]?.outputs).toEqual({ pageRead: pageReadDiagnostic });
+    expect(JSON.stringify(result.stages[0]?.outputs)).not.toContain("page bytes");
+  });
+
+  it("no-ops for an empty snapshot without a diagnostic or when there is no gather stage", () => {
     const original = spine();
     expect(attachContextVariablesToGather(original, {})).toBe(original);
     const noGather: ConversationTrace = { ...original, stages: original.stages.filter((s) => s.kind !== "gather") };
-    expect(attachContextVariablesToGather(noGather, { cart: 1 })).toBe(noGather);
+    expect(attachContextVariablesToGather(noGather, { cart: 1 }, pageReadDiagnostic)).toBe(noGather);
   });
+
+  it.each([
+    {
+      outcome: "not_required",
+      required: false,
+      resolved: false,
+      operation: null,
+    },
+    {
+      outcome: "context_ready",
+      required: true,
+      resolved: true,
+      operation: "summarize",
+    },
+    {
+      outcome: "unavailable",
+      required: true,
+      resolved: false,
+      operation: "lookup",
+    },
+    {
+      outcome: "unsupported_operation",
+      required: true,
+      resolved: false,
+      operation: "transform",
+    },
+  ] as const)(
+    "attaches the content-free $outcome diagnostic without changing host variables",
+    ({ outcome, required, resolved, operation }) => {
+      const diagnostic: PageReadTraceDiagnostic = {
+        schemaVersion: 1,
+        available: outcome !== "unavailable",
+        required,
+        requested: false,
+        resolved,
+        operation,
+        outcome,
+      };
+      const result = attachContextVariablesToGather(spine(), {
+        page_context: {
+          kind: "page_context",
+          pageUrl: "https://private.test/page",
+          title: "Private title",
+          content: "Private page text",
+        },
+        cart: { items: 2 },
+      }, diagnostic);
+
+      expect(result.stages[0]?.outputs).toEqual({
+        contextVariables: { cart: { items: 2 } },
+        pageRead: diagnostic,
+      });
+      expect(JSON.stringify(result.stages[0]?.outputs)).not.toContain("private");
+    },
+  );
+});
+
+describe("buildPageReadTraceDiagnostic", () => {
+  it.each([
+    {
+      available: true,
+      decision: { required: false, operation: null, resolvedRequest: null },
+      gate: { kind: "not_required" },
+      resolvedInput: true,
+      expected: {
+        available: true,
+        required: false,
+        resolved: false,
+        operation: null,
+        outcome: "not_required",
+      },
+    },
+    {
+      available: true,
+      decision: { required: true, operation: "summarize", resolvedRequest: "Summarize it" },
+      gate: { kind: "capture", operation: "summarize", resolvedRequest: "Summarize it" },
+      resolvedInput: true,
+      expected: {
+        available: true,
+        required: true,
+        resolved: true,
+        operation: "summarize",
+        outcome: "context_ready",
+      },
+    },
+    {
+      available: true,
+      decision: { required: true, operation: "lookup", resolvedRequest: "Find it" },
+      gate: { kind: "capture", operation: "lookup", resolvedRequest: "Find it" },
+      resolvedInput: false,
+      expected: {
+        available: true,
+        required: true,
+        resolved: false,
+        operation: "lookup",
+        outcome: "context_ready",
+      },
+    },
+    {
+      available: false,
+      decision: { required: true, operation: "lookup", resolvedRequest: "Find it" },
+      gate: { kind: "unavailable" },
+      resolvedInput: false,
+      expected: {
+        available: false,
+        required: true,
+        resolved: false,
+        operation: "lookup",
+        outcome: "unavailable",
+      },
+    },
+    {
+      available: true,
+      decision: { required: true, operation: "transform", resolvedRequest: "Translate it" },
+      gate: { kind: "unsupported_operation" },
+      resolvedInput: false,
+      expected: {
+        available: true,
+        required: true,
+        resolved: false,
+        operation: "transform",
+        outcome: "unsupported_operation",
+      },
+    },
+  ] satisfies Array<{
+    available: boolean;
+    decision: PageReadDecision;
+    gate: PageReadGateOutcome;
+    resolvedInput: boolean;
+    expected: Omit<PageReadTraceDiagnostic, "schemaVersion" | "requested">;
+  }>)(
+    "maps $gate.kind to the content-free diagnostic outcome",
+    ({ available, decision, gate, resolvedInput, expected }) => {
+      expect(buildPageReadTraceDiagnostic({
+        capability: {
+          available,
+          mode: available ? "content" : null,
+          supportedOperations: available ? ["metadata", "lookup", "summarize"] : [],
+        },
+        outcome: {
+          merged: { decision, contributors: [] },
+          gate,
+        },
+        resolved: resolvedInput,
+      })).toEqual({
+        schemaVersion: 1,
+        requested: false,
+        ...expected,
+      });
+    },
+  );
 });
 
 describe("attachCapabilitySubTrace", () => {

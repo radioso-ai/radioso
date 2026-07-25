@@ -3,6 +3,11 @@ import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/worksp
 import { renderContextBlock } from "../../context-variables/public.js";
 import { SharedAnswerInstructionBuilder } from "../../retrieval/public.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
+import {
+  pageContextConditionFor,
+  renderPageContextCondition,
+  type PageContextCondition,
+} from "./pageRead/pageContextCondition.js";
 
 /**
  * Capability-agnostic answer-composition utilities shared by every terminal answer
@@ -53,8 +58,15 @@ export class ChatAnswerSupport {
     return renderContextBlock(session.resolvedContext?.renderFragments ?? []);
   }
 
+  pageContextCondition(session: PreparedSession): PageContextCondition | null {
+    return pageContextConditionFor(session.pageReadOutcome);
+  }
+
   buildPromptWithContext(prompt: string, session: PreparedSession): string {
-    const contextBlock = this.buildContextBlock(session);
-    return contextBlock ? `${prompt}\n\n${contextBlock}` : prompt;
+    const blocks = [
+      this.buildContextBlock(session),
+      renderPageContextCondition(this.pageContextCondition(session)),
+    ].filter((block) => block.length > 0);
+    return blocks.length > 0 ? `${prompt}\n\n${blocks.join("\n\n")}` : prompt;
   }
 }

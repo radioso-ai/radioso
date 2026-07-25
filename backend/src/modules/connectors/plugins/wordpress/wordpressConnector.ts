@@ -136,6 +136,10 @@ export class WordpressConnector implements ConnectorPlugin {
     return WP_CONFIG_KEYS.siteUrl;
   }
 
+  rotateGeneratedSecretsOnUniqueChannelChange(): boolean {
+    return true;
+  }
+
   validateConfig(config: Record<string, string>): ConnectorValidationIssue[] {
     const issues: ConnectorValidationIssue[] = [];
     const siteUrl = config[WP_CONFIG_KEYS.siteUrl];

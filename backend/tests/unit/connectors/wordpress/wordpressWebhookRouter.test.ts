@@ -17,7 +17,10 @@ const setupApp = (overrides?: {
   const deleteByExternalId = vi.fn(async () => true);
   const getConfig = vi.fn(async () => ({
     enabled: true,
-    config: { webhook_shared_secret: "topsecret" },
+    config: {
+      site_url: "https://example.com",
+      webhook_shared_secret: "topsecret",
+    },
   }));
 
   const router = createWordpressWebhookRouter({
@@ -98,7 +101,53 @@ describe("wordpressWebhookRouter", () => {
       workspaceId: "ws-1",
       externalDocumentId: "wp_post_1",
       title: "Home",
+      source: {
+        externalId: "wordpress:https://example.com",
+      },
     });
+  });
+
+  it("rejects a validly signed event from a different WordPress site", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      site_url: "https://site-one.example",
+      post: {
+        ...validPost,
+        link: "https://site-one.example/home",
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Webhook site does not match connector configuration" });
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it("rejects a post permalink outside the signed WordPress site", async () => {
+    const { app, ingest } = setupApp();
+    const body = JSON.stringify({
+      event: "published",
+      site_url: "https://example.com",
+      post: {
+        ...validPost,
+        link: "https://other.example/home",
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/connectors/wordpress/ws-1/webhook")
+      .set("content-type", "application/json")
+      .set("x-radioso-signature", signBody(body, "topsecret"))
+      .send(body);
+
+    expect(res.status).toBe(403);
+    expect(ingest).not.toHaveBeenCalled();
   });
 
   it("calls deleteByExternalId on a valid signed delete event", async () => {
@@ -114,6 +163,12 @@ describe("wordpressWebhookRouter", () => {
     expect(deleteByExternalId).toHaveBeenCalledWith({
       workspaceId: "ws-1",
       externalDocumentId: "wp_post_1",
+      source: {
+        externalId: "wordpress:https://example.com",
+        name: "example.com",
+        config: { siteUrl: "https://example.com" },
+        metadata: { connectorId: "wordpress" },
+      },
     });
   });
 

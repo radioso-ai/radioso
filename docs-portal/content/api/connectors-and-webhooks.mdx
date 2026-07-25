@@ -1,7 +1,7 @@
 ---
 title: "Connectors"
 description: "Read connector state, save connector config, enable or disable connectors, and run manual syncs."
-last_updated: 2026-07-24
+last_updated: 2026-07-25
 ---
 
 # Connectors
@@ -38,7 +38,7 @@ Radioso ships with these connector types:
 - `wordpress`: syncs WordPress pages and posts into workspace documents. It supports push webhooks and optional manual sync.
 - `whatsapp`: receives WhatsApp Business Cloud API messages, sends them through assistant chat, and replies through WhatsApp. It does not support manual sync.
 
-For WordPress, each post is ingested from its rendered content. The author's display name is stored as document metadata (`author`) — drawn from the embedded author on REST sync and from the push payload on webhooks — and included in the searchable text, so assistants can find a post by its author even though WordPress never returns the byline as part of the post body. The publish date is stored the same way: the raw timestamp under `published_at` and its day under `dateFrom`, so posts are searchable by date and usable in date metadata rules. Existing documents only pick up the author and publish date after a re-sync.
+For WordPress, each post is ingested from its rendered content. The author's display name is stored as document metadata (`author`) — drawn from the embedded author on REST sync and from the push payload on webhooks — and included in searchable and answer context, so assistants can find and identify an author even when WordPress omits the byline from the post body. The publish date is stored the same way: the raw timestamp under `published_at` and its day under `dateFrom`, so posts are searchable by date and usable in date metadata rules. Existing documents only pick up the author and publish date after a re-sync.
 
 For WhatsApp, configure the phone number ID, access token, app secret, business account ID, and generated webhook verify token. Use the connector detail's `webhookUrl` as the Meta webhook callback URL. Radioso verifies `X-Hub-Signature-256`, ignores duplicate message IDs, and stores message logs for retry and recovery.
 
@@ -83,6 +83,8 @@ The response returns `202` when the sync has been accepted:
 The sync continues after the HTTP request returns. Re-read the connector detail to see updated `syncState`. Not every connector supports manual sync. Unsupported or already-running syncs return `409`.
 
 For WordPress, the connector creates its source record before it calls the WordPress REST API. This keeps failed syncs visible under **Knowledge → Sources**, including failures that happen before WordPress returns the first post.
+
+A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects events when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret; copy the new secret into the plugin settings for the new site.
 
 ## Common failure modes
 

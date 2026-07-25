@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import { ConnectorRegistry } from "../../../src/modules/connectors/services/connectorRegistry.js";
+import {
+  decryptField,
+  encryptField,
+} from "../../../src/shared/infra/crypto/fieldEncryption.js";
+
+const CONNECTOR_KEY_OPTIONS = { keyName: "CONNECTOR_ENCRYPTION_KEY" } as const;
 
 /** Minimal fake plugin for testing the registry. */
 const createFakePlugin = (overrides: Partial<ConnectorPlugin> = {}): ConnectorPlugin => ({
@@ -20,6 +26,12 @@ const createFakePlugin = (overrides: Partial<ConnectorPlugin> = {}): ConnectorPl
   getWebhookPath: overrides.getWebhookPath ?? (() => "/api/connectors/fake/:workspaceId/webhook"),
   uniqueChannelField: overrides.uniqueChannelField ?? (() => "channel_id"),
   validateConfig: overrides.validateConfig ?? (() => []),
+  ...(overrides.rotateGeneratedSecretsOnUniqueChannelChange
+    ? {
+        rotateGeneratedSecretsOnUniqueChannelChange:
+          overrides.rotateGeneratedSecretsOnUniqueChannelChange,
+      }
+    : {}),
   ...(overrides.syncNow ? { syncNow: overrides.syncNow } : {}),
 });
 
@@ -164,6 +176,83 @@ describe("ConnectorRegistry", () => {
     };
 
     await expect(registry.getDecryptedConfig(db as any, "workspace-1", "fake")).resolves.toBeNull();
+  });
+
+  it("rotates generated secrets when an opted-in connector changes its unique channel", async () => {
+    const encryptionKey = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({
+      configSchema: () => [
+        { key: "webhook_secret", label: "Webhook secret", type: "generated_secret", required: true },
+        { key: "channel_id", label: "Channel ID", type: "text", required: true },
+      ],
+      rotateGeneratedSecretsOnUniqueChannelChange: () => true,
+    }));
+    registry.setEncryptionKey(encryptionKey);
+
+    let storedConfig = {
+      channel_id: "site-one",
+      webhook_secret: encryptField("old-secret", encryptionKey, CONNECTOR_KEY_OPTIONS),
+    };
+    const db = {
+      query: vi.fn(async <T>(sql: string, params: unknown[] = []) => {
+        if (sql.includes("SELECT config_data FROM connector_configs")) {
+          return [{ config_data: storedConfig } as T];
+        }
+        if (sql.includes("SELECT workspace_id FROM connector_configs")) {
+          return [];
+        }
+        if (sql.includes("INSERT INTO connector_configs")) {
+          storedConfig = JSON.parse(String(params[2])) as typeof storedConfig;
+          return [];
+        }
+        return [];
+      }),
+    };
+
+    await expect(
+      registry.saveConfig(db as any, "workspace-1", "fake", { channel_id: "site-two" }),
+    ).resolves.toEqual({ kind: "success" });
+
+    expect(storedConfig.channel_id).toBe("site-two");
+    expect(
+      decryptField(storedConfig.webhook_secret, encryptionKey, CONNECTOR_KEY_OPTIONS),
+    ).not.toBe("old-secret");
+  });
+
+  it("preserves generated secrets when the unique channel is unchanged", async () => {
+    const encryptionKey = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
+    const encryptedSecret = encryptField("stable-secret", encryptionKey, CONNECTOR_KEY_OPTIONS);
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({
+      configSchema: () => [
+        { key: "webhook_secret", label: "Webhook secret", type: "generated_secret", required: true },
+        { key: "channel_id", label: "Channel ID", type: "text", required: true },
+      ],
+      rotateGeneratedSecretsOnUniqueChannelChange: () => true,
+    }));
+    registry.setEncryptionKey(encryptionKey);
+
+    let storedConfig = { channel_id: "site-one", webhook_secret: encryptedSecret };
+    const db = {
+      query: vi.fn(async <T>(sql: string, params: unknown[] = []) => {
+        if (sql.includes("SELECT config_data FROM connector_configs")) {
+          return [{ config_data: storedConfig } as T];
+        }
+        if (sql.includes("SELECT workspace_id FROM connector_configs")) {
+          return [];
+        }
+        if (sql.includes("INSERT INTO connector_configs")) {
+          storedConfig = JSON.parse(String(params[2])) as typeof storedConfig;
+          return [];
+        }
+        return [];
+      }),
+    };
+
+    await registry.saveConfig(db as any, "workspace-1", "fake", { channel_id: "site-one" });
+
+    expect(storedConfig.webhook_secret).toBe(encryptedSecret);
   });
 
   it("includes connector sync state in connector detail", async () => {

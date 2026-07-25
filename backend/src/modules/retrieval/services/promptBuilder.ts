@@ -4,6 +4,7 @@ import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
+import { renderMetadataPromptText } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 
 export interface PromptBuildResult {
@@ -38,8 +39,16 @@ export class PromptBuilder {
         // Sanitize to prevent prompt injection via newlines or control characters.
         const rawSourceUrl = resolveContextSourceUrl(context.metadata) ?? "";
         const sanitizedSourceUrl = rawSourceUrl.replace(/[\n\r\t\x00-\x1f]/g, "").slice(0, 2048);
-        const metadataLine = sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}\n` : "";
-        return `Result ${index + 1} (${context.title}): ${metadataLine}${context.content}`;
+        const rawMetadataText = renderMetadataPromptText(context.metadata ?? {});
+        const sanitizedMetadataText = rawMetadataText
+          .replace(/[\n\r\t\x00-\x1f]/g, " ")
+          .slice(0, 2048);
+        const metadataLines = [
+          sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}` : "",
+          sanitizedMetadataText ? `Attributes: ${sanitizedMetadataText}` : "",
+        ].filter((line) => line.length > 0);
+        const metadataSection = metadataLines.length > 0 ? `${metadataLines.join("\n")}\n` : "";
+        return `Result ${index + 1} (${context.title}): ${metadataSection}${context.content}`;
       })
       .join("\n\n");
     const answerInstructionBlocks = this.sharedAnswerInstructionBuilder.build({

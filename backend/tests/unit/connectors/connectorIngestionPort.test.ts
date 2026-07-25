@@ -11,7 +11,7 @@ interface BuildPortOptions {
   ingest?: ReturnType<typeof vi.fn>;
   resolveSource?: ReturnType<typeof vi.fn>;
   delete?: ReturnType<typeof vi.fn>;
-  findByExternalDocumentId?: ReturnType<typeof vi.fn>;
+  findBySourceAndExternalDocumentId?: ReturnType<typeof vi.fn>;
   extractTextFromHtml?: ExtractTextFromHtmlMock;
 }
 
@@ -27,7 +27,8 @@ const buildPort = (overrides: BuildPortOptions = {}) => {
       } as any,
       documentDeletionService: { delete: overrides.delete ?? vi.fn() } as any,
       documentRepository: {
-        findByExternalDocumentId: overrides.findByExternalDocumentId ?? vi.fn(),
+        findBySourceAndExternalDocumentId:
+          overrides.findBySourceAndExternalDocumentId ?? vi.fn(),
       } as any,
       htmlContentNormalizer: { extractTextFromHtml },
     }),
@@ -80,13 +81,22 @@ describe("createConnectorIngestionPort", () => {
   });
 
   it("returns false from deleteByExternalId when no matching document exists", async () => {
-    const findByExternalDocumentId = vi.fn(async () => null);
+    const resolveSource = vi.fn(async () => ({ id: "source-1" }));
+    const findBySourceAndExternalDocumentId = vi.fn(async () => null);
     const deleteFn = vi.fn();
-    const { port } = buildPort({ findByExternalDocumentId, delete: deleteFn });
+    const { port } = buildPort({
+      resolveSource,
+      findBySourceAndExternalDocumentId,
+      delete: deleteFn,
+    });
 
     const deleted = await port.deleteByExternalId({
       workspaceId: "ws-1",
       externalDocumentId: "wp_post_999",
+      source: {
+        externalId: "wordpress:https://example.com",
+        name: "example.com",
+      },
     });
 
     expect(deleted).toBe(false);
@@ -145,17 +155,37 @@ describe("createConnectorIngestionPort", () => {
   });
 
   it("resolves external id then delegates to DocumentDeletionService", async () => {
-    const findByExternalDocumentId = vi.fn(async () => ({ id: "doc-xyz" }));
+    const resolveSource = vi.fn(async () => ({ id: "source-xyz" }));
+    const findBySourceAndExternalDocumentId = vi.fn(async () => ({ id: "doc-xyz" }));
     const deleteFn = vi.fn(async () => {});
-    const { port } = buildPort({ findByExternalDocumentId, delete: deleteFn });
+    const { port } = buildPort({
+      resolveSource,
+      findBySourceAndExternalDocumentId,
+      delete: deleteFn,
+    });
 
     const deleted = await port.deleteByExternalId({
       workspaceId: "ws-1",
       externalDocumentId: "wp_post_42",
+      source: {
+        externalId: "wordpress:https://example.com",
+        name: "example.com",
+      },
     });
 
     expect(deleted).toBe(true);
-    expect(findByExternalDocumentId).toHaveBeenCalledWith("ws-1", "wp_post_42");
+    expect(resolveSource).toHaveBeenCalledWith({
+      workspaceId: "ws-1",
+      source: expect.objectContaining({
+        kind: "connector",
+        externalId: "wordpress:https://example.com",
+      }),
+    });
+    expect(findBySourceAndExternalDocumentId).toHaveBeenCalledWith(
+      "ws-1",
+      "source-xyz",
+      "wp_post_42",
+    );
     expect(deleteFn).toHaveBeenCalledWith({ workspaceId: "ws-1", documentId: "doc-xyz" });
   });
 });

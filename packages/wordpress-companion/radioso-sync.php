@@ -3,7 +3,7 @@
  * Plugin Name: Radioso Sync
  * Description: Pushes published, updated, and deleted posts/pages to a Radioso
  *              workspace via signed webhook (HMAC-SHA256).
- * Version:     0.1.0
+ * Version:     0.2.0
  * Author:      Radioso
  * License:     MIT
  *
@@ -64,8 +64,9 @@ function radioso_dispatch($event, $post) {
     }
 
     $payload = wp_json_encode([
-        'event' => $event,
-        'post'  => [
+        'event'    => $event,
+        'site_url' => home_url('/'),
+        'post'     => [
             'id'               => (int) $post->ID,
             'type'             => $post->post_type,
             'status'           => $post->post_status,

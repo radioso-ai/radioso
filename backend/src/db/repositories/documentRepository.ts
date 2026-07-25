@@ -447,6 +447,22 @@ export class DocumentRepository implements DocumentRepositoryPort {
     return row ? mapDocument(row) : null;
   }
 
+  async findBySourceAndExternalDocumentId(
+    workspaceId: string,
+    sourceId: string,
+    externalDocumentId: string,
+  ): Promise<DocumentRecord | null> {
+    const row = (await this.db
+      .selectFrom("documents")
+      .select(documentSelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("source_id", "=", sourceId)
+      .where("external_document_id", "=", externalDocumentId)
+      .executeTakeFirst()) as DocumentRow | undefined;
+
+    return row ? mapDocument(row) : null;
+  }
+
   async update(input: DocumentUpdateInput): Promise<DocumentRecord> {
     const row = (await this.db
       .updateTable("documents")

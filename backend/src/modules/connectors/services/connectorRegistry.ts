@@ -383,9 +383,19 @@ export class ConnectorRegistry {
     }
 
     const storedUpdates = this.encryptSecrets(normalizedInput, schema);
+    const uniqueChannelChanged = uniqueField
+      ? Boolean(existingPlainConfig[uniqueField]) &&
+        existingPlainConfig[uniqueField] !== mergedPlainConfig[uniqueField]
+      : false;
+    const rotatedGeneratedSecrets =
+      uniqueChannelChanged &&
+      plugin.rotateGeneratedSecretsOnUniqueChannelChange?.()
+        ? this.generateSecrets(schema.filter(isGeneratedSecretField))
+        : {};
     const mergedStoredConfig = {
       ...existingStoredConfig,
       ...storedUpdates,
+      ...this.encryptSecrets(rotatedGeneratedSecrets, schema),
     };
 
     await db.query(
@@ -397,6 +407,10 @@ export class ConnectorRegistry {
     );
 
     return { kind: "success" };
+  }
+
+  private generateSecrets(fields: ConfigFieldDefinition[]): Record<string, string> {
+    return Object.fromEntries(fields.map((field) => [field.key, generateConnectorSecret()]));
   }
 
   async enableConnector(

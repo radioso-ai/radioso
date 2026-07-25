@@ -14,6 +14,7 @@ import {
   type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
 import { compileRoutineDefinition } from "./compiler.js";
+import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import {
   validateRoutineDefinition,
   type RoutineValidationDiagnostic,
@@ -101,6 +102,7 @@ export interface RoutineDefinitionServiceOptions {
       transaction?: unknown;
     }): Promise<{ repointed: number; orphans: RoutineDirectiveScopeOrphan[] }>;
   };
+  triggerEmbeddingService?: Pick<RoutineTriggerEmbeddingService, "persistPublished">;
 }
 
 const draftDefinitionFromInput = (agentId: string, input: RoutineDefinitionDraftInput): RoutineDefinition => ({
@@ -304,6 +306,7 @@ export class RoutineDefinitionService {
       }
       throw error;
     }
+    await this.options.triggerEmbeddingService?.persistPublished({ workspaceId, agentId, routine: published });
     await this.recordLifecycleAudit("routine_definition.publish", workspaceId, agentId, published, {
       supersededDefinitionId,
       directiveScopeOrphans: directiveScopeOrphans.length,

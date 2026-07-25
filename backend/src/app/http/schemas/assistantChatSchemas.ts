@@ -46,6 +46,12 @@ export const assistantChatSchema = z.object({
   inputMetadata: userInputMetadataSchema.optional(),
   sourceContext: sourceContextSchema,
   metadataFilter: metadataFilterSchema,
+  // Operator-only workbench test override: routine definition ids (including
+  // unpublished drafts) to make eligible for this conversation so an author can
+  // test-run a draft end-to-end. Only reachable on this workspace-session route;
+  // the public chat surface has no such field, so an end-user turn can never
+  // activate a draft. Ephemeral — never persisted to the routine catalog.
+  previewRoutineIds: z.array(z.string().uuid()).max(20).optional(),
 }).superRefine((value, ctx) => {
   if (!value.message && !value.startConversation) {
     ctx.addIssue({

@@ -300,6 +300,10 @@ export interface ChatRequest {
   userExpectedLocale?: string
   inputMetadata?: ChatUserInputMetadata
   includeDebug?: boolean
+  // Workbench-only: draft (or any-status) routine ids to make eligible for this turn so
+  // an author can test-run an unpublished routine. Sent only from the authenticated
+  // dashboard chat; ignored/absent everywhere else.
+  previewRoutineIds?: string[]
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
@@ -331,6 +335,9 @@ export const toAssistantChatPayload = (data: ChatRequest) => ({
   includeDebug: data.includeDebug,
   userExpectedLocale: data.userExpectedLocale,
   inputMetadata: data.inputMetadata,
+  ...(data.previewRoutineIds && data.previewRoutineIds.length > 0
+    ? { previewRoutineIds: data.previewRoutineIds }
+    : {}),
   sourceContext: {
     surface: 'authenticated_chat' as const,
   },

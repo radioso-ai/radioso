@@ -54,6 +54,18 @@ services.
   the agent chat tab with `agentChatConversationId` (a `dashboard-routes` param). The
   workbench adopts it via `useChatSession().adoptConversation` (`lib/chat-context.tsx`),
   loading the forked thread and continuing live. Original conversation is untouched.
+- `ChatWorkbench` is a reusable component with a `shell: 'page' | 'drawer'` prop — the
+  same live chat body renders inside the full-page `DashboardPage` or, via
+  `workbench/chat-workbench-drawer.tsx`, inside a right-side `Sheet`. Page-context props
+  (`onOpenDocument`, `onboarding`) are optional so it drops into either host.
+- Test an unpublished routine: **Test draft** on a saved draft in
+  `settings/assistant-routines-section.tsx` opens `ChatWorkbenchDrawer` in place (no
+  navigation) with `previewRoutineIds={[draftId]}`. `ChatWorkbench` passes them into
+  `useChatSession(..., { previewRoutineIds })`, which rides every send to `/assistant/chat`;
+  the backend makes those draft definitions eligible for the turn (operator-only — public
+  chat has no such field). The draft-test session uses a distinct session key so its turns
+  never mix into the normal test chat. A deep link `?tab=chat&chatPreviewRoutine=<id>`
+  (`dashboard-routes` param `agentChatPreviewRoutineId`) does the same test full-page.
 - Settings UI: `settings-view.tsx`, `settings/`, and settings docs sources.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
 - Shared table/page patterns: `shared/`.

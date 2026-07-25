@@ -47,6 +47,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
               inputMetadata: req.body.inputMetadata,
               sourceContext: req.body.sourceContext,
               metadataFilter: req.body.metadataFilter,
+              previewRoutineIds: req.body.previewRoutineIds,
               sourceChannel: req.body.sourceContext?.surface ?? null,
               sourceOrigin: req.body.sourceContext?.sourceOrigin ?? null,
             }),
@@ -68,6 +69,7 @@ export const createAssistantRoutes = (dependencies: AssistantRouteDependencies):
           inputMetadata: req.body.inputMetadata,
           sourceContext: req.body.sourceContext,
           metadataFilter: req.body.metadataFilter,
+          previewRoutineIds: req.body.previewRoutineIds,
           sourceChannel: req.body.sourceContext?.surface ?? null,
           sourceOrigin: req.body.sourceContext?.sourceOrigin ?? null,
         });

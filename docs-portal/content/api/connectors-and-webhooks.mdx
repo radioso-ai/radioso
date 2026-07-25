@@ -1,7 +1,7 @@
 ---
 title: "Connectors"
 description: "Read connector state, save connector config, enable or disable connectors, and run manual syncs."
-last_updated: 2026-07-24
+last_updated: 2026-07-25
 ---
 
 # Connectors
@@ -83,6 +83,8 @@ The response returns `202` when the sync has been accepted:
 The sync continues after the HTTP request returns. Re-read the connector detail to see updated `syncState`. Not every connector supports manual sync. Unsupported or already-running syncs return `409`.
 
 For WordPress, the connector creates its source record before it calls the WordPress REST API. This keeps failed syncs visible under **Knowledge → Sources**, including failures that happen before WordPress returns the first post.
+
+A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects events when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret; copy the new secret into the plugin settings for the new site.
 
 ## Common failure modes
 

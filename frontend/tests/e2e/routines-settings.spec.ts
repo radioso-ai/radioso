@@ -186,7 +186,8 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
     page.getByRole("button", { name: "New routine" }).click(),
   ]);
 
-  await page.getByRole("button", { name: "Draft with AI" }).click();
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await page.getByRole("menuitem", { name: "Draft with AI" }).click();
   await expect(page.getByRole("dialog", { name: "Draft with AI" })).toBeVisible();
   await page.getByLabel("Procedure text for routine drafting assist").fill("When the visitor asks for follow-up, collect @email and send the contact request.");
   await page.getByRole("button", { name: "Load proposal" }).click();
@@ -336,7 +337,8 @@ test("agent routines archive and restore from the collapsed archived section", a
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000201`);
   await expect(page.getByText("published v2 (read-only)", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Archive", exact: true }).click();
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await page.getByRole("menuitem", { name: "Archive" }).click();
   await expect(page.getByText("archived v2 (read-only)", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
 
@@ -394,12 +396,13 @@ test("agent routines archive from a revision draft without publishing first", as
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
   await expect(page.getByText("draft v2", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Delete draft Collect pricing intake" })).toBeVisible();
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Delete draft" })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "REVISE")).toBe(true);
 
   await Promise.all([
     page.waitForURL(routinesListUrl),
-    page.getByRole("button", { name: "Archive", exact: true }).click(),
+    page.getByRole("menuitem", { name: "Archive" }).click(),
   ]);
   await expect.poll(() => routineUpdates.some((update) => update.method === "ARCHIVE")).toBe(true);
 
@@ -426,7 +429,8 @@ test("agent routine draft delete requires confirmation", async ({ page }) => {
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/55555555-5555-4555-9555-000000000601`);
   await expect(page.getByText("draft v1", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Delete draft Collect pricing intake" }).click();
+  await page.getByRole("button", { name: "More routine actions" }).click();
+  await page.getByRole("menuitem", { name: "Delete draft" }).click();
   await expect(page.getByRole("alertdialog", { name: "Delete draft?" })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "DELETE")).toBe(false);
 

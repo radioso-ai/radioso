@@ -12,6 +12,7 @@ import {
   FlaskConical,
   FormInput,
   History,
+  MoreHorizontal,
   Pencil,
   Plus,
   RotateCcw,
@@ -43,6 +44,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -1063,74 +1071,96 @@ function RoutineEditorScreen({
     }
   })
 
-  const headerActions = useMemo(() => (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-      {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-      {!isReadOnly && form ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => setDraftAssistDialogOpen(true)} disabled={isSaving || isDraftingRoutine}>
-          <WandSparkles className="mr-2 h-4 w-4" />
-          Draft with AI
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'draft' && publishedSibling ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archiveFromDraft()} disabled={isSaving}>
-          <Archive className="mr-2 h-4 w-4" />
-          Archive
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'published' ? (
-        <>
-          <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archivePublished()} disabled={isSaving}>
-            <Archive className="mr-2 h-4 w-4" />
-            Archive
+  const headerActions = useMemo(() => {
+    // One primary action per status; secondary is the draft's "Test draft". Everything
+    // else (AI drafting, archive, delete) lives in an overflow menu so the header keeps a
+    // single clear call to action instead of a row of competing buttons.
+    const isDraft = editingRoutine?.status === 'draft'
+    const showDraftWithAi = !isReadOnly && Boolean(form)
+    const showArchiveFromDraft = isDraft && Boolean(publishedSibling)
+    const showArchivePublished = editingRoutine?.status === 'published'
+    const showDeleteDraft = isDraft
+    const hasOverflow = showDraftWithAi || showArchiveFromDraft || showArchivePublished || showDeleteDraft
+
+    return (
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
+        {isDraft ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setTestDrawerOpen(true)}
+            disabled={isSaving}
+            title="Open a live test chat where this draft can activate, run, and hand back — without publishing it"
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            Test draft
           </Button>
+        ) : null}
+        {editingRoutine?.status === 'published' ? (
           <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.revisePublished()} disabled={isSaving}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit revision
           </Button>
-        </>
-      ) : null}
-      {editingRoutine?.status === 'archived' ? (
-        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Restore
-        </Button>
-      ) : null}
-      {!isReadOnly && form ? (
-        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
-          <Send className="mr-2 h-4 w-4" />
-          Publish
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'draft' ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setTestDrawerOpen(true)}
-          disabled={isSaving}
-          title="Open a live test chat where this draft can activate, run, and hand back — without publishing it"
-        >
-          <FlaskConical className="mr-2 h-4 w-4" />
-          Test draft
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'draft' ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => actionHandlersRef.current.openDeleteDraftDialog()}
-          disabled={isSaving}
-          aria-label={`Delete draft ${editingRoutine.name}`}
-          title="Delete draft"
-          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ) : null}
-    </div>
-  ), [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus])
+        ) : null}
+        {editingRoutine?.status === 'archived' ? (
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Restore
+          </Button>
+        ) : null}
+        {!isReadOnly && form ? (
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
+            <Send className="mr-2 h-4 w-4" />
+            Publish
+          </Button>
+        ) : null}
+        {hasOverflow ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {showDraftWithAi ? (
+                <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
+                  <WandSparkles className="mr-2 h-4 w-4" />
+                  Draft with AI
+                </DropdownMenuItem>
+              ) : null}
+              {showArchiveFromDraft ? (
+                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archiveFromDraft()}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </DropdownMenuItem>
+              ) : null}
+              {showArchivePublished ? (
+                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archivePublished()}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </DropdownMenuItem>
+              ) : null}
+              {showDeleteDraft ? (
+                <>
+                  {showDraftWithAi || showArchiveFromDraft ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem
+                    disabled={isSaving}
+                    onSelect={() => actionHandlersRef.current.openDeleteDraftDialog()}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete draft
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    )
+  }, [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus])
 
   const headerBackAction = useMemo(() => (
     <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>

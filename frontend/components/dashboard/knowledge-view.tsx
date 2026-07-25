@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { AddDocumentMenu, type AddDocumentAction } from '@/components/dashboard/documents/add-document-menu'
 import { DocumentsView } from '@/components/dashboard/documents-view'
 import { DocumentSourcesView } from '@/components/dashboard/document-sources-view'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
@@ -29,17 +28,18 @@ export function KnowledgeView({
   const router = useRouter()
   const activeTab = routeState.knowledgeTab ?? 'documents'
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
-  // The Sources tab's "Add source" action reuses the Documents tab's crawl
-  // dialog: it flips this flag and routes to Documents, which opens the dialog
-  // and clears the flag. Keeps a single crawl flow instead of duplicating it.
-  const [pendingCrawlOpen, setPendingCrawlOpen] = useState(false)
+  // The Sources tab's "Add" menu reuses the Documents tab's add dialogs: it
+  // records the chosen action and routes to Documents, which opens the matching
+  // dialog and clears the flag. Keeps a single set of add flows instead of
+  // duplicating them.
+  const [pendingAddAction, setPendingAddAction] = useState<AddDocumentAction | null>(null)
   const [ingestionSaveState, setIngestionSaveState] = useState<{
     state: 'idle' | 'saved' | 'saving' | 'error'
     message?: string | null
   }>({ state: 'idle' })
 
-  const handleAddSource = useCallback(() => {
-    setPendingCrawlOpen(true)
+  const handleAddSelect = useCallback((action: AddDocumentAction) => {
+    setPendingAddAction(action)
     router.push(
       buildDashboardHref(accountId, {
         ...routeState,
@@ -95,8 +95,8 @@ export function KnowledgeView({
         selectedDocumentId={selectedDocumentId}
         onSelectedDocumentChange={onSelectedDocumentChange}
         onboarding={onboarding}
-        autoOpenCrawl={pendingCrawlOpen}
-        onAutoOpenCrawlHandled={() => setPendingCrawlOpen(false)}
+        autoOpenAdd={pendingAddAction}
+        onAutoOpenAddHandled={() => setPendingAddAction(null)}
       />
     )
   }
@@ -106,16 +106,19 @@ export function KnowledgeView({
       title="Sources"
       description="Review the sources agents can use for scoped knowledge."
       actions={
-        websiteCrawlerEnabled ? (
-          <Button type="button" size="sm" onClick={handleAddSource}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add source
-          </Button>
-        ) : undefined
+        <AddDocumentMenu
+          websiteCrawlerEnabled={websiteCrawlerEnabled}
+          onSelect={handleAddSelect}
+        />
       }
     >
       <DocumentSourcesView
-        onAddSource={websiteCrawlerEnabled ? handleAddSource : undefined}
+        addSourceMenu={
+          <AddDocumentMenu
+            websiteCrawlerEnabled={websiteCrawlerEnabled}
+            onSelect={handleAddSelect}
+          />
+        }
         onViewDocumentsForSource={(sourceId) => {
           router.push(
             buildDashboardHref(accountId, {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -8,7 +8,6 @@ import {
   FileText,
   Pause,
   Play,
-  Plus,
   RefreshCw,
   ScrollText,
   Settings2,
@@ -108,9 +107,9 @@ const connectorIdFromExternalId = (externalId: string | null): string | null => 
 
 interface DocumentSourcesViewProps {
   onViewDocumentsForSource: (sourceId: string) => void
-  // Optional add-source entry point (opens the website-crawl flow). Omitted when
-  // crawling is unavailable for the workspace.
-  onAddSource?: () => void
+  // Add-source affordance rendered in the empty state. The same menu shown in
+  // the Sources header, passed down so both entry points stay identical.
+  addSourceMenu?: ReactNode
 }
 
 const splitPatterns = (value: string): string[] =>
@@ -452,7 +451,7 @@ function SourceExpandedPanel({
   )
 }
 
-export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: DocumentSourcesViewProps) {
+export function DocumentSourcesView({ onViewDocumentsForSource, addSourceMenu }: DocumentSourcesViewProps) {
   const { activeWorkspaceId, isLoading: isWorkspaceLoading } = useWorkspace()
   const [sources, setSources] = useState<DocumentSourceListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -730,12 +729,7 @@ export function DocumentSourcesView({ onViewDocumentsForSource, onAddSource }: D
             Sources appear after website crawls or uploaded files create persisted source records.
           </p>
         </div>
-        {onAddSource ? (
-          <Button type="button" size="sm" onClick={onAddSource}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add source
-          </Button>
-        ) : null}
+        {addSourceMenu}
       </div>
     )
   }

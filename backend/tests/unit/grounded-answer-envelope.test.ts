@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildGroundedAnswerResponseFormat,
   GroundedAnswerEnvelopeReader,
   parseGroundedAnswerEnvelope,
   SUGGESTIONS_SENTINEL,
@@ -11,6 +12,43 @@ import {
 } from "../support/answerEnvelopeV2Fixtures.js";
 
 describe("parseGroundedAnswerEnvelope", () => {
+  it("passes through model-returned fields the envelope does not interpret as opaque extras", () => {
+    const parsed = parseGroundedAnswerEnvelope(JSON.stringify({
+      answer: "The practice begins gently[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      adherence: [{ rule: "d1", satisfied: true, note: "kept the requested tone" }],
+    }));
+
+    // The envelope carries the extension verbatim; it does not know what it means.
+    expect(parsed.extras).toEqual({
+      adherence: [{ rule: "d1", satisfied: true, note: "kept the requested tone" }],
+    });
+  });
+
+  it("omits extras when the envelope only has core fields", () => {
+    expect(parseGroundedAnswerEnvelope(groundedV2Envelope()).extras).toBeUndefined();
+  });
+
+  it("merges a caller schema extension into the response format, base-only without one", () => {
+    const extension = {
+      properties: { adherence: { type: "array", items: { properties: { rule: { enum: ["d1", "d2"] } } } } },
+      required: ["adherence"],
+    };
+    const extended = buildGroundedAnswerResponseFormat(extension);
+    expect(extended.schema.properties).toMatchObject({
+      adherence: { type: "array", items: { properties: { rule: { enum: ["d1", "d2"] } } } },
+    });
+    expect(extended.schema.required).toContain("adherence");
+
+    const base = buildGroundedAnswerResponseFormat();
+    expect(base.schema.properties).not.toHaveProperty("adherence");
+    expect(base.schema.required).not.toContain("adherence");
+  });
+
   it("parses a provider-enforced structured envelope", () => {
     expect(parseGroundedAnswerEnvelope(JSON.stringify({
       answer: "The practice begins gently[[1]].",
@@ -174,6 +212,25 @@ describe("GroundedAnswerEnvelopeReader", () => {
     expect(yielded.join("")).toBe("Answer[[1]].");
     expect(finalized.suggestions).toEqual([]);
     expect(finalized.parseStatus).toBe("valid_v2");
+  });
+
+  it("buffers structured extras until finalization without emitting them", () => {
+    const reader = new GroundedAnswerEnvelopeReader();
+    const raw = JSON.stringify({
+      answer: "Answer[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      adherence: [{ rule: "d1", satisfied: true, note: "concise" }],
+    });
+    const emitted = reader.push(raw);
+    const finalized = reader.finalize();
+
+    expect(emitted).toBe("Answer[[1]].");
+    expect(emitted).not.toContain("adherence");
+    expect(finalized.extras).toEqual({ adherence: [{ rule: "d1", satisfied: true, note: "concise" }] });
   });
 
   it("returns held answer bytes with missing status when no sentinel arrives", () => {

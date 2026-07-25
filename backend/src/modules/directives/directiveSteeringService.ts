@@ -147,8 +147,18 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
       );
     }
 
+    // Order the steering rules by priority first (orderSteeringRules sorts
+    // SteeringRule[] by priority; the raw matches carry priority nested under
+    // `directive`, so they must be mapped before ordering), then assign stable
+    // per-turn ids over that final ordering. Ids intentionally cover only the
+    // rendered set: held-back and lifecycle-suppressed directives are never
+    // prompted, so they get no attestation id.
+    const orderedRules = orderSteeringRules(rendered.map(directiveToSteeringRule));
     return {
-      rules: orderSteeringRules(rendered.map(directiveToSteeringRule)),
+      rules: orderedRules.map((rule, index) => ({
+        ...rule,
+        id: `d${index + 1}`,
+      })),
       matches: kept,
       omissions: [...omissions, ...relationshipOmissions],
       bounded: dropped,

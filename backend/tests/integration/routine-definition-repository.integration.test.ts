@@ -120,6 +120,32 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     );
   });
 
+  it("searches persisted trigger embeddings and identifies candidates without a usable vector", async () => {
+    const first = await repository.createDraft(agentId, baseDraft({ name: "Refund search one" }));
+    const second = await repository.createDraft(agentId, baseDraft({ name: "Refund search two" }));
+    await repository.publish(agentId, first.id);
+    await repository.publish(agentId, second.id);
+    const firstVector = new Array<number>(1536).fill(0);
+    firstVector[0] = 1;
+    await repository.saveTriggerEmbedding({
+      agentId,
+      routineId: first.id,
+      embedding: firstVector,
+      model: "text-embedding-3-small",
+      hash: "first",
+    });
+
+    const result = await repository.searchActivationTriggerEmbeddings({
+      candidateRoutineIds: [first.id, second.id],
+      embeddingModel: "text-embedding-3-small",
+      queryEmbedding: firstVector,
+      topK: 8,
+    });
+
+    expect(result.matches).toEqual([{ routineId: first.id, distance: 0 }]);
+    expect(result.noVectorRoutineIds).toEqual([second.id]);
+  });
+
   it("publish supersedes the prior published row, hands a working transaction to onPublished, and conflicts when re-published", async () => {
     const first = await repository.createDraft(agentId, baseDraft());
     await repository.publish(agentId, first.id);

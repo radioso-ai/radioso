@@ -220,7 +220,7 @@ import {
   SlackSkillDefinitionRepository,
 } from "../../modules/slackSkills/public.js";
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../modules/notify/notifyExecutor.js";
-import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver } from "../../modules/routines/public.js";
+import { RoutineSkillExecutorDispatcher, StaticRoutineSkillResolver, type RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
@@ -859,27 +859,19 @@ export const buildWorkspaceServices = (input: {
 
 const ROUTINE_ACTIVATION_PREFILTER_TOP_K = 8;
 const ROUTINE_ACTIVATION_PREFILTER_MIN_SCORE = 0.2;
+// Bounds per-turn background embedding fan-out while unembedded published
+// rows (pre-migration-128 catalogs, or a changed workspace embedding model)
+// converge to persisted vectors over successive turns.
+const ROUTINE_TRIGGER_SELF_HEAL_PER_TURN = 16;
+const routineDefinitionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-const cosineSimilarity = (left: readonly number[], right: readonly number[]): number => {
-  const length = Math.min(left.length, right.length);
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (let index = 0; index < length; index += 1) {
-    const leftValue = left[index] ?? 0;
-    const rightValue = right[index] ?? 0;
-    dot += leftValue * rightValue;
-    leftNorm += leftValue * leftValue;
-    rightNorm += rightValue * rightValue;
-  }
-  const denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
-  return denominator === 0 ? 0 : dot / denominator;
-};
-
-const createRoutineActivationPrefilter = (input: {
+export const createRoutineActivationPrefilter = (input: {
   accountId?: string;
   embeddingService: EmbeddingService;
+  embeddingModelForWorkspace: (workspaceId: string) => Promise<string>;
   logger: AppLogger;
+  routineDefinitionRepository: Pick<RoutineDefinitionRepository, "searchActivationTriggerEmbeddings">;
+  selfHealTriggerEmbedding?: (input: { routineId: string; description: string }) => void;
   workspaceId: string;
 }): RoutineActivationPrefilter => ({
   minScore: ROUTINE_ACTIVATION_PREFILTER_MIN_SCORE,
@@ -888,10 +880,15 @@ const createRoutineActivationPrefilter = (input: {
     if (triggers.length === 0) {
       return [];
     }
+    const allCandidates = () => triggers.map((trigger) => ({ routineId: trigger.routineId, score: 1 }));
+    let embeddingModel: string;
+    let queryVector: number[] | undefined;
     try {
-      const vectors = await input.embeddingService.embedTexts(
-        [query, ...triggers.map((trigger) => trigger.description)],
+      embeddingModel = await input.embeddingModelForWorkspace(input.workspaceId);
+      [queryVector] = await input.embeddingService.embedTexts(
+        [query],
         {
+          model: embeddingModel,
           usageContext: {
             accountId: input.accountId ?? null,
             workspaceId: input.workspaceId,
@@ -903,26 +900,77 @@ const createRoutineActivationPrefilter = (input: {
           },
         },
       );
-      const queryVector = vectors[0];
       if (!queryVector) {
-        return [];
+        throw new Error("routine_activation_query_embedding_missing");
       }
-      return triggers.flatMap((trigger, index) => {
-        const triggerVector = vectors[index + 1];
-        return triggerVector
-          ? [{ routineId: trigger.routineId, score: cosineSimilarity(queryVector, triggerVector) }]
-          : [];
-      });
-    } catch (error) {
-      input.logger.warn(
+    } catch {
+      input.logger.debug(
         {
-          err: error instanceof Error ? error.message : String(error),
-          workspaceId: input.workspaceId,
-          routineTriggerCount: triggers.length,
+          mode: "embed_failed",
+          candidateCountBefore: triggers.length,
+          candidateCountAfter: triggers.length,
+          candidateRoutineIds: triggers.map((trigger) => trigger.routineId),
+          keptRoutineIds: triggers.map((trigger) => trigger.routineId),
         },
-        "Routine activation prefilter failed; falling back to ranked LLM activation",
+        "Routine activation prefilter fell back to all candidates",
       );
-      throw error;
+      return allCandidates();
+    }
+    try {
+      const result = await input.routineDefinitionRepository.searchActivationTriggerEmbeddings({
+        candidateRoutineIds: triggers
+          .map((trigger) => trigger.routineId)
+          .filter((routineId) => routineDefinitionIdPattern.test(routineId)),
+        embeddingModel: embeddingModel!,
+        queryEmbedding: queryVector!,
+        topK: ROUTINE_ACTIVATION_PREFILTER_TOP_K,
+      });
+      const scored = result.matches.flatMap(({ routineId, distance }) => {
+        const score = 1 - distance;
+        return score >= ROUTINE_ACTIVATION_PREFILTER_MIN_SCORE ? [{ routineId, score }] : [];
+      });
+      const noVector = [
+        ...result.noVectorRoutineIds,
+        ...triggers
+          .map((trigger) => trigger.routineId)
+          .filter((routineId) => !routineDefinitionIdPattern.test(routineId)),
+      ].map((routineId) => ({ routineId, score: 1 }));
+      // DB-backed rows in the no-vector lane are legacy/unembedded or stale on
+      // a changed embedding model. Re-embed a bounded batch fire-and-forget so
+      // the lane stays a transient recall fallback, not a steady state that
+      // outranks real similarity scores. Drafts self-skip in the service.
+      if (input.selfHealTriggerEmbedding) {
+        const descriptionsById = new Map(triggers.map((trigger) => [trigger.routineId, trigger.description]));
+        for (const routineId of result.noVectorRoutineIds.slice(0, ROUTINE_TRIGGER_SELF_HEAL_PER_TURN)) {
+          const description = descriptionsById.get(routineId);
+          if (description) {
+            input.selfHealTriggerEmbedding({ routineId, description });
+          }
+        }
+      }
+      input.logger.debug(
+        {
+          mode: "persisted",
+          candidateCountBefore: triggers.length,
+          candidateCountAfter: scored.length + noVector.length,
+          candidateRoutineIds: triggers.map((trigger) => trigger.routineId),
+          keptRoutineIds: [...scored, ...noVector].map((candidate) => candidate.routineId),
+        },
+        "Routine activation prefilter completed",
+      );
+      return [...scored, ...noVector];
+    } catch {
+      input.logger.debug(
+        {
+          mode: "fallback_full",
+          candidateCountBefore: triggers.length,
+          candidateCountAfter: triggers.length,
+          candidateRoutineIds: triggers.map((trigger) => trigger.routineId),
+          keptRoutineIds: triggers.map((trigger) => trigger.routineId),
+        },
+        "Routine activation prefilter fell back to all candidates",
+      );
+      return allCandidates();
     }
   },
 });
@@ -964,6 +1012,8 @@ export const buildChatServices = (input: {
   workspaceRepository: WorkspaceRepository;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   errorReporter: ErrorReporter;
+  ingestionSettingsService: IngestionSettingsService;
+  routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
   const routineActivationEmbeddingService = new EmbeddingService(
@@ -1390,7 +1440,18 @@ export const buildChatServices = (input: {
               activationPrefilter: createRoutineActivationPrefilter({
                 accountId,
                 embeddingService: routineActivationEmbeddingService,
+                embeddingModelForWorkspace: async (inputWorkspaceId) =>
+                  (await input.ingestionSettingsService.getForWorkspace(inputWorkspaceId)).embeddingModel,
                 logger: input.logger,
+                routineDefinitionRepository: input.routineDefinitionRepository,
+                selfHealTriggerEmbedding: ({ routineId, description }) => {
+                  // persistPublished is total (catch-all) — safe fire-and-forget.
+                  void input.routineTriggerEmbeddingService.persistPublished({
+                    workspaceId,
+                    agentId,
+                    routine: { id: routineId, activation: { triggerDescription: description } },
+                  });
+                },
                 workspaceId,
               }),
             }

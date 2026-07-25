@@ -40,6 +40,17 @@ interface RoutineDefinitionRow {
   updated_at: Date;
 }
 
+interface RoutineTriggerEmbeddingSearchRow {
+  routine_id: string;
+  distance: number | null;
+  no_vector: boolean;
+}
+
+export interface RoutineTriggerEmbeddingSearchResult {
+  matches: Array<{ routineId: string; distance: number }>;
+  noVectorRoutineIds: string[];
+}
+
 const asRecord = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -317,6 +328,101 @@ export class RoutineDefinitionRepository {
     `.execute(this.db);
     const row = result.rows[0];
     return row ? mapRow(row) : null;
+  }
+
+  async getTriggerEmbeddingMetadata(
+    agentId: string,
+    routineId: string,
+  ): Promise<{ hash: string | null } | null> {
+    const row = await this.db
+      .selectFrom("routine_definition")
+      .select("trigger_embedding_hash")
+      .where("agent_id", "=", agentId)
+      .where("id", "=", routineId)
+      .where("status", "=", "published")
+      .executeTakeFirst();
+    return row ? { hash: row.trigger_embedding_hash } : null;
+  }
+
+  async saveTriggerEmbedding(input: {
+    agentId: string;
+    routineId: string;
+    embedding: readonly number[];
+    model: string;
+    hash: string;
+  }): Promise<void> {
+    const vector = `[${input.embedding.join(",")}]`;
+    await this.db
+      .updateTable("routine_definition")
+      .set({
+        trigger_embedding: sql<string>`${vector}::vector(1536)`,
+        trigger_embedding_model: input.model,
+        trigger_embedding_hash: input.hash,
+        updated_at: currentTimestamp(),
+      })
+      .where("agent_id", "=", input.agentId)
+      .where("id", "=", input.routineId)
+      .where("status", "=", "published")
+      .execute();
+  }
+
+  async clearTriggerEmbedding(input: { agentId: string; routineId: string }): Promise<void> {
+    await this.db
+      .updateTable("routine_definition")
+      .set({
+        trigger_embedding: null,
+        trigger_embedding_model: null,
+        trigger_embedding_hash: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("agent_id", "=", input.agentId)
+      .where("id", "=", input.routineId)
+      .where("status", "=", "published")
+      .execute();
+  }
+
+  async searchActivationTriggerEmbeddings(input: {
+    candidateRoutineIds: readonly string[];
+    embeddingModel: string;
+    queryEmbedding: readonly number[];
+    topK: number;
+  }): Promise<RoutineTriggerEmbeddingSearchResult> {
+    if (input.candidateRoutineIds.length === 0) {
+      return { matches: [], noVectorRoutineIds: [] };
+    }
+    const queryVector = `[${input.queryEmbedding.join(",")}]`;
+    const result = await sql<RoutineTriggerEmbeddingSearchRow>`
+      WITH candidates AS MATERIALIZED (
+        SELECT id, trigger_embedding, trigger_embedding_model
+        FROM routine_definition
+        WHERE id = ANY(${input.candidateRoutineIds}::uuid[])
+      ), nearest AS (
+        SELECT id::text AS routine_id,
+               trigger_embedding <=> ${queryVector}::vector(1536) AS distance,
+               false AS no_vector
+        FROM candidates
+        WHERE trigger_embedding IS NOT NULL
+          AND trigger_embedding_model = ${input.embeddingModel}
+        ORDER BY trigger_embedding <=> ${queryVector}::vector(1536) ASC
+        LIMIT ${input.topK}
+      ), no_vector AS (
+        SELECT id::text AS routine_id,
+               NULL::double precision AS distance,
+               true AS no_vector
+        FROM candidates
+        WHERE trigger_embedding IS NULL
+          OR trigger_embedding_model IS DISTINCT FROM ${input.embeddingModel}
+      )
+      SELECT routine_id, distance, no_vector FROM nearest
+      UNION ALL
+      SELECT routine_id, distance, no_vector FROM no_vector
+    `.execute(this.db);
+    return {
+      matches: result.rows.flatMap((row) =>
+        row.no_vector || row.distance === null ? [] : [{ routineId: row.routine_id, distance: Number(row.distance) }]
+      ),
+      noVectorRoutineIds: result.rows.flatMap((row) => row.no_vector ? [row.routine_id] : []),
+    };
   }
 
   async createDraft(agentId: string, input: RoutineDefinitionDraftInput): Promise<RoutineDefinition> {

@@ -10,7 +10,7 @@ Pairs with the `wordpress` connector in the Radioso backend
 
 1. In Radioso, enable the WordPress connector in your workspace and copy:
    - The **webhook URL** shown on the connector settings page.
-   - The **webhook shared secret** you entered (or generated) there.
+   - The **webhook shared secret** Radioso generated there.
 2. Zip the contents of this directory:
    ```
    cd packages/wordpress-companion
@@ -23,6 +23,11 @@ Pairs with the `wordpress` connector in the Radioso backend
 
 That's it. Every time a configured post type is published, updated, or deleted,
 the plugin will fire a signed webhook to Radioso.
+
+One workspace WordPress connector accepts one site. The signed payload includes
+the site's public URL, and Radioso rejects events whose site or post permalink
+does not match the configured WordPress site. Changing the site URL in Radioso
+rotates the shared secret, so update the plugin settings with the new secret.
 
 ## Polling fallback
 

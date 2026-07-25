@@ -4,6 +4,7 @@ import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
+import { renderMetadataPromptText } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
 
 export interface PromptBuildResult {
@@ -11,35 +12,6 @@ export interface PromptBuildResult {
   prompt: string;
   citations: Array<{ documentId: string; chunkId: string; title: string }>;
 }
-
-const CONTROL_CHARACTER_PATTERN = /[\n\r\t\x00-\x1f]/;
-const ISO_TIMESTAMP_PATTERN =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?$/;
-
-const boundedContextMetadataText = (value: unknown, maxLength: number): string | null => {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const normalized = value.trim();
-  if (!normalized || CONTROL_CHARACTER_PATTERN.test(normalized)) {
-    return null;
-  }
-  return normalized.slice(0, maxLength);
-};
-
-const contextMetadataLines = (metadata: Record<string, unknown> | undefined): string[] => {
-  const sourceUrl = (resolveContextSourceUrl(metadata) ?? "")
-    .replace(/[\n\r\t\x00-\x1f]/g, "")
-    .slice(0, 2048);
-  const author = boundedContextMetadataText(metadata?.author, 256);
-  const publishedAt = boundedContextMetadataText(metadata?.published_at, 64);
-
-  return [
-    sourceUrl ? `Source: ${sourceUrl}` : "",
-    author ? `Author: ${author}` : "",
-    publishedAt && ISO_TIMESTAMP_PATTERN.test(publishedAt) ? `Published: ${publishedAt}` : "",
-  ].filter((line) => line.length > 0);
-};
 
 export class PromptBuilder {
   constructor(
@@ -64,11 +36,19 @@ export class PromptBuilder {
       .join("\n");
     const contextsSection = input.contexts
       .map((context, index) => {
-        // Metadata is line-delimited prompt context, so reject control characters
-        // and bound every projected value before placing it beside source content.
-        const metadataLines = contextMetadataLines(context.metadata);
-        const metadataBlock = metadataLines.length > 0 ? `${metadataLines.join("\n")}\n` : "";
-        return `Result ${index + 1} (${context.title}): ${metadataBlock}${context.content}`;
+        // Sanitize to prevent prompt injection via newlines or control characters.
+        const rawSourceUrl = resolveContextSourceUrl(context.metadata) ?? "";
+        const sanitizedSourceUrl = rawSourceUrl.replace(/[\n\r\t\x00-\x1f]/g, "").slice(0, 2048);
+        const rawMetadataText = renderMetadataPromptText(context.metadata ?? {});
+        const sanitizedMetadataText = rawMetadataText
+          .replace(/[\n\r\t\x00-\x1f]/g, " ")
+          .slice(0, 2048);
+        const metadataLines = [
+          sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}` : "",
+          sanitizedMetadataText ? `Attributes: ${sanitizedMetadataText}` : "",
+        ].filter((line) => line.length > 0);
+        const metadataSection = metadataLines.length > 0 ? `${metadataLines.join("\n")}\n` : "";
+        return `Result ${index + 1} (${context.title}): ${metadataSection}${context.content}`;
       })
       .join("\n\n");
     const answerInstructionBlocks = this.sharedAnswerInstructionBuilder.build({

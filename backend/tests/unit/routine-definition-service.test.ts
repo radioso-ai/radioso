@@ -384,6 +384,7 @@ const createService = (options: {
   skillAuthoringCatalog?: SkillAuthoringCatalog;
   additionalRoutineSkillNames?: (input: { workspaceId: string; agentId: string }) => Promise<readonly string[]>;
   contextVariableReader?: ConstructorParameters<typeof RoutineDefinitionService>[0]["contextVariableReader"];
+  triggerEmbeddingService?: ConstructorParameters<typeof RoutineDefinitionService>[0]["triggerEmbeddingService"];
 } = {}) => {
   const repository = new FakeRoutineDefinitionRepository();
   const auditService = { record: vi.fn().mockResolvedValue(undefined) };
@@ -468,6 +469,20 @@ describe("RoutineDefinitionService", () => {
         diagnostics: [],
       },
     });
+  });
+
+  it("persists the activation trigger after successfully publishing a draft", async () => {
+    const persistPublished = vi.fn().mockResolvedValue(undefined);
+    const { service } = createService({ triggerEmbeddingService: { persistPublished } });
+    const draft = await service.createDraft(workspaceId, agentId, validDraft());
+
+    await service.publish(workspaceId, agentId, draft.routine.id);
+
+    expect(persistPublished).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId,
+      agentId,
+      routine: expect.objectContaining({ id: draft.routine.id, status: "published" }),
+    }));
   });
 
   it("publishes a tool step that names a skill, dispatched through the skill port", async () => {

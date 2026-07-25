@@ -1,9 +1,10 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, FileUp, Globe, Pencil, Plug, Plus, SlidersHorizontal } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
+import { AddDocumentMenu, type AddDocumentAction } from '@/components/dashboard/documents/add-document-menu'
 import { DocumentCrawlDialog } from '@/components/dashboard/documents/document-crawl-dialog'
 import { DocumentCrawlJobsBanner } from '@/components/dashboard/documents/document-crawl-jobs-banner'
 import { DocumentDeleteDialog } from '@/components/dashboard/documents/document-delete-dialog'
@@ -31,12 +32,6 @@ import { DocumentSearchResults } from '@/components/dashboard/document-search-re
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { useDocumentSearch } from '@/components/dashboard/use-document-search'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import {
   type DocumentSourceListItem,
   type DocumentSummary,
@@ -68,10 +63,10 @@ interface DocumentsViewProps {
   onSelectedDocumentChange?: (documentId: string | null) => void
   onboarding: WorkspaceOnboardingState
   navigation?: ReactNode
-  // When set, open the website-crawl dialog on mount (used by the Sources tab's
-  // "Add source" action, which routes here so the canonical crawl flow is reused).
-  autoOpenCrawl?: boolean
-  onAutoOpenCrawlHandled?: () => void
+  // When set, open the matching add dialog on mount (used by the Sources tab's
+  // "Add" menu, which routes here so the canonical add flows are reused).
+  autoOpenAdd?: AddDocumentAction | null
+  onAutoOpenAddHandled?: () => void
 }
 
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
@@ -93,8 +88,8 @@ export function DocumentsView({
   onSelectedDocumentChange,
   onboarding,
   navigation,
-  autoOpenCrawl = false,
-  onAutoOpenCrawlHandled,
+  autoOpenAdd = null,
+  onAutoOpenAddHandled,
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
@@ -461,21 +456,38 @@ export function DocumentsView({
     setCrawlError(null)
   }, [])
 
-  const openCreateDialog = () => {
+  const openCreateDialog = useCallback(() => {
     justClosedDocumentIdRef.current = null
     resetCreateDialog()
     setIsCreateDialogOpen(true)
-  }
+  }, [resetCreateDialog])
 
-  const openImportDialog = () => {
+  const openImportDialog = useCallback(() => {
     resetImportDialog()
     setIsImportDialogOpen(true)
-  }
+  }, [resetImportDialog])
 
-  const openCrawlDialog = () => {
+  const openCrawlDialog = useCallback(() => {
     resetCrawlDialog()
     setIsCrawlDialogOpen(true)
-  }
+  }, [resetCrawlDialog])
+
+  const handleAddSelect = useCallback((action: AddDocumentAction) => {
+    switch (action) {
+      case 'crawl':
+        openCrawlDialog()
+        break
+      case 'import':
+        openImportDialog()
+        break
+      case 'create':
+        openCreateDialog()
+        break
+      case 'wordpress':
+        setActiveConnectorId('wordpress')
+        break
+    }
+  }, [openCrawlDialog, openImportDialog, openCreateDialog])
 
   const handleRetryCrawl = useCallback((job: WebsiteCrawlJobSummary) => {
     resetCrawlDialog()
@@ -484,15 +496,15 @@ export function DocumentsView({
   }, [resetCrawlDialog])
 
   useEffect(() => {
-    if (!autoOpenCrawl) {
+    if (!autoOpenAdd) {
       return
     }
-    if (websiteCrawlerEnabled) {
-      resetCrawlDialog()
-      setIsCrawlDialogOpen(true)
+    // Crawling is gated per workspace; skip the open but still clear the flag.
+    if (!(autoOpenAdd === 'crawl' && !websiteCrawlerEnabled)) {
+      handleAddSelect(autoOpenAdd)
     }
-    onAutoOpenCrawlHandled?.()
-  }, [autoOpenCrawl, websiteCrawlerEnabled, resetCrawlDialog, onAutoOpenCrawlHandled])
+    onAutoOpenAddHandled?.()
+  }, [autoOpenAdd, websiteCrawlerEnabled, handleAddSelect, onAutoOpenAddHandled])
 
   const openDocumentPage = useCallback(async (documentId: string) => {
     justClosedDocumentIdRef.current = null
@@ -1159,35 +1171,10 @@ export function DocumentsView({
                   </span>
                 ) : null}
               </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" className="h-10 px-3.5">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add
-                    <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {websiteCrawlerEnabled ? (
-                    <DropdownMenuItem onClick={openCrawlDialog}>
-                      <Globe className="mr-2 h-4 w-4" />
-                      Crawl website
-                    </DropdownMenuItem>
-                  ) : null}
-                  <DropdownMenuItem onClick={openImportDialog}>
-                    <FileUp className="mr-2 h-4 w-4" />
-                    Import file
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={openCreateDialog}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Write document
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setActiveConnectorId('wordpress')}>
-                    <Plug className="mr-2 h-4 w-4" />
-                    Connect WordPress
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <AddDocumentMenu
+                websiteCrawlerEnabled={websiteCrawlerEnabled}
+                onSelect={handleAddSelect}
+              />
             </div>
           }
           actions={navigation}

@@ -5,6 +5,7 @@ import type {
   ConversationClarificationStore,
   ConversationClarifier,
   Directive,
+  DirectiveAdherenceEntry,
   ConversationRoutineActivator,
   ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
@@ -115,6 +116,9 @@ const toRenderableTurn = (
     answerSegments: presentation.answerSegments,
     planningCitations: presentation.planningCitations,
     grounding: presentation.grounding,
+    ...(presentation.metadata?.directiveAdherence
+      ? { directiveAdherence: presentation.metadata.directiveAdherence as DirectiveAdherenceEntry[] }
+      : {}),
     ...(traceMetrics ? { traceMetrics } : {}),
   },
 });

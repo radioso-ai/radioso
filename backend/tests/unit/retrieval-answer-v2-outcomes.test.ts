@@ -8,9 +8,10 @@ import type { PreparedSession } from "../../src/modules/chat/services/chatSessio
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { getGroundedMissFallback } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import {
-  GROUNDED_ANSWER_RESPONSE_FORMAT,
+  buildGroundedAnswerResponseFormat,
   SUGGESTIONS_SENTINEL,
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
+import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import type { TurnStreamResult } from "../../src/modules/chat/services/turnOutcome.js";
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
@@ -106,7 +107,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
       incrementCounter(name, options) {
         metricWrites.push({ name, labels: options.labels });
       },
-    }),
+    }, { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) }),
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
     fallbackWorkspaceContext: () => fallbackWorkspaceContext,
     attemptKeys,
@@ -137,7 +138,7 @@ describe("retrieval answer envelope v2", () => {
     expect(presented.suggestions).toMatchObject([
       { text: "How does registration work?", kind: "deeper" },
     ]);
-    expect(responseFormats()).toEqual([GROUNDED_ANSWER_RESPONSE_FORMAT]);
+    expect(responseFormats()).toEqual([buildGroundedAnswerResponseFormat()]);
   });
 
   it("streams only a structured answer and returns its suggestions separately", async () => {
@@ -163,7 +164,42 @@ describe("retrieval answer envelope v2", () => {
       mode: "assistant",
       planned: [{ text: "How does registration work?", kind: "deeper", contextIndex: 1 }],
     });
-    expect(responseFormats()).toEqual([GROUNDED_ANSWER_RESPONSE_FORMAT]);
+    expect(responseFormats()).toEqual([buildGroundedAnswerResponseFormat()]);
+  });
+
+  it("resolves rule-keyed adherence into directive trace metadata", async () => {
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [{
+        id: "d1",
+        directiveName: "Be concise",
+        action: "Keep the response concise.",
+        source: "directive",
+        lifespan: "response",
+      }],
+      matches: [],
+      omissions: [],
+    };
+    const { composer, responseFormats } = buildComposer(JSON.stringify({
+      answer: "The workshop begins in June[[1]].",
+      v: 2,
+      outcome: "answer",
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      adherence: [{ rule: "d1", satisfied: true, note: "kept the answer concise" }],
+    }));
+
+    const presented = await composer.composeAnswer(session, "Question?", undefined, undefined);
+
+    expect(presented.metadata?.directiveAdherence).toEqual([
+      { directive: "Be concise", ruleId: "d1", satisfied: true, note: "kept the answer concise" },
+    ]);
+    expect(responseFormats()).toEqual([
+      buildGroundedAnswerResponseFormat(
+        createDirectiveAdherenceSideChannel(session.directiveSteering?.rules ?? []).schemaExtension(),
+      ),
+    ]);
   });
 
   it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {

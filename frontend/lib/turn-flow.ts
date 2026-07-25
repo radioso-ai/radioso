@@ -82,6 +82,19 @@ const directiveSummary = (stage: ConversationTraceStage): string | undefined => 
   return stage.status === 'skipped' ? 'none matched' : undefined
 }
 
+const adherenceSummary = (stage: ConversationTraceStage | undefined): { label?: string; unmet: boolean } => {
+  const adherence = stage?.outputs?.adherence
+  if (!Array.isArray(adherence) || adherence.length === 0) return { unmet: false }
+  const entries = adherence.filter(
+    (entry): entry is { satisfied: boolean } =>
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry) &&
+      typeof (entry as Record<string, unknown>).satisfied === 'boolean',
+  )
+  if (entries.length === 0) return { unmet: false }
+  const honored = entries.filter((entry) => entry.satisfied).length
+  return { label: `${honored}/${entries.length} directives honored`, unmet: honored < entries.length }
+}
+
 const messageSummary = (stage: ConversationTraceStage): string | undefined => {
   // The trace carries only structural references (event id, length); the
   // actual message text lives on the conversation message record and is shown
@@ -111,7 +124,12 @@ const clarificationStatus = (stage: ConversationTraceStage): FlowStatus => {
 const deriveOutcome = (
   spine: ConversationTrace,
   dispatch: ConversationTraceStage | undefined,
+  compose: ConversationTraceStage | undefined,
 ): { label?: string; status: FlowStatus } => {
+  const adherence = adherenceSummary(compose)
+  if (adherence.label) {
+    return { label: adherence.label, status: adherence.unmet ? 'rejected' : dispatch?.status ?? 'applied' }
+  }
   const dispatchStatus = asString(dispatch?.outputs?.outcomeStatus)
   if (dispatch?.status === 'failed') {
     return { label: dispatchStatus ?? 'failed', status: 'failed' }
@@ -330,7 +348,7 @@ export const envelopeToFlowGraph = (envelope: TurnTraceEnvelope): TurnFlowGraph 
 
   // Outcome.
   const outcomeId = 'outcome'
-  const outcome = deriveOutcome(spine, dispatch)
+  const outcome = deriveOutcome(spine, dispatch, compose)
   nodes.push({
     id: outcomeId,
     nodeKind: 'outcome',

@@ -4,6 +4,8 @@ import { renderSteeringBlock } from "../../src/shared/infra/prompts/steeringProm
 import type { SteeringRule } from "../../src/shared/domain/steeringRule.js";
 
 const rule = (action: string, priority: number): SteeringRule => ({
+  id: `d${priority}`,
+  directiveName: `Directive ${priority}`,
   action,
   priority,
   source: "directive",
@@ -26,5 +28,15 @@ describe("renderSteeringBlock", () => {
     expect(block.indexOf("Higher priority behavior.")).toBeLessThan(
       block.indexOf("Lower priority behavior."),
     );
+    expect(block).not.toContain("[d90]");
+    expect(block).not.toContain("output envelope");
+  });
+
+  it("renders bracketed ids only when an envelope caller opts in", () => {
+    const block = renderSteeringBlock([rule("Higher priority behavior.", 90)], {
+      includeRuleIds: true,
+    });
+
+    expect(block).toContain("[d90]");
   });
 });

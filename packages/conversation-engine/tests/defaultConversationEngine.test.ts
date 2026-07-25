@@ -173,6 +173,36 @@ describe("DefaultConversationEngine", () => {
     ]);
   });
 
+  it("forwards compose adherence to the spine and links directives to compose", async () => {
+    const input = createInput({
+      composer: {
+        compose: vi.fn(async () => ({
+          answer: "Your order ships tomorrow.",
+          metadata: {
+            directiveAdherence: [
+              { directive: "be-brief", ruleId: "d1", satisfied: true, note: "kept it concise" },
+            ],
+          },
+        })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.trace.stages.find((stage) => stage.kind === "compose")?.outputs).toMatchObject({
+      adherence: [{ directive: "be-brief", ruleId: "d1", satisfied: true }],
+    });
+    expect(result.trace.links).toContainEqual({ from: "directives", to: "compose", kind: "adherence" });
+  });
+
+  it("omits compose adherence and its link when the renderer did not report it", async () => {
+    const result = await new DefaultConversationEngine().processTurn(createInput());
+    const outputs = result.trace.stages.find((stage) => stage.kind === "compose")?.outputs ?? {};
+
+    expect(outputs).not.toHaveProperty("adherence");
+    expect(result.trace.links).toBeUndefined();
+  });
+
   it("copies a capability sub-trace from the outcome onto its dispatch stage", async () => {
     const subTrace = { namespace: "retrieval", version: 1, payload: { candidates: 3 } };
     const input = createInput({

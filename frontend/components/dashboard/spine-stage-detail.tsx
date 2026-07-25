@@ -20,6 +20,7 @@ export interface ConversationMessageRecord {
 interface MessageLookupContext {
   messages?: ConversationMessageRecord[]
   assistantMessageId?: string
+  directiveAdherence?: DirectiveAdherenceDetail[]
 }
 
 const STATUS_LABELS: Record<ConversationTraceStage['status'], string> = {
@@ -53,6 +54,23 @@ const asArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : [
 
 const asStringArray = (value: unknown): string[] =>
   asArray(value).filter((entry): entry is string => typeof entry === 'string')
+
+interface DirectiveAdherenceDetail {
+  directive: string
+  ruleId: string
+  satisfied: boolean
+  note: string
+}
+
+const readDirectiveAdherence = (value: unknown): DirectiveAdherenceDetail[] =>
+  asArray(value).flatMap((entry) => {
+    if (!isRecord(entry)) return []
+    const directive = asString(entry.directive)
+    const ruleId = asString(entry.ruleId)
+    const note = asString(entry.note)
+    if (!directive || !ruleId || !note || typeof entry.satisfied !== 'boolean') return []
+    return [{ directive, ruleId, satisfied: entry.satisfied, note }]
+  })
 
 function StageHeader({ stage }: { stage: ConversationTraceStage }) {
   const telemetry = spineStageTelemetry(stage)
@@ -336,11 +354,18 @@ interface DirectiveDetail {
   selectionConfidence?: number
 }
 
-function DirectiveMatchStageDetail({ stage }: { stage: ConversationTraceStage }) {
+function DirectiveMatchStageDetail({
+  stage,
+  ctx,
+}: {
+  stage: ConversationTraceStage
+  ctx: MessageLookupContext
+}) {
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
   const matched = (asArray(outputs.directives).filter(isRecord) as DirectiveDetail[]) ?? []
   const matchCount = asNumber(outputs.matchCount) ?? matched.length
   const candidateCount = asNumber(outputs.candidateCount)
+  const adherenceByDirective = new Map(ctx.directiveAdherence?.map((entry) => [entry.directive, entry]))
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -372,6 +397,19 @@ function DirectiveMatchStageDetail({ stage }: { stage: ConversationTraceStage })
                       {directive.selectionMode}
                     </span>
                   ) : null}
+                  {directive.name && adherenceByDirective.has(directive.name) ? (
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
+                      adherenceByDirective.get(directive.name)?.satisfied
+                        ? 'bg-emerald-500/10 text-emerald-600'
+                        : 'bg-rose-500/10 text-rose-600'
+                    }`}>
+                      {adherenceByDirective.get(directive.name)?.satisfied ? 'honored' : 'not honored'}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      —
+                    </span>
+                  )}
                 </div>
                 {directive.action ? (
                   <p className="whitespace-pre-wrap break-words text-xs text-foreground">{directive.action}</p>
@@ -668,6 +706,7 @@ function ComposeStageDetail({
   const outcomeCount = asNumber(outputs.outcomeCount)
   const streamed = typeof outputs.streamed === 'boolean' ? outputs.streamed : undefined
   const outcomes = (asArray(outputs.outcomes).filter(isRecord) as ComposeOutcomeSummary[]) ?? []
+  const adherence = readDirectiveAdherence(outputs.adherence)
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -697,6 +736,23 @@ function ComposeStageDetail({
               ...(typeof streamed === 'boolean' ? { streamed } : {}),
             }}
           />
+        </Section>
+      ) : null}
+      {adherence.length > 0 ? (
+        <Section label={`Adherence (${adherence.length})`}>
+          <ul className="space-y-1.5">
+            {adherence.map((entry) => (
+              <li key={entry.ruleId} className="rounded-md border border-border/60 bg-muted/20 p-2.5">
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="font-medium text-foreground">{entry.directive}</span>
+                  <span className={entry.satisfied ? 'text-emerald-600' : 'text-rose-600'}>
+                    {entry.satisfied ? '✓' : '✗'}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>
+              </li>
+            ))}
+          </ul>
         </Section>
       ) : null}
       {outcomes.length > 0 ? (
@@ -1008,12 +1064,14 @@ export function SpineStageDetail({
   stage,
   messages,
   assistantMessageId,
+  directiveAdherence,
 }: {
   stage: ConversationTraceStage
   messages?: ConversationMessageRecord[]
   assistantMessageId?: string
+  directiveAdherence?: DirectiveAdherenceDetail[]
 }) {
-  const ctx: MessageLookupContext = { messages, assistantMessageId }
+  const ctx: MessageLookupContext = { messages, assistantMessageId, directiveAdherence }
   switch (stage.kind) {
     case 'message':
       return <MessageStageDetail stage={stage} ctx={ctx} />
@@ -1023,7 +1081,7 @@ export function SpineStageDetail({
     // Routine turns trace co-composed directives under `directive_steering`; the
     // payload is the same directive summary, so it renders through the same view.
     case 'directive_steering':
-      return <DirectiveMatchStageDetail stage={stage} />
+      return <DirectiveMatchStageDetail stage={stage} ctx={ctx} />
     case 'skill_selection':
       return <SkillSelectionStageDetail stage={stage} />
     case 'clarification':

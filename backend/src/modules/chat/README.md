@@ -64,7 +64,14 @@ imports from `services/`.
   not receive an API-level strict-format parameter because arbitrary compatible
   backends do not share that capability. The incremental envelope reader emits
   only the decoded `answer` field, so claims and follow-up suggestions never enter
-  visible streaming text.
+  visible streaming text. The envelope stays capability-neutral: a caller may merge
+  a strict schema extension into the response format and the reader buffers any
+  fields it does not interpret as opaque `extras` (like suggestions, never in
+  visible text). Directive adherence rides that seam — the shared
+  `shared/domain/directiveAdherence.ts` probe owns the attestation schema fragment
+  and resolves the raw `extras` back to directive display names, so the envelope
+  never learns directive vocabulary and any composer can carry it. Resolved
+  attestation appears only on the operator-facing compose trace output.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths. A valid in-range `[[n]]`

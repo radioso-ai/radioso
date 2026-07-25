@@ -47,6 +47,12 @@ export interface ChatPresentedAnswer {
   grounding?: GroundingVerdict;
   groundingSummary?: GroundingSummary;
   groundingDiagnostics?: ChatGroundingDiagnostics;
+  /**
+   * Opaque metadata patch a composer's answer side channel attaches to the turn
+   * (e.g. directive-adherence attestation). The composer does not interpret it; the
+   * chat→engine adapter forwards the recognized keys onto the trace.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface SkillOutcomeCapabilityProvider {

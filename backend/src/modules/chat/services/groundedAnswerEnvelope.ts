@@ -1,5 +1,6 @@
 import type { ChatSuggestionKind } from "../types/chatResponses.js";
 import type { JsonSchemaResponseFormat } from "../../../shared/infra/llm/providerTypes.js";
+import type { AnswerSchemaExtension } from "../../../shared/domain/answerSideChannel.js";
 import { StructuredAnswerFieldReader } from "./structuredAnswerFieldReader.js";
 
 export const SUGGESTIONS_SENTINEL = "<<<RADIOSO_FOLLOWUPS_JSON>>>";
@@ -26,9 +27,19 @@ export interface GroundedAnswerEnvelope {
   outcome: GroundingEnvelopeOutcome | null;
   claims: unknown[][];
   suggestions: PlannedEnvelopeSuggestion[];
+  /**
+   * Opaque structured fields the model returned that the envelope itself does not
+   * interpret — populated only from schema extensions a caller merged in via
+   * {@link buildGroundedAnswerResponseFormat}. The envelope transports them; the
+   * caller (e.g. a directive-adherence probe) owns their meaning.
+   */
+  extras?: Record<string, unknown>;
 }
 
-export const GROUNDED_ANSWER_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+/** Top-level envelope keys the envelope interprets itself; anything else is an extra. */
+const CORE_ENVELOPE_KEYS = new Set(["answer", "v", "outcome", "claims", "suggestions", "grounding"]);
+
+const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
   type: "json_schema",
   name: "grounded_answer_envelope",
   strict: true,
@@ -68,6 +79,33 @@ export const GROUNDED_ANSWER_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
     },
   },
 };
+
+/**
+ * Builds the strict grounded-envelope schema, optionally merging a caller-supplied
+ * structured extension (extra `properties` + `required`). The envelope stays
+ * capability-neutral: it does not know what the extension means, only how to carry
+ * it. Callers that have nothing to add pass no extension and get the base schema.
+ */
+export const buildGroundedAnswerResponseFormat = (
+  extension?: AnswerSchemaExtension | null,
+): JsonSchemaResponseFormat => {
+  const baseProperties = GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.properties as Record<string, unknown>;
+  const baseRequired = GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.required as string[];
+  if (!extension) {
+    return GROUNDED_ANSWER_RESPONSE_FORMAT_BASE;
+  }
+  return {
+    ...GROUNDED_ANSWER_RESPONSE_FORMAT_BASE,
+    schema: {
+      ...GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema,
+      properties: { ...baseProperties, ...extension.properties },
+      required: [...baseRequired, ...extension.required],
+    },
+  };
+};
+
+/** Base schema for callers with no structured extension to contribute. */
+export const GROUNDED_ANSWER_RESPONSE_FORMAT = buildGroundedAnswerResponseFormat();
 
 interface ParsedEnvelopeTail extends Omit<GroundedAnswerEnvelope, "answer"> {}
 
@@ -115,6 +153,12 @@ const readSuggestionsArray = (raw: unknown): PlannedEnvelopeSuggestion[] => {
   });
 };
 
+/** Collect any model-returned top-level fields the envelope does not interpret itself. */
+const collectExtras = (record: Record<string, unknown>): Record<string, unknown> | undefined => {
+  const entries = Object.entries(record).filter(([key]) => !CORE_ENVELOPE_KEYS.has(key));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
+
 const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
   if (Array.isArray(parsed)) {
     return {
@@ -160,12 +204,14 @@ const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
     };
   }
 
+  const extras = collectExtras(record);
   return {
     protocolVersion: 2,
     parseStatus: "valid_v2",
     outcome,
     claims,
     suggestions: readSuggestionsArray(record.suggestions),
+    ...(extras ? { extras } : {}),
   };
 };
 
@@ -312,6 +358,7 @@ export class GroundedAnswerEnvelopeReader {
         outcome: parsed.outcome,
         claims: parsed.claims,
         suggestions: parsed.suggestions,
+        ...(parsed.extras !== undefined ? { extras: parsed.extras } : {}),
       };
     }
     if (this.inTail) {

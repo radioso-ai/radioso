@@ -277,6 +277,23 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'input:directives', 'engine')?.kind).toBe('fan-in')
   })
 
+  it('summarizes compose adherence with honored counts and unmet status', () => {
+    const base = envelope()
+    base.spine.stages.find((stage) => stage.kind === 'compose')!.outputs = {
+      adherence: [
+        { directive: 'Be concise', ruleId: 'd1', satisfied: true, note: 'brief' },
+        { directive: 'Use headings', ruleId: 'd2', satisfied: false, note: 'not used' },
+      ],
+    }
+
+    const graph = envelopeToFlowGraph(base)
+
+    expect(graph.nodes.find((node) => node.id === 'outcome')).toMatchObject({
+      sublabel: '1/2 directives honored',
+      status: 'rejected',
+    })
+  })
+
   it('places clarification before the outcome on claimed routine turns', () => {
     const claimed: TurnTraceEnvelope = {
       version: 1,

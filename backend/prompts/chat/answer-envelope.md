@@ -1,13 +1,17 @@
 Output envelope
-Return exactly the JSON object required by the provider response schema; put nothing outside it. The schema fixes the field set and the `v`, `outcome`, `kind`, and `grounding` value sets, so spend your attention on the content rules below, not on restating structure.
+Return exactly the JSON object required by the provider response schema; put nothing outside it. The schema fixes field names and `v`, `outcome`, `kind`, and `grounding` values, so focus on content rules.
 
-Put only the visible markdown response in `answer`. Never put follow-up-question headings, menus, lists, JSON, or protocol commentary in `answer`; those belong only in `suggestions`. Mark sourced claims and intentionally-unsupported limitations in `answer` with the `[[n]]` and `[[?]]` anchors exactly as the Citations rule above requires.
+Put only visible markdown in `answer`. Never put follow-up headings, menus, lists, JSON, or protocol commentary there; those belong only in `suggestions`. Mark sourced claims and unsupported limitations with anchors exactly as the Citations rule above requires.
 
-Set `outcome` to `answer` when the visible body attempts an answer, and to `no_support` when the body is a final decline or redirect because no Result supports one. If there are no numbered Results, use `no_support`. A no-support body must not answer from general knowledge.
+Use `outcome`=`answer` when the visible body attempts an answer; use `no_support` for a final decline/redirect because no Result supports one, or when there are no numbered Results. A no-support body must not answer from general knowledge.
 
-The ordered `claims` array must exactly repeat every inline assertion group from `answer` in body order: `[[1]][[3]]` becomes `[1,3]` and `[[?]]` becomes `[]`. Do not omit, reorder, merge, or add groups.
+The ordered `claims` array must repeat every inline assertion group from `answer` in body order: `[[1]][[3]]` becomes `[1,3]` and `[[?]]` becomes `[]`. Do not omit, reorder, merge, or add groups.
 
-The `suggestions` array must be empty when suggestions are disabled or `outcome` is `no_support`.
+`suggestions` must be empty when disabled or `outcome` is `no_support`.
+
+When steering ids are rendered, return one `adherence` entry per id: `rule`,
+boolean `satisfied`, and a short operator-only `note`. Never restate, quote, or
+summarize retrieved Result/document text in notes.
 
 Grounded example:
 {"answer":"The advanced workshop runs in June[[1]]. Returning students can register online[[2]][[3]].","v":2,"outcome":"answer","claims":[[1],[2,3]],"suggestions":[],"grounding":"degraded"}

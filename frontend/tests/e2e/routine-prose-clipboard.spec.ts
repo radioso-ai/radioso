@@ -75,7 +75,7 @@ test("an action step survives a copy to an external file and back", async ({ pag
   const editor = page.getByRole("textbox", { name: "Routine", exact: true });
   await editor.click();
   await editor.pressSequentially("Email the team ");
-  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Action" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Action type").fill("contact.send");

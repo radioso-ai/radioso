@@ -10,7 +10,7 @@ Pairs with the `wordpress` connector in the Radioso backend
 
 1. In Radioso, enable the WordPress connector in your workspace and copy:
    - The **webhook URL** shown on the connector settings page.
-   - The **webhook shared secret** you entered (or generated) there.
+   - The **webhook shared secret** Radioso generated there.
 2. Zip the contents of this directory:
    ```
    cd packages/wordpress-companion

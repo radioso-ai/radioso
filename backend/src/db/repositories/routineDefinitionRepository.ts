@@ -360,7 +360,6 @@ export class RoutineDefinitionRepository {
         trigger_embedding: sql<string>`${vector}::vector`,
         trigger_embedding_model: input.model,
         trigger_embedding_hash: input.hash,
-        updated_at: currentTimestamp(),
       })
       .where("agent_id", "=", input.agentId)
       .where("id", "=", input.routineId)
@@ -375,7 +374,6 @@ export class RoutineDefinitionRepository {
         trigger_embedding: null,
         trigger_embedding_model: null,
         trigger_embedding_hash: null,
-        updated_at: currentTimestamp(),
       })
       .where("agent_id", "=", input.agentId)
       .where("id", "=", input.routineId)

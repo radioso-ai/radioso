@@ -152,6 +152,11 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     // <=> comparison only ever sees same-width vectors.
     const routine = await repository.createDraft(agentId, baseDraft({ name: "Wide vector flow" }));
     await repository.publish(agentId, routine.id);
+    const authoredUpdatedAt = new Date("2026-01-01T00:00:00.000Z");
+    await database.query(
+      `UPDATE routine_definition SET updated_at = $1 WHERE id = $2`,
+      [authoredUpdatedAt, routine.id],
+    );
     const wideVector = new Array<number>(3072).fill(0);
     wideVector[1] = 1;
     await repository.saveTriggerEmbedding({
@@ -161,6 +166,9 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
       model: "text-embedding-3-large",
       hash: "wide",
     });
+    expect((await repository.findById(agentId, routine.id))?.updatedAt.toISOString()).toBe(
+      authoredUpdatedAt.toISOString(),
+    );
 
     const metadata = await repository.getTriggerEmbeddingMetadata(agentId, routine.id);
     expect(metadata).toEqual({ hash: "wide", model: "text-embedding-3-large" });
@@ -182,6 +190,12 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     });
     expect(otherModel.matches).toEqual([]);
     expect(otherModel.noVectorRoutineIds).toEqual([routine.id]);
+
+    await repository.clearTriggerEmbedding({ agentId, routineId: routine.id });
+    expect(await repository.getTriggerEmbeddingMetadata(agentId, routine.id)).toEqual({ hash: null, model: null });
+    expect((await repository.findById(agentId, routine.id))?.updatedAt.toISOString()).toBe(
+      authoredUpdatedAt.toISOString(),
+    );
   });
 
   it("publish supersedes the prior published row, hands a working transaction to onPublished, and conflicts when re-published", async () => {

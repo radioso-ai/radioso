@@ -333,15 +333,15 @@ export class RoutineDefinitionRepository {
   async getTriggerEmbeddingMetadata(
     agentId: string,
     routineId: string,
-  ): Promise<{ hash: string | null } | null> {
+  ): Promise<{ hash: string | null; model: string | null } | null> {
     const row = await this.db
       .selectFrom("routine_definition")
-      .select("trigger_embedding_hash")
+      .select(["trigger_embedding_hash", "trigger_embedding_model"])
       .where("agent_id", "=", agentId)
       .where("id", "=", routineId)
       .where("status", "=", "published")
       .executeTakeFirst();
-    return row ? { hash: row.trigger_embedding_hash } : null;
+    return row ? { hash: row.trigger_embedding_hash, model: row.trigger_embedding_model } : null;
   }
 
   async saveTriggerEmbedding(input: {
@@ -352,10 +352,12 @@ export class RoutineDefinitionRepository {
     hash: string;
   }): Promise<void> {
     const vector = `[${input.embedding.join(",")}]`;
+    // Typeless ::vector on purpose: workspace embedding models differ in width
+    // and this column carries no fixed-dimension index (see migration 128).
     await this.db
       .updateTable("routine_definition")
       .set({
-        trigger_embedding: sql<string>`${vector}::vector(1536)`,
+        trigger_embedding: sql<string>`${vector}::vector`,
         trigger_embedding_model: input.model,
         trigger_embedding_hash: input.hash,
         updated_at: currentTimestamp(),
@@ -397,13 +399,15 @@ export class RoutineDefinitionRepository {
         FROM routine_definition
         WHERE id = ANY(${input.candidateRoutineIds}::uuid[])
       ), nearest AS (
+        -- The model-equality predicate also guarantees dimension compatibility
+        -- for <=>: stored vectors under the query's model share its width.
         SELECT id::text AS routine_id,
-               trigger_embedding <=> ${queryVector}::vector(1536) AS distance,
+               trigger_embedding <=> ${queryVector}::vector AS distance,
                false AS no_vector
         FROM candidates
         WHERE trigger_embedding IS NOT NULL
           AND trigger_embedding_model = ${input.embeddingModel}
-        ORDER BY trigger_embedding <=> ${queryVector}::vector(1536) ASC
+        ORDER BY trigger_embedding <=> ${queryVector}::vector ASC
         LIMIT ${input.topK}
       ), no_vector AS (
         SELECT id::text AS routine_id,

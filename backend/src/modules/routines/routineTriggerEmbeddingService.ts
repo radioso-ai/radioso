@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageContext.js";
 
 export interface RoutineTriggerEmbeddingStore {
-  get(input: { agentId: string; routineId: string }): Promise<{ hash: string | null } | null>;
+  get(input: { agentId: string; routineId: string }): Promise<{ hash: string | null; model: string | null } | null>;
   save(input: {
     agentId: string;
     routineId: string;
@@ -42,6 +42,9 @@ export class RoutineTriggerEmbeddingService {
     // Structural on purpose: satisfied by RoutineDefinition, and by the
     // prefilter self-heal path which only holds id + trigger description.
     routine: { id: string; activation: { triggerDescription: string } };
+    // Self-heal already embedded the trigger during prefiltering; reusing that
+    // vector avoids a duplicate embedding call per healed routine.
+    precomputed?: { embedding: readonly number[]; model: string };
   }): Promise<void> {
     const hash = triggerHash(input.routine.activation.triggerDescription);
     const inFlightKey = `${input.agentId}:${input.routine.id}:${hash}`;
@@ -52,25 +55,31 @@ export class RoutineTriggerEmbeddingService {
       // No published row (draft under workbench preview, or deleted since the
       // turn started): nothing to persist, and no cleanup to do.
       if (!existing) return;
-      if (existing.hash === hash) return;
 
-      const settings = await this.options.settings.getForWorkspace(input.workspaceId);
-      const [embedding] = await this.options.embeddings.embedTexts([input.routine.activation.triggerDescription], {
-        model: settings.embeddingModel,
-        usageContext: {
-          workspaceId: input.workspaceId,
-          surface: "assistant",
-          operation: "routine_activation_trigger_embedding",
-          attemptKey: input.routine.id,
-        },
-      });
+      const model = input.precomputed?.model
+        ?? (await this.options.settings.getForWorkspace(input.workspaceId)).embeddingModel;
+      // Hash alone is not enough to skip: a workspace embedding-model change
+      // leaves the trigger text (and hash) identical while the stored vector
+      // goes stale, so the stored model must match the current one too.
+      if (existing.hash === hash && existing.model === model) return;
+
+      const embedding = input.precomputed?.embedding
+        ?? (await this.options.embeddings.embedTexts([input.routine.activation.triggerDescription], {
+          model,
+          usageContext: {
+            workspaceId: input.workspaceId,
+            surface: "assistant",
+            operation: "routine_activation_trigger_embedding",
+            attemptKey: input.routine.id,
+          },
+        }))[0];
       if (!embedding) throw new Error("routine_trigger_embedding_missing");
 
       await this.options.store.save({
         agentId: input.agentId,
         routineId: input.routine.id,
         embedding,
-        model: settings.embeddingModel,
+        model,
         hash,
       });
     } catch {

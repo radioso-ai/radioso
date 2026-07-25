@@ -146,6 +146,44 @@ describeIntegration("RoutineDefinitionRepository (Postgres)", () => {
     expect(result.noVectorRoutineIds).toEqual([second.id]);
   });
 
+  it("stores and searches non-1536-dimension vectors; model mismatch counts as no vector", async () => {
+    // The column is typeless (migration 128): text-embedding-3-large produces
+    // native 3072-dim vectors, and the model-equality predicate guarantees the
+    // <=> comparison only ever sees same-width vectors.
+    const routine = await repository.createDraft(agentId, baseDraft({ name: "Wide vector flow" }));
+    await repository.publish(agentId, routine.id);
+    const wideVector = new Array<number>(3072).fill(0);
+    wideVector[1] = 1;
+    await repository.saveTriggerEmbedding({
+      agentId,
+      routineId: routine.id,
+      embedding: wideVector,
+      model: "text-embedding-3-large",
+      hash: "wide",
+    });
+
+    const metadata = await repository.getTriggerEmbeddingMetadata(agentId, routine.id);
+    expect(metadata).toEqual({ hash: "wide", model: "text-embedding-3-large" });
+
+    const sameModel = await repository.searchActivationTriggerEmbeddings({
+      candidateRoutineIds: [routine.id],
+      embeddingModel: "text-embedding-3-large",
+      queryEmbedding: wideVector,
+      topK: 8,
+    });
+    expect(sameModel.matches).toEqual([{ routineId: routine.id, distance: 0 }]);
+    expect(sameModel.noVectorRoutineIds).toEqual([]);
+
+    const otherModel = await repository.searchActivationTriggerEmbeddings({
+      candidateRoutineIds: [routine.id],
+      embeddingModel: "text-embedding-3-small",
+      queryEmbedding: new Array<number>(1536).fill(0.1),
+      topK: 8,
+    });
+    expect(otherModel.matches).toEqual([]);
+    expect(otherModel.noVectorRoutineIds).toEqual([routine.id]);
+  });
+
   it("publish supersedes the prior published row, hands a working transaction to onPublished, and conflicts when re-published", async () => {
     const first = await repository.createDraft(agentId, baseDraft());
     await repository.publish(agentId, first.id);

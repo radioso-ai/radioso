@@ -1687,7 +1687,7 @@ CREATE TABLE public.routine_definition (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     lineage_id uuid NOT NULL,
     activation_reentry_mode text DEFAULT 'once_per_conversation'::text NOT NULL,
-    trigger_embedding public.vector(1536),
+    trigger_embedding public.vector,
     trigger_embedding_model text,
     trigger_embedding_hash text,
     CONSTRAINT routine_definition_activation_reentry_mode_check CHECK ((activation_reentry_mode = ANY (ARRAY['once_per_conversation'::text, 'always'::text, 'semantic'::text]))),

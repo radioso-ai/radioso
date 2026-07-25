@@ -402,6 +402,27 @@ such as:
 Use **Save draft** to keep work in progress. Use **Publish** to create an
 immutable version that the chat runtime can run.
 
+## Test a draft before publishing
+
+You do not have to publish a routine to see how it behaves. On a saved draft,
+choose **Test draft** to slide out a live test chat in a drawer over the editor —
+so you stay on the routine while you try it. In that chat the draft is eligible to
+activate, run turn by turn, and hand back to normal answering when it ends —
+exactly as it would after publishing, but without publishing it.
+
+- The test conversation is separate from your other test chats, so a draft under
+  test never mixes into them.
+- **Test draft** runs the last **saved** draft. Save your edits first, then test.
+- Only the draft you opened is made eligible; the agent's already-published
+  routines still run alongside it, just as they would in production.
+- This is an operator-only tool on the authenticated dashboard. Draft routines are
+  never eligible in real end-user conversations — publishing remains the only way
+  to make a routine live.
+
+Use this to confirm the trigger fires when you expect, that steps collect what
+they should, that branches go where you intend, and that the routine ends or hands
+off correctly, before committing to a published version.
+
 ## Copy a routine to text
 
 You can copy a routine out of the **Prose** view and paste it back later without

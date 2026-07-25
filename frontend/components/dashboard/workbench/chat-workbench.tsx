@@ -3,7 +3,7 @@
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { FileText, MoreHorizontal, RotateCcw, Send, Workflow } from 'lucide-react'
+import { FileText, FlaskConical, MoreHorizontal, RotateCcw, Send, Workflow } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import {
@@ -52,11 +52,25 @@ export interface ChatWorkbenchProps {
   agentId?: string
   assistantName?: string | null
   assistantLinkUtmEnabled?: boolean
-  onOpenDocument: (documentId: string) => void
-  onboarding: WorkspaceOnboardingState
+  /**
+   * Which chrome to render around the same chat body: `page` (default) wraps it in
+   * the full-screen {@link DashboardPage}; `drawer` renders a header/body/footer column
+   * meant to fill a {@link SheetContent} (see {@link ChatWorkbenchDrawer}).
+   */
+  shell?: 'page' | 'drawer'
+  /** Opens a cited document. Optional so the workbench can run in hosts without a document surface. */
+  onOpenDocument?: (documentId: string) => void
+  /** Drives the empty-state copy. Optional; defaults to a neutral "ready" state. */
+  onboarding?: WorkspaceOnboardingState
   navigation?: ReactNode
   /** A forked test conversation to adopt into the live session on open (from "Continue in test chat"). */
   adoptConversationId?: string
+  /**
+   * Draft routine test: routine definition ids (drafts included) made eligible on every
+   * send so an author can test-run an unpublished routine end-to-end in a real conversation.
+   * Absent for normal test chat.
+   */
+  previewRoutineIds?: string[]
 }
 
 /** Maps a persisted history turn into the live client message shape for adoption. */
@@ -129,14 +143,25 @@ export function ChatWorkbench({
   agentId,
   assistantName,
   assistantLinkUtmEnabled,
+  shell = 'page',
   onOpenDocument,
   onboarding,
   adoptConversationId,
+  previewRoutineIds,
 }: ChatWorkbenchProps) {
   const router = useRouter()
+  // Page-context props are optional so the workbench can be hosted in a drawer without
+  // a document surface or onboarding data. Missing onboarding reads as a neutral "ready"
+  // workspace (no loading gate, no upload prompt).
+  const onboardingIsLoading = onboarding?.isLoading ?? false
+  const hasPendingDocuments = onboarding?.hasPendingDocuments ?? false
+  const hasReadyDocuments = onboarding?.hasReadyDocuments ?? true
   const [input, setInput] = useState('')
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
-  const chatSessionKey = `agent-chat:v3:${activeWorkspaceId ?? accountId}:${agentId ?? 'default-agent'}`
+  const previewRoutineKey = previewRoutineIds && previewRoutineIds.length > 0 ? previewRoutineIds.join(',') : null
+  // A draft-test session is kept distinct from the normal test chat so its turns never
+  // mix into the regular conversation.
+  const chatSessionKey = `agent-chat:v3:${activeWorkspaceId ?? accountId}:${agentId ?? 'default-agent'}${previewRoutineKey ? `:preview:${previewRoutineKey}` : ''}`
   const {
     messages,
     isLoading,
@@ -147,7 +172,7 @@ export function ChatWorkbench({
     startNewChat,
     adoptConversation,
     conversationId,
-  } = useChatSession(chatSessionKey, agentId)
+  } = useChatSession(chatSessionKey, agentId, previewRoutineIds ? { previewRoutineIds } : undefined)
   const skillCatalog = useSkillCatalog(activeWorkspaceId)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [showCitations, setShowCitations] = useState<boolean>(() => {
@@ -173,7 +198,7 @@ export function ChatWorkbench({
   const [selectedStageId, setSelectedStageId] = useState<string | undefined>(undefined)
   const [flowOpen, setFlowOpen] = useState(false)
 
-  const isInitializingView = (onboarding.isLoading || isBootstrapping || !isInitialized) && messages.length === 0
+  const isInitializingView = (onboardingIsLoading || isBootstrapping || !isInitialized) && messages.length === 0
   const visibleMessages = messages
   const { isAtBottom, scrollToLatestTurn } = useChatScroll({
     messages: visibleMessages,
@@ -196,11 +221,15 @@ export function ChatWorkbench({
   const inspectorOpen = selectedMessage !== null
 
   // The trace carries only the routine id; join its readable name from the
-  // agent's routine catalog — fetched only while inspecting a routine turn.
-  const routineAgentId = activeEnvelope && routineTurnSignalFromSpine(activeEnvelope.spine)
+  // agent's routine catalog — fetched while inspecting a routine turn, or while a
+  // draft is under test (to name it in the banner below).
+  const routineAgentId = previewRoutineKey || (activeEnvelope && routineTurnSignalFromSpine(activeEnvelope.spine))
     ? agentId ?? null
     : null
   const routineNamesById = useRoutineCatalog(routineAgentId)
+  const previewRoutineNames = (previewRoutineIds ?? [])
+    .map((id) => routineNamesById.get(id))
+    .filter((name): name is string => Boolean(name))
 
   useEffect(() => {
     const userExpectedLocale =
@@ -285,7 +314,7 @@ export function ChatWorkbench({
   const handleOpenCitation = async (documentId: string): Promise<CitationOpenResult> => {
     try {
       await documentsApi.getDocument(documentId)
-      onOpenDocument(documentId)
+      onOpenDocument?.(documentId)
       return 'opened'
     } catch (error) {
       if (
@@ -337,7 +366,7 @@ export function ChatWorkbench({
     await answerFeedbackApi.clear(assistantMessageId)
   }
 
-  const emptyState = onboarding.hasPendingDocuments
+  const emptyState = hasPendingDocuments
     ? {
         title: 'Documents are still processing',
         description:
@@ -357,7 +386,7 @@ export function ChatWorkbench({
           </Button>
         ),
       }
-    : onboarding.hasReadyDocuments
+    : hasReadyDocuments
       ? {
           title: 'Your workspace is ready',
           description:
@@ -385,137 +414,171 @@ export function ChatWorkbench({
           ),
         }
 
+  const title = previewRoutineKey ? 'Test draft' : 'Chat'
+  const description = `Test ${assistantName?.trim() || 'your agent'}`
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      {mode === 'chat' && conversationId ? (
+        <CompactIdField label="Conversation" value={conversationId} />
+      ) : null}
+      <div className="inline-flex items-center rounded-lg border border-input bg-input/30 p-0.5">
+        {(['chat', 'history'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => {
+              if (value === 'history') {
+                closeInspector()
+              }
+              setMode(value)
+            }}
+            className={cn(
+              'rounded-md px-3 py-1 text-sm font-medium capitalize transition',
+              mode === value
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {value === 'chat' ? 'Chat' : 'History'}
+          </button>
+        ))}
+      </div>
+      {mode === 'chat' ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" size="icon" variant="outline" aria-label="Chat options">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuCheckboxItem
+              checked={showCitations}
+              onCheckedChange={(checked) => updateShowCitations(checked === true)}
+            >
+              Show citations
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              disabled={isLoading || isBootstrapping || isInitializingView}
+              onSelect={() => {
+                void handleStartNewChat()
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Clear chat
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : null}
+    </div>
+  )
+  const footerContent = isInitializingView || mode === 'history' ? null : (
+    <>
+      {!isAtBottom && messages.length > 0 ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2 px-4">
+          <div className="mx-auto flex max-w-3xl justify-end">
+            <ScrollToBottomButton onClick={() => scrollToLatestTurn()} />
+          </div>
+        </div>
+      ) : null}
+      <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
+        <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask a question..."
+            className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
+          />
+          <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
+            <Send className="w-4 h-4" />
+            <span className="sr-only">Send message</span>
+          </Button>
+        </div>
+      </form>
+    </>
+  )
+  const bodyContent = (
+    <>
+      {mode === 'chat' && previewRoutineKey ? (
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          <span>
+            Testing draft routine
+            {previewRoutineNames.length > 0 ? <> <span className="font-medium">{previewRoutineNames.join(', ')}</span></> : null}
+            . It can activate and run here without being published; this test conversation is separate from your other chats.
+          </span>
+        </div>
+      ) : null}
+      {mode === 'history' ? (
+        <TestSessionsView agentId={agentId} />
+      ) : isInitializingView ? (
+        <div className="flex h-full items-center justify-center">
+          <LogoSpinner imageClassName="h-7 w-7" />
+        </div>
+      ) : visibleMessages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-full text-center">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+            <Send className="w-5 h-5 text-primary" />
+          </div>
+          <h2 className="text-lg font-medium text-foreground mb-1">{emptyState.title}</h2>
+          <p className="text-sm text-muted-foreground max-w-sm">
+            {emptyState.description}
+          </p>
+          {emptyState.primaryAction ? (
+            <div className="mt-4">{emptyState.primaryAction}</div>
+          ) : null}
+        </div>
+      ) : (
+        <div>
+          <ChatMessageThread
+            messages={visibleMessages}
+            onOpenDocument={handleOpenCitation}
+            onSuggestionSelect={handleSuggestionSelect}
+            onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
+            onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
+            onMessageSelect={setSelectedMessageId}
+            selectedMessageId={selectedMessageId ?? undefined}
+            showCitations={showCitations}
+            conversationId={conversationId}
+            evalCaptureEnabled
+            assistantAvatarLabel={assistantName ?? undefined}
+            assistantLinkUtmEnabled={assistantLinkUtmEnabled}
+            skillCatalog={skillCatalog}
+          />
+          <div ref={messagesEndRef} />
+        </div>
+      )}
+    </>
+  )
+
   return (
     <>
-      <DashboardPage
-        title="Chat"
-        description={`Test ${assistantName?.trim() || 'your agent'}`}
-        actions={
-          <div className="flex items-center gap-2">
-            {mode === 'chat' && conversationId ? (
-              <CompactIdField label="Conversation" value={conversationId} />
-            ) : null}
-            <div className="inline-flex items-center rounded-lg border border-input bg-input/30 p-0.5">
-              {(['chat', 'history'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    if (value === 'history') {
-                      closeInspector()
-                    }
-                    setMode(value)
-                  }}
-                  className={cn(
-                    'rounded-md px-3 py-1 text-sm font-medium capitalize transition',
-                    mode === value
-                      ? 'bg-background text-foreground shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {value === 'chat' ? 'Chat' : 'History'}
-                </button>
-              ))}
+      {shell === 'drawer' ? (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="sticky top-0 z-20 flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-background/95 px-5 py-2.5 pr-12 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="min-w-0">
+              <SheetTitle className="text-base font-medium leading-none">{title}</SheetTitle>
+              <p className="mt-1 text-sm text-muted-foreground">{description}</p>
             </div>
-            {mode === 'chat' ? (
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" size="icon" variant="outline" aria-label="Chat options">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuCheckboxItem
-                      checked={showCitations}
-                      onCheckedChange={(checked) => updateShowCitations(checked === true)}
-                    >
-                      Show citations
-                    </DropdownMenuCheckboxItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      disabled={isLoading || isBootstrapping || isInitializingView}
-                      onSelect={() => {
-                        void handleStartNewChat()
-                      }}
-                    >
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                      Clear chat
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </>
-            ) : null}
+            {headerActions}
           </div>
-        }
-        footerClassName="relative"
-        footer={isInitializingView || mode === 'history' ? null : (
-          <>
-            {!isAtBottom && messages.length > 0 ? (
-              <div className="pointer-events-none absolute inset-x-0 bottom-full mb-2 px-4">
-                <div className="mx-auto flex max-w-3xl justify-end">
-                  <ScrollToBottomButton onClick={() => scrollToLatestTurn()} />
-                </div>
-              </div>
-            ) : null}
-            <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
-              <div className="flex items-end gap-1 rounded-3xl border border-input bg-input/40 px-2 py-1.5 transition-colors focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-0">
-                <Textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask a question..."
-                  className="min-h-[36px] max-h-32 flex-1 resize-none border-0 bg-transparent px-2 py-1.5 shadow-none focus-visible:ring-0"
-                />
-                <Button type="submit" size="icon" className="h-9 w-9 shrink-0 rounded-full" disabled={isLoading || isBootstrapping || !input.trim()}>
-                  <Send className="w-4 h-4" />
-                  <span className="sr-only">Send message</span>
-                </Button>
-              </div>
-            </form>
-          </>
-        )}
-      >
-          {mode === 'history' ? (
-            <TestSessionsView agentId={agentId} />
-          ) : isInitializingView ? (
-            <div className="flex h-full items-center justify-center">
-              <LogoSpinner imageClassName="h-7 w-7" />
-            </div>
-          ) : visibleMessages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                <Send className="w-5 h-5 text-primary" />
-              </div>
-              <h2 className="text-lg font-medium text-foreground mb-1">{emptyState.title}</h2>
-              <p className="text-sm text-muted-foreground max-w-sm">
-                {emptyState.description}
-              </p>
-              {emptyState.primaryAction ? (
-                <div className="mt-4">{emptyState.primaryAction}</div>
-              ) : null}
-            </div>
-          ) : (
-            <div>
-              <ChatMessageThread
-                messages={visibleMessages}
-                onOpenDocument={handleOpenCitation}
-                onSuggestionSelect={handleSuggestionSelect}
-                onAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleAnswerFeedback : undefined}
-                onClearAnswerFeedback={editionController.canUseAssistantAnswerFeedback() ? handleClearAnswerFeedback : undefined}
-                onMessageSelect={setSelectedMessageId}
-                selectedMessageId={selectedMessageId ?? undefined}
-                showCitations={showCitations}
-                conversationId={conversationId}
-                evalCaptureEnabled
-                assistantAvatarLabel={assistantName ?? undefined}
-                assistantLinkUtmEnabled={assistantLinkUtmEnabled}
-                skillCatalog={skillCatalog}
-              />
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-      </DashboardPage>
+          <div className="relative min-h-0 flex-1 overflow-y-auto p-5">{bodyContent}</div>
+          {footerContent ? (
+            <div className="relative z-20 shrink-0 border-t border-border bg-background p-4">{footerContent}</div>
+          ) : null}
+        </div>
+      ) : (
+        <DashboardPage
+          title={title}
+          description={description}
+          actions={headerActions}
+          footerClassName="relative"
+          footer={footerContent}
+        >
+          {bodyContent}
+        </DashboardPage>
+      )}
 
       <Sheet open={inspectorOpen} onOpenChange={(open) => { if (!open) closeInspector() }}>
         <SheetContent side="right" className="w-[95vw] gap-0 p-0 sm:!max-w-[680px]">

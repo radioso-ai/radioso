@@ -57,7 +57,7 @@ interface ChatSession {
 interface ChatContextValue {
   getSession: (workspaceId: string, agentId?: string) => ChatSession
   initializeSession: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
-  sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string) => Promise<boolean>
+  sendMessage: (workspaceId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string, previewRoutineIds?: string[]) => Promise<boolean>
   startNewChat: (workspaceId: string, userExpectedLocale?: string, agentId?: string) => Promise<void>
   adoptConversation: (workspaceId: string, conversationId: string, messages: ChatMessage[], agentId?: string) => void
 }
@@ -245,7 +245,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   )
 
   const sendMessage = useCallback(
-    async (accountId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string) => {
+    async (accountId: string, content: string, inputMetadata?: ChatUserInputMetadata, agentId?: string, previewRoutineIds?: string[]) => {
       const query = content.trim()
 
       if (!query) {
@@ -300,6 +300,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             bootstrapGreetingId: currentSession.conversationId ? undefined : currentSession.bootstrapGreetingId,
             inputMetadata,
             userExpectedLocale: resolveBrowserLocale(),
+            previewRoutineIds,
           },
           {
             onConversation: ({ conversationId }) => {
@@ -622,18 +623,27 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>
 }
 
-export const useChatSession = (workspaceId: string, agentId?: string) => {
+export const useChatSession = (
+  workspaceId: string,
+  agentId?: string,
+  // Workbench draft test: routine ids (drafts included) made eligible on every send of
+  // this session so an author can test-run an unpublished routine end-to-end. Absent for
+  // normal chat.
+  options?: { previewRoutineIds?: string[] },
+) => {
   const context = useContext(ChatContext)
 
   if (!context) {
     throw new Error('useChatSession must be used within a ChatProvider')
   }
 
+  const previewRoutineIds = options?.previewRoutineIds
+
   return {
     ...context.getSession(workspaceId, agentId),
     initializeSession: (userExpectedLocale?: string) =>
       context.initializeSession(workspaceId, userExpectedLocale, agentId),
-    sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata, agentId),
+    sendMessage: (content: string, inputMetadata?: ChatUserInputMetadata) => context.sendMessage(workspaceId, content, inputMetadata, agentId, previewRoutineIds),
     startNewChat: (userExpectedLocale?: string) =>
       context.startNewChat(workspaceId, userExpectedLocale, agentId),
     adoptConversation: (conversationId: string, messages: ChatMessage[]) =>

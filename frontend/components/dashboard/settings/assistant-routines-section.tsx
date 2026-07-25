@@ -9,8 +9,10 @@ import {
   CheckCircle2,
   ChevronDown,
   Eye,
+  FlaskConical,
   FormInput,
   History,
+  MoreHorizontal,
   Pencil,
   Plus,
   RotateCcw,
@@ -21,11 +23,13 @@ import {
   WandSparkles,
 } from 'lucide-react'
 
+import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workbench-drawer'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { useRegisterRoutineHeader } from '@/components/dashboard/shared/routine-header-actions'
@@ -41,6 +45,13 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -197,11 +208,6 @@ const lineageStateLabel = (lineage: RoutineLineageGroup) => {
   if (lineage.state === 'draft-with-archived') return 'draft + archived'
   return lineage.state
 }
-
-const formatRoutineDate = (value: string) => new Intl.DateTimeFormat(undefined, {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-}).format(new Date(value))
 
 const replaceBrowserUrl = (href: string) => {
   if (typeof window === 'undefined') return
@@ -533,6 +539,8 @@ function RoutineEditorScreen({
   const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
+  const [testDrawerOpen, setTestDrawerOpen] = useState(false)
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
   const routineEditorDirtyRef = useRef(false)
@@ -1060,61 +1068,104 @@ function RoutineEditorScreen({
     }
   })
 
-  const headerActions = useMemo(() => (
-    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-      {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
-      {!isReadOnly && form ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => setDraftAssistDialogOpen(true)} disabled={isSaving || isDraftingRoutine}>
-          <WandSparkles className="mr-2 h-4 w-4" />
-          Draft with AI
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'draft' && publishedSibling ? (
-        <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archiveFromDraft()} disabled={isSaving}>
-          <Archive className="mr-2 h-4 w-4" />
-          Archive
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'published' ? (
-        <>
-          <Button type="button" size="sm" variant="outline" onClick={() => void actionHandlersRef.current.archivePublished()} disabled={isSaving}>
-            <Archive className="mr-2 h-4 w-4" />
-            Archive
+  const headerActions = useMemo(() => {
+    // One primary action per status; secondary is the draft's "Test draft". Everything
+    // else (AI drafting, archive, delete) lives in an overflow menu so the header keeps a
+    // single clear call to action instead of a row of competing buttons.
+    const isDraft = editingRoutine?.status === 'draft'
+    const showDraftWithAi = !isReadOnly && Boolean(form)
+    const showArchiveFromDraft = isDraft && Boolean(publishedSibling)
+    const showArchivePublished = editingRoutine?.status === 'published'
+    const showDeleteDraft = isDraft
+    const showVersionHistory = versionHistory.length > 1
+    const hasOverflow =
+      showVersionHistory || showDraftWithAi || showArchiveFromDraft || showArchivePublished || showDeleteDraft
+
+    return (
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+        {!isReadOnly && form ? <RoutineValidationStatusIcon state={validationStatus} /> : null}
+        {isDraft ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setTestDrawerOpen(true)}
+            disabled={isSaving}
+            title="Open a live test chat where this draft can activate, run, and hand back — without publishing it"
+          >
+            <FlaskConical className="mr-2 h-4 w-4" />
+            Test draft
           </Button>
+        ) : null}
+        {editingRoutine?.status === 'published' ? (
           <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.revisePublished()} disabled={isSaving}>
             <Pencil className="mr-2 h-4 w-4" />
             Edit revision
           </Button>
-        </>
-      ) : null}
-      {editingRoutine?.status === 'archived' ? (
-        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
-          <RotateCcw className="mr-2 h-4 w-4" />
-          Restore
-        </Button>
-      ) : null}
-      {!isReadOnly && form ? (
-        <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
-          <Send className="mr-2 h-4 w-4" />
-          Publish
-        </Button>
-      ) : null}
-      {editingRoutine?.status === 'draft' ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => actionHandlersRef.current.openDeleteDraftDialog()}
-          disabled={isSaving}
-          aria-label={`Delete draft ${editingRoutine.name}`}
-          title="Delete draft"
-          className="h-8 w-8 text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      ) : null}
-    </div>
-  ), [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus])
+        ) : null}
+        {editingRoutine?.status === 'archived' ? (
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.restoreArchived()} disabled={isSaving}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Restore
+          </Button>
+        ) : null}
+        {!isReadOnly && form ? (
+          <Button type="button" size="sm" onClick={() => void actionHandlersRef.current.publishDraft()} disabled={isSaving || !canPublishDraft}>
+            <Send className="mr-2 h-4 w-4" />
+            Publish
+          </Button>
+        ) : null}
+        {hasOverflow ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground" aria-label="More routine actions">
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              {showVersionHistory ? (
+                <DropdownMenuItem onSelect={() => setVersionHistoryOpen(true)}>
+                  <History className="mr-2 h-4 w-4" />
+                  Version history
+                </DropdownMenuItem>
+              ) : null}
+              {showDraftWithAi ? (
+                <DropdownMenuItem disabled={isSaving || isDraftingRoutine} onSelect={() => setDraftAssistDialogOpen(true)}>
+                  <WandSparkles className="mr-2 h-4 w-4" />
+                  Draft with AI
+                </DropdownMenuItem>
+              ) : null}
+              {showArchiveFromDraft ? (
+                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archiveFromDraft()}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </DropdownMenuItem>
+              ) : null}
+              {showArchivePublished ? (
+                <DropdownMenuItem disabled={isSaving} onSelect={() => void actionHandlersRef.current.archivePublished()}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </DropdownMenuItem>
+              ) : null}
+              {showDeleteDraft ? (
+                <>
+                  {showDraftWithAi || showArchiveFromDraft ? <DropdownMenuSeparator /> : null}
+                  <DropdownMenuItem
+                    disabled={isSaving}
+                    onSelect={() => actionHandlersRef.current.openDeleteDraftDialog()}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete draft
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
+    )
+  }, [canPublishDraft, editingRoutine, form, isDraftingRoutine, isReadOnly, isSaving, publishedSibling, validationStatus, versionHistory.length])
 
   const headerBackAction = useMemo(() => (
     <Button type="button" variant="ghost" className="-ml-3 h-8 px-3 text-muted-foreground" onClick={() => router.push(listHref)}>
@@ -1141,6 +1192,25 @@ function RoutineEditorScreen({
         onOpenChange={setDraftAssistDialogOpen}
         onProseChange={setDraftAssistProse}
         onLoadProposal={() => void actionHandlersRef.current.loadAssistedDraft()}
+      />
+      {editingRoutine && editingRoutine.status === 'draft' ? (
+        <ChatWorkbenchDrawer
+          open={testDrawerOpen}
+          onOpenChange={setTestDrawerOpen}
+          accountId={accountId}
+          agentId={agentId}
+          previewRoutineIds={[editingRoutine.id]}
+        />
+      ) : null}
+      <RoutineVersionHistoryDrawer
+        open={versionHistoryOpen}
+        onOpenChange={setVersionHistoryOpen}
+        versions={versionHistory}
+        currentId={editingRoutine?.id}
+        onOpenVersion={(routineId) => {
+          setVersionHistoryOpen(false)
+          router.push(buildPersistedHref(routineId))
+        }}
       />
       <div className="overflow-visible rounded-lg border border-border bg-card/95 shadow-sm">
         <div className="space-y-5 p-5">
@@ -1279,33 +1349,6 @@ function RoutineEditorScreen({
               />
             ) : null}
 
-            {versionHistory.length > 0 ? (
-              <div className="rounded-lg border border-border p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
-                  <History className="h-4 w-4 text-muted-foreground" />
-                  Version history
-                </div>
-                <div className="space-y-2">
-                  {versionHistory.map((version) => (
-                    <button
-                      key={version.id}
-                      type="button"
-                      className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-muted/60"
-                      onClick={() => router.push(buildPersistedHref(version.id))}
-                    >
-                      <span className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">v{version.version}</span>
-                        <Badge variant="outline">{routineStatusLabel(version.status)}</Badge>
-                        {version.id === editingRoutine?.id ? (
-                          <span className="text-xs text-muted-foreground">current view</span>
-                        ) : null}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{formatRoutineDate(version.updatedAt)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
             </RoutineSkillCatalogProvider>
           )}
         </div>

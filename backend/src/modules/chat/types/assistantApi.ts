@@ -63,6 +63,12 @@ export interface AssistantChatRequest {
   clientContextCapabilities?: AssistantClientContextCapabilities;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
+  /**
+   * Operator-only workbench test override: routine definition ids (drafts included)
+   * to make eligible for this turn. Set only by the authenticated workbench chat so an
+   * author can test-run an unpublished routine; never present on public-chat requests.
+   */
+  previewRoutineIds?: string[];
 }
 
 export type AssistantChatResponse = ChatResponse | ChatBootstrapResponse;

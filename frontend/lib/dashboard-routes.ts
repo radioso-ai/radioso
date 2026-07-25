@@ -51,6 +51,8 @@ export interface DashboardRouteState {
   agentRoutineId?: string
   /** When opening the agent chat tab, adopt this (forked test) conversation into the live session. */
   agentChatConversationId?: string
+  /** When opening the agent chat tab, make this draft routine eligible so it can be test-run live. */
+  agentChatPreviewRoutineId?: string
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
@@ -82,6 +84,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'agentTab',
   'agentRoutineId',
   'agentChatConversationId',
+  'agentChatPreviewRoutineId',
   'knowledgeTab',
   'settingsTab',
   'accountTab',
@@ -299,6 +302,14 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     ) {
       normalized.agentChatConversationId = state.agentChatConversationId
     }
+    if (
+      state.agentId &&
+      !state.agentRoutineId &&
+      (state.agentTab ?? DEFAULT_AGENT_TAB) === 'chat' &&
+      state.agentChatPreviewRoutineId
+    ) {
+      normalized.agentChatPreviewRoutineId = state.agentChatPreviewRoutineId
+    }
     if (state.anchor) {
       normalized.anchor = state.anchor
     }
@@ -423,6 +434,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.agentChatConversationId) {
       searchParams.set('chatConversation', normalized.agentChatConversationId)
+    }
+    if (normalized.agentChatPreviewRoutineId) {
+      searchParams.set('chatPreviewRoutine', normalized.agentChatPreviewRoutineId)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -678,6 +692,9 @@ export const parseDashboardRoute = (
       agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
       ...(searchParams?.get('chatConversation')
         ? { agentChatConversationId: searchParams.get('chatConversation') ?? undefined }
+        : {}),
+      ...(searchParams?.get('chatPreviewRoutine')
+        ? { agentChatPreviewRoutineId: searchParams.get('chatPreviewRoutine') ?? undefined }
         : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })

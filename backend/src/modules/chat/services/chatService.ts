@@ -1343,6 +1343,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
+    previewRoutineIds?: string[];
   }): Promise<ChatResponse> {
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
@@ -1386,6 +1387,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
+    previewRoutineIds?: string[];
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -1668,6 +1670,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
+    previewRoutineIds?: string[];
   }): AsyncIterable<ChatStreamEvent> {
     const streamStartedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1715,6 +1718,7 @@ export class ChatService {
     sourceOrigin?: string | null;
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
+    previewRoutineIds?: string[];
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, streamStartedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (

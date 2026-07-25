@@ -92,6 +92,12 @@ export interface PreparedSession {
    */
   turnPlan?: ChatTurnPlanHandle;
   /**
+   * Operator-only workbench test override carried from {@link PrepareChatSessionInput}:
+   * routine definition ids (drafts included) to make eligible for this turn so an author
+   * can test-run an unpublished routine end-to-end. Empty/absent for every live turn.
+   */
+  previewRoutineIds?: string[];
+  /**
    * Rolling conversation summary text (issue #866), loaded once at prepare from the
    * per-conversation summary store. Absent for new/short conversations. Injected
    * alongside the recent-message window into turn interpretation and answer
@@ -146,6 +152,12 @@ export interface PrepareChatSessionInput {
   retrievalSettingsOverride?: RetrievalPipelineRequest["retrievalSettingsOverride"];
   /** Ephemeral caller attribution for model and retrieval usage emitted by this turn. */
   usageAttribution?: ModelCallUsageAttribution;
+  /**
+   * Operator-only workbench test override: routine definition ids (drafts included)
+   * to make eligible for this turn's routine activation/resume. Ephemeral — never
+   * persisted; only the authenticated workbench chat sets it.
+   */
+  previewRoutineIds?: string[];
 }
 
 export interface PrepareChatSessionOptions {
@@ -281,6 +293,7 @@ export class ChatSessionPreparer {
       priorRewriteContinuityState: rewriteContinuityState,
       conversationSummary,
       usageAttribution: input.usageAttribution,
+      previewRoutineIds: input.previewRoutineIds,
       ...this.stagedSpineFor(retrieval, null, hostVariables),
     };
   }

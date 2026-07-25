@@ -22,7 +22,7 @@ const definition: RoutineDefinition = {
   updatedAt: new Date("2026-06-09T00:00:00.000Z"),
 };
 
-type SourceRepository = Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById">;
+type SourceRepository = Pick<RoutineDefinitionRepository, "listPublishedByAgent" | "listByAgent" | "findPinnedById" | "findById">;
 
 describe("DB-backed routine composition source", () => {
   it("compiles published definitions with the definition id as the routine id (scope-tag identity)", async () => {
@@ -30,6 +30,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => [definition]),
       listByAgent: vi.fn(async () => [definition]),
       findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
     const source = createPublishedRoutineRegistrationSource(repository);
 
@@ -52,6 +53,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
 
     await expect(createPublishedRoutineRegistrationSource(repository).load({ agentId: "agent_1" })).resolves.toEqual([]);
@@ -63,6 +65,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => [superseded]),
       findPinnedById: vi.fn(async () => superseded),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
 
     const registrations = await createPublishedRoutineRegistrationSource(repository).loadPinned({
@@ -81,6 +84,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => []),
       findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
 
     const registrations = await createPublishedRoutineRegistrationSource(repository, { onPinnedDefinitionError }).loadPinned({
@@ -100,6 +104,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => [draft, archived]),
       findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
 
     const registrations = await createPublishedRoutineRegistrationSource(repository, {
@@ -118,6 +123,48 @@ describe("DB-backed routine composition source", () => {
     }));
   });
 
+  it("loadPreview compiles a DRAFT definition by id so it can be test-run in the workbench", async () => {
+    const draft = { ...definition, status: "draft" as const };
+    const findById = vi.fn(async () => draft);
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => []),
+      listByAgent: vi.fn(async () => []),
+      findPinnedById: vi.fn(async () => null),
+      findById,
+    } as SourceRepository;
+
+    const registrations = await createPublishedRoutineRegistrationSource(repository).loadPreview({
+      agentId: "agent_1",
+      routineIds: [DEFINITION_ID],
+    });
+
+    // Preview bypasses the published-only gate: findById returns any status.
+    expect(findById).toHaveBeenCalledWith("agent_1", DEFINITION_ID);
+    expect(repository.listPublishedByAgent).not.toHaveBeenCalled();
+    expect(registrations).toHaveLength(1);
+    expect(registrations[0]!.routine.id).toBe(DEFINITION_ID);
+    expect(registrations[0]!.trigger.description).toBe("The user asks for help.");
+  });
+
+  it("loadPreview reports a preview id that resolves to no definition and skips it", async () => {
+    const onPreviewDefinitionError = vi.fn();
+    const repository = {
+      listPublishedByAgent: vi.fn(async () => []),
+      listByAgent: vi.fn(async () => []),
+      findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
+    } as SourceRepository;
+
+    const registrations = await createPublishedRoutineRegistrationSource(repository, {
+      onPreviewDefinitionError,
+    }).loadPreview({ agentId: "agent_1", routineIds: [DEFINITION_ID] });
+
+    expect(registrations).toEqual([]);
+    expect(onPreviewDefinitionError).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: "agent_1", routineId: DEFINITION_ID }),
+    );
+  });
+
   it("resolves legacy pin collisions by status rank and then highest version", async () => {
     const archived = { ...definition, id: "44444444-4444-4444-9444-444444444444", status: "archived" as const };
     const superseded = { ...definition, id: "55555555-5555-4555-9555-555555555555", status: "superseded" as const };
@@ -126,6 +173,7 @@ describe("DB-backed routine composition source", () => {
       listPublishedByAgent: vi.fn(async () => []),
       listByAgent: vi.fn(async () => [archived, superseded, published]),
       findPinnedById: vi.fn(async () => null),
+      findById: vi.fn(async () => null),
     } as SourceRepository;
 
     const registrations = await createPublishedRoutineRegistrationSource(repository).loadPinned({

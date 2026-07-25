@@ -254,6 +254,26 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips a draft-routine test-chat link (chatPreviewRoutine)', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const routineId = '22222222-2222-4222-8222-222222222222'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'agents',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentChatPreviewRoutineId: routineId,
+    })).toBe(`/w/support-abc123/agents/${agentId}?chatPreviewRoutine=${routineId}`)
+
+    expect(parseDashboardRoute(['agents', agentId], new URLSearchParams({
+      chatPreviewRoutine: routineId,
+    }))).toEqual({
+      section: 'agents',
+      agentId,
+      agentChatPreviewRoutineId: routineId,
+    })
+  })
+
   it('parses only UUID agent path segments', () => {
     const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
 

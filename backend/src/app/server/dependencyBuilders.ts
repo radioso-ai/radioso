@@ -1262,6 +1262,16 @@ export const buildChatServices = (input: {
         "Pinned routine definition failed to load or compile; skipping resume-only registration",
       );
     },
+    onPreviewDefinitionError: ({ agentId, routineId, error }) => {
+      input.logger.warn(
+        {
+          agentId,
+          routineId,
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
+      );
+    },
     resolveCompletionExport: async (definition) => {
       const [skill] = await input.database.query<{
         target_id: string | null;
@@ -1297,6 +1307,7 @@ export const buildChatServices = (input: {
       workspaceId,
       accountId,
       pinnedRoutineIds = [],
+      previewRoutineIds = [],
       responseLanguage,
       groundedAnswerRenderer,
       throwIfCancelled,
@@ -1315,6 +1326,25 @@ export const buildChatServices = (input: {
         );
         publishedRegistrations = [];
       }
+      // Operator-only workbench test override: make specific draft (or any-status)
+      // definitions eligible this turn so an author can test-run an unpublished routine.
+      // Reachable only via the authenticated workbench chat; never set on live turns.
+      let previewRegistrations: RoutineRegistration[] = [];
+      if (previewRoutineIds.length > 0) {
+        try {
+          previewRegistrations = await publishedRoutineSource.loadPreview({ agentId, routineIds: previewRoutineIds });
+        } catch (error) {
+          input.logger.warn(
+            {
+              agentId,
+              routineIds: previewRoutineIds,
+              err: error instanceof Error ? error.message : String(error),
+            },
+            "Preview routine definitions failed to load; continuing without workbench draft routines",
+          );
+          previewRegistrations = [];
+        }
+      }
       let pinnedRegistrations: RoutineRegistration[];
       try {
         pinnedRegistrations = await publishedRoutineSource.loadPinned({ agentId, routineIds: pinnedRoutineIds });
@@ -1332,6 +1362,9 @@ export const buildChatServices = (input: {
       const registrations = [
         ...input.composition.routineRegistrations,
         ...publishedRegistrations,
+        // Preview (draft) routines are fresh-activation candidates too, still subject
+        // to the same capability gating below.
+        ...previewRegistrations,
       ];
       const gatedRegistrations = [];
       for (const registration of registrations) {
@@ -1364,6 +1397,11 @@ export const buildChatServices = (input: {
       });
       const routinesById = new Map(routineRegistry.routines.map((routine) => [routine.id, routine]));
       for (const registration of pinnedRegistrations) {
+        routinesById.set(registration.routine.id, registration.routine);
+      }
+      // Preview routines resume mid-flight regardless of the activation gate, matching
+      // pinned-resume semantics, so a draft under test continues across turns.
+      for (const registration of previewRegistrations) {
         routinesById.set(registration.routine.id, registration.routine);
       }
       const routines = [...routinesById.values()];

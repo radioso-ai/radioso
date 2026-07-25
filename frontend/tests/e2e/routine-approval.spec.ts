@@ -95,7 +95,7 @@ test("author an approval gate in the Prose editor, save, and reload without Form
 
   // Insert a self-contained approval chip: capture key + option→target table. The dialog
   // seeds Approve + Decline; point each at a branch (and rename the second to Deny).
-  await page.getByRole("button", { name: "More" }).click();
+  await page.getByRole("button", { name: "More", exact: true }).click();
   await page.getByRole("menuitem", { name: "Approval" }).click();
   await page.getByLabel("Decision name").fill("refund_decision");
   await page.getByLabel("Option 1 label").fill("Approve");

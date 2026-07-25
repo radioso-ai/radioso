@@ -13,6 +13,7 @@ import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTu
 import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { createDirectiveAdherenceSideChannel } from "../../../shared/domain/directiveAdherence.js";
 
 export interface ChatTurnRuntimeDependencies {
@@ -49,7 +50,7 @@ export interface ChatTurnRuntime {
 export const buildChatTurnRuntime = (
   deps: ChatTurnRuntimeDependencies,
 ): ChatTurnRuntime => {
-  const answerSupport = new ChatAnswerSupport();
+  const answerSupport = new ChatAnswerSupport(CONTEXT_VARIABLES_BEHAVIOR.renderBound, deps.logger);
   const chatAnswerPresenter = new ChatAnswerPresenter(
     new AssistantSuggestionExpansionService(),
     deps.chatActionSuggestionService,

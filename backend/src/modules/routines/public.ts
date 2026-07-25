@@ -35,6 +35,7 @@ export {
   type RoutineTerminalKind,
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
+export { RoutineTriggerEmbeddingService, type RoutineTriggerEmbeddingStore } from "./routineTriggerEmbeddingService.js";
 export { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 export {
   RoutineSkillExecutorDispatcher,

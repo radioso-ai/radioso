@@ -2,12 +2,20 @@
  * Public entry point for the context-variables module. Other modules (chat, routines) must
  * import from here, never from internal files, per the module-boundary lint.
  */
-export { renderContextBlock } from "./contextBlockRenderer.js";
+export { renderContextBlock, renderContextBlockWithBound } from "./contextBlockRenderer.js";
 export type {
   ContextFragment,
   PageContextFragment,
   VariableContextFragment,
 } from "./contextBlockRenderer.js";
+export { boundContextVariableFragments } from "./contextVariablesBound.js";
+export type {
+  ContextVariableBoundClamp,
+  ContextVariableBoundDrop,
+  ContextVariableBoundResult,
+  ContextVariableRenderBoundConfig,
+  ContextVariableRenderCandidate,
+} from "./contextVariablesBound.js";
 export {
   ContextResolutionService,
   resolveContextForTurn,

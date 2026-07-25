@@ -1,6 +1,11 @@
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
-import { renderContextBlock } from "../../context-variables/public.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import {
+  renderContextBlockWithBound,
+  type ContextVariableRenderBoundConfig,
+} from "../../context-variables/public.js";
 import { SharedAnswerInstructionBuilder } from "../../retrieval/public.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import {
@@ -18,6 +23,13 @@ import {
  */
 export class ChatAnswerSupport {
   private readonly assistantInstructionBuilder = new SharedAnswerInstructionBuilder();
+  private readonly loggedBoundedContext = new WeakSet<PreparedSession>();
+
+  constructor(
+    private readonly contextVariableRenderBound: ContextVariableRenderBoundConfig =
+      CONTEXT_VARIABLES_BEHAVIOR.renderBound,
+    private readonly logger?: Pick<AppLogger, "debug">,
+  ) {}
 
   buildChatWorkspaceContext(session: PreparedSession): LlmCapabilityResolveInput {
     return {
@@ -55,7 +67,28 @@ export class ChatAnswerSupport {
 
   /** Render the turn's renderable visitor-context fragments (page + always-surfaced variables). */
   buildContextBlock(session: PreparedSession): string {
-    return renderContextBlock(session.resolvedContext?.renderFragments ?? []);
+    const rendered = renderContextBlockWithBound(
+      session.resolvedContext?.renderFragments ?? [],
+      this.contextVariableRenderBound,
+    );
+    const { dropped, clamped, kept } = rendered.variableBound;
+    if (this.logger && !this.loggedBoundedContext.has(session) && (dropped.length > 0 || clamped.length > 0)) {
+      this.loggedBoundedContext.add(session);
+      this.logger.debug(
+        {
+          event: "context_variables_render_bounded",
+          workspaceId: session.agent.workspaceId,
+          conversationId: session.conversation.id,
+          renderedVariables: kept.length,
+          droppedVariables: dropped.length,
+          droppedVariableNames: dropped.map((entry) => entry.variableName),
+          clampedVariables: clamped.length,
+          clampedVariableNames: clamped.map((entry) => entry.variableName),
+        },
+        "Context-variable rendering bounded",
+      );
+    }
+    return rendered.block;
   }
 
   pageContextCondition(session: PreparedSession): PageContextCondition | null {

@@ -25,6 +25,19 @@ export const DIRECTIVES_BEHAVIOR = {
   },
 } as const;
 
+export const CONTEXT_VARIABLES_BEHAVIOR = {
+  // Bounds on always-surfaced host variables in the answer prompt. Staged
+  // context remains complete for directive matching and routine binding.
+  renderBound: {
+    // Variables retain resolution order; this cap decides membership only.
+    maxRenderedVariables: 12,
+    // JSON values are explicitly marked when shortened before line rendering.
+    perValueMaxChars: 600,
+    // Approximate prompt ceiling using the repo-standard ~4 chars/token estimate.
+    sectionTokenBudget: 1_200,
+  },
+} as const;
+
 export const CHAT_BEHAVIOR = {
   intentRouting: {
     reasoningEffort: "minimal",

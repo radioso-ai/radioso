@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { renderContextBlock } from "../../src/modules/context-variables/contextBlockRenderer.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -81,6 +82,18 @@ describe("renderContextBlock", () => {
       ].join("\n"),
     );
   });
+
+  it("bounds only the rendered variables block, preserving page-context output", () => {
+    const page = { kind: "page_context" as const, pageUrl: "https://example.com" };
+    const block = renderContextBlock(
+      [page, { kind: "variable", name: "large", value: "x".repeat(80) }],
+      { ...CONTEXT_VARIABLES_BEHAVIOR.renderBound, perValueMaxChars: 20 },
+    );
+
+    expect(block).toContain("Current page URL: https://example.com");
+    expect(block).toContain('- large: "xxxxxx… [truncated]');
+    expect(block).not.toContain("x".repeat(80));
+  });
 });
 
 describe("ChatAnswerSupport visitor-context rendering", () => {
@@ -93,7 +106,11 @@ describe("ChatAnswerSupport visitor-context rendering", () => {
     content: "Hello world",
   };
   const sessionWith = (resolved: ReturnType<typeof resolveContextForTurn>) =>
-    ({ resolvedContext: resolved }) as unknown as PreparedSession;
+    ({
+      agent: { workspaceId: "workspace-1" },
+      conversation: { id: "conversation-1" },
+      resolvedContext: resolved,
+    }) as unknown as PreparedSession;
 
   it("buildContextBlock renders the turn's render fragments (page parity)", () => {
     const session = sessionWith(resolveContextForTurn(pageContext));
@@ -111,5 +128,33 @@ describe("ChatAnswerSupport visitor-context rendering", () => {
   it("buildPromptWithContext returns the prompt unchanged when no context", () => {
     const session = sessionWith(resolveContextForTurn(null));
     expect(support.buildPromptWithContext("BASE", session)).toBe("BASE");
+  });
+
+  it("logs bounded variable names once without logging their values", () => {
+    const debug = vi.fn();
+    const boundedSupport = new ChatAnswerSupport(
+      { maxRenderedVariables: 1, perValueMaxChars: 20, sectionTokenBudget: 1_000 },
+      { debug },
+    );
+    const session = sessionWith(
+      resolveContextForTurn(null, [
+        { name: "large", value: "secret-value-".repeat(10), surfacing: "always" },
+        { name: "held_back", value: "also-secret", surfacing: "always" },
+      ]),
+    );
+
+    boundedSupport.buildContextBlock(session);
+    boundedSupport.buildContextBlock(session);
+
+    expect(debug).toHaveBeenCalledTimes(1);
+    expect(debug).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "context_variables_render_bounded",
+        droppedVariableNames: ["held_back"],
+        clampedVariableNames: ["large"],
+      }),
+      "Context-variable rendering bounded",
+    );
+    expect(JSON.stringify(debug.mock.calls)).not.toContain("secret-value");
   });
 });

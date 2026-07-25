@@ -18,7 +18,7 @@ import {
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
-import { RoutineDefinitionService, RoutineDraftAssistService } from "../../modules/routines/public.js";
+import { RoutineDefinitionService, RoutineDraftAssistService, RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
 import { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -371,6 +371,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
   );
+  // Shared by routine publishing (write-time trigger embedding) and the chat
+  // activation prefilter (lazy self-heal of unembedded/stale rows) so both
+  // paths dedup concurrent embedding work through one instance.
+  const routineTriggerEmbeddingService = new RoutineTriggerEmbeddingService({
+    embeddings: embeddingService,
+    settings: settings.ingestionSettingsService,
+    store: {
+      get: ({ agentId, routineId }) => repositories.routineDefinitionRepository.getTriggerEmbeddingMetadata(agentId, routineId),
+      save: (embedding) => repositories.routineDefinitionRepository.saveTriggerEmbedding(embedding),
+      clear: (input) => repositories.routineDefinitionRepository.clearTriggerEmbedding(input),
+    },
+    logger,
+  });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentService,
@@ -407,6 +420,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceRepository: repositories.workspaceRepository,
     assertPublicWebsiteUrl,
     errorReporter: infrastructure.errorReportingService,
+    ingestionSettingsService: settings.ingestionSettingsService,
+    routineTriggerEmbeddingService,
   });
   const skillCapabilityBindings = bindSkillCapabilityExecutors({
     capabilities: skillCapabilityRegistry,
@@ -542,6 +557,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     auditService: infrastructure.auditService,
     directiveScopeTags: repositories.agentRepository,
+    triggerEmbeddingService: routineTriggerEmbeddingService,
   });
   const routineDraftAssistService = new RoutineDraftAssistService({
     repository: repositories.agentRepository,

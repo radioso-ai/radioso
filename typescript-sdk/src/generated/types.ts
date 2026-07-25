@@ -4356,6 +4356,14 @@ export interface components {
                 browserLocale?: string | null;
                 content?: string | null;
             };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
+            };
         };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
@@ -5311,6 +5319,14 @@ export interface components {
                 pageLocale?: string | null;
                 browserLocale?: string | null;
                 content?: string | null;
+            };
+            clientContextCapabilities?: {
+                "page.read"?: {
+                    available: boolean;
+                    /** @enum {string|null} */
+                    mode: "metadata" | "content" | null;
+                    supportedOperations: ("metadata" | "lookup" | "summarize")[];
+                };
             };
             signedIdentity?: string;
             inputMetadata?: {

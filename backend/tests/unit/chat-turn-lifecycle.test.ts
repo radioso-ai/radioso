@@ -16,8 +16,15 @@ import type { ChatPresentedAnswer } from "../../src/modules/chat/services/chatAn
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
 import { resolveContextForTurn } from "../../src/modules/context-variables/public.js";
 import { TURN_TRACE_ENVELOPE_VERSION } from "../../src/modules/chat/services/turnTraceEnvelope.js";
+import type { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { capabilityNames, type CapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../src/shared/domain/actionCapabilities.js";
+import type {
+  PageReadCandidateSource,
+  PageReadCapability,
+  PageReadDecision,
+  PageReadGateOutcome,
+} from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 
 interface RecordedAudit {
   eventType?: string;
@@ -25,7 +32,7 @@ interface RecordedAudit {
   metadata: Record<string, unknown>;
 }
 
-const harness = () => {
+const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter"] }) => {
   const records: RecordedAudit[] = [];
   const auditService = {
     record: vi.fn(async (event: RecordedAudit) => {
@@ -40,7 +47,21 @@ const harness = () => {
     create: vi.fn(async () => ({ id: "assistant_msg_1" })),
   } as unknown as MessageRepositoryPort;
 
-  const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService);
+  const lifecycle = new ChatTurnLifecycle(
+    conversationRepository,
+    messageRepository,
+    auditService,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    metrics,
+  );
   return { lifecycle, records, messageRepository };
 };
 
@@ -75,6 +96,53 @@ const presentation = (): ChatPresentedAnswer => ({
   answerOutcome: "grounded_success",
   citations: [],
 });
+
+const pageReadCapability: PageReadCapability = {
+  available: true,
+  mode: "content",
+  supportedOperations: ["metadata", "lookup", "summarize"],
+};
+
+const pageReadSession = (input: {
+  decision: PageReadDecision;
+  gate: PageReadGateOutcome;
+  source?: PageReadCandidateSource;
+  capability?: PageReadCapability;
+  capturePage?: boolean;
+}): PreparedSession => {
+  const resolvedContext = input.capturePage
+    ? resolveContextForTurn({
+        pageUrl: "https://example.test/docs",
+        pageTitle: "Docs",
+        pageLocale: "en-US",
+        browserLocale: "en",
+        content: "Visible page text.",
+      })
+    : resolveContextForTurn(null);
+  return {
+    ...session(),
+    pageContext: {
+      pageUrl: "https://example.test/docs",
+      pageTitle: "Docs",
+      content: "Visible page text.",
+    },
+    pageReadCapability: input.capability ?? pageReadCapability,
+    pageReadOutcome: {
+      merged: {
+        decision: input.decision,
+        contributors: input.decision.required && input.source
+          ? [{
+              source: input.source,
+              operation: input.decision.operation,
+              resolvedRequest: input.decision.resolvedRequest,
+            }]
+          : [],
+      },
+      gate: input.gate,
+    },
+    resolvedContext,
+  };
+};
 
 const effectiveRetrieval = (): PreparedSession["retrieval"] =>
   ({
@@ -198,20 +266,24 @@ const routineRetrievalTrace = (): ConversationTrace => ({
 });
 
 describe("ChatTurnLifecycle — engine turn envelope", () => {
-  it("persists the redacted page context snapshot on assistant message metadata", async () => {
+  it("persists the frozen capture decision and the gated page snapshot on assistant metadata", async () => {
     const { lifecycle, messageRepository } = harness();
-    const prepared = {
-      ...session(),
-      resolvedContext: resolveContextForTurn({
-        pageUrl: "https://example.test/docs",
-        pageTitle: "Docs",
-        pageLocale: "en-US",
-        browserLocale: "en",
-        content: "Visible page text.",
-      }),
-    };
+    const prepared = pageReadSession({
+      decision: {
+        required: true,
+        operation: "lookup",
+        resolvedRequest: "Find the refund window",
+      },
+      source: { kind: "planner" },
+      gate: {
+        kind: "capture",
+        operation: "lookup",
+        resolvedRequest: "Find the refund window",
+      },
+      capturePage: true,
+    });
 
-    await lifecycle.completeAssistantTurn({
+    const completed = await lifecycle.completeAssistantTurn({
       workspaceId: "workspace_1",
       session: prepared,
       presentation: {
@@ -256,7 +328,149 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         content: "Visible page text.",
       },
     });
+    expect(assistantMessage?.metadata?.pageRead).toEqual({
+      decision: {
+        required: true,
+        operation: "lookup",
+        resolvedRequest: "Find the refund window",
+      },
+      winnerSource: { kind: "planner" },
+      gateOutcome: "capture",
+    });
+    const gather = completed.response.turnTrace?.spine.stages.find((stage) => stage.kind === "gather");
+    expect(gather?.outputs?.contextVariables).toBeUndefined();
+    expect(gather?.outputs?.pageRead).toEqual({
+      schemaVersion: 1,
+      available: true,
+      required: true,
+      requested: false,
+      resolved: true,
+      operation: "lookup",
+      outcome: "context_ready",
+    });
   });
+
+  it.each([
+    {
+      name: "not_required",
+      decision: { required: false, operation: null, resolvedRequest: null },
+      gate: { kind: "not_required" },
+      source: undefined,
+      expectedWinner: null,
+    },
+    {
+      name: "unavailable",
+      decision: { required: true, operation: "lookup", resolvedRequest: "Find the price" },
+      gate: { kind: "unavailable" },
+      source: { kind: "routine", routineId: "page.price" },
+      expectedWinner: { kind: "routine", routineId: "page.price" },
+    },
+    {
+      name: "unsupported_operation",
+      decision: { required: true, operation: "transform", resolvedRequest: "Translate the page" },
+      gate: { kind: "unsupported_operation" },
+      source: { kind: "planner" },
+      expectedWinner: { kind: "planner" },
+    },
+  ] satisfies Array<{
+    name: string;
+    decision: PageReadDecision;
+    gate: PageReadGateOutcome;
+    source: PageReadCandidateSource | undefined;
+    expectedWinner: PageReadCandidateSource | null;
+  }>)(
+    "persists the frozen $name decision without page-derived metadata",
+    async ({ decision, gate, source, expectedWinner }) => {
+      const { lifecycle, messageRepository } = harness();
+      await lifecycle.completeAssistantTurn({
+        workspaceId: "workspace_1",
+        session: pageReadSession({ decision, gate, source }),
+        presentation: presentation(),
+        answerStartedAt: Date.now(),
+        stream: false,
+        engineTrace: engineTrace(),
+      });
+
+      const assistantMessage = vi.mocked(messageRepository.create).mock.calls[0]?.[0];
+      expect(assistantMessage?.metadata?.pageRead).toEqual({
+        decision,
+        winnerSource: expectedWinner,
+        gateOutcome: gate.kind,
+      });
+      expect(assistantMessage?.metadata).not.toHaveProperty("contextVariables");
+      expect(JSON.stringify(assistantMessage?.metadata)).not.toContain("Visible page text.");
+      expect(JSON.stringify(assistantMessage?.metadata)).not.toContain("https://example.test/docs");
+    },
+  );
+
+  it("persists no page-read metadata for a turn without the capability", async () => {
+    const metrics = { incrementCounter: vi.fn() };
+    const { lifecycle, messageRepository } = harness(metrics);
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    const assistantMessage = vi.mocked(messageRepository.create).mock.calls[0]?.[0];
+    expect(assistantMessage?.metadata).not.toHaveProperty("pageRead");
+    expect(metrics.incrementCounter).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      decision: { required: false, operation: null, resolvedRequest: null },
+      gate: { kind: "not_required" },
+      expectedLabels: { outcome: "not_required", operation: "none" },
+    },
+    {
+      decision: { required: true, operation: "lookup", resolvedRequest: "Find the price" },
+      gate: { kind: "capture", operation: "lookup", resolvedRequest: "Find the price" },
+      expectedLabels: { outcome: "capture", operation: "lookup" },
+    },
+    {
+      decision: { required: true, operation: "summarize", resolvedRequest: "Summarize the page" },
+      gate: { kind: "unavailable" },
+      expectedLabels: { outcome: "unavailable", operation: "summarize" },
+    },
+    {
+      decision: { required: true, operation: "transform", resolvedRequest: "Translate the page" },
+      gate: { kind: "unsupported_operation" },
+      expectedLabels: { outcome: "unsupported_operation", operation: "transform" },
+    },
+  ] satisfies Array<{
+    decision: PageReadDecision;
+    gate: PageReadGateOutcome;
+    expectedLabels: { outcome: PageReadGateOutcome["kind"]; operation: string };
+  }>)(
+    "emits the $expectedLabels.outcome counter exactly once with bounded labels",
+    async ({ decision, gate, expectedLabels }) => {
+      const metrics = { incrementCounter: vi.fn() };
+      const { lifecycle } = harness(metrics);
+
+      await lifecycle.completeAssistantTurn({
+        workspaceId: "workspace_1",
+        session: pageReadSession({ decision, gate }),
+        presentation: presentation(),
+        answerStartedAt: Date.now(),
+        stream: false,
+        engineTrace: engineTrace(),
+      });
+
+      expect(metrics.incrementCounter).toHaveBeenCalledOnce();
+      expect(metrics.incrementCounter).toHaveBeenCalledWith(
+        "chat_page_read_gate_outcomes_total",
+        {
+          help: "Page-read gate outcomes by result and selected operation.",
+          labels: expectedLabels,
+        },
+      );
+    },
+  );
 
   it("builds the same turn trace envelope through the extracted presentation helper", async () => {
     vi.useFakeTimers();

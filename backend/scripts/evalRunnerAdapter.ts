@@ -63,6 +63,8 @@ export const buildReplayInput = (
     agentConfigOverride: evalCase.agentConfigOverride,
     query: evalCase.query,
     history,
+    pageContext: evalCase.pageContext,
+    clientContextCapabilities: evalCase.clientContextCapabilities,
     routineStartState: evalCase.routineStartState ?? null,
   };
 };

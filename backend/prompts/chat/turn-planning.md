@@ -63,6 +63,6 @@ If the user has explicitly instructed the assistant to answer in a specific lang
 If there is no explicit language instruction, use the language of the latest user question.
 If the latest user message is short, neutral, or language-ambiguous, preserve the most recent explicit language instruction from the conversation when one exists.
 Return a concise human-readable language label such as "English", "Spanish", or "Estonian".
-If there is no user message or no reliable language can be determined, use null.{{routine_section}}{{directive_section}}{{output_shape_section}}
+If there is no user message or no reliable language can be determined, use null.{{page_read_section}}{{routine_section}}{{directive_section}}{{output_shape_section}}
 
 The provider response schema, when available, fixes the field set and value sets. The output-shape rules remain the fallback contract for providers that cannot enforce that schema.

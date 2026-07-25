@@ -803,14 +803,38 @@ describe('radioso embed launcher', () => {
     expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
   })
 
-  it('pre-mounts the iframe but defers the session bootstrap until the widget opens', async () => {
+  it.each([
+    {
+      bodyText: '',
+      expectedCapability: {
+        available: true,
+        mode: 'metadata',
+        supportedOperations: ['metadata'],
+      },
+      name: 'empty page body',
+    },
+    {
+      bodyText: 'Visible refund policy',
+      expectedCapability: {
+        available: true,
+        mode: 'content',
+        supportedOperations: ['metadata', 'lookup', 'summarize'],
+      },
+      name: 'non-empty page body',
+    },
+  ])('pre-mounts the iframe and advertises the captured capability for $name', async ({
+    bodyText,
+    expectedCapability,
+  }) => {
     const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
     const script = new FakeElement('script')
     script.src = 'https://app.example.com/radioso-embed.js'
     script.dataset.radiosoToken = 'embed-token'
+    script.dataset.radiosoPageContext = 'content'
 
     const head = new FakeElement('head')
     const body = new FakeElement('body')
+    body.textContent = bodyText
     const document = {
       readyState: 'complete',
       currentScript: script,
@@ -924,10 +948,20 @@ describe('radioso embed launcher', () => {
     for (let index = 0; index < 10; index += 1) {
       await Promise.resolve()
     }
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'radioso:embed:session' }),
-      'https://app.example.com',
-    )
+    const sessionMessage = postMessage.mock.calls.find(
+      ([message]) => message.type === 'radioso:embed:session',
+    )?.[0]
+    expect(sessionMessage).toMatchObject({
+      type: 'radioso:embed:session',
+      clientContextCapabilities: {
+        'page.read': expectedCapability,
+      },
+    })
+    if (bodyText) {
+      expect(sessionMessage.pageContext.content).toBe(bodyText)
+    } else {
+      expect(sessionMessage.pageContext).not.toHaveProperty('content')
+    }
   })
 
 })

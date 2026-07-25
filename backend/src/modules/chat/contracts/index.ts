@@ -1,6 +1,11 @@
 import type { ChatResponse } from "../types/chatResponses.js";
+import type { AssistantClientContextCapabilities } from "../types/assistantApi.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
+export type {
+  AssistantClientContextCapabilities,
+  AssistantPageContext,
+} from "../types/assistantApi.js";
 export type {
   AnswerSegment,
   ChatCitation,
@@ -43,6 +48,7 @@ export type {
   ChatSuggestion,
   ChatSuggestionKind,
 } from "../types/chatResponses.js";
+export type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 
 export interface ChatAnswerPort {
   answer(input: {
@@ -56,6 +62,7 @@ export interface ChatAnswerPort {
     inputMetadata?: unknown;
     metadataFilter?: Record<string, unknown>;
     pageContext?: unknown;
+    clientContextCapabilities?: AssistantClientContextCapabilities;
     sourceChannel?: string | null;
     channelContext?: ConversationChannelContext | null;
     chatSessionId?: string | null;

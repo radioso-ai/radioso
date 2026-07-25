@@ -27,7 +27,7 @@ test("agent context settings create, enable, and update surfacing", async ({ pag
   await page.getByLabel("Description", { exact: true }).fill("Current visitor cart from the host backend.");
   await page.getByRole("dialog", { name: "Add context variable" }).getByRole("button", { name: "Add variable" }).click();
 
-  await expect(page.getByText("@cart")).toBeVisible();
+  await expect(page.getByText("@cart", { exact: true })).toBeVisible();
   await page.getByLabel("Enable cart").click();
   await expect(page.getByLabel("Disable cart")).toBeVisible();
   await page.getByLabel("Surfacing", { exact: true }).click();

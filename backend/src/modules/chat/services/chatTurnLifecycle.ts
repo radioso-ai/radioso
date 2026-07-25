@@ -40,6 +40,7 @@ import { appendConversationSummaryStage } from "./conversationSummaryTracePresen
 import {
   attachCapabilitySubTrace,
   attachContextVariablesToGather,
+  buildPageReadTraceDiagnostic,
   buildTurnTraceEnvelope,
   type TurnTraceEnvelope,
 } from "./turnTraceEnvelope.js";
@@ -51,6 +52,13 @@ import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type {
+  PageReadCandidateSource,
+  PageReadDecision,
+  PageReadGateOutcome,
+} from "./pageRead/pageReadDecision.js";
+import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -245,6 +253,33 @@ export interface TurnTracePresentation {
   successInput: AssistantTurnSuccessInput;
 }
 
+interface PersistedPageReadDecision {
+  decision: PageReadDecision;
+  winnerSource: PageReadCandidateSource | null;
+  gateOutcome: PageReadGateOutcome["kind"];
+}
+
+const frozenPageReadDecisionFor = (
+  session: PreparedSession,
+): PersistedPageReadDecision | undefined => {
+  if (session.pageReadCapability == null) {
+    return undefined;
+  }
+  // A turn path that never consulted the gate must not lose the answered turn at
+  // persistence time; the documented failure default is "not required".
+  const outcome = session.pageReadOutcome ?? freezePageReadOutcome(session, {
+    planner: null,
+    routineCandidates: [],
+    directiveCandidates: [],
+    fallbackRequest: session.effectiveQuery,
+  });
+  return {
+    decision: outcome.merged.decision,
+    winnerSource: outcome.merged.contributors[0]?.source ?? null,
+    gateOutcome: outcome.gate.kind,
+  };
+};
+
 export const buildTurnTraceForPresentation = (
   input: BuildTurnTraceForPresentationInput,
 ): TurnTracePresentation => {
@@ -292,16 +327,25 @@ export const buildTurnTraceForPresentation = (
   const resolvedActivitySummary = activityTrace.summary ?? activitySummary;
   const contextVariablesSnapshot = input.session.resolvedContext.snapshot;
   const hasContextVariablesSnapshot = Object.keys(contextVariablesSnapshot).length > 0;
+  const pageReadDecision = frozenPageReadDecisionFor(input.session);
+  const pageReadDiagnostic = input.session.pageReadCapability != null && input.session.pageReadOutcome
+    ? buildPageReadTraceDiagnostic({
+        capability: input.session.pageReadCapability,
+        outcome: input.session.pageReadOutcome,
+        resolved: Object.hasOwn(contextVariablesSnapshot, "page_context"),
+      })
+    : undefined;
   const directiveFirings = input.session.directiveStateStore?.capturedFiringNames() ?? [];
   // The conversation spine is the root span; retrieval rides as a typed leaf on
-  // its dispatch stage, and the resolved (redacted) visitor context rides on the
-  // gather stage. Engine always runs the assistant turn, so engineTrace is
-  // present — but stay defensive: no spine means no envelope this turn.
+  // its dispatch stage, while redacted host variables and the content-free page
+  // diagnostic ride on gather. Engine always runs the assistant turn, so
+  // engineTrace is present — but stay defensive: no spine means no envelope.
   const turnTrace = input.engineTrace
     ? buildTurnTraceEnvelope({
       spine: attachContextVariablesToGather(
         attachRetrievalActivityTrace(input.engineTrace, activityTrace),
         contextVariablesSnapshot,
+        pageReadDiagnostic,
       ),
       modelCallTrace: input.modelCallTrace,
     })
@@ -357,6 +401,7 @@ export const buildTurnTraceForPresentation = (
       ...(hasContextVariablesSnapshot
         ? { contextVariables: contextVariablesSnapshot }
         : {}),
+      ...(pageReadDecision ? { pageRead: pageReadDecision } : {}),
       groundingVerdict: input.presentation.grounding,
       groundingProtocolVersion: input.presentation.groundingSummary?.protocolVersion,
       groundingDiagnostics: input.presentation.groundingDiagnostics,
@@ -421,6 +466,7 @@ export class ChatTurnLifecycle {
     // Optional: when wired, the per-conversation rolling summary (#866) is
     // regenerated fire-and-forget after the turn is durably persisted.
     private readonly conversationSummaryUpdater?: ConversationSummaryUpdater,
+    private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -609,6 +655,16 @@ export class ChatTurnLifecycle {
       if (input.additionalAuditEvent) {
         await this.auditService.record(input.additionalAuditEvent);
       }
+    }
+
+    if (input.session.pageReadCapability != null && input.session.pageReadOutcome) {
+      this.metrics?.incrementCounter("chat_page_read_gate_outcomes_total", {
+        help: "Page-read gate outcomes by result and selected operation.",
+        labels: {
+          outcome: input.session.pageReadOutcome.gate.kind,
+          operation: input.session.pageReadOutcome.merged.decision.operation ?? "none",
+        },
+      });
     }
 
     // Advance the conversation's directive firing memory (#865) once the reply is

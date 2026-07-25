@@ -6,6 +6,10 @@ import type { ChatTurnRoute } from "../../../shared/domain/chatTurnRoute.js";
 import { appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import type { TurnRouting } from "./turnRouter.js";
+import {
+  renderPageContextCondition,
+  type PageContextCondition,
+} from "./pageRead/pageContextCondition.js";
 
 export const buildAssistantReplyPrompt = (input: {
   route: ChatTurnRoute;
@@ -15,6 +19,7 @@ export const buildAssistantReplyPrompt = (input: {
   query: string;
   framing?: TurnRouting["framing"];
   pageContextBlock?: string;
+  pageContextCondition?: PageContextCondition | null;
   conversationSummary?: string;
   steering?: SteeringRule[];
 }): string => {
@@ -33,6 +38,9 @@ export const buildAssistantReplyPrompt = (input: {
     outside_scope_request: input.framing?.outsideScopeRequest || "none",
     answer_instruction_block: input.answerInstructionBlock || "No additional answer instructions.",
     page_context_block: input.pageContextBlock ? `\n${input.pageContextBlock}` : "",
+    page_context_condition_block: input.pageContextCondition
+      ? `\n${renderPageContextCondition(input.pageContextCondition)}`
+      : "",
     conversation_summary_block: summarySection ? `\n${summarySection}\n` : "",
     history_section: historySection || "No prior history",
     query: input.query,

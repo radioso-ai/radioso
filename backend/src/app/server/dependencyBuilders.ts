@@ -1445,6 +1445,7 @@ export const buildChatServices = (input: {
         );
       }
       return {
+        routines,
         // The plan-aware activator prepares candidates once through the registry's
         // seam, feeds them to the shared turn plan (earliest consumer), and applies
         // precomputed rankings; without a plan handle it is exactly the staged

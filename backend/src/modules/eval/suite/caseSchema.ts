@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import type { InternalAgentConfig } from "../../agents/public.js";
+import type {
+  AssistantClientContextCapabilities,
+  AssistantPageContext,
+} from "../../chat/contracts/index.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
 
@@ -24,6 +28,10 @@ export interface ConversationQualityCase {
   /** Prior turns, oldest first, replayed as conversation history before `query`. */
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   query: string;
+  /** Ephemeral host-page input supplied to this turn only. */
+  pageContext?: AssistantPageContext;
+  /** Client-advertised context capabilities supplied alongside `pageContext`. */
+  clientContextCapabilities?: AssistantClientContextCapabilities;
   /** Seed a mid-routine position so the agent resumes instead of activating fresh. */
   routineStartState?: EvalRunRoutineStartState;
   agentConfigOverride?: Partial<InternalAgentConfig>;
@@ -32,6 +40,22 @@ export interface ConversationQualityCase {
 
 const answerMatchMode = z.enum(["substring", "regex"]);
 const metadataValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const pageContextSchema = z.object({
+  pageUrl: z.string().trim().max(2048).nullable().optional(),
+  pageTitle: z.string().trim().max(180).nullable().optional(),
+  pageLocale: z.string().trim().max(35).nullable().optional(),
+  browserLocale: z.string().trim().max(35).nullable().optional(),
+  content: z.string().trim().max(6000).nullable().optional(),
+});
+const clientContextCapabilitiesSchema = z.object({
+  "page.read": z.object({
+    available: z.boolean(),
+    mode: z.enum(["metadata", "content"]).nullable(),
+    supportedOperations: z
+      .array(z.enum(["metadata", "lookup", "summarize"]))
+      .max(3),
+  }).optional(),
+});
 
 /**
  * Runtime guard for the full assertion vocabulary (shipped product assertions + suite
@@ -65,6 +89,8 @@ export const conversationQualityCaseSchema = z.object({
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() }))
     .optional(),
   query: z.string().min(1),
+  pageContext: pageContextSchema.optional(),
+  clientContextCapabilities: clientContextCapabilitiesSchema.optional(),
   routineStartState: z.record(z.unknown()).optional(),
   agentConfigOverride: z.record(z.unknown()).optional(),
   assertions: z.array(suiteAssertionSchema),

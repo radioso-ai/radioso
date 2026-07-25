@@ -6,6 +6,22 @@ import {
 } from "./corpus.js";
 import { BOOK_DEMO_ROUTINE_ID, CONTACT_SUPPORT_ROUTINE_ID } from "./routines.js";
 
+const contentPageReadCapabilities: ConversationQualityCase["clientContextCapabilities"] = {
+  "page.read": {
+    available: true,
+    mode: "content",
+    supportedOperations: ["metadata", "lookup", "summarize"],
+  },
+};
+
+const metadataPageReadCapabilities: ConversationQualityCase["clientContextCapabilities"] = {
+  "page.read": {
+    available: true,
+    mode: "metadata",
+    supportedOperations: ["metadata"],
+  },
+};
+
 /**
  * The seed conversation-quality dataset. Cases lean on deterministic assertions (route,
  * retrieval, citation, grounding verdict, routine activation, exact figures) and reserve
@@ -166,6 +182,172 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
       { type: "answer_contains", pattern: "49", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "page-read-summarize",
+    name: "A page summary is grounded in the supplied page content",
+    tags: ["page-read", "grounding"],
+    query: "Summarize this page.",
+    pageContext: {
+      pageUrl: "https://example.invalid/releases/aurora-finch",
+      pageTitle: "Aurora Finch release brief",
+      pageLocale: "en",
+      browserLocale: "en-US",
+      content:
+        "Project Aurora Finch launches on October 14. The pilot cohort contains 240 teams. A maintenance window runs from 02:00 to 04:00 UTC.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "answer_contains", pattern: "Aurora Finch", matchMode: "substring" },
+      { type: "answer_contains", pattern: "240", matchMode: "substring" },
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Summarizes the Aurora Finch release using only the supplied page: October 14 launch, 240-team pilot cohort, and the 02:00–04:00 UTC maintenance window.",
+        criteria:
+          "The answer is a faithful summary of the supplied page and does not substitute workspace-document facts.",
+      },
+    ],
+  },
+  {
+    id: "page-read-summarize-spanish",
+    name: "A Spanish page-summary request is grounded in the supplied page content",
+    tags: ["page-read", "grounding", "multilingual"],
+    query: "Resume esta página.",
+    pageContext: {
+      pageUrl: "https://example.invalid/lanzamientos/garza-verde",
+      pageTitle: "Notas del lanzamiento Garza Verde",
+      pageLocale: "es",
+      browserLocale: "es-ES",
+      content:
+        "El proyecto Garza Verde se lanza el 17 de noviembre. La prueba incluye 85 organizaciones y termina el 3 de diciembre.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "answer_contains", pattern: "Garza Verde", matchMode: "substring" },
+      { type: "answer_contains", pattern: "17 de noviembre", matchMode: "substring" },
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Responde en español y resume que Garza Verde se lanza el 17 de noviembre, incluye 85 organizaciones y termina el 3 de diciembre.",
+        criteria:
+          "The answer is in Spanish and faithfully summarizes the supplied Spanish page.",
+      },
+    ],
+  },
+  {
+    id: "page-read-targeted-lookup",
+    name: "A targeted lookup uses a fact available only in the page payload",
+    tags: ["page-read", "grounding"],
+    query: "What does this page say the migration access code is?",
+    pageContext: {
+      pageUrl: "https://example.invalid/migrations/quartz",
+      pageTitle: "Quartz migration checklist",
+      pageLocale: "en",
+      browserLocale: "en-US",
+      content:
+        "During the Quartz migration, operators must enter access code QZ-7419 before starting the verification step.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "answer_contains", pattern: "QZ-7419", matchMode: "substring", caseSensitive: true },
+    ],
+  },
+  {
+    id: "page-read-gratitude-no-leak",
+    name: "A gratitude turn does not inject unrelated page content",
+    tags: ["page-read", "direct", "injection"],
+    query: "Thanks, that helps.",
+    pageContext: {
+      pageUrl: "https://example.invalid/internal/canary",
+      pageTitle: "Canary launch note",
+      pageLocale: "en",
+      browserLocale: "en-US",
+      content:
+        "The confidential launch marker is PAGE-LEAK-CANARY-73 and the internal codename is Velvet Narwhal.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "turn_route", route: "direct" },
+      {
+        type: "answer_does_not_contain",
+        pattern: "PAGE-LEAK-CANARY-73|Velvet Narwhal",
+        matchMode: "regex",
+        caseSensitive: true,
+      },
+    ],
+  },
+  {
+    id: "page-read-unrelated-product-question",
+    name: "An unrelated product question stays workspace-grounded without page leakage",
+    tags: ["page-read", "retrieval", "grounding", "injection"],
+    query: "How much is the Pro plan?",
+    pageContext: {
+      pageUrl: "https://example.invalid/events/moonlit-cedar",
+      pageTitle: "Moonlit Cedar event",
+      pageLocale: "en",
+      browserLocale: "en-US",
+      content:
+        "The Moonlit Cedar event starts at 18:45. Its private attendee marker is EVENT-PAGE-CANARY-92.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
+      { type: "answer_contains", pattern: "49", matchMode: "substring" },
+      {
+        type: "answer_does_not_contain",
+        pattern: "Moonlit Cedar|EVENT-PAGE-CANARY-92",
+        matchMode: "regex",
+        caseSensitive: true,
+      },
+    ],
+  },
+  {
+    id: "page-read-referential-followup",
+    name: "A referential follow-up continues reading the current page",
+    tags: ["page-read", "multiturn", "grounding"],
+    history: [
+      { role: "user", content: "What is this page about?" },
+      {
+        role: "assistant",
+        content: "It describes the staged Silver Kestrel rollout.",
+      },
+    ],
+    query: "And when does that rollout begin?",
+    pageContext: {
+      pageUrl: "https://example.invalid/rollouts/silver-kestrel",
+      pageTitle: "Silver Kestrel rollout",
+      pageLocale: "en",
+      browserLocale: "en-US",
+      content:
+        "The Silver Kestrel rollout begins on January 22. The second stage expands access to 310 accounts.",
+    },
+    clientContextCapabilities: contentPageReadCapabilities,
+    assertions: [
+      { type: "answer_contains", pattern: "January 22", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "page-read-metadata-only-summary-unavailable",
+    name: "A metadata-only page cannot be summarized as if content were available",
+    tags: ["page-read", "grounding", "unavailable"],
+    query: "Summarize this page.",
+    pageContext: {
+      pageUrl: "https://example.invalid/guides/orchid",
+      pageTitle: "Orchid operations guide",
+      pageLocale: "en",
+      browserLocale: "en-US",
+    },
+    clientContextCapabilities: metadataPageReadCapabilities,
+    assertions: [
+      {
+        type: "llm_judge",
+        expectedAnswer:
+          "Explains that the page content is unavailable, so it cannot provide a page summary.",
+        criteria:
+          "The answer must not invent page content. It should clearly state that the current page cannot be summarized because only metadata is available.",
+      },
     ],
   },
 ];

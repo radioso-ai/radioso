@@ -318,6 +318,54 @@ describe("seed fixtures", () => {
     expect(parsed).toHaveLength(conversationQualityCases.length);
   });
 
+  it("validates page context and page-read capability inputs", () => {
+    const [parsed] = parseConversationQualityCases([
+      {
+        id: "page-read",
+        name: "page read",
+        query: "Summarize this page.",
+        pageContext: {
+          pageUrl: "https://example.com/release",
+          pageTitle: "Release notes",
+          pageLocale: "en",
+          browserLocale: "en-US",
+          content: "The release is named Blue Heron.",
+        },
+        clientContextCapabilities: {
+          "page.read": {
+            available: true,
+            mode: "content",
+            supportedOperations: ["metadata", "lookup", "summarize"],
+          },
+        },
+        assertions: [],
+      },
+    ]);
+
+    expect(parsed?.pageContext?.content).toContain("Blue Heron");
+    expect(parsed?.clientContextCapabilities?.["page.read"]?.mode).toBe("content");
+  });
+
+  it("rejects malformed page-read capability inputs", () => {
+    expect(() =>
+      parseConversationQualityCases([
+        {
+          id: "page-read",
+          name: "page read",
+          query: "Summarize this page.",
+          clientContextCapabilities: {
+            "page.read": {
+              available: true,
+              mode: "content",
+              supportedOperations: ["transform"],
+            },
+          },
+          assertions: [],
+        },
+      ]),
+    ).toThrow();
+  });
+
   it("only references document and routine ids that exist in the fixtures", () => {
     const documentIds = new Set(conversationQualityCorpus.map((doc) => doc.id));
     const routineIds = new Set([CONTACT_SUPPORT_ROUTINE_ID, BOOK_DEMO_ROUTINE_ID]);

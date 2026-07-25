@@ -17,6 +17,7 @@ type PublicChatRequest = components['schemas']['PublicChatRequest']
 type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
   query?: string
   bootstrapGreeting?: boolean
+  clientContextCapabilities?: unknown
 }
 
 const resolveOrigin = (value: string | null) => {
@@ -88,6 +89,7 @@ export async function POST(
     userExpectedLocale: parsedBody.userExpectedLocale,
     inputMetadata: parsedBody.inputMetadata,
     pageContext: parsedBody.pageContext,
+    clientContextCapabilities: parsedBody.clientContextCapabilities,
   })
 
   try {

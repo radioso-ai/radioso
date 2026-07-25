@@ -150,12 +150,17 @@ describe("public chat contract", () => {
     expect(response.body).not.toHaveProperty("debug");
   });
 
-  it("accepts embedded page context as bounded supplemental prompt context", async () => {
+  it("accepts embedded page context but gates it out of model input when no classifier selects it", async () => {
+    // The page-read gate requires a positive classification (planner, staged
+    // interpreter, or routine dependency) before any page byte reaches a model.
+    // The contract app has no classifier model, so the documented failure
+    // default applies: the request is accepted, the turn answers normally, and
+    // page context contributes nothing to model input.
     const prompts: string[] = [];
     const contextualGateway: ChatGateway = {
       async answer(input) {
         prompts.push(input.prompt);
-        return "The current page mentions summer retreats.";
+        return "Answered without page context.";
       },
       async *streamAnswer() {
         yield "unused";
@@ -179,12 +184,20 @@ describe("public chat contract", () => {
           browserLocale: "en-US",
           content: "Summer retreats are open for registration.",
         },
+        clientContextCapabilities: {
+          "page.read": {
+            available: true,
+            mode: "content",
+            supportedOperations: ["metadata", "lookup", "summarize"],
+          },
+        },
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.answer).toBe("The current page mentions summer retreats.");
-    expect(prompts.some((prompt) => prompt.includes("Current page URL: https://example.com/retreats"))).toBe(true);
-    expect(prompts.some((prompt) => prompt.includes("Visible page excerpt"))).toBe(true);
+    const allPrompts = prompts.join("\n");
+    expect(allPrompts).not.toContain("https://example.com/retreats");
+    expect(allPrompts).not.toContain("Summer retreats are open for registration.");
+    expect(allPrompts).not.toContain("Visible page excerpt");
   });
 
   it("uses a valid signed identity to unlock customer-scoped context and treats invalid identity as anonymous", async () => {

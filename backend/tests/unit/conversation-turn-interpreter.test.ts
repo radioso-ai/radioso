@@ -6,6 +6,23 @@ import {
   parseTurnInterpretation,
   type TurnInterpretationGateway,
 } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
+import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
+
+const pageReadCapability: PageReadCapability = {
+  available: true,
+  mode: "content",
+  supportedOperations: ["metadata", "lookup", "summarize"],
+};
+
+const directInterpretation = (overrides: Record<string, unknown> = {}) => JSON.stringify({
+  route: "direct",
+  isIdentityQuestion: false,
+  intentTopic: null,
+  inScopeRequest: null,
+  outsideScopeRequest: null,
+  rewrite: null,
+  ...overrides,
+});
 
 describe("ConversationTurnInterpreter", () => {
   it("parses routing fields and a retrieval rewrite proposal from merged JSON", () => {
@@ -60,6 +77,7 @@ describe("ConversationTurnInterpreter", () => {
       query: "What can I book?",
       history: [],
       workspaceId: "workspace-1",
+      pageReadCapability,
     })).resolves.toEqual({
       route: "retrieval",
       framing: { isIdentityQuestion: false },
@@ -151,6 +169,103 @@ describe("ConversationTurnInterpreter", () => {
     expect(prompt).toContain("Lexical custom guidance.");
     expect(prompt).toContain('"route":"retrieval|direct"');
     expect(prompt).toContain('"rewrite"');
+  });
+
+  it("keeps pageRead absent without a capability and still parses existing output", () => {
+    const parsed = parseTurnInterpretation(directInterpretation());
+    expect(parsed).not.toHaveProperty("pageRead");
+  });
+
+  it("rejects pageRead without a capability", () => {
+    expect(() => parseTurnInterpretation(directInterpretation({
+      pageRead: { required: true, operation: "lookup", resolvedRequest: "current page" },
+    }))).toThrow();
+  });
+
+  it("requires pageRead when a capability is supplied", () => {
+    expect(() => parseTurnInterpretation(directInterpretation(), pageReadCapability)).toThrow();
+  });
+
+  it("rejects a required page read with null operation and request", () => {
+    expect(() => parseTurnInterpretation(directInterpretation({
+      pageRead: { required: true, operation: null, resolvedRequest: null },
+    }), pageReadCapability)).toThrow();
+  });
+
+  it("rejects a not-required page read with non-null fields", () => {
+    expect(() => parseTurnInterpretation(directInterpretation({
+      pageRead: { required: false, operation: "lookup", resolvedRequest: "current page" },
+    }), pageReadCapability)).toThrow();
+  });
+
+  it("accepts a valid not-required staged page-read contribution", () => {
+    const parsed = parseTurnInterpretation(directInterpretation({
+      pageRead: { required: false, operation: null, resolvedRequest: null },
+    }), pageReadCapability);
+    expect(parsed.pageRead).toEqual({
+      required: false,
+      operation: null,
+      resolvedRequest: null,
+    });
+  });
+
+  it.each(["lookup", "summarize", "transform"] as const)(
+    "accepts a valid %s staged page-read contribution",
+    (operation) => {
+      const parsed = parseTurnInterpretation(directInterpretation({
+        pageRead: { required: true, operation, resolvedRequest: `${operation} request` },
+      }), pageReadCapability);
+      expect(parsed.pageRead).toEqual({
+        required: true,
+        operation,
+        resolvedRequest: `${operation} request`,
+      });
+    },
+  );
+
+  it("renders staged page-read instructions and output shape only with capability", () => {
+    const base = {
+      context: "",
+      query: "What is on this page?",
+    };
+    expect(buildTurnInterpretationPrompt(base)).not.toContain("Page Read Classification");
+    expect(buildTurnInterpretationPrompt(base)).not.toContain('"pageRead"');
+
+    const prompt = buildTurnInterpretationPrompt({ ...base, pageReadCapability });
+    expect(prompt).toContain("Page Read Classification");
+    expect(prompt).toContain("mode: content");
+    expect(prompt).toContain('"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}');
+  });
+
+  it("threads capability through the staged gateway and returns its contribution", async () => {
+    let receivedCapability: PageReadCapability | null | undefined;
+    const interpreter = new LlmConversationTurnInterpreter({
+      async interpret(input) {
+        receivedCapability = input.pageReadCapability;
+        return {
+          route: "direct",
+          pageRead: {
+            required: true,
+            operation: "lookup",
+            resolvedRequest: "current page",
+          },
+        };
+      },
+    });
+
+    const result = await interpreter.interpretChatTurn({
+      query: "What is on this page?",
+      history: [],
+      workspaceId: "workspace-1",
+      pageReadCapability,
+    });
+
+    expect(receivedCapability).toEqual(pageReadCapability);
+    expect(result.pageRead).toEqual({
+      required: true,
+      operation: "lookup",
+      resolvedRequest: "current page",
+    });
   });
 });
 

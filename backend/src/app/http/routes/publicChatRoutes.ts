@@ -601,6 +601,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             sourceOrigin,
             userExpectedLocale: req.body.userExpectedLocale,
             pageContext: req.body.pageContext,
+            clientContextCapabilities: req.body.clientContextCapabilities,
           });
           if (!bootstrap) {
             // No proactive greeting to emit (e.g. bootstrap is inactive for this
@@ -633,6 +634,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           bootstrapGreetingId: req.body.bootstrapGreetingId,
           inputMetadata: req.body.inputMetadata,
           pageContext: req.body.pageContext,
+          clientContextCapabilities: req.body.clientContextCapabilities,
           sourceChannel,
           chatSessionId,
           sourceOrigin,

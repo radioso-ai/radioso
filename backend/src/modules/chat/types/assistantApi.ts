@@ -1,6 +1,7 @@
 import type { ChatStreamEvent } from "../contracts/streamEvents.js";
 import type { ChatBootstrapResponse, ChatResponse } from "./chatResponses.js";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
 
 export type AssistantRouteType = "direct" | "retrieval";
 export type AssistantRouteReason =
@@ -35,6 +36,10 @@ export interface AssistantPageContext {
   content?: string | null;
 }
 
+export interface AssistantClientContextCapabilities {
+  "page.read"?: PageReadCapability;
+}
+
 export interface AssistantChatRequest {
   workspaceId: string;
   agentId?: string | null;
@@ -55,6 +60,7 @@ export interface AssistantChatRequest {
   anonymousSessionId?: string | null;
   sourceOrigin?: string | null;
   pageContext?: AssistantPageContext | null;
+  clientContextCapabilities?: AssistantClientContextCapabilities;
   verifiedCustomerId?: string | null;
   verifiedIdentity?: Record<string, unknown> | null;
 }

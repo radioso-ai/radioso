@@ -10,6 +10,7 @@ import {
   type TurnPlanGatewayFactory,
   type TurnPlanRequest,
 } from "../../src/modules/chat/services/turnPlanService.js";
+import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
 
 const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
@@ -47,6 +48,17 @@ const validPlanJson = (overrides: Record<string, unknown> = {}): string =>
 const candidates = {
   routineIds: new Set(["book-call"]),
   directiveNames: new Set(["refund-tone"]),
+};
+
+const pageReadCapability: PageReadCapability = {
+  available: true,
+  mode: "content",
+  supportedOperations: ["metadata", "lookup", "summarize"],
+};
+
+const pageReadCandidates = {
+  ...candidates,
+  pageReadCapability,
 };
 
 const history: MessageRecord[] = [];
@@ -255,6 +267,59 @@ describe("parseTurnPlan", () => {
     const plan = parseTurnPlan(validPlanJson({ responseLanguage: null }), candidates);
     expect(plan?.responseLanguage).toBeUndefined();
   });
+
+  it("keeps pageRead absent without a capability and still parses existing fixtures", () => {
+    const plan = parseTurnPlan(validPlanJson(), candidates);
+    expect(plan).not.toBeNull();
+    expect(plan).not.toHaveProperty("pageRead");
+  });
+
+  it("rejects pageRead without a capability", () => {
+    expect(parseTurnPlan(validPlanJson({
+      pageRead: { required: true, operation: "lookup", resolvedRequest: "refund window" },
+    }), candidates)).toBeNull();
+  });
+
+  it("requires pageRead when a capability is supplied", () => {
+    expect(parseTurnPlan(validPlanJson(), pageReadCandidates)).toBeNull();
+  });
+
+  it("rejects a required page read with null operation and request", () => {
+    expect(parseTurnPlan(validPlanJson({
+      pageRead: { required: true, operation: null, resolvedRequest: null },
+    }), pageReadCandidates)).toBeNull();
+  });
+
+  it("rejects a not-required page read with non-null fields", () => {
+    expect(parseTurnPlan(validPlanJson({
+      pageRead: { required: false, operation: "lookup", resolvedRequest: "refund window" },
+    }), pageReadCandidates)).toBeNull();
+  });
+
+  it("accepts a valid not-required page read", () => {
+    const plan = parseTurnPlan(validPlanJson({
+      pageRead: { required: false, operation: null, resolvedRequest: null },
+    }), pageReadCandidates);
+    expect(plan?.pageRead).toEqual({
+      required: false,
+      operation: null,
+      resolvedRequest: null,
+    });
+  });
+
+  it.each(["lookup", "summarize", "transform"] as const)(
+    "accepts a valid %s page read",
+    (operation) => {
+      const plan = parseTurnPlan(validPlanJson({
+        pageRead: { required: true, operation, resolvedRequest: `${operation} request` },
+      }), pageReadCandidates);
+      expect(plan?.pageRead).toEqual({
+        required: true,
+        operation,
+        resolvedRequest: `${operation} request`,
+      });
+    },
+  );
 });
 
 describe("turnPlanDirectiveClassifications", () => {
@@ -342,6 +407,32 @@ describe("buildTurnPlanResponseFormat", () => {
     expect(schemaProperty(format, "responseLanguage")?.type).toEqual(["string", "null"]);
     expect(schemaProperty(format, "rewrite")?.type).toEqual(["object", "null"]);
   });
+
+  it("includes a required strict pageRead object only when capability is supplied", () => {
+    const withoutCapability = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    expect(schemaProperty(withoutCapability, "pageRead")).toBeUndefined();
+    expect(withoutCapability.schema.required).not.toContain("pageRead");
+
+    const withCapability = buildTurnPlanResponseFormat({
+      routineIds: [],
+      directiveNames: [],
+      pageReadCapability,
+    });
+    expect(schemaProperty(withCapability, "pageRead")).toEqual({
+      type: "object",
+      additionalProperties: false,
+      required: ["required", "operation", "resolvedRequest"],
+      properties: {
+        required: { type: "boolean" },
+        operation: {
+          type: ["string", "null"],
+          enum: ["metadata", "lookup", "summarize", "transform", null],
+        },
+        resolvedRequest: { type: ["string", "null"] },
+      },
+    });
+    expect(withCapability.schema.required).toContain("pageRead");
+  });
 });
 
 describe("buildTurnPlanningPrompt", () => {
@@ -390,6 +481,19 @@ describe("buildTurnPlanningPrompt", () => {
     expect(prompt).not.toContain('"routineRankings"');
     expect(prompt).not.toContain('"directiveClassifications"');
   });
+
+  it("renders page-read instructions and output shape only with capability", () => {
+    const withoutCapability = buildTurnPlanningPrompt(promptInput());
+    expect(withoutCapability).not.toContain("Page Read Classification");
+    expect(withoutCapability).not.toContain('"pageRead"');
+
+    const withCapability = buildTurnPlanningPrompt(promptInput({ pageReadCapability }));
+    expect(withCapability).toContain("Page Read Classification");
+    expect(withCapability).toContain("mode: content");
+    expect(withCapability).toContain("supported operations: metadata, lookup, summarize");
+    expect(withCapability).toContain("still emit transform");
+    expect(withCapability).toContain('"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}');
+  });
 });
 
 describe("TurnPlanService", () => {
@@ -420,6 +524,28 @@ describe("TurnPlanService", () => {
     expect(rankingItems.properties.routineId.enum).toEqual(["book-call"]);
     const classificationItems = properties.directiveClassifications.items as Record<string, Record<string, Record<string, unknown>>>;
     expect(classificationItems.properties.name.enum).toEqual(["refund-tone"]);
+  });
+
+  it("passes pageRead through the prompt, response schema, parse, and plan when capability is supplied", async () => {
+    const client = {
+      complete: vi.fn(
+        async (_request: { prompt: string; responseFormat: ReturnType<typeof buildTurnPlanResponseFormat> }) => ({
+          text: validPlanJson({
+            pageRead: { required: true, operation: "lookup", resolvedRequest: "refund window" },
+          }),
+        }),
+      ),
+    };
+    const plan = await new TurnPlanService(factory(client)).plan(request({ pageReadCapability }));
+
+    expect(plan?.pageRead).toEqual({
+      required: true,
+      operation: "lookup",
+      resolvedRequest: "refund window",
+    });
+    const call = client.complete.mock.calls[0]?.[0];
+    expect(call?.prompt).toContain("Page Read Classification");
+    expect(call?.responseFormat.schema.required).toContain("pageRead");
   });
 
   it("passes the bound usage operation through the factory", async () => {

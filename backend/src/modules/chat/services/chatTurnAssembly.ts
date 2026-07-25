@@ -14,6 +14,7 @@ import type {
   ClarificationCandidate,
   ClarificationPolicy,
   RoutineActionRequest,
+  Routine,
   RoutineAwaitingDecision,
   RoutineState,
   TurnContext,
@@ -85,6 +86,8 @@ import {
 import type { TurnRouter, TurnRouting } from "./turnRouter.js";
 import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHandler.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
+import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
+import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
@@ -136,6 +139,7 @@ export interface ChatRoutineProvider {
     throwIfCancelled?: () => void;
     turnPlan?: ChatTurnPlanHandle;
   }): Promise<{
+    routines?: readonly Routine[];
     activator: ConversationRoutineActivator;
     runner: ConversationRoutineRunner;
     slotCorrection?: ConversationRoutineSlotCorrection;
@@ -337,6 +341,42 @@ export class ChatTurnAssembly {
     const deferredStore = new DeferredRoutineStore(this.options.routineStore);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
+    const pageReadAwareRunner: ConversationRoutineRunner = {
+      resume: async (resumeInput) => {
+        const planned = session.turnPlan
+          ? await session.turnPlan.resolve(null)
+          : undefined;
+        const routine = routineTurnPorts.routines?.find(
+          (candidate) => candidate.id === resumeInput.state.routineId,
+        );
+        // Tentative: the routine may yield the turn off-topic, so the decision is
+        // frozen on a detached carrier and the routine binds against a scoped
+        // staged view. Only a non-yielded result commits capture to the session.
+        const candidate = freezePageReadOutcome(
+          { pageReadCapability: session.pageReadCapability },
+          {
+            planner: planned?.status === "planned"
+              ? planned.plan.pageRead ?? null
+              : null,
+            routineCandidates: routine ? pageReadRoutineCandidates(routine) : [],
+            directiveCandidates: [],
+            fallbackRequest: session.effectiveQuery,
+          },
+        );
+        const result = await routineTurnPorts.runner.resume({
+          ...resumeInput,
+          turn: {
+            ...resumeInput.turn,
+            stagedContext: this.options.chatSessionPreparer.stagedPageContextFor(session, candidate),
+          },
+        });
+        if (!result.yielded) {
+          session.pageReadOutcome ??= candidate;
+          this.options.chatSessionPreparer.applyFrozenPageReadOutcome(session);
+        }
+        return result;
+      },
+    };
     const outcome = await attemptRoutineTurnWithConversationEngine({
       engine: this.options.conversationEngine,
       session,
@@ -344,7 +384,7 @@ export class ChatTurnAssembly {
       directiveRuntime: this.options.directiveRuntime,
       directiveStateStore: this.options.directiveStateStore,
       routineStore: deferredStore,
-      routineRunner: routineTurnPorts.runner,
+      routineRunner: pageReadAwareRunner,
       routineActivator: activator,
       routineSlotCorrection: routineTurnPorts.slotCorrection,
       routineReentryGate: routineTurnPorts.reentryGate,
@@ -832,11 +872,22 @@ export class ChatTurnAssembly {
         agentSkillSettings: input.session.agent.skillSettings,
         usageAttribution: input.session.usageAttribution,
         conversationSummary: input.session.conversationSummary,
+        pageReadCapability: input.session.pageReadCapability,
       })
       : await this.routeTurn(input.request, input.session));
-    return input.resolvedRetrievalSense
+    const resolved = input.resolvedRetrievalSense
       ? { ...interpreted, route: CHAT_TURN_ROUTE.RETRIEVAL }
       : interpreted;
+    freezePageReadOutcome(input.session, {
+      // routeTurn's TurnRouting fallback carries no pageRead classification.
+      planner: ("pageRead" in resolved
+        ? (resolved as ConversationTurnInterpretationResult).pageRead
+        : undefined) ?? null,
+      routineCandidates: [],
+      directiveCandidates: [],
+      fallbackRequest: input.session.effectiveQuery,
+    });
+    return resolved;
   }
 
   private async plannedInterpretation(
@@ -852,6 +903,7 @@ export class ChatTurnAssembly {
       source: "planned",
       route,
       framing: outcome.plan.framing,
+      ...(outcome.plan.pageRead ? { pageRead: outcome.plan.pageRead } : {}),
       ...(route === CHAT_TURN_ROUTE.RETRIEVAL && outcome.plan.rewriteProposal
         ? { rewriteProposal: outcome.plan.rewriteProposal }
         : {}),

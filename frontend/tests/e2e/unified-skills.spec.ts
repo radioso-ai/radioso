@@ -53,7 +53,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await expect(page.locator("#skill-extra-config")).toBeVisible();
   await page.getByRole("button", { name: "Create skill" }).click();
 
-  await expect(page.getByText("@send_followup_email")).toBeVisible();
+  await expect(page.getByText("@send_followup_email", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
@@ -82,7 +82,7 @@ test("unified Skills surface creates skills with descriptor-owned settings contr
   await page.getByLabel("Suggested questions count").fill("3");
   await page.getByRole("button", { name: "Create skill" }).click();
 
-  await expect(page.getByText("@retrieve_events")).toBeVisible();
+  await expect(page.getByText("@retrieve_events", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Add new skill" }).click();
   await page.getByRole("button", { name: /Notify Human/i }).click();

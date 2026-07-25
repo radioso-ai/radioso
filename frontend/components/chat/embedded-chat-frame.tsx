@@ -17,6 +17,7 @@ import {
   clearStoredEmbedBootstrapSession,
   readStoredEmbedBootstrapSession,
   storeEmbedBootstrapSession,
+  type ClientContextCapabilities,
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
 import { postWebsiteEmbedAnalyticsEvent, type WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
@@ -60,6 +61,7 @@ type BootstrapState =
       expiresAt: string
       workspaceName?: string | null
       pageContext?: WebsiteEmbedPageContext | null
+      clientContextCapabilities?: ClientContextCapabilities
       signedIdentity?: string | null
     }
 
@@ -100,6 +102,34 @@ const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => 
   }
 
   return Object.values(pageContext).some(Boolean) ? pageContext : null
+}
+
+const sanitizeClientContextCapabilities = (value: unknown): ClientContextCapabilities | undefined => {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+  const pageRead = (value as Record<string, unknown>)['page.read']
+  if (!pageRead || typeof pageRead !== 'object') {
+    return undefined
+  }
+  const capability = pageRead as Record<string, unknown>
+  const operations = capability.supportedOperations
+  if (
+    typeof capability.available !== 'boolean'
+    || (capability.mode !== 'metadata' && capability.mode !== 'content' && capability.mode !== null)
+    || !Array.isArray(operations)
+    || operations.length > 3
+    || operations.some((operation) => !['metadata', 'lookup', 'summarize'].includes(String(operation)))
+  ) {
+    return undefined
+  }
+  return {
+    'page.read': {
+      available: capability.available,
+      mode: capability.mode,
+      supportedOperations: operations as Array<'metadata' | 'lookup' | 'summarize'>,
+    },
+  }
 }
 
 export function EmbeddedChatFrame({
@@ -253,6 +283,7 @@ export function EmbeddedChatFrame({
           resumeExpiresAt,
         })
         const pageContext = sanitizePageContext(event.data.pageContext)
+        const clientContextCapabilities = sanitizeClientContextCapabilities(event.data.clientContextCapabilities)
         const signedIdentity = typeof event.data.signedIdentity === 'string' ? event.data.signedIdentity : null
         setState({
           status: 'ready',
@@ -262,6 +293,7 @@ export function EmbeddedChatFrame({
           expiresAt,
           workspaceName: session.workspaceName,
           pageContext,
+          clientContextCapabilities,
           signedIdentity,
         })
         postWebsiteEmbedAnalyticsEvent({
@@ -402,6 +434,7 @@ export function EmbeddedChatFrame({
       themeOverrides={themeOverrides}
       surface="embed"
       pageContext={state.pageContext}
+      clientContextCapabilities={state.clientContextCapabilities}
       signedIdentity={state.signedIdentity}
       onAnalyticsEvent={handleAnalyticsEvent}
     />

@@ -20,6 +20,11 @@ const baseCase = (id: string, name: string) => ({
   assertions: [{ type: "answer_contains", pattern: "refund", matchMode: "substring" }],
   status: "pending" as const,
   lastRunId: null,
+  agent: {
+    agentId: "77777777-7777-4777-8777-777777777777",
+    name: "Support agent",
+    deleted: false,
+  },
   createdAt: nowIso,
   updatedAt: nowIso,
 });

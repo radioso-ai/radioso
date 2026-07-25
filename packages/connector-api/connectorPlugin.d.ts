@@ -88,13 +88,15 @@ export interface ConnectorIngestionPort {
   }): Promise<{ documentId: string; status: string }>;
 
   /**
-   * Delete the document keyed by (workspaceId, externalDocumentId), if any.
+   * Delete the document keyed by
+   * (workspaceId, source, externalDocumentId), if any.
    * Returns true when a document was found and deleted, false when no document
    * matched. Idempotent — safe to call for unknown external ids.
    */
   deleteByExternalId(input: {
     workspaceId: string;
     externalDocumentId: string;
+    source: ConnectorSourceDescriptor;
   }): Promise<boolean>;
 
   /**
@@ -163,6 +165,14 @@ export interface ConnectorPlugin {
    * Return null if no uniqueness constraint applies.
    */
   uniqueChannelField(): string | null;
+
+  /**
+   * Optional policy for connectors whose generated credentials authenticate a
+   * unique upstream channel. When true, changing the unique channel field
+   * rotates every generated_secret so the previous channel can no longer send
+   * authenticated events.
+   */
+  rotateGeneratedSecretsOnUniqueChannelChange?(): boolean;
 
   /**
    * Validate connector-specific config beyond basic schema field requirements.

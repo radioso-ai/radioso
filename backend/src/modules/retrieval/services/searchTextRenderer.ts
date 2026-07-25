@@ -24,25 +24,38 @@ export const renderSearchText = (input: {
   return parts.join("\n\n");
 };
 
-export const renderMetadataSearchText = (metadata: Record<string, unknown>): string => {
+const renderMetadataText = (
+  metadata: Record<string, unknown>,
+  options: { includeUrl: boolean; includeMonthAliases: boolean },
+): string => {
   const dateFrom = normalizeIsoDay(metadata.dateFrom);
   const dateTo = normalizeIsoDay(metadata.dateTo);
   const url = pickMetadataUrl(metadata);
   const author = typeof metadata.author === "string" ? normalizeWhitespace(metadata.author) : "";
-  const monthKeys = collectMonthKeys(dateFrom, dateTo);
+  const monthKeys = options.includeMonthAliases ? collectMonthKeys(dateFrom, dateTo) : [];
   const monthLabels = monthKeys.flatMap((monthKey) => renderMonthLabels(monthKey));
 
   const parts = [
     dateFrom ? `Date from: ${dateFrom}` : "",
     dateTo ? `Date to: ${dateTo}` : "",
-    ...monthKeys.map((monthKey) => `Month key: ${monthKey}`),
-    ...monthLabels.map((label) => `Month label: ${label}`),
-    url ? `URL: ${url}` : "",
+    ...(options.includeMonthAliases
+      ? [
+          ...monthKeys.map((monthKey) => `Month key: ${monthKey}`),
+          ...monthLabels.map((label) => `Month label: ${label}`),
+        ]
+      : []),
+    options.includeUrl && url ? `URL: ${url}` : "",
     author ? `Author: ${author}` : "",
   ].filter((part) => part.length > 0);
 
   return parts.join(" | ");
 };
+
+export const renderMetadataSearchText = (metadata: Record<string, unknown>): string =>
+  renderMetadataText(metadata, { includeUrl: true, includeMonthAliases: true });
+
+export const renderMetadataPromptText = (metadata: Record<string, unknown>): string =>
+  renderMetadataText(metadata, { includeUrl: false, includeMonthAliases: false });
 
 const pickMetadataUrl = (metadata: Record<string, unknown>): string => {
   const sourceUrl = typeof metadata.sourceUrl === "string" ? normalizeWhitespace(metadata.sourceUrl) : "";

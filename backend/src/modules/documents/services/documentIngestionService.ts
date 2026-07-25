@@ -198,6 +198,11 @@ export interface DocumentRepositoryPort {
     workspaceId: string,
     externalDocumentId: string,
   ): Promise<DocumentRecord | null>;
+  findBySourceAndExternalDocumentId(
+    workspaceId: string,
+    sourceId: string,
+    externalDocumentId: string,
+  ): Promise<DocumentRecord | null>;
   listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,

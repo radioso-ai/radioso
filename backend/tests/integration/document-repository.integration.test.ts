@@ -247,6 +247,32 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(await repository.findByExternalDocumentId(workspaceId, "missing")).toBeNull();
   });
 
+  it("findBySourceAndExternalDocumentId distinguishes matching ids from different sources", async () => {
+    const secondSourceId = randomUUID();
+    await database.query(
+      `INSERT INTO document_sources (id, workspace_id, kind, name, external_id, config, metadata)
+       VALUES ($1, $2, $3, $4, $5, '{}'::jsonb, '{}'::jsonb)`,
+      [secondSourceId, workspaceId, "connector", "Second Site", "wordpress:https://second.example"],
+    );
+    const first = await repository.createAndQueue(
+      baseCreateInput({ sourceId, externalDocumentId: "wp_post_42", title: "First site" }),
+    );
+    const second = await repository.createAndQueue(
+      baseCreateInput({
+        sourceId: secondSourceId,
+        externalDocumentId: "wp_post_42",
+        title: "Second site",
+      }),
+    );
+
+    await expect(
+      repository.findBySourceAndExternalDocumentId(workspaceId, sourceId, "wp_post_42"),
+    ).resolves.toMatchObject({ id: first.id, title: "First site" });
+    await expect(
+      repository.findBySourceAndExternalDocumentId(workspaceId, secondSourceId, "wp_post_42"),
+    ).resolves.toMatchObject({ id: second.id, title: "Second site" });
+  });
+
   it("summarizeWorkspace counts statuses and aggregates sample document slugs", async () => {
     await repository.create({ ...baseCreateInput(), status: "ready" });
     await repository.create({ ...baseCreateInput(), status: "queued" });

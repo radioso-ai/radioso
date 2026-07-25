@@ -12,6 +12,37 @@ const conversationIntentSnapshot = {
 };
 
 describe("grounded answer prompt contract", () => {
+  it("shows searchable author metadata to the answer model", () => {
+    const result = new PromptBuilder().build({
+      query: "Who is Mario Liguori?",
+      history: [],
+      contexts: [
+        {
+          chunkId: "chunk-1",
+          documentId: "document-1",
+          title: "Who Was Swamiji, Really?",
+          content: "The article body does not repeat the author byline.",
+          similarity: 0.9,
+          retrievalSources: ["lexical"],
+          retrievalText: "Author: Mario Liguori",
+          semanticScore: 0.7,
+          lexicalScore: 0.9,
+          relevanceScore: 0.9,
+          rerankPosition: 1,
+          promptPosition: 1,
+          estimatedTokenCost: 24,
+          metadata: {
+            author: "Mario Liguori",
+            sourceUrl: "https://example.com/who-was-swamiji",
+          },
+        },
+      ],
+      settings: {},
+    });
+
+    expect(result.prompt).toContain("Author: Mario Liguori");
+  });
+
   it("requires parseable source anchors for backend citation validation", () => {
     const prompt = loadPromptTemplate("retrieval/answer.md");
 

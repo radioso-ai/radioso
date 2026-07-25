@@ -25,10 +25,15 @@ import {
   mapWebhookPostToIngestInput,
   type WebhookPostPayload,
 } from "./wordpressIngest.js";
-import { wordpressSourceFor } from "./wordpressSource.js";
+import {
+  normalizeWordpressSiteUrl,
+  wordpressSourceFor,
+  wordpressUrlBelongsToSite,
+} from "./wordpressSource.js";
 
 const WordpressEventSchema = z.object({
   event: z.enum(["published", "updated", "deleted"]),
+  site_url: z.string().url().optional(),
   post: z.object({
     id: z.number().int().positive(),
     type: z.string().min(1),
@@ -109,24 +114,45 @@ export const createWordpressWebhookRouter = (deps: WebhookDeps): Router => {
       return;
     }
 
-    const { event, post } = parsed.data;
+    const { event, post, site_url: payloadSiteUrl } = parsed.data;
     const externalDocumentId = externalIdFor(post.id);
+    const source = wordpressSourceFor(config.config);
+    const configuredSiteUrl =
+      typeof source?.config?.["siteUrl"] === "string"
+        ? source.config["siteUrl"]
+        : null;
+    const payloadSiteMatches =
+      !payloadSiteUrl ||
+      normalizeWordpressSiteUrl(payloadSiteUrl) === configuredSiteUrl;
+    if (
+      !source ||
+      !configuredSiteUrl ||
+      !payloadSiteMatches ||
+      !wordpressUrlBelongsToSite(configuredSiteUrl, post.link)
+    ) {
+      deps.logger.warn(
+        { workspaceId, externalDocumentId, event },
+        "wordpress webhook site does not match connector configuration",
+      );
+      res.status(403).json({ error: "Webhook site does not match connector configuration" });
+      return;
+    }
 
     try {
       if (event === "deleted") {
         const deleted = await deps.ingestion.deleteByExternalId({
           workspaceId,
           externalDocumentId,
+          source,
         });
         deps.logger.info(
           { workspaceId, externalDocumentId, deleted },
           "wordpress webhook delete handled",
         );
       } else {
-        const source = wordpressSourceFor(config.config);
         await deps.ingestion.ingest({
           ...mapWebhookPostToIngestInput(workspaceId, post as WebhookPostPayload),
-          ...(source ? { source } : {}),
+          source,
         });
         deps.logger.info(
           { workspaceId, externalDocumentId, event },

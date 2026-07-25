@@ -12,6 +12,8 @@ import { AssistantReplyComposer } from "./assistantReplyComposer.js";
 import { RetrievalAnswerComposer, createRetrievalTurnSkill } from "./retrievalTurnSkill.js";
 import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
+import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 export interface ChatTurnRuntimeDependencies {
   chatGateway: ChatGateway;
@@ -19,6 +21,7 @@ export interface ChatTurnRuntimeDependencies {
   chatActionSuggestionService?: ChatActionSuggestionService;
   skillOutcomeCapabilities: SkillOutcomeCapabilityProvider;
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
+  logger?: Pick<AppLogger, "debug">;
 }
 
 /**
@@ -46,7 +49,7 @@ export interface ChatTurnRuntime {
 export const buildChatTurnRuntime = (
   deps: ChatTurnRuntimeDependencies,
 ): ChatTurnRuntime => {
-  const answerSupport = new ChatAnswerSupport();
+  const answerSupport = new ChatAnswerSupport(CONTEXT_VARIABLES_BEHAVIOR.renderBound, deps.logger);
   const chatAnswerPresenter = new ChatAnswerPresenter(
     new AssistantSuggestionExpansionService(),
     deps.chatActionSuggestionService,

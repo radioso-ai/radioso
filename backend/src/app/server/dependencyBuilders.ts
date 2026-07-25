@@ -1198,6 +1198,7 @@ export const buildChatServices = (input: {
       input.composition.skillCatalogRegistry,
     ),
     metrics: input.metricsRegistry,
+    logger: input.logger,
   });
   // Behavioral steering comes from application composition. Chat and direct
   // retrieval answer surfaces share this port so extracted answer directives

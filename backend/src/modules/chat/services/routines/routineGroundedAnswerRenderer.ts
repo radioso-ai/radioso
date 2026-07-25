@@ -1,4 +1,5 @@
 import type {
+  DirectiveAdherenceEntry,
   RenderableTurn,
   StagedContext,
 } from "@radioso/conversation-contract";
@@ -76,6 +77,9 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     answerSegments: presentation.answerSegments,
     planningCitations: presentation.planningCitations,
     grounding: presentation.grounding,
+    ...(presentation.metadata?.directiveAdherence
+      ? { directiveAdherence: presentation.metadata.directiveAdherence as DirectiveAdherenceEntry[] }
+      : {}),
     effectiveRetrieval: presentation.effectiveRetrieval,
   },
 });

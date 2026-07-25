@@ -6,12 +6,16 @@ import type { PreparedSession } from "./chatSessionPreparer.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
 import { buildConversationIntentSnapshot } from "./conversationIntentSnapshot.js";
 import {
+  buildGroundedAnswerResponseFormat,
   GroundedAnswerEnvelopeReader,
-  GROUNDED_ANSWER_RESPONSE_FORMAT,
   parseGroundedAnswerEnvelope,
   type GroundedAnswerEnvelope,
   type PlannedEnvelopeSuggestion,
 } from "./groundedAnswerEnvelope.js";
+import type {
+  AnswerSideChannel,
+  AnswerSideChannelFactory,
+} from "../../../shared/domain/answerSideChannel.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
 import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
@@ -61,6 +65,7 @@ export class RetrievalAnswerComposer {
     private readonly chatAnswerPresenter: ChatAnswerPresenter,
     private readonly fallbackReplyComposer: FallbackReplyComposer,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+    private readonly answerSideChannel?: AnswerSideChannelFactory,
   ) {}
 
   private recordGroundingOutcome(
@@ -92,6 +97,17 @@ export class RetrievalAnswerComposer {
       help: "Computed chat grounding assertion outcomes",
       labels: { protocol, verdict: summary.verdict, reason, stream: String(stream) },
     });
+  }
+
+  /**
+   * The answer side channel for this turn, if composition supplied one. The composer
+   * merges its schema extension into the envelope and hands the parsed extras back
+   * to it for an opaque metadata patch — it never learns what the side channel means
+   * (directive adherence today). Built from the turn's active steering rules, which
+   * the composer already renders into the prompt.
+   */
+  private sideChannel(session: PreparedSession): AnswerSideChannel | undefined {
+    return this.answerSideChannel?.forSteeringRules(session.directiveSteering?.rules ?? []);
   }
 
   private recordGroundingGateBound(): void {
@@ -136,7 +152,9 @@ export class RetrievalAnswerComposer {
       prompt,
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
-      generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
+      generation: {
+        responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session)?.schemaExtension() ?? null),
+      },
       ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
@@ -176,6 +194,7 @@ export class RetrievalAnswerComposer {
   ): Promise<ChatPresentedAnswer> {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+    let metadataPatch: Record<string, unknown> | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
 
     if (session.retrieval.contexts.length === 0) {
@@ -183,6 +202,7 @@ export class RetrievalAnswerComposer {
       if (fallback) {
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
+        metadataPatch = this.sideChannel(session)?.resolve(fallback.extras);
         grounding = computeGroundingSummary({
           body: fallback.answer,
           envelope: fallback,
@@ -209,6 +229,7 @@ export class RetrievalAnswerComposer {
       );
       answer = envelope.answer;
       plannedSuggestions = envelope.suggestions;
+      metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
       grounding = computeGroundingSummary({
         body: envelope.answer,
         envelope,
@@ -225,7 +246,12 @@ export class RetrievalAnswerComposer {
       userExpectedLocale,
       grounding,
     );
-    return presentation;
+    return {
+      ...presentation,
+      ...(metadataPatch
+        ? { metadata: { ...presentation.metadata, ...metadataPatch } }
+        : {}),
+    };
   }
 
   /** Compose a focused decline through the grounded-miss path. Its narrow prompt
@@ -271,6 +297,7 @@ export class RetrievalAnswerComposer {
   ): AsyncGenerator<string, TurnStreamResult> {
     let rawAnswer = "";
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
+    let metadataPatch: Record<string, unknown> | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
@@ -289,6 +316,7 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         });
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
+      metadataPatch = this.sideChannel(session)?.resolve(fallbackEnvelope?.extras);
       if (fallbackEnvelope) {
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
         this.recordGroundingOutcome(grounding, fallbackEnvelope, true);
@@ -308,7 +336,9 @@ export class RetrievalAnswerComposer {
         prompt: this.support.buildPromptWithContext(session.retrieval.prompt, session),
         workspaceContext: this.support.buildChatWorkspaceContext(session),
         usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded"),
-        generation: { responseFormat: GROUNDED_ANSWER_RESPONSE_FORMAT },
+        generation: {
+          responseFormat: buildGroundedAnswerResponseFormat(this.sideChannel(session)?.schemaExtension() ?? null),
+        },
         signal: combineAbortSignals(signal, gateController.signal),
       });
       let gateBound = false;
@@ -367,6 +397,7 @@ export class RetrievalAnswerComposer {
       gate.finish();
       groundingGateWaitMs = gate.waitDurationMs;
       plannedSuggestions = finalized.suggestions;
+      metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;
       if (!rawAnswer.trim()) {
         throw new BlankChatAnswerError();
@@ -389,7 +420,12 @@ export class RetrievalAnswerComposer {
       grounding,
     );
     return {
-      finalPresentation: presentation,
+      finalPresentation: {
+        ...presentation,
+        ...(metadataPatch
+          ? { metadata: { ...presentation.metadata, ...metadataPatch } }
+          : {}),
+      },
       suggestions: { mode: "assistant", planned: plannedSuggestions },
       hasStreamedAnswer,
       streamedAnswer,

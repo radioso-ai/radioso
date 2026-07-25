@@ -16,12 +16,14 @@ function NodeDetail({
   leafTrace,
   messages,
   assistantMessageId,
+  directiveAdherence,
 }: {
   node: TurnFlowNode | null
   spineStages: ConversationTraceStage[]
   leafTrace?: ActivityTrace
   messages?: ConversationMessageRecord[]
   assistantMessageId?: string
+  directiveAdherence?: Array<{ directive: string; ruleId: string; satisfied: boolean; note: string }>
 }) {
   if (!node) {
     return (
@@ -38,6 +40,7 @@ function NodeDetail({
         stage={stage}
         messages={messages}
         assistantMessageId={assistantMessageId}
+        directiveAdherence={directiveAdherence}
       />
     ) : (
       <p className="text-sm text-muted-foreground">No recorded detail for this stage.</p>
@@ -102,6 +105,15 @@ export function TurnFlowOverlay({
   }
 
   const activeNode = selectedNode ?? initialNode
+  const rawDirectiveAdherence = envelope.spine.stages.find((stage) => stage.kind === 'compose')?.outputs?.adherence
+  const directiveAdherence = (Array.isArray(rawDirectiveAdherence) ? rawDirectiveAdherence : [])
+    .filter((entry): entry is { directive: string; ruleId: string; satisfied: boolean; note: string } =>
+      Boolean(entry) && typeof entry === 'object' && !Array.isArray(entry) &&
+      typeof (entry as Record<string, unknown>).directive === 'string' &&
+      typeof (entry as Record<string, unknown>).ruleId === 'string' &&
+      typeof (entry as Record<string, unknown>).satisfied === 'boolean' &&
+      typeof (entry as Record<string, unknown>).note === 'string',
+    )
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-background">
@@ -135,6 +147,7 @@ export function TurnFlowOverlay({
             leafTrace={leafTrace}
             messages={messages}
             assistantMessageId={assistantMessageId}
+            directiveAdherence={directiveAdherence}
           />
         </div>
       </div>

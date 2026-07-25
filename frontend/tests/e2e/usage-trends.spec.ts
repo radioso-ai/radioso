@@ -13,11 +13,17 @@ test("account usage page shows trends and reloads when controls change", async (
   const chartCard = page.locator('[data-slot="card"]').filter({ hasText: "Usage by period" }).first();
   await expect(readyDocumentsCard).toBeVisible();
   await expect(chartCard).toBeVisible();
-  const readyDocumentsBox = await readyDocumentsCard.boundingBox();
-  const chartBox = await chartCard.boundingBox();
-  expect(readyDocumentsBox).not.toBeNull();
-  expect(chartBox).not.toBeNull();
-  expect(readyDocumentsBox!.y).toBeLessThan(chartBox!.y);
+  await expect
+    .poll(async () => {
+      const [readyDocumentsBox, chartBox] = await Promise.all([
+        readyDocumentsCard.boundingBox(),
+        chartCard.boundingBox(),
+      ]);
+      return readyDocumentsBox !== null && chartBox !== null
+        ? readyDocumentsBox.y < chartBox.y
+        : false;
+    })
+    .toBe(true);
 
   const usageTrends = page.getByTestId("usage-trends");
   await expect(usageTrends.getByText("Usage trends")).toBeVisible();

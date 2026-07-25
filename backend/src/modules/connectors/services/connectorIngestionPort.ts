@@ -47,7 +47,7 @@ export interface HtmlContentNormalizer {
 export const createConnectorIngestionPort = (deps: {
   documentIngestionService: ConnectorDocumentIngestionPort;
   documentDeletionService: ConnectorDocumentDeletionPort;
-  documentRepository: Pick<DocumentRepositoryPort, "findByExternalDocumentId">;
+  documentRepository: Pick<DocumentRepositoryPort, "findBySourceAndExternalDocumentId">;
   htmlContentNormalizer: HtmlContentNormalizer;
 }): ConnectorIngestionPort => ({
   async ingest(input) {
@@ -66,8 +66,13 @@ export const createConnectorIngestionPort = (deps: {
   },
 
   async deleteByExternalId(input) {
-    const existing = await deps.documentRepository.findByExternalDocumentId(
+    const source = await deps.documentIngestionService.resolveSource({
+      workspaceId: input.workspaceId,
+      source: toResolverInput(input.source),
+    });
+    const existing = await deps.documentRepository.findBySourceAndExternalDocumentId(
       input.workspaceId,
+      source.id,
       input.externalDocumentId,
     );
     if (!existing) {

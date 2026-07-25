@@ -100,16 +100,20 @@ const composeOutputsFor = (
   response: RenderableTurn,
   outcomes: TurnOutcome[],
   options: { streamed: boolean },
-): Record<string, unknown> => ({
-  // Length only — the assistant message itself is persisted on the chat
-  // message record and is read back from there by authorized callers.
-  answerLength: response.answer.length,
-  citationCount: Array.isArray(response.citations) ? response.citations.length : 0,
-  suggestionCount: Array.isArray(response.suggestions) ? response.suggestions.length : 0,
-  outcomeCount: outcomes.length,
-  streamed: options.streamed,
-  outcomes: outcomes.map(summarizeOutcomeForCompose),
-});
+): Record<string, unknown> => {
+  const adherence = response.metadata?.directiveAdherence;
+  return {
+    // Length only — the assistant message itself is persisted on the chat
+    // message record and is read back from there by authorized callers.
+    answerLength: response.answer.length,
+    citationCount: Array.isArray(response.citations) ? response.citations.length : 0,
+    suggestionCount: Array.isArray(response.suggestions) ? response.suggestions.length : 0,
+    outcomeCount: outcomes.length,
+    streamed: options.streamed,
+    outcomes: outcomes.map(summarizeOutcomeForCompose),
+    ...(adherence ? { adherence } : {}),
+  };
+};
 
 const composeTraceMetricsFor = (response: RenderableTurn): Record<string, number> | undefined => {
   const candidate = response.metadata?.traceMetrics;
@@ -124,6 +128,7 @@ const composeTraceMetricsFor = (response: RenderableTurn): Record<string, number
 };
 
 const directiveMatchToSteering = (match: DirectiveMatch): SteeringRule => ({
+  directiveName: match.directive.name,
   action: match.directive.action,
   condition: match.directive.condition.kind === "contextual"
     ? match.directive.condition.description
@@ -258,15 +263,24 @@ const guidanceToSteering = (guidance: SkillTransientGuidance, fallbackPriority?:
   lifespan: "response",
 });
 
-const createTrace = (stages: ConversationTraceStage[]): ConversationTrace => {
+const createTrace = (
+  stages: ConversationTraceStage[],
+  links?: ConversationTrace["links"],
+): ConversationTrace => {
   const startedAt = stages[0]?.startedAt ?? nowIso();
   return {
     traceId: `conversation-turn-${startedAt}`,
     startedAt,
     completedAt: stages.at(-1)?.completedAt ?? startedAt,
     stages,
+    ...(links && links.length > 0 ? { links } : {}),
   };
 };
+
+const composeAdherenceLinks = (response: RenderableTurn): ConversationTrace["links"] | undefined =>
+  response.metadata?.directiveAdherence
+    ? [{ from: "directives", to: "compose", kind: "adherence" }]
+    : undefined;
 
 const mergeStagedContext = (outcomes: TurnOutcome[]): StagedContext[] =>
   outcomes.flatMap((outcome) => outcome.stagedContext);
@@ -1113,7 +1127,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       decision: prepared.decision,
       outcomes: prepared.outcomes,
       response,
-      trace: createTrace(prepared.stages),
+      trace: createTrace(prepared.stages, composeAdherenceLinks(response)),
     });
   }
 
@@ -1182,7 +1196,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         decision: prepared.decision,
         outcomes: prepared.outcomes,
         response,
-        trace: createTrace(prepared.stages),
+        trace: createTrace(prepared.stages, composeAdherenceLinks(response)),
       }),
       metadata: finalMetadata,
     };

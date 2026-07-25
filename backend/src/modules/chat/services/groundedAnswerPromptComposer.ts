@@ -50,7 +50,7 @@ export const composeGroundedAnswerSystemPrompt = (
     input.hasRetrievedContexts;
 
   const base = input.baseSystemPrompt ?? "";
-  const steeringBlock = renderSteeringBlock(input.steering ?? []);
+  const steeringBlock = renderSteeringBlock(input.steering ?? [], { includeRuleIds: true });
   const withSteering = steeringBlock ? joinBlocks(base, steeringBlock) : base;
   const summarySection = renderConversationSummarySection(input.conversationSummary);
   const withSummary = summarySection ? joinBlocks(withSteering, summarySection) : withSteering;

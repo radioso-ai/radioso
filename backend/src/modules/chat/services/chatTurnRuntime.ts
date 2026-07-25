@@ -14,6 +14,7 @@ import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { createDirectiveAdherenceSideChannel } from "../../../shared/domain/directiveAdherence.js";
 
 export interface ChatTurnRuntimeDependencies {
   chatGateway: ChatGateway;
@@ -63,6 +64,9 @@ export const buildChatTurnRuntime = (
         chatAnswerPresenter,
         deps.fallbackReplyComposer,
         deps.metrics,
+        // Directive adherence is wired in here, at composition — the composer only
+        // sees the capability-neutral side-channel port, never the directive domain.
+        { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules, deps.logger) },
       ),
     ),
     createDirectTurnSkill(

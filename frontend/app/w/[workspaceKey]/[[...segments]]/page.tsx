@@ -16,6 +16,7 @@ import {
   workspaceApi,
 } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
+import { buildDashboardDocumentTitle } from '@/lib/dashboard-document-title'
 import { buildDashboardHref, parseDashboardRoute, withDashboardWorkspace } from '@/lib/dashboard-routes'
 
 const getParamValue = (value: string | string[] | undefined) => {
@@ -84,6 +85,12 @@ export default function WorkspaceDashboardPage() {
       router.replace('/')
     }
   }, [isBootstrapping, parsedRoute, router, user])
+
+  useEffect(() => {
+    if (parsedRoute) {
+      document.title = buildDashboardDocumentTitle(parsedRoute.section)
+    }
+  }, [parsedRoute])
 
   useEffect(() => {
     if (isBootstrapping || !user || !workspaceKey || !parsedRoute) {

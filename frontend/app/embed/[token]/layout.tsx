@@ -1,5 +1,7 @@
 export const metadata = {
-  title: "Embedded Chat",
+  // `absolute` opts out of the root brand template — an embedded iframe should
+  // not carry the Radioso suffix inside the host site.
+  title: { absolute: "Embedded Chat" },
   description: "Embedded chat with our AI assistant",
 };
 

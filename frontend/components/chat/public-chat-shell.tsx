@@ -38,6 +38,7 @@ import {
   type AnswerFeedbackState,
   type AnswerFeedbackValue,
   type ChatSuggestion,
+  type ClientContextCapabilities,
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
@@ -1080,6 +1081,7 @@ export function PublicChatShell({
   themeOverrides,
   surface = 'public',
   pageContext,
+  clientContextCapabilities,
   signedIdentity,
   onAnalyticsEvent,
 }: {
@@ -1095,6 +1097,7 @@ export function PublicChatShell({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface?: PublicChatSurface
   pageContext?: WebsiteEmbedPageContext | null
+  clientContextCapabilities?: ClientContextCapabilities
   signedIdentity?: string | null
   onAnalyticsEvent?: (event: WebsiteEmbedAnalyticsInput) => void
 }) {
@@ -1108,6 +1111,7 @@ export function PublicChatShell({
       consumeSessionHandoff={surface === 'public'}
       localeOverride={localeOverride}
       pageContext={pageContext}
+      clientContextCapabilities={clientContextCapabilities}
       signedIdentity={signedIdentity}
       onAnalyticsEvent={surface === 'embed' ? onAnalyticsEvent : undefined}
     >

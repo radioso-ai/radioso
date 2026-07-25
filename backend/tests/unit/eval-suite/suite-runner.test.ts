@@ -1,10 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DefaultConversationEngine } from "@radioso/conversation-engine";
 import { WorkbenchReplayRunner } from "../../../src/modules/chat/services/workbenchReplayRunner.js";
 import type { RetrievalTurnPort } from "../../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { TurnRouter } from "../../../src/modules/chat/services/turnRouter.js";
 import type { TurnSkill } from "../../../src/modules/chat/services/turnOutcome.js";
+import type {
+  TurnPlanCoordinator,
+  TurnPlanInputs,
+} from "../../../src/modules/chat/services/turnPlanCoordinator.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../../src/modules/retrieval/public.js";
 import { runConversationQualitySuite, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityAgentConfig, CQ_AGENT_ID, CQ_WORKSPACE_ID } from "../../fixtures/conversation-quality/index.js";
@@ -112,7 +116,7 @@ const stubTurnRouter = (): TurnRouter => ({
 });
 
 describe("buildReplayInput", () => {
-  it("maps history and passes through the routine start state", () => {
+  it("maps history and passes through turn context and the routine start state", () => {
     const evalCase: ConversationQualityCase = {
       id: "c",
       name: "c",
@@ -121,6 +125,18 @@ describe("buildReplayInput", () => {
         { role: "assistant", content: "hello" },
       ],
       query: "and now?",
+      pageContext: {
+        pageUrl: "https://example.com/release",
+        pageTitle: "Release notes",
+        content: "The release is named Blue Heron.",
+      },
+      clientContextCapabilities: {
+        "page.read": {
+          available: true,
+          mode: "content",
+          supportedOperations: ["metadata", "lookup", "summarize"],
+        },
+      },
       routineStartState: { routineId: "r", path: ["s1"], variables: { email: "a@b.c" }, status: "active" },
       assertions: [],
     };
@@ -131,11 +147,58 @@ describe("buildReplayInput", () => {
     });
     expect(input.query).toBe("and now?");
     expect(input.history.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(input.pageContext).toEqual(evalCase.pageContext);
+    expect(input.clientContextCapabilities).toEqual(evalCase.clientContextCapabilities);
     expect(input.routineStartState).toEqual({ routineId: "r", path: ["s1"], variables: { email: "a@b.c" }, status: "active" });
   });
 });
 
 describe("conversation-quality suite over the real engine", () => {
+  it("threads page-read capability into replay turn planning", async () => {
+    const plan = vi.fn(async (_input: TurnPlanInputs) => ({
+      status: "failed" as const,
+      reason: "invalid_or_error" as const,
+    }));
+    const turnPlanCoordinator = {
+      plan,
+      recordBypass: vi.fn(),
+    } as unknown as TurnPlanCoordinator;
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn(),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: stubTurnRouter(),
+      turnPlanCoordinator,
+    });
+
+    await runner.run({
+      workspaceId: CQ_WORKSPACE_ID,
+      sourceAgentId: CQ_AGENT_ID,
+      baselineAgentConfig: conversationQualityAgentConfig,
+      query: "Summarize this page.",
+      history: [],
+      pageContext: {
+        pageTitle: "Release notes",
+        content: "The release is named Blue Heron.",
+      },
+      clientContextCapabilities: {
+        "page.read": {
+          available: true,
+          mode: "content",
+          supportedOperations: ["metadata", "lookup", "summarize"],
+        },
+      },
+    });
+
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(plan.mock.calls[0]?.[0].pageReadCapability).toEqual({
+      available: true,
+      mode: "content",
+      supportedOperations: ["metadata", "lookup", "summarize"],
+    });
+  });
+
   it("scores a case end-to-end through the runner port and real conversation engine", async () => {
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn(),

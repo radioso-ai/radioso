@@ -762,6 +762,37 @@
     return pageContext
   }
 
+  const pageReadCapabilityForContext = (configuredMode, pageContext) => {
+    const hasContent = typeof pageContext.content === 'string' && pageContext.content.trim().length > 0
+    if (configuredMode === 'content' && hasContent) {
+      return {
+        available: true,
+        mode: 'content',
+        supportedOperations: ['metadata', 'lookup', 'summarize'],
+      }
+    }
+
+    const hasMetadata = [
+      pageContext.pageUrl,
+      pageContext.pageTitle,
+      pageContext.pageLocale,
+      pageContext.browserLocale,
+    ].some((value) => typeof value === 'string' && value.trim().length > 0)
+    if (hasMetadata) {
+      return {
+        available: true,
+        mode: 'metadata',
+        supportedOperations: ['metadata'],
+      }
+    }
+
+    return {
+      available: false,
+      mode: null,
+      supportedOperations: [],
+    }
+  }
+
   const getCopy = (overrides) => {
     const next = { ...defaultCopy }
     if (overrides && typeof overrides === 'object') {
@@ -1287,6 +1318,9 @@
     const initialState = normalizeInitialState(expertOverrides.initialState) || DEFAULT_INITIAL_STATE
     const pageContextMode = normalizePageContextMode(expertOverrides.pageContext)
     const pageContext = collectPageContext(pageContextMode)
+    const clientContextCapabilities = {
+      'page.read': pageReadCapabilityForContext(pageContextMode, pageContext),
+    }
     const avatarUrl = resolveAvatarUrl(config.assistantLogoUrl, scriptUrl) || new URL('/radioso-icon.svg', scriptUrl).toString()
 
     const proactiveGreetingAttr =
@@ -1572,7 +1606,14 @@
           if (sessionAvatarUrl && iconContainer) {
             setLauncherAvatarMarkup(iconContainer, icon, sessionAvatarUrl)
           }
-          activeContentWindow.postMessage({ type: SESSION_MESSAGE, session, pageContext, signedIdentity: signedIdentityToken, resumed }, scriptUrl.origin)
+          activeContentWindow.postMessage({
+            type: SESSION_MESSAGE,
+            session,
+            pageContext,
+            clientContextCapabilities,
+            signedIdentity: signedIdentityToken,
+            resumed,
+          }, scriptUrl.origin)
         })
         .catch((error) => {
           if (!activeContentWindow || iframe !== activeIframe) {

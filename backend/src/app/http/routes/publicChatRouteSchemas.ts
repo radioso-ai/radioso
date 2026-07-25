@@ -12,6 +12,14 @@ export const pageContextSchema = z.object({
   content: z.string().trim().max(6000).nullable().optional(),
 }).optional();
 
+export const clientContextCapabilitiesSchema = z.object({
+  "page.read": z.object({
+    available: z.boolean(),
+    mode: z.enum(["metadata", "content"]).nullable(),
+    supportedOperations: z.array(z.enum(["metadata", "lookup", "summarize"])).max(3),
+  }).optional(),
+}).optional();
+
 export const anonymousChatSchema = z.object({
   message: chatMessageSchema.optional(),
   stream: z.boolean().default(false),
@@ -20,6 +28,7 @@ export const anonymousChatSchema = z.object({
   startConversation: z.boolean().optional(),
   userExpectedLocale: localeHintSchema.optional(),
   pageContext: pageContextSchema,
+  clientContextCapabilities: clientContextCapabilitiesSchema,
   signedIdentity: z.string().max(8192).optional(),
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click", "intent_click"]),
@@ -87,4 +96,5 @@ export const publicChatSessionSchema = z.object({
   // Accepted for older clients but no longer trusted as a resume credential.
   anonymousSessionId: z.string().uuid().optional(),
   pageContext: pageContextSchema,
+  clientContextCapabilities: clientContextCapabilitiesSchema,
 });

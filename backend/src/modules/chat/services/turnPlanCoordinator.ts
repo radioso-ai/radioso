@@ -22,6 +22,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
+import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import {
   estimateTurnPlanningPromptTokens,
   TurnPlanService,
@@ -122,6 +123,7 @@ export interface TurnPlanInputs {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
+  pageReadCapability?: PageReadCapability | null;
   /**
    * The owning module's prepared routine candidates for this turn (already
    * suppression/prefilter-bounded), or `null` when no routines are registered or
@@ -187,6 +189,7 @@ export class TurnPlanCoordinator {
       semanticRewriteInstructions: input.semanticRewriteInstructions,
       lexicalRewriteInstructions: input.lexicalRewriteInstructions,
       conversationSummary: input.conversationSummary,
+      pageReadCapability: input.pageReadCapability,
       routineCandidates: prepared ? prepared.candidates : [],
       directiveCandidates: input.directiveCandidates,
       workspaceContext: input.workspaceContext,

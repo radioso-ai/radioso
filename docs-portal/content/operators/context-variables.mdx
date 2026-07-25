@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-06-27
+last_updated: 2026-07-24
 ---
 
 # Context variables
@@ -23,6 +23,23 @@ Radioso provides built-in context for the website experience.
 
 Built-ins are not listed in the host-defined catalog and cannot be edited there.
 They are code-owned platform context.
+
+### Page context is relevance-gated
+
+The embed still captures page context with each message, but the agent no longer
+sees it on every turn. Each turn is classified first. Page data — including the
+URL, title, and locale — reaches the model only when the turn actually asks
+about the current page, or when an active routine declares a `page_context`
+dependency. Unrelated turns contribute no page data to model input or stored
+message metadata.
+
+In practice this means answers to general questions are not influenced by
+whatever page the visitor happens to be on, and page content cannot inject
+instructions into unrelated turns.
+
+Newer embeds also advertise this capability explicitly as
+`clientContextCapabilities["page.read"]`, with a mode of `metadata` or
+`content`. Older embeds keep working: their page payload is gated the same way.
 
 ## Host-defined variables
 

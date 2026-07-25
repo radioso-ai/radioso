@@ -303,6 +303,13 @@ export interface ChatRequest {
 }
 
 export type WebsiteEmbedPageContext = NonNullable<ApiSchemas['PublicChatSessionRequest']['pageContext']>
+export interface ClientContextCapabilities {
+  'page.read'?: {
+    available: boolean
+    mode: 'metadata' | 'content' | null
+    supportedOperations: Array<'metadata' | 'lookup' | 'summarize'>
+  }
+}
 export interface PublicChatIntakeAction {
   skillName: string
   intentName?: string

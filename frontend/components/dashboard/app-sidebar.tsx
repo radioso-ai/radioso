@@ -31,6 +31,7 @@ import {
 import { useInboxCount } from '@/hooks/use-inbox-count'
 import { cn } from '@/lib/utils'
 import { WorkspaceSwitcher } from './workspace-switcher'
+import { AccountMenu } from './account-menu'
 import { useWorkspace } from '@/lib/workspace-context'
 
 interface AppSidebarProps {
@@ -117,23 +118,14 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
       </SidebarContent>
 
       <SidebarFooter>
-        {isAccountActive && areaSubNav ? <div className="pb-1">{areaSubNav}</div> : null}
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              size="lg"
-              isActive={isAccountActive}
-              tooltip={user?.email || userDisplayName}
-              className={cn('group/user', isAccountActive && 'bg-sidebar-accent')}
-            >
-              <Link
-                href={buildDashboardHref(accountId, {
-                  section: 'account',
-                  accountTab: 'members',
-                  workspaceId: activeWorkspaceId ?? undefined,
-                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                })}
+            <AccountMenu accountId={accountId} routeState={routeState}>
+              <SidebarMenuButton
+                size="lg"
+                isActive={isAccountActive}
+                tooltip={user?.email || userDisplayName}
+                className={cn('group/user', isAccountActive && 'bg-sidebar-accent')}
               >
                 <div className="relative flex-shrink-0">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-secondary/60 to-primary/40 text-xs font-semibold text-sidebar-foreground">
@@ -145,8 +137,8 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                   <p className="truncate text-sm font-medium text-foreground">{userDisplayName}</p>
                   <p className="truncate text-xs text-muted-foreground">{user?.email || 'user@example.com'}</p>
                 </div>
-              </Link>
-            </SidebarMenuButton>
+              </SidebarMenuButton>
+            </AccountMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

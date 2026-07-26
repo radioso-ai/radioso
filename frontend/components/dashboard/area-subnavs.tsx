@@ -6,25 +6,16 @@ import {
   Building2,
   FileText,
   FolderOpen,
-  Gauge,
   Inbox,
-  LogOut,
   MessagesSquare,
   MessageSquareWarning,
-  Monitor,
-  Moon,
-  Sun,
-  Users,
 } from 'lucide-react'
 
-import { SectionNavBody, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
+import { SectionNavBody, type SubNavGroup } from '@/components/dashboard/subnav-column'
 import { buildActivityTabHref, type ActivitySurfaceTab } from '@/components/dashboard/activity-tabs'
-import { useTheme } from '@/components/theme-provider'
-import { useAuth } from '@/lib/auth-context'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   buildDashboardHref,
-  type AccountTab,
   type DashboardRouteState,
   type KnowledgeTab,
   type SettingsTab,
@@ -91,38 +82,4 @@ export function SettingsSubNav({ accountId, routeState }: { accountId: string; r
   ]
 
   return <SectionNavBody groups={groups} />
-}
-
-export function AccountSubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
-  const parts = useWorkspaceRouteParts()
-  const { theme, setTheme } = useTheme()
-  const { logout } = useAuth()
-  const active = routeState.accountTab ?? 'members'
-  const href = (accountTab: AccountTab) => buildDashboardHref(accountId, { section: 'account', accountTab, ...parts })
-
-  const groups: SubNavGroup[] = [
-    {
-      items: [
-        { id: 'members', label: 'Members', icon: Users, href: href('members'), active: active === 'members' },
-        { id: 'usage', label: 'Usage', icon: Gauge, href: href('usage'), active: active === 'usage' },
-      ],
-    },
-    {
-      label: 'Appearance',
-      items: [
-        { id: 'theme-light', label: 'Light', icon: Sun, active: theme === 'light', onClick: () => setTheme('light') },
-        { id: 'theme-dark', label: 'Dark', icon: Moon, active: theme === 'dark', onClick: () => setTheme('dark') },
-        { id: 'theme-system', label: 'System', icon: Monitor, active: theme === 'system', onClick: () => setTheme('system') },
-      ],
-    },
-  ]
-
-  return (
-    <SectionNavBody
-      groups={groups}
-      footer={
-        <SubNavRow entry={{ id: 'sign-out', label: 'Sign out', icon: LogOut, danger: true, onClick: () => void logout() }} />
-      }
-    />
-  )
 }

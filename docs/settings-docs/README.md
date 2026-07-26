@@ -1,16 +1,17 @@
 ---
 title: "Settings Docs"
 description: "Index and structure for the workspace control copy files that power the frontend dashboard ingestion and retrieval settings UI."
-last_updated: 2026-05-22
+last_updated: 2026-07-27
 ---
 
 # Settings Docs
 
-This directory is the source of truth for workspace control copy used by the frontend dashboard UI.
+These files are the workspace settings copy shown in the frontend settings UI. The source copy lives in `docs/settings-docs/` and is mirrored here for the dashboard import — edit both so they stay identical.
 
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
+- `general/`: copy for assistant identity, startup behavior, and channel controls
 - `retrieval/`: copy for retrieval-stage and retrieval-owned answer evidence controls
 - one setting per file
 
@@ -28,20 +29,22 @@ Short inline copy shown next to the setting control.
 Long-form explanation shown in the right-side help panel.
 ```
 
-The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the dashboard help UI.
+The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the settings UI.
 
 ## UI mapping
 
-The Knowledge Base dashboard surface presents ingestion and retrieval controls in pipeline order:
+The dashboard presents settings in product order:
 
-1. Ingestion: choose chunking settings -> tune chunk sizing -> reprocess existing documents
-2. Retrieval: rewrite query -> retrieve/filter candidates -> rerank -> present grounded evidence
+1. Workspace, Assistant, and Channels: workspace access, assistant behavior, anonymous chat, and danger zone
+2. Ingestion: Choose chunking settings -> Tune active chunking -> Apply changes to existing documents
+3. Retrieval: Rewrite the incoming question -> Tune search and reranking -> Prioritize by metadata -> Present grounded evidence
+4. Connectors: connector list and configuration, without a per-page side menu
 
 Embedding model selection belongs on the Settings -> Providers surface because it is a provider-backed model choice. It still uses ingestion settings behind the scenes because changing the embedding model affects existing chunks and may trigger re-indexing.
 
-Assistant identity, conversation mode, custom answer instruction, proactive greeting, and suggested follow-up behavior belong to the Agent behavior surface. Retrieval controls should stay focused on evidence gathering, ranking, filters, and citation presentation.
+Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, and citation presentation.
 
-The connector-style stage separators are rendered in [`frontend/components/dashboard/settings/settings-flow.tsx`](../../frontend/components/dashboard/settings/settings-flow.tsx) and reused by the activity trace graph for visual consistency.
+The settings navigation shell and per-tab section metadata live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
 
 ## Editing guidance
 

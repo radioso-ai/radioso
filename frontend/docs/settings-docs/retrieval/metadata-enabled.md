@@ -16,4 +16,4 @@ This is the activation switch for the rule.
 
 ### Operational Use
 
-It allows a rule to remain configured while removing its live effect, which is useful during retrieval tuning, comparison, and debugging.
+It allows a rule to remain configured while removing its live effect for this agent, which is useful during retrieval tuning, comparison, and debugging.

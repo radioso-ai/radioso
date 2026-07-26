@@ -12,7 +12,6 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 
 ## Start here
 
-- [Documentation Improvement Plan](./documentation-improvement-plan.md) - current audit of thin docs and the rewrite priorities
 - [Code Map](./architecture/code-map.md) - stable map from product areas to owners, entry points, tests, and related docs
 - [Agent Context Workflow](./agent-context-workflow.md) - lightweight workflow and `.context/` template for low-context feature starts
 - [OSS And SaaS Observability](./oss-saas-observability.md) - runtime flags, `/metrics`, and optional PostHog or Sentry adapters
@@ -22,7 +21,11 @@ Before creating or revising documentation in this repo, read [Document Writer Pr
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
 - [Human Takeover](./human-takeover.md) - operator API and ownership behavior for human-owned conversations
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
+- [Website Embed CDN](./website-embed-cdn.md) - how the embed widget assets are served from the CDN
 - [Slack Channel](./slack-channel.md) - Slack setup, self-host manifest, data flow, and curated-knowledge boundary
+- [Webhook Skills](./webhook-skills.md) - configure agents to call your webhooks as skills
+- [Slack Post Skills](./slack-skills.md) - configure agents to post to Slack as a skill
+- [Customer Email Skills](./customer-email-skills.md) - workspace outbound email connections and email skills
 - [Radioso Skills RFC](./radioso-skills-rfc.md) - vocabulary and direction behind the implemented read-only skills catalog
 - [MCP Client Setup](./mcp-client-setup.md) - current MCP client connection patterns and constraints
 

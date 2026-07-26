@@ -40,7 +40,7 @@ The unified endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-Legacy Slack skill endpoints may remain available during cutover:
+The older per-type Slack routes below still work and operate on the same `agent_skills` records as the unified endpoints. Prefer the unified `/skills` endpoints for new integrations:
 
 - `GET /api/v1/agents/{agentId}/slack-skills`
 - `POST /api/v1/agents/{agentId}/slack-skills`

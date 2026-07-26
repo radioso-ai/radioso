@@ -6,7 +6,7 @@ last_updated: 2026-04-14
 
 # Performance Benchmarking
 
-Radioso now ships a repo-owned benchmark harness under `scripts/performance/`.
+The benchmark harness lives under `scripts/performance/`.
 The source of truth for benchmark workloads, budgets, and baseline comparison
 rules lives in the repository, while heavy execution can still run from an
 external runner or staging host.

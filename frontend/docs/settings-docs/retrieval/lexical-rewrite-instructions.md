@@ -12,7 +12,7 @@ Guide the exact-term rewrite used for lexical retrieval.
 ## Details
 ### Overview
 
-These instructions control how the system rewrites a query for exact-term retrieval.
+These instructions control how this agent rewrites a query for exact-term retrieval.
 
 ### Where It Helps Most
 

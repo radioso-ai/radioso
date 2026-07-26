@@ -4,6 +4,7 @@ import request from "supertest";
 import { describe, expect, it } from "vitest";
 
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 
 describe("settings contract", () => {
   it("returns assistant and channel settings through one shared resource", async () => {
@@ -191,7 +192,67 @@ describe("settings contract", () => {
       structuredMinChunkSize: 30,
       structuredMaxChunkSize: 260,
       documentEnrichmentEnabled: true,
-      supportedEmbeddingModels: expect.arrayContaining(["text-embedding-3-small", "text-embedding-3-large"]),
+      supportedEmbeddingModels: [
+        "text-embedding-3-small",
+        "text-embedding-3-large",
+        "text-embedding-ada-002",
+        "gemini-embedding-001",
+      ],
+    });
+  });
+
+  it("accepts an unchanged legacy model echo but rejects another unsupported model", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "ingestion-legacy-echo@example.com");
+    const legacyModel = "legacy-compatible-embedding";
+    await repositories.ingestionSettingsRepository.upsert(
+      session.workspaceId,
+      {
+        ...defaultIngestionSettings(session.workspaceId),
+        embeddingModel: legacyModel,
+      } as never,
+    );
+    const baseUpdate = {
+      chunkingStrategy: "structured_semantic",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      documentEnrichmentEnabled: true,
+    };
+
+    const unchanged = await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .send({ ...baseUpdate, embeddingModel: legacyModel });
+    const rejected = await request(app)
+      .put("/api/v1/settings/ingestion")
+      .set(adminSessionHeaders(session))
+      .send({
+        ...baseUpdate,
+        embeddingModel: "different-unsupported-model",
+      });
+    const persisted =
+      await repositories.ingestionSettingsRepository.findByWorkspaceId(
+        session.workspaceId,
+      );
+
+    expect(unchanged.status).toBe(200);
+    expect(unchanged.body).toMatchObject({
+      embeddingModel: legacyModel,
+      pendingEmbeddingModel: null,
+      documentEnrichmentEnabled: true,
+      supportedEmbeddingModels: [
+        "text-embedding-3-small",
+        "text-embedding-3-large",
+        "text-embedding-ada-002",
+        "gemini-embedding-001",
+      ],
+    });
+    expect(rejected.status).toBe(400);
+    expect(persisted).toMatchObject({
+      embeddingModel: legacyModel,
+      pendingEmbeddingModel: null,
     });
   });
 
@@ -287,6 +348,17 @@ describe("settings contract", () => {
     expect(ingestionSettingsSchema).toContain("chunkingStrategy:");
     expect(ingestionSettingsSchema).toContain("embeddingModel:");
     expect(ingestionSettingsSchema).toContain("pendingEmbeddingModel:");
+    const ingestionResponseModelSchema =
+      ingestionSettingsSchema.match(
+        /embeddingModel:\n([\s\S]*?)\n        pendingEmbeddingModel:/,
+      )?.[1] ?? "";
+    const ingestionUpdateModelSchema =
+      ingestionUpdateSchema.match(
+        /embeddingModel:\n([\s\S]*?)\n        documentEnrichmentEnabled:/,
+      )?.[1] ?? "";
+    expect(ingestionResponseModelSchema).toContain("type: string");
+    expect(ingestionResponseModelSchema).not.toContain("enum:");
+    expect(ingestionUpdateModelSchema).toContain("enum:");
     expect(ingestionSettingsSchema).toContain("fixedWindowChunkSize:");
     expect(ingestionSettingsSchema).toContain("documentEnrichmentEnabled:");
     expect(ingestionUpdateSchema).toContain("embeddingModel:");

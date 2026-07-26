@@ -14,6 +14,14 @@ import {
   createRetrievalSkillSettingsResolver,
   createSystemRetrievalDefaultsProvider,
   createDefaultDocumentJobDispatcher,
+  EmbeddingProfileJobFailureAdapter,
+  EmbeddingModelTransitionAdapter,
+  LegacyVectorCandidateSearchAdapter,
+  PgVectorTransitionIndexPreparation,
+  PgVectorTransitionMaintenance,
+  RegistryFixedInputEmbeddingValidation,
+  VectorCandidateSearchRolloutAdapter,
+  WorkspaceEmbeddingBindingResolver,
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
@@ -48,7 +56,17 @@ import {
 import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
-import { EmbeddingService } from "../../modules/retrieval/composition.js";
+import {
+  EmbeddingCoverageReconciler,
+  EmbeddingTransitionCoordinator,
+  ProfileBoundEmbeddingPorts,
+} from "../../modules/embeddingProfiles/public.js";
+import {
+  PostgresChunkCandidateHydrator,
+  PgVectorAdapter,
+  PgVectorIndex,
+  VectorIndexReconciler,
+} from "../../modules/retrieval/composition.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -286,20 +304,116 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Build the registry first (no resolver yet) so we can compute supported embedding
   // models; embedding stays env-default and doesn't need the workspace-aware resolver.
   const llmRegistry = buildLlmRegistry(env, logger);
-  const embeddingService = new EmbeddingService(llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder));
   const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
   const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
     auditService: infrastructure.auditService,
     documentJobDispatcher,
     repositories,
   });
+  const embeddingCoverage = new EmbeddingCoverageReconciler(
+    repositories.documentProcessingJobRepository,
+    documentJobDispatcher,
+  );
+  const pgVectorAdapter = new PgVectorAdapter(infrastructure.database);
+  const embeddingTransitionCoordinator = new EmbeddingTransitionCoordinator(
+    repositories.embeddingProfileRepository,
+    new RegistryFixedInputEmbeddingValidation(
+      repositories.embeddingProfileRepository,
+      llmRegistry,
+    ),
+    embeddingCoverage,
+    { backendKey: "pgvector" },
+  );
+  const embeddingTransitions = new EmbeddingModelTransitionAdapter(
+    repositories.embeddingProfileRepository,
+    (model) => llmRegistry.resolveEmbeddingModelBinding(model),
+    embeddingTransitionCoordinator,
+    new PgVectorTransitionIndexPreparation(
+      pgVectorAdapter,
+      repositories.vectorIndexWorkRepository,
+    ),
+  );
+  const embeddingProfileJobFailures = new EmbeddingProfileJobFailureAdapter(
+    repositories.embeddingProfileRepository,
+    embeddingTransitionCoordinator,
+  );
   const supportedEmbeddingModels = listSupportedEmbeddingModels(llmRegistry);
   const settings = buildSettingsServices({
     auditService: infrastructure.auditService,
-    documentRepository: repositories.documentRepository,
     ingestionSettingsRepository: repositories.ingestionSettingsRepository,
     supportedEmbeddingModels,
-    workspaceIngestionReprocessService,
+    embeddingTransitions,
+  });
+  let vectorTransitionMaintenance: PgVectorTransitionMaintenance;
+  const vectorIndexReconciler = new VectorIndexReconciler({
+    adapter: pgVectorAdapter,
+    backendKey: "pgvector",
+    repository: repositories.vectorIndexWorkRepository,
+    spaces: repositories.embeddingProfileRepository,
+    batchSize: 100,
+    leaseMs: 60_000,
+    maxAttempts: 5,
+    retryDelayMs: 5_000,
+    pollIntervalMs: 1_000,
+    resolveCaughtUpReadiness: async () => "exact_fallback",
+    onCheckpointAdvanced: async ({ workspaceId }) => {
+      await settings.ingestionSettingsService
+        .promotePendingEmbeddingModelIfReady?.(workspaceId);
+    },
+    onIdle: () =>
+      vectorTransitionMaintenance.reconcileBuildingTransitions(),
+    onLoopError: (error) => {
+      logger.error(
+        {
+          backend: "pgvector",
+          err: error instanceof Error ? error.message : String(error),
+        },
+        "Vector index reconciliation tick failed",
+      );
+      void infrastructure.errorReportingService.report({
+        errorType: "vector.index.reconciliation_tick_failed",
+        error,
+        severity: "error",
+      }).catch((reportError) => {
+        logger.error(
+          {
+            err: reportError instanceof Error
+              ? reportError.message
+              : String(reportError),
+          },
+          "Vector index reconciliation error report failed",
+        );
+      });
+    },
+  });
+  vectorTransitionMaintenance = new PgVectorTransitionMaintenance(
+    vectorIndexReconciler,
+    repositories.embeddingProfileRepository,
+    {
+      promotePendingEmbeddingModelIfReady: (workspaceId) =>
+        settings.ingestionSettingsService
+          .promotePendingEmbeddingModelIfReady!(workspaceId),
+    },
+  );
+  const embeddingPorts = new ProfileBoundEmbeddingPorts(
+    llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder),
+    new WorkspaceEmbeddingBindingResolver({
+      profiles: repositories.embeddingProfileRepository,
+      settings: settings.ingestionSettingsService,
+      identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
+    }),
+  );
+  const chunkHydrator = new PostgresChunkCandidateHydrator(
+    infrastructure.database.kysely,
+  );
+  const legacyVectorSearch = new LegacyVectorCandidateSearchAdapter({
+    legacy: new PgVectorIndex(infrastructure.database),
+    profiles: repositories.embeddingProfileRepository,
+  });
+  const vectorSearch = new VectorCandidateSearchRolloutAdapter({
+    canonical: pgVectorAdapter.search,
+    legacy: legacyVectorSearch,
+    legacyDimensions: [1536, 3072],
   });
   // Now that settings are available, build the capability service (backed by the
   // retrieval_settings row through the repository) and the resolver, then attach
@@ -323,10 +437,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     composition,
     documentJobDispatcher,
     documentSourceRepository: repositories.documentSourceRepository,
-    embeddingService,
+    documentEmbeddings: embeddingPorts,
+    pinnedDocumentEmbeddings: embeddingPorts,
+    clusteringEmbeddings: embeddingPorts,
     env,
     logger,
     productAnalyticsService: infrastructure.productAnalyticsService,
+    postJobMaintenance: vectorTransitionMaintenance,
     repositories,
     settings,
     telemetryService: infrastructure.telemetryService,
@@ -334,7 +451,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     usageEventRecorder: infrastructure.usageEventRecorder,
     llmRegistry,
     workspaceIngestionReprocessService,
+    embeddingCoverage,
     errorReporter: infrastructure.errorReportingService,
+    embeddingProfileTerminalFailures: embeddingProfileJobFailures,
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();
@@ -342,8 +461,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     database: infrastructure.database,
     documentRepository: repositories.documentRepository,
-    embeddingService,
-    ingestionSettingsService: settings.ingestionSettingsService,
+    queryEmbeddings: embeddingPorts,
+    vectorSearch,
+    chunkHydrator,
     llmRegistry,
     logger,
     retrievalDefaultsProvider,
@@ -380,6 +500,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     composition,
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     conversationRepository: repositories.conversationRepository,
+    clusteringEmbeddings: embeddingPorts,
     database: infrastructure.database,
     env,
     historyItemsRepository: repositories.historyItemsRepository,
@@ -647,6 +768,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
+    vectorIndexReconciler,
     authService,
     accessGrantService: access.accessGrantService,
     passwordResetService,

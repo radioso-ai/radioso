@@ -5,7 +5,6 @@ import { DocumentProcessingWorker } from "../../src/modules/documents/services/d
 import type { DocumentEnrichmentStagePort } from "../../src/modules/documents/services/documentEnrichmentService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import type { DocumentProcessingJobRecord } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import {
@@ -14,6 +13,7 @@ import {
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
+import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 const singleChunkStrategy = (): ChunkingStrategy => ({
   id: "structured_semantic",
@@ -35,8 +35,8 @@ const singleChunkStrategy = (): ChunkingStrategy => ({
   },
 });
 
-const buildEmbeddingService = (persisted: string[]): EmbeddingService =>
-  new EmbeddingService({
+const buildEmbeddingService = (persisted: string[]) =>
+  createDocumentEmbeddingPort({
     async embedTexts(texts: string[]): Promise<number[][]> {
       persisted.push(...texts);
       return texts.map(() => [1, 2, 3]);

@@ -7,14 +7,16 @@ import {
 } from "../../../shared/agent-runtime/index.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type {
+  QueryEmbeddingPort,
+} from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { QueryRewritePort } from "../domain/queryRewritePort.js";
 import type { ActivityTrace } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
-import type { VectorIndexPort } from "../domain/vectorIndex.js";
+import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
-import type { EmbeddingGateway } from "./embeddingService.js";
 import type { RerankGateway } from "./rerankService.js";
 import { buildAgenticActivityTrace } from "./agenticActivityTraceBuilder.js";
 import {
@@ -34,8 +36,8 @@ const DEFAULT_FALLBACK_CHUNK_LIMIT = 8;
 
 export interface AgenticRetrievalRunnerDeps {
   readonly capabilityRunner: AgenticCapabilityRunner;
-  readonly embeddings: EmbeddingGateway;
-  readonly vectorIndex: VectorIndexPort;
+  readonly queryEmbeddings: QueryEmbeddingPort;
+  readonly vectorSearch: VectorCandidateSearchPort;
   readonly chunkHydrator: ChunkCandidateHydratorPort;
   readonly lexicalSearch: LexicalSearchPort;
   readonly queryRewrite: QueryRewritePort;
@@ -57,7 +59,6 @@ export interface AgenticRetrievalRunInput {
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   readonly budgets?: Partial<AgentBudgets>;
   readonly fallbackChunkLimit?: number;
-  readonly embeddingModel?: string;
   readonly similarityThreshold?: number;
   readonly snippetChars?: number;
   readonly agenticToolFactories?: ReadonlyArray<AgenticRetrievalToolFactory>;
@@ -108,12 +109,11 @@ export class AgenticRetrievalRunner {
     const tools: AgentTool[] = [
       createSemanticSearchTool({
         workspaceId: input.workspaceId,
-        embeddings: this.deps.embeddings,
-        vectorIndex: this.deps.vectorIndex,
+        queryEmbeddings: this.deps.queryEmbeddings,
+        vectorSearch: this.deps.vectorSearch,
         chunkHydrator: this.deps.chunkHydrator,
         registry,
         sourceFilter: input.sourceFilter,
-        embeddingModel: input.embeddingModel,
         similarityThreshold: input.similarityThreshold,
         snippetChars: input.snippetChars,
         callerMetadataFilter: metadataFilter,

@@ -217,7 +217,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector:0.8.5-pg16
         env:
           POSTGRES_DB: radioso_test
           POSTGRES_PASSWORD: postgres

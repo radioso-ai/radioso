@@ -1,5 +1,6 @@
 import {
   type EmbeddingClient,
+  type EmbeddingClientOptions,
   type EmbeddingResult,
   type LlmCapabilityConfig,
   type ProviderUsage,
@@ -14,7 +15,6 @@ import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./p
 import { parseSseEvents } from "./sse.js";
 
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const STORAGE_VECTOR_DIMENSIONS = 1536;
 
 const buildGenerateBody = (input: {
   prompt: string;
@@ -161,7 +161,7 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
+  async embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult> {
     const embeddings: number[][] = [];
     const model = options?.model ?? this.config.model;
     let promptTokens: number | undefined;
@@ -181,7 +181,19 @@ export class GeminiEmbeddingClient implements EmbeddingClient {
               signal,
               body: JSON.stringify({
                 model: `models/${model}`,
-                output_dimensionality: STORAGE_VECTOR_DIMENSIONS,
+                ...(options?.dimensions === undefined
+                  ? {}
+                  : { outputDimensionality: options.dimensions }),
+                ...(options?.purpose === undefined
+                  ? {}
+                  : {
+                      taskType:
+                        options.purpose === "retrieval_document"
+                          ? "RETRIEVAL_DOCUMENT"
+                          : options.purpose === "retrieval_query"
+                            ? "RETRIEVAL_QUERY"
+                            : "CLUSTERING",
+                    }),
                 content: {
                   parts: [{ text }],
                 },

@@ -15,6 +15,11 @@ export {
   type WorkspaceLlmCapabilityPreferenceInput,
 } from "./contracts/llmCapability.js";
 export type {
+  EmbeddingModelTransitionFailureReason,
+  EmbeddingModelTransitionPort,
+  EmbeddingModelTransitionReadiness,
+  EmbeddingModelTransitionState,
+  EmbeddingModelTransitionStatus,
   IngestionSettingsRepositoryPort,
   RetrievalMetadataFieldSourcePort,
   WorkspaceLlmCapabilityPreferencesRepositoryPort,

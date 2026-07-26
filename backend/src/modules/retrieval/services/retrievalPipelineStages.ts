@@ -82,6 +82,15 @@ export interface RetrievalBranchResult {
   lexicalContexts: RetrievedChunk[];
 }
 
+export type SemanticRetrievalAvailability =
+  | "available"
+  | "degraded"
+  | "unavailable";
+
+export type SemanticRetrievalFailureReason =
+  | "query_embedding_unavailable"
+  | "vector_search_unavailable";
+
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
   activeEmbedding: number[];
   activeEmbeddingDurationMs: number;
@@ -93,6 +102,8 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
+  semanticRetrievalAvailability?: SemanticRetrievalAvailability;
+  semanticRetrievalFailureReason?: SemanticRetrievalFailureReason | null;
 }
 
 export interface CandidatePreparationStageResult extends CandidateRetrievalStageResult {
@@ -207,6 +218,8 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
   vectorFallbackApplied?: unknown;
+  semanticRetrievalAvailability?: unknown;
+  semanticRetrievalFailureReason?: unknown;
 };
 
 type TraceCandidatePreparationInput = TraceCandidateRetrievalInput & {
@@ -311,6 +324,8 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,
+    "retrieval.semantic.availability": result.semanticRetrievalAvailability,
+    "retrieval.semantic.failure_reason": result.semanticRetrievalFailureReason,
   });
 
 export const buildCandidatePreparationTraceAttributes = (result: TraceCandidatePreparationInput): TraceAttributes =>

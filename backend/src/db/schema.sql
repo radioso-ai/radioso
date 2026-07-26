@@ -7,8 +7,8 @@
 --
 
 
--- Dumped from database version 16.13 (Debian 16.13-1.pgdg12+1)
--- Dumped by pg_dump version 16.13 (Debian 16.13-1.pgdg12+1)
+-- Dumped from database version 16.14 (Debian 16.14-1.pgdg12+1)
+-- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg12+1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -339,6 +339,46 @@ $$;
 
 
 --
+-- Name: reject_embedding_space_identity_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reject_embedding_space_identity_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (
+    NEW.identity_fingerprint,
+    NEW.provider,
+    NEW.endpoint_scope_fingerprint,
+    NEW.model,
+    NEW.dimensions,
+    NEW.distance_metric,
+    NEW.normalization,
+    NEW.document_task,
+    NEW.query_task,
+    NEW.vector_options,
+    NEW.model_version
+  ) IS DISTINCT FROM (
+    OLD.identity_fingerprint,
+    OLD.provider,
+    OLD.endpoint_scope_fingerprint,
+    OLD.model,
+    OLD.dimensions,
+    OLD.distance_metric,
+    OLD.normalization,
+    OLD.document_task,
+    OLD.query_task,
+    OLD.vector_options,
+    OLD.model_version
+  ) THEN
+    RAISE EXCEPTION 'embedding space identity is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: set_chunk_temporal_dates(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -633,6 +673,28 @@ CREATE TABLE public.bootstrap_greeting_cache (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     agent_id uuid NOT NULL
+);
+
+
+--
+-- Name: chunk_embeddings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
 );
 
 
@@ -1276,7 +1338,11 @@ CREATE TABLE public.document_processing_jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     workspace_id uuid NOT NULL,
     options jsonb,
-    kind text DEFAULT 'vectorize'::text NOT NULL
+    kind text DEFAULT 'vectorize'::text NOT NULL,
+    embedding_space_id uuid,
+    workspace_profile_generation bigint,
+    CONSTRAINT document_processing_jobs_embedding_profile_fence_check CHECK ((((kind = 'embedding_profile'::text) AND (embedding_space_id IS NOT NULL) AND (workspace_profile_generation IS NOT NULL)) OR ((kind <> 'embedding_profile'::text) AND (embedding_space_id IS NULL) AND (workspace_profile_generation IS NULL)))),
+    CONSTRAINT document_processing_jobs_workspace_profile_generation_check CHECK ((workspace_profile_generation >= 1))
 );
 
 
@@ -1371,6 +1437,34 @@ CREATE TABLE public.email_verification_tokens (
     request_ip text,
     request_user_agent text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: embedding_spaces; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.embedding_spaces (
+    id uuid NOT NULL,
+    identity_fingerprint text NOT NULL,
+    provider text NOT NULL,
+    endpoint_scope_fingerprint text NOT NULL,
+    model text NOT NULL,
+    dimensions integer NOT NULL,
+    distance_metric text NOT NULL,
+    normalization text NOT NULL,
+    document_task text,
+    query_task text,
+    vector_options jsonb DEFAULT '{}'::jsonb NOT NULL,
+    model_version text,
+    status text DEFAULT 'active'::text NOT NULL,
+    quarantine_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT embedding_spaces_check CHECK ((((status = 'active'::text) AND (quarantine_reason IS NULL)) OR ((status = 'quarantined'::text) AND (quarantine_reason IS NOT NULL)))),
+    CONSTRAINT embedding_spaces_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT embedding_spaces_distance_metric_check CHECK ((distance_metric = 'cosine'::text)),
+    CONSTRAINT embedding_spaces_status_check CHECK ((status = ANY (ARRAY['active'::text, 'quarantined'::text])))
 );
 
 
@@ -1475,7 +1569,8 @@ CREATE TABLE public.ingestion_settings (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     pending_embedding_model text,
-    document_enrichment_enabled boolean DEFAULT false NOT NULL
+    document_enrichment_enabled boolean DEFAULT false NOT NULL,
+    revision bigint DEFAULT 1 NOT NULL
 );
 
 
@@ -1965,6 +2060,70 @@ CREATE TABLE public.users (
 
 
 --
+-- Name: vector_index_checkpoints; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vector_index_checkpoints (
+    backend_key text NOT NULL,
+    workspace_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    acknowledged_sequence bigint DEFAULT 0 NOT NULL,
+    readiness text DEFAULT 'building'::text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT vector_index_checkpoints_acknowledged_sequence_check CHECK ((acknowledged_sequence >= 0)),
+    CONSTRAINT vector_index_checkpoints_readiness_check CHECK ((readiness = ANY (ARRAY['building'::text, 'ready'::text, 'stale'::text, 'unavailable'::text, 'exact_fallback'::text])))
+);
+
+
+--
+-- Name: vector_index_work; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.vector_index_work (
+    sequence bigint NOT NULL,
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    document_id uuid,
+    operation text NOT NULL,
+    canonical_version bigint NOT NULL,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status text DEFAULT 'queued'::text NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    claimed_at timestamp with time zone,
+    completed_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT vector_index_work_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT vector_index_work_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT vector_index_work_operation_check CHECK ((operation = ANY (ARRAY['upsert'::text, 'delete'::text, 'filter_update'::text]))),
+    CONSTRAINT vector_index_work_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'processing'::text, 'completed'::text, 'failed'::text, 'dead_letter'::text])))
+);
+
+
+--
+-- Name: vector_index_work_sequence_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.vector_index_work_sequence_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: vector_index_work_sequence_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_index_work.sequence;
+
+
+--
 -- Name: website_crawl_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1987,6 +2146,46 @@ CREATE TABLE public.website_crawl_jobs (
     policy_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     checkpoint_json jsonb DEFAULT '{}'::jsonb NOT NULL,
     resume_requested_at timestamp with time zone
+);
+
+
+--
+-- Name: workspace_embedding_profiles; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_embedding_profiles (
+    workspace_id uuid NOT NULL,
+    active_embedding_space_id uuid NOT NULL,
+    pending_embedding_space_id uuid,
+    generation bigint DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_embedding_profiles_check CHECK (((pending_embedding_space_id IS NULL) OR (pending_embedding_space_id <> active_embedding_space_id))),
+    CONSTRAINT workspace_embedding_profiles_generation_check CHECK ((generation >= 1))
+);
+
+
+--
+-- Name: workspace_embedding_transitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_embedding_transitions (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    source_embedding_space_id uuid NOT NULL,
+    target_embedding_space_id uuid NOT NULL,
+    generation bigint NOT NULL,
+    status text NOT NULL,
+    failure_reason text,
+    cleanup_after timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone,
+    CONSTRAINT workspace_embedding_transitions_check CHECK ((source_embedding_space_id <> target_embedding_space_id)),
+    CONSTRAINT workspace_embedding_transitions_check1 CHECK ((((status = ANY (ARRAY['blocked'::text, 'quarantined'::text, 'failed'::text])) AND (failure_reason IS NOT NULL)) OR (status <> ALL (ARRAY['blocked'::text, 'quarantined'::text, 'failed'::text])))),
+    CONSTRAINT workspace_embedding_transitions_check2 CHECK ((((status = ANY (ARRAY['cancelled'::text, 'promoted'::text, 'failed'::text])) AND (completed_at IS NOT NULL)) OR (status <> ALL (ARRAY['cancelled'::text, 'promoted'::text, 'failed'::text])))),
+    CONSTRAINT workspace_embedding_transitions_generation_check CHECK ((generation >= 1)),
+    CONSTRAINT workspace_embedding_transitions_status_check CHECK ((status = ANY (ARRAY['building'::text, 'blocked'::text, 'quarantined'::text, 'cancelled'::text, 'promoted'::text, 'failed'::text])))
 );
 
 
@@ -2199,6 +2398,13 @@ ALTER TABLE ONLY public.chunks ATTACH PARTITION public.chunks_p9 FOR VALUES WITH
 
 
 --
+-- Name: vector_index_work sequence; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work ALTER COLUMN sequence SET DEFAULT nextval('public.vector_index_work_sequence_seq'::regclass);
+
+
+--
 -- Name: abuse_control_entries abuse_control_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2356,6 +2562,14 @@ ALTER TABLE ONLY public.bootstrap_greeting_cache
 
 ALTER TABLE ONLY public.bootstrap_greeting_cache
     ADD CONSTRAINT bootstrap_greeting_cache_workspace_agent_fingerprint_key UNIQUE (workspace_id, agent_id, fingerprint);
+
+
+--
+-- Name: chunk_embeddings chunk_embeddings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings
+    ADD CONSTRAINT chunk_embeddings_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
 
 
 --
@@ -2783,14 +2997,6 @@ ALTER TABLE ONLY public.directive_states
 
 
 --
--- Name: document_processing_jobs document_processing_jobs_document_id_document_revision_kind_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.document_processing_jobs
-    ADD CONSTRAINT document_processing_jobs_document_id_document_revision_kind_key UNIQUE (document_id, document_revision, kind);
-
-
---
 -- Name: document_processing_jobs document_processing_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2836,6 +3042,22 @@ ALTER TABLE ONLY public.email_verification_tokens
 
 ALTER TABLE ONLY public.email_verification_tokens
     ADD CONSTRAINT email_verification_tokens_token_hash_key UNIQUE (token_hash);
+
+
+--
+-- Name: embedding_spaces embedding_spaces_identity_fingerprint_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.embedding_spaces
+    ADD CONSTRAINT embedding_spaces_identity_fingerprint_key UNIQUE (identity_fingerprint);
+
+
+--
+-- Name: embedding_spaces embedding_spaces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.embedding_spaces
+    ADD CONSTRAINT embedding_spaces_pkey PRIMARY KEY (id);
 
 
 --
@@ -3159,11 +3381,67 @@ ALTER TABLE ONLY public.users
 
 
 --
+-- Name: vector_index_checkpoints vector_index_checkpoints_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_checkpoints
+    ADD CONSTRAINT vector_index_checkpoints_pkey PRIMARY KEY (backend_key, workspace_id, embedding_space_id);
+
+
+--
+-- Name: vector_index_work vector_index_work_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work
+    ADD CONSTRAINT vector_index_work_id_key UNIQUE (id);
+
+
+--
+-- Name: vector_index_work vector_index_work_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work
+    ADD CONSTRAINT vector_index_work_pkey PRIMARY KEY (sequence);
+
+
+--
+-- Name: vector_index_work vector_index_work_workspace_id_embedding_space_id_chunk_id__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work
+    ADD CONSTRAINT vector_index_work_workspace_id_embedding_space_id_chunk_id__key UNIQUE (workspace_id, embedding_space_id, chunk_id, canonical_version, operation);
+
+
+--
 -- Name: website_crawl_jobs website_crawl_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.website_crawl_jobs
     ADD CONSTRAINT website_crawl_jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_embedding_profiles workspace_embedding_profiles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_profiles
+    ADD CONSTRAINT workspace_embedding_profiles_pkey PRIMARY KEY (workspace_id);
+
+
+--
+-- Name: workspace_embedding_transitions workspace_embedding_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_transitions
+    ADD CONSTRAINT workspace_embedding_transitions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_embedding_transitions workspace_embedding_transitions_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_transitions
+    ADD CONSTRAINT workspace_embedding_transitions_workspace_id_id_key UNIQUE (workspace_id, id);
 
 
 --
@@ -4050,6 +4328,20 @@ CREATE INDEX idx_assistant_answer_triage_workspace_state ON public.assistant_ans
 
 
 --
+-- Name: idx_chunk_embeddings_chunk; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_chunk_embeddings_chunk ON public.chunk_embeddings USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: idx_chunk_embeddings_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_chunk_embeddings_space ON public.chunk_embeddings USING btree (workspace_id, embedding_space_id);
+
+
+--
 -- Name: idx_connector_configs_connector_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4131,6 +4423,20 @@ CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree 
 --
 
 CREATE INDEX idx_document_processing_jobs_claim ON public.document_processing_jobs USING btree (status, available_at, kind, created_at);
+
+
+--
+-- Name: idx_document_processing_jobs_embedding_profile; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_document_processing_jobs_embedding_profile ON public.document_processing_jobs USING btree (document_id, document_revision, kind, embedding_space_id, workspace_profile_generation) WHERE (kind = 'embedding_profile'::text);
+
+
+--
+-- Name: idx_document_processing_jobs_revision_phase; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_document_processing_jobs_revision_phase ON public.document_processing_jobs USING btree (document_id, document_revision, kind) WHERE (kind <> 'embedding_profile'::text);
 
 
 --
@@ -4505,6 +4811,27 @@ CREATE INDEX idx_usage_events_workspace_occurred_at ON public.usage_events USING
 
 
 --
+-- Name: idx_vector_index_checkpoints_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vector_index_checkpoints_space ON public.vector_index_checkpoints USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: idx_vector_index_work_chunk_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vector_index_work_chunk_version ON public.vector_index_work USING btree (workspace_id, embedding_space_id, chunk_id, canonical_version DESC);
+
+
+--
+-- Name: idx_vector_index_work_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_vector_index_work_claim ON public.vector_index_work USING btree (status, available_at, sequence);
+
+
+--
 -- Name: idx_website_crawl_jobs_claim; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4523,6 +4850,34 @@ CREATE INDEX idx_website_crawl_jobs_source_status ON public.website_crawl_jobs U
 --
 
 CREATE INDEX idx_website_crawl_jobs_workspace_created ON public.website_crawl_jobs USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_workspace_embedding_profiles_active_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_embedding_profiles_active_space ON public.workspace_embedding_profiles USING btree (active_embedding_space_id);
+
+
+--
+-- Name: idx_workspace_embedding_profiles_pending_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_embedding_profiles_pending_space ON public.workspace_embedding_profiles USING btree (pending_embedding_space_id) WHERE (pending_embedding_space_id IS NOT NULL);
+
+
+--
+-- Name: idx_workspace_embedding_transitions_one_live; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_workspace_embedding_transitions_one_live ON public.workspace_embedding_transitions USING btree (workspace_id) WHERE (status = ANY (ARRAY['building'::text, 'blocked'::text, 'quarantined'::text]));
+
+
+--
+-- Name: idx_workspace_embedding_transitions_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workspace_embedding_transitions_target ON public.workspace_embedding_transitions USING btree (workspace_id, target_embedding_space_id);
 
 
 --
@@ -5471,6 +5826,13 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 
 
 --
+-- Name: embedding_spaces embedding_spaces_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER embedding_spaces_identity_immutable BEFORE UPDATE ON public.embedding_spaces FOR EACH ROW EXECUTE FUNCTION public.reject_embedding_space_identity_mutation();
+
+
+--
 -- Name: agent_skills trg_agent_skills_target_reference; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -5728,6 +6090,22 @@ ALTER TABLE ONLY public.bootstrap_greeting_cache
 
 
 --
+-- Name: chunk_embeddings chunk_embeddings_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings
+    ADD CONSTRAINT chunk_embeddings_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: chunk_embeddings chunk_embeddings_workspace_id_chunk_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings
+    ADD CONSTRAINT chunk_embeddings_workspace_id_chunk_id_fkey FOREIGN KEY (workspace_id, chunk_id) REFERENCES public.chunks(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: chunks chunks_document_id_fkey1; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5837,6 +6215,14 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.document_processing_jobs
     ADD CONSTRAINT document_processing_jobs_document_id_fkey FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: document_processing_jobs document_processing_jobs_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_processing_jobs
+    ADD CONSTRAINT document_processing_jobs_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
 
 
 --
@@ -6280,6 +6666,38 @@ ALTER TABLE ONLY public.usage_events
 
 
 --
+-- Name: vector_index_checkpoints vector_index_checkpoints_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_checkpoints
+    ADD CONSTRAINT vector_index_checkpoints_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: vector_index_checkpoints vector_index_checkpoints_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_checkpoints
+    ADD CONSTRAINT vector_index_checkpoints_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: vector_index_work vector_index_work_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work
+    ADD CONSTRAINT vector_index_work_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: vector_index_work vector_index_work_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.vector_index_work
+    ADD CONSTRAINT vector_index_work_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: website_crawl_jobs website_crawl_jobs_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6301,6 +6719,54 @@ ALTER TABLE ONLY public.website_crawl_jobs
 
 ALTER TABLE ONLY public.website_crawl_jobs
     ADD CONSTRAINT website_crawl_jobs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_embedding_profiles workspace_embedding_profiles_active_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_profiles
+    ADD CONSTRAINT workspace_embedding_profiles_active_embedding_space_id_fkey FOREIGN KEY (active_embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: workspace_embedding_profiles workspace_embedding_profiles_pending_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_profiles
+    ADD CONSTRAINT workspace_embedding_profiles_pending_embedding_space_id_fkey FOREIGN KEY (pending_embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: workspace_embedding_profiles workspace_embedding_profiles_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_profiles
+    ADD CONSTRAINT workspace_embedding_profiles_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_embedding_transitions workspace_embedding_transitions_source_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_transitions
+    ADD CONSTRAINT workspace_embedding_transitions_source_embedding_space_id_fkey FOREIGN KEY (source_embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: workspace_embedding_transitions workspace_embedding_transitions_target_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_transitions
+    ADD CONSTRAINT workspace_embedding_transitions_target_embedding_space_id_fkey FOREIGN KEY (target_embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: workspace_embedding_transitions workspace_embedding_transitions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_embedding_transitions
+    ADD CONSTRAINT workspace_embedding_transitions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

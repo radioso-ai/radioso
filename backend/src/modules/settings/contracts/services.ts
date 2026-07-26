@@ -1,4 +1,9 @@
-import type { IngestionSettingsInput, IngestionSettingsRecord, ValidatedIngestionSettingsInput } from "./ingestion.js";
+import type {
+  EmbeddingModelId,
+  IngestionSettingsRecord,
+  IngestionSettingsWriteInput,
+  ValidatedIngestionSettingsInput,
+} from "./ingestion.js";
 import type {
   WorkspaceLlmCapability,
   WorkspaceLlmCapabilityPreference,
@@ -8,13 +13,68 @@ import type { MetadataFieldSuggestion } from "./retrieval.js";
 
 export interface IngestionSettingsRepositoryPort {
   findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null>;
+  findVersionedByWorkspaceId?(workspaceId: string): Promise<{
+    settings: IngestionSettingsRecord;
+    revision: string;
+  } | null>;
   upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord>;
-  clearPendingEmbeddingModel?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
+  clearPendingEmbeddingModel?(
+    workspaceId: string,
+    expectedPendingEmbeddingModel: NonNullable<
+      IngestionSettingsRecord["pendingEmbeddingModel"]
+    >,
+    expectedRevision: string,
+  ): Promise<IngestionSettingsRecord | null>;
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 
 export interface WorkspaceReprocessPort {
   reprocessWorkspace(workspaceId: string, options?: { documentEnrichmentOverride?: "on" | "off" } | null): Promise<unknown>;
+}
+
+export type EmbeddingModelTransitionStatus =
+  | "idle"
+  | "building"
+  | "blocked"
+  | "quarantined"
+  | "failed"
+  | "promoted"
+  | "cancelled";
+
+export type EmbeddingModelTransitionReadiness =
+  | "building"
+  | "ready"
+  | "blocked"
+  | "unavailable";
+
+export type EmbeddingModelTransitionFailureReason =
+  | "validation_failed"
+  | "backfill_retry_exhausted"
+  | "embedding_contract_drift"
+  | "terminal_failure";
+
+/**
+ * Settings owns model selection but must not know embedding-space or transition
+ * identifiers. Application composition adapts this model-level port to the
+ * internal generation-fenced transition coordinator.
+ */
+export interface EmbeddingModelTransitionState {
+  activeModel: string;
+  pendingModel: EmbeddingModelId | null;
+  status: EmbeddingModelTransitionStatus;
+  readiness: EmbeddingModelTransitionReadiness | null;
+  failureReason: EmbeddingModelTransitionFailureReason | null;
+}
+
+export interface EmbeddingModelTransitionPort {
+  getState(workspaceId: string): Promise<EmbeddingModelTransitionState | null>;
+  start(input: {
+    workspaceId: string;
+    activeModel: string;
+    targetModel: EmbeddingModelId;
+  }): Promise<EmbeddingModelTransitionState>;
+  cancel(workspaceId: string): Promise<EmbeddingModelTransitionState>;
+  reconcile(workspaceId: string): Promise<EmbeddingModelTransitionState | null>;
 }
 
 /**
@@ -40,8 +100,8 @@ export interface RetrievalMetadataFieldSourcePort {
 export interface IngestionSettingsPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
   cancelPendingEmbeddingModel?(workspaceId: string): Promise<IngestionSettingsRecord>;
-  listSupportedEmbeddingModels?(): readonly IngestionSettingsRecord["embeddingModel"][];
-  updateForWorkspace(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord>;
+  listSupportedEmbeddingModels?(): readonly EmbeddingModelId[];
+  updateForWorkspace(workspaceId: string, input: IngestionSettingsWriteInput): Promise<IngestionSettingsRecord>;
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 

@@ -25,6 +25,9 @@ import {
 } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 import { hathaRajaYogaCandidates } from "../fixtures/retrievalSenseCorpus.js";
 
+const embeddingSpace = { id: "space-active", dimensions: 3, distanceMetric: "cosine" as const };
+const emptyChunkHydrator = { async hydrate() { return []; } };
+
 const baseCandidateRetrievalInput = (documentScope?: string[]) => ({
   request: {
     workspaceId: "workspace-1",
@@ -272,10 +275,14 @@ describe("retrieval pipeline stages", () => {
       metadata: { dateFrom: "2026-07-03", dateTo: "2026-07-03" },
     };
     const stage = new CandidateRetrievalStageService(
-      { async embedChunks() { return [[0.1, 0.2]]; } } as never,
+      {
+        async embedQueries() {
+          return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
+        },
+      },
       { async search() { return []; } } as never,
       { async search() { return []; } } as never,
-      undefined,
+      emptyChunkHydrator,
       {
         async findUpcoming(input) {
           temporalCalls.push(input);
@@ -322,10 +329,14 @@ describe("retrieval pipeline stages", () => {
   it("does not request temporal candidates when structured lookup is disabled", async () => {
     let temporalCalls = 0;
     const stage = new CandidateRetrievalStageService(
-      { async embedChunks() { return [[0.1, 0.2]]; } } as never,
+      {
+        async embedQueries() {
+          return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
+        },
+      },
       { async search() { return []; } } as never,
       { async search() { return []; } } as never,
-      undefined,
+      emptyChunkHydrator,
       {
         async findUpcoming() {
           temporalCalls += 1;
@@ -1567,20 +1578,23 @@ describe("retrieval pipeline stages", () => {
     const lexicalQueries: string[] = [];
     const retrievalStage = new CandidateRetrievalStageService(
       {
-        async embedChunks(chunks: string[]) {
-          return chunks.map((_: string, index: number) => [index + 1]);
+        async embedQueries(input) {
+          return {
+            space: embeddingSpace,
+            vectors: input.texts.map((_: string, index: number) => [index + 1]),
+          };
         },
-      } as never,
+      },
       {
         async search(input) {
-          vectorQueries.push(String(input.queryEmbedding[0]));
+          vectorQueries.push(String(input.queryVector[0]));
           return [
             {
-              chunkId: `semantic-${input.queryEmbedding[0]}`,
-              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
-              title: input.queryEmbedding[0] === 1 ? "Narayani" : "Arudra",
-              content: "profile",
-              similarity: 0.9,
+              chunkId: `semantic-${input.queryVector[0]}`,
+              documentId: `doc-semantic-${input.queryVector[0]}`,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
             },
           ];
         },
@@ -1597,6 +1611,17 @@ describe("retrieval pipeline stages", () => {
               similarity: 0.8,
             },
           ];
+        },
+      },
+      {
+        async hydrate(input) {
+          return input.candidates.map((candidate) => ({
+            chunkId: candidate.chunkId,
+            documentId: candidate.documentId ?? `doc-${candidate.chunkId}`,
+            title: candidate.chunkId,
+            content: "profile",
+            similarity: candidate.score,
+          }));
         },
       },
     );
@@ -1654,19 +1679,19 @@ describe("retrieval pipeline stages", () => {
     );
     const retrievalStage = new CandidateRetrievalStageService(
       {
-        async embedChunks() {
-          return [[1, 0, 0]];
+        async embedQueries() {
+          return { space: embeddingSpace, vectors: [[1, 0, 0]] };
         },
-      } as never,
+      },
       {
-        async search() {
+        async search(input) {
           return [
             {
               chunkId: "c1",
               documentId: "d1",
-              title: "Summer Retreat",
-              content: "Summer retreat in Estonia costs 290 EUR.",
-              similarity: 0.6,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.6,
             },
           ];
         },
@@ -1674,6 +1699,17 @@ describe("retrieval pipeline stages", () => {
       {
         async search() {
           return [];
+        },
+      },
+      {
+        async hydrate(input) {
+          return input.candidates.map((candidate) => ({
+            chunkId: candidate.chunkId,
+            documentId: candidate.documentId ?? `doc-${candidate.chunkId}`,
+            title: "Summer Retreat",
+            content: "Summer retreat in Estonia costs 290 EUR.",
+            similarity: candidate.score,
+          }));
         },
       },
     );

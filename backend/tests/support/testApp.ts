@@ -74,11 +74,21 @@ import { RetrievalPipelineService } from "../../src/modules/retrieval/services/r
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { RetrievalAnswerService } from "../../src/modules/retrieval/services/retrievalAnswerService.js";
 import { RetrievalSearchService } from "../../src/modules/retrieval/services/retrievalSearchService.js";
-import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import {
+  EmbeddingGenerationService,
+  type EmbeddingGenerationGateway,
+} from "../../src/modules/embeddingProfiles/public.js";
 import { streamResult, textResult } from "./llmStubs.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
+import type {
+  EmbeddingModelTransitionPort,
+  EmbeddingModelTransitionState,
+} from "../../src/modules/settings/contracts/services.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import type { RetrievedChunk, VectorSearchPort } from "../../src/modules/retrieval/public.js";
+import type { QueryEmbeddingPort } from "../../src/modules/embeddingProfiles/contracts/embeddingConsumers.js";
+import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/domain/vectorAdapter.js";
+import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/infra/chunkCandidateHydrator.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
@@ -224,6 +234,10 @@ import {
   InMemoryRoutineDefinitionRepository,
 } from "./fakes.js";
 import { InMemoryOrganizationProvisioner } from "./organizationProvisioner.js";
+import {
+  bindClusteringEmbeddingPort,
+  bindDocumentEmbeddingPort,
+} from "./embeddingPorts.js";
 
 export const createTestEnv = (): Env => ({
   NODE_ENV: "test",
@@ -616,7 +630,7 @@ export const createTestDependencies = (overrides: {
   const messageRepository = new InMemoryMessageRepository();
   conversationRepository.setMessageRepository(messageRepository);
   const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();
-  const embeddingGateway: EmbeddingGateway = {
+  const embeddingGateway: EmbeddingGenerationGateway = {
     async embedTexts(texts: string[]): Promise<number[][]> {
       return texts.map((text) => [text.length, text.split(" ").length, 1]);
     },
@@ -695,13 +709,59 @@ export const createTestDependencies = (overrides: {
   };
   const lexicalSearch = overrides.lexicalSearch ?? defaultLexicalSearch;
   let currentQueryText = "";
-  const embeddingService = new EmbeddingService({
+  const embeddingService = new EmbeddingGenerationService({
     async embedTexts(texts: string[]): Promise<number[][]> {
       currentQueryText = texts[0] ?? "";
       return embeddingGateway.embedTexts(texts);
     },
   });
-  const chunkingProvider = new ChonkieChunkingProvider(embeddingService);
+  const queryEmbeddings: QueryEmbeddingPort = {
+    async embedQueries(request) {
+      const vectors = await embeddingService.embedTexts([...request.texts], {
+        usageContext: request.usageContext,
+      });
+      return {
+        space: {
+          id: "test-space",
+          dimensions: vectors[0]?.length ?? 0,
+          distanceMetric: "cosine",
+        },
+        vectors,
+      };
+    },
+  };
+  let hydratedVectorRows = new Map<string, RetrievedChunk>();
+  const vectorCandidates: VectorCandidateSearchPort = {
+    async search(input) {
+      const rows = await vectorSearch.search({
+        workspaceId: input.workspaceId,
+        queryEmbedding: input.queryVector,
+        topK: input.topK,
+        similarityThreshold: input.minimumScore,
+        metadataFilter: input.filter.metadataContains,
+        sourceFilter: input.filter.source,
+      });
+      hydratedVectorRows = new Map(rows.map((row) => [row.chunkId, row]));
+      return rows.map((row) => ({
+        chunkId: row.chunkId,
+        documentId: row.documentId,
+        embeddingSpaceId: input.space.id,
+        version: "0",
+        score: row.similarity,
+      }));
+    },
+  };
+  const chunkHydrator: ChunkCandidateHydratorPort = {
+    async hydrate({ candidates }) {
+      return candidates.flatMap((candidate) => {
+        const row = hydratedVectorRows.get(candidate.chunkId);
+        return row ? [row] : [];
+      });
+    },
+  };
+  const chunkingProvider = new ChonkieChunkingProvider(
+    bindClusteringEmbeddingPort(embeddingService),
+  );
   const chunkingStrategyRegistry = new ChunkingStrategyRegistry([
     new FixedWindowChunkingStrategy(chunkingProvider),
     new StructuredSemanticChunkingStrategy(chunkingProvider),
@@ -773,18 +833,66 @@ export const createTestDependencies = (overrides: {
     documentSourceRepository,
     auditService,
   );
+  const embeddingTransitionStates = new Map<
+    string,
+    EmbeddingModelTransitionState
+  >();
+  const embeddingTransitions: EmbeddingModelTransitionPort = {
+    async getState(workspaceId) {
+      return embeddingTransitionStates.get(workspaceId) ?? null;
+    },
+    async start({ workspaceId, activeModel, targetModel }) {
+      const { documentCount } = await documentRepository.summarizeWorkspace(
+        workspaceId,
+      );
+      const transition: EmbeddingModelTransitionState = documentCount > 0
+        ? {
+            activeModel,
+            pendingModel: targetModel,
+            status: "building",
+            readiness: "building",
+            failureReason: null,
+          }
+        : {
+            activeModel: targetModel,
+            pendingModel: null,
+            status: "promoted",
+            readiness: "ready",
+            failureReason: null,
+          };
+      embeddingTransitionStates.set(workspaceId, transition);
+      return transition;
+    },
+    async cancel(workspaceId) {
+      const settings = await ingestionSettingsRepository.findByWorkspaceId(
+        workspaceId,
+      );
+      const transition: EmbeddingModelTransitionState = {
+        activeModel:
+          settings?.embeddingModel ?? "text-embedding-3-small",
+        pendingModel: null,
+        status: "cancelled",
+        readiness: null,
+        failureReason: null,
+      };
+      embeddingTransitionStates.set(workspaceId, transition);
+      return transition;
+    },
+    async reconcile(workspaceId) {
+      return embeddingTransitionStates.get(workspaceId) ?? null;
+    },
+  };
   const ingestionSettingsService = new IngestionSettingsService(
     ingestionSettingsRepository,
     auditService,
-    documentRepository,
     undefined,
-    workspaceIngestionReprocessService,
+    embeddingTransitions,
   );
   const documentSourceContentService = new DocumentSourceContentService(documentStorage);
   const documentProcessingService = new DocumentProcessingService(
     documentRepository,
     chunkRepository,
-    embeddingService,
+    bindDocumentEmbeddingPort(embeddingService),
     auditService,
     ingestionSettingsService,
     chunkingStrategyRegistry,
@@ -883,8 +991,8 @@ export const createTestDependencies = (overrides: {
   };
   const retrievalPipeline = new RetrievalPipelineService(
     createSystemRetrievalDefaultsProvider(),
-    embeddingService,
-    vectorSearch,
+    queryEmbeddings,
+    vectorCandidates,
     lexicalSearch,
     new ConversationContextService(),
     new QueryRewriteService(queryRewriteGateway, triggerAnalysisGateway),
@@ -895,8 +1003,8 @@ export const createTestDependencies = (overrides: {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(telemetryService),
     undefined,
-    ingestionSettingsService,
     createRetrievalSkillSettingsResolver(),
+    chunkHydrator,
   );
   const documentSearchService = new DocumentSearchService(
     documentRepository,

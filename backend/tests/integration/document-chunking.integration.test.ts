@@ -7,7 +7,6 @@ import { DocumentProcessingService } from "../../src/modules/documents/services/
 import type { DocumentEnrichmentStagePort } from "../../src/modules/documents/services/documentEnrichmentService.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 import { createAuditService } from "../support/fakes.js";
@@ -17,6 +16,7 @@ import {
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
 import { createTestApp, issueTestToken } from "../support/testApp.js";
+import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
@@ -208,7 +208,7 @@ Chunking behavior.`,
     const service = new DocumentProcessingService(
       documentRepository,
       chunkRepository,
-      new EmbeddingService({
+      createDocumentEmbeddingPort({
         async embedTexts(texts: string[]): Promise<number[][]> {
           return texts.map(() => [1, 2, 3]);
         },
@@ -314,7 +314,7 @@ Chunking behavior.`,
     const service = new DocumentProcessingService(
       documentRepository,
       chunkRepository,
-      new EmbeddingService({
+      createDocumentEmbeddingPort({
         async embedTexts(texts: string[]): Promise<number[][]> {
           return texts.map(() => [1, 2, 3]);
         },

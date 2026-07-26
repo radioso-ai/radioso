@@ -24,11 +24,15 @@ import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAn
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
-import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import {
+  EmbeddingGenerationService,
+  type EmbeddingGenerationGateway,
+} from "../../src/modules/embeddingProfiles/public.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { applyTestMigration, runAllTestMigrations } from "../support/databaseMigrations.js";
+import { bindDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -527,7 +531,7 @@ describeIfDatabase("persistence integration", () => {
     const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
-    const embeddingGateway: EmbeddingGateway = {
+    const embeddingGateway: EmbeddingGenerationGateway = {
       async embedTexts(texts: string[]): Promise<number[][]> {
         capturedTexts.push(...texts);
         return texts.map((text) =>
@@ -538,14 +542,14 @@ describeIfDatabase("persistence integration", () => {
 
     const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
     const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database.kysely), auditService);
-    const embeddingService = new EmbeddingService(embeddingGateway);
+    const embeddingService = new EmbeddingGenerationService(embeddingGateway);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
       jobRepository,
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        embeddingService,
+        bindDocumentEmbeddingPort(embeddingService),
         auditService,
         ingestionSettingsService,
         new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy(new ChonkieChunkingProvider())]),

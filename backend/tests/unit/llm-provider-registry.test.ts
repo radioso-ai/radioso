@@ -4,7 +4,19 @@ import { ModelRerankGateway, OpenAISemanticRerankGateway } from "../../src/modul
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import { OpenAIEmbeddingClient, OpenAITextGenerationClient } from "../../src/shared/infra/llm/openaiProvider.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
-import type { TextGenerationClient, TextGenerationRequest } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityConfig,
+  TextGenerationClient,
+  TextGenerationRequest,
+} from "../../src/shared/infra/llm/providerTypes.js";
+import {
+  endpointScopeFingerprint,
+} from "../../src/shared/infra/llm/embeddingProviderResolver.js";
+import type {
+  EmbeddingUsageEvent,
+  ModelUsageEvent,
+  UsageEventRecorder,
+} from "../../src/shared/domain/usageEventRecorder.js";
 import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import { captureModelCallTrace } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { streamResult, textResult } from "../support/llmStubs.js";
@@ -168,7 +180,7 @@ describe("LlmProviderRegistry", () => {
     );
   });
 
-  it("routes Gemini embedding models to Gemini with the storage vector width", async () => {
+  it("routes the catalogued Gemini model explicitly with its native vector width", async () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
       OPENAI_CHAT_MODEL: "gpt-5.2",
@@ -182,7 +194,9 @@ describe("LlmProviderRegistry", () => {
         body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
         signal: init?.signal,
       });
-      return Response.json({ embedding: { values: new Array(1536).fill(0.25) } });
+      return Response.json({
+        embedding: { values: [1, ...new Array(3071).fill(0)] },
+      });
     });
 
     const registry = new LlmProviderRegistry(config);
@@ -192,20 +206,185 @@ describe("LlmProviderRegistry", () => {
       provider: "gemini",
       model: "gemini-embedding-001",
     });
+    expect(registry.resolveEmbeddingModelBinding("gemini-embedding-001")).toEqual({
+      provider: "gemini",
+      endpointScopeFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     const embeddings = await registry.createEmbeddingGateway().embedTexts(["hello"], {
       model: "gemini-embedding-001",
     });
 
-    expect(embeddings).toEqual([new Array(1536).fill(0.25)]);
+    expect(embeddings).toEqual([[1, ...new Array(3071).fill(0)]]);
     expect(requests).toHaveLength(1);
     expect(requests[0]?.url).toContain("/gemini-embedding-001:embedContent");
     expect(requests[0]?.url).toContain("key=gemini-key");
     expect(requests[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(requests[0]?.body).toMatchObject({
       model: "models/gemini-embedding-001",
-      output_dimensionality: 1536,
+      outputDimensionality: 3072,
+      taskType: "RETRIEVAL_DOCUMENT",
       content: {
         parts: [{ text: "hello" }],
+      },
+    });
+  });
+
+  it("rejects malformed provider vectors through the production gateway", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      GEMINI_API_KEY: "gemini-key",
+    });
+    vi.stubGlobal("fetch", async () =>
+      Response.json({ embedding: { values: [1, 0] } }),
+    );
+
+    await expect(
+      new LlmProviderRegistry(config)
+        .createEmbeddingGateway()
+        .embedTexts(["hello"], { model: "gemini-embedding-001" }),
+    ).rejects.toThrow(
+      "dimensions 2 do not match expected dimensions 3072",
+    );
+  });
+
+  it("rejects caller dimensions that disagree with the catalog descriptor", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await expect(
+      new LlmProviderRegistry(config)
+        .createEmbeddingGateway()
+        .embedTexts(["hello"], {
+          model: "text-embedding-3-small",
+          dimensions: 3072,
+        }),
+    ).rejects.toThrow(
+      "requested dimensions 3072 do not match descriptor dimensions 1536",
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("records the routed provider identity rather than primary embedding metadata", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      GEMINI_API_KEY: "gemini-key",
+    });
+    const embeddingEvents: EmbeddingUsageEvent[] = [];
+    const recorder: UsageEventRecorder = {
+      async recordEmbedding(event) {
+        embeddingEvents.push(event);
+      },
+      async recordModelCall(_event: ModelUsageEvent) {},
+    };
+    vi.stubGlobal("fetch", async () =>
+      Response.json({
+        embedding: { values: [1, ...new Array(3071).fill(0)] },
+      }),
+    );
+
+    await new LlmProviderRegistry(config)
+      .createEmbeddingGateway(recorder)
+      .embedTexts(["hello"], {
+        model: "gemini-embedding-001",
+        provider: "gemini",
+      });
+
+    expect(embeddingEvents).toHaveLength(1);
+    expect(embeddingEvents[0]).toMatchObject({
+      provider: "gemini",
+      model: "gemini-embedding-001",
+    });
+    expect(embeddingEvents[0]?.idempotencyKey).toContain(
+      ":gemini:gemini-embedding-001:",
+    );
+  });
+
+  it("routes pinned embedding generation to the exact persisted endpoint scope", async () => {
+    const baseConfig = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+    });
+    const endpointA: LlmCapabilityConfig = {
+      capability: "embeddings",
+      provider: "openai-compatible",
+      model: "text-embedding-3-small",
+      apiKey: "endpoint-a-key",
+      baseUrl: "https://endpoint-a.example/v1",
+    };
+    const endpointB: LlmCapabilityConfig = {
+      ...endpointA,
+      apiKey: "endpoint-b-key",
+      baseUrl: "https://endpoint-b.example/v1",
+    };
+    const unavailableEndpoint: LlmCapabilityConfig = {
+      ...endpointA,
+      baseUrl: "https://unavailable.example/v1",
+    };
+    const encodedEmbedding = Buffer.alloc(1536 * Float32Array.BYTES_PER_ELEMENT);
+    encodedEmbedding.writeFloatLE(1, 0);
+    const requestedUrls: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      requestedUrls.push(
+        input instanceof Request ? input.url : String(input),
+      );
+      return Response.json({
+        data: [{
+          index: 0,
+          embedding: encodedEmbedding.toString("base64"),
+        }],
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      });
+    });
+
+    const registry = new LlmProviderRegistry({
+      ...baseConfig,
+      embeddings: endpointB,
+      embeddingProviderConfigs: [endpointB, endpointA],
+    });
+    const gateway = registry.createEmbeddingGateway();
+
+    await expect(gateway.embedTexts(["hello"], {
+      model: "text-embedding-3-small",
+      provider: "openai-compatible",
+      endpointScopeFingerprint: endpointScopeFingerprint(endpointA),
+    })).resolves.toHaveLength(1);
+    expect(requestedUrls).toEqual([
+      "https://endpoint-a.example/v1/embeddings",
+    ]);
+
+    await expect(gateway.embedTexts(["hello"], {
+      model: "text-embedding-3-small",
+      provider: "openai-compatible",
+      endpointScopeFingerprint: endpointScopeFingerprint(unavailableEndpoint),
+    })).rejects.toThrow("No configured embedding provider can serve model");
+    expect(requestedUrls).toHaveLength(1);
+  });
+
+  it("constructs a production fixed-input probe for transition orchestration", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      GEMINI_API_KEY: "gemini-key",
+    });
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        embedding: { values: [1, ...new Array(3071).fill(0)] },
+      });
+    });
+
+    const result = await new LlmProviderRegistry(config)
+      .createEmbeddingModelProbe("gemini-embedding-001", "gemini")
+      .probe();
+
+    expect(result.vectors).toHaveLength(1);
+    expect(requestBody).toMatchObject({
+      outputDimensionality: 3072,
+      taskType: "RETRIEVAL_DOCUMENT",
+      content: {
+        parts: [{ text: "Radioso embedding compatibility probe." }],
       },
     });
   });

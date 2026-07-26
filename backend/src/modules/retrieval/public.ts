@@ -21,7 +21,6 @@ export {
   type ChunkOutput,
 } from "./domain/chunking/chunkingStrategy.js";
 export type {
-  TextChunkingEmbeddingPort,
   TextChunkingMethod,
   TextChunkingProviderChunk,
   TextChunkingProviderPort,
@@ -114,17 +113,47 @@ export type {
   VectorIndexSearchInput,
 } from "./domain/vectorIndex.js";
 export type {
+  EmbeddingSpaceRef,
+  VectorAdapter,
+  VectorBackendStatus,
+  VectorCandidate,
+  VectorCandidateSearchInput,
+  VectorCandidateSearchPort,
+  VectorDistanceMetric,
+  VectorDimensionRange,
+  VectorFilterOperation,
+  VectorIndexAdministrationPort,
+  VectorIndexCapabilities,
+  VectorIndexCapabilityPort,
+  VectorIndexConsistency,
+  VectorIndexFilter as PortableVectorIndexFilter,
+  VectorIndexHealth as VectorAdapterHealth,
+  VectorIndexMutation,
+  VectorIndexMutationResult,
+  VectorIndexPayload,
+  VectorIndexRecord,
+  VectorIndexVersion,
+  VectorIndexWriteResult,
+  VectorIndexWriterPort,
+  VectorSearchMode,
+  VectorSpaceReadiness,
+} from "./domain/vectorAdapter.js";
+export {
+  compareVectorIndexVersions,
+  cosineSimilarity,
+  matchesVectorIndexFilter,
+  supportsEmbeddingSpace,
+  vectorDistanceMetrics,
+  vectorFilterOperations,
+  vectorSearchModes,
+} from "./domain/vectorAdapter.js";
+export type {
   RetrievedChunk,
   VectorSearchInput,
   VectorSearchPort,
 } from "./domain/vectorSearch.js";
-export {
-  ModelEmbeddingGateway,
-  OpenAIEmbeddingGateway,
-} from "./services/embeddingService.js";
 export { resolveContextSourceUrl } from "./services/contextSourceUrl.js";
 export { SharedAnswerInstructionBuilder } from "./services/sharedAnswerInstructionBuilder.js";
-export type { EmbeddingGateway, EmbeddingService } from "./services/embeddingService.js";
 export type { PromptBuildResult } from "./services/promptBuilder.js";
 export type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
 export type { SkillSettingsResolver } from "./services/retrievalContextStage.js";

@@ -4,12 +4,14 @@ import {
   type ModelToolCallingGateway,
 } from "../../agent-runtime/index.js";
 import {
-  ModelEmbeddingGateway,
   ModelQueryRewriteGateway,
   ModelRerankGateway,
   ModelTriggerAnalysisGateway,
   OpenAISemanticRerankGateway,
 } from "../../../modules/retrieval/public.js";
+import {
+  ModelEmbeddingGenerationGateway,
+} from "../../../modules/embeddingProfiles/public.js";
 import type { LlmCapabilityResolver } from "./capabilityResolver.js";
 import {
   ContextualChatGateway,
@@ -27,11 +29,28 @@ import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import { EmbeddingInferencePipelineService } from "./embeddingInferencePipeline.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
 import {
+  EmbeddingModelProbeService,
+} from "../../../modules/embeddingProfiles/services/embeddingVectorValidator.js";
+import type {
+  EmbeddingProviderImplementation,
+  EmbeddingProviderPort,
+} from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
+import {
+  EmbeddingClientProviderAdapter,
+} from "./embeddingProviderAdapter.js";
+import {
+  type EmbeddingCapabilityConfig,
+  type EmbeddingProviderBindingSelection,
+  endpointScopeFingerprint,
+  resolveEmbeddingProviderBinding,
+} from "./embeddingProviderResolver.js";
+import { getSupportedEmbeddingModel } from "./supportedEmbeddingModels.js";
+import {
   type EmbeddingClient,
+  type EmbeddingClientOptions,
   type EmbeddingResult,
   type LlmCapabilityConfig,
   type LlmCapabilityName,
-  type LlmProviderName,
   type LlmProviderMetadata,
   ProviderConfigurationError,
   type ResolvedLlmConfig,
@@ -43,27 +62,9 @@ export { ProviderConfigurationError } from "./providerTypes.js";
 const supportsEmbeddings = (config: LlmCapabilityConfig): boolean =>
   config.provider === "openai" || config.provider === "openai-compatible" || config.provider === "gemini";
 
-const providerFamilyForEmbeddingModel = (model: string): "gemini" | "openai-like" | undefined => {
-  if (model.startsWith("gemini-")) {
-    return "gemini";
-  }
-  if (model.startsWith("text-embedding-")) {
-    return "openai-like";
-  }
-  return undefined;
-};
-
-const configMatchesEmbeddingFamily = (config: LlmCapabilityConfig, family: "gemini" | "openai-like"): boolean => {
-  if (family === "gemini") {
-    return config.provider === "gemini";
-  }
-
-  return config.provider === "openai" || config.provider === "openai-compatible";
-};
-
 class RoutedEmbeddingClient implements EmbeddingClient {
   readonly metadata;
-  private readonly clients = new Map<LlmProviderName, EmbeddingClient>();
+  private readonly providers = new Map<string, EmbeddingProviderPort>();
 
   constructor(
     private readonly primaryConfig: LlmCapabilityConfig,
@@ -77,34 +78,55 @@ class RoutedEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
-    return this.clientForModel(options?.model ?? this.primaryConfig.model).embedTexts(texts, options);
+  async embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult> {
+    const model = options?.model ?? this.primaryConfig.model;
+    const descriptor = getSupportedEmbeddingModel(model);
+    if (
+      options?.dimensions !== undefined &&
+      options.dimensions !== descriptor.dimensions
+    ) {
+      throw new Error(
+        `requested dimensions ${options.dimensions} do not match descriptor dimensions ${descriptor.dimensions}`,
+      );
+    }
+    const binding = this.bindingForModel(model, {
+      provider: options?.provider,
+      endpointScopeFingerprint: options?.endpointScopeFingerprint,
+    });
+    return binding.provider.generate({
+      texts,
+      model,
+      dimensions: descriptor.dimensions,
+      purpose: options?.purpose ?? "retrieval_document",
+      provider: binding.config.provider,
+    });
   }
 
-  private clientForModel(model: string): EmbeddingClient {
-    const config = this.configForModel(model);
-    const existing = this.clients.get(config.provider);
+  private bindingForModel(
+    model: string,
+    requestedBinding?: EmbeddingProviderBindingSelection,
+  ): {
+    config: EmbeddingCapabilityConfig;
+    provider: EmbeddingProviderPort;
+  } {
+    const config = resolveEmbeddingProviderBinding(
+      model,
+      this.primaryConfig,
+      this.configs,
+      requestedBinding,
+    );
+    const cacheKey = endpointScopeFingerprint(config);
+    const existing = this.providers.get(cacheKey);
     if (existing) {
-      return existing;
+      return { config, provider: existing };
     }
 
-    const client = this.clientFactory(config);
-    this.clients.set(config.provider, client);
-    return client;
-  }
-
-  private configForModel(model: string): LlmCapabilityConfig {
-    const providerFamily = providerFamilyForEmbeddingModel(model);
-    if (!providerFamily || configMatchesEmbeddingFamily(this.primaryConfig, providerFamily)) {
-      return this.primaryConfig;
-    }
-
-    const config = this.configs.find((candidate) => configMatchesEmbeddingFamily(candidate, providerFamily));
-    if (config) {
-      return config;
-    }
-
-    throw new ProviderConfigurationError(`No configured embedding provider can serve model ${model}`);
+    const validatedProvider = new EmbeddingClientProviderAdapter(
+      this.clientFactory(config),
+      getSupportedEmbeddingModel,
+    );
+    this.providers.set(cacheKey, validatedProvider);
+    return { config, provider: validatedProvider };
   }
 }
 
@@ -244,7 +266,7 @@ export class LlmProviderRegistry {
   }
 
   createEmbeddingGateway(usageEventRecorder?: UsageEventRecorder) {
-    return new ModelEmbeddingGateway(
+    return new ModelEmbeddingGenerationGateway(
       new EmbeddingInferencePipelineService(
         new RoutedEmbeddingClient(
           this.config.embeddings,
@@ -252,22 +274,46 @@ export class LlmProviderRegistry {
           (config) => this.createEmbeddingClient(config),
         ),
         usageEventRecorder,
-        (model) => this.identifyEmbeddingModel(model),
+        (model, provider) => this.identifyEmbeddingModel(model, provider),
       ),
     );
   }
 
-  identifyEmbeddingModel(model: string): LlmProviderMetadata {
-    const providerFamily = providerFamilyForEmbeddingModel(model);
-    const config = !providerFamily || configMatchesEmbeddingFamily(this.config.embeddings, providerFamily)
-      ? this.config.embeddings
-      : this.config.embeddingProviderConfigs.find((candidate) =>
-          supportsEmbeddings(candidate) && configMatchesEmbeddingFamily(candidate, providerFamily),
-        );
+  createEmbeddingModelProbe(
+    model: string,
+    provider?: EmbeddingProviderImplementation,
+    requestedEndpointScopeFingerprint?: string,
+  ): { probe(): ReturnType<EmbeddingModelProbeService["probe"]> } {
+    const descriptor = getSupportedEmbeddingModel(model);
+    const config = resolveEmbeddingProviderBinding(
+      model,
+      this.config.embeddings,
+      this.config.embeddingProviderConfigs,
+      {
+        provider,
+        endpointScopeFingerprint: requestedEndpointScopeFingerprint,
+      },
+    );
+    const validatedProvider = new EmbeddingClientProviderAdapter(
+      this.createEmbeddingClient(config),
+      getSupportedEmbeddingModel,
+    );
+    const probeService = new EmbeddingModelProbeService(validatedProvider);
+    return {
+      probe: () => probeService.probe(descriptor),
+    };
+  }
 
-    if (!config) {
-      throw new ProviderConfigurationError(`No configured embedding provider can serve model ${model}`);
-    }
+  identifyEmbeddingModel(
+    model: string,
+    provider?: EmbeddingProviderImplementation,
+  ): LlmProviderMetadata {
+    const config = resolveEmbeddingProviderBinding(
+      model,
+      this.config.embeddings,
+      this.config.embeddingProviderConfigs,
+      { provider },
+    );
 
     return {
       capability: "embeddings",
@@ -276,14 +322,36 @@ export class LlmProviderRegistry {
     };
   }
 
-  canServeEmbeddingModel(model: string): boolean {
-    const providerFamily = providerFamilyForEmbeddingModel(model);
-    if (!providerFamily) {
-      return supportsEmbeddings(this.config.embeddings);
-    }
+  resolveEmbeddingModelBinding(
+    model: string,
+    provider?: EmbeddingProviderImplementation,
+  ): {
+    provider: EmbeddingProviderImplementation;
+    endpointScopeFingerprint: string;
+  } {
+    const config = resolveEmbeddingProviderBinding(
+      model,
+      this.config.embeddings,
+      this.config.embeddingProviderConfigs,
+      { provider },
+    );
+    return {
+      provider: config.provider,
+      endpointScopeFingerprint: endpointScopeFingerprint(config),
+    };
+  }
 
-    return [this.config.embeddings, ...this.config.embeddingProviderConfigs]
-      .some((config) => supportsEmbeddings(config) && configMatchesEmbeddingFamily(config, providerFamily));
+  canServeEmbeddingModel(model: string): boolean {
+    try {
+      resolveEmbeddingProviderBinding(
+        model,
+        this.config.embeddings,
+        this.config.embeddingProviderConfigs,
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private metadataFor(config: LlmCapabilityConfig): LlmProviderMetadata {

@@ -2,6 +2,7 @@ import OpenAI from "openai";
 
 import {
   type EmbeddingClient,
+  type EmbeddingClientOptions,
   type EmbeddingResult,
   type LlmCapabilityConfig,
   type LlmProviderName,
@@ -377,7 +378,7 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
     };
   }
 
-  async embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult> {
+  async embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult> {
     const startedAt = Date.now();
     const model = options?.model ?? this.config.model;
     try {
@@ -389,6 +390,11 @@ export class OpenAIEmbeddingClient implements EmbeddingClient {
             {
               model,
               input: texts,
+              ...(this.config.provider === "openai" &&
+              model.startsWith("text-embedding-3-") &&
+              options?.dimensions !== undefined
+                ? { dimensions: options.dimensions }
+                : {}),
             },
             { signal },
           ),

@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
 
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
+
+const embeddingSpace = { id: "space-active", dimensions: 1, distanceMetric: "cosine" as const };
+
+const hydrateSemanticCandidates = {
+  async hydrate(input: {
+    candidates: Array<{ chunkId: string; documentId?: string; score: number }>;
+  }) {
+    return input.candidates.map((candidate) => ({
+      chunkId: candidate.chunkId,
+      documentId: candidate.documentId ?? `doc-${candidate.chunkId}`,
+      title: candidate.chunkId,
+      content: "profile",
+      similarity: candidate.score,
+    }));
+  },
+};
 
 describe("candidate retrieval branches", () => {
   it("runs semantic and lexical retrieval separately for each active subquery", async () => {
@@ -9,21 +24,21 @@ describe("candidate retrieval branches", () => {
     const lexicalQueries: string[] = [];
     const lexicalPlans: unknown[] = [];
     const stage = new CandidateRetrievalStageService(
-      new EmbeddingService({
-        async embedTexts(texts) {
-          return texts.map((_, index) => [index + 1]);
+      {
+        async embedQueries(input) {
+          return { space: embeddingSpace, vectors: input.texts.map((_, index) => [index + 1]) };
         },
-      }),
+      },
       {
         async search(input) {
-          vectorQueries.push(Number(input.queryEmbedding[0]));
+          vectorQueries.push(Number(input.queryVector[0]));
           return [
             {
-              chunkId: `semantic-${input.queryEmbedding[0]}`,
-              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
-              title: input.queryEmbedding[0] === 1 ? "Narayani" : "Arudra",
-              content: "profile",
-              similarity: 0.9,
+              chunkId: `semantic-${input.queryVector[0]}`,
+              documentId: `doc-semantic-${input.queryVector[0]}`,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
             },
           ];
         },
@@ -43,6 +58,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
+      hydrateSemanticCandidates,
     );
 
     const result = await stage.execute({
@@ -137,22 +153,22 @@ describe("candidate retrieval branches", () => {
     const vectorQueries: number[] = [];
     const lexicalQueries: string[] = [];
     const stage = new CandidateRetrievalStageService(
-      new EmbeddingService({
-        async embedTexts(texts) {
-          embeddedTexts.push(texts);
-          return texts.map((_, index) => [index + 1]);
+      {
+        async embedQueries(input) {
+          embeddedTexts.push([...input.texts]);
+          return { space: embeddingSpace, vectors: input.texts.map((_, index) => [index + 1]) };
         },
-      }),
+      },
       {
         async search(input) {
-          vectorQueries.push(Number(input.queryEmbedding[0]));
+          vectorQueries.push(Number(input.queryVector[0]));
           return [
             {
-              chunkId: `semantic-${input.queryEmbedding[0]}`,
-              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
-              title: "topic",
-              content: "profile",
-              similarity: 0.9,
+              chunkId: `semantic-${input.queryVector[0]}`,
+              documentId: `doc-semantic-${input.queryVector[0]}`,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
             },
           ];
         },
@@ -171,6 +187,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
+      hydrateSemanticCandidates,
     );
 
     const subqueries = [
@@ -266,24 +283,31 @@ describe("candidate retrieval branches", () => {
     expect(result.retrievalBranches[3]?.semanticContexts).toEqual([]);
   });
 
-  it("uses the active workspace embedding model for semantic query embeddings", async () => {
-    const seenModels: Array<string | undefined> = [];
-    const seenVectorInputs: Array<{ model: string; dimensions: number }> = [];
-    const seenHydrationInputs: Array<{ model?: string; candidateIds: string[] }> = [];
+  it("passes the query embedding port's opaque active space through semantic search", async () => {
+    const seenEmbeddingInputs: Array<{ workspaceId: string; texts: readonly string[] }> = [];
+    const seenVectorInputs: Array<{ spaceId: string; vector: number[] }> = [];
+    const seenHydrationInputs: Array<{ candidateIds: string[] }> = [];
+    const space = { id: "space-active", dimensions: 2, distanceMetric: "cosine" as const };
     const stage = new CandidateRetrievalStageService(
-      new EmbeddingService({
-        async embedTexts(texts, options?: { model?: string }) {
-          seenModels.push(options?.model);
-          return texts.map(() => [1, 2]);
+      {
+        async embedQueries(input) {
+          seenEmbeddingInputs.push(input);
+          return { space, vectors: input.texts.map(() => [1, 2]) };
         },
-      }),
+      },
       {
         async search(input) {
           seenVectorInputs.push({
-            model: input.embeddingModel,
-            dimensions: input.queryEmbeddingDimensions,
+            spaceId: input.space.id,
+            vector: input.queryVector,
           });
-          return [{ chunkId: "chunk-1", documentId: "doc-1", score: 0.9 }];
+          return [{
+            chunkId: "chunk-1",
+            documentId: "doc-1",
+            embeddingSpaceId: input.space.id,
+            version: "1",
+            score: 0.9,
+          }];
         },
       },
       {
@@ -292,25 +316,8 @@ describe("candidate retrieval branches", () => {
         },
       },
       {
-        async getForWorkspace(workspaceId: string) {
-          return {
-            workspaceId,
-            chunkingStrategy: "fixed_window" as const,
-            fixedWindowChunkSize: 800,
-            fixedWindowChunkOverlap: 120,
-            structuredMinChunkSize: 24,
-            structuredMaxChunkSize: 220,
-            embeddingModel: "text-embedding-3-small" as const,
-            pendingEmbeddingModel: "text-embedding-3-large" as const,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          };
-        },
-      },
-      {
         async hydrate(input) {
           seenHydrationInputs.push({
-            model: input.embeddingModel,
             candidateIds: input.candidates.map((candidate) => candidate.chunkId),
           });
           return [{
@@ -401,9 +408,12 @@ describe("candidate retrieval branches", () => {
       continuityDecision: "updated",
     });
 
-    expect(seenModels).toEqual(["text-embedding-3-small"]);
-    expect(seenVectorInputs).toEqual([{ model: "text-embedding-3-small", dimensions: 2 }]);
-    expect(seenHydrationInputs).toEqual([{ model: "text-embedding-3-small", candidateIds: ["chunk-1"] }]);
+    expect(seenEmbeddingInputs).toEqual([expect.objectContaining({
+      workspaceId: "w1",
+      texts: ["account recovery"],
+    })]);
+    expect(seenVectorInputs).toEqual([{ spaceId: "space-active", vector: [1, 2] }]);
+    expect(seenHydrationInputs).toEqual([{ candidateIds: ["chunk-1"] }]);
     expect(result.rewrittenContexts).toEqual([
       {
         chunkId: "chunk-1",
@@ -421,22 +431,22 @@ describe("candidate retrieval branches", () => {
     const lexicalQueries: string[] = [];
     const lexicalPlans: unknown[] = [];
     const stage = new CandidateRetrievalStageService(
-      new EmbeddingService({
-        async embedTexts(texts) {
-          embeddedTexts.push(texts);
-          return texts.map((_, index) => [index + 1]);
+      {
+        async embedQueries(input) {
+          embeddedTexts.push([...input.texts]);
+          return { space: embeddingSpace, vectors: input.texts.map((_, index) => [index + 1]) };
         },
-      }),
+      },
       {
         async search(input) {
-          vectorQueries.push(Number(input.queryEmbedding[0]));
+          vectorQueries.push(Number(input.queryVector[0]));
           return [
             {
-              chunkId: `semantic-${input.queryEmbedding[0]}`,
-              documentId: `doc-semantic-${input.queryEmbedding[0]}`,
-              title: "Account recovery",
-              content: "recovery",
-              similarity: 0.9,
+              chunkId: `semantic-${input.queryVector[0]}`,
+              documentId: `doc-semantic-${input.queryVector[0]}`,
+              embeddingSpaceId: input.space.id,
+              version: "1",
+              score: 0.9,
             },
           ];
         },
@@ -456,6 +466,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
+      hydrateSemanticCandidates,
     );
 
     const baseInput = {

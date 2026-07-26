@@ -16,6 +16,7 @@ interface IngestionSettingsRow {
   embedding_model: IngestionSettingsRecord["embeddingModel"];
   pending_embedding_model: IngestionSettingsRecord["pendingEmbeddingModel"];
   document_enrichment_enabled: boolean;
+  revision: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -44,6 +45,7 @@ const ingestionSettingsColumns = [
   "embedding_model",
   "pending_embedding_model",
   "document_enrichment_enabled",
+  "revision",
   "created_at",
   "updated_at",
 ] as const;
@@ -59,6 +61,25 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
       .executeTakeFirst();
 
     return row ? mapSettings(row as IngestionSettingsRow) : null;
+  }
+
+  async findVersionedByWorkspaceId(workspaceId: string): Promise<{
+    settings: IngestionSettingsRecord;
+    revision: string;
+  } | null> {
+    const row = await this.db
+      .selectFrom("ingestion_settings")
+      .select(ingestionSettingsColumns)
+      .where("workspace_id", "=", workspaceId)
+      .executeTakeFirst();
+    if (!row) {
+      return null;
+    }
+    const versioned = row as IngestionSettingsRow;
+    return {
+      settings: mapSettings(versioned),
+      revision: String(versioned.revision),
+    };
   }
 
   async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
@@ -85,6 +106,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
           embedding_model: eb.ref("excluded.embedding_model"),
           pending_embedding_model: eb.ref("excluded.pending_embedding_model"),
           document_enrichment_enabled: eb.ref("excluded.document_enrichment_enabled"),
+          revision: eb("ingestion_settings.revision", "+", "1"),
           updated_at: currentTimestamp(),
         })),
       )
@@ -94,14 +116,23 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
     return mapSettings(row as IngestionSettingsRow);
   }
 
-  async clearPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+  async clearPendingEmbeddingModel(
+    workspaceId: string,
+    expectedPendingEmbeddingModel: NonNullable<
+      IngestionSettingsRecord["pendingEmbeddingModel"]
+    >,
+    expectedRevision: string,
+  ): Promise<IngestionSettingsRecord | null> {
     const row = await this.db
       .updateTable("ingestion_settings")
-      .set({
+      .set((eb) => ({
         pending_embedding_model: null,
+        revision: eb("revision", "+", "1"),
         updated_at: currentTimestamp(),
-      })
+      }))
       .where("workspace_id", "=", workspaceId)
+      .where("pending_embedding_model", "=", expectedPendingEmbeddingModel)
+      .where("revision", "=", expectedRevision)
       .returning(ingestionSettingsColumns)
       .executeTakeFirst();
 
@@ -158,6 +189,7 @@ export class IngestionSettingsRepository implements IngestionSettingsRepositoryP
         .set((eb) => ({
           embedding_model: eb.fn.coalesce("pending_embedding_model", "embedding_model"),
           pending_embedding_model: null,
+          revision: eb("revision", "+", "1"),
           updated_at: currentTimestamp(),
         }))
         .where("workspace_id", "=", workspaceId)

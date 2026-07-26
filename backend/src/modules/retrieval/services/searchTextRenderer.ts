@@ -24,6 +24,11 @@ export const renderSearchText = (input: {
   return parts.join("\n\n");
 };
 
+export const buildRetrievalText = (input: {
+  title: string;
+  content: string;
+}): string => renderSearchText(input);
+
 const renderMetadataText = (
   metadata: Record<string, unknown>,
   options: { includeUrl: boolean; includeMonthAliases: boolean },

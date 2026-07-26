@@ -47,6 +47,8 @@ class CanonicalPgVectorFixture {
   private readonly physicalToLogical = new Map<string, string>();
   private readonly versions = new Map<string, string>();
   private readonly accountId = randomUUID();
+  private readonly idPrefix = randomUUID().slice(0, 24);
+  private idCounter = 0;
 
   readonly adapter: VectorAdapter;
 
@@ -109,12 +111,17 @@ class CanonicalPgVectorFixture {
         search: async (input) => {
           const mapped = await this.mapSearch(input);
           const results = await this.pg.search.search(mapped);
-          return results.map((candidate) => ({
-            ...candidate,
-            chunkId: this.logical(candidate.chunkId),
-            documentId: this.logical(candidate.documentId),
-            embeddingSpaceId: this.logical(candidate.embeddingSpaceId),
-          }));
+          return results
+            .map((candidate) => ({
+              ...candidate,
+              chunkId: this.logical(candidate.chunkId),
+              documentId: this.logical(candidate.documentId),
+              embeddingSpaceId: this.logical(candidate.embeddingSpaceId),
+            }))
+            .sort((left, right) =>
+              right.score - left.score
+              || left.chunkId.localeCompare(right.chunkId),
+            );
         },
       },
     };
@@ -152,7 +159,7 @@ class CanonicalPgVectorFixture {
     if (existing) {
       return existing;
     }
-    const physical = randomUUID();
+    const physical = `${this.idPrefix}${(++this.idCounter).toString(16).padStart(12, "0")}`;
     this.logicalToPhysical.set(logical, physical);
     this.physicalToLogical.set(physical, logical.split(":").at(-1)!);
     return physical;

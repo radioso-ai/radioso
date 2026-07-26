@@ -31,6 +31,8 @@ describeIntegration("chunk embedding repository (Postgres)", () => {
   });
 
   beforeEach(async () => {
+    await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspaceId]);
+    await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]);
     await database.query("DELETE FROM workspace_embedding_transitions WHERE workspace_id = $1", [
       workspaceId,

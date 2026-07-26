@@ -709,6 +709,9 @@ export interface RoutineDefinition {
   lineage_id: string;
   name: string;
   status: string;
+  trigger_embedding: string | null;
+  trigger_embedding_hash: string | null;
+  trigger_embedding_model: string | null;
   updated_at: Generated<Timestamp>;
   version: number;
 }

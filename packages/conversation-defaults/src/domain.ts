@@ -21,6 +21,7 @@ export interface DirectiveOmission {
 
 /** Maps a matched Directive into a directive-sourced, response-lifespan SteeringRule. */
 export const directiveToSteeringRule = (match: DirectiveMatch): SteeringRule => ({
+  directiveName: match.directive.name,
   action: match.directive.action,
   condition: match.directive.condition.kind === "contextual"
     ? match.directive.condition.description

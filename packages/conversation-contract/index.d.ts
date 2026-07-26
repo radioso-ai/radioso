@@ -62,6 +62,10 @@ export type SteeringSource = "directive" | "skill" | "routine";
 export type SteeringLifespan = "response" | "session";
 
 export interface SteeringRule {
+  /** Stable per-turn identity when the rule originates from an authored directive. */
+  id?: string;
+  /** Authored directive display name for operator-facing trace resolution. */
+  directiveName?: string;
   action: string;
   condition?: string;
   priority?: number;
@@ -317,7 +321,18 @@ export interface RenderableTurn {
   /** Sources the turn grounded on; carries {@link ConversationCitation}[] when present. */
   citations?: unknown[];
   suggestions?: unknown[];
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> & {
+    directiveAdherence?: DirectiveAdherenceEntry[];
+  };
+}
+
+/** A grounded answer's self-reported result for one active directive steering rule. */
+export interface DirectiveAdherenceEntry {
+  directive: string;
+  ruleId: string;
+  satisfied: boolean;
+  /** Short operator-facing rationale; never source-document content. */
+  note: string;
 }
 
 export interface TurnStreamDelta {

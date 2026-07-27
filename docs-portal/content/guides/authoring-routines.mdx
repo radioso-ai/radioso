@@ -1,0 +1,101 @@
+---
+title: Author a routine
+description: Build a multi-step flow your agent runs across turns using the dashboard routine editor, then test it and publish it.
+---
+
+# Author a routine
+
+A directive steers one turn. A routine carries a flow across many turns: it can collect values, call a skill, branch on what happened, and finish or hand off to a person. Reach for a routine when a single reply is not enough — an order-issue intake, a lead capture, a refund check.
+
+You author routines in an agent's **Routines** settings. The list shows one row per routine, not one row per version. Choose **New routine** to start a draft, or select an existing routine to open the editor.
+
+## Two views of the same draft
+
+The editor has two views of one draft. Switching between them re-projects the same routine; it does not make a copy.
+
+- **Prose** is the primary view. You write the routine in plain language and drop inline chips where structure is needed.
+- **Form** is a strict, lower-level view. It exposes slot, step, transition, and terminal fields directly. Some shapes — more than one handoff, an activation gate — open in Form because Prose cannot show them.
+
+The graph the engine runs is compiled from the draft. You never draw or edit the graph by hand.
+
+![The Damaged delivery intake routine open in the Form editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
+
+## Set the routine header
+
+At the top of the editor, set four things:
+
+- **Name** — what the routine is called in settings.
+- **Priority** — the tie-breaker when more than one routine could start at once.
+- **Reentry** — what happens after the routine finishes in a conversation.
+- **Activation trigger** — a plain-language description of when the routine should start.
+
+The trigger is judged by meaning, not by a keyword list, so write it the way an operator would describe the task: "customer reports coffee that arrived damaged, stale, or wrong."
+
+### Reentry
+
+A routine can finish more than once in one conversation. Reentry decides whether a finished routine can start again:
+
+- **Once per conversation** — the default. After it completes, it does not start again in that conversation. Use it for one-time tasks like capturing a lead.
+- **Every time it matches** — the routine can start again after it completes. Use it for repeatable tasks like looking up an order.
+- **Let the assistant decide** — after it completes, the assistant reads the next message and chooses whether to resume the same run, start a fresh one, or leave it finished.
+
+The default stays safe: an existing routine keeps running once per conversation until you change this.
+
+## Collect values with slots
+
+A slot is a value the routine collects, such as an order number or an email. In Prose, type `@` to insert a variable chip like `@order_number`; it compiles to a typed slot. When a step asks for a slot, the routine waits on that step until the visitor provides the value, stores it under that name, then moves on. You do not need a branch to make a collection step wait.
+
+Each slot has a type — `text`, `number`, `boolean`, `email`, or `date` — shown on its chip. The type decides which comparisons are available later. Two flags live in the same chip menu (and in the Form view):
+
+- **Optional** — a slot is required by default, and a step that asks for it waits until it is filled. Mark it optional when the routine can finish without it.
+- **Editable after completion** — lets the visitor correct that value after the routine finishes, without running the whole thing again. Off by default; turn it on for values a visitor may reasonably want to fix, like an email.
+
+## Steps, skills, and branches
+
+Each line in Prose is a step, run in order. To add structure, type `@` for a value, `#` for a skill, or use the toolbar:
+
+- **Skill** (`#name`) — a capability the routine calls, such as `retrieve`, `email`, or `webhook_call`. The `#` menu lists only the skills the agent actually has. Click the chip to bind its inputs (to a fixed value or a slot the routine holds) and to assign its outputs to variables later steps can read. A skill the agent lacks shows as **unknown skill** so a typo is easy to spot.
+- **Condition** — a typed comparison on a slot, built from the **Condition** toolbar button. It is **decided in code**: the same comparison runs the same way every time. Use it for invariants — amounts, dates, whether a required value is present.
+- **Outcome** — a branch on the result status of the skill step before it (for example `failed`).
+- **End** and **Handoff** — chips on a branch line that finish the routine or escalate it to a person.
+- **Jump** — sends the routine to another named step. A backward jump must set a max count so the loop always ends.
+- **Approval** — a gate that pauses for a workspace member to choose one of several options, then continues down the branch for that choice.
+
+Every branch line shows how it is decided. A line with a condition chip or a capped loop is marked **Rule**. A line with only prose is marked **AI decides**: the model reads the description and uses judgment, which is what you want for fuzzy forks like "the customer seems unsure." The marker comes from the chips, not the words, so it reads the same in any language.
+
+The key point: chips for structure, prose for instruction. You never type curly braces or arrows.
+
+## Validate and publish
+
+Run **Validate** before you publish. It reports problems in author terms — a branch target that no longer exists, a step that cannot reach an end, a required skill input that nothing fills, a comparison on a slot that does not exist.
+
+Use **Save draft** to keep work in progress. Use **Publish** to create an immutable version the chat runtime runs. A routine has four statuses: `draft`, `published`, `superseded` (an older published version), and `archived` (retired). To change a published routine, choose **Edit revision** to open its draft, then publish again — the new version takes the same id in place and the previous one is marked superseded.
+
+Conversations already running keep the version they started on. If a routine is superseded or archived mid-flow, that visitor finishes on the pinned version; only new conversations consider the current published version.
+
+## Test a draft before publishing
+
+You do not have to publish to see how a routine behaves. On a saved draft, choose **Test draft** to slide out a live test chat over the editor. In it the draft is eligible to activate, runs turn by turn, and hands back to normal answering when it ends — exactly as it would after publishing.
+
+- **Test draft** runs the last *saved* draft, so save your edits first.
+- The test conversation is separate from your other test chats.
+- Only the draft you opened is made eligible; the agent's published routines still run alongside it.
+
+Draft routines are never eligible in real end-user conversations. Publishing is the only way to make a routine live.
+
+## Copy a routine as text
+
+Select the whole routine in Prose and copy it; Radioso puts it on the clipboard as portable routine markdown — the same deterministic format the [Portable routines API](/api/portable-routines) accepts. Paste it into a note, a document, or a message, and paste it back into the editor later to restore the chips, name, and trigger. The text carries names, not internal ids, so a skill the target agent lacks comes back as **unknown skill** for you to repoint.
+
+## Common failure modes
+
+- A routine never starts: the trigger describes the wrong situation, or a higher-priority routine claims the turn first. Test the trigger with **Test draft**.
+- A step does not wait for a value: it references the slot as literal text instead of an `@` chip. Insert the chip so the step compiles to a real slot.
+- A backward jump fails validation: give it a max count so the loop is bounded.
+- **Test draft** shows stale behavior: it runs the last saved draft. Save, then test again.
+
+## Read next
+
+- [Portable routines](/api/portable-routines) — the markdown format and the create, update, and canonicalize endpoints.
+- [Test your agent in the workbench](/guides/workbench) — chat with your agent and inspect a turn.
+- [Human takeover](/operators/human-takeover) — what happens when a routine hands off to a person.

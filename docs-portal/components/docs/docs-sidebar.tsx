@@ -111,7 +111,7 @@ export function DocsSidebar({
           </div>
           <div className="leading-tight">
             <div className="text-sm font-semibold text-sidebar-foreground">Radioso Docs</div>
-            <div className="text-xs text-sidebar-foreground/55">Knowledge agents platform</div>
+            <div className="text-xs text-sidebar-foreground/55">Conversational agents platform</div>
           </div>
         </Link>
         <div className="relative">
@@ -119,7 +119,7 @@ export function DocsSidebar({
           <Input
             placeholder="Search docs"
             value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearchChange(e.target.value)}
             className="h-9 bg-background/60 pl-9 text-sm"
           />
         </div>

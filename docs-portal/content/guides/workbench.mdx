@@ -1,0 +1,47 @@
+---
+title: Test your agent in the workbench
+description: Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench.
+---
+
+# Test your agent in the workbench
+
+The workbench is where you talk to your agent the way a visitor would — but signed in, with the tools an operator needs. Use it to check that a change to documents, directives, or a routine actually lands before it reaches real conversations. You reach it from an agent's **Chat** tab.
+
+The workbench drives the same assistant chat API that end-user surfaces use, so what you see here is what a visitor gets.
+
+![A grounded answer in the Chat workbench about EU shipping timing, with a Sources line and three suggested follow-up questions, and the conversation id shown in the header.](/screenshots/dashboard-agents-workbench.png)
+
+## Chat with your agent
+
+Type a question in the box at the bottom and send it. The agent answers grounded in your workspace data, and when it uses retrieval the answer carries a **Sources** line you can expand to see the cited documents. Click a citation to open the source document.
+
+Below an answer, the agent may offer **suggested follow-up questions**. Click one to send it as the next message — a quick way to walk a visitor's likely path without typing.
+
+A test conversation is a real conversation with its own id, shown in the header next to a copy button. Copy it when you want to look the conversation up elsewhere, such as pulling its transcript or filing an eval. The workbench keeps one running conversation until you clear it; open the options menu (the **···** button) for **Clear chat**, which starts a fresh conversation, and for **Show citations**, which toggles whether the Sources line appears.
+
+## Chat and History
+
+The header has a **Chat** / **History** toggle. **Chat** is the live conversation. **History** lists your past operator test chats for this agent, kept separate from the Activity view so your experiments never mix into real customer conversations.
+
+## Inspect a turn
+
+Click any message to slide out **Turn diagnostics** on the right. It shows the same trace the Activity history drawer shows — how the turn was routed, what retrieval ran, and which stages fired. Select a user turn and the panel resolves forward to the assistant turn it produced. When a turn has a full trace, a **Flow** button opens a larger view of the turn's path.
+
+## Capture a turn as an eval case
+
+When an answer is worth locking in — or worth catching if it regresses — hover the answer and click the **flask icon** in its action row. That opens **Save this turn as an eval**: name the case and confirm. Radioso snapshots the conversation and, when the answer is present, seeds the case with an LLM-judge expectation using that answer as the reference, then opens the eval editor. From there you can run it immediately or add more precise checks.
+
+This is the bridge from "that looked right" to a repeatable test. The [Evaluate answer quality](/guides/evals) guide covers what a case checks and how a run works.
+
+## Common failure modes
+
+- A weak answer right after uploading a document usually means the document has not finished processing yet, not that retrieval is broken. Check the document's status first.
+- No **Sources** line on an answer: either the agent answered without retrieval, or **Show citations** is off in the options menu.
+- The flask icon is missing: it appears on an assistant answer on hover, once the turn has a conversation id and a message to capture.
+- Your test chats do not appear in Activity by design — look under the **History** toggle in the workbench instead.
+
+## Read next
+
+- [Evaluate answer quality](/guides/evals) — turn a captured turn into a repeatable check.
+- [Author a routine](/guides/authoring-routines) — build a multi-step flow, then test its draft in a live chat.
+- [Human takeover](/operators/human-takeover) — take over a real conversation from the AI.

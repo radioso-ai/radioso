@@ -68,6 +68,10 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 Directives add steering to matching turns. A directive has a `condition`, an
 `action`, optional priority and relationship fields, and optional scope tags.
 
+In the dashboard you author directives in the agent's **Directives** settings, where your own rules sit above the built-in Radioso directives you can **Override**.
+
+![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
+
 Create a directive with `POST /api/v1/agents/{agentId}/directives`:
 
 ```json

@@ -1,0 +1,97 @@
+---
+title: Slack channel
+description: Connect Radioso agents to Slack as an inbound conversation channel, route channels to specific agents, and act on escalations from Slack.
+---
+
+# Slack channel
+
+The Slack channel lets people talk to your Radioso agents from Slack. One Slack workspace maps to one Radioso organization. Inside it, the default agent answers direct messages and any channel without a specific binding, and individual Slack channels can be routed to specific agents.
+
+Slack is a channel, not a document source. Radioso does not read Slack history, does not call Slack search, and does not add Slack messages to the knowledge base. Answers still come from the agent's curated Radioso knowledge; if that knowledge does not cover the question, the agent declines safely or escalates.
+
+You manage it from an agent's **Channels**, alongside the public chat link, website widget, API, and MCP.
+
+![The agent settings sidebar with a Channels section listing Public chat link, Website widget, API, MCP, Slack, and WhatsApp.](/screenshots/dashboard-agent-channels.png)
+
+## What it does
+
+- Direct messages to the Slack bot are routed to the default Radioso agent.
+- `@mention` events in Slack channels are answered in the originating thread. A channel-specific binding wins when one exists; otherwise Radioso uses the default agent.
+- While the agent works on a message, Radioso adds an `eyes` reaction. Once the reply is posted, that reaction is replaced with a check mark, or an `x` if the reply could not be delivered.
+- Each DM user and each mentioned channel thread maps to one Radioso conversation.
+- When a turn's outcome is `no_context` and an escalation channel is configured, Radioso posts a human follow-up to that channel.
+- Approval gates, handoffs, and unanswered questions arrive as interactive messages an operator can act on from Slack.
+
+## Operator actions in Slack
+
+When the agent needs a person, Radioso posts an interactive message to the operator channel, so operators can act without opening the dashboard. Three kinds arrive:
+
+- An approval gate posts the decision with one button per option — the options come from the routine, not a fixed approve/deny pair.
+- A handoff and an unanswered question each post a card with a **Take over** button.
+
+From these an operator can approve or deny a decision (the routine resumes with the chosen option), take over a conversation (the agent stops answering it), reply to the customer (a short Slack form opens, and the reply goes back where the conversation started — the customer's Slack DM or the website chat), or hand the conversation back to the agent.
+
+Only Radioso workspace members can act. Radioso matches the Slack user to a member by email, so the Slack user's email must match their Radioso account. A Slack user who is not a member, or who lacks the takeover permission, gets a private message and the action does not run. A button that is already out of date, because someone resolved it first, is rejected without changing the result.
+
+## Slack in the Activity view
+
+A Slack conversation shows its real Slack context in Activity: the list and detail views show the Slack workspace, whether it is a direct message or a channel, the thread, and the Slack user. It is not shown as a plain authenticated chat.
+
+## Self-host setup
+
+Self-hosted deployments use the standard Slack OAuth flow, with one difference: you supply your own Slack app secrets through environment variables.
+
+1. Set `APP_BASE_URL` to the public HTTPS URL where users open the Radioso dashboard.
+2. Open the agent's Slack channel settings and expand **Self-host setup**.
+3. Copy the generated Slack app manifest.
+4. In Slack, create an app from that manifest.
+5. Set these environment variables from the Slack app:
+   - `SLACK_OAUTH_CLIENT_ID`
+   - `SLACK_OAUTH_CLIENT_SECRET`
+   - `SLACK_SIGNING_SECRET`
+6. Restart the backend.
+7. Use **Add to Slack** in the Radioso UI, approve the install, and confirm the default agent. Optionally add channel-specific agent bindings and an escalation channel such as `#support`.
+
+Slack is available only when all three environment variables are set. If one is missing, Radioso does not start Slack OAuth install and the UI shows which variable you still need to configure.
+
+The manifest is available from:
+
+```text
+GET /api/v1/workspaces/{workspaceId}/slack/manifest
+```
+
+It requests bot scopes for mentions, chat posting, message reactions, direct messages, and Slack user lookup (`users:read`, `users:read.email`), and fills the OAuth redirect, event, and interactivity URLs. If an existing Slack app was installed before message reactions or interactive operator actions were configured, reinstall or re-consent the app so Slack grants the reaction and user-lookup scopes and sends interactivity callbacks.
+
+### Split-host deployments
+
+`APP_BASE_URL` is the dashboard origin, used for browser redirects such as the page shown after a Slack install completes. Slack reaches the backend directly for the OAuth callback and the Events API. When the backend runs on a different host than the dashboard, set `CONNECTOR_PUBLIC_BASE_URL` to the backend's public HTTPS origin; the manifest and OAuth callback then use that host — for example a dashboard at `https://app.example.com` and an API at `https://api.example.com`. When it is not set, Radioso falls back to `APP_BASE_URL`, which is correct when one host serves both.
+
+The backend must be reachable by Slack at a public HTTPS URL. If Slack cannot reach the callback, event, or interactivity URL, OAuth install and inbound messages cannot complete.
+
+## Setup and binding endpoints
+
+The channel settings use these API surfaces:
+
+```text
+POST   /api/v1/workspaces/{workspaceId}/slack/install/start
+GET    /api/v1/workspaces/{workspaceId}/slack/install/status
+GET    /api/v1/workspaces/{workspaceId}/slack/binding
+GET    /api/v1/workspaces/{workspaceId}/slack/bindings
+PUT    /api/v1/workspaces/{workspaceId}/slack/binding
+DELETE /api/v1/workspaces/{workspaceId}/slack/binding?channelId={channelId}
+```
+
+Slack sends Events API payloads to `/api/connectors/slack/events` and interaction callbacks to `/api/connectors/slack/interactivity`. Radioso verifies the Slack signature, checks replay age, deduplicates by `event_id`, ignores bot-authored events, resolves the agent from the channel binding, and runs the normal chat path with `sourceChannel: "slack"`.
+
+## Common failure modes
+
+- **Add to Slack** does nothing and the UI names a missing variable: one of the three `SLACK_*` environment variables is unset. Set all three and restart the backend.
+- An operator's Slack action is rejected with a private message: their Slack email does not match a Radioso member with the takeover permission.
+- Buttons or reactions do not work after an upgrade: the app was installed before those scopes existed. Reinstall or re-consent the app.
+- OAuth or inbound events fail on a split-host deployment: `CONNECTOR_PUBLIC_BASE_URL` is unset or points at a host Slack cannot reach over public HTTPS.
+
+## Read next
+
+- [Human takeover](/operators/human-takeover) — the ownership model behind the take-over and hand-back actions.
+- [Author a routine](/guides/authoring-routines) — author the handoff terminals and approval gates that post to Slack.
+- [Connectors and webhooks](/api/connectors-and-webhooks) — the connector surface Slack events arrive on.

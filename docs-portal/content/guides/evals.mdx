@@ -1,0 +1,71 @@
+---
+title: Evaluate answer quality
+description: Turn real conversations into repeatable eval cases, replay them against your current corpus and settings, and track a workspace pass rate.
+---
+
+# Evaluate answer quality
+
+An eval is a real conversation you froze so you can replay it and check the agent still answers the way you expect. It is how you catch a regression before a visitor does — after you add documents, retune retrieval, or edit a directive. You manage evals from the **Eval** section in the dashboard.
+
+![The Eval section showing 1 of 1 case passing, a Run all button, and one case row with a passing status and its last run and expectation count.](/screenshots/dashboard-eval.png)
+
+## Cases come from real conversations
+
+You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench or the Activity view, hover an assistant answer and click the **flask icon** to save that turn as a case. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
+
+Under the hood the snapshot and case are two API calls, both under `/api/v1/evals`:
+
+```text
+POST /api/v1/evals/snapshots        { conversationId, messageId? }
+POST /api/v1/evals/cases            { snapshotId, name, assertions? }
+```
+
+`messageId` picks the assistant turn to capture; omit it to snapshot the latest. A case starts with no assertions unless you seed one — capturing from an answer seeds an LLM-judge check that uses that answer as the reference, so a fresh case can run immediately.
+
+## Assertions: what a run checks
+
+A case passes when all its assertions pass. Add them in the eval editor. Two families cover most needs — what retrieval found, and what the answer said.
+
+Retrieval assertions:
+
+- `retrieval_includes_document` / `retrieval_excludes_document` — a document must, or must not, appear in the retrieved set. Names a `documentId`.
+- `retrieval_top_k_includes_document` — a document must appear within the top `k` results. Names a `documentId` and a `k`.
+- `retrieval_document_order` — the named `documentIds` must appear in that relative order.
+- `retrieval_chunk_metadata` — a retrieved chunk from `documentId` must carry the expected `metadata` fields.
+
+Answer assertions:
+
+- `answer_cites_document` — the answer must cite `documentId`.
+- `answer_contains` / `answer_does_not_contain` — the answer must, or must not, match a `pattern`. Set `matchMode` to `substring` or `regex`, and `caseSensitive` when it matters.
+- `llm_judge` — a model compares the new answer to an `expectedAnswer`, with optional `criteria` describing what counts as correct. Use it when exact text is too brittle but meaning matters.
+
+A case holds up to 20 assertions.
+
+## Run a case
+
+Running replays the snapshot against your **current** corpus and settings — that is the point: the frozen conversation meets today's data.
+
+```text
+POST /api/v1/evals/cases/{id}/runs   { mode, overrides? }
+```
+
+`mode` is `retrieval_only` — replay just the retrieval step and score retrieval assertions — or `full_assistant`, which produces a full answer and scores every assertion. Use `retrieval_only` to isolate whether a change moved retrieval before you spend a model call on the whole answer.
+
+## Run the whole suite
+
+The Eval list header shows how many cases pass — "1 of 1 case passing" — and a **Run all** button. Run all replays every case with assertions and reports each case's outcome plus the workspace pass rate. Cases with no assertions are skipped, because there is nothing to score. The suite runs case by case, so a large suite takes a moment.
+
+Watch the pass rate the way you watch a test suite: a change that drops it tells you something regressed, and the failing cases point at where.
+
+## Common failure modes
+
+- A case shows nothing to score: it has no assertions. Add at least one in the editor, or capture from an answer to seed an LLM-judge check.
+- A retrieval assertion fails after an ingestion change: the document moved in or out of the result set. That is the eval doing its job — decide whether the new ranking is correct, then update the assertion or the settings.
+- An `answer_contains` regex never matches: check `matchMode` is `regex` and `caseSensitive` is set as you intend.
+- A run reflects old behavior: a run replays against current corpus and settings, but the *conversation* is the snapshot. Capture a new case if the conversation itself should change.
+
+## Read next
+
+- [Test your agent in the workbench](/guides/workbench) — where you capture a turn as a case.
+- [Author a routine](/guides/authoring-routines) — behavior you may want an eval to pin down.
+- [Documents and search](/api/documents-and-search) — the corpus a run replays against.

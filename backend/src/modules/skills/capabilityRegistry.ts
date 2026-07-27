@@ -34,7 +34,7 @@ export interface SkillCapabilitySettingsFieldOption {
 export interface SkillCapabilitySettingsField {
   key: string;
   label: string;
-  type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+  type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope" | "metadata_rules";
   help?: string;
   dependsOnKey?: string;
   options?: SkillCapabilitySettingsFieldOption[];

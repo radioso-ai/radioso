@@ -26,7 +26,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
-import type { AgentSourceScope, DocumentSourceListItem } from '@/lib/api'
+import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
+import type { AgentSourceScope, DocumentSourceListItem, RetrievalMetadataRule } from '@/lib/api'
 import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 import { cn } from '@/lib/utils'
 import {
@@ -276,7 +277,7 @@ function SkillSettingControl({
   }
 
   if (field.type === 'string_list') {
-    const items = Array.isArray(value) ? value : []
+    const items = Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
     const updateItem = (index: number, nextValue: string) => {
       const next = [...items]
       next[index] = nextValue
@@ -306,6 +307,22 @@ function SkillSettingControl({
           ))}
         </div>
         {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+      </div>
+    )
+  }
+
+  if (field.type === 'metadata_rules') {
+    const rules = Array.isArray(value) ? (value as RetrievalMetadataRule[]) : []
+    return (
+      <div className="space-y-2 md:col-span-2">
+        <Label>{field.label}</Label>
+        {field.help ? <p className="text-xs text-muted-foreground">{field.help}</p> : null}
+        <MetadataRulesEditor
+          metadataRules={rules}
+          metadataFieldSuggestions={[]}
+          onChange={(next) => onChange(next)}
+          showHeader={false}
+        />
       </div>
     )
   }
@@ -469,7 +486,7 @@ export function SkillForm({
                 <div
                   key={field.key}
                   className={cn(
-                    field.type === 'source_scope' || field.type === 'textarea' || field.type === 'string_list'
+                    field.type === 'source_scope' || field.type === 'textarea' || field.type === 'string_list' || field.type === 'metadata_rules'
                       ? 'md:col-span-2'
                       : '',
                     nested ? 'border-l border-border pl-4 md:col-span-2' : '',

@@ -16835,6 +16835,7 @@ paths:
                                   - select
                                   - string_list
                                   - source_scope
+                                  - metadata_rules
                               help:
                                 type: string
                               dependsOnKey:

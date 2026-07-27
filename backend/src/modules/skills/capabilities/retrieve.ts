@@ -81,6 +81,14 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       advanced: true,
     },
     {
+      key: "metadataRules",
+      label: "Metadata rules",
+      type: "metadata_rules",
+      help: "Always boost or filter results by document metadata — for example, only keep documents whose language is English.",
+      group: "Retrieval tuning",
+      advanced: true,
+    },
+    {
       key: "queryRewriteEnabled",
       label: "Query rewrite",
       type: "boolean",

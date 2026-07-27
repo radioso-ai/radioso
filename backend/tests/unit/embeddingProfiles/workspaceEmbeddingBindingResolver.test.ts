@@ -234,6 +234,93 @@ describe("WorkspaceEmbeddingBindingResolver", () => {
     }]);
   });
 
+  it("preserves the 1536-dimensional contract when materializing an existing Gemini workspace", async () => {
+    const createdSpaces: Array<Record<string, unknown>> = [];
+    const resolver = new WorkspaceEmbeddingBindingResolver({
+      profiles: {
+        async findWorkspaceProfile() {
+          return null;
+        },
+        async findEmbeddingSpaceById(id) {
+          return {
+            id,
+            identityFingerprint: "fingerprint",
+            endpointScopeFingerprint: "gemini-endpoint",
+            provider: "gemini",
+            model: "gemini-embedding-001",
+            dimensions: 1536,
+            distanceMetric: "cosine",
+            normalization: "application_unit",
+            documentTask: null,
+            queryTask: null,
+            vectorOptions: {},
+            modelVersion: null,
+            status: "active",
+            quarantineReason: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+        },
+        async createEmbeddingSpace(input) {
+          createdSpaces.push(input);
+          return {
+            ...input,
+            id: "gemini-existing-space",
+            status: "active",
+            quarantineReason: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+        },
+        async initializeWorkspaceProfile(input) {
+          return {
+            workspaceId: "gemini-workspace",
+            activeEmbeddingSpaceId: input.activeEmbeddingSpaceId,
+            pendingEmbeddingSpaceId: null,
+            generation: "1",
+            transition: null,
+          };
+        },
+      },
+      settings: {
+        async getForWorkspace() {
+          return settings({
+            workspaceId: "gemini-workspace",
+            embeddingModel: "gemini-embedding-001",
+          });
+        },
+      },
+      identifyModel: () => ({
+        provider: "gemini",
+        endpointScopeFingerprint: "gemini-endpoint",
+      }),
+    });
+
+    await expect(resolver.resolveBinding({
+      workspaceId: "gemini-workspace",
+      purpose: "retrieval_query",
+    })).resolves.toEqual({
+      space: {
+        id: "gemini-existing-space",
+        dimensions: 1536,
+        distanceMetric: "cosine",
+      },
+      model: "gemini-embedding-001",
+      provider: "gemini",
+      endpointScopeFingerprint: "gemini-endpoint",
+    });
+    expect(createdSpaces).toEqual([
+      expect.objectContaining({
+        provider: "gemini",
+        model: "gemini-embedding-001",
+        dimensions: 1536,
+        normalization: "application_unit",
+        documentTask: null,
+        queryTask: null,
+      }),
+    ]);
+  });
+
   it("materializes an existing uncatalogued selection with the compatibility vector contract", async () => {
     const createdSpaces: Array<Record<string, unknown>> = [];
     const resolver = new WorkspaceEmbeddingBindingResolver({

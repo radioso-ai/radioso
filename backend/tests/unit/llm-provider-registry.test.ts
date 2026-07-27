@@ -229,6 +229,59 @@ describe("LlmProviderRegistry", () => {
     });
   });
 
+  it("serves an existing 1536-dimensional Gemini binding without changing its vector contract", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      GEMINI_API_KEY: "gemini-key",
+    });
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return Response.json({
+        embedding: {
+          values: [2, ...new Array(1535).fill(0)],
+        },
+      });
+    });
+
+    const registry = new LlmProviderRegistry(config);
+    const gateway = registry.createEmbeddingGateway();
+    await expect(gateway.embedTexts(
+      ["hello"],
+      {
+        model: "gemini-embedding-001",
+        dimensions: 1536,
+        purpose: "retrieval_query",
+      },
+    )).rejects.toThrow(
+      "requested dimensions 1536 do not match descriptor dimensions 3072",
+    );
+    expect(requestBody).toBeUndefined();
+
+    const binding = registry.resolveEmbeddingModelBinding(
+      "gemini-embedding-001",
+    );
+    await expect(gateway.embedTexts(
+      ["hello"],
+      {
+        model: "gemini-embedding-001",
+        dimensions: 1536,
+        purpose: "retrieval_query",
+        provider: binding.provider,
+        endpointScopeFingerprint: binding.endpointScopeFingerprint,
+      },
+    )).resolves.toEqual([[1, ...new Array(1535).fill(0)]]);
+
+    expect(requestBody).toMatchObject({
+      model: "models/gemini-embedding-001",
+      outputDimensionality: 1536,
+      content: {
+        parts: [{ text: "hello" }],
+      },
+    });
+    expect(requestBody).not.toHaveProperty("taskType");
+  });
+
   it("serves an existing uncatalogued 1536-dimensional binding without adding it to the product catalog", async () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
@@ -371,16 +424,28 @@ describe("LlmProviderRegistry", () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
     });
+    const registry = new LlmProviderRegistry(config);
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
 
     await expect(
-      new LlmProviderRegistry(config)
-        .createEmbeddingGateway()
-        .embedTexts(["hello"], {
-          model: "text-embedding-3-small",
-          dimensions: 3072,
-        }),
+      registry.createEmbeddingGateway().embedTexts(["hello"], {
+        model: "text-embedding-3-small",
+        dimensions: 3072,
+      }),
+    ).rejects.toThrow(
+      "requested dimensions 3072 do not match descriptor dimensions 1536",
+    );
+    const binding = registry.resolveEmbeddingModelBinding(
+      "text-embedding-3-small",
+    );
+    await expect(
+      registry.createEmbeddingGateway().embedTexts(["hello"], {
+        model: "text-embedding-3-small",
+        dimensions: 3072,
+        provider: binding.provider,
+        endpointScopeFingerprint: binding.endpointScopeFingerprint,
+      }),
     ).rejects.toThrow(
       "requested dimensions 3072 do not match descriptor dimensions 1536",
     );

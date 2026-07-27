@@ -72,6 +72,18 @@ const descriptors = {
   SupportedEmbeddingModelDescriptor
 >;
 
+const EXISTING_GEMINI_1536_DESCRIPTOR: SupportedEmbeddingModelDescriptor = {
+  model: "gemini-embedding-001",
+  providerFamily: "gemini",
+  dimensions: 1536,
+  normalization: "application_unit",
+  taskMapping: OPENAI_TASKS,
+  limits: {
+    ...COMMON_LIMITS,
+    maxBatch: 1,
+  },
+};
+
 export const isSupportedEmbeddingModel = (
   model: string,
 ): model is SupportedEmbeddingModelId =>
@@ -93,15 +105,22 @@ export const resolveEmbeddingModelDescriptor = (
     readonly dimensions: number;
   },
 ): SupportedEmbeddingModelDescriptor => {
-  if (isSupportedEmbeddingModel(model)) {
-    return descriptors[model];
-  }
   if (
     !Number.isInteger(existingBinding.dimensions)
     || existingBinding.dimensions < 1
     || existingBinding.dimensions > 16_000
   ) {
     throw new Error("Existing embedding dimensions must be an integer between 1 and 16000");
+  }
+  if (
+    model === "gemini-embedding-001"
+    && existingBinding.provider === "gemini"
+    && existingBinding.dimensions === EXISTING_GEMINI_1536_DESCRIPTOR.dimensions
+  ) {
+    return EXISTING_GEMINI_1536_DESCRIPTOR;
+  }
+  if (isSupportedEmbeddingModel(model)) {
+    return descriptors[model];
   }
   const gemini = existingBinding.provider === "gemini";
   return {

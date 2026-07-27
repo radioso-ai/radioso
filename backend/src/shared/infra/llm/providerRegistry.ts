@@ -88,12 +88,29 @@ class RoutedEmbeddingClient implements EmbeddingClient {
       provider: options?.provider,
       endpointScopeFingerprint: options?.endpointScopeFingerprint,
     });
-    const descriptor = isSupportedEmbeddingModel(model)
+    const catalogDescriptor = isSupportedEmbeddingModel(model)
       ? getSupportedEmbeddingModel(model)
-      : resolveEmbeddingModelDescriptor(model, {
-          provider: binding.config.provider,
-          dimensions: options?.dimensions ?? Number.NaN,
-        });
+      : null;
+    if (
+      catalogDescriptor
+      && options?.dimensions !== undefined
+      && options.dimensions !== catalogDescriptor.dimensions
+      && (
+        options.provider === undefined
+        || options.endpointScopeFingerprint === undefined
+      )
+    ) {
+      throw new Error(
+        `requested dimensions ${options.dimensions} do not match descriptor dimensions ${catalogDescriptor.dimensions}`,
+      );
+    }
+    const descriptor =
+      catalogDescriptor && options?.dimensions === undefined
+        ? catalogDescriptor
+        : resolveEmbeddingModelDescriptor(model, {
+            provider: binding.config.provider,
+            dimensions: options?.dimensions ?? Number.NaN,
+          });
     if (
       options?.dimensions !== undefined &&
       options.dimensions !== descriptor.dimensions

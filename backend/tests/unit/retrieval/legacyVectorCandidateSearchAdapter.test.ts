@@ -75,6 +75,63 @@ describe("LegacyVectorCandidateSearchAdapter", () => {
     }]);
   });
 
+  it("searches existing Gemini vectors with their persisted 1536-dimensional contract", async () => {
+    const searches: Array<Parameters<VectorIndexPort["search"]>[0]> = [];
+    const adapter = new LegacyVectorCandidateSearchAdapter({
+      legacy: {
+        async search(input) {
+          searches.push(input);
+          return [];
+        },
+      },
+      profiles: {
+        async findEmbeddingSpaceById() {
+          return {
+            id: "gemini-existing-space",
+            identityFingerprint: "fingerprint",
+            endpointScopeFingerprint: "gemini-endpoint",
+            provider: "gemini",
+            model: "gemini-embedding-001",
+            dimensions: 1536,
+            distanceMetric: "cosine",
+            normalization: "application_unit",
+            documentTask: null,
+            queryTask: null,
+            vectorOptions: {},
+            modelVersion: null,
+            status: "active",
+            quarantineReason: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+        },
+      },
+    });
+
+    await adapter.search({
+      workspaceId: "gemini-workspace",
+      space: {
+        id: "gemini-existing-space",
+        dimensions: 1536,
+        distanceMetric: "cosine",
+      },
+      queryVector: [1, 0],
+      topK: 5,
+      minimumScore: 0,
+      filter: {},
+    });
+
+    expect(searches).toEqual([{
+      workspaceId: "gemini-workspace",
+      queryEmbedding: [1, 0],
+      queryEmbeddingDimensions: 1536,
+      topK: 5,
+      similarityThreshold: 0,
+      embeddingModel: "gemini-embedding-001",
+      filter: {},
+    }]);
+  });
+
   it("merges the canonical index with only explicitly compatible legacy dimensions", async () => {
     const canonical: VectorCandidateSearchPort = {
       async search(input) {

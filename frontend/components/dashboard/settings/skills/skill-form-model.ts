@@ -7,7 +7,7 @@ import type {
   SkillCapabilitySettingsField,
 } from '@/lib/api-skills'
 import { getToolInputFields, normalizeSkillName, parseBoundParamValue, type ToolInputField, type ToolInputFieldType } from '@/lib/external-skills'
-import type { AgentSourceScope } from '@/lib/api'
+import type { AgentSourceScope, RetrievalMetadataRule } from '@/lib/api'
 
 export type SkillInputMode = 'bind' | 'expose' | 'ignore'
 
@@ -32,7 +32,7 @@ export type SkillFormDraft = {
 }
 
 export type DerivedSkillField = ToolInputField
-export type SkillSettingDraftValue = string | number | boolean | string[] | AgentSourceScope | undefined
+export type SkillSettingDraftValue = string | number | boolean | string[] | AgentSourceScope | RetrievalMetadataRule[] | undefined
 
 const DEFAULT_OUTCOMES = ['completed', 'failed']
 
@@ -419,6 +419,9 @@ const readSettingDraftValue = (
   if (field.type === 'source_scope') {
     return configSourceScopeToDraft(value)
   }
+  if (field.type === 'metadata_rules') {
+    return Array.isArray(value) ? (value as RetrievalMetadataRule[]) : []
+  }
   if (field.type === 'string_list') {
     return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
   }
@@ -460,8 +463,13 @@ const settingDraftValueToConfig = (
   if (field.type === 'source_scope') {
     return draftSourceScopeToConfig(value)
   }
+  if (field.type === 'metadata_rules') {
+    return Array.isArray(value) ? value : []
+  }
   if (field.type === 'string_list') {
-    return Array.isArray(value) ? value.map((item) => item.trim()).filter(Boolean) : []
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean)
+      : []
   }
   if (field.type === 'number') {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined

@@ -16,6 +16,8 @@ export interface EmbeddingModelBindingMetadata {
   readonly endpointScopeFingerprint?: string;
 }
 
+export const EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS = 1536;
+
 export class ModelEmbeddingSpaceMaterializer {
   constructor(
     private readonly profiles: Pick<

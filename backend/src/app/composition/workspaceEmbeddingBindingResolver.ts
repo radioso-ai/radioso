@@ -12,6 +12,7 @@ import {
   resolveEmbeddingModelDescriptor,
 } from "../../shared/infra/llm/supportedEmbeddingModels.js";
 import {
+  EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS,
   ModelEmbeddingSpaceMaterializer,
   requireEmbeddingProvider,
 } from "./modelEmbeddingSpaceMaterializer.js";
@@ -24,8 +25,6 @@ interface EmbeddingModelMetadata {
   readonly provider: string;
   readonly endpointScopeFingerprint?: string;
 }
-
-const EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS = 1536;
 
 export interface WorkspaceEmbeddingBindingResolverOptions {
   readonly settings: WorkspaceEmbeddingSettingsPort;

@@ -40,6 +40,131 @@ const activeProfile = {
 };
 
 describe("EmbeddingModelTransitionAdapter", () => {
+  it.each([
+    {
+      name: "existing Gemini",
+      activeModel: "gemini-embedding-001",
+      activeProvider: "gemini",
+      activeEndpoint: "gemini-scope",
+    },
+    {
+      name: "uncatalogued persisted",
+      activeModel: "existing-embedding-model",
+      activeProvider: "openai-compatible",
+      activeEndpoint: "compatible-scope",
+    },
+  ])("materializes the $name active binding before starting the first transition", async ({
+    activeModel,
+    activeProvider,
+    activeEndpoint,
+  }) => {
+    const spaces = new Map<string, ReturnType<typeof space> | Record<string, unknown>>();
+    const profiles = {
+      findWorkspaceProfile: vi.fn().mockResolvedValueOnce(null),
+      findEmbeddingSpaceById: vi.fn(async (id: string) => spaces.get(id) ?? null),
+      createEmbeddingSpace: vi.fn(async (input) => {
+        const id = input.model === activeModel
+          ? "space-existing-active"
+          : "space-target";
+        const created = {
+          ...input,
+          id,
+          status: "active" as const,
+          quarantineReason: null,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        };
+        spaces.set(id, created);
+        return created;
+      }),
+      initializeWorkspaceProfile: vi.fn(async (input) => ({
+        workspaceId: "workspace-1",
+        activeEmbeddingSpaceId: input.activeEmbeddingSpaceId,
+        pendingEmbeddingSpaceId: null,
+        generation: "1",
+        transition: null,
+      })),
+    };
+    const coordinator = {
+      start: vi.fn(async ({ targetEmbeddingSpaceId }) => ({
+        outcome: "started",
+        profile: {
+          workspaceId: "workspace-1",
+          activeEmbeddingSpaceId: "space-existing-active",
+          pendingEmbeddingSpaceId: targetEmbeddingSpaceId,
+          generation: "2",
+          transition: {
+            id: "transition-1",
+            sourceEmbeddingSpaceId: "space-existing-active",
+            targetEmbeddingSpaceId,
+            generation: "2",
+            status: "building" as const,
+            failureReason: null,
+          },
+        },
+        transition: {
+          id: "transition-1",
+          sourceEmbeddingSpaceId: "space-existing-active",
+          targetEmbeddingSpaceId,
+          generation: "2",
+          status: "building" as const,
+          failureReason: null,
+        },
+      })),
+      cancel: vi.fn(),
+      reconcilePromotion: vi.fn(),
+    };
+    const adapter = new EmbeddingModelTransitionAdapter(
+      profiles as never,
+      (model) => model === activeModel
+        ? {
+            provider: activeProvider,
+            endpointScopeFingerprint: activeEndpoint,
+          }
+        : {
+            provider: "openai",
+            endpointScopeFingerprint: "openai-scope",
+          },
+      coordinator as never,
+      { prepare: vi.fn().mockResolvedValue(undefined) },
+    );
+
+    await expect(adapter.start({
+      workspaceId: "workspace-1",
+      activeModel,
+      targetModel: "text-embedding-3-small",
+    })).resolves.toMatchObject({
+      activeModel,
+      pendingModel: "text-embedding-3-small",
+      status: "building",
+    });
+
+    expect(profiles.createEmbeddingSpace).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        model: activeModel,
+        provider: activeProvider,
+        endpointScopeFingerprint: activeEndpoint,
+        dimensions: 1536,
+        normalization: "application_unit",
+        documentTask: null,
+        queryTask: null,
+      }),
+    );
+    expect(profiles.initializeWorkspaceProfile).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeEmbeddingSpaceId: "space-existing-active",
+    });
+    expect(profiles.createEmbeddingSpace).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        model: "text-embedding-3-small",
+        dimensions: 1536,
+        normalization: "provider_unit",
+      }),
+    );
+  });
+
   it("materializes the target identity and delegates a model change to the coordinator", async () => {
     const spaces = new Map([
       ["space-active", space("space-active", "text-embedding-3-small")],

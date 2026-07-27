@@ -19,6 +19,7 @@ import {
   serviceUnavailable,
 } from "../../shared/domain/errors.js";
 import {
+  EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS,
   ModelEmbeddingSpaceMaterializer,
   requireEmbeddingProvider,
   type EmbeddingModelBindingMetadata,
@@ -159,7 +160,10 @@ implements EmbeddingModelTransitionPort {
     if (existing) {
       return existing;
     }
-    const active = await this.spaces.ensure(activeModel);
+    const active = await this.spaces.ensureExistingSelection(
+      activeModel,
+      EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS,
+    );
     return this.profiles.initializeWorkspaceProfile({
       workspaceId,
       activeEmbeddingSpaceId: active.id,

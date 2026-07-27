@@ -1,5 +1,5 @@
+import type { ClusteringEmbeddingPort } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type {
-  TextChunkingEmbeddingPort,
   TextChunkingProviderChunk,
   TextChunkingProviderPort,
   TextChunkingProviderRequest,
@@ -99,11 +99,10 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
 
   private readonly tokenChunkersByConfig = new Map<string, Promise<TokenChunkerInstance>>();
   private readonly recursiveChunkersByConfig = new Map<string, Promise<RecursiveChunkerInstance>>();
-  private readonly semanticChunkersByConfig = new Map<string, Promise<SemanticChunkerInstance>>();
   private readonly tableChunkersByConfig = new Map<string, Promise<TableChunkerInstance>>();
   private readonly codeChunkersByConfig = new Map<string, Promise<CodeChunkerInstance>>();
 
-  constructor(private readonly semanticEmbeddings?: TextChunkingEmbeddingPort) {}
+  constructor(private readonly semanticEmbeddings?: ClusteringEmbeddingPort) {}
 
   async chunkText(request: TextChunkingProviderRequest): Promise<TextChunkingProviderChunk[]> {
     if (request.method === "fixed_window") {
@@ -293,21 +292,9 @@ export class ChonkieChunkingProvider implements TextChunkingProviderPort {
       throw new Error("ChonkieJS semantic chunking requires an embedding provider");
     }
 
-    const cacheKey = [
-      "semantic",
-      request.chunkSize,
-      request.minCharactersPerChunk ?? "",
-      request.embeddingModel ?? "",
-    ].join(":");
-    const cached = this.semanticChunkersByConfig.get(cacheKey);
-
-    if (cached) {
-      return cached;
-    }
-
-    const created = createSemanticChunker(request, this.semanticEmbeddings);
-    this.semanticChunkersByConfig.set(cacheKey, created);
-    return created;
+    // The embeddings callback closes over request-scoped usage correlation.
+    // Reusing it would attribute later documents or workspaces to the first request.
+    return createSemanticChunker(request, this.semanticEmbeddings);
   }
 
   private getTableChunker(request: TextChunkingProviderRequest): Promise<TableChunkerInstance> {
@@ -371,16 +358,23 @@ const createRecursiveChunker = async (request: TextChunkingProviderRequest): Pro
 
 const createSemanticChunker = async (
   request: TextChunkingProviderRequest,
-  embeddings: TextChunkingEmbeddingPort,
+  embeddings: ClusteringEmbeddingPort,
 ): Promise<SemanticChunkerInstance> => {
   const { SemanticChunker } = await import("@chonkiejs/core");
+  const usageContext = request.embeddingUsageContext;
+  if (!usageContext) {
+    throw new Error("ChonkieJS semantic chunking requires workspace request context");
+  }
 
   return SemanticChunker.create({
-    embeddings: (texts: string[]) =>
-      embeddings.embedTexts(texts, {
-        model: request.embeddingModel,
-        usageContext: request.embeddingUsageContext,
-      }),
+    embeddings: async (texts: string[]) => {
+      const result = await embeddings.embedForClustering({
+        workspaceId: usageContext.workspaceId,
+        texts,
+        usageContext,
+      });
+      return result.vectors.map((vector) => [...vector]);
+    },
     chunkSize: request.chunkSize,
     minCharactersPerSentence: request.minCharactersPerChunk,
   });

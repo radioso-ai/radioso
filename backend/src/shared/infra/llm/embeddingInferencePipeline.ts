@@ -6,7 +6,11 @@ import {
   type UsageEventStatus,
 } from "../../domain/usageEventRecorder.js";
 import type {
+  EmbeddingProviderImplementation,
+} from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
+import type {
   EmbeddingClient,
+  EmbeddingClientOptions,
   EmbeddingResult,
   LlmProviderMetadata,
   ProviderUsage,
@@ -22,6 +26,10 @@ export interface EmbeddingUsageItem {
 export interface EmbeddingInferenceRequest {
   texts: string[];
   model?: string;
+  dimensions?: number;
+  purpose?: EmbeddingClientOptions["purpose"];
+  provider?: EmbeddingClientOptions["provider"];
+  endpointScopeFingerprint?: string;
   operation: ModelCallUsageContext;
   sourceId?: string | null;
   documentId?: string | null;
@@ -87,22 +95,32 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
   constructor(
     private readonly delegate: EmbeddingClient,
     private readonly usageEventRecorder: UsageEventRecorder = new NoopUsageEventRecorder(),
-    private readonly identifyModel?: (model: string) => LlmProviderMetadata,
+    private readonly identifyModel?: (
+      model: string,
+      provider?: EmbeddingProviderImplementation,
+    ) => LlmProviderMetadata,
   ) {
     this.metadata = delegate.metadata;
   }
 
   async embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
+    const identity = this.identityFor(input);
     return traceOperation({
       name: "llm.provider.embedding",
-      attributes: providerTraceAttributes(this.delegate.metadata, input),
+      attributes: providerTraceAttributes(identity, input),
       run: () => this.embedTextsWithinTrace(input),
     });
   }
 
   private async embedTextsWithinTrace(input: EmbeddingInferenceRequest): Promise<EmbeddingResult> {
     try {
-      const result = await this.delegate.embedTexts(input.texts, { model: input.model });
+      const result = await this.delegate.embedTexts(input.texts, {
+        model: input.model,
+        dimensions: input.dimensions,
+        purpose: input.purpose,
+        provider: input.provider,
+        endpointScopeFingerprint: input.endpointScopeFingerprint,
+      });
       await this.recordUsage(input, "succeeded", result.usage);
       setTraceAttributes({ "llm.provider.outcome": "succeeded" });
       return result;
@@ -120,7 +138,7 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
     error?: unknown,
   ): Promise<void> {
     const model = input.model ?? this.delegate.metadata.model;
-    const identity = this.identifyModel?.(model) ?? {
+    const identity = this.identifyModel?.(model, input.provider) ?? {
       ...this.delegate.metadata,
       model,
     };
@@ -157,5 +175,14 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
     }).catch(() => {
       // Usage accounting is observational; embedding results remain authoritative.
     });
+  }
+
+  private identityFor(input: EmbeddingInferenceRequest): LlmProviderMetadata {
+    const model = input.model ?? this.delegate.metadata.model;
+    return this.identifyModel?.(model, input.provider) ?? {
+      ...this.delegate.metadata,
+      ...(input.provider ? { provider: input.provider } : {}),
+      model,
+    };
   }
 }

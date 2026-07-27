@@ -23,8 +23,12 @@ import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstra
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
+import { EmbeddingProfileJobRepository } from "../../db/repositories/embeddingProfileJobRepository.js";
+import { EmbeddingProfileCleanupRepository } from "../../db/repositories/embeddingProfileCleanupRepository.js";
 import { DocumentRepository } from "../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../db/repositories/documentSourceRepository.js";
+import { EmbeddingProfileRepository } from "../../db/repositories/embeddingProfileRepository.js";
+import { VectorIndexWorkRepository } from "../../db/repositories/vectorIndexWorkRepository.js";
 import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
 import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
@@ -118,9 +122,12 @@ import {
   DocumentEnrichmentService,
   DocumentImportService,
   DocumentIngestionService,
+  type EmbeddingCoverageReconciliationPort,
   ModelDocumentEnrichmentGateway,
   DocumentProcessingService,
   DocumentProcessingWorker,
+  EmbeddingProfileJobService,
+  type EmbeddingProfileTerminalFailurePort,
   DocumentSearchHistoryService,
   DocumentSearchService,
   DocumentSourceReprocessService,
@@ -131,14 +138,12 @@ import {
 import {
   AgenticRetrievalPipelineService,
   AgenticRetrievalRunner,
-  EmbeddingService,
   GatewayQueryRewritePortAdapter,
   ModelSenseLabelGateway,
-  PostgresChunkCandidateHydrator,
+  type ChunkCandidateHydratorPort,
   PgLexicalSearch,
   PostgresSenseEmbeddingReader,
   PgVectorChunkStorage,
-  PgVectorIndex,
   PromptBuilder,
   RetrievalAnswerExecutor,
   RetrievalAnswerService,
@@ -148,6 +153,17 @@ import {
   type RetrievalSensePolicy,
   type RetrievalPipelinePort,
 } from "../../modules/retrieval/composition.js";
+import type {
+  ClusteringEmbeddingPort,
+  DocumentEmbeddingPort,
+  PinnedDocumentEmbeddingPort,
+  QueryEmbeddingPort,
+} from "../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
+import {
+  EmbeddingProfileCleanupService,
+  type EmbeddingProfileProjectionCleanupPort,
+} from "../../modules/embeddingProfiles/public.js";
+import type { VectorCandidateSearchPort } from "../../modules/retrieval/domain/vectorAdapter.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { AbuseControlRepository } from "../../db/repositories/abuseControlRepository.js";
@@ -187,6 +203,7 @@ import {
   IngestionSettingsService,
   PlatformSettingsService,
   AgentConverseSessionService,
+  type EmbeddingModelTransitionPort,
 } from "../../modules/settings/composition.js";
 import type { EmbeddingModelId } from "../../modules/settings/contracts/ingestion.js";
 import {
@@ -388,6 +405,10 @@ export const buildRepositories = (
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
+  embeddingProfileRepository: new EmbeddingProfileRepository(database.kysely),
+  vectorIndexWorkRepository: new VectorIndexWorkRepository(database.kysely),
+  embeddingProfileJobRepository: new EmbeddingProfileJobRepository(database.kysely),
+  embeddingProfileCleanupRepository: new EmbeddingProfileCleanupRepository(database.kysely),
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database.kysely),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
@@ -566,17 +587,15 @@ export const buildLlmRegistry = (
 
 export const buildSettingsServices = (input: {
   auditService: AuditService;
-  documentRepository: DocumentRepository;
   ingestionSettingsRepository: IngestionSettingsRepository;
   supportedEmbeddingModels?: readonly EmbeddingModelId[];
-  workspaceIngestionReprocessService?: Pick<WorkspaceIngestionReprocessService, "reprocessWorkspace">;
+  embeddingTransitions?: EmbeddingModelTransitionPort;
 }) => {
   const ingestionSettingsService = new IngestionSettingsService(
     input.ingestionSettingsRepository,
     input.auditService,
-    input.documentRepository,
     input.supportedEmbeddingModels,
-    input.workspaceIngestionReprocessService,
+    input.embeddingTransitions,
   );
 
   return {
@@ -613,10 +632,21 @@ export const buildDocumentServices = (input: {
   telemetryService: TelemetryService;
   usageLimitPolicy: ReturnType<typeof buildInfrastructure>["usageLimitPolicy"];
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
-  embeddingService: EmbeddingService;
+  documentEmbeddings: DocumentEmbeddingPort;
+  pinnedDocumentEmbeddings?: PinnedDocumentEmbeddingPort;
+  clusteringEmbeddings: ClusteringEmbeddingPort;
   llmRegistry: LlmProviderRegistry;
   workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
+  embeddingCoverage?: EmbeddingCoverageReconciliationPort;
   errorReporter: ErrorReporter;
+  postJobMaintenance?: {
+    run(input: {
+      maxBatches: number;
+      workspaceId?: string;
+    }): Promise<void>;
+  };
+  embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort;
+  embeddingProfileProjectionCleanup: EmbeddingProfileProjectionCleanupPort;
 }) => {
   const {
     auditService,
@@ -630,7 +660,8 @@ export const buildDocumentServices = (input: {
     telemetryService,
     usageLimitPolicy,
     usageEventRecorder,
-    embeddingService,
+    documentEmbeddings,
+    clusteringEmbeddings,
     llmRegistry,
   } = input;
   const documentStorage = composition.documentStorage ?? createDefaultDocumentStorage(env);
@@ -640,7 +671,7 @@ export const buildDocumentServices = (input: {
   const websiteCrawlJobDispatcher = createDefaultWebsiteCrawlJobDispatcher(env, logger);
   const websiteCrawlerProvider = composition.websiteCrawlerProvider ?? new RadiosoCrawlerProvider();
   const chunkingStrategyRegistry = createDefaultChunkingStrategyRegistry(
-    embeddingService,
+    clusteringEmbeddings,
     composition.chunkingProvider,
   );
   const documentEnrichmentService = new DocumentEnrichmentService({
@@ -649,7 +680,7 @@ export const buildDocumentServices = (input: {
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
     repositories.chunkRepository,
-    embeddingService,
+    documentEmbeddings,
     auditService,
     settings.ingestionSettingsService,
     chunkingStrategyRegistry,
@@ -660,6 +691,16 @@ export const buildDocumentServices = (input: {
     repositories.documentProcessingJobRepository,
     documentJobDispatcher,
   );
+  const embeddingProfileJobService = input.pinnedDocumentEmbeddings
+    ? new EmbeddingProfileJobService(
+        repositories.embeddingProfileJobRepository,
+        input.pinnedDocumentEmbeddings,
+      )
+    : undefined;
+  const embeddingProfileCleanupService = new EmbeddingProfileCleanupService(
+    repositories.embeddingProfileCleanupRepository,
+    input.embeddingProfileProjectionCleanup,
+  );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,
     auditService,
@@ -669,6 +710,7 @@ export const buildDocumentServices = (input: {
     productAnalyticsService,
     usageLimitPolicy,
     documentSourceRepository,
+    input.embeddingCoverage,
   );
   const websiteCrawlJobService = new WebsiteCrawlJobService({
     repository: repositories.websiteCrawlJobRepository,
@@ -697,6 +739,10 @@ export const buildDocumentServices = (input: {
     env.DOCUMENT_PROCESSING_JOB_LEASE_MS,
     telemetryService,
     input.errorReporter,
+    embeddingProfileJobService,
+    embeddingProfileCleanupService,
+    input.postJobMaintenance,
+    input.embeddingProfileTerminalFailures,
   );
   const documentJobConsumer = composition.documentJobConsumer ?? createDefaultDocumentJobConsumer(
     env,
@@ -759,8 +805,9 @@ export const buildRetrievalServices = (input: {
   auditService: AuditService;
   database: Database;
   documentRepository: DocumentRepository;
-  embeddingService: EmbeddingService;
-  ingestionSettingsService: IngestionSettingsService;
+  queryEmbeddings: QueryEmbeddingPort;
+  vectorSearch: VectorCandidateSearchPort;
+  chunkHydrator: ChunkCandidateHydratorPort;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
@@ -788,12 +835,13 @@ export const buildRetrievalServices = (input: {
 const buildRetrievalAnswerExecutor = (
   deterministic: RetrievalPipelinePort,
   input: {
-    embeddingService: EmbeddingService;
+    queryEmbeddings: QueryEmbeddingPort;
+    vectorSearch: VectorCandidateSearchPort;
+    chunkHydrator: ChunkCandidateHydratorPort;
     database: Database;
     llmRegistry: LlmProviderRegistry;
     logger: AppLogger;
     telemetryService: TelemetryService;
-    ingestionSettingsService?: IngestionSettingsService;
     usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   },
 ): RetrievalPipelinePort =>
@@ -805,9 +853,9 @@ const buildRetrievalAnswerExecutor = (
         capabilityRunner: new AgenticCapabilityRunner({
           runtime: new DefaultAgentRuntime({ gateway: input.llmRegistry.createToolCallingGateway(input.usageEventRecorder) }),
         }),
-        embeddings: input.embeddingService,
-        vectorIndex: new PgVectorIndex(input.database),
-        chunkHydrator: new PostgresChunkCandidateHydrator(input.database.kysely),
+        queryEmbeddings: input.queryEmbeddings,
+        vectorSearch: input.vectorSearch,
+        chunkHydrator: input.chunkHydrator,
         lexicalSearch: new PgLexicalSearch(input.database),
         queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway(input.usageEventRecorder)),
         rerankGateway: input.llmRegistry.createRerankGateway(input.usageEventRecorder),
@@ -817,7 +865,6 @@ const buildRetrievalAnswerExecutor = (
         runner,
         promptBuilder: new PromptBuilder(),
         systemPrompt,
-        ingestionSettingsService: input.ingestionSettingsService,
       });
     },
     onStrategySelected: (selection, { workspaceId }) => {
@@ -883,7 +930,7 @@ const cosineSimilarity = (left: readonly number[], right: readonly number[]): nu
 
 export const createRoutineActivationPrefilter = (input: {
   accountId?: string;
-  embeddingService: EmbeddingService;
+  clusteringEmbeddings: ClusteringEmbeddingPort;
   embeddingModelForWorkspace: (workspaceId: string) => Promise<string>;
   logger: AppLogger;
   routineDefinitionRepository: Pick<RoutineDefinitionRepository, "searchActivationTriggerEmbeddings">;
@@ -914,10 +961,12 @@ export const createRoutineActivationPrefilter = (input: {
     let queryVector: number[] | undefined;
     try {
       embeddingModel = await input.embeddingModelForWorkspace(input.workspaceId);
-      [queryVector] = await input.embeddingService.embedTexts([query], {
-        model: embeddingModel,
+      const { vectors } = await input.clusteringEmbeddings.embedForClustering({
+        workspaceId: input.workspaceId,
+        texts: [query],
         usageContext: usage("routine_activation_prefilter"),
       });
+      [queryVector] = vectors;
       if (!queryVector) {
         throw new Error("routine_activation_query_embedding_missing");
       }
@@ -977,10 +1026,11 @@ export const createRoutineActivationPrefilter = (input: {
     const flyVectorsById = new Map<string, number[]>();
     if (unscoredIds.length > 0) {
       try {
-        const vectors = await input.embeddingService.embedTexts(
-          unscoredIds.map((routineId) => descriptionsById.get(routineId) ?? ""),
-          { model: embeddingModel!, usageContext: usage("routine_activation_prefilter_fly") },
-        );
+        const { vectors } = await input.clusteringEmbeddings.embedForClustering({
+          workspaceId: input.workspaceId,
+          texts: unscoredIds.map((routineId) => descriptionsById.get(routineId) ?? ""),
+          usageContext: usage("routine_activation_prefilter_fly"),
+        });
         unscoredIds.forEach((routineId, index) => {
           const vector = vectors[index];
           if (vector) {
@@ -1055,6 +1105,7 @@ export const buildChatServices = (input: {
   composition: ApplicationComposition;
   conversationOwnershipRepository: ConversationOwnershipRepository;
   conversationRepository: ConversationRepository;
+  clusteringEmbeddings: ClusteringEmbeddingPort;
   database: Database;
   env: Env;
   historyItemsRepository: HistoryItemsRepository;
@@ -1086,9 +1137,6 @@ export const buildChatServices = (input: {
   routineTriggerEmbeddingService: RoutineTriggerEmbeddingService;
 }) => {
   const chatGateway = input.llmRegistry.createChatGateway(input.usageEventRecorder);
-  const routineActivationEmbeddingService = new EmbeddingService(
-    input.llmRegistry.createEmbeddingGateway(input.usageEventRecorder),
-  );
   const routineActivationPolicy = { floor: 0.4, margin: 0.15, askMargin: 0.15, maxOptions: 4 };
   // Retrieval-sense clarification is answer-first: once a candidate set survives
   // floor/suppression/clear-margin/loop-guard/priority checks, a no-clear-winner case
@@ -1509,7 +1557,7 @@ export const buildChatServices = (input: {
           ? {
               activationPrefilter: createRoutineActivationPrefilter({
                 accountId,
-                embeddingService: routineActivationEmbeddingService,
+                clusteringEmbeddings: input.clusteringEmbeddings,
                 embeddingModelForWorkspace: async (inputWorkspaceId) =>
                   (await input.ingestionSettingsService.getForWorkspace(inputWorkspaceId)).embeddingModel,
                 logger: input.logger,

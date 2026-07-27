@@ -5,7 +5,6 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { AgenticRetrievalRunner } from "./agenticRetrievalRunner.js";
 import type { RegisteredChunk } from "./agenticTools/index.js";
-import type { IngestionSettingsReaderPort } from "./candidateRetrievalStage.js";
 import type { PromptBuilder } from "./promptBuilder.js";
 import type {
   RetrievalPipelineInterpretationResult,
@@ -22,14 +21,6 @@ export interface AgenticRetrievalPipelineServiceDeps {
   readonly runner: AgenticRetrievalRunner;
   readonly promptBuilder: PromptBuilder;
   readonly systemPrompt: string;
-  /**
-   * Reads the workspace's ingestion settings to learn the embedding model the
-   * corpus was indexed with. Without this, semantic search runs against the
-   * default text-embedding-3-small, which gives empty/wrong results for
-   * workspaces indexed with Gemini or another embedding model. Reuses the
-   * same port the deterministic pipeline uses (see CandidateRetrievalStage).
-   */
-  readonly ingestionSettingsService?: IngestionSettingsReaderPort;
 }
 
 /**
@@ -70,9 +61,6 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
     const rewrittenQuery = input.interpretation.result.rewrittenQuery;
     const agentQuery = pickAgentQuery(input);
 
-    const ingestionSettings = await this.deps.ingestionSettingsService?.getForWorkspace(
-      input.request.workspaceId,
-    );
     const runResult = await this.deps.runner.run({
       workspaceId: input.request.workspaceId,
       query: agentQuery,
@@ -80,7 +68,6 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       sourceFilter: input.request.sourceFilter,
       metadataFilter: input.request.metadataFilter,
       similarityThreshold: settings.similarityThreshold,
-      embeddingModel: ingestionSettings?.embeddingModel,
       usageContext: input.request.usageContext,
       agenticToolFactories: input.request.agenticToolFactories,
     });

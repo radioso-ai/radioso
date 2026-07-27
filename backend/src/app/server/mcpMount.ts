@@ -138,14 +138,13 @@ export const mountMergedMcp = (app: Express, dependencies: McpMountDependencies)
     });
   })();
 
-  app.options(dependencies.env.RADIOSO_MCP_MOUNT_PATH, (req, res) => {
-    applyMergedMcpCors(req, res, dependencies.env.RADIOSO_MCP_MERGED_CORS_ORIGINS);
-  });
-  app.all(dependencies.env.RADIOSO_MCP_MOUNT_PATH, (req, res, next: NextFunction) => {
+  app.use(dependencies.env.RADIOSO_MCP_MOUNT_PATH, (req, res, next) => {
     if (applyMergedMcpCors(req, res, dependencies.env.RADIOSO_MCP_MERGED_CORS_ORIGINS)) {
       return;
     }
-
+    next();
+  });
+  app.all(dependencies.env.RADIOSO_MCP_MOUNT_PATH, (req, res, next: NextFunction) => {
     void runtime.then((mcpRuntime) => mcpRuntime.middleware(req, res, next)).catch(next);
   });
 };

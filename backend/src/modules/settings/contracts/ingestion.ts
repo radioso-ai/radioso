@@ -1,4 +1,5 @@
 export {
+  activeEmbeddingModelFromPersisted,
   EMBEDDING_MODEL_DEFAULT,
   FIXED_WINDOW_CHUNK_OVERLAP_DEFAULT,
   FIXED_WINDOW_CHUNK_SIZE_DEFAULT,
@@ -8,7 +9,10 @@ export {
   embeddingModelIds,
   validateIngestionSettings,
   type EmbeddingModelId,
+  type ActiveEmbeddingModel,
+  type LegacyEmbeddingModel,
   type IngestionSettingsInput,
+  type IngestionSettingsWriteInput,
   type IngestionSettingsRecord,
   type ValidatedIngestionSettingsInput,
 } from "../domain/ingestionSettings.js";

@@ -3160,8 +3160,8 @@ export interface components {
             workspaceId: string;
             /** @enum {string} */
             chunkingStrategy: "fixed_window" | "structured_semantic" | "recursive_text";
-            /** @enum {string} */
-            embeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001";
+            /** @description The embedding model currently used for document indexing and retrieval. */
+            embeddingModel: string;
             /** @enum {string|null} */
             pendingEmbeddingModel: "text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001" | null;
             supportedEmbeddingModels: ("text-embedding-3-small" | "text-embedding-3-large" | "text-embedding-ada-002" | "gemini-embedding-001")[];

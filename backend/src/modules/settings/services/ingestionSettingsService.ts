@@ -1,34 +1,53 @@
 import {
+  activeEmbeddingModelFromPersisted,
   defaultIngestionSettings,
+  EMBEDDING_MODEL_DEFAULT,
   type EmbeddingModelId,
   embeddingModelIds,
-  type IngestionSettingsInput,
+  isEmbeddingModelId,
   type IngestionSettingsRecord,
+  type IngestionSettingsWriteInput,
+  type ValidatedIngestionSettingsInput,
   validateIngestionSettings,
 } from "../domain/ingestionSettings.js";
 import type { AuditService } from "../../audit/contracts/index.js";
-import type { IngestionSettingsRepositoryPort, WorkspaceReprocessPort } from "../contracts/services.js";
-import type { DocumentRepositoryPort } from "../../documents/contracts/index.js";
-import { badRequest } from "../../../shared/domain/errors.js";
+import type {
+  EmbeddingModelTransitionPort,
+  EmbeddingModelTransitionState,
+  IngestionSettingsRepositoryPort,
+} from "../contracts/services.js";
+import {
+  badRequest,
+  serviceUnavailable,
+} from "../../../shared/domain/errors.js";
+
+interface IngestionSettingsSnapshot {
+  settings: IngestionSettingsRecord;
+  revision: string | null;
+}
 
 export class IngestionSettingsService {
   constructor(
     private readonly repository: IngestionSettingsRepositoryPort,
     private readonly auditService: AuditService,
-    private readonly documentRepository?: Pick<DocumentRepositoryPort, "summarizeWorkspace">,
     private readonly supportedEmbeddingModels?: readonly EmbeddingModelId[],
-    private readonly workspaceReprocessService?: WorkspaceReprocessPort,
+    private readonly embeddingTransitions?: EmbeddingModelTransitionPort,
   ) {}
 
   async getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord> {
-    const current = await this.repository.findByWorkspaceId(workspaceId);
-    const existing = current?.pendingEmbeddingModel
-      ? await this.repository.promotePendingEmbeddingModelIfReady?.(workspaceId) ?? current
-      : current;
-    if (existing) {
+    const current = await this.findSettingsSnapshot(workspaceId);
+    if (current) {
+      const existing = await this.resolveEffectiveTransitionState(
+        workspaceId,
+        current.settings,
+        current.revision,
+      );
       return {
         ...existing,
-        ...validateIngestionSettings(existing),
+        ...this.validateWithPreservedActiveModel(
+          existing,
+          existing.embeddingModel,
+        ),
       };
     }
 
@@ -36,28 +55,122 @@ export class IngestionSettingsService {
     return this.repository.upsert(workspaceId, defaults);
   }
 
-  async updateForWorkspace(workspaceId: string, input: IngestionSettingsInput): Promise<IngestionSettingsRecord> {
+  private async resolveTransitionStateWithLegacyRepair(
+    workspaceId: string,
+    settings: IngestionSettingsRecord,
+  ): Promise<EmbeddingModelTransitionState | null> {
+    if (!this.embeddingTransitions) {
+      return null;
+    }
+
+    const transition = await this.embeddingTransitions.getState(workspaceId);
+    if (
+      !settings.pendingEmbeddingModel
+      || !isEmbeddingModelId(settings.pendingEmbeddingModel)
+      || (
+        transition
+        && (
+          transition.pendingModel
+          || transition.status !== "idle"
+        )
+      )
+    ) {
+      return transition;
+    }
+
+    return this.embeddingTransitions.start({
+      workspaceId,
+      activeModel: settings.embeddingModel,
+      targetModel: settings.pendingEmbeddingModel,
+    });
+  }
+
+  private async resolveEffectiveTransitionState(
+    workspaceId: string,
+    settings: IngestionSettingsRecord,
+    revision: string | null,
+  ): Promise<IngestionSettingsRecord> {
+    const transition = await this.resolveTransitionStateWithLegacyRepair(
+      workspaceId,
+      settings,
+    );
+    if (!transition) {
+      return settings;
+    }
+
+    const effective = this.applyTransitionState(settings, transition);
+    if (
+      transition.status !== "failed"
+      || transition.pendingModel
+      || !settings.pendingEmbeddingModel
+      || !revision
+      || !this.repository.clearPendingEmbeddingModel
+    ) {
+      return effective;
+    }
+
+    const synchronized = await this.repository.clearPendingEmbeddingModel(
+      workspaceId,
+      settings.pendingEmbeddingModel,
+      revision,
+    );
+    if (synchronized) {
+      return this.applyTransitionState(synchronized, transition);
+    }
+
+    // A compare-and-clear miss means another settings write won the race.
+    // Return its durable state rather than overlaying stale transition data.
+    return (await this.findSettingsSnapshot(workspaceId))?.settings ?? effective;
+  }
+
+  private async findSettingsSnapshot(
+    workspaceId: string,
+  ): Promise<IngestionSettingsSnapshot | null> {
+    if (this.repository.findVersionedByWorkspaceId) {
+      return this.repository.findVersionedByWorkspaceId(workspaceId);
+    }
+    const settings = await this.repository.findByWorkspaceId(workspaceId);
+    return settings ? { settings, revision: null } : null;
+  }
+
+  async updateForWorkspace(
+    workspaceId: string,
+    input: IngestionSettingsWriteInput,
+  ): Promise<IngestionSettingsRecord> {
     try {
-      const existing = await this.repository.findByWorkspaceId(workspaceId);
-      const baseline = existing ?? defaultIngestionSettings(workspaceId);
+      const existing = await this.findSettingsSnapshot(workspaceId);
+      const baseline = existing
+        ? await this.resolveEffectiveTransitionState(
+            workspaceId,
+            existing.settings,
+            existing.revision,
+          )
+        : defaultIngestionSettings(workspaceId);
       const requestedEmbeddingModel = input.embeddingModel;
-      this.assertRequestedEmbeddingModelCanRun(baseline, requestedEmbeddingModel);
-      this.assertEmbeddingTransitionCanStart(baseline, requestedEmbeddingModel);
-      const embeddingTransition = requestedEmbeddingModel
-        ? await this.resolveEmbeddingTransition(workspaceId, baseline, requestedEmbeddingModel)
+      const transitionTarget = this.resolveTransitionTarget(
+        baseline,
+        requestedEmbeddingModel,
+      );
+      this.assertRequestedEmbeddingModelCanRun(baseline, transitionTarget);
+      this.assertEmbeddingTransitionCanStart(baseline, transitionTarget);
+      const embeddingTransition = transitionTarget
+        ? this.transitionFields(await this.startAndReconcileTransition({
+            workspaceId,
+            activeModel: baseline.embeddingModel,
+            targetModel: transitionTarget,
+          }))
         : {
             embeddingModel: baseline.embeddingModel,
             pendingEmbeddingModel: baseline.pendingEmbeddingModel,
           };
       const settings = await this.repository.upsert(
         workspaceId,
-        validateIngestionSettings({
+        this.validateWithPreservedActiveModel({
           ...baseline,
           ...input,
           ...embeddingTransition,
-        }),
+        }, embeddingTransition.embeddingModel),
       );
-      await this.reprocessWorkspaceForNewPendingModel(workspaceId, baseline, settings, input);
       try {
         await this.auditService.record({
           workspaceId,
@@ -83,7 +196,18 @@ export class IngestionSettingsService {
   }
 
   async promotePendingEmbeddingModelIfReady(workspaceId: string): Promise<IngestionSettingsRecord | null> {
-    return this.repository.promotePendingEmbeddingModelIfReady?.(workspaceId) ?? null;
+    if (!this.embeddingTransitions) {
+      return null;
+    }
+    const transition = await this.embeddingTransitions.reconcile(workspaceId);
+    if (!transition) {
+      return null;
+    }
+    const baseline = await this.repository.findByWorkspaceId(workspaceId);
+    if (!baseline) {
+      return null;
+    }
+    return this.persistTransitionState(workspaceId, baseline, transition);
   }
 
   async cancelPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord> {
@@ -92,12 +216,12 @@ export class IngestionSettingsService {
       return baseline;
     }
 
-    const cleared = await this.repository.clearPendingEmbeddingModel?.(workspaceId);
-    const settings = cleared ?? {
-      ...baseline,
-      pendingEmbeddingModel: null,
-      updatedAt: new Date(),
-    };
+    const transition = await this.requireEmbeddingTransitions().cancel(workspaceId);
+    const settings = await this.persistTransitionState(
+      workspaceId,
+      baseline,
+      transition,
+    );
 
     try {
       await this.auditService.record({
@@ -113,35 +237,6 @@ export class IngestionSettingsService {
 
   listSupportedEmbeddingModels(): readonly EmbeddingModelId[] {
     return this.supportedEmbeddingModels ?? embeddingModelIds;
-  }
-
-  private async resolveEmbeddingTransition(
-    workspaceId: string,
-    baseline: IngestionSettingsRecord,
-    requestedEmbeddingModel: EmbeddingModelId,
-  ): Promise<Pick<IngestionSettingsRecord, "embeddingModel" | "pendingEmbeddingModel">> {
-    if (requestedEmbeddingModel === baseline.embeddingModel) {
-      return {
-        embeddingModel: baseline.embeddingModel,
-        pendingEmbeddingModel: baseline.pendingEmbeddingModel,
-      };
-    }
-
-    const hasDocuments = this.documentRepository
-      ? (await this.documentRepository.summarizeWorkspace(workspaceId)).documentCount > 0
-      : true;
-
-    if (!hasDocuments) {
-      return {
-        embeddingModel: requestedEmbeddingModel,
-        pendingEmbeddingModel: null,
-      };
-    }
-
-    return {
-      embeddingModel: baseline.embeddingModel,
-      pendingEmbeddingModel: requestedEmbeddingModel,
-    };
   }
 
   private assertRequestedEmbeddingModelCanRun(
@@ -174,30 +269,105 @@ export class IngestionSettingsService {
     throw badRequest(`embeddingModel change already pending for ${baseline.pendingEmbeddingModel}`);
   }
 
-  private async reprocessWorkspaceForNewPendingModel(
-    workspaceId: string,
+  private resolveTransitionTarget(
     baseline: IngestionSettingsRecord,
-    settings: IngestionSettingsRecord,
-    input: IngestionSettingsInput,
-  ): Promise<void> {
+    requestedEmbeddingModel: string | undefined,
+  ): EmbeddingModelId | undefined {
     if (
-      !settings.pendingEmbeddingModel ||
-      settings.pendingEmbeddingModel === baseline.pendingEmbeddingModel ||
-      !this.workspaceReprocessService
+      !requestedEmbeddingModel ||
+      requestedEmbeddingModel === baseline.embeddingModel
     ) {
-      return;
+      return undefined;
+    }
+    if (!isEmbeddingModelId(requestedEmbeddingModel)) {
+      throw badRequest("embeddingModel must be a supported embedding model");
+    }
+    return requestedEmbeddingModel;
+  }
+
+  private validateWithPreservedActiveModel(
+    input: IngestionSettingsWriteInput & {
+      pendingEmbeddingModel?: EmbeddingModelId | null;
+    },
+    activeEmbeddingModel: string,
+  ): ValidatedIngestionSettingsInput {
+    if (isEmbeddingModelId(activeEmbeddingModel)) {
+      return validateIngestionSettings({
+        ...input,
+        embeddingModel: activeEmbeddingModel,
+      });
     }
 
-    try {
-      await this.workspaceReprocessService.reprocessWorkspace(workspaceId);
-    } catch (error) {
-      await this.repository.upsert(workspaceId, validateIngestionSettings({
-        ...settings,
-        ...input,
-        embeddingModel: baseline.embeddingModel,
-        pendingEmbeddingModel: baseline.pendingEmbeddingModel,
-      }));
-      throw error;
+    const validated = validateIngestionSettings({
+      ...input,
+      embeddingModel: EMBEDDING_MODEL_DEFAULT,
+    });
+    return {
+      ...validated,
+      // This persisted value is preserved only for an unchanged legacy echo.
+      // It is never accepted as a new embedding-model selection.
+      embeddingModel: activeEmbeddingModelFromPersisted(activeEmbeddingModel),
+    };
+  }
+
+  private requireEmbeddingTransitions(): EmbeddingModelTransitionPort {
+    if (this.embeddingTransitions) {
+      return this.embeddingTransitions;
     }
+    throw serviceUnavailable(
+      "Embedding model transitions are temporarily unavailable",
+    );
+  }
+
+  private async startAndReconcileTransition(input: {
+    workspaceId: string;
+    activeModel: string;
+    targetModel: EmbeddingModelId;
+  }): Promise<EmbeddingModelTransitionState> {
+    const transitions = this.requireEmbeddingTransitions();
+    const started = await transitions.start(input);
+    return await transitions.reconcile(input.workspaceId) ?? started;
+  }
+
+  private transitionFields(
+    transition: EmbeddingModelTransitionState,
+  ): Pick<IngestionSettingsRecord, "embeddingModel" | "pendingEmbeddingModel"> {
+    if (
+      transition.pendingModel
+      && transition.pendingModel === transition.activeModel
+    ) {
+      throw new Error(
+        "Embedding transition state cannot expose the active model as pending",
+      );
+    }
+    return {
+      embeddingModel: activeEmbeddingModelFromPersisted(transition.activeModel),
+      pendingEmbeddingModel: transition.pendingModel,
+    };
+  }
+
+  private applyTransitionState(
+    settings: IngestionSettingsRecord,
+    transition: EmbeddingModelTransitionState,
+  ): IngestionSettingsRecord {
+    return {
+      ...settings,
+      ...this.transitionFields(transition),
+    };
+  }
+
+  private persistTransitionState(
+    workspaceId: string,
+    settings: IngestionSettingsRecord,
+    transition: EmbeddingModelTransitionState,
+  ): Promise<IngestionSettingsRecord> {
+    const fields = this.transitionFields(transition);
+    return this.repository.upsert(
+      workspaceId,
+      this.validateWithPreservedActiveModel({
+        ...settings,
+        ...fields,
+      }, fields.embeddingModel),
+    );
   }
 }

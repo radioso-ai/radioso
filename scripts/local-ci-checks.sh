@@ -171,7 +171,7 @@ start_postgres() {
     -e POSTGRES_PASSWORD=postgres \
     -e POSTGRES_USER=postgres \
     -p 127.0.0.1::5432 \
-    pgvector/pgvector:pg16
+    pgvector/pgvector:0.8.5-pg16
 
   postgres_port="$(docker port "$postgres_container" 5432/tcp | sed 's/.*://')"
   for _ in $(seq 1 40); do

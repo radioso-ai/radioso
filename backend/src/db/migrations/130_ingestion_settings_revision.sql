@@ -1,0 +1,2 @@
+ALTER TABLE ingestion_settings
+  ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;

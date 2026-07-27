@@ -28,6 +28,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
     : buildDependencies(options.env, { modules: options.applicationModules });
   dependencies.logger.info({ role: "worker" }, "Radioso document worker starting");
   await dependencies.applicationModules.initializeAll();
+  dependencies.vectorIndexReconciler?.start();
   await dependencies.documentProcessingWorker.start();
   await dependencies.documentJobConsumer?.start();
   // Drain the async conversation-action outbox (spec 070) out of band from the turn.
@@ -48,6 +49,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.actionDispatchWorker.stop();
         await dependencies.documentJobConsumer?.stop();
         await dependencies.documentProcessingWorker.stop();
+        await dependencies.vectorIndexReconciler?.stop();
         await dependencies.applicationModules.shutdownAll();
       } finally {
         await stopRuntimeTracing();

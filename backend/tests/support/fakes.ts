@@ -1693,9 +1693,24 @@ export class InMemoryRetrievalSettingsRepository
 
 export class InMemoryIngestionSettingsRepository implements IngestionSettingsRepositoryPort {
   private readonly items = new Map<string, IngestionSettingsRecord>();
+  private readonly revisions = new Map<string, bigint>();
 
   async findByWorkspaceId(workspaceId: string): Promise<IngestionSettingsRecord | null> {
     return this.items.get(workspaceId) ?? null;
+  }
+
+  async findVersionedByWorkspaceId(workspaceId: string): Promise<{
+    settings: IngestionSettingsRecord;
+    revision: string;
+  } | null> {
+    const settings = this.items.get(workspaceId);
+    if (!settings) {
+      return null;
+    }
+    return {
+      settings,
+      revision: String(this.revisions.get(workspaceId) ?? 1n),
+    };
   }
 
   async upsert(workspaceId: string, input: ValidatedIngestionSettingsInput): Promise<IngestionSettingsRecord> {
@@ -1714,12 +1729,27 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, record);
+    this.revisions.set(
+      workspaceId,
+      (this.revisions.get(workspaceId) ?? 0n) + 1n,
+    );
     return record;
   }
 
-  async clearPendingEmbeddingModel(workspaceId: string): Promise<IngestionSettingsRecord | null> {
+  async clearPendingEmbeddingModel(
+    workspaceId: string,
+    expectedPendingEmbeddingModel: NonNullable<
+      IngestionSettingsRecord["pendingEmbeddingModel"]
+    >,
+    expectedRevision: string,
+  ): Promise<IngestionSettingsRecord | null> {
     const existing = this.items.get(workspaceId);
-    if (!existing) {
+    const revision = this.revisions.get(workspaceId) ?? 1n;
+    if (
+      !existing
+      || existing.pendingEmbeddingModel !== expectedPendingEmbeddingModel
+      || String(revision) !== expectedRevision
+    ) {
       return null;
     }
     const record = {
@@ -1728,6 +1758,7 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, record);
+    this.revisions.set(workspaceId, revision + 1n);
     return record;
   }
 
@@ -1743,6 +1774,10 @@ export class InMemoryIngestionSettingsRepository implements IngestionSettingsRep
       updatedAt: new Date(),
     };
     this.items.set(workspaceId, record);
+    this.revisions.set(
+      workspaceId,
+      (this.revisions.get(workspaceId) ?? 0n) + 1n,
+    );
     return record;
   }
 }
@@ -2987,6 +3022,9 @@ export class InMemoryDocumentStorage implements DocumentStoragePort {
 
 export class InMemoryChunkRepository implements ChunkRepositoryPort {
   readonly items = new Map<string, ChunkRecord[]>();
+  readonly publications: Array<
+    Parameters<ChunkRepositoryPort["publishForDocumentRevision"]>[0]
+  > = [];
 
   constructor(private documentRepository?: InMemoryDocumentRepository) {}
 
@@ -3003,6 +3041,10 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
     workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
+    embeddingSpace: Parameters<
+      ChunkRepositoryPort["publishForDocumentRevision"]
+    >[0]["embeddingSpace"];
+    canonicalVersion: string;
   }): Promise<boolean> {
     if (this.documentRepository) {
       const document = this.documentRepository.items.get(input.documentId);
@@ -3018,6 +3060,7 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
       });
     }
 
+    this.publications.push(input);
     this.items.set(input.documentId, input.chunks);
     return true;
   }
@@ -3103,6 +3146,9 @@ export class InMemoryChunkRepository implements ChunkRepositoryPort {
   }
 }
 
+const jobPriority = (kind: DocumentProcessingJobRecord["kind"]): number =>
+  kind === "vectorize" ? 0 : kind === "embedding_profile" ? 1 : 2;
+
 export class InMemoryDocumentProcessingJobRepository implements DocumentProcessingJobRepositoryPort {
   readonly items = new Map<string, DocumentProcessingJobRecord>();
 
@@ -3168,7 +3214,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     const next = [...this.items.values()]
       .filter((item) => item.status === "queued" && item.availableAt <= now)
       .sort((left, right) =>
-        Number(left.kind === "enrich") - Number(right.kind === "enrich") ||
+        jobPriority(left.kind) - jobPriority(right.kind) ||
         left.createdAt.getTime() - right.createdAt.getTime())[0];
 
     if (!next) {
@@ -3226,6 +3272,35 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     }
 
     return queuedDocuments.length;
+  }
+
+  async ensureEmbeddingProfileJobsForTransition(): Promise<number> {
+    return 0;
+  }
+
+  async cancelEmbeddingProfileJobsForTransition(): Promise<number> {
+    return 0;
+  }
+
+  async reconcileEmbeddingProfileJobsForWorkspace(): Promise<{ enqueued: number; skipped: number }> {
+    return { enqueued: 0, skipped: 0 };
+  }
+
+  async listQueuedEmbeddingProfileJobsForWorkspace(input: {
+    workspaceId: string;
+    embeddingSpaceId?: string;
+    generation?: string;
+    limit?: number;
+  }): Promise<DocumentProcessingJobRecord[]> {
+    return [...this.items.values()]
+      .filter((item) =>
+        item.workspaceId === input.workspaceId
+        && item.kind === "embedding_profile"
+        && item.status === "queued"
+        && (!input.embeddingSpaceId || item.embeddingSpaceId === input.embeddingSpaceId)
+        && (!input.generation || item.workspaceProfileGeneration === input.generation))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .slice(0, input.limit);
   }
 
   async listProcessingJobs(): Promise<DocumentProcessingJobRecord[]> {

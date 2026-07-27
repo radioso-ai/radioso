@@ -208,6 +208,19 @@ export interface BootstrapGreetingCache {
   workspace_id: string;
 }
 
+export interface ChunkEmbeddings {
+  canonical_version: Int8;
+  chunk_id: string;
+  content_hash: string;
+  created_at: Generated<Timestamp>;
+  dimensions: number;
+  document_revision: number;
+  embedding: string;
+  embedding_space_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface Chunks {
   chunk_index: number;
   content: string;
@@ -376,6 +389,7 @@ export interface DocumentProcessingJobs {
   created_at: Generated<Timestamp>;
   document_id: string;
   document_revision: number;
+  embedding_space_id: string | null;
   id: string;
   kind: Generated<string>;
   last_error: string | null;
@@ -383,6 +397,7 @@ export interface DocumentProcessingJobs {
   status: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
+  workspace_profile_generation: Int8 | null;
 }
 
 export interface Documents {
@@ -456,6 +471,25 @@ export interface EmailVerificationTokens {
   user_id: string;
 }
 
+export interface EmbeddingSpaces {
+  created_at: Generated<Timestamp>;
+  dimensions: number;
+  distance_metric: string;
+  document_task: string | null;
+  endpoint_scope_fingerprint: string;
+  id: string;
+  identity_fingerprint: string;
+  model: string;
+  model_version: string | null;
+  normalization: string;
+  provider: string;
+  quarantine_reason: string | null;
+  query_task: string | null;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  vector_options: Generated<Json>;
+}
+
 export interface EmbeddingUsageItems {
   chunk_id: string | null;
   chunk_index: number;
@@ -523,6 +557,7 @@ export interface IngestionSettings {
   fixed_window_chunk_overlap: Generated<number>;
   fixed_window_chunk_size: Generated<number>;
   pending_embedding_model: string | null;
+  revision: Generated<Int8>;
   structured_max_chunk_size: Generated<number>;
   structured_min_chunk_size: Generated<number>;
   updated_at: Generated<Timestamp>;
@@ -861,6 +896,35 @@ export interface Users {
   updated_at: Generated<Timestamp>;
 }
 
+export interface VectorIndexCheckpoints {
+  acknowledged_sequence: Generated<Int8>;
+  backend_key: string;
+  embedding_space_id: string;
+  readiness: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface VectorIndexWork {
+  attempt_count: Generated<number>;
+  available_at: Generated<Timestamp>;
+  canonical_version: Int8;
+  chunk_id: string;
+  claimed_at: Timestamp | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  document_id: string | null;
+  embedding_space_id: string;
+  id: string;
+  last_error: string | null;
+  operation: string;
+  payload: Generated<Json>;
+  sequence: Generated<Int8>;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface WebsiteCrawlJobs {
   account_id: string | null;
   attempt_count: Generated<number>;
@@ -878,6 +942,29 @@ export interface WebsiteCrawlJobs {
   resume_requested_at: Timestamp | null;
   source_id: string | null;
   status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface WorkspaceEmbeddingProfiles {
+  active_embedding_space_id: string;
+  created_at: Generated<Timestamp>;
+  generation: Generated<Int8>;
+  pending_embedding_space_id: string | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface WorkspaceEmbeddingTransitions {
+  cleanup_after: Timestamp | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  failure_reason: string | null;
+  generation: Int8;
+  id: string;
+  source_embedding_space_id: string;
+  status: string;
+  target_embedding_space_id: string;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -963,6 +1050,7 @@ export interface DB {
   assistant_answer_triage: AssistantAnswerTriage;
   audit_events: AuditEvents;
   bootstrap_greeting_cache: BootstrapGreetingCache;
+  chunk_embeddings: ChunkEmbeddings;
   chunks: Chunks;
   clarification_states: ClarificationStates;
   connector_configs: ConnectorConfigs;
@@ -982,6 +1070,7 @@ export interface DB {
   documents: Documents;
   email_skill_activity: EmailSkillActivity;
   email_verification_tokens: EmailVerificationTokens;
+  embedding_spaces: EmbeddingSpaces;
   embedding_usage_items: EmbeddingUsageItems;
   eval_cases: EvalCases;
   eval_runs: EvalRuns;
@@ -1011,7 +1100,11 @@ export interface DB {
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
   users: Users;
+  vector_index_checkpoints: VectorIndexCheckpoints;
+  vector_index_work: VectorIndexWork;
   website_crawl_jobs: WebsiteCrawlJobs;
+  workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
+  workspace_embedding_transitions: WorkspaceEmbeddingTransitions;
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
   workspace_tokens: WorkspaceTokens;

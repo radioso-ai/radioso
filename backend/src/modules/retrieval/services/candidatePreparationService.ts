@@ -1,5 +1,5 @@
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
-import { buildRetrievalText } from "./embeddingService.js";
+import { buildRetrievalText } from "./searchTextRenderer.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";
 import { compareByFusedScore, fuseCandidateRanks } from "./candidateScoring.js";
 

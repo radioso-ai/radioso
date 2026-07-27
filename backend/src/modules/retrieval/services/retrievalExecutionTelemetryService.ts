@@ -55,6 +55,11 @@ export class RetrievalExecutionTelemetryService {
     normalizedCandidateCount: number;
     finalContextCount: number;
     queryEmbeddingDurationMs?: number;
+    semanticRetrievalAvailability?: "available" | "degraded" | "unavailable";
+    semanticRetrievalFailureReason?:
+      | "query_embedding_unavailable"
+      | "vector_search_unavailable"
+      | null;
     retrievalSkipped?: boolean;
     parsedQuery?: ParsedQueryInterpretation;
     appliedConstraints?: AppliedConstraint[];
@@ -130,6 +135,8 @@ export class RetrievalExecutionTelemetryService {
           executionSurface: input.execution?.surface,
           executionPath: input.execution?.path,
           retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
+          semanticRetrievalAvailability: input.semanticRetrievalAvailability,
+          semanticRetrievalFailureReason: input.semanticRetrievalFailureReason,
           skillName: skillDiagnostic?.skillName,
           shapeName: input.shapeSelection?.shapeName,
           queryShape: input.shapeSelection?.queryShape,
@@ -140,6 +147,8 @@ export class RetrievalExecutionTelemetryService {
           rewrite_status: input.rewriteStatus,
           rerank_status: input.rerankStatus,
           fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
+          semantic_availability: input.semanticRetrievalAvailability ?? "unknown",
+          semantic_failure_reason: input.semanticRetrievalFailureReason ?? "none",
           execution_surface: input.execution?.surface ?? "unknown",
           execution_path: input.execution?.path ?? "unknown",
           skill_name: skillDiagnostic?.skillName ?? "unknown",
@@ -168,6 +177,8 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.rewrite.status": input.rewriteStatus,
   "retrieval.rerank.status": input.rerankStatus,
   "retrieval.fallback.applied": fallbackApplied,
+  "retrieval.semantic.availability": input.semanticRetrievalAvailability,
+  "retrieval.semantic.failure_reason": input.semanticRetrievalFailureReason,
   "retrieval.skipped": input.retrievalSkipped ?? false,
   "retrieval.candidates.semantic_original.count": boundedTraceCount(input.originalCandidateCount),
   "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(input.rewrittenCandidateCount),

@@ -7,7 +7,10 @@ import {
 } from "../../src/modules/documents/services/documentProcessingService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { EmbeddingService, ModelEmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import {
+  EmbeddingGenerationService,
+  ModelEmbeddingGenerationGateway,
+} from "../../src/modules/embeddingProfiles/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import { EmbeddingInferencePipelineService } from "../../src/shared/infra/llm/embeddingInferencePipeline.js";
 import type { ProviderUsage } from "../../src/shared/infra/llm/providerTypes.js";
@@ -18,6 +21,7 @@ import {
   InMemoryDocumentProcessingJobRepository,
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
+import { bindDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 class RecordingUsageEventRecorder implements UsageEventRecorder {
   readonly embeddings: EmbeddingUsageEvent[] = [];
@@ -50,27 +54,28 @@ const createProcessingService = (input: {
   recorder: RecordingUsageEventRecorder;
   embedTexts: (texts: string[]) => Promise<number[][]>;
   providerUsage?: ProviderUsage;
-}) =>
-  new DocumentProcessingService(
-    input.documentRepository,
-    input.chunkRepository,
-    new EmbeddingService(
-      new ModelEmbeddingGateway(
-        new EmbeddingInferencePipelineService(
-          {
-            metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
-            async embedTexts(texts) {
-              return {
-                vectors: await input.embedTexts(texts),
-                usage: input.providerUsage,
-              };
-            },
+}) => {
+  const embeddingService = new EmbeddingGenerationService(
+    new ModelEmbeddingGenerationGateway(
+      new EmbeddingInferencePipelineService(
+        {
+          metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
+          async embedTexts(texts) {
+            return {
+              vectors: await input.embedTexts(texts),
+              usage: input.providerUsage,
+            };
           },
-          input.recorder,
-          (model) => ({ capability: "embeddings", provider: "openai", model }),
-        ),
+        },
+        input.recorder,
+        (model) => ({ capability: "embeddings", provider: "openai", model }),
       ),
     ),
+  );
+  return new DocumentProcessingService(
+    input.documentRepository,
+    input.chunkRepository,
+    bindDocumentEmbeddingPort(embeddingService),
     input.auditService,
     {
       async getForWorkspace(workspaceId: string) {
@@ -79,6 +84,7 @@ const createProcessingService = (input: {
     },
     new ChunkingStrategyRegistry([fixedWindowStrategy]),
   );
+};
 
 describe("document processing usage metering", () => {
   it("builds privacy-safe document processing span attributes with bounded counts", () => {
@@ -222,7 +228,7 @@ describe("document processing usage metering", () => {
 
   it("assigns distinct idempotency keys to unattributed embedding batches", async () => {
     const recorder = new RecordingUsageEventRecorder();
-    const gateway = new ModelEmbeddingGateway(
+    const gateway = new ModelEmbeddingGenerationGateway(
       new EmbeddingInferencePipelineService(
         {
           metadata: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },

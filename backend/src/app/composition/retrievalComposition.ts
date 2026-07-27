@@ -3,6 +3,9 @@ import type {
   VectorIndexWorkRepositoryPort,
 } from "../../modules/embeddingProfiles/contracts/repositories.js";
 import type {
+  EmbeddingTransitionCoordinator,
+} from "../../modules/embeddingProfiles/public.js";
+import type {
   EmbeddingTransitionIndexPreparationPort,
 } from "./embeddingModelTransitionAdapter.js";
 import type {
@@ -13,6 +16,19 @@ import type {
 } from "../../modules/retrieval/services/vectorIndexReconciler.js";
 
 export const PGVECTOR_BACKEND_KEY = "pgvector";
+
+type EmbeddingTransitionMaintenancePort = Pick<
+  EmbeddingTransitionCoordinator,
+  "reconcileBackfills"
+> & {
+  promotePendingEmbeddingModelIfReady(
+    workspaceId: string,
+  ): Promise<unknown>;
+};
+
+type BackfillReconciliationOutcome = Awaited<
+  ReturnType<EmbeddingTransitionCoordinator["reconcileBackfills"]>
+>;
 
 export class PgVectorTransitionIndexPreparation
 implements EmbeddingTransitionIndexPreparationPort {
@@ -41,17 +57,18 @@ implements EmbeddingTransitionIndexPreparationPort {
 }
 
 export class PgVectorTransitionMaintenance {
+  private backfillReconciliationFailureActive = false;
+
   constructor(
     private readonly reconciler: Pick<VectorIndexReconciler, "runUntilIdle">,
     private readonly profiles: Pick<
       EmbeddingProfileRepositoryPort,
       "listBuildingTransitions"
     >,
-    private readonly transitions: {
-      promotePendingEmbeddingModelIfReady(
-        workspaceId: string,
-      ): Promise<unknown>;
-    },
+    private readonly transitions: EmbeddingTransitionMaintenancePort,
+    private readonly onBackfillReconciliationFailure?: (
+      outcome: BackfillReconciliationOutcome,
+    ) => void,
   ) {}
 
   async run(input: {
@@ -72,6 +89,13 @@ export class PgVectorTransitionMaintenance {
   }
 
   async reconcileBuildingTransitions(limit = 100): Promise<void> {
+    const backfills = await this.transitions.reconcileBackfills({ limit });
+    if (backfills.failed === 0) {
+      this.backfillReconciliationFailureActive = false;
+    } else if (!this.backfillReconciliationFailureActive) {
+      this.backfillReconciliationFailureActive = true;
+      this.onBackfillReconciliationFailure?.(backfills);
+    }
     const building = await this.profiles.listBuildingTransitions({ limit });
     for (const { profile } of building) {
       await this.transitions.promotePendingEmbeddingModelIfReady(

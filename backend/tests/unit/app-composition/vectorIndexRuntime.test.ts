@@ -47,6 +47,11 @@ describe("vector index production composition", () => {
     const runUntilIdle = vi.fn()
       .mockRejectedValueOnce(checkpointCallbackFailure)
       .mockResolvedValueOnce(0);
+    const reconcileBackfills = vi.fn().mockResolvedValue({
+      discovered: 1,
+      handedOff: 1,
+      failed: 0,
+    });
     const promotePendingEmbeddingModelIfReady = vi.fn()
       .mockResolvedValue(undefined);
     const maintenance = new PgVectorTransitionMaintenance(
@@ -56,7 +61,10 @@ describe("vector index production composition", () => {
           profile: { workspaceId: "workspace-1" },
         }]),
       } as never,
-      { promotePendingEmbeddingModelIfReady },
+      {
+        reconcileBackfills,
+        promotePendingEmbeddingModelIfReady,
+      },
     );
 
     await expect(maintenance.run({
@@ -70,5 +78,91 @@ describe("vector index production composition", () => {
     await maintenance.run({ maxBatches: 10 });
     expect(promotePendingEmbeddingModelIfReady)
       .toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("repairs committed backfill handoffs before retrying promotion", async () => {
+    const events: string[] = [];
+    const reconcileBackfills = vi.fn().mockImplementation(async () => {
+      events.push("backfill");
+      return {
+        discovered: 1,
+        handedOff: 1,
+        failed: 0,
+      };
+    });
+    const listBuildingTransitions = vi.fn().mockImplementation(async () => {
+      events.push("list");
+      return [{
+        profile: { workspaceId: "workspace-1" },
+      }];
+    });
+    const promotePendingEmbeddingModelIfReady = vi.fn()
+      .mockImplementation(async () => {
+        events.push("promote");
+      });
+    const maintenance = new PgVectorTransitionMaintenance(
+      { runUntilIdle: vi.fn().mockResolvedValue(0) },
+      { listBuildingTransitions } as never,
+      {
+        reconcileBackfills,
+        promotePendingEmbeddingModelIfReady,
+      },
+    );
+
+    await maintenance.reconcileBuildingTransitions(25);
+
+    expect(reconcileBackfills).toHaveBeenCalledWith({ limit: 25 });
+    expect(events).toEqual(["backfill", "list", "promote"]);
+  });
+
+  it("reports a persistent backfill-reconciliation failure once per incident", async () => {
+    const reconcileBackfills = vi.fn()
+      .mockResolvedValueOnce({
+        discovered: 2,
+        handedOff: 1,
+        failed: 1,
+      })
+      .mockResolvedValueOnce({
+        discovered: 2,
+        handedOff: 1,
+        failed: 1,
+      })
+      .mockResolvedValueOnce({
+        discovered: 1,
+        handedOff: 1,
+        failed: 0,
+      })
+      .mockResolvedValueOnce({
+        discovered: 2,
+        handedOff: 1,
+        failed: 1,
+      });
+    const onBackfillReconciliationFailure = vi.fn();
+    const maintenance = new PgVectorTransitionMaintenance(
+      { runUntilIdle: vi.fn().mockResolvedValue(0) },
+      { listBuildingTransitions: vi.fn().mockResolvedValue([]) } as never,
+      {
+        reconcileBackfills,
+        promotePendingEmbeddingModelIfReady: vi.fn(),
+      },
+      onBackfillReconciliationFailure,
+    );
+
+    await maintenance.reconcileBuildingTransitions();
+    await maintenance.reconcileBuildingTransitions();
+    await maintenance.reconcileBuildingTransitions();
+    await maintenance.reconcileBuildingTransitions();
+
+    expect(onBackfillReconciliationFailure).toHaveBeenCalledTimes(2);
+    expect(onBackfillReconciliationFailure).toHaveBeenNthCalledWith(1, {
+      discovered: 2,
+      handedOff: 1,
+      failed: 1,
+    });
+    expect(onBackfillReconciliationFailure).toHaveBeenNthCalledWith(2, {
+      discovered: 2,
+      handedOff: 1,
+      failed: 1,
+    });
   });
 });

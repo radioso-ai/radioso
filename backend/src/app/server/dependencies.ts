@@ -390,9 +390,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     vectorIndexReconciler,
     repositories.embeddingProfileRepository,
     {
+      reconcileBackfills: (input) =>
+        embeddingTransitionCoordinator.reconcileBackfills(input),
       promotePendingEmbeddingModelIfReady: (workspaceId) =>
         settings.ingestionSettingsService
           .promotePendingEmbeddingModelIfReady!(workspaceId),
+    },
+    (outcome) => {
+      logger.warn(
+        {
+          role: "worker",
+          embeddingTransitionsDiscovered: outcome.discovered,
+          embeddingTransitionBackfillHandoffsFailed: outcome.failed,
+        },
+        "Embedding transition backfill reconciliation incomplete",
+      );
     },
   );
   const embeddingPorts = new ProfileBoundEmbeddingPorts(

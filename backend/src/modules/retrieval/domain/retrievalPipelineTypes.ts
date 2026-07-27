@@ -315,6 +315,11 @@ export interface RetrievalExecutionDiagnostics {
   normalizedCandidateCount: number;
   finalContextCount: number;
   queryEmbeddingDurationMs?: number;
+  semanticRetrievalAvailability?: "available" | "degraded" | "unavailable";
+  semanticRetrievalFailureReason?:
+    | "query_embedding_unavailable"
+    | "vector_search_unavailable"
+    | null;
   retrievalSkipped?: boolean;
   parsedQuery?: ParsedQueryInterpretation;
   appliedConstraints?: AppliedConstraint[];

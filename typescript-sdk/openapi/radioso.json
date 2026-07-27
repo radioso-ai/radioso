@@ -1373,12 +1373,7 @@
           },
           "embeddingModel": {
             "type": "string",
-            "enum": [
-              "text-embedding-3-small",
-              "text-embedding-3-large",
-              "text-embedding-ada-002",
-              "gemini-embedding-001"
-            ]
+            "description": "The embedding model currently used for document indexing and retrieval."
           },
           "pendingEmbeddingModel": {
             "type": [

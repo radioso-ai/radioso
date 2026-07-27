@@ -12,9 +12,19 @@ import type {
 import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
+import type {
+  EmbeddingProfileJobService,
+  EmbeddingProfileTerminalFailureKind,
+  EmbeddingProfileTerminalFailurePort,
+} from "./embeddingProfileJobService.js";
+import {
+  EmbeddingVectorContractError,
+  type EmbeddingProfileCleanupService,
+} from "../../embeddingProfiles/public.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_JOB_LEASE_MS = 300_000;
+const EMBEDDING_CLEANUP_INTERVAL_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
 
@@ -34,7 +44,7 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
 
 export const buildDocumentWorkerJobTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
-  input: { outcome?: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed" | "failed_permanent" | "processed" | "noop" | "busy" } = {},
+  input: { outcome?: "completed" | "stale" | "deleted" | "superseded" | "retry_scheduled" | "failed" | "failed_permanent" | "processed" | "noop" | "busy" } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
   "radioso.document_id": job.documentId,
@@ -51,6 +61,7 @@ export class DocumentProcessingWorker {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private lastActivityState: "idle" | "processing" | null = null;
+  private lastEmbeddingCleanupAt = 0;
 
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
@@ -63,7 +74,55 @@ export class DocumentProcessingWorker {
     private readonly jobLeaseMs = DEFAULT_JOB_LEASE_MS,
     private readonly telemetryService?: TelemetryService,
     private readonly errorReporter?: ErrorReporter,
+    private readonly embeddingProfileJobService?: Pick<EmbeddingProfileJobService, "process">,
+    private readonly embeddingProfileCleanupService?: Pick<EmbeddingProfileCleanupService, "runDue">,
+    private readonly postJobMaintenance?: {
+      run(input: {
+        maxBatches: number;
+        workspaceId?: string;
+      }): Promise<void>;
+    },
+    private readonly embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort,
   ) {}
+
+  async runPostJobMaintenance(
+    maxBatches = 10,
+    workspaceId?: string,
+  ): Promise<void> {
+    if (!this.postJobMaintenance) {
+      return;
+    }
+    try {
+      await this.postJobMaintenance.run({
+        maxBatches,
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error instanceof Error ? error.message : String(error),
+          role: "worker",
+        },
+        "Post-job maintenance failed after document processing",
+      );
+      await this.errorReporter
+        ?.report({
+          errorType: "document.worker.post_job_maintenance_failed",
+          error,
+          severity: "error",
+        })
+        .catch((reportError) => {
+          this.logger.error(
+            {
+              err: reportError instanceof Error
+                ? reportError.message
+                : String(reportError),
+            },
+            "Post-job maintenance error report failed",
+          );
+        });
+    }
+  }
 
   async start(): Promise<void> {
     if (this.running) {
@@ -87,7 +146,7 @@ export class DocumentProcessingWorker {
       // Enrich jobs run against an already-ready document, so readiness is not
       // proof the enrichment ran. Release the job to run again on restart, and
       // never touch the document status — the vectorize path owns readiness.
-      if (job.kind === "enrich") {
+      if (job.kind !== "vectorize") {
         await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
         return;
       }
@@ -120,6 +179,7 @@ export class DocumentProcessingWorker {
   }
 
   async runOnce(now: Date = new Date()): Promise<boolean> {
+    await this.runEmbeddingCleanupIfDue(now);
     await this.releaseStaleClaims(now);
     const job = await this.claimNextAvailableJob(now);
     if (!job) {
@@ -247,17 +307,25 @@ export class DocumentProcessingWorker {
       const startedAt = Date.now();
 
       try {
-        const outcome = job.kind === "enrich"
-          ? await this.processingService.processEnrichment(job)
-          : await this.processingService.process(job);
+        const outcome = job.kind === "embedding_profile"
+          ? await this.requireEmbeddingProfileJobService().process(job)
+          : job.kind === "enrich"
+            ? await this.processingService.processEnrichment(job)
+            : await this.processingService.process(job);
         if (outcome === "completed") {
           await this.jobRepository.markCompleted(job.id);
+          await this.runPostJobMaintenance(10, job.workspaceId);
           await this.emitJobTelemetry("document.worker.job_completed", job, {
             durationMs: Date.now() - startedAt,
             outcome: "completed",
           });
         } else {
-          await this.jobRepository.markSkipped(job.id, outcome === "stale" ? "stale_revision" : "document_deleted");
+          const skipReason = outcome === "stale"
+            ? "stale_revision"
+            : outcome === "superseded"
+              ? "profile_superseded"
+              : "document_deleted";
+          await this.jobRepository.markSkipped(job.id, skipReason);
           await this.emitJobTelemetry("document.worker.job_skipped", job, {
             durationMs: Date.now() - startedAt,
             outcome,
@@ -273,7 +341,14 @@ export class DocumentProcessingWorker {
     return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
       const message = getProviderFailureReason(error);
       const isPermanent = isPermanentProviderFailure(error);
-      const hasRetriesRemaining = !isPermanent && job.attemptCount < MAX_ATTEMPTS;
+      const isContractInvalid = error instanceof EmbeddingVectorContractError;
+      const hasRetriesRemaining =
+        !isPermanent
+        && !isContractInvalid
+        && job.attemptCount < MAX_ATTEMPTS;
+      const terminalProfileFailureKind = job.kind === "embedding_profile"
+        ? embeddingProfileTerminalFailureKind(error, isPermanent)
+        : undefined;
 
       if (hasRetriesRemaining) {
         const delayMs =
@@ -282,7 +357,7 @@ export class DocumentProcessingWorker {
         await this.jobRepository.reschedule(job.id, nextAttemptAt, message);
         // Enrich jobs run against an already-ready document; a retry must never
         // knock it back to "queued" — only the vectorize path owns document status.
-        if (job.kind !== "enrich") {
+        if (job.kind === "vectorize") {
           await this.documentRepository.setStatusIfRevisionMatches({
             documentId: job.documentId,
             workspaceId: job.workspaceId,
@@ -306,6 +381,7 @@ export class DocumentProcessingWorker {
             documentId: job.documentId,
             revision: job.documentRevision,
             attemptCount: job.attemptCount,
+            jobKind: job.kind,
             retryScheduled: true,
             reason: message,
           },
@@ -318,7 +394,28 @@ export class DocumentProcessingWorker {
         return;
       }
 
-      if (job.kind === "enrich") {
+      if (job.kind === "embedding_profile") {
+        if (!terminalProfileFailureKind) {
+          throw new Error(
+            "Embedding profile terminal failure classification is unavailable",
+          );
+        }
+        await this.requireEmbeddingProfileTerminalFailures().recordFailure({
+          jobId: job.id,
+          workspaceId: job.workspaceId,
+          embeddingSpaceId: requireEmbeddingProfileJobField(
+            job.embeddingSpaceId,
+            "embedding space",
+          ),
+          workspaceProfileGeneration: requireEmbeddingProfileJobField(
+            job.workspaceProfileGeneration,
+            "workspace profile generation",
+          ),
+          failureKind: terminalProfileFailureKind,
+        });
+      }
+
+      if (job.kind !== "vectorize") {
         // The document is already queryable; a failed enrich job must never flip
         // it to "failed". Mark only the job failed and leave the document ready.
         await this.jobRepository.markFailed(job.id, message);
@@ -343,8 +440,12 @@ export class DocumentProcessingWorker {
           documentId: job.documentId,
           revision: job.documentRevision,
           attemptCount: job.attemptCount,
+          jobKind: job.kind,
           retryScheduled: false,
           permanent: isPermanent,
+          ...(terminalProfileFailureKind
+            ? { embeddingProfileFailureKind: terminalProfileFailureKind }
+            : {}),
           reason: message,
         },
       });
@@ -352,8 +453,25 @@ export class DocumentProcessingWorker {
         durationMs,
         outcome: isPermanent ? "failed_permanent" : "failed",
         reason: message,
+        embeddingProfileFailureKind: terminalProfileFailureKind,
       });
     });
+  }
+
+  private requireEmbeddingProfileJobService(): Pick<EmbeddingProfileJobService, "process"> {
+    if (!this.embeddingProfileJobService) {
+      throw new Error("Embedding profile job service is not configured");
+    }
+    return this.embeddingProfileJobService;
+  }
+
+  private requireEmbeddingProfileTerminalFailures(): EmbeddingProfileTerminalFailurePort {
+    if (!this.embeddingProfileTerminalFailures) {
+      throw new Error(
+        "Embedding profile terminal failure handling is not configured",
+      );
+    }
+    return this.embeddingProfileTerminalFailures;
   }
 
   private async repairQueueGaps(): Promise<number> {
@@ -379,6 +497,37 @@ export class DocumentProcessingWorker {
     }
 
     return repairedJobCount;
+  }
+
+  private async runEmbeddingCleanupIfDue(now: Date): Promise<void> {
+    if (
+      !this.embeddingProfileCleanupService
+      || now.getTime() - this.lastEmbeddingCleanupAt < EMBEDDING_CLEANUP_INTERVAL_MS
+    ) {
+      return;
+    }
+    this.lastEmbeddingCleanupAt = now.getTime();
+    try {
+      const outcome = await this.embeddingProfileCleanupService.runDue({
+        now,
+        limit: 25,
+      });
+      if (outcome.cleaned > 0 || outcome.refused > 0) {
+        this.logger.info(
+          {
+            role: "worker",
+            embeddingSpacesCleaned: outcome.cleaned,
+            embeddingSpacesCleanupRefused: outcome.refused,
+          },
+          "Embedding profile cleanup reconciliation completed",
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        { error },
+        "Embedding profile cleanup reconciliation failed",
+      );
+    }
   }
 
   private async logQueueState(
@@ -428,8 +577,9 @@ export class DocumentProcessingWorker {
     job: DocumentProcessingJobRecord,
     input: {
       durationMs: number;
-      outcome: "completed" | "stale" | "deleted" | "retry_scheduled" | "failed" | "failed_permanent";
+      outcome: "completed" | "stale" | "deleted" | "superseded" | "retry_scheduled" | "failed" | "failed_permanent";
       reason?: string;
+      embeddingProfileFailureKind?: EmbeddingProfileTerminalFailureKind;
     },
   ): Promise<void> {
     await this.telemetryService?.emit({
@@ -447,7 +597,33 @@ export class DocumentProcessingWorker {
       metadata: input.reason ? { reason: input.reason } : undefined,
       tags: {
         outcome: input.outcome,
+        ...(input.embeddingProfileFailureKind
+          ? {
+              jobKind: job.kind,
+              embeddingProfileFailureKind: input.embeddingProfileFailureKind,
+            }
+          : {}),
       },
     });
   }
 }
+
+const requireEmbeddingProfileJobField = (
+  value: string | null | undefined,
+  label: string,
+): string => {
+  if (!value) {
+    throw new Error(`Embedding profile job requires an immutable ${label}`);
+  }
+  return value;
+};
+
+const embeddingProfileTerminalFailureKind = (
+  error: unknown,
+  isPermanent: boolean,
+): EmbeddingProfileTerminalFailureKind => {
+  if (error instanceof EmbeddingVectorContractError) {
+    return "contract_invalid";
+  }
+  return isPermanent ? "permanent" : "retry_exhausted";
+};

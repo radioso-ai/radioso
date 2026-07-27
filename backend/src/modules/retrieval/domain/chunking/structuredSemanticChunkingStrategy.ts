@@ -24,7 +24,6 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
       content: normalized,
       chunkSize: request.config.structuredMaxChunkSize,
       minCharactersPerChunk: request.config.structuredMinChunkSize,
-      embeddingModel: request.config.embeddingModel,
       embeddingUsageContext: request.config.embeddingUsageContext
         ? {
             ...request.config.embeddingUsageContext,
@@ -42,7 +41,6 @@ export class StructuredSemanticChunkingStrategy implements ChunkingStrategy {
     content: string;
     chunkSize: number;
     minCharactersPerChunk: number;
-    embeddingModel?: string;
     embeddingUsageContext?: import("../../../../shared/domain/modelCallUsageContext.js").ModelCallUsageContext;
   }) {
     try {

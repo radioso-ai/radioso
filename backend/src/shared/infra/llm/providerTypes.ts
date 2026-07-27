@@ -1,3 +1,10 @@
+import type {
+  EmbeddingProviderImplementation,
+  EmbeddingPurpose,
+} from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
+
+export type { EmbeddingPurpose } from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
+
 export type LlmProviderName = "openai" | "openai-compatible" | "gemini" | "claude";
 export type LlmCapabilityName = "chat" | "rewrite" | "rerank" | "embeddings";
 
@@ -76,6 +83,14 @@ export interface EmbeddingResult {
   usage?: ProviderUsage;
 }
 
+export interface EmbeddingClientOptions {
+  model?: string;
+  dimensions?: number;
+  purpose?: EmbeddingPurpose;
+  provider?: EmbeddingProviderImplementation;
+  endpointScopeFingerprint?: string;
+}
+
 export interface TextGenerationClient {
   readonly metadata: LlmProviderMetadata;
   complete(input: TextGenerationRequest): Promise<TextGenerationResult>;
@@ -84,7 +99,7 @@ export interface TextGenerationClient {
 
 export interface EmbeddingClient {
   readonly metadata: LlmProviderMetadata;
-  embedTexts(texts: string[], options?: { model?: string }): Promise<EmbeddingResult>;
+  embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult>;
 }
 
 export interface LlmCapabilityConfig extends LlmProviderMetadata {

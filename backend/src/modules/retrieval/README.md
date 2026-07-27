@@ -13,20 +13,39 @@ Retrieval knows about search candidates, chunks, query plans, ranking signals,
 retrieval settings, and the prompt context needed for grounded answers.
 
 Retrieval should not own assistant persona, chat session lifecycle, HTTP request
-shape, document processing, or user-facing assistant copy.
+shape, document processing, user-facing assistant copy, embedding provider
+selection, model catalogs, dimensions, normalization, provider tasks, or
+general-purpose embedding generation.
+
+Retrieval consumes `QueryEmbeddingPort`: it supplies workspace/query context and
+receives vectors paired with an opaque `EmbeddingSpaceRef`. Embedding Profiles
+owns the translation from that context to a model, provider, dimension, and
+generation request. Document and clustering callers use their own ports; do not
+reuse the query port for those purposes.
 
 Vector indexing is a retrieval-owned adapter boundary. PostgreSQL remains the
-canonical chunk store, while `VectorIndexPort` returns ranked chunk references
-and `ChunkCandidateHydratorPort` hydrates those references from canonical
-storage. pgvector is the default vector-index adapter; external vector backends
-should implement the same candidate contract rather than returning hydrated
-document rows directly.
+canonical vector store, while `VectorCandidateSearchPort` returns ranked chunk
+references and `ChunkCandidateHydratorPort` hydrates those references from
+canonical storage. pgvector is the default vector adapter; an external backend
+such as Pinecone should implement the same capability, writer, candidate-search,
+and administration ports rather than returning hydrated document rows directly.
+Application composition owns the production adapter instance and binds
+`VectorIndexReconciler` to worker lifecycle, bounded task recovery, and the
+embedding-transition caught-up callback. Retrieval itself does not know settings
+or profile activation rules. Pgvector exact search reads canonical
+`chunk_embeddings`, so its caught-up correctness state is `exact_fallback`;
+accelerated route qualification remains a separate performance gate.
 
 Vector filters use the backend-neutral `VectorChunkFilter` shape. Metadata
 filters are containment filters over JSON-compatible metadata values; adapters
 may push them down for performance, but hydration remains the final enforcement
 point for workspace, ready document state, source scope, metadata scope, and
 embedding model.
+
+Lexical retrieval remains live when query embedding or active-space vector
+search is unavailable. Candidate retrieval returns lexical contexts with a
+bounded semantic availability and failure code; diagnostics and telemetry may
+report those codes but must not include provider errors, queries, or vectors.
 
 ## Public Surfaces
 
@@ -45,8 +64,10 @@ imports from `services/` or `infra/`.
 - `services/retrievalPipelineStages.ts`: stage construction and ordering.
 - `services/retrievalSearchService.ts`: candidate search coordination.
 - `services/retrievalAnswerService.ts`: retrieval answer assembly.
-- `domain/vectorIndex.ts`: vector-index lifecycle/search contract for adapters
-  that return ranked chunk references.
+- `domain/vectorAdapter.ts`: backend-neutral capability, writer,
+  candidate-search, and administration ports.
+- `domain/vectorIndex.ts`: temporary compatibility contract for the existing
+  model-keyed pgvector implementation.
 - `domain/vectorFilter.ts`: backend-neutral source and metadata filter contract
   shared by vector search, lexical search, and hydration.
 - `domain/vectorSearch.ts`: compatibility-only hydrated vector search contract
@@ -55,6 +76,8 @@ imports from `services/` or `infra/`.
   retrieval contracts and filter compilers.
 - `infra/vectorSearch.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
+- `services/vectorIndexReconciler.ts`: backend-neutral durable projection drain,
+  checkpoint advancement, and bounded retry loop.
 
 ## Common Change Paths
 
@@ -98,5 +121,7 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/retrieval-shape-resolver.test.ts`
 - `cd backend && pnpm test -- tests/unit/hybrid-retrieval-search.test.ts`
 - `cd backend && pnpm run test:integration` for end-to-end retrieval behavior.
+- `cd backend && pnpm test -- tests/unit/retrieval/vectorIndexReconciler.test.ts`
+  for projection drain and checkpoint callback behavior.
 
 Use `pnpm run test:contract` when changing retrieval API response contracts.

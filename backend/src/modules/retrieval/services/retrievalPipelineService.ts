@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import type { IngestionSettingsService } from "../../settings/contracts/services.js";
+import type {
+  QueryEmbeddingPort,
+} from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
-import type { EmbeddingService } from "./embeddingService.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { ConversationContextService } from "./conversationContextService.js";
@@ -15,8 +16,7 @@ import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetr
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
 import { resolveRetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievalDefaultsProvider } from "../domain/retrievalDefaultsProvider.js";
-import type { VectorIndexPort } from "../domain/vectorIndex.js";
-import type { VectorSearchPort } from "../domain/vectorSearch.js";
+import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
@@ -122,26 +122,8 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
 
   constructor(
     retrievalDefaultsProvider: RetrievalDefaultsProvider,
-    embeddingService: EmbeddingService,
-    vectorSearch: VectorSearchPort,
-    lexicalSearch: LexicalSearchPort,
-    conversationContextService: ConversationContextService,
-    queryRewriteService: QueryRewriteService,
-    candidatePreparationService: CandidatePreparationService,
-    _attributeMatchScoringService: unknown,
-    rerankService: RerankService,
-    promptContextSelectorService: PromptContextSelectorService,
-    promptBuilder: PromptBuilder,
-    retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    _semanticQueryConstraintService?: unknown,
-    ingestionSettingsService?: IngestionSettingsService,
-    skillSettingsResolver?: SkillSettingsResolver,
-    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
-  );
-  constructor(
-    retrievalDefaultsProvider: RetrievalDefaultsProvider,
-    embeddingService: EmbeddingService,
-    vectorSearch: VectorIndexPort,
+    queryEmbeddings: QueryEmbeddingPort,
+    vectorSearch: VectorCandidateSearchPort,
     lexicalSearch: LexicalSearchPort,
     conversationContextService: ConversationContextService,
     queryRewriteService: QueryRewriteService,
@@ -152,28 +134,8 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
     promptBuilder: PromptBuilder,
     retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
     _semanticQueryConstraintService: unknown,
-    ingestionSettingsService: IngestionSettingsService | undefined,
     skillSettingsResolver: SkillSettingsResolver | undefined,
     chunkHydrator: ChunkCandidateHydratorPort,
-    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
-  );
-  constructor(
-    retrievalDefaultsProvider: RetrievalDefaultsProvider,
-    embeddingService: EmbeddingService,
-    vectorSearch: VectorIndexPort | VectorSearchPort,
-    lexicalSearch: LexicalSearchPort,
-    conversationContextService: ConversationContextService,
-    queryRewriteService: QueryRewriteService,
-    candidatePreparationService: CandidatePreparationService,
-    _attributeMatchScoringService: unknown,
-    rerankService: RerankService,
-    promptContextSelectorService: PromptContextSelectorService,
-    promptBuilder: PromptBuilder,
-    retrievalExecutionTelemetryService: RetrievalExecutionTelemetryService,
-    _semanticQueryConstraintService?: unknown,
-    ingestionSettingsService?: IngestionSettingsService,
-    skillSettingsResolver?: SkillSettingsResolver,
-    chunkHydratorOrTemporal?: ChunkCandidateHydratorPort | TemporalCandidateRetrievalPort,
     temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
   ) {
     this.retrievalContextStage = new RetrievalContextStageService(
@@ -182,28 +144,13 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
       skillSettingsResolver,
     );
     this.queryInterpretationStage = new QueryInterpretationStageService(queryRewriteService);
-    const chunkHydrator = chunkHydratorOrTemporal && "hydrate" in chunkHydratorOrTemporal
-      ? chunkHydratorOrTemporal
-      : undefined;
-    const temporalRetrieval = chunkHydrator
-      ? temporalCandidateRetrieval
-      : (chunkHydratorOrTemporal as TemporalCandidateRetrievalPort | undefined) ?? temporalCandidateRetrieval;
-    this.candidateRetrievalStage = chunkHydrator
-      ? new CandidateRetrievalStageService(
-          embeddingService,
-          vectorSearch as VectorIndexPort,
-          lexicalSearch,
-          ingestionSettingsService,
-          chunkHydrator,
-          temporalRetrieval,
-        )
-      : new CandidateRetrievalStageService(
-          embeddingService,
-          vectorSearch as VectorSearchPort,
-          lexicalSearch,
-          ingestionSettingsService,
-          temporalRetrieval,
-        );
+    this.candidateRetrievalStage = new CandidateRetrievalStageService(
+      queryEmbeddings,
+      vectorSearch,
+      lexicalSearch,
+      chunkHydrator,
+      temporalCandidateRetrieval,
+    );
     this.candidatePreparationStage = new CandidatePreparationStageService(
       candidatePreparationService,
       new MetadataRuleScoringService(),

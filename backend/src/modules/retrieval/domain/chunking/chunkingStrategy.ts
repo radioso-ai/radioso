@@ -19,7 +19,6 @@ export interface ChunkingRequest {
     fixedWindowChunkOverlap: number;
     structuredMinChunkSize: number;
     structuredMaxChunkSize: number;
-    embeddingModel?: string;
     embeddingUsageContext?: Omit<ModelCallUsageContext, "operation">;
   };
 }

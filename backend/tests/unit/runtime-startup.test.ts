@@ -153,6 +153,11 @@ const createDependencies = () =>
       initializeAll: vi.fn().mockResolvedValue(undefined),
       shutdownAll: vi.fn().mockResolvedValue(undefined),
     },
+    vectorIndexReconciler: {
+      start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+      runUntilIdle: vi.fn().mockResolvedValue(0),
+    },
     connectorDb: {},
     chatService: {},
   } as unknown as AppDependencies);
@@ -186,6 +191,7 @@ describe("runtime startup", () => {
     expect(dependencies.connectorRegistry.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+    expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
@@ -210,6 +216,7 @@ describe("runtime startup", () => {
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.initializeAll).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+    expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
   });
 
   it("starts the worker runtime independently after migration verification", async () => {
@@ -227,6 +234,7 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
@@ -234,6 +242,7 @@ describe("runtime startup", () => {
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
@@ -264,6 +273,7 @@ describe("runtime startup", () => {
     expect(ensureNoPendingMigrations).toHaveBeenCalledWith(env.DATABASE_URL, migrationTimeoutOptionsFor(env));
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
+    expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");

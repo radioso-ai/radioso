@@ -106,9 +106,19 @@ export const updateIngestionSettingsSchema = z.object({
   structuredMaxChunkSize: z.number().int()
     .min(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMin)
     .max(RETRIEVAL_BEHAVIOR.chunking.structuredMaxChunkSizeMax),
-  embeddingModel: z.enum(embeddingModelIds).optional(),
+  // Runtime string compatibility lets an older client echo an already-active
+  // legacy model. The service rejects every unsupported value that is not the
+  // persisted active value.
+  embeddingModel: z.string().optional(),
   documentEnrichmentEnabled: z.boolean().optional(),
 });
+
+// The documented public contract remains the existing four-model enum. Only
+// the runtime route schema is wider for the legacy equal-value no-op.
+export const documentedUpdateIngestionSettingsSchema =
+  updateIngestionSettingsSchema.extend({
+    embeddingModel: z.enum(embeddingModelIds).optional(),
+  });
 
 export const reprocessIngestionBodySchema = z.object({
   documentEnrichmentOverride: z.enum(["on", "off"]).optional(),

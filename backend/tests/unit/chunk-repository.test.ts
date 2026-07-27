@@ -353,8 +353,25 @@ describe("chunk repository", () => {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
 
+            if (sql.includes("FROM workspace_embedding_transitions retired")) {
+              return { rows: [] };
+            }
+            if (sql.includes("FROM workspace_embedding_profiles")) {
+              return {
+                rows: [{ active_embedding_space_id: "space-1" }],
+              };
+            }
             if (sql.includes("FOR UPDATE")) {
               return { rows: [{ id: "doc-1" }] };
+            }
+            if (sql.includes("FROM embedding_spaces")) {
+              return {
+                rows: [{
+                  id: "space-1",
+                  dimensions: 1536,
+                  distance_metric: "cosine",
+                }],
+              };
             }
 
             return { rows: [] };
@@ -369,6 +386,12 @@ describe("chunk repository", () => {
       documentId: "doc-1",
       workspaceId: "workspace-1",
       revision: 2,
+      embeddingSpace: {
+        id: "space-1",
+        dimensions: 1536,
+        distanceMetric: "cosine",
+      },
+      canonicalVersion: "2",
       chunks: [],
     });
 
@@ -377,5 +400,175 @@ describe("chunk repository", () => {
       sql: "DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2",
       params: ["doc-1", "workspace-1"],
     });
+  });
+
+  it("publishes canonical vectors with immutable space identity in the document transaction", async () => {
+    const calls: Array<{ sql: string; params: unknown[] | undefined }> = [];
+    const repository = createRepository(
+      {
+        async query() {
+          throw new Error("unused");
+        },
+        async withTransaction(
+          callback: (client: {
+            query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+          }) => Promise<unknown>,
+        ) {
+          const client = {
+            async query(sql: string, params?: unknown[]) {
+              calls.push({ sql, params });
+
+              if (sql.includes("FROM documents")) {
+                return { rows: [{ id: "doc-1" }] };
+              }
+              if (sql.includes("FROM embedding_spaces")) {
+                return {
+                  rows: [
+                    {
+                      id: "space-768",
+                      dimensions: 3,
+                      distance_metric: "cosine",
+                    },
+                  ],
+                };
+              }
+
+              return { rows: [] };
+            },
+          };
+
+          return callback(client as never);
+        },
+      } as never,
+      {
+        async insertChunks() {
+          return;
+        },
+      },
+    );
+
+    await repository.publishForDocumentRevision({
+      documentId: "doc-1",
+      workspaceId: "workspace-1",
+      revision: 2,
+      embeddingSpace: {
+        id: "space-768",
+        dimensions: 3,
+        distanceMetric: "cosine",
+      },
+      canonicalVersion: "2",
+      chunks: [
+        {
+          id: "chunk-1",
+          documentId: "doc-1",
+          workspaceId: "workspace-1",
+          chunkIndex: 0,
+          content: "content",
+          searchText: "search content",
+          embedding: [0.123456789, -0.25, 0.375],
+          startOffset: 0,
+          endOffset: 7,
+          metadata: {},
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    const canonicalInsert = calls.find((call) => call.sql.includes("INSERT INTO chunk_embeddings"));
+    const readyUpdateIndex = calls.findIndex((call) => call.sql.includes("SET status = 'ready'"));
+    const canonicalInsertIndex = calls.findIndex((call) =>
+      call.sql.includes("INSERT INTO chunk_embeddings"),
+    );
+
+    expect(canonicalInsertIndex).toBeGreaterThan(-1);
+    expect(canonicalInsertIndex).toBeLessThan(readyUpdateIndex);
+    expect(canonicalInsert?.params).toEqual([
+      "workspace-1",
+      "chunk-1",
+      "space-768",
+      2,
+      "2",
+      3,
+      "[0.123456789,-0.25,0.375]",
+      expect.any(String),
+    ]);
+  });
+
+  it("keeps incompatible legacy dimensions out of the fixed vector column during canonical publication", async () => {
+    const calls: Array<{ sql: string; params: unknown[] | undefined }> = [];
+    const embedding = Array.from({ length: 3072 }, (_, index) => index / 3072);
+    const repository = createRepository(
+      {
+        async query() {
+          throw new Error("unused");
+        },
+        async withTransaction(
+          callback: (client: {
+            query(sql: string, params?: unknown[]): Promise<{ rows: unknown[] }>;
+          }) => Promise<unknown>,
+        ) {
+          const client = {
+            async query(sql: string, params?: unknown[]) {
+              calls.push({ sql, params });
+
+              if (sql.includes("FROM documents")) {
+                return { rows: [{ id: "doc-1" }] };
+              }
+              if (sql.includes("FROM embedding_spaces")) {
+                return {
+                  rows: [
+                    {
+                      id: "space-3072",
+                      dimensions: 3072,
+                      distance_metric: "cosine",
+                    },
+                  ],
+                };
+              }
+
+              return { rows: [] };
+            },
+          };
+
+          return callback(client as never);
+        },
+      } as never,
+      new PgVectorChunkStorage(),
+    );
+
+    await repository.publishForDocumentRevision({
+      documentId: "doc-1",
+      workspaceId: "workspace-1",
+      revision: 2,
+      embeddingSpace: {
+        id: "space-3072",
+        dimensions: 3072,
+        distanceMetric: "cosine",
+      },
+      canonicalVersion: "2",
+      chunks: [
+        {
+          id: "chunk-3072",
+          documentId: "doc-1",
+          workspaceId: "workspace-1",
+          chunkIndex: 0,
+          content: "content",
+          embedding,
+          embeddingModel: "text-embedding-3-large",
+          startOffset: 0,
+          endOffset: 7,
+          metadata: {},
+          createdAt: new Date(),
+        },
+      ],
+    });
+
+    const legacyInsert = calls.find((call) => call.sql.includes("INSERT INTO chunks"));
+    const legacyRows = chunkInsertRows(legacyInsert?.params);
+    expect(legacyRows[0]).toMatchObject({
+      boundedEmbedding: null,
+      unboundedEmbedding: `[${embedding.join(",")}]`,
+    });
+    expect(calls.some((call) => call.sql.includes("INSERT INTO chunk_embeddings"))).toBe(true);
   });
 });

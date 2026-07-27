@@ -2,7 +2,7 @@ name: ${COMPOSE_PROJECT_NAME:-radioso}
 
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.5-pg16
     shm_size: "1gb"
     environment:
       POSTGRES_DB: radioso

@@ -739,6 +739,7 @@ export const installDashboardApiMocks = async (
     llmModelUpdates?: Array<unknown>;
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
+    ingestionSettingsUpdateError?: string;
     usageTrends?: unknown;
     mcpConnections?: McpConnectionFixture[];
     mcpConnectionRequests?: string[];
@@ -2040,6 +2041,15 @@ export const installDashboardApiMocks = async (
     if (request.method() === "PUT" && path === "/settings/ingestion") {
       const body = request.postDataJSON() as Partial<IngestionSettingsFixture>;
       ingestionSettingsUpdates?.push(body);
+      if (options.ingestionSettingsUpdateError) {
+        await json(route, {
+          error: {
+            code: "embedding_transition_failed",
+            message: options.ingestionSettingsUpdateError,
+          },
+        }, 503);
+        return;
+      }
       const requestedEmbeddingModel = body.embeddingModel;
       const embeddingFields =
         requestedEmbeddingModel && requestedEmbeddingModel !== ingestionSettings.embeddingModel

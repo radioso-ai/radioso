@@ -23,12 +23,16 @@ describe("no-raw-sql guard", () => {
     // Pin the sanctioned set so adding a new raw-SQL home is a deliberate, reviewed change.
     expect([...ALLOWLIST].sort()).toEqual(
       [
+        "db/repositories/chunkEmbeddingRepository.ts",
+        "db/repositories/documentProcessingJobRepository.ts",
+        "db/repositories/vectorIndexWorkRepository.ts",
         "db/runMigrations.ts",
         "modules/connectors/plugins/whatsapp/whatsappPlugin.ts",
         "modules/connectors/services/connectorRegistry.ts",
         "modules/documents/infra/chunkRepository.ts",
         "modules/retrieval/infra/chunkVectorStorage.ts",
         "modules/retrieval/infra/lexicalSearch.ts",
+        "modules/retrieval/infra/pgVectorAdapter.ts",
         "modules/retrieval/infra/vectorSearch.ts",
         "shared/infra/database.ts",
       ].sort(),

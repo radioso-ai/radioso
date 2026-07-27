@@ -73,9 +73,6 @@ describe("AMQP document job queue", () => {
     expect(channel.waitForConfirms).toHaveBeenCalledOnce();
     expect(JSON.parse(channel.sendToQueue.mock.calls[0][1].toString("utf8"))).toEqual({
       jobId: "33cc6be4-1a3a-4b43-9714-e87e9f9a60ab",
-      documentId: "77d89bb2-b69a-43b0-b226-62f40d160321",
-      workspaceId: "e93ea86d-28ec-4d2f-aa9a-5e633a22c6df",
-      revision: 2,
     });
   });
 
@@ -84,6 +81,15 @@ describe("AMQP document job queue", () => {
       parseDocumentJobQueueMessage({
         jobId: "33cc6be4-1a3a-4b43-9714-e87e9f9a60ab",
         options: { documentEnrichmentOverride: "on" },
+      }),
+    ).toThrow();
+  });
+
+  it("keeps queue messages identifier-only", () => {
+    expect(() =>
+      parseDocumentJobQueueMessage({
+        jobId: "33cc6be4-1a3a-4b43-9714-e87e9f9a60ab",
+        documentId: "77d89bb2-b69a-43b0-b226-62f40d160321",
       }),
     ).toThrow();
   });

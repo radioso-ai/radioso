@@ -25,7 +25,7 @@ OUT_DIR="$ROOT/backend/src/shared/infra/kysely"
 OUT="$OUT_DIR/schema.ts"
 CODEGEN="$ROOT/backend/node_modules/.bin/kysely-codegen"
 
-IMAGE="pgvector/pgvector:pg16"
+IMAGE="pgvector/pgvector:0.8.5-pg16"
 CONTAINER="radioso-kysely-codegen-$$"
 DB="radioso"
 

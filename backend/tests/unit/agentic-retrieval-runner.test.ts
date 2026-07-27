@@ -11,14 +11,14 @@ import {
   type ModelToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { AgenticRetrievalRunner } from "../../src/modules/retrieval/services/agenticRetrievalRunner.js";
-import type { EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import type { QueryEmbeddingPort } from "../../src/modules/embeddingProfiles/contracts/embeddingConsumers.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
 import type {
   ChunkCandidateHydratorPort,
   RetrievedChunk,
-  VectorIndexPort,
+  VectorCandidateSearchPort,
 } from "../../src/modules/retrieval/public.js";
 
 type ScriptedTurn = { say: string; tools?: ModelToolCall[] };
@@ -54,22 +54,28 @@ const chunk = (overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => ({
   endOffset: overrides.endOffset,
   metadata: overrides.metadata ?? {},
 });
+const embeddingSpace = { id: "space-active", dimensions: 4, distanceMetric: "cosine" as const };
 
 const buildDeps = (overrides: {
   gateway?: ModelToolCallingGateway;
   vectorResults?: RetrievedChunk[];
   lexicalResults?: RetrievedChunk[];
 } = {}) => {
-  const embeddings: EmbeddingGateway = {
-    async embedTexts(texts) {
-      return texts.map(() => [0.1, 0.2, 0.3, 0.4]);
+  const queryEmbeddings: QueryEmbeddingPort = {
+    async embedQueries(input) {
+      return {
+        space: embeddingSpace,
+        vectors: input.texts.map(() => [0.1, 0.2, 0.3, 0.4]),
+      };
     },
   };
-  const vectorIndex: VectorIndexPort = {
+  const vectorSearch: VectorCandidateSearchPort = {
     async search() {
       return (overrides.vectorResults ?? []).map((result) => ({
         chunkId: result.chunkId,
         documentId: result.documentId,
+        embeddingSpaceId: embeddingSpace.id,
+        version: "1",
         score: result.similarity,
       }));
     },
@@ -101,7 +107,7 @@ const buildDeps = (overrides: {
   };
   const runtime = new DefaultAgentRuntime({ gateway: overrides.gateway ?? makeGateway([{ say: "done" }]) });
   const capabilityRunner = new AgenticCapabilityRunner({ runtime });
-  return { capabilityRunner, embeddings, vectorIndex, chunkHydrator, lexicalSearch, queryRewrite, rerankGateway };
+  return { capabilityRunner, queryEmbeddings, vectorSearch, chunkHydrator, lexicalSearch, queryRewrite, rerankGateway };
 };
 
 const buildRunner = (overrides: Parameters<typeof buildDeps>[0] = {}) => new AgenticRetrievalRunner(buildDeps(overrides));
@@ -376,13 +382,19 @@ describe("AgenticRetrievalRunner", () => {
   it("supports a multi-hop run: first search yields nothing, agent rewrites and searches again", async () => {
     const calls: Array<{ query: string }> = [];
     const dynamicEmbedDeps = buildDeps();
-    const vectorIndex: VectorIndexPort = {
+    const vectorSearch: VectorCandidateSearchPort = {
       async search(input) {
-        calls.push({ query: JSON.stringify(input.queryEmbedding.slice(0, 1)) });
+        calls.push({ query: JSON.stringify(input.queryVector.slice(0, 1)) });
         if (calls.length === 1) {
           return [];
         }
-        return [{ chunkId: "second-hop", documentId: "doc-1", score: 0.7 }];
+        return [{
+          chunkId: "second-hop",
+          documentId: "doc-1",
+          embeddingSpaceId: input.space.id,
+          version: "1",
+          score: 0.7,
+        }];
       },
     };
     const chunkHydrator: ChunkCandidateHydratorPort = {
@@ -403,7 +415,7 @@ describe("AgenticRetrievalRunner", () => {
     const runner = new AgenticRetrievalRunner({
       ...dynamicEmbedDeps,
       capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway }) }),
-      vectorIndex,
+      vectorSearch,
       chunkHydrator,
     });
 

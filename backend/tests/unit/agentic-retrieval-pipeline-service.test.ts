@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { AgenticRetrievalPipelineService } from "../../src/modules/retrieval/services/agenticRetrievalPipelineService.js";
-import type { IngestionSettingsRecord } from "../../src/modules/settings/contracts/ingestion.js";
 import type { AgenticRetrievalRunResult, AgenticRetrievalRunner } from "../../src/modules/retrieval/services/agenticRetrievalRunner.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
 import type { RegisteredChunk } from "../../src/modules/retrieval/services/agenticTools/index.js";
@@ -473,15 +472,14 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.diagnostics.retrievalSkipped).toBe(false);
   });
 
-  it("threads the caller's metadataFilter, similarityThreshold, and ingestion embeddingModel into the runner", async () => {
+  it("threads the caller's metadataFilter and similarityThreshold into the runner", async () => {
     const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
-    let captured: { metadataFilter?: unknown; similarityThreshold?: number; embeddingModel?: string } | null = null;
+    let captured: { metadataFilter?: unknown; similarityThreshold?: number } | null = null;
     const runner = {
-      run: async (input: { metadataFilter?: unknown; similarityThreshold?: number; embeddingModel?: string }) => {
+      run: async (input: { metadataFilter?: unknown; similarityThreshold?: number }) => {
         captured = {
           metadataFilter: input.metadataFilter,
           similarityThreshold: input.similarityThreshold,
-          embeddingModel: input.embeddingModel,
         };
         return {
           selectedChunks: [stubChunk("c1")],
@@ -493,17 +491,11 @@ describe("AgenticRetrievalPipelineService", () => {
         };
       },
     } as unknown as AgenticRetrievalRunner;
-    const ingestionSettingsService = {
-      async getForWorkspace() {
-        return { embeddingModel: "gemini-embedding-001" } as unknown as IngestionSettingsRecord;
-      },
-    };
     const service = new AgenticRetrievalPipelineService({
       deterministic: stubDeterministic(detState),
       runner,
       promptBuilder: new PromptBuilder(),
       systemPrompt: "sp",
-      ingestionSettingsService,
     });
 
     await service.run(
@@ -512,10 +504,9 @@ describe("AgenticRetrievalPipelineService", () => {
       }),
     );
 
-    const captured2 = captured as { metadataFilter?: unknown; similarityThreshold?: number; embeddingModel?: string } | null;
+    const captured2 = captured as { metadataFilter?: unknown; similarityThreshold?: number } | null;
     expect(captured2).not.toBeNull();
     expect(captured2?.metadataFilter).toEqual({ tenant: "acme" });
-    expect(captured2?.embeddingModel).toBe("gemini-embedding-001");
     // similarityThreshold comes from the resolved settings — defaultRetrievalSettings sets it.
     expect(typeof captured2?.similarityThreshold).toBe("number");
   });

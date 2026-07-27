@@ -4,7 +4,7 @@ import type {
   TemporalQueryMode,
 } from "../../domain/retrievalPipelineTypes.js";
 import type { RetrievedChunk } from "../../domain/vectorSearch.js";
-import { buildRetrievalText } from "../embeddingService.js";
+import { buildRetrievalText } from "../searchTextRenderer.js";
 import { clampNormalizedScore } from "../candidateScoring.js";
 
 const TEMPORAL_SOURCE: RetrievalSource = "temporal";

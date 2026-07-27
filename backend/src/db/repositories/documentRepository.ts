@@ -28,6 +28,10 @@ import {
   mapDocumentSummary,
   type DocumentRow,
 } from "./documentRowMapper.js";
+import {
+  appendVectorFilterUpdatesForDocument,
+  appendVectorTombstonesForDocuments,
+} from "./vectorIndexWorkRepository.js";
 
 interface QueuedDocumentRow {
   id: string;
@@ -551,19 +555,27 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }
 
   async setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null> {
-    const row = (await this.db
-      .updateTable("documents")
-      .set({
-        retrieval_enabled: input.retrievalEnabled,
-        retrieval_expires_at: input.retrievalExpiresAt,
-        updated_at: currentTimestamp(),
-      })
-      .where("id", "=", input.documentId)
-      .where("workspace_id", "=", input.workspaceId)
-      .returning(documentSelectColumns)
-      .executeTakeFirst()) as DocumentRow | undefined;
-
-    return row ? mapDocument(row) : null;
+    return this.db.transaction().execute(async (trx) => {
+      const row = (await trx
+        .updateTable("documents")
+        .set({
+          retrieval_enabled: input.retrievalEnabled,
+          retrieval_expires_at: input.retrievalExpiresAt,
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "=", input.documentId)
+        .where("workspace_id", "=", input.workspaceId)
+        .returning(documentSelectColumns)
+        .executeTakeFirst()) as DocumentRow | undefined;
+      if (!row) {
+        return null;
+      }
+      await appendVectorFilterUpdatesForDocument(trx, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+      });
+      return mapDocument(row);
+    });
   }
 
   async requeue(documentId: string, workspaceId: string): Promise<DocumentRecord> {
@@ -765,14 +777,28 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }
 
   async deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean> {
-    const rows = await this.db
-      .deleteFrom("documents")
-      .where("id", "=", documentId)
-      .where("workspace_id", "=", workspaceId)
-      .returning("id")
-      .execute();
-
-    return rows.length > 0;
+    return this.db.transaction().execute(async (trx) => {
+      const document = await trx
+        .selectFrom("documents")
+        .select("id")
+        .where("id", "=", documentId)
+        .where("workspace_id", "=", workspaceId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!document) {
+        return false;
+      }
+      await appendVectorTombstonesForDocuments(trx, {
+        workspaceId,
+        documentIds: [documentId],
+      });
+      await trx
+        .deleteFrom("documents")
+        .where("id", "=", documentId)
+        .where("workspace_id", "=", workspaceId)
+        .executeTakeFirstOrThrow();
+      return true;
+    });
   }
 
   async listSummaryPageBySourceId(
@@ -845,18 +871,31 @@ export class DocumentRepository implements DocumentRepositoryPort {
     count: number;
     storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
   }> {
-    const rows = await this.db
-      .deleteFrom("documents")
-      .where("source_id", "=", sourceId)
-      .where("workspace_id", "=", workspaceId)
-      .returning([
-        "id",
-        "source_kind",
-        "source_storage_bucket",
-        "source_storage_object",
-        "source_storage_generation",
-      ])
-      .execute();
+    const rows = await this.db.transaction().execute(async (trx) => {
+      const documents = await trx
+        .selectFrom("documents")
+        .select("id")
+        .where("source_id", "=", sourceId)
+        .where("workspace_id", "=", workspaceId)
+        .forUpdate()
+        .execute();
+      await appendVectorTombstonesForDocuments(trx, {
+        workspaceId,
+        documentIds: documents.map((document) => document.id),
+      });
+      return trx
+        .deleteFrom("documents")
+        .where("source_id", "=", sourceId)
+        .where("workspace_id", "=", workspaceId)
+        .returning([
+          "id",
+          "source_kind",
+          "source_storage_bucket",
+          "source_storage_object",
+          "source_storage_generation",
+        ])
+        .execute();
+    });
 
     const storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }> = [];
     for (const row of rows) {
@@ -915,16 +954,35 @@ export class DocumentRepository implements DocumentRepositoryPort {
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
     const keep = Array.from(new Set(input.keepExternalDocumentIds.filter((value) => value && value.length > 0)));
 
-    let query = this.db
-      .deleteFrom("documents")
-      .where("source_id", "=", input.sourceId)
-      .where("workspace_id", "=", input.workspaceId)
-      .where("external_document_id", "is not", null);
-    if (keep.length > 0) {
-      query = query.where(sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`);
-    }
-
-    const rows = await query.returning(["id", "content_size_bytes"]).execute();
+    const rows = await this.db.transaction().execute(async (trx) => {
+      let documentsQuery = trx
+        .selectFrom("documents")
+        .select("id")
+        .where("source_id", "=", input.sourceId)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("external_document_id", "is not", null);
+      if (keep.length > 0) {
+        documentsQuery = documentsQuery.where(
+          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
+        );
+      }
+      const documents = await documentsQuery.forUpdate().execute();
+      await appendVectorTombstonesForDocuments(trx, {
+        workspaceId: input.workspaceId,
+        documentIds: documents.map((document) => document.id),
+      });
+      let deleteQuery = trx
+        .deleteFrom("documents")
+        .where("source_id", "=", input.sourceId)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("external_document_id", "is not", null);
+      if (keep.length > 0) {
+        deleteQuery = deleteQuery.where(
+          sql<boolean>`external_document_id <> ALL(${sql.val(keep)}::text[])`,
+        );
+      }
+      return deleteQuery.returning(["id", "content_size_bytes"]).execute();
+    });
 
     let deletedContentBytes = 0;
     for (const row of rows) {

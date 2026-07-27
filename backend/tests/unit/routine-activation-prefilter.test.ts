@@ -37,7 +37,22 @@ const createPrefilter = (overrides: {
     search,
     prefilter: createRoutineActivationPrefilter({
       accountId: "account-1",
-      embeddingService: { embedTexts } as never,
+      clusteringEmbeddings: {
+        async embedForClustering(request: {
+          texts: readonly string[];
+          usageContext?: unknown;
+        }) {
+          return {
+            vectors: await (embedTexts as unknown as (
+              texts: string[],
+              options?: { usageContext?: unknown },
+            ) => Promise<number[][]>)(
+              [...request.texts],
+              { usageContext: request.usageContext },
+            ),
+          };
+        },
+      } as never,
       embeddingModelForWorkspace: vi.fn().mockResolvedValue("text-embedding-3-small"),
       logger: { debug: vi.fn(), warn: vi.fn() } as never,
       routineDefinitionRepository: { searchActivationTriggerEmbeddings: search } as never,

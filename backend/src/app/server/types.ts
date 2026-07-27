@@ -92,6 +92,7 @@ import type {
 } from "../../modules/eval/composition.js";
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { OperatorReplyService } from "../../modules/handoff/public.js";
+import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 
 export interface AppDependencies {
   env: Env;
@@ -108,6 +109,7 @@ export interface AppDependencies {
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
+  vectorIndexReconciler?: Pick<VectorIndexReconciler, "start" | "stop" | "runUntilIdle">;
   authService: AuthService;
   accessGrantService: AccessGrantService;
   passwordResetService: PasswordResetService;

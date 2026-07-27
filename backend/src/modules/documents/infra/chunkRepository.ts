@@ -1,4 +1,11 @@
 import type { ChunkVectorStoragePort } from "../../retrieval/public.js";
+import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
+import { insertCanonicalChunkEmbeddingsForDocumentRevision } from "../../../db/repositories/chunkEmbeddingRepository.js";
+import { insertEmbeddingProfileJobsForDocumentRevision } from "../../../db/repositories/documentProcessingJobRepository.js";
+import {
+  appendVectorFilterUpdatesForDocumentTransaction,
+  appendVectorTombstonesForDocumentTransaction,
+} from "../../../db/repositories/vectorIndexWorkRepository.js";
 import type { Database } from "../../../shared/infra/database.js";
 import type {
   ChunkDetail,
@@ -34,6 +41,8 @@ export class ChunkRepository implements ChunkRepositoryPort {
     workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
+    embeddingSpace: EmbeddingSpaceRef;
+    canonicalVersion: string;
   }): Promise<boolean> {
     return this.database.withTransaction(async (client) => {
       const documentRows = await client.query<{ id: string }>(
@@ -50,11 +59,30 @@ export class ChunkRepository implements ChunkRepositoryPort {
         return false;
       }
 
+      await appendVectorTombstonesForDocumentTransaction(client, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+        retainedChunkIds: input.chunks.map((chunk) => chunk.id),
+      });
       await client.query("DELETE FROM chunks WHERE document_id = $1 AND workspace_id = $2", [
         input.documentId,
         input.workspaceId,
       ]);
       await this.vectorStorage.insertChunks(client, input.chunks);
+      await insertEmbeddingProfileJobsForDocumentRevision(client, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+        documentRevision: input.revision,
+        activeEmbeddingSpaceId: input.embeddingSpace.id,
+      });
+      await insertCanonicalChunkEmbeddingsForDocumentRevision(client, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+        documentRevision: input.revision,
+        canonicalVersion: input.canonicalVersion,
+        embeddingSpace: input.embeddingSpace,
+        chunks: input.chunks,
+      });
       await client.query(
         `UPDATE documents
          SET status = 'ready',
@@ -135,6 +163,10 @@ export class ChunkRepository implements ChunkRepositoryPort {
           [input.documentId, input.workspaceId, patch.chunkIndex, JSON.stringify(patch.metadata)],
         );
       }
+      await appendVectorFilterUpdatesForDocumentTransaction(client, {
+        workspaceId: input.workspaceId,
+        documentId: input.documentId,
+      });
 
       return true;
     });

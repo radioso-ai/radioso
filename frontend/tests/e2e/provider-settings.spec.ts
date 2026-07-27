@@ -66,7 +66,7 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(page.locator('#model-chat')).toContainText("claude-sonnet-4-6");
 });
 
-test("workspace operator changes the embedding model from Providers", async ({ page }) => {
+test("provider settings keep exactly the existing four embedding choices and no advanced vector controls", async ({ page }) => {
   const ingestionSettingsUpdates: unknown[] = [];
 
   await seedDashboardStorage(page);
@@ -81,8 +81,22 @@ test("workspace operator changes the embedding model from Providers", async ({ p
   const embeddingsRow = page.getByTestId("llm-model-row-embeddings");
   await expect(embeddingsRow).toBeVisible();
   await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
+  await expect(embeddingsRow.getByText(
+    /custom embedding model|embedding dimension|embedding profile|vector backend/i,
+  )).toHaveCount(0);
+
+  await page.locator("#provider-embeddings").click();
+  await page.getByRole("option", { name: "Google Gemini" }).click();
+  const geminiConfirmation = page.getByRole("alertdialog", { name: "Change embedding model?" });
+  await expect(geminiConfirmation).toContainText("Google Gemini Embedding");
+  await geminiConfirmation.getByRole("button", { name: "Cancel" }).click();
 
   await page.locator("#model-embeddings").click();
+  await expect(page.getByRole("option")).toHaveText([
+    "OpenAI text-embedding-3-small",
+    "OpenAI text-embedding-3-large",
+    "OpenAI text-embedding-ada-002",
+  ]);
   await page.getByRole("option", { name: "OpenAI text-embedding-3-large" }).click();
 
   await expect(page.getByRole("alertdialog", { name: "Change embedding model?" })).toBeVisible();
@@ -93,4 +107,38 @@ test("workspace operator changes the embedding model from Providers", async ({ p
     embeddingModel: "text-embedding-3-large",
   });
   await expect(embeddingsRow.getByText("Pending re-index")).toBeVisible();
+  await expect(embeddingsRow.getByTestId("embedding-model-transition-summary")).toHaveText(
+    "Active: OpenAI text-embedding-3-small. Pending: OpenAI text-embedding-3-large.",
+  );
+
+  await embeddingsRow.getByRole("button", { name: "Cancel" }).click();
+  await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
+  await expect(embeddingsRow.getByTestId("embedding-model-transition-summary")).toHaveCount(0);
+  await expect(page.locator("#model-embeddings")).toContainText("OpenAI text-embedding-3-small");
+});
+
+test("provider settings retain the active embedding model when transition startup fails", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    ingestionSettings: baseIngestionSettings(),
+    ingestionSettingsUpdateError: "The replacement model could not be validated. The active model is unchanged.",
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+
+  const embeddingsRow = page.getByTestId("llm-model-row-embeddings");
+  await page.locator("#model-embeddings").click();
+  await page.getByRole("option", { name: "OpenAI text-embedding-3-large" }).click();
+  await page.getByRole("button", { name: "Change model and re-index" }).click();
+
+  const dialog = page.getByRole("alertdialog", { name: "Change embedding model?" });
+  await expect(dialog).toContainText(
+    "The replacement model could not be validated. The active model is unchanged.",
+  );
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
+  await expect(embeddingsRow.getByText("Pending re-index")).toHaveCount(0);
+  await expect(page.locator("#model-embeddings")).toContainText("OpenAI text-embedding-3-small");
 });

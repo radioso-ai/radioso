@@ -13,7 +13,10 @@ Documents knows about persisted documents, source metadata, storage adapters,
 processing state, job dispatch, parsing inputs, and worker recovery.
 
 Documents should not own retrieval ranking policy, assistant persona, chat
-session behavior, or frontend presentation rules.
+session behavior, frontend presentation rules, or embedding provider/model
+selection. Embedding-only profile jobs carry an opaque durable space ID and
+workspace generation; Embedding Profiles resolves that pin to provider-owned
+generation details.
 
 Chunk persistence belongs to Documents because chunks are canonical document
 records. Vector-specific write details are delegated through the retrieval-owned
@@ -37,6 +40,8 @@ imports from `services/` or `infra/`.
 - `services/documentIngestionService.ts`: upload and ingestion entry point.
 - `services/documentImportService.ts`: import flows and source metadata.
 - `services/documentProcessingService.ts`: processing orchestration.
+- `services/embeddingProfileJobService.ts`: resumable, generation-fenced
+  embedding-only work that cannot mutate document or canonical chunk state.
 - `services/documentProcessingWorker.ts`: worker runtime behavior.
 - `infra/chunkRepository.ts`: canonical chunk persistence adapter.
 - `services/documentJobMessage.ts`: durable job message shape.
@@ -59,6 +64,7 @@ Focused starting points:
 
 - `cd backend && pnpm test -- tests/unit/document-ingestion.test.ts`
 - `cd backend && pnpm test -- tests/unit/document-processing-worker-runtime.test.ts`
+- `cd backend && pnpm test -- tests/unit/documents/embeddingProfileJobService.test.ts`
 - `cd backend && pnpm test -- tests/unit/document-import-service.test.ts`
 - `cd backend && pnpm run test:integration` for processing and import flows.
 

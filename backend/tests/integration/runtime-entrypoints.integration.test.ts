@@ -249,6 +249,12 @@ describe("runtime entrypoints", () => {
       .spyOn(dependencies.documentProcessingWorker, "runOnce")
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
+    const maintenanceSpy = vi
+      .spyOn(
+        dependencies.documentProcessingWorker,
+        "runPostJobMaintenance",
+      )
+      .mockResolvedValue(undefined);
 
     const runtime = await startWorkerTaskRuntime({
       env: createEnv(8101),
@@ -267,6 +273,7 @@ describe("runtime entrypoints", () => {
     expect(response.body).toEqual({ processedJobCount: 1 });
     expect(workerStartSpy).not.toHaveBeenCalled();
     expect(runOnceSpy).toHaveBeenCalledTimes(2);
+    expect(maintenanceSpy).toHaveBeenCalledWith(10);
   });
 
   it("crawler worker task runtime exposes bounded crawl recovery without starting the polling loop", async () => {

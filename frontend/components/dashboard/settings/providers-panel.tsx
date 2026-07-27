@@ -751,6 +751,10 @@ function EmbeddingModelRow({
   const modelOptions = embeddingModelsByProvider[provider]
   const isPending = Boolean(settings.pendingEmbeddingModel)
   const selectedModelOption = embeddingModelOptions.find((option) => option.value === currentModel)
+  const activeModelOption = embeddingModelOptions.find((option) => option.value === settings.embeddingModel)
+  const pendingModelOption = settings.pendingEmbeddingModel
+    ? embeddingModelOptions.find((option) => option.value === settings.pendingEmbeddingModel)
+    : null
   const requestedModelOption = requestedModel
     ? embeddingModelOptions.find((option) => option.value === requestedModel)
     : null
@@ -808,6 +812,7 @@ function EmbeddingModelRow({
           'Failed to complete the embedding model change and start re-indexing. Check the current setting before trying again.',
         ),
       )
+      revertDraft()
     } finally {
       setBusy(false)
     }
@@ -859,6 +864,14 @@ function EmbeddingModelRow({
             <p className="text-xs leading-relaxed text-muted-foreground">
               {capabilityVisual.embeddings.description}
             </p>
+            {isPending ? (
+              <p
+                className="text-xs leading-relaxed text-muted-foreground"
+                data-testid="embedding-model-transition-summary"
+              >
+                Active: {activeModelOption?.label ?? settings.embeddingModel}. Pending: {pendingModelOption?.label ?? settings.pendingEmbeddingModel}.
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="min-w-0 space-y-1">

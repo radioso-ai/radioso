@@ -32,19 +32,13 @@ export interface VectorIndexHealth {
   ok: boolean;
 }
 
+/**
+ * Compatibility search port for the current pgvector-backed retrieval callers.
+ *
+ * New vector lifecycle work uses the mandatory narrow ports in
+ * `vectorAdapter.ts`. This legacy shape remains until active embedding-space
+ * routing replaces model-string routing in production.
+ */
 export interface VectorIndexPort {
-  upsertChunks?(input: {
-    workspaceId: string;
-    documentId: string;
-    chunks: VectorIndexChunk[];
-  }): Promise<void>;
-
-  deleteDocumentChunks?(input: {
-    workspaceId: string;
-    documentId: string;
-  }): Promise<void>;
-
   search(input: VectorIndexSearchInput): Promise<VectorIndexCandidate[]>;
-
-  health?(): Promise<VectorIndexHealth>;
 }

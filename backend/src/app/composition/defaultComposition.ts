@@ -18,9 +18,9 @@ import {
   FixedWindowChunkingStrategy,
   RecursiveTextChunkingStrategy,
   StructuredSemanticChunkingStrategy,
-  type EmbeddingService,
   type TextChunkingProviderPort,
 } from "../../modules/retrieval/composition.js";
+import type { ClusteringEmbeddingPort } from "../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
 import { buildAnalyticsSinks } from "../../shared/analytics/buildAnalyticsSinks.js";
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import { buildErrorSinks } from "../../shared/errors/buildErrorSinks.js";
@@ -345,8 +345,8 @@ export const createDefaultWebsiteCrawlJobConsumer = (
     : undefined;
 
 export const createDefaultChunkingStrategyRegistry = (
-  embeddingService: EmbeddingService,
-  chunkingProvider: TextChunkingProviderPort = new ChonkieChunkingProvider(embeddingService),
+  clusteringEmbeddings: ClusteringEmbeddingPort,
+  chunkingProvider: TextChunkingProviderPort = new ChonkieChunkingProvider(clusteringEmbeddings),
 ): ChunkingStrategyRegistry =>
   new ChunkingStrategyRegistry([
     new FixedWindowChunkingStrategy(chunkingProvider),

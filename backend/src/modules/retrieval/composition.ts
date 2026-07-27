@@ -1,17 +1,22 @@
-import type { IngestionSettingsService } from "../settings/contracts/services.js";
+import type {
+  QueryEmbeddingPort,
+} from "../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { LlmProviderRegistry } from "../../shared/infra/llm/providerRegistry.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { RetrievalDefaultsProvider } from "./domain/retrievalDefaultsProvider.js";
+import type { VectorCandidateSearchPort } from "./domain/vectorAdapter.js";
 import { CandidatePreparationService } from "./services/candidatePreparationService.js";
 import { ConversationContextService } from "./services/conversationContextService.js";
-import { EmbeddingService } from "./services/embeddingService.js";
 import { PgLexicalSearch } from "./infra/lexicalSearch.js";
 import { PgTemporalCandidateRepository } from "./infra/temporalCandidateRepository.js";
 import { PgVectorIndex, PgVectorSearch } from "./infra/vectorSearch.js";
-import { PostgresChunkCandidateHydrator } from "./infra/chunkCandidateHydrator.js";
+import {
+  PostgresChunkCandidateHydrator,
+  type ChunkCandidateHydratorPort,
+} from "./infra/chunkCandidateHydrator.js";
 import { PromptBuilder } from "./services/promptBuilder.js";
 import { PromptContextSelectorService } from "./services/promptContextSelectorService.js";
 import { QueryRewriteService } from "./services/queryRewriteService.js";
@@ -29,7 +34,6 @@ export {
   RecursiveTextChunkingStrategy,
 } from "./domain/chunking/recursiveTextChunkingStrategy.js";
 export type {
-  TextChunkingEmbeddingPort,
   TextChunkingMethod,
   TextChunkingProviderChunk,
   TextChunkingProviderPort,
@@ -55,15 +59,10 @@ export {
   PgVectorSearch,
   PgVectorIndex,
 } from "./infra/vectorSearch.js";
+export { PgVectorAdapter } from "./infra/pgVectorAdapter.js";
+export { VectorIndexReconciler } from "./services/vectorIndexReconciler.js";
 export { CandidatePreparationService } from "./services/candidatePreparationService.js";
 export { ConversationContextService } from "./services/conversationContextService.js";
-export {
-  buildRetrievalText,
-  EmbeddingService,
-  ModelEmbeddingGateway,
-  OpenAIEmbeddingGateway,
-  type EmbeddingGateway,
-} from "./services/embeddingService.js";
 export {
   PromptBuilder,
   type PromptBuildResult,
@@ -120,19 +119,20 @@ export { AgentConverseGroundedAnswerService } from "./services/agentConverseGrou
 
 export const createDefaultRetrievalServices = (input: {
   database: Database;
-  embeddingService: EmbeddingService;
+  queryEmbeddings: QueryEmbeddingPort;
+  vectorSearch: VectorCandidateSearchPort;
+  chunkHydrator: ChunkCandidateHydratorPort;
   llmRegistry: LlmProviderRegistry;
   logger: AppLogger;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   telemetryService: TelemetryService;
-  ingestionSettingsService?: IngestionSettingsService;
   usageEventRecorder?: UsageEventRecorder;
   skillSettingsResolver?: SkillSettingsResolver;
 }) => {
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalDefaultsProvider,
-    input.embeddingService,
-    new PgVectorIndex(input.database),
+    input.queryEmbeddings,
+    input.vectorSearch,
     new PgLexicalSearch(input.database),
     new ConversationContextService(),
     new QueryRewriteService(
@@ -146,9 +146,8 @@ export const createDefaultRetrievalServices = (input: {
     new PromptBuilder(),
     new RetrievalExecutionTelemetryService(input.telemetryService),
     undefined,
-    input.ingestionSettingsService,
     input.skillSettingsResolver,
-    new PostgresChunkCandidateHydrator(input.database.kysely),
+    input.chunkHydrator,
     new PgTemporalCandidateRepository(input.database),
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline);

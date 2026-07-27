@@ -15,6 +15,22 @@ export const embeddingModelIds = [
 export type EmbeddingModelId = (typeof embeddingModelIds)[number];
 export const EMBEDDING_MODEL_DEFAULT: EmbeddingModelId = "text-embedding-3-small";
 
+export const isEmbeddingModelId = (value: string): value is EmbeddingModelId =>
+  embeddingModelIds.includes(value as EmbeddingModelId);
+
+declare const legacyEmbeddingModelBrand: unique symbol;
+export type LegacyEmbeddingModel = string & {
+  readonly [legacyEmbeddingModelBrand]: "legacy_embedding_model";
+};
+export type ActiveEmbeddingModel =
+  | EmbeddingModelId
+  | LegacyEmbeddingModel;
+
+export const activeEmbeddingModelFromPersisted = (
+  value: string,
+): ActiveEmbeddingModel =>
+  isEmbeddingModelId(value) ? value : value as LegacyEmbeddingModel;
+
 export interface IngestionSettingsRecord {
   workspaceId: string;
   chunkingStrategy: ChunkingStrategyId;
@@ -22,7 +38,7 @@ export interface IngestionSettingsRecord {
   fixedWindowChunkOverlap: number;
   structuredMinChunkSize: number;
   structuredMaxChunkSize: number;
-  embeddingModel: EmbeddingModelId;
+  embeddingModel: ActiveEmbeddingModel;
   pendingEmbeddingModel: EmbeddingModelId | null;
   documentEnrichmentEnabled?: boolean;
   createdAt: Date;
@@ -40,8 +56,23 @@ export interface IngestionSettingsInput {
   documentEnrichmentEnabled?: boolean;
 }
 
-export interface ValidatedIngestionSettingsInput extends IngestionSettingsInput {
-  embeddingModel: EmbeddingModelId;
+/**
+ * The runtime write boundary accepts a string only to support an older client
+ * echoing an already-active legacy value while saving unrelated settings.
+ * New selections are still narrowed to EmbeddingModelId by the service.
+ */
+export type IngestionSettingsWriteInput = Omit<
+  IngestionSettingsInput,
+  "embeddingModel"
+> & {
+  embeddingModel?: string;
+};
+
+export interface ValidatedIngestionSettingsInput extends Omit<
+  IngestionSettingsInput,
+  "embeddingModel"
+> {
+  embeddingModel: ActiveEmbeddingModel;
   pendingEmbeddingModel: EmbeddingModelId | null;
 }
 
@@ -64,11 +95,11 @@ export const validateIngestionSettings = (input: IngestionSettingsInput): Valida
     throw badRequest("chunkingStrategy must be a supported strategy");
   }
   const embeddingModel = input.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
-  if (!embeddingModelIds.includes(embeddingModel)) {
+  if (!isEmbeddingModelId(embeddingModel)) {
     throw badRequest("embeddingModel must be a supported embedding model");
   }
   const pendingEmbeddingModel = input.pendingEmbeddingModel ?? null;
-  if (pendingEmbeddingModel && !embeddingModelIds.includes(pendingEmbeddingModel)) {
+  if (pendingEmbeddingModel && !isEmbeddingModelId(pendingEmbeddingModel)) {
     throw badRequest("pendingEmbeddingModel must be a supported embedding model");
   }
   if (

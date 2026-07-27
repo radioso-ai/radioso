@@ -1,68 +1,35 @@
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
-import type { EmbeddingService } from "./embeddingService.js";
-import { EMBEDDING_MODEL_DEFAULT, type IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
+import type {
+  QueryEmbeddingPort,
+} from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
-import type { VectorIndexPort } from "../domain/vectorIndex.js";
+import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
-import type { RetrievedChunk, VectorSearchPort } from "../domain/vectorSearch.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
-export interface IngestionSettingsReaderPort {
-  getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
-}
-
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
   constructor(
-    embeddingService: EmbeddingService,
-    vectorSearch: VectorSearchPort,
-    lexicalSearch: LexicalSearchPort,
-    ingestionSettingsService?: IngestionSettingsReaderPort,
-    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
-    clock?: Clock,
-  );
-  constructor(
-    embeddingService: EmbeddingService,
-    vectorSearch: VectorIndexPort,
-    lexicalSearch: LexicalSearchPort,
-    ingestionSettingsService: IngestionSettingsReaderPort | undefined,
-    chunkHydrator: ChunkCandidateHydratorPort,
-    temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
-    clock?: Clock,
-  );
-  constructor(
-    private readonly embeddingService: EmbeddingService,
-    private readonly vectorSearch: VectorSearchPort | VectorIndexPort,
+    private readonly queryEmbeddings: QueryEmbeddingPort,
+    private readonly vectorSearch: VectorCandidateSearchPort,
     private readonly lexicalSearch: LexicalSearchPort,
-    private readonly ingestionSettingsService?: IngestionSettingsReaderPort,
-    chunkHydratorOrTemporal?: ChunkCandidateHydratorPort | TemporalCandidateRetrievalPort,
-    temporalOrClock?: TemporalCandidateRetrievalPort | Clock,
+    private readonly chunkHydrator: ChunkCandidateHydratorPort,
+    private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
     clock?: Clock,
   ) {
-    // The overloads put the optional clock last in both call shapes, so at the
-    // shared implementation position it can be either the temporal port (long
-    // form) or the clock (short form). A Clock is a bare function; ports are
-    // objects — disambiguate on that.
-    const temporalCandidateRetrieval = typeof temporalOrClock === "function" ? undefined : temporalOrClock;
-    this.clock = (typeof temporalOrClock === "function" ? temporalOrClock : clock) ?? systemClock;
-    if (chunkHydratorOrTemporal && "hydrate" in chunkHydratorOrTemporal) {
-      this.chunkHydrator = chunkHydratorOrTemporal;
-      this.temporalCandidateRetrieval = temporalCandidateRetrieval;
-    } else {
-      this.temporalCandidateRetrieval = chunkHydratorOrTemporal ?? temporalCandidateRetrieval;
-    }
+    this.clock = clock ?? systemClock;
   }
 
-  private readonly chunkHydrator?: ChunkCandidateHydratorPort;
-  private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort;
   private readonly clock: Clock;
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
+    const retrievalNow = this.clock();
     const sourceFilter = input.request.sourceFilter;
     const metadataFilter = normalizeVectorMetadataFilter(input.request.metadataFilter);
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
@@ -72,37 +39,55 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     // semantic contexts below and contribute lexical-only.
     const uniqueSemanticQueries = [...new Set(semanticQueries)].slice(0, RETRIEVAL_BEHAVIOR.maxSemanticBranches);
     const searchedSemanticQueries = new Set(uniqueSemanticQueries);
-    const ingestionSettings = await this.ingestionSettingsService?.getForWorkspace(input.request.workspaceId);
-    const embeddingModel = ingestionSettings?.embeddingModel;
-    const embeddings = await this.embeddingService.embedChunks(uniqueSemanticQueries, {
-      model: embeddingModel,
-      usageContext: {
-        ...(input.request.usageContext ?? {
+    const lexicalSearchBySubquery = new Map(
+      input.activeRetrievalSubqueries.map((subquery) => [
+        subquery.id,
+        this.lexicalSearch.search({
           workspaceId: input.request.workspaceId,
-          surface: "retrieval",
-          attemptKey: "query_embedding",
+          query: subquery.lexicalQuery,
+          topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
+          metadataFilter,
+          sourceFilter,
+          lexicalPlan: subquery.lexicalPlan,
         }),
-        operation: "query_embedding",
-        attemptKey: "query_embedding",
-      },
-    });
+      ] as const),
+    );
+    const embeddingResult = await this.queryEmbeddings.embedQueries({
+        workspaceId: input.request.workspaceId,
+        texts: uniqueSemanticQueries,
+        usageContext: {
+          ...(input.request.usageContext ?? {
+            workspaceId: input.request.workspaceId,
+            surface: "retrieval",
+            attemptKey: "query_embedding",
+          }),
+          operation: "query_embedding",
+          attemptKey: "query_embedding",
+        },
+      })
+      .catch(() => null);
     const embeddingBySemanticQuery = new Map(
-      uniqueSemanticQueries.map((query, index) => [query, embeddings[index] ?? []] as const),
+      uniqueSemanticQueries.map((query, index) => [
+        query,
+        embeddingResult?.vectors[index] ?? [],
+      ] as const),
     );
     const activeEmbeddingDurationMs = Math.max(0, Date.now() - embeddingStartedAt);
     const semanticSearchByQuery = new Map(
       uniqueSemanticQueries.map((query) => [
         query,
-        this.searchWithFallback({
-          workspaceId: input.request.workspaceId,
-          queryEmbedding: embeddingBySemanticQuery.get(query) ?? [],
-          queryEmbeddingDimensions: (embeddingBySemanticQuery.get(query) ?? []).length,
-          topK: input.settings.vectorTopK,
-          similarityThreshold: input.settings.similarityThreshold,
-          embeddingModel,
-          metadataFilter,
-          sourceFilter,
-        }),
+        embeddingResult
+          ? this.searchWithFallback({
+              workspaceId: input.request.workspaceId,
+              space: embeddingResult.space,
+              queryVector: embeddingBySemanticQuery.get(query) ?? [],
+              topK: input.settings.vectorTopK,
+              minimumScore: input.settings.similarityThreshold,
+              metadataFilter,
+              sourceFilter,
+              notExpiredAt: retrievalNow.toISOString(),
+            }).catch(() => ({ contexts: [], fallbackApplied: true }))
+          : Promise.resolve({ contexts: [], fallbackApplied: true }),
       ] as const),
     );
     const retrievalBranches = await Promise.all(
@@ -110,20 +95,17 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         // A branch outside the semantic cap (searchedSemanticQueries) is lexical-only
         // by design — its empty semantic result is not a vector fallback, so it must
         // not raise vectorFallbackApplied for the turn.
-        const semanticSearched = searchedSemanticQueries.has(subquery.semanticQuery);
+        const semanticSearched =
+          embeddingResult !== null
+          && searchedSemanticQueries.has(subquery.semanticQuery);
         const semanticSearchForBranch = semanticSearched
           ? semanticSearchByQuery.get(subquery.semanticQuery)
-          : Promise.resolve({ contexts: [], fallbackApplied: false });
+          : embeddingResult
+            ? Promise.resolve({ contexts: [], fallbackApplied: false })
+            : Promise.resolve({ contexts: [], fallbackApplied: true });
         const [semanticSearch, lexicalContexts] = await Promise.all([
           semanticSearchForBranch ?? Promise.resolve({ contexts: [], fallbackApplied: false }),
-          this.lexicalSearch.search({
-            workspaceId: input.request.workspaceId,
-            query: subquery.lexicalQuery,
-            topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
-            metadataFilter,
-            sourceFilter,
-            lexicalPlan: subquery.lexicalPlan,
-          }),
+          lexicalSearchBySubquery.get(subquery.id) ?? Promise.resolve([]),
         ]);
 
         return {
@@ -149,12 +131,22 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ? retrievalBranches.flatMap((branch) => branch.semanticContexts)
       : [];
     const lexicalContexts = retrievalBranches.flatMap((branch) => branch.lexicalContexts);
+    const semanticRetrievalAvailability = resolveSemanticAvailability({
+      embeddingAvailable: embeddingResult !== null,
+      searchedBranchCount: retrievalBranches.filter((branch) => branch.semanticSearched).length,
+      failedBranchCount: retrievalBranches.filter((branch) => branch.fallbackApplied).length,
+    });
+    const semanticRetrievalFailureReason = semanticRetrievalAvailability === "available"
+      ? null
+      : embeddingResult
+        ? "vector_search_unavailable" as const
+        : "query_embedding_unavailable" as const;
     const temporalQueryMode = resolveTemporalQueryMode(input);
     const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
     const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
       ? await this.temporalCandidateRetrieval.findUpcoming({
           workspaceId: input.request.workspaceId,
-          today: formatIsoDateUtc(this.clock()),
+          today: formatIsoDateUtc(retrievalNow),
           topK: input.settings.vectorTopK,
           metadataFilter,
           sourceFilter,
@@ -173,39 +165,32 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       temporalStructuredLookupEnabled,
       retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
+      semanticRetrievalAvailability,
+      semanticRetrievalFailureReason,
     };
   }
 
   private async searchWithFallback(input: {
     workspaceId: string;
-    queryEmbedding: number[];
-    queryEmbeddingDimensions: number;
+    space: Parameters<VectorCandidateSearchPort["search"]>[0]["space"];
+    queryVector: number[];
     topK: number;
-    similarityThreshold: number;
-    embeddingModel?: string;
+    minimumScore: number;
     metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
+    notExpiredAt: string;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
-    if (!this.chunkHydrator) {
-      const rows = await (this.vectorSearch as VectorSearchPort).search(input);
-
-      return {
-        contexts: rows,
-        fallbackApplied: false,
-      };
-    }
-
-    const embeddingModel = input.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
-    const candidates = await (this.vectorSearch as VectorIndexPort).search({
+    const candidates = await this.vectorSearch.search({
       workspaceId: input.workspaceId,
-      queryEmbedding: input.queryEmbedding,
-      queryEmbeddingDimensions: input.queryEmbeddingDimensions,
+      space: input.space,
+      queryVector: input.queryVector,
       topK: input.topK,
-      similarityThreshold: input.similarityThreshold,
-      embeddingModel,
+      minimumScore: input.minimumScore,
       filter: {
         metadataContains: input.metadataFilter,
         source: input.sourceFilter,
+        retrievalEnabled: true,
+        notExpiredAt: input.notExpiredAt,
       },
     });
     const rows = await this.chunkHydrator.hydrate({
@@ -213,7 +198,6 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       candidates,
       metadataFilter: input.metadataFilter,
       sourceFilter: input.sourceFilter,
-      embeddingModel,
     });
 
     return {
@@ -223,6 +207,22 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
   }
 }
 
+const resolveSemanticAvailability = (input: {
+  embeddingAvailable: boolean;
+  searchedBranchCount: number;
+  failedBranchCount: number;
+}): "available" | "degraded" | "unavailable" => {
+  if (!input.embeddingAvailable) {
+    return "unavailable";
+  }
+  if (input.failedBranchCount === 0) {
+    return "available";
+  }
+  return input.failedBranchCount < input.searchedBranchCount
+    ? "degraded"
+    : "unavailable";
+};
+
 const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
   const structured = input.rewrittenQuery.structuredResult;
   if (structured?.queryShape !== "event_date_lookup") {
@@ -230,4 +230,3 @@ const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): Tempor
   }
   return structured.temporalQueryMode ?? "none";
 };
-

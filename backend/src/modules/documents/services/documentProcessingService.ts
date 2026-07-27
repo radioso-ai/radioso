@@ -13,8 +13,11 @@ import {
   renderSearchText,
   type ChunkingStrategy,
   type ChunkingStrategyId,
-  type EmbeddingService,
 } from "../../retrieval/public.js";
+import type {
+  DocumentEmbeddingPort,
+  EmbeddingSpaceRef,
+} from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
@@ -151,7 +154,7 @@ export class DocumentProcessingService {
   constructor(
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly chunkRepository: ChunkRepositoryPort,
-    private readonly embeddingService: EmbeddingService,
+    private readonly documentEmbeddings: DocumentEmbeddingPort,
     private readonly auditService: AuditService,
     private readonly ingestionSettingsService: IngestionSettingsReaderPort,
     private readonly chunkingStrategyRegistry: ChunkingStrategyRegistryPort,
@@ -209,7 +212,9 @@ export class DocumentProcessingService {
         content: normalizeMarkdown(documentWithContent.sourceContent),
       });
       const settings = await this.ingestionSettingsService.getForWorkspace(job.workspaceId);
-      const embeddingModel = settings.pendingEmbeddingModel ?? settings.embeddingModel;
+      // Canonical publication always belongs to the active profile. A pending
+      // profile is populated only by generation-pinned embedding_profile jobs.
+      const embeddingModel = settings.embeddingModel;
       const chunkingStrategy = this.chunkingStrategyRegistry.get(settings.chunkingStrategy);
       const chunkingStartedAt = Date.now();
       const chunks = await traceActiveSpan("document.processing.chunking", buildDocumentProcessingTraceAttributes(job, {
@@ -222,7 +227,6 @@ export class DocumentProcessingService {
           fixedWindowChunkOverlap: settings.fixedWindowChunkOverlap,
           structuredMinChunkSize: settings.structuredMinChunkSize,
           structuredMaxChunkSize: settings.structuredMaxChunkSize,
-          embeddingModel,
           embeddingUsageContext: {
             workspaceId: job.workspaceId,
             requestId: job.id,
@@ -271,31 +275,32 @@ export class DocumentProcessingService {
       const embeddingUsage = this.buildEmbeddingUsage(job, enrichedChunks);
       const embeddingStartedAt = Date.now();
       let embeddings: number[][];
+      let embeddingSpace: EmbeddingSpaceRef;
       try {
         const embeddingResult = await traceActiveSpan("document.processing.embedding", buildDocumentProcessingTraceAttributes(job, {
           stage: "embedding",
           chunkCount: enrichedChunks.length,
-        }), () => this.embeddingService.embedChunksWithUsage(
-          enrichedChunks.map((chunk) => chunk.searchText),
-          {
-            model: embeddingModel,
-            usageContext: {
-              workspaceId: job.workspaceId,
-              requestId: job.id,
-              surface: "documents",
-              operation: "embedding",
-              attemptKey: embeddingUsage.attemptKey,
-            },
-            documentId: job.documentId,
-            documentRevision: job.documentRevision,
-            jobId: job.id,
-            usageItems: embeddingUsage.chunks,
+        }), () => this.documentEmbeddings.embedDocumentChunks({
+          workspaceId: job.workspaceId,
+          texts: enrichedChunks.map((chunk) => chunk.searchText),
+          sourceId: documentWithContent.sourceId ?? null,
+          documentId: job.documentId,
+          documentRevision: job.documentRevision,
+          jobId: job.id,
+          usageItems: embeddingUsage.chunks,
+          usageContext: {
+            workspaceId: job.workspaceId,
+            requestId: job.id,
+            surface: "documents",
+            operation: "embedding",
+            attemptKey: embeddingUsage.attemptKey,
           },
-        ), (result) => buildDocumentProcessingTraceAttributes(job, {
+        }), (result) => buildDocumentProcessingTraceAttributes(job, {
           stage: "embedding",
           chunkCount: result.vectors.length,
         }));
-        embeddings = embeddingResult.vectors;
+        embeddings = embeddingResult.vectors.map((vector) => [...vector]);
+        embeddingSpace = embeddingResult.space;
       } catch (error) {
         throw error;
       }
@@ -337,6 +342,8 @@ export class DocumentProcessingService {
         workspaceId: job.workspaceId,
         revision: job.documentRevision,
         chunks: persistedChunks,
+        embeddingSpace,
+        canonicalVersion: String(job.documentRevision),
       }), (result) => buildDocumentProcessingTraceAttributes(job, {
         stage: "storage",
         outcome: result ? "published" : undefined,

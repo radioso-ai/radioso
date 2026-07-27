@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -313,6 +314,8 @@ export interface ChunkRepositoryPort {
     workspaceId: string;
     revision: number;
     chunks: ChunkRecord[];
+    embeddingSpace: EmbeddingSpaceRef;
+    canonicalVersion: string;
   }): Promise<boolean>;
   // Reads the published chunks for a document so a later, out-of-band stage
   // (async enrichment) can re-derive per-chunk metadata without re-chunking.
@@ -365,6 +368,12 @@ export interface DocumentListPage {
   hasMore: boolean;
 }
 
+export interface EmbeddingCoverageReconciliationPort {
+  reconcileWorkspace(
+    workspaceId: string,
+  ): Promise<{ enqueued: number; skipped: number }>;
+}
+
 export interface DocumentDetails extends DocumentSummary {
   content: string;
 }
@@ -398,6 +407,7 @@ export class DocumentIngestionService {
     private readonly productAnalyticsService: ProductAnalyticsPort = new NoopProductAnalyticsService(),
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
+    private readonly embeddingCoverage?: EmbeddingCoverageReconciliationPort,
   ) {}
 
   async ingest(input: {
@@ -751,6 +761,8 @@ export class DocumentIngestionService {
     if (!updated) {
       throw notFound("Document not found");
     }
+
+    await this.embeddingCoverage?.reconcileWorkspace(input.workspaceId);
 
     await this.auditService.record({
       workspaceId: input.workspaceId,

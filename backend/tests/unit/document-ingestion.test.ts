@@ -7,7 +7,6 @@ import { DocumentProcessingWorker } from "../../src/modules/documents/services/d
 import { DocumentSourceContentService } from "../../src/modules/documents/services/documentSourceContentService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
   createAuditService,
@@ -19,6 +18,7 @@ import {
 } from "../support/fakes.js";
 import { notFound } from "../../src/shared/domain/errors.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
+import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 describe("document ingestion", () => {
   it("queues new documents instead of processing them inline", async () => {
@@ -345,7 +345,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -376,13 +376,20 @@ describe("document ingestion", () => {
     expect(chunkRepository.items.get(document.id)).toHaveLength(1);
   });
 
-  it("uses the workspace embedding model when processing document chunks", async () => {
+  it("uses the document embedding port without supplying provider-owned options", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
-    const seenModels: Array<string | undefined> = [];
+    const embedDocumentChunks = vi.fn(async (input: { texts: readonly string[] }) => ({
+      space: {
+        id: "space-document",
+        dimensions: 3,
+        distanceMetric: "cosine" as const,
+      },
+      vectors: input.texts.map(() => [1, 2, 3]),
+    }));
     const ingestionService = new DocumentIngestionService(documentRepository, auditService);
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
@@ -390,12 +397,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
-          async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
-            seenModels.push(options?.model);
-            return texts.map(() => [1, 2, 3]);
-          },
-        }),
+        { embedDocumentChunks },
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
@@ -418,10 +420,39 @@ describe("document ingestion", () => {
     });
 
     expect(await processingWorker.runOnce()).toBe(true);
-    expect(seenModels).toEqual(["text-embedding-3-large"]);
+    expect(embedDocumentChunks).toHaveBeenCalledOnce();
+    const request = embedDocumentChunks.mock.calls[0]![0] as Record<string, unknown>;
+    expect(request).toEqual(expect.objectContaining({
+      workspaceId: "workspace-1",
+      texts: expect.any(Array),
+      documentId: expect.any(String),
+      documentRevision: 1,
+      jobId: expect.any(String),
+      usageItems: expect.any(Array),
+      usageContext: expect.objectContaining({
+        workspaceId: "workspace-1",
+        surface: "documents",
+        operation: "embedding",
+      }),
+    }));
+    expect(request).not.toHaveProperty("provider");
+    expect(request).not.toHaveProperty("model");
+    expect(request).not.toHaveProperty("dimensions");
+    expect(request).not.toHaveProperty("purpose");
+    expect(chunkRepository.publications).toHaveLength(1);
+    expect(chunkRepository.publications[0]).toMatchObject({
+      workspaceId: "workspace-1",
+      revision: 1,
+      canonicalVersion: "1",
+      embeddingSpace: {
+        id: "space-document",
+        dimensions: 3,
+        distanceMetric: "cosine",
+      },
+    });
   });
 
-  it("uses a pending embedding model for reprocessed document chunks before promotion", async () => {
+  it("keeps synchronous document publication on the active embedding model during a transition", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -436,12 +467,12 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[], options?: { model?: string }): Promise<number[][]> {
             seenModels.push(options?.model);
             return texts.map(() => [1, 2, 3]);
           },
-        }),
+        }, "text-embedding-3-small"),
         auditService,
         {
           async getForWorkspace(workspaceId: string) {
@@ -466,8 +497,8 @@ describe("document ingestion", () => {
     });
 
     expect(await processingWorker.runOnce()).toBe(true);
-    expect(seenModels).toEqual(["text-embedding-3-large"]);
-    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0]!.id)?.[0]?.embeddingModel).toBe("text-embedding-3-large");
+    expect(seenModels).toEqual(["text-embedding-3-small"]);
+    expect(chunkRepository.items.get((await documentRepository.listByWorkspaceId("workspace-1"))[0]!.id)?.[0]?.embeddingModel).toBe("text-embedding-3-small");
     expect(promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
   });
 
@@ -484,7 +515,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -665,7 +696,7 @@ describe("document ingestion", () => {
     processingService = new DocumentProcessingService(
       documentRepository,
       chunkRepository,
-      new EmbeddingService({
+      createDocumentEmbeddingPort({
         async embedTexts(texts: string[]): Promise<number[][]> {
           if (!newerRevisionPublished) {
             newerRevisionPublished = true;
@@ -816,7 +847,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -914,7 +945,7 @@ describe("document ingestion", () => {
     const service = new DocumentProcessingService(
       documentRepository,
       chunkRepository,
-      new EmbeddingService({
+      createDocumentEmbeddingPort({
         async embedTexts(texts: string[]): Promise<number[][]> {
           return texts.map(() => [1, 2, 3]);
         },
@@ -1186,7 +1217,7 @@ describe("document ingestion", () => {
             return null;
           },
         },
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -1283,7 +1314,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -1363,7 +1394,7 @@ describe("document ingestion", () => {
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        new EmbeddingService({
+        createDocumentEmbeddingPort({
           async embedTexts(texts: string[]): Promise<number[][]> {
             return texts.map(() => [1, 2, 3]);
           },
@@ -1436,6 +1467,40 @@ describe("document retrieval eligibility", () => {
 
     expect(updated.retrievalEnabled).toBe(true);
     expect(updated.retrievalExpiresAt).toEqual(expiresAt);
+  });
+
+  it("reconciles profile coverage after retrieval eligibility changes", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const reconcileWorkspace = vi.fn().mockResolvedValue({
+      enqueued: 1,
+      skipped: 0,
+    });
+    const service = new DocumentIngestionService(
+      documentRepository,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { reconcileWorkspace },
+    );
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Doc",
+      sourceContent: "body",
+      markdownContent: "body",
+      status: "ready",
+    });
+
+    await service.updateRetrievalEligibility({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      retrievalEnabled: true,
+    });
+
+    expect(reconcileWorkspace).toHaveBeenCalledWith("workspace-1");
   });
 
   it("clears an elapsed expiry when the document is re-enabled", async () => {

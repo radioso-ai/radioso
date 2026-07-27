@@ -18,7 +18,7 @@ The answering strategy decides *how* retrieval runs for each question. The resul
 
 - **Standard** runs a fixed pipeline: interpret the question, search, rank, and answer in a set order. It is fast and predictable.
 - **Reasoning (experimental)** runs an agent that decides its own steps. It can search more than once and refine the query before answering. It is slower and costs more, but handles harder, multi-part questions better.
-- **Automatic** currently behaves exactly like Standard. Per-question strategy routing is not available yet.
+- **Automatic** behaves exactly like Standard.
 
 ### How it works
 

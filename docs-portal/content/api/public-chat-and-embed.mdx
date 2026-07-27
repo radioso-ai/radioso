@@ -72,7 +72,7 @@ To resume an existing visitor session, include the previous response's `resumeTo
 
 The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `resumeToken`, `workspaceName`, `assistantBootstrapActive`, `expiresAt`, and `resumeExpiresAt`. Internally, `publicSessionId` is the chat session boundary for conversation continuity.
 
-`chatSessionId` and the older `anonymousSessionId` are accepted as legacy client hints but are not trusted as resume credentials. New clients normally should not send either; use `resumeToken` to resume and the returned `publicSessionToken` for chat requests.
+`chatSessionId` and `anonymousSessionId` are accepted as client hints but are not trusted as resume credentials. Use `resumeToken` to resume and the returned `publicSessionToken` for chat requests.
 
 ## Send a public chat message
 

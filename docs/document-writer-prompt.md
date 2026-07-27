@@ -34,8 +34,8 @@ Rules that hold in every register:
 - **Label restatement.** A sentence that only repeats the heading or setting name. If the doc for a toggle called "Rule enabled" says "This is the activation switch for the rule", it has told the reader nothing.
 - **Hype words.** simply, easily, seamless, powerful, robust, cutting-edge. If something is genuinely easy, show the two-line example and let it speak.
 - **Time-relative claims.** "now ships", "new", "recently added". Docs outlive the moment they were written.
-- **Speculative futures.** "reserved for a future router", "planned for a later release". Document what exists. Roadmap talk lives in issues and specs, not user docs. (A short "not yet supported" limit statement is fine — that describes the present.)
-- **Copy-paste boilerplate.** The same hedge sentence pasted into three files is a machine-tell. If a migration note is true, state what is actually true for that surface, with the actual endpoints.
+- **Futures and migrations.** "reserved for a future router", "planned for a later release", "not available yet", "legacy", "deprecated", "during cutover". Describe what exists right now, in present tense. A plain limit statement is fine ("The SDK does not cover browser sign-in"); a promise or hint that it will change is not. Roadmap talk lives in issues and specs, not user docs.
+- **Copy-paste boilerplate.** The same hedge sentence pasted into three files is a machine-tell. If two route families exist, document both as present facts with the actual endpoints.
 - **Competitor comparisons.** Describe Radioso on its own terms. No put-downs of other tools, however witty.
 - **Filler openers.** Don't warm up. Start with the thing.
 
@@ -73,7 +73,7 @@ Real examples from this repo. The "before" text shipped.
 
 > Before: "Legacy webhook skill endpoints may remain available during cutover."
 >
-> After (only if verified true): "The old `/api/v1/webhooks` routes still respond but are deprecated; new integrations should use the skill endpoints below."
+> After (verified against the code first): "The per-type webhook routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints are the primary surface."
 
 ## Screenshots
 

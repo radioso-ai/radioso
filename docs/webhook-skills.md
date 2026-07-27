@@ -46,7 +46,7 @@ The unified endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-The older per-type webhook routes below still work and operate on the same `agent_skills` records as the unified endpoints. Prefer the unified `/skills` endpoints for new integrations:
+The per-type webhook routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints above are the primary surface:
 
 - `GET /api/v1/agents/{agentId}/webhook-skills`
 - `POST /api/v1/agents/{agentId}/webhook-skills`

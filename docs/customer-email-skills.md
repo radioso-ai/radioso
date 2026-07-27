@@ -112,7 +112,7 @@ The unified skill endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-The older per-type email routes below still work and operate on the same `agent_skills` records as the unified endpoints. Prefer the unified `/skills` endpoints for new integrations:
+The per-type email routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints above are the primary surface:
 
 - `GET /api/v1/agents/{agentId}/email-skills`
 - `POST /api/v1/agents/{agentId}/email-skills`
@@ -138,10 +138,10 @@ mail provider directly and does not handle OAuth tokens.
 ## Provider Delivery Status
 
 The connection, skill, OAuth, and activity paths are complete. The provider
-adapter that talks to Gmail or Microsoft Graph is not wired yet. The current
+adapter that talks to Gmail or Microsoft Graph is not wired. The current
 build uses a mock provider for both `google_mail` and `microsoft_graph_mail`.
 
-The key point is that no real email is sent yet. The mock provider accepts every
+The key point is that no real email is sent. The mock provider accepts every
 draft and send request and returns a placeholder message id. So a `drafted` or
 `sent` outcome means the request passed validation and reached the provider
 step, not that a message was delivered. Activity receipts are not proof of

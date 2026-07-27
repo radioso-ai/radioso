@@ -282,7 +282,7 @@ Radioso exposes two MCP surfaces. The **agent converse surface** lets a client t
 
 Radioso supports MCP in two deployment shapes. Self-hosted operators can set `RADIOSO_MCP_ENABLED=true` with `RADIOSO_MCP_STANDALONE=false` and serve MCP from the backend at `/mcp`, using the workspace API token directly. Operators who need a separate public connector surface can keep backend MCP disabled and use the standalone `packages/radioso-mcp-server/` process with its token exchange flow.
 
-Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. A standard MCP OAuth front door for the converse surface is planned; until then, public connectors use a session token minted through the grant exchange.
+Cursor can use either same-host merged mode or a local standalone server. Claude Desktop, ChatGPT deep-research, and other hosted remote MCP clients require a public HTTPS deployment plus compatible auth. Public connectors use a session token minted through the grant exchange; there is no standard MCP OAuth front door for the converse surface.
 
 ### Website embed
 

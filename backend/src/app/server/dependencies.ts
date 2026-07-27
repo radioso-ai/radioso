@@ -322,7 +322,22 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       llmRegistry,
     ),
     embeddingCoverage,
-    { backendKey: "pgvector" },
+    {
+      backendKey: "pgvector",
+      onTransitionBlocked: (input) => {
+        logger.warn(
+          {
+            event: "embedding.transition.blocked",
+            backend: input.backendKey,
+            workspaceId: input.workspaceId,
+            embeddingTransitionId: input.transitionId,
+            embeddingSpaceId: input.targetEmbeddingSpaceId,
+            failureReason: input.failureReason,
+          },
+          "Embedding transition blocked after vector index retry exhaustion",
+        );
+      },
+    },
   );
   const embeddingTransitions = new EmbeddingModelTransitionAdapter(
     repositories.embeddingProfileRepository,

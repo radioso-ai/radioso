@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/domain/vectorAdapter.js";
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
 
 const embeddingSpace = { id: "space-active", dimensions: 1, distanceMetric: "cosine" as const };
@@ -21,8 +22,11 @@ const hydrateSemanticCandidates = {
 describe("candidate retrieval branches", () => {
   it("runs semantic and lexical retrieval separately for each active subquery", async () => {
     const vectorQueries: number[] = [];
+    const vectorFilters: Array<Parameters<VectorCandidateSearchPort["search"]>[0]["filter"]> = [];
     const lexicalQueries: string[] = [];
     const lexicalPlans: unknown[] = [];
+    const now = new Date("2026-07-27T12:34:56.000Z");
+    let clockCalls = 0;
     const stage = new CandidateRetrievalStageService(
       {
         async embedQueries(input) {
@@ -32,6 +36,7 @@ describe("candidate retrieval branches", () => {
       {
         async search(input) {
           vectorQueries.push(Number(input.queryVector[0]));
+          vectorFilters.push(input.filter);
           return [
             {
               chunkId: `semantic-${input.queryVector[0]}`,
@@ -59,6 +64,12 @@ describe("candidate retrieval branches", () => {
         },
       },
       hydrateSemanticCandidates,
+      undefined,
+      () => {
+        const value = new Date(now.getTime() + clockCalls * 1_000);
+        clockCalls += 1;
+        return value;
+      },
     );
 
     const result = await stage.execute({
@@ -141,6 +152,21 @@ describe("candidate retrieval branches", () => {
     });
 
     expect(vectorQueries).toEqual([1, 2]);
+    expect(clockCalls).toBe(1);
+    expect(vectorFilters).toEqual([
+      {
+        metadataContains: undefined,
+        source: undefined,
+        retrievalEnabled: true,
+        notExpiredAt: now.toISOString(),
+      },
+      {
+        metadataContains: undefined,
+        source: undefined,
+        retrievalEnabled: true,
+        notExpiredAt: now.toISOString(),
+      },
+    ]);
     expect(lexicalQueries).toEqual(["narayani", "arudra"]);
     expect(result.retrievalBranches).toHaveLength(2);
     expect(result.retrievalBranches.map((branch) => branch.label)).toEqual(["Narayani", "Arudra"]);

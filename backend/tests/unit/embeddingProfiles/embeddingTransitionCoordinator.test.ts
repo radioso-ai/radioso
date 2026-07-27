@@ -79,7 +79,17 @@ const promotedProfile = (): WorkspaceEmbeddingProfileState =>
     transition: buildingTransition({ status: "promoted" }),
   });
 
-const createHarness = () => {
+const createHarness = (
+  options: {
+    onTransitionBlocked?: (input: {
+      workspaceId: string;
+      transitionId: string;
+      targetEmbeddingSpaceId: string;
+      backendKey: string;
+      failureReason: "backfill_retry_exhausted";
+    }) => void;
+  } = {},
+) => {
   let profile = activeProfile();
   const repository: EmbeddingTransitionCoordinatorRepository = {
     findEmbeddingSpaceById: vi.fn(async () => targetSpace()),
@@ -133,7 +143,7 @@ const createHarness = () => {
     repository,
     validation,
     backfill,
-    { backendKey: "pgvector" },
+    { backendKey: "pgvector", ...options },
   );
 
   return {
@@ -423,6 +433,44 @@ describe("EmbeddingTransitionCoordinator", () => {
       expectedGeneration: "2",
     });
     expect(repeated.outcome).toBe("promoted");
+  });
+
+  it("reports a transition blocked atomically by vector-index readiness reconciliation", async () => {
+    const onTransitionBlocked = vi.fn(() => {
+      throw new Error("logging unavailable");
+    });
+    const harness = createHarness({ onTransitionBlocked });
+    vi.mocked(harness.repository.promoteTransitionIfEligible).mockResolvedValue(
+      buildingProfile({
+        transition: buildingTransition({
+          status: "blocked",
+          failureReason: "backfill_retry_exhausted",
+        }),
+      }),
+    );
+
+    await expect(harness.coordinator.reconcilePromotion({
+      workspaceId: "workspace-1",
+      transitionId: "transition-1",
+      expectedGeneration: "2",
+    })).resolves.toMatchObject({
+      outcome: "blocked",
+      profile: {
+        activeEmbeddingSpaceId: "space-active",
+        pendingEmbeddingSpaceId: "space-target",
+        transition: {
+          status: "blocked",
+          failureReason: "backfill_retry_exhausted",
+        },
+      },
+    });
+    expect(onTransitionBlocked).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      transitionId: "transition-1",
+      targetEmbeddingSpaceId: "space-target",
+      backendKey: "pgvector",
+      failureReason: "backfill_retry_exhausted",
+    });
   });
 
   it("keeps a not-ready transition pending for a later automatic promotion attempt", async () => {

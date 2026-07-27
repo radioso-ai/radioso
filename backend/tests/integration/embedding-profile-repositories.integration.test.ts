@@ -379,6 +379,279 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     });
   });
 
+  it("moves a transition out of building when target vector work dead-letters", async () => {
+    const active = await createSpace("dead-letter-active", 2);
+    const pending = await createSpace("dead-letter-pending", 2);
+    const { documentId, chunkId } = await insertReadyDocumentWithChunk();
+    await profileRepository.initializeWorkspaceProfile({
+      workspaceId,
+      activeEmbeddingSpaceId: active.id,
+    });
+    const started = await profileRepository.startTransition({
+      workspaceId,
+      targetEmbeddingSpaceId: pending.id,
+      expectedGeneration: "1",
+    });
+    await chunkEmbeddingRepository.upsert({
+      workspaceId,
+      chunkId,
+      documentId,
+      documentRevision: 7,
+      embeddingSpaceId: pending.id,
+      canonicalVersion: "1",
+      dimensions: 2,
+      embedding: [0, 1],
+      contentHash: "dead-letter-target-content",
+    });
+    const projection = await vectorIndexWorkRepository.append({
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      documentId,
+      operation: "upsert",
+      canonicalVersion: "1",
+      payload: {},
+    });
+    await expect(vectorIndexWorkRepository.claimBatch({
+      limit: 1,
+      now: new Date(),
+      leaseMs: 1_000,
+    })).resolves.toMatchObject([{ id: projection.work.id }]);
+    await expect(vectorIndexWorkRepository.markFailed({
+      id: projection.work.id,
+      errorCode: "adapter_unavailable",
+      retryAt: new Date(Date.now() + 5_000),
+      maxAttempts: 1,
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      caughtUpReadiness: "exact_fallback",
+    })).resolves.toMatchObject({
+      disposition: "dead_lettered",
+      checkpoint: null,
+    });
+    await vectorIndexWorkRepository.ensureCheckpoint({
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      readiness: "exact_fallback",
+    });
+    const coordinator = new EmbeddingTransitionCoordinator(
+      profileRepository,
+      { validateFixedInput: async () => undefined },
+      {
+        ensureTransitionWork: async () => undefined,
+        cancelTransitionWork: async () => undefined,
+      },
+      { backendKey: "pgvector" },
+    );
+
+    await expect(coordinator.reconcilePromotion({
+      workspaceId,
+      transitionId: started.transition.id,
+      expectedGeneration: "2",
+    })).resolves.toMatchObject({
+      outcome: "blocked",
+      profile: {
+        activeEmbeddingSpaceId: active.id,
+        pendingEmbeddingSpaceId: pending.id,
+        transition: {
+          id: started.transition.id,
+          status: "blocked",
+          failureReason: "backfill_retry_exhausted",
+        },
+      },
+    });
+    await expect(profileRepository.listBuildingTransitions({ limit: 25 }))
+      .resolves.toEqual([]);
+  });
+
+  it("does not block a transition for dead-lettered work on the active space", async () => {
+    const active = await createSpace("active-dead-letter", 2);
+    const pending = await createSpace("active-dead-letter-target", 2);
+    const chunkId = randomUUID();
+    await profileRepository.initializeWorkspaceProfile({
+      workspaceId,
+      activeEmbeddingSpaceId: active.id,
+    });
+    const started = await profileRepository.startTransition({
+      workspaceId,
+      targetEmbeddingSpaceId: pending.id,
+      expectedGeneration: "1",
+    });
+    const activeProjection = await vectorIndexWorkRepository.append({
+      workspaceId,
+      embeddingSpaceId: active.id,
+      chunkId,
+      operation: "delete",
+      canonicalVersion: "1",
+      payload: {},
+    });
+    await expect(vectorIndexWorkRepository.claimBatch({
+      limit: 1,
+      now: new Date(),
+      leaseMs: 1_000,
+    })).resolves.toMatchObject([{ id: activeProjection.work.id }]);
+    await vectorIndexWorkRepository.markFailed({
+      id: activeProjection.work.id,
+      errorCode: "adapter_unavailable",
+      retryAt: new Date(Date.now() + 5_000),
+      maxAttempts: 1,
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: active.id,
+      chunkId,
+      caughtUpReadiness: "exact_fallback",
+    });
+    await vectorIndexWorkRepository.ensureCheckpoint({
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      readiness: "exact_fallback",
+    });
+    const coordinator = new EmbeddingTransitionCoordinator(
+      profileRepository,
+      { validateFixedInput: async () => undefined },
+      {
+        ensureTransitionWork: async () => undefined,
+        cancelTransitionWork: async () => undefined,
+      },
+      { backendKey: "pgvector" },
+    );
+
+    await expect(coordinator.reconcilePromotion({
+      workspaceId,
+      transitionId: started.transition.id,
+      expectedGeneration: "2",
+    })).resolves.toMatchObject({
+      outcome: "promoted",
+      profile: {
+        activeEmbeddingSpaceId: pending.id,
+        pendingEmbeddingSpaceId: null,
+        transition: {
+          id: started.transition.id,
+          status: "promoted",
+        },
+      },
+    });
+  });
+
+  it("keeps a transition building when newer target work supersedes a dead letter", async () => {
+    const active = await createSpace("superseded-dead-letter-active", 2);
+    const pending = await createSpace("superseded-dead-letter-pending", 2);
+    const { documentId, chunkId } = await insertReadyDocumentWithChunk();
+    await profileRepository.initializeWorkspaceProfile({
+      workspaceId,
+      activeEmbeddingSpaceId: active.id,
+    });
+    const started = await profileRepository.startTransition({
+      workspaceId,
+      targetEmbeddingSpaceId: pending.id,
+      expectedGeneration: "1",
+    });
+    const staleProjection = await vectorIndexWorkRepository.append({
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      documentId,
+      operation: "upsert",
+      canonicalVersion: "1",
+      payload: {},
+    });
+    await vectorIndexWorkRepository.claimBatch({
+      limit: 1,
+      now: new Date(),
+      leaseMs: 1_000,
+    });
+    await vectorIndexWorkRepository.markFailed({
+      id: staleProjection.work.id,
+      errorCode: "adapter_unavailable",
+      retryAt: new Date(Date.now() + 5_000),
+      maxAttempts: 1,
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      caughtUpReadiness: "exact_fallback",
+    });
+    const replacementProjection = await vectorIndexWorkRepository.append({
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      documentId,
+      operation: "upsert",
+      canonicalVersion: "2",
+      payload: {},
+    });
+    await chunkEmbeddingRepository.upsert({
+      workspaceId,
+      chunkId,
+      documentId,
+      documentRevision: 7,
+      embeddingSpaceId: pending.id,
+      canonicalVersion: "2",
+      dimensions: 2,
+      embedding: [0, 1],
+      contentHash: "superseding-target-content",
+    });
+    await vectorIndexWorkRepository.ensureCheckpoint({
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      readiness: "exact_fallback",
+    });
+    const coordinator = new EmbeddingTransitionCoordinator(
+      profileRepository,
+      { validateFixedInput: async () => undefined },
+      {
+        ensureTransitionWork: async () => undefined,
+        cancelTransitionWork: async () => undefined,
+      },
+      { backendKey: "pgvector" },
+    );
+
+    await expect(coordinator.reconcilePromotion({
+      workspaceId,
+      transitionId: started.transition.id,
+      expectedGeneration: "2",
+    })).resolves.toMatchObject({
+      outcome: "waiting",
+      profile: {
+        transition: {
+          status: "building",
+          failureReason: null,
+        },
+      },
+    });
+
+    await expect(vectorIndexWorkRepository.claimBatch({
+      limit: 1,
+      now: new Date(),
+      leaseMs: 1_000,
+    })).resolves.toMatchObject([{ id: replacementProjection.work.id }]);
+    await vectorIndexWorkRepository.markCompletedAndAdvanceCheckpoint({
+      id: replacementProjection.work.id,
+      backendKey: "pgvector",
+      workspaceId,
+      embeddingSpaceId: pending.id,
+      chunkId,
+      caughtUpReadiness: "exact_fallback",
+    });
+    await expect(coordinator.reconcilePromotion({
+      workspaceId,
+      transitionId: started.transition.id,
+      expectedGeneration: "2",
+    })).resolves.toMatchObject({
+      outcome: "promoted",
+      profile: {
+        activeEmbeddingSpaceId: pending.id,
+        pendingEmbeddingSpaceId: null,
+        transition: { status: "promoted" },
+      },
+    });
+  });
+
   it("repairs settings after permanent pinned work failure and accepts a new model", async () => {
     const active = await createSpace("text-embedding-3-small");
     const failedTarget = await createSpace("text-embedding-3-large", 3072);

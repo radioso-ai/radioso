@@ -122,6 +122,7 @@ describe("semantic_search tool", () => {
     const embeddingRequests: Array<Parameters<QueryEmbeddingPort["embedQueries"]>[0]> = [];
     const searchRequests: Array<Parameters<VectorCandidateSearchPort["search"]>[0]> = [];
     const space = { id: "space-active", dimensions: 2, distanceMetric: "cosine" as const };
+    const now = new Date("2026-07-27T12:34:56.000Z");
     const queryEmbeddings: QueryEmbeddingPort = {
       async embedQueries(request) {
         embeddingRequests.push(request);
@@ -141,6 +142,7 @@ describe("semantic_search tool", () => {
       chunkHydrator: { async hydrate() { return []; } },
       registry: new InMemoryChunkRegistry(),
       usageContext,
+      clock: () => now,
     });
 
     await tool.invoke({ query: "who was gandhi" }, toolCtx);
@@ -160,7 +162,12 @@ describe("semantic_search tool", () => {
       queryVector: [0.25, 0.75],
       topK: 5,
       minimumScore: 0.2,
-      filter: {},
+      filter: {
+        metadataContains: undefined,
+        source: undefined,
+        retrievalEnabled: true,
+        notExpiredAt: now.toISOString(),
+      },
     }]);
   });
 

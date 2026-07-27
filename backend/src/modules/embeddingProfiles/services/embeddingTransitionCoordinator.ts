@@ -87,12 +87,23 @@ export interface EmbeddingTransitionPromotionResult {
   profile: WorkspaceEmbeddingProfileState;
 }
 
+export interface EmbeddingTransitionCoordinatorOptions {
+  backendKey: string;
+  onTransitionBlocked?: (input: {
+    workspaceId: string;
+    transitionId: string;
+    targetEmbeddingSpaceId: string;
+    backendKey: string;
+    failureReason: "backfill_retry_exhausted";
+  }) => void;
+}
+
 export class EmbeddingTransitionCoordinator {
   constructor(
     private readonly repository: EmbeddingTransitionCoordinatorRepository,
     private readonly validation: FixedInputEmbeddingValidationPort,
     private readonly backfill: EmbeddingTransitionBackfillPort,
-    private readonly options: { backendKey: string },
+    private readonly options: EmbeddingTransitionCoordinatorOptions,
   ) {}
 
   async start(input: {
@@ -280,7 +291,28 @@ export class EmbeddingTransitionCoordinator {
         ...input,
         backendKey: this.options.backendKey,
       });
-      return { outcome: "promoted", profile };
+      const outcome = promotionOutcome(profile, input.transitionId);
+      if (
+        outcome === "blocked"
+        && profile.transition?.failureReason === "backfill_retry_exhausted"
+      ) {
+        try {
+          this.options.onTransitionBlocked?.({
+            workspaceId: input.workspaceId,
+            transitionId: input.transitionId,
+            targetEmbeddingSpaceId: profile.transition.targetEmbeddingSpaceId,
+            backendKey: this.options.backendKey,
+            failureReason: "backfill_retry_exhausted",
+          });
+        } catch {
+          // Observability must not turn a persisted lifecycle outcome into a
+          // reconciliation failure.
+        }
+      }
+      return {
+        outcome,
+        profile,
+      };
     } catch (cause) {
       if (!isExpectedPromotionRace(cause)) {
         throw cause;

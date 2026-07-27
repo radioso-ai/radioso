@@ -3,6 +3,7 @@ import { z } from "zod";
 import type {
   QueryEmbeddingPort,
 } from "../../../embeddingProfiles/contracts/embeddingConsumers.js";
+import { type Clock, systemClock } from "../../../../shared/domain/clock.js";
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
 import type { VectorCandidateSearchPort } from "../../domain/vectorAdapter.js";
@@ -24,6 +25,7 @@ export interface SemanticSearchToolDeps {
   readonly sourceFilter?: RetrievalSourceFilter;
   readonly similarityThreshold?: number;
   readonly snippetChars?: number;
+  readonly clock?: Clock;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   /**
    * The caller-supplied metadata filter from the retrieval request. Always
@@ -104,6 +106,8 @@ export const createSemanticSearchTool = (
       filter: {
         metadataContains: metadataFilter,
         source: deps.sourceFilter,
+        retrievalEnabled: true,
+        notExpiredAt: (deps.clock ?? systemClock)().toISOString(),
       },
     });
     const chunks = await deps.chunkHydrator.hydrate({

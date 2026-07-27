@@ -22,9 +22,13 @@ import {
   currentTimestamp,
   nowPlusSeconds,
   toJsonb,
+  transactionAdvisoryLock,
 } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { JsonValue } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import {
+  vectorProjectionMutationFenceKey,
+} from "./vectorIndexWorkRepository.js";
 
 interface EmbeddingSpaceRow {
   id: string;
@@ -398,6 +402,9 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
     backendKey: string;
   }): Promise<WorkspaceEmbeddingProfileState> {
     return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(
+        vectorProjectionMutationFenceKey(input.workspaceId),
+      ).execute(trx);
       const current = await this.lockWorkspaceProfile(trx, input.workspaceId, input.transitionId);
       const transition = current.transition;
       if (!transition || transition.id !== input.transitionId) {
@@ -413,6 +420,72 @@ export class EmbeddingProfileRepository implements EmbeddingProfileRepositoryPor
         .where("id", "=", transition.targetEmbeddingSpaceId)
         .forUpdate()
         .executeTakeFirstOrThrow();
+      const unresolvedDeadLetter = await trx
+        .selectFrom("vector_index_work as dead_letter")
+        .select("dead_letter.id")
+        .where("dead_letter.workspace_id", "=", input.workspaceId)
+        .where(
+          "dead_letter.embedding_space_id",
+          "=",
+          transition.targetEmbeddingSpaceId,
+        )
+        .where("dead_letter.status", "=", "dead_letter")
+        .where((eb) =>
+          eb.not(
+            eb.exists(
+              eb
+                .selectFrom("vector_index_work as superseding")
+                .select("superseding.id")
+                .whereRef(
+                  "superseding.workspace_id",
+                  "=",
+                  "dead_letter.workspace_id",
+                )
+                .whereRef(
+                  "superseding.embedding_space_id",
+                  "=",
+                  "dead_letter.embedding_space_id",
+                )
+                .whereRef(
+                  "superseding.chunk_id",
+                  "=",
+                  "dead_letter.chunk_id",
+                )
+                .whereRef(
+                  "superseding.canonical_version",
+                  ">",
+                  "dead_letter.canonical_version",
+                )
+                .whereRef(
+                  "superseding.sequence",
+                  ">",
+                  "dead_letter.sequence",
+                ),
+            ),
+          ),
+        )
+        .limit(1)
+        .executeTakeFirst();
+      if (unresolvedDeadLetter) {
+        const blocked = blockEmbeddingTransition(current, {
+          transitionId: input.transitionId,
+          expectedGeneration: input.expectedGeneration,
+          reason: "backfill_retry_exhausted",
+        });
+        await trx
+          .updateTable("workspace_embedding_transitions")
+          .set({
+            status: "blocked",
+            failure_reason: "backfill_retry_exhausted",
+            updated_at: currentTimestamp(),
+          })
+          .where("workspace_id", "=", input.workspaceId)
+          .where("id", "=", input.transitionId)
+          .where("generation", "=", input.expectedGeneration)
+          .where("status", "=", "building")
+          .executeTakeFirstOrThrow();
+        return blocked;
+      }
       const uncoveredChunk = await trx
         .selectFrom("chunks as c")
         .innerJoin("documents as d", (join) =>

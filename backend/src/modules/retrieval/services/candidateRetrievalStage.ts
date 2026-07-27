@@ -29,6 +29,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
 
   async execute(input: QueryInterpretationStageResult) {
     const embeddingStartedAt = Date.now();
+    const retrievalNow = this.clock();
     const sourceFilter = input.request.sourceFilter;
     const metadataFilter = normalizeVectorMetadataFilter(input.request.metadataFilter);
     const semanticQueries = input.activeRetrievalSubqueries.map((subquery) => subquery.semanticQuery);
@@ -84,6 +85,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
               minimumScore: input.settings.similarityThreshold,
               metadataFilter,
               sourceFilter,
+              notExpiredAt: retrievalNow.toISOString(),
             }).catch(() => ({ contexts: [], fallbackApplied: true }))
           : Promise.resolve({ contexts: [], fallbackApplied: true }),
       ] as const),
@@ -144,7 +146,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
       ? await this.temporalCandidateRetrieval.findUpcoming({
           workspaceId: input.request.workspaceId,
-          today: formatIsoDateUtc(this.clock()),
+          today: formatIsoDateUtc(retrievalNow),
           topK: input.settings.vectorTopK,
           metadataFilter,
           sourceFilter,
@@ -176,6 +178,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     minimumScore: number;
     metadataFilter?: VectorMetadataFilter;
     sourceFilter?: RetrievalSourceFilter;
+    notExpiredAt: string;
   }): Promise<{ contexts: RetrievedChunk[]; fallbackApplied: boolean }> {
     const candidates = await this.vectorSearch.search({
       workspaceId: input.workspaceId,
@@ -186,6 +189,8 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       filter: {
         metadataContains: input.metadataFilter,
         source: input.sourceFilter,
+        retrievalEnabled: true,
+        notExpiredAt: input.notExpiredAt,
       },
     });
     const rows = await this.chunkHydrator.hydrate({

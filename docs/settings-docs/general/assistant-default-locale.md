@@ -1,17 +1,15 @@
 ---
 title: "Greeting Language Fallback"
 description: "Fallback language for automatic new-chat greetings when the client does not supply a locale hint."
-last_updated: 2026-05-06
+last_updated: 2026-07-27
 ---
 
 # Greeting Language Fallback
 
 ## Summary
-Fallback language for automatic new-chat greetings when the client does not provide one.
+The language an automatic greeting uses when the client sends no language hint of its own.
 
 ## Details
-Choose the language name operators should see in the setup UI. The backend stores the matching locale tag.
+This sets the language for a proactive greeting only when the incoming request carries no locale of its own. Pick the language by name in the setup UI; Radioso stores the matching locale tag.
 
-This is a fallback only. Request-level locale hints from public chat override it.
-
-Normal assistant replies still follow the user’s message language.
+It is a fallback, not a lock. A public-chat request that supplies its own locale overrides it, and once a visitor sends a message the agent replies in the language they wrote in. So this mainly matters for the very first, visitor-silent greeting — for example, defaulting an embed to Estonian on a mostly-Estonian site, while still answering an English question in English.

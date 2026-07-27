@@ -1,30 +1,15 @@
 ---
 title: "Trigger Mode"
 description: "Choice between always-on metadata rules and rules that activate only for matching conversation turns."
-last_updated: 2026-04-23
+last_updated: 2026-07-27
 ---
 
 # Trigger Mode
 
 ## Summary
-Choose whether a metadata rule is always active or only activates for matching turns.
+Choose whether this rule shapes every retrieval turn or only the turns whose question matches its trigger.
 
 ## Details
-### Overview
+Trigger mode decides when a rule is allowed to act. Always on applies it to every retrieval-backed turn — the right choice for stable preferences that should always hold, like language, source, or a workspace-wide content type. Trigger per turn holds the rule back until the model judges that the current question matches the rule's trigger instruction, which suits rules that should only bite on specific requests: upcoming events, time-bound courses, schedule lookups.
 
-Trigger mode changes when a rule is allowed to shape retrieval.
-
-- **Always on** applies the rule on every retrieval-backed turn.
-- **Trigger per turn** asks the model whether the current question matches the rule's trigger instruction.
-
-### How It Works
-
-In practice, trigger matching happens inside query interpretation. If the workspace has no trigger-based rules, Radioso skips that step entirely.
-
-The key point is that completions are authoritative in v1. Embeddings may help narrow candidates later, but they do not decide whether a trigger rule matched.
-
-### Practical Implication
-
-Use **Always on** for stable preferences like language, source, or workspace-wide content type.
-
-Use **Trigger per turn** for rules that should only apply to specific requests, such as upcoming events, time-bound courses, or schedule lookups.
+Trigger matching happens during query interpretation, and if the agent has no trigger-based rules at all, Radioso skips that step rather than paying for it. The match is decided by a model completion, and that decision is authoritative; embeddings may help narrow candidates later, but they do not overrule whether a trigger fired.

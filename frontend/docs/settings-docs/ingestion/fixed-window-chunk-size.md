@@ -1,59 +1,15 @@
 ---
 title: "Chunk Size"
 description: "Tuning guide for fixed-window chunk sizes balancing context coverage against retrieval precision."
-last_updated: 2026-04-02
+last_updated: 2026-07-27
 ---
 
 # Chunk Size
 
 ## Summary
-Set how much text each fixed-window chunk should contain.
+Set how much text goes into each chunk when fixed-window chunking is active.
 
 ## Details
-### Overview
+With fixed-window chunking, every chunk holds roughly this much text, and the number trades context against precision. Larger chunks keep more surrounding explanation together, which helps when the sentence that answers a question only makes sense alongside its neighbors — but they also make retrieval blunter and citations bulkier, since a returned chunk carries more text that is not strictly relevant. Smaller chunks pinpoint evidence more sharply and cite tightly, at the risk of clipping a thought partway and leaving the explanation around it behind.
 
-Chunk size controls how much text is placed into each chunk when fixed-window chunking is active.
-
-### Larger Values
-
-Bigger chunks mean:
-
-- more surrounding context stays together
-- answers may have more local context available
-- retrieval becomes less precise
-
-This helps when the important sentence depends on nearby explanation.
-
-### Smaller Values
-
-Smaller chunks mean:
-
-- more precise retrieval
-- easier pinpointing of exact evidence
-- more risk of fragmented context
-
-This helps when you want retrieval to be surgical rather than broad.
-
-### Core Tradeoff
-
-Bigger chunks improve context.
-Smaller chunks improve precision.
-
-### Symptoms Of Oversized Chunks
-
-- citations feel bloated
-- the right chunk is returned, but it contains lots of irrelevant text
-- answers quote or rely on evidence that feels broader than necessary
-
-### Symptoms Of Undersized Chunks
-
-- answers feel clipped
-- the system retrieves one part of an idea but misses the explanation around it
-- adjacent chunks look like they should have stayed together
-
-### Tuning Guidance
-
-Tune based on the failure mode you observe:
-
-- too broad -> decrease
-- too fragmented -> increase
+Tune by the failure you actually see. If citations feel bloated and the right chunk arrives buried in unrelated text, make chunks smaller. If answers feel clipped and adjacent chunks obviously belonged together, make them larger. This applies only to fixed-window chunking; semantic chunking sizes chunks by its own minimum and maximum instead.

@@ -1,41 +1,15 @@
 ---
 title: "Chunk Overlap"
 description: "Chunking setting to reuse parts of previous chunks across boundaries for context preservation and retrieval continuity."
-last_updated: 2026-04-02
+last_updated: 2026-07-27
 ---
 
 # Chunk Overlap
 
 ## Summary
-Reuse part of the previous chunk so adjacent chunks share context.
+Repeat a slice of the previous chunk in the next one so a thought split across a boundary is not lost.
 
 ## Details
-### Overview
+Fixed-window boundaries fall at a set length, not at the end of an idea, so a sentence or explanation can be cut in half between two chunks. Overlap softens that by having each chunk begin with the tail of the one before it, so the full thought survives in at least one chunk even when the cut lands mid-sentence.
 
-Overlap means each chunk repeats a portion of the previous chunk. The purpose is to preserve continuity across artificial chunk boundaries.
-
-### Why It Matters
-
-Ideas do not naturally stop at fixed boundaries.
-
-If the chunker cuts right through a sentence, paragraph, or explanation, retrieval may grab half the thought and miss the rest.
-
-Overlap reduces that problem by letting neighboring chunks share some context.
-
-### Effects Of Higher Overlap
-
-- boundary cuts hurt less
-- adjacent chunks read more naturally
-- retrieval has a better chance of catching the full thought
-
-### Costs Of Excessive Overlap
-
-- creates many near-duplicate chunks
-- increases redundancy in retrieval results
-- wastes index space
-- can make search results look repetitive
-
-### Tuning Signals
-
-- If context keeps getting cut off at boundaries, increase overlap.
-- If retrieval returns multiple chunks that feel almost identical, decrease overlap.
+More overlap means boundary cuts hurt less and neighboring chunks read more naturally, so retrieval is likelier to catch a complete thought. Too much, though, fills the index with near-duplicate chunks: results start to look repetitive and prompt space is spent re-reading the same lines. Increase it when context keeps getting cut off at boundaries; decrease it when retrieval returns several chunks that are almost the same text. It applies to fixed-window chunking only.

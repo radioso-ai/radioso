@@ -1,12 +1,12 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-07-19
+last_updated: 2026-07-27
 ---
 
 # Assistant Execution Model
 
-Radioso uses two knowledge-agent execution classes on purpose, even though only the interactive path is shipped for the covered workflows in this feature.
+Radioso uses two knowledge-agent execution classes on purpose. Only the interactive path is shipped; the deferred class is a design boundary the product holds to, not a running subsystem yet.
 
 ## Live Chat Stays Immediate
 
@@ -80,7 +80,7 @@ cancellation remains best effort within each process.
 
 ## Background Work Is Separate
 
-Long-running assistant-adjacent work belongs in a separate deferred class when Radioso has a real background runtime behind it.
+Long-running assistant-adjacent work belongs in a separate deferred class, not in the live chat path.
 
 Use deferred execution for workflows such as:
 
@@ -94,7 +94,7 @@ These workflows should present themselves as background work from the start. The
 When you explain the system to customers or reviewers, use plain language:
 
 - live agent chat is immediate and streaming
-- any future background agent work must be explicit and delayed
+- background agent work must be explicit and delayed
 - the product never hides a queued chat turn behind the normal chat UI
 
-That distinction is the service model. It protects chat responsiveness now while still leaving room for durable async workflows later if the product adds a real background execution path.
+That distinction is the service model. It protects chat responsiveness and keeps a clean boundary for durable async workflows: they run as declared background work, never as a disguised chat turn.

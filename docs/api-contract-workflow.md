@@ -1,14 +1,16 @@
 ---
 title: "API Contract Workflow"
 description: "Workflow for synchronizing OpenAPI contracts across backend, SDK, and MCP when API routes and schemas change."
-last_updated: 2026-05-14
+last_updated: 2026-07-27
 ---
 
 # API Contract Workflow
 
-Radioso uses the backend OpenAPI document as the source contract for generated client surfaces.
+The backend OpenAPI document is the single source contract for every generated client surface. The TypeScript SDK types and the MCP server types are both derived from it, so the backend describes the API once and the downstream clients inherit that description instead of re-declaring it.
 
-The contract artifacts are:
+Regeneration runs in one direction — backend first, then SDK, then MCP — because each downstream artifact is generated from the one before it. Run the steps out of order and a client can end up generated against a contract the backend no longer serves, which is exactly the drift the contract check is there to catch.
+
+These artifacts move together:
 
 - `backend/openapi.json`
 - `backend/openapi.yaml`

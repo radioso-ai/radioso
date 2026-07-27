@@ -59,7 +59,7 @@ pnpm run build
 
 `pnpm run sync` updates the SDK's generated types from the backend API description.
 
-## What You Can Do With It Right Now
+## What You Can Do With It
 
 ```ts
 client.settings.getIngestion(...)

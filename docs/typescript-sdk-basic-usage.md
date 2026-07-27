@@ -201,7 +201,7 @@ const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
 ```
 
-Retrieval answer settings now live on the default-answer `retrieve` skill.
+Retrieval answer settings live on the default-answer `retrieve` skill.
 Suggested questions are part of that skill's config. Contact escalation is a
 `notify` skill, and routine completion export is a `webhook_call` skill.
 

@@ -84,7 +84,7 @@ app was installed before these were added, reinstall or re-consent it.
 A Slack conversation shows its real Slack context in the Activity view. The
 conversation list and the detail view show the Slack workspace, whether it is a
 direct message or a channel, the thread, and the Slack user. A Slack
-conversation is no longer shown as a plain authenticated chat.
+conversation is not shown as a plain authenticated chat.
 
 ## Cloud Setup
 

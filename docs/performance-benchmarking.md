@@ -1,15 +1,22 @@
 ---
 title: "Performance Benchmarking"
 description: "Repo-owned benchmark harness with profiles for API smoke tests, ingestion, chat traffic, and baseline comparison."
-last_updated: 2026-04-14
+last_updated: 2026-07-27
 ---
 
 # Performance Benchmarking
 
-The benchmark harness lives under `scripts/performance/`.
-The source of truth for benchmark workloads, budgets, and baseline comparison
-rules lives in the repository, while heavy execution can still run from an
-external runner or staging host.
+The benchmark harness lives under `scripts/performance/`. It drives repeatable
+load against a Radioso instance — health-check pressure, document ingestion, and
+public chat traffic — and compares each run against a saved baseline, so a
+regression shows up as a number instead of a hunch.
+
+The workloads, budgets, and baseline-comparison rules live in the repository,
+while heavy execution can still run from an external runner or staging host.
+Reach for a `safe` profile during local or CI smoke checks, a `guarded` profile
+when you have credentials and want to exercise ingestion or chat, and a
+`restricted` profile only against staging-like environments built to absorb the
+pressure.
 
 ## Available commands
 

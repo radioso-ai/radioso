@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
-last_updated: 2026-07-24
+last_updated: 2026-07-27
 ---
 
 # MCP Client Setup
@@ -114,9 +114,9 @@ Authorization: Bearer <session token>
 - A converse grant is bound to the `mcp-converse` channel. Embed and public-chat launch tokens are rejected, so a public website token cannot be used to converse over MCP.
 - A converse grant is a secret. Unlike an embed token, it is never exposed in client-side surfaces.
 
-### Authentication roadmap
+### Authentication limits
 
-Today the converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. A standard MCP OAuth 2.1 front door, for public connectors such as Claude or ChatGPT, is planned and not yet available. Until then, public connectors can use a session token minted through the exchange flow.
+The converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. There is no standard MCP OAuth 2.1 front door for public connectors such as Claude or ChatGPT yet, so public connectors authenticate with a session token minted through the exchange flow.
 
 ## Deployment Modes
 

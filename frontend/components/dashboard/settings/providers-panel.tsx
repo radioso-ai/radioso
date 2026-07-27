@@ -858,19 +858,29 @@ function EmbeddingModelRow({
                     : 'text-muted-foreground'
                 }
               >
-                {isPending ? 'Pending re-index' : 'Workspace embedding model'}
+                {isPending ? 'Re-indexing' : 'Workspace embedding model'}
               </Badge>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {capabilityVisual.embeddings.description}
             </p>
             {isPending ? (
-              <p
-                className="text-xs leading-relaxed text-muted-foreground"
-                data-testid="embedding-model-transition-summary"
-              >
-                Active: {activeModelOption?.label ?? settings.embeddingModel}. Pending: {pendingModelOption?.label ?? settings.pendingEmbeddingModel}.
-              </p>
+              <>
+                <p
+                  className="text-xs leading-relaxed text-muted-foreground"
+                  data-testid="embedding-model-transition-summary"
+                >
+                  Active: {activeModelOption?.label ?? settings.embeddingModel}. Pending: {pendingModelOption?.label ?? settings.pendingEmbeddingModel}.
+                </p>
+                <p
+                  className="flex items-center gap-1.5 text-xs leading-relaxed text-muted-foreground"
+                  data-testid="embedding-model-reindex-activity"
+                  aria-live="polite"
+                >
+                  <Spinner className="size-3 shrink-0" aria-hidden="true" />
+                  Re-indexing queue active. Rebuilding search vectors for existing documents in the background.
+                </p>
+              </>
             ) : null}
           </div>
         </div>

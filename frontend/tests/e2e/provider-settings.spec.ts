@@ -106,9 +106,12 @@ test("provider settings keep exactly the existing four embedding choices and no 
   expect(ingestionSettingsUpdates.at(-1)).toMatchObject({
     embeddingModel: "text-embedding-3-large",
   });
-  await expect(embeddingsRow.getByText("Pending re-index")).toBeVisible();
+  await expect(embeddingsRow.getByText("Re-indexing", { exact: true })).toBeVisible();
   await expect(embeddingsRow.getByTestId("embedding-model-transition-summary")).toHaveText(
     "Active: OpenAI text-embedding-3-small. Pending: OpenAI text-embedding-3-large.",
+  );
+  await expect(embeddingsRow.getByTestId("embedding-model-reindex-activity")).toHaveText(
+    "Re-indexing queue active. Rebuilding search vectors for existing documents in the background.",
   );
 
   await embeddingsRow.getByRole("button", { name: "Cancel" }).click();
@@ -139,6 +142,6 @@ test("provider settings retain the active embedding model when transition startu
   await dialog.getByRole("button", { name: "Cancel" }).click();
 
   await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
-  await expect(embeddingsRow.getByText("Pending re-index")).toHaveCount(0);
+  await expect(embeddingsRow.getByText("Re-indexing", { exact: true })).toHaveCount(0);
   await expect(page.locator("#model-embeddings")).toContainText("OpenAI text-embedding-3-small");
 });

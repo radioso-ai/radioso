@@ -878,7 +878,7 @@ function EmbeddingModelRow({
                   aria-live="polite"
                 >
                   <Spinner className="size-3 shrink-0" aria-hidden="true" />
-                  Re-indexing queue active. Rebuilding search vectors for existing documents in the background.
+                  Re-indexing queue active. This can take a while; you can keep working while search uses the active model.
                 </p>
               </>
             ) : null}

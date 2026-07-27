@@ -111,7 +111,7 @@ test("provider settings keep exactly the existing four embedding choices and no 
     "Active: OpenAI text-embedding-3-small. Pending: OpenAI text-embedding-3-large.",
   );
   await expect(embeddingsRow.getByTestId("embedding-model-reindex-activity")).toHaveText(
-    "Re-indexing queue active. Rebuilding search vectors for existing documents in the background.",
+    "Re-indexing queue active. This can take a while; you can keep working while search uses the active model.",
   );
 
   await embeddingsRow.getByRole("button", { name: "Cancel" }).click();

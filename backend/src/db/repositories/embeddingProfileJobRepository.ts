@@ -5,7 +5,9 @@ import type {
   EmbeddingProfileJobLoadResult,
   EmbeddingProfileJobPersistencePort,
 } from "../../modules/documents/services/embeddingProfileJobService.js";
+import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import { upsertCanonicalChunkEmbeddingWithProjection } from "./chunkEmbeddingRepository.js";
+import { vectorProjectionMutationFenceKey } from "./vectorIndexWorkRepository.js";
 
 export class EmbeddingProfileJobRepository
 implements EmbeddingProfileJobPersistencePort {
@@ -56,6 +58,9 @@ implements EmbeddingProfileJobPersistencePort {
     input: EmbeddingProfileJobCommitInput,
   ): Promise<"completed" | "deleted" | "stale" | "superseded"> {
     return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(
+        vectorProjectionMutationFenceKey(input.workspaceId),
+      ).execute(trx);
       const fence = await this.readFence(trx, input, true);
       if (fence !== "ready") {
         return mapCommitFence(fence);

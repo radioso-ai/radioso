@@ -29,6 +29,10 @@ export interface CanonicalVectorRebuildSourcePort {
     records: CanonicalVectorRebuildRecord[];
     nextCursor: string | null;
   }>;
+  applyIfCurrent(input: {
+    item: CanonicalVectorRebuildRecord;
+    apply(current: CanonicalVectorRebuildRecord): Promise<void>;
+  }): Promise<boolean>;
 }
 
 export class VectorIndexRebuildService {
@@ -76,12 +80,20 @@ export class VectorIndexRebuildService {
           await this.options.adapter.admin.prepareSpace({ space: item.space });
           prepared.add(key);
         }
-        await this.options.adapter.writer.applyMutations({
-          workspaceId: item.workspaceId,
-          space: item.space,
-          mutations: [{ kind: "upsert", record: item.record }],
+        const applied = await this.options.source.applyIfCurrent({
+          item,
+          apply: (current) => {
+            assertInScope(current, input.scope);
+            return this.options.adapter.writer.applyMutations({
+              workspaceId: current.workspaceId,
+              space: current.space,
+              mutations: [{ kind: "upsert", record: current.record }],
+            }).then(() => undefined);
+          },
         });
-        recordsWritten += 1;
+        if (applied) {
+          recordsWritten += 1;
+        }
       }
       cursor = page.nextCursor;
     } while (cursor !== null);

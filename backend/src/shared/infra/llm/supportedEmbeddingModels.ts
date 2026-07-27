@@ -1,4 +1,5 @@
 import type {
+  EmbeddingProviderImplementation,
   SupportedEmbeddingModelDescriptor,
 } from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
 
@@ -85,3 +86,30 @@ export const getSupportedEmbeddingModel = (
   return descriptors[model];
 };
 
+export const resolveEmbeddingModelDescriptor = (
+  model: string,
+  existingBinding: {
+    readonly provider: EmbeddingProviderImplementation;
+    readonly dimensions: number;
+  },
+): SupportedEmbeddingModelDescriptor => {
+  if (isSupportedEmbeddingModel(model)) {
+    return descriptors[model];
+  }
+  if (
+    !Number.isInteger(existingBinding.dimensions)
+    || existingBinding.dimensions < 1
+    || existingBinding.dimensions > 16_000
+  ) {
+    throw new Error("Existing embedding dimensions must be an integer between 1 and 16000");
+  }
+  const gemini = existingBinding.provider === "gemini";
+  return {
+    model,
+    providerFamily: gemini ? "gemini" : "openai_like",
+    dimensions: existingBinding.dimensions,
+    normalization: "application_unit",
+    taskMapping: OPENAI_TASKS,
+    limits: gemini ? { ...COMMON_LIMITS, maxBatch: 1 } : COMMON_LIMITS,
+  };
+};

@@ -353,6 +353,9 @@ describe("chunk repository", () => {
           async query(sql: string, params?: unknown[]) {
             calls.push({ sql, params });
 
+            if (sql.includes("FROM workspace_embedding_transitions retired")) {
+              return { rows: [] };
+            }
             if (sql.includes("FROM workspace_embedding_profiles")) {
               return {
                 rows: [{ active_embedding_space_id: "space-1" }],

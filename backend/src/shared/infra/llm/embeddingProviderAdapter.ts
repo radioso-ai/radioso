@@ -50,13 +50,17 @@ export class EmbeddingClientProviderAdapter implements EmbeddingProviderPort {
     private readonly client: EmbeddingClient,
     private readonly descriptorFor: (
       model: string,
+      dimensions: number,
     ) => SupportedEmbeddingModelDescriptor,
   ) {}
 
   async generate(
     request: Parameters<EmbeddingProviderPort["generate"]>[0],
   ): Promise<ValidatedEmbeddingBatch> {
-    const descriptor = this.descriptorFor(request.model);
+    const descriptor = this.descriptorFor(
+      request.model,
+      request.dimensions,
+    );
     if (request.dimensions !== descriptor.dimensions) {
       throw new Error(
         `requested dimensions ${request.dimensions} do not match descriptor dimensions ${descriptor.dimensions}`,
@@ -69,7 +73,10 @@ export class EmbeddingClientProviderAdapter implements EmbeddingProviderPort {
       const result = await this.client.embedTexts(batch, {
         model: request.model,
         dimensions: request.dimensions,
-        purpose: request.purpose,
+        purpose:
+          descriptor.taskMapping[request.purpose] === null
+            ? undefined
+            : request.purpose,
         provider: request.provider,
       });
       if (

@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import { ChunkEmbeddingRepository } from "../../src/db/repositories/chunkEmbeddingRepository.js";
+import { EmbeddingProfileCleanupRepository } from "../../src/db/repositories/embeddingProfileCleanupRepository.js";
 import { EmbeddingProfileRepository } from "../../src/db/repositories/embeddingProfileRepository.js";
 import { IngestionSettingsRepository } from "../../src/db/repositories/ingestionSettingsRepository.js";
-import { VectorIndexWorkRepository } from "../../src/db/repositories/vectorIndexWorkRepository.js";
+import { VectorIndexRebuildRepository } from "../../src/db/repositories/vectorIndexRebuildRepository.js";
+import {
+  appendVectorFilterUpdatesForDocument,
+  VectorIndexWorkRepository,
+} from "../../src/db/repositories/vectorIndexWorkRepository.js";
 import { EmbeddingProfileJobFailureAdapter } from "../../src/app/composition/embeddingProfileJobFailureAdapter.js";
 import { EmbeddingModelTransitionAdapter } from "../../src/app/composition/embeddingModelTransitionAdapter.js";
 import { EmbeddingTransitionCoordinator } from "../../src/modules/embeddingProfiles/public.js";
@@ -19,9 +24,11 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("embedding profile repositories (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const profileRepository = new EmbeddingProfileRepository(database.kysely);
+  const cleanupRepository = new EmbeddingProfileCleanupRepository(database.kysely);
   const chunkEmbeddingRepository = new ChunkEmbeddingRepository(database.kysely);
   const ingestionSettingsRepository = new IngestionSettingsRepository(database.kysely);
   const vectorIndexWorkRepository = new VectorIndexWorkRepository(database.kysely);
+  const vectorIndexRebuildRepository = new VectorIndexRebuildRepository(database.kysely);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -620,6 +627,323 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
         status: "promoted",
       },
     });
+  });
+
+  it("fenced cleanup retires an indexed source projection and its durable history", async () => {
+    const source = await createSpace("cleanup-source", 2);
+    const target = await createSpace("cleanup-target", 2);
+    const { documentId, chunkId } = await insertReadyDocumentWithChunk();
+    await profileRepository.initializeWorkspaceProfile({
+      workspaceId,
+      activeEmbeddingSpaceId: source.id,
+    });
+    const started = await profileRepository.startTransition({
+      workspaceId,
+      targetEmbeddingSpaceId: target.id,
+      expectedGeneration: "1",
+    });
+
+    await chunkEmbeddingRepository.upsert({
+      workspaceId,
+      chunkId,
+      documentId,
+      embeddingSpaceId: source.id,
+      documentRevision: 7,
+      canonicalVersion: "1",
+      dimensions: 2,
+      embedding: [1, 0],
+      contentHash: "cleanup-source-content",
+    });
+    await chunkEmbeddingRepository.upsert({
+      workspaceId,
+      chunkId,
+      documentId,
+      embeddingSpaceId: target.id,
+      documentRevision: 7,
+      canonicalVersion: "1",
+      dimensions: 2,
+      embedding: [0, 1],
+      contentHash: "cleanup-target-content",
+    });
+    const staleRebuildItem = (await vectorIndexRebuildRepository.scan({
+      scope: {
+        kind: "space",
+        embeddingSpaceId: source.id,
+        workspaceId,
+      },
+      cursor: null,
+      limit: 10,
+    })).records[0]!;
+    await database.query(
+      `UPDATE vector_index_work
+       SET status = 'completed', completed_at = NOW()
+       WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    for (const space of [source, target]) {
+      const [{ sequence }] = await database.query<{ sequence: string }>(
+        `SELECT MAX(sequence)::text AS sequence
+         FROM vector_index_work
+         WHERE workspace_id = $1 AND embedding_space_id = $2`,
+        [workspaceId, space.id],
+      );
+      await vectorIndexWorkRepository.ensureCheckpoint({
+        backendKey: "external-test",
+        workspaceId,
+        embeddingSpaceId: space.id,
+        readiness: "building",
+      });
+      await vectorIndexWorkRepository.advanceCheckpoint({
+        backendKey: "external-test",
+        workspaceId,
+        embeddingSpaceId: space.id,
+        acknowledgedSequence: sequence,
+        expectedAcknowledgedSequence: "0",
+        readiness: "exact_fallback",
+      });
+    }
+    await profileRepository.promoteTransitionIfEligible({
+      workspaceId,
+      transitionId: started.transition.id,
+      expectedGeneration: "2",
+      backendKey: "external-test",
+    });
+    const cleanupNow = new Date("2100-01-02T00:00:00.000Z");
+    await database.query(
+      `UPDATE workspace_embedding_transitions
+       SET cleanup_after = $2
+       WHERE id = $1`,
+      [started.transition.id, new Date("2100-01-01T00:00:00.000Z")],
+    );
+    const newerRetirementTarget = await createSpace("cleanup-cycle-target", 2);
+    const newerRetirementId = randomUUID();
+    await database.query(
+      `INSERT INTO workspace_embedding_transitions
+         (id, workspace_id, source_embedding_space_id,
+          target_embedding_space_id, generation, status, cleanup_after,
+          completed_at)
+       VALUES ($1, $2, $3, $4, 4, 'promoted', $5, $5)`,
+      [
+        newerRetirementId,
+        workspaceId,
+        source.id,
+        newerRetirementTarget.id,
+        new Date("2100-01-03T00:00:00.000Z"),
+      ],
+    );
+
+    const candidate = {
+      transitionId: started.transition.id,
+      workspaceId,
+      embeddingSpaceId: source.id,
+      generation: "2",
+    };
+    const cleanupProjection = vi.fn(async () => undefined);
+    await expect(cleanupRepository.cleanupIfSafe({
+      candidate,
+      now: cleanupNow,
+      cleanupProjection,
+    })).resolves.toBe("refused");
+    expect(cleanupProjection).not.toHaveBeenCalled();
+    await database.query(
+      `UPDATE workspace_embedding_transitions
+       SET cleanup_after = $2
+       WHERE id = $1`,
+      [newerRetirementId, new Date("2100-01-02T00:00:00.000Z")],
+    );
+
+    const inFlightWorkId = randomUUID();
+    await database.query(
+      `INSERT INTO vector_index_work
+         (id, workspace_id, embedding_space_id, chunk_id, document_id,
+          operation, canonical_version, status, claimed_at)
+       VALUES ($1, $2, $3, $4, $5, 'delete', 2, 'processing', $6)`,
+      [
+        inFlightWorkId,
+        workspaceId,
+        source.id,
+        randomUUID(),
+        documentId,
+        new Date(cleanupNow.getTime() - 120_000),
+      ],
+    );
+    await expect(cleanupRepository.cleanupIfSafe({
+      candidate,
+      now: cleanupNow,
+      cleanupProjection,
+    })).resolves.toBe("refused");
+    expect(cleanupProjection).not.toHaveBeenCalled();
+    await expect(vectorIndexWorkRepository.claimBatch({
+      limit: 10,
+      now: cleanupNow,
+      leaseMs: 60_000,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        id: inFlightWorkId,
+        status: "processing",
+        attemptCount: 1,
+      }),
+    ]);
+    await vectorIndexWorkRepository.markCompleted(inFlightWorkId);
+    const failingCleanup = vi.fn(async () => {
+      throw new Error("external projection unavailable");
+    });
+    await expect(cleanupRepository.cleanupIfSafe({
+      candidate,
+      now: cleanupNow,
+      cleanupProjection: failingCleanup,
+    })).rejects.toThrow("external projection unavailable");
+    await expect(database.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM chunk_embeddings
+       WHERE workspace_id = $1 AND embedding_space_id = $2`,
+      [workspaceId, source.id],
+    )).resolves.toEqual([{ count: "1" }]);
+
+    const queuedAfterGraceId = randomUUID();
+    await database.query(
+      `INSERT INTO vector_index_work
+         (id, workspace_id, embedding_space_id, chunk_id, document_id,
+          operation, canonical_version, status)
+       VALUES ($1, $2, $3, $4, $5, 'delete', 3, 'queued')`,
+      [queuedAfterGraceId, workspaceId, source.id, randomUUID(), documentId],
+    );
+    await expect(vectorIndexWorkRepository.claimBatch({
+      limit: 10,
+      now: cleanupNow,
+      leaseMs: 60_000,
+    })).resolves.toEqual([]);
+
+    let lateFilterUpdate:
+      | ReturnType<typeof appendVectorFilterUpdatesForDocument>
+      | undefined;
+    let lateCanonicalUpsert:
+      | ReturnType<ChunkEmbeddingRepository["upsert"]>
+      | undefined;
+    const lateRebuildApply = vi.fn(async () => undefined);
+    let lateRebuild:
+      | ReturnType<VectorIndexRebuildRepository["applyIfCurrent"]>
+      | undefined;
+    const successfulCleanup = vi.fn(async () => {
+      const [canonicalRows, workRows, checkpointRows] = await Promise.all([
+        database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM chunk_embeddings
+           WHERE workspace_id = $1 AND embedding_space_id = $2`,
+          [workspaceId, source.id],
+        ),
+        database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM vector_index_work
+           WHERE workspace_id = $1 AND embedding_space_id = $2`,
+          [workspaceId, source.id],
+        ),
+        database.query<{ count: string }>(
+          `SELECT COUNT(*)::text AS count FROM vector_index_checkpoints
+           WHERE workspace_id = $1 AND embedding_space_id = $2`,
+          [workspaceId, source.id],
+        ),
+      ]);
+      expect(canonicalRows).toEqual([{ count: "1" }]);
+      expect(workRows).toEqual([{ count: "3" }]);
+      expect(checkpointRows).toEqual([{ count: "1" }]);
+      lateFilterUpdate = appendVectorFilterUpdatesForDocument(database.kysely, {
+        workspaceId,
+        documentId,
+        embeddingSpaceId: source.id,
+      });
+      lateCanonicalUpsert = chunkEmbeddingRepository.upsert({
+        workspaceId,
+        chunkId,
+        documentId,
+        embeddingSpaceId: source.id,
+        documentRevision: 7,
+        canonicalVersion: "4",
+        dimensions: 2,
+        embedding: [1, 0],
+        contentHash: "late-retired-content",
+      });
+      lateRebuild = vectorIndexRebuildRepository.applyIfCurrent({
+        item: staleRebuildItem,
+        apply: lateRebuildApply,
+      });
+      await expect(Promise.race([
+        Promise.allSettled([
+          lateFilterUpdate,
+          lateCanonicalUpsert,
+          lateRebuild,
+        ])
+          .then(() => "settled"),
+        new Promise<"fenced">((resolve) => setImmediate(() => resolve("fenced"))),
+      ])).resolves.toBe("fenced");
+    });
+    await expect(cleanupRepository.cleanupIfSafe({
+      candidate,
+      now: cleanupNow,
+      cleanupProjection: successfulCleanup,
+    })).resolves.toBe("cleaned");
+    expect(successfulCleanup).toHaveBeenCalledOnce();
+    await expect(lateFilterUpdate).resolves.toEqual([]);
+    await expect(lateCanonicalUpsert).rejects.toThrow(
+      "Canonical embedding space is retired for this workspace",
+    );
+    await expect(lateRebuild).resolves.toBe(false);
+    expect(lateRebuildApply).not.toHaveBeenCalled();
+    for (const table of [
+      "chunk_embeddings",
+      "vector_index_work",
+      "vector_index_checkpoints",
+    ]) {
+      const rows = await database.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM ${table}
+         WHERE workspace_id = $1 AND embedding_space_id = $2`,
+        [workspaceId, source.id],
+      );
+      expect(rows).toEqual([{ count: "0" }]);
+    }
+    await expect(database.query<{ cleanup_after: Date | null }>(
+      `SELECT cleanup_after
+       FROM workspace_embedding_transitions
+       WHERE id IN ($1, $2)
+       ORDER BY id`,
+      [started.transition.id, newerRetirementId],
+    )).resolves.toEqual([
+      { cleanup_after: null },
+      { cleanup_after: null },
+    ]);
+
+    await profileRepository.startTransition({
+      workspaceId,
+      targetEmbeddingSpaceId: source.id,
+      expectedGeneration: "3",
+    });
+    await chunkEmbeddingRepository.upsert({
+      workspaceId,
+      chunkId,
+      documentId,
+      embeddingSpaceId: source.id,
+      documentRevision: 7,
+      canonicalVersion: "1",
+      dimensions: 2,
+      embedding: [-1, 0],
+      contentHash: "reactivated-source-content",
+    });
+    const reactivatedApply = vi.fn(async () => undefined);
+    await expect(vectorIndexRebuildRepository.applyIfCurrent({
+      item: staleRebuildItem,
+      apply: reactivatedApply,
+    })).resolves.toBe(true);
+    expect(reactivatedApply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId,
+        space: expect.objectContaining({ id: source.id }),
+        record: expect.objectContaining({
+          chunkId,
+          documentId,
+          version: "1",
+          vector: [-1, 0],
+        }),
+      }),
+    );
   });
 
   it("stores full-precision canonical vectors with decimal-safe monotonic versions", async () => {

@@ -8,7 +8,9 @@ import type {
 } from "../../modules/embeddingProfiles/contracts/repositories.js";
 import type { EmbeddingPurpose } from "../../modules/embeddingProfiles/contracts/embeddingProvider.js";
 import type { IngestionSettingsRecord } from "../../modules/settings/contracts/ingestion.js";
-import { getSupportedEmbeddingModel } from "../../shared/infra/llm/supportedEmbeddingModels.js";
+import {
+  resolveEmbeddingModelDescriptor,
+} from "../../shared/infra/llm/supportedEmbeddingModels.js";
 import {
   ModelEmbeddingSpaceMaterializer,
   requireEmbeddingProvider,
@@ -22,6 +24,8 @@ interface EmbeddingModelMetadata {
   readonly provider: string;
   readonly endpointScopeFingerprint?: string;
 }
+
+const EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS = 1536;
 
 export interface WorkspaceEmbeddingBindingResolverOptions {
   readonly settings: WorkspaceEmbeddingSettingsPort;
@@ -58,9 +62,12 @@ implements EmbeddingBindingResolverPort {
       );
     }
     const model = settings.embeddingModel;
-    const descriptor = getSupportedEmbeddingModel(model);
     const metadata = this.options.identifyModel(model);
     const provider = requireEmbeddingProvider(metadata.provider);
+    const descriptor = resolveEmbeddingModelDescriptor(model, {
+      provider,
+      dimensions: EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS,
+    });
 
     // Existing workspaces have model-keyed vectors until legacy profile
     // materialization assigns a persisted space. Keeping that translation here
@@ -112,7 +119,10 @@ implements EmbeddingBindingResolverPort {
     const space = await new ModelEmbeddingSpaceMaterializer(
       profiles,
       this.options.identifyModel,
-    ).ensure(model);
+    ).ensureExistingSelection(
+      model,
+      EXISTING_WORKSPACE_EMBEDDING_DIMENSIONS,
+    );
     const profile = await profiles.initializeWorkspaceProfile({
       workspaceId,
       activeEmbeddingSpaceId: space.id,

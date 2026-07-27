@@ -113,6 +113,7 @@ export {
   EmbeddingProfileCleanupService,
   type EmbeddingProfileCleanupCandidate,
   type EmbeddingProfileCleanupRepositoryPort,
+  type EmbeddingProfileProjectionCleanupPort,
 } from "./services/embeddingProfileCleanupService.js";
 export {
   EmbeddingProfileReadinessError,

@@ -44,7 +44,11 @@ import {
   endpointScopeFingerprint,
   resolveEmbeddingProviderBinding,
 } from "./embeddingProviderResolver.js";
-import { getSupportedEmbeddingModel } from "./supportedEmbeddingModels.js";
+import {
+  getSupportedEmbeddingModel,
+  isSupportedEmbeddingModel,
+  resolveEmbeddingModelDescriptor,
+} from "./supportedEmbeddingModels.js";
 import {
   type EmbeddingClient,
   type EmbeddingClientOptions,
@@ -80,7 +84,16 @@ class RoutedEmbeddingClient implements EmbeddingClient {
 
   async embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult> {
     const model = options?.model ?? this.primaryConfig.model;
-    const descriptor = getSupportedEmbeddingModel(model);
+    const binding = this.bindingForModel(model, {
+      provider: options?.provider,
+      endpointScopeFingerprint: options?.endpointScopeFingerprint,
+    });
+    const descriptor = isSupportedEmbeddingModel(model)
+      ? getSupportedEmbeddingModel(model)
+      : resolveEmbeddingModelDescriptor(model, {
+          provider: binding.config.provider,
+          dimensions: options?.dimensions ?? Number.NaN,
+        });
     if (
       options?.dimensions !== undefined &&
       options.dimensions !== descriptor.dimensions
@@ -89,10 +102,6 @@ class RoutedEmbeddingClient implements EmbeddingClient {
         `requested dimensions ${options.dimensions} do not match descriptor dimensions ${descriptor.dimensions}`,
       );
     }
-    const binding = this.bindingForModel(model, {
-      provider: options?.provider,
-      endpointScopeFingerprint: options?.endpointScopeFingerprint,
-    });
     return binding.provider.generate({
       texts,
       model,
@@ -114,6 +123,7 @@ class RoutedEmbeddingClient implements EmbeddingClient {
       this.primaryConfig,
       this.configs,
       requestedBinding,
+      { acceptExistingSelection: true },
     );
     const cacheKey = endpointScopeFingerprint(config);
     const existing = this.providers.get(cacheKey);
@@ -123,7 +133,11 @@ class RoutedEmbeddingClient implements EmbeddingClient {
 
     const validatedProvider = new EmbeddingClientProviderAdapter(
       this.clientFactory(config),
-      getSupportedEmbeddingModel,
+      (candidateModel, dimensions) =>
+        resolveEmbeddingModelDescriptor(candidateModel, {
+          provider: config.provider,
+          dimensions,
+        }),
     );
     this.providers.set(cacheKey, validatedProvider);
     return { config, provider: validatedProvider };
@@ -313,6 +327,7 @@ export class LlmProviderRegistry {
       this.config.embeddings,
       this.config.embeddingProviderConfigs,
       { provider },
+      { acceptExistingSelection: true },
     );
 
     return {
@@ -334,6 +349,7 @@ export class LlmProviderRegistry {
       this.config.embeddings,
       this.config.embeddingProviderConfigs,
       { provider },
+      { acceptExistingSelection: true },
     );
     return {
       provider: config.provider,
@@ -342,6 +358,9 @@ export class LlmProviderRegistry {
   }
 
   canServeEmbeddingModel(model: string): boolean {
+    if (!isSupportedEmbeddingModel(model)) {
+      return false;
+    }
     try {
       resolveEmbeddingProviderBinding(
         model,

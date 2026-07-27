@@ -769,6 +769,10 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
           && item.record.documentId === input.scope.documentId);
         return { records: selected, nextCursor: null };
       },
+      async applyIfCurrent(input) {
+        await input.apply(input.item);
+        return true;
+      },
     };
     const rebuild = new VectorIndexRebuildService({
       adapter,
@@ -795,6 +799,43 @@ describeIntegration("vector index reconciliation (Postgres)", () => {
       minimumScore: -1,
       filter: {},
     })).resolves.toMatchObject([{ chunkId: "chunk-in-scope" }]);
+  });
+
+  it("rejects an out-of-scope current record returned by a rebuild source", async () => {
+    const adapter = new InMemoryVectorAdapter();
+    const scanned = rebuildRecord(
+      spaceId,
+      workspaceId,
+      "document-in-scope",
+      "chunk-in-scope",
+    );
+    const source: CanonicalVectorRebuildSourcePort = {
+      async listTargets() {
+        return [{ workspaceId, space }];
+      },
+      async scan() {
+        return { records: [scanned], nextCursor: null };
+      },
+      async applyIfCurrent(input) {
+        await input.apply({
+          ...input.item,
+          workspaceId: randomUUID(),
+        });
+        return true;
+      },
+    };
+    const rebuild = new VectorIndexRebuildService({
+      adapter,
+      source,
+      batchSize: 10,
+    });
+
+    await expect(rebuild.rebuild({
+      scope: { kind: "workspace", workspaceId },
+      generation: "1",
+    })).rejects.toThrow(
+      "Canonical rebuild source returned an out-of-scope vector",
+    );
   });
 });
 

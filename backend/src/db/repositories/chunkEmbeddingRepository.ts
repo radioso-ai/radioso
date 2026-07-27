@@ -13,7 +13,10 @@ import {
   transactionAdvisoryLock,
 } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-import { appendVectorIndexWorkInTransaction } from "./vectorIndexWorkRepository.js";
+import {
+  appendVectorIndexWorkInTransaction,
+  vectorProjectionMutationFenceKey,
+} from "./vectorIndexWorkRepository.js";
 
 interface ChunkEmbeddingRow {
   workspace_id: string;
@@ -103,6 +106,31 @@ export const insertCanonicalChunkEmbeddingsForDocumentRevision = async (
   input: CanonicalChunkEmbeddingPublication,
 ): Promise<void> => {
   assertCanonicalVersion(input.canonicalVersion);
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [vectorProjectionMutationFenceKey(input.workspaceId)],
+  );
+  const retiredSpace = await client.query<{ id: string }>(
+    `SELECT retired.id
+     FROM workspace_embedding_transitions retired
+     WHERE retired.workspace_id = $1
+       AND retired.source_embedding_space_id = $2
+       AND retired.status = 'promoted'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM workspace_embedding_profiles live_profile
+         WHERE live_profile.workspace_id = $1
+           AND $2 IN (
+             live_profile.active_embedding_space_id,
+             live_profile.pending_embedding_space_id
+           )
+       )
+     LIMIT 1`,
+    [input.workspaceId, input.embeddingSpace.id],
+  );
+  if (retiredSpace.rows.length > 0) {
+    throw new Error("Canonical embedding space is retired for this workspace");
+  }
   const embeddingSpaceResult = await client.query<StoredEmbeddingSpaceRow>(
     `SELECT id, dimensions, distance_metric
      FROM embedding_spaces
@@ -150,6 +178,42 @@ export const upsertCanonicalChunkEmbeddingWithProjection = async (
 ): Promise<{ record: ChunkEmbeddingRecord; applied: boolean }> => {
   assertCanonicalVersion(input.canonicalVersion);
   assertEmbeddingVector(input.embedding, input.dimensions);
+  await transactionAdvisoryLock(
+    vectorProjectionMutationFenceKey(input.workspaceId),
+  ).execute(db);
+  const retiredSpace = await db
+    .selectFrom("workspace_embedding_transitions as retired")
+    .select("retired.id")
+    .where("retired.workspace_id", "=", input.workspaceId)
+    .where("retired.source_embedding_space_id", "=", input.embeddingSpaceId)
+    .where("retired.status", "=", "promoted")
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom("workspace_embedding_profiles as live_profile")
+            .select("live_profile.workspace_id")
+            .where("live_profile.workspace_id", "=", input.workspaceId)
+            .where((profileEb) =>
+              profileEb.or([
+                profileEb(
+                  "live_profile.active_embedding_space_id",
+                  "=",
+                  input.embeddingSpaceId,
+                ),
+                profileEb(
+                  "live_profile.pending_embedding_space_id",
+                  "=",
+                  input.embeddingSpaceId,
+                ),
+              ])),
+        ),
+      ))
+    .limit(1)
+    .executeTakeFirst();
+  if (retiredSpace) {
+    throw new Error("Canonical embedding space is retired for this workspace");
+  }
   await transactionAdvisoryLock(
     `chunk-embedding:${input.workspaceId}:${input.chunkId}:${input.embeddingSpaceId}`,
   ).execute(db);
@@ -260,6 +324,10 @@ export const appendCanonicalVectorProjectionWork = async (
   if (input.chunks.length === 0) {
     return;
   }
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [vectorProjectionMutationFenceKey(input.workspaceId)],
+  );
   const document = await client.query<{
     source_id: string | null;
     retrieval_enabled: boolean;

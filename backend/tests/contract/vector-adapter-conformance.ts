@@ -87,7 +87,14 @@ export const runVectorAdapterConformance = (
         await adapter.admin.prepareSpace({ space });
         await adapter.admin.prepareSpace({ space });
         await apply(adapter, [{ kind: "upsert", record: record("chunk-1", [1, 0], "1") }]);
+        await apply(
+          adapter,
+          [{ kind: "upsert", record: record("workspace-2-chunk", [1, 0], "1") }],
+          space,
+          "workspace-2",
+        );
 
+        await adapter.admin.resetSpace({ spaceId: space.id, workspaceId: "workspace-1" });
         await adapter.admin.resetSpace({ spaceId: space.id, workspaceId: "workspace-1" });
         await expect(adapter.search.search({
           workspaceId: "workspace-1",
@@ -97,6 +104,19 @@ export const runVectorAdapterConformance = (
           minimumScore: -1,
           filter: {},
         })).resolves.toEqual([]);
+        await expect(adapter.search.search({
+          workspaceId: "workspace-2",
+          space,
+          queryVector: [1, 0],
+          topK: 10,
+          minimumScore: -1,
+          filter: {},
+        })).resolves.toEqual([
+          expect.objectContaining({
+            chunkId: "workspace-2-chunk",
+            embeddingSpaceId: space.id,
+          }),
+        ]);
       });
     });
 
@@ -187,7 +207,7 @@ export const runVectorAdapterConformance = (
                 sourceId: null,
                 metadata: { customer: { id: "acme", tags: ["priority", "support"] } },
                 retrievalEnabled: true,
-                retrievalExpiresAt: "2026-07-27T00:00:00.000Z",
+                retrievalExpiresAt: "2100-07-27T00:00:00.000Z",
               },
             }),
           },
@@ -220,7 +240,7 @@ export const runVectorAdapterConformance = (
                 sourceId: "source-1",
                 metadata: { customer: { id: "acme", tags: ["priority"] } },
                 retrievalEnabled: true,
-                retrievalExpiresAt: "2026-07-26T00:00:00.000Z",
+                retrievalExpiresAt: "2100-07-26T00:00:00.000Z",
               },
             }),
           },
@@ -245,7 +265,7 @@ export const runVectorAdapterConformance = (
               },
             },
             retrievalEnabled: true,
-            notExpiredAt: "2026-07-26T12:00:00.000Z",
+            notExpiredAt: "2100-07-26T12:00:00.000Z",
           },
         });
         expect(assigned.map((candidate) => candidate.chunkId)).toEqual(["chunk-a"]);
@@ -259,7 +279,7 @@ export const runVectorAdapterConformance = (
           filter: {
             source: { constrained: false },
             retrievalEnabled: true,
-            notExpiredAt: "2026-07-26T12:00:00.000Z",
+            notExpiredAt: "2100-07-26T12:00:00.000Z",
           },
         });
         expect(allCurrent.map((candidate) => candidate.chunkId)).toEqual(["chunk-a", "chunk-b"]);

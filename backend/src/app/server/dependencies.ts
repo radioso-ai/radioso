@@ -454,6 +454,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     embeddingCoverage,
     errorReporter: infrastructure.errorReportingService,
     embeddingProfileTerminalFailures: embeddingProfileJobFailures,
+    embeddingProfileProjectionCleanup: {
+      resetWorkspaceSpace: ({ workspaceId, embeddingSpaceId }) =>
+        pgVectorAdapter.admin.resetSpace({
+          workspaceId,
+          spaceId: embeddingSpaceId,
+        }),
+    },
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
   const skillSettingsResolver = createRetrievalSkillSettingsResolver();

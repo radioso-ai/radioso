@@ -3,6 +3,8 @@ import type {
   EmbeddingProfileCleanupCandidate,
   EmbeddingProfileCleanupRepositoryPort,
 } from "../../modules/embeddingProfiles/services/embeddingProfileCleanupService.js";
+import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
+import { vectorProjectionMutationFenceKey } from "./vectorIndexWorkRepository.js";
 
 export class EmbeddingProfileCleanupRepository
 implements EmbeddingProfileCleanupRepositoryPort {
@@ -38,8 +40,12 @@ implements EmbeddingProfileCleanupRepositoryPort {
   async cleanupIfSafe(input: {
     candidate: EmbeddingProfileCleanupCandidate;
     now: Date;
+    cleanupProjection(): Promise<void>;
   }): Promise<"cleaned" | "refused" | "already_cleaned"> {
     return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(
+        vectorProjectionMutationFenceKey(input.candidate.workspaceId),
+      ).execute(trx);
       const transition = await trx
         .selectFrom("workspace_embedding_transitions")
         .select([
@@ -78,13 +84,13 @@ implements EmbeddingProfileCleanupRepositoryPort {
         profileReference,
         liveTransition,
         liveJob,
-        vectorWorkReference,
-        vectorCheckpointReference,
+        futureRetention,
       ] =
         await Promise.all([
           trx
             .selectFrom("workspace_embedding_profiles")
             .select("workspace_id")
+            .where("workspace_id", "=", input.candidate.workspaceId)
             .where((eb) =>
               eb.or([
                 eb("active_embedding_space_id", "=", input.candidate.embeddingSpaceId),
@@ -95,6 +101,7 @@ implements EmbeddingProfileCleanupRepositoryPort {
           trx
             .selectFrom("workspace_embedding_transitions")
             .select("id")
+            .where("workspace_id", "=", input.candidate.workspaceId)
             .where("id", "!=", input.candidate.transitionId)
             .where((eb) =>
               eb.or([
@@ -107,33 +114,58 @@ implements EmbeddingProfileCleanupRepositoryPort {
           trx
             .selectFrom("document_processing_jobs")
             .select("id")
+            .where("workspace_id", "=", input.candidate.workspaceId)
             .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
             .where("status", "in", ["queued", "processing", "failed"])
             .executeTakeFirst(),
           trx
-            .selectFrom("vector_index_work")
+            .selectFrom("workspace_embedding_transitions")
             .select("id")
-            .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
-            .executeTakeFirst(),
-          trx
-            .selectFrom("vector_index_checkpoints")
-            .select("backend_key")
-            .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
+            .where("workspace_id", "=", input.candidate.workspaceId)
+            .where(
+              "source_embedding_space_id",
+              "=",
+              input.candidate.embeddingSpaceId,
+            )
+            .where("status", "=", "promoted")
+            .where("cleanup_after", ">", input.now)
             .executeTakeFirst(),
         ]);
-      // Completed projection rows and checkpoints are still backend references.
-      // A future fenced reset seam must remove them before canonical cleanup may
-      // complete; silently orphaning projected vectors is never acceptable.
+      const mutableVectorWork = await trx
+        .selectFrom("vector_index_work")
+        .select(["id", "status"])
+        .where("workspace_id", "=", input.candidate.workspaceId)
+        .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
+        .where("status", "in", ["queued", "processing", "failed"])
+        .forUpdate()
+        .execute();
+      const inFlightVectorWork = mutableVectorWork.some(
+        (work) => work.status === "processing",
+      );
       if (
         profileReference
         || liveTransition
         || liveJob
-        || vectorWorkReference
-        || vectorCheckpointReference
+        || futureRetention
+        || inFlightVectorWork
       ) {
         return "refused";
       }
 
+      // Retire the adapter projection while the workspace profile fence remains
+      // locked. If the idempotent reset fails, this transaction rolls back and
+      // leaves the canonical vectors and durable synchronization state retryable.
+      await input.cleanupProjection();
+      await trx
+        .deleteFrom("vector_index_checkpoints")
+        .where("workspace_id", "=", input.candidate.workspaceId)
+        .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
+        .execute();
+      await trx
+        .deleteFrom("vector_index_work")
+        .where("workspace_id", "=", input.candidate.workspaceId)
+        .where("embedding_space_id", "=", input.candidate.embeddingSpaceId)
+        .execute();
       await trx
         .deleteFrom("chunk_embeddings")
         .where("workspace_id", "=", input.candidate.workspaceId)
@@ -145,7 +177,14 @@ implements EmbeddingProfileCleanupRepositoryPort {
           cleanup_after: null,
           updated_at: input.now,
         })
-        .where("id", "=", input.candidate.transitionId)
+        .where("workspace_id", "=", input.candidate.workspaceId)
+        .where(
+          "source_embedding_space_id",
+          "=",
+          input.candidate.embeddingSpaceId,
+        )
+        .where("status", "=", "promoted")
+        .where("cleanup_after", "is not", null)
         .execute();
       return "cleaned";
     });

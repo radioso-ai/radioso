@@ -6,7 +6,10 @@ import { createEmbeddingSpaceIdentity } from "../../modules/embeddingProfiles/pu
 import type {
   EmbeddingProviderImplementation,
 } from "../../modules/embeddingProfiles/contracts/embeddingProvider.js";
-import { getSupportedEmbeddingModel } from "../../shared/infra/llm/supportedEmbeddingModels.js";
+import {
+  getSupportedEmbeddingModel,
+  resolveEmbeddingModelDescriptor,
+} from "../../shared/infra/llm/supportedEmbeddingModels.js";
 
 export interface EmbeddingModelBindingMetadata {
   readonly provider: string;
@@ -27,6 +30,27 @@ export class ModelEmbeddingSpaceMaterializer {
   async ensure(model: string): Promise<EmbeddingSpaceRecord> {
     const descriptor = getSupportedEmbeddingModel(model);
     const metadata = this.identifyModel(model);
+    return this.ensureDescriptor(model, descriptor, metadata);
+  }
+
+  async ensureExistingSelection(
+    model: string,
+    dimensions: number,
+  ): Promise<EmbeddingSpaceRecord> {
+    const metadata = this.identifyModel(model);
+    const provider = requireEmbeddingProvider(metadata.provider);
+    const descriptor = resolveEmbeddingModelDescriptor(model, {
+      provider,
+      dimensions,
+    });
+    return this.ensureDescriptor(model, descriptor, metadata);
+  }
+
+  private async ensureDescriptor(
+    model: string,
+    descriptor: ReturnType<typeof getSupportedEmbeddingModel>,
+    metadata: EmbeddingModelBindingMetadata,
+  ): Promise<EmbeddingSpaceRecord> {
     const provider = requireEmbeddingProvider(metadata.provider);
     if (!metadata.endpointScopeFingerprint) {
       throw new Error(

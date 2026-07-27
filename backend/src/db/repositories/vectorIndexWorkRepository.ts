@@ -77,6 +77,9 @@ const vectorIndexCheckpointColumns = [
   "updated_at",
 ] as const;
 
+export const vectorProjectionMutationFenceKey = (workspaceId: string): string =>
+  `vector-projection-mutation:${workspaceId}`;
+
 export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort {
   constructor(private readonly db: Db) {}
 
@@ -125,6 +128,52 @@ export class VectorIndexWorkRepository implements VectorIndexWorkRepositoryPort 
           eb.and([
             eb("status", "in", ["queued", "failed"]),
             eb("available_at", "<=", input.now),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("workspace_embedding_transitions as cleanup")
+                  .select("cleanup.id")
+                  .whereRef(
+                    "cleanup.workspace_id",
+                    "=",
+                    "vector_index_work.workspace_id",
+                  )
+                  .whereRef(
+                    "cleanup.source_embedding_space_id",
+                    "=",
+                    "vector_index_work.embedding_space_id",
+                  )
+                  .where("cleanup.status", "=", "promoted")
+                  .where("cleanup.cleanup_after", "is not", null)
+                  .where("cleanup.cleanup_after", "<=", input.now)
+                  .where((cleanupEb) =>
+                    cleanupEb.not(
+                      cleanupEb.exists(
+                        cleanupEb
+                          .selectFrom("workspace_embedding_profiles as live_profile")
+                          .select("live_profile.workspace_id")
+                          .whereRef(
+                            "live_profile.workspace_id",
+                            "=",
+                            "vector_index_work.workspace_id",
+                          )
+                          .where((profileEb) =>
+                            profileEb.or([
+                              profileEb(
+                                "live_profile.active_embedding_space_id",
+                                "=",
+                                profileEb.ref("vector_index_work.embedding_space_id"),
+                              ),
+                              profileEb(
+                                "live_profile.pending_embedding_space_id",
+                                "=",
+                                profileEb.ref("vector_index_work.embedding_space_id"),
+                              ),
+                            ])),
+                      ),
+                    )),
+              ),
+            ),
           ]),
           eb.and([
             eb("status", "=", "processing"),
@@ -611,6 +660,9 @@ export const appendVectorIndexWorkInTransaction = async (
 ): Promise<{ work: VectorIndexWorkRecord; accepted: boolean }> => {
   assertUnsignedDecimal(input.canonicalVersion, "Canonical version", false);
   await transactionAdvisoryLock(
+    vectorProjectionMutationFenceKey(input.workspaceId),
+  ).execute(db);
+  await transactionAdvisoryLock(
     `vector-index-work:${input.workspaceId}:${input.embeddingSpaceId}:${input.chunkId}`,
   ).execute(db);
   const latest = await db
@@ -668,6 +720,9 @@ export const appendVectorFilterUpdatesForDocument = async (
     embeddingSpaceId?: string;
   },
 ): Promise<VectorIndexWorkRecord[]> => {
+  await transactionAdvisoryLock(
+    vectorProjectionMutationFenceKey(input.workspaceId),
+  ).execute(db);
   await transactionAdvisoryLock(
     `vector-index-filter:${input.workspaceId}:${input.documentId}:${input.embeddingSpaceId ?? "*"}`,
   ).execute(db);
@@ -767,6 +822,9 @@ export const appendVectorTombstonesForDocuments = async (
     return [];
   }
   await transactionAdvisoryLock(
+    vectorProjectionMutationFenceKey(input.workspaceId),
+  ).execute(db);
+  await transactionAdvisoryLock(
     `vector-index-delete:${input.workspaceId}:${[...input.documentIds].sort().join(",")}`,
   ).execute(db);
   let query = db
@@ -841,6 +899,10 @@ export const appendVectorTombstonesForDocumentTransaction = async (
 ): Promise<void> => {
   await client.query(
     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [vectorProjectionMutationFenceKey(input.workspaceId)],
+  );
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
     [`vector-index-delete:${input.workspaceId}:${input.documentId}`],
   );
   const retained = [...(input.retainedChunkIds ?? [])];
@@ -909,6 +971,10 @@ export const appendVectorFilterUpdatesForDocumentTransaction = async (
     embeddingSpaceId?: string;
   },
 ): Promise<void> => {
+  await client.query(
+    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+    [vectorProjectionMutationFenceKey(input.workspaceId)],
+  );
   await client.query(
     "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
     [`vector-index-filter:${input.workspaceId}:${input.documentId}:${input.embeddingSpaceId ?? "*"}`],

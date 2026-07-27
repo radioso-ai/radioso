@@ -234,6 +234,93 @@ describe("WorkspaceEmbeddingBindingResolver", () => {
     }]);
   });
 
+  it("materializes an existing uncatalogued selection with the compatibility vector contract", async () => {
+    const createdSpaces: Array<Record<string, unknown>> = [];
+    const resolver = new WorkspaceEmbeddingBindingResolver({
+      profiles: {
+        async findWorkspaceProfile() {
+          return null;
+        },
+        async findEmbeddingSpaceById(id) {
+          return {
+            id,
+            identityFingerprint: "fingerprint",
+            endpointScopeFingerprint: "endpoint-fingerprint",
+            provider: "openai-compatible",
+            model: "existing-embedding-model",
+            dimensions: 1536,
+            distanceMetric: "cosine",
+            normalization: "application_unit",
+            documentTask: null,
+            queryTask: null,
+            vectorOptions: {},
+            modelVersion: null,
+            status: "active",
+            quarantineReason: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+        },
+        async createEmbeddingSpace(input) {
+          createdSpaces.push(input);
+          return {
+            ...input,
+            id: "space-existing",
+            status: "active",
+            quarantineReason: null,
+            createdAt: new Date(0),
+            updatedAt: new Date(0),
+          };
+        },
+        async initializeWorkspaceProfile(input) {
+          return {
+            workspaceId: "legacy-workspace",
+            activeEmbeddingSpaceId: input.activeEmbeddingSpaceId,
+            pendingEmbeddingSpaceId: null,
+            generation: "1",
+            transition: null,
+          };
+        },
+      },
+      settings: {
+        async getForWorkspace() {
+          return settings({
+            workspaceId: "legacy-workspace",
+            embeddingModel:
+              "existing-embedding-model" as IngestionSettingsRecord["embeddingModel"],
+          });
+        },
+      },
+      identifyModel: () => ({
+        provider: "openai-compatible",
+        endpointScopeFingerprint: "endpoint-fingerprint",
+      }),
+    });
+
+    await expect(resolver.resolveBinding({
+      workspaceId: "legacy-workspace",
+      purpose: "retrieval_document",
+    })).resolves.toEqual({
+      space: {
+        id: "space-existing",
+        dimensions: 1536,
+        distanceMetric: "cosine",
+      },
+      model: "existing-embedding-model",
+      provider: "openai-compatible",
+      endpointScopeFingerprint: "endpoint-fingerprint",
+    });
+    expect(createdSpaces).toEqual([
+      expect.objectContaining({
+        provider: "openai-compatible",
+        endpointScopeFingerprint: "endpoint-fingerprint",
+        model: "existing-embedding-model",
+        dimensions: 1536,
+        normalization: "application_unit",
+      }),
+    ]);
+  });
+
   it("binds the persisted winner when concurrent legacy initialization selects another space", async () => {
     const resolver = new WorkspaceEmbeddingBindingResolver({
       profiles: {

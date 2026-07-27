@@ -4,6 +4,8 @@ import type {
   VectorIndexRebuildScope,
 } from "../../modules/retrieval/services/vectorIndexRebuildService.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
+import { vectorProjectionMutationFenceKey } from "./vectorIndexWorkRepository.js";
 
 export class VectorIndexRebuildRepository
 implements CanonicalVectorRebuildSourcePort {
@@ -115,6 +117,73 @@ implements CanonicalVectorRebuildSourcePort {
         ? String(offset + input.limit)
         : null,
     };
+  }
+
+  async applyIfCurrent(input: {
+    item: CanonicalVectorRebuildRecord;
+    apply(current: CanonicalVectorRebuildRecord): Promise<void>;
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      await transactionAdvisoryLock(
+        vectorProjectionMutationFenceKey(input.item.workspaceId),
+      ).execute(trx);
+      const current = await trx
+        .selectFrom("chunk_embeddings as ce")
+        .innerJoin("chunks as c", (join) =>
+          join
+            .onRef("c.workspace_id", "=", "ce.workspace_id")
+            .onRef("c.id", "=", "ce.chunk_id"))
+        .innerJoin("documents as d", (join) =>
+          join
+            .onRef("d.workspace_id", "=", "c.workspace_id")
+            .onRef("d.id", "=", "c.document_id"))
+        .innerJoin("embedding_spaces as es", "es.id", "ce.embedding_space_id")
+        .select([
+          "ce.workspace_id",
+          "ce.chunk_id",
+          "ce.embedding_space_id",
+          "ce.canonical_version",
+          "ce.embedding",
+          "es.dimensions",
+          "es.distance_metric",
+          "c.document_id",
+          "c.metadata",
+          "d.source_id",
+          "d.retrieval_enabled",
+          "d.retrieval_expires_at",
+        ])
+        .where("ce.workspace_id", "=", input.item.workspaceId)
+        .where("ce.embedding_space_id", "=", input.item.space.id)
+        .where("ce.chunk_id", "=", input.item.record.chunkId)
+        .where("c.document_id", "=", input.item.record.documentId)
+        .executeTakeFirst();
+      if (!current) {
+        return false;
+      }
+      await input.apply({
+        workspaceId: current.workspace_id,
+        space: {
+          id: current.embedding_space_id,
+          dimensions: Number(current.dimensions),
+          distanceMetric: normalizeDistanceMetric(current.distance_metric),
+        },
+        record: {
+          chunkId: current.chunk_id,
+          documentId: current.document_id,
+          vector: parseVector(current.embedding),
+          version: String(current.canonical_version),
+          payload: {
+            sourceId: current.source_id,
+            metadata: (current.metadata ?? {}) as Record<string, never>,
+            retrievalEnabled: current.retrieval_enabled,
+            retrievalExpiresAt: current.retrieval_expires_at
+              ? new Date(current.retrieval_expires_at).toISOString()
+              : null,
+          },
+        },
+      });
+      return true;
+    });
   }
 }
 

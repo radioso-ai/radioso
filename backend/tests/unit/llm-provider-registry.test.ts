@@ -229,6 +229,126 @@ describe("LlmProviderRegistry", () => {
     });
   });
 
+  it("serves an existing uncatalogued 1536-dimensional binding without adding it to the product catalog", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      OPENAI_COMPATIBLE_API_KEY: "compatible-key",
+      OPENAI_COMPATIBLE_BASE_URL: "https://embeddings.example/v1",
+      LLM_EMBEDDING_PROVIDER: "openai-compatible",
+      LLM_EMBEDDING_MODEL: "configured-embedding-model",
+    });
+    const encodedEmbedding = Buffer.alloc(
+      1536 * Float32Array.BYTES_PER_ELEMENT,
+    );
+    encodedEmbedding.writeFloatLE(2, 0);
+    const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({
+        url: input instanceof Request ? input.url : String(input),
+        body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+      });
+      return Response.json({
+        data: [{
+          index: 0,
+          embedding: encodedEmbedding.toString("base64"),
+        }],
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      });
+    });
+
+    const registry = new LlmProviderRegistry(config);
+    expect(registry.canServeEmbeddingModel("existing-embedding-model")).toBe(false);
+    const binding = registry.resolveEmbeddingModelBinding(
+      "existing-embedding-model",
+    );
+    const embeddings = await registry.createEmbeddingGateway().embedTexts(
+      ["hello"],
+      {
+        model: "existing-embedding-model",
+        dimensions: 1536,
+        provider: binding.provider,
+        endpointScopeFingerprint: binding.endpointScopeFingerprint,
+      },
+    );
+
+    expect(embeddings).toEqual([[1, ...new Array(1535).fill(0)]]);
+    expect(requests).toEqual([{
+      url: "https://embeddings.example/v1/embeddings",
+      body: {
+        model: "existing-embedding-model",
+        input: ["hello"],
+        encoding_format: "base64",
+      },
+    }]);
+
+    const invalidEmbedding = Buffer.alloc(
+      2 * Float32Array.BYTES_PER_ELEMENT,
+    );
+    invalidEmbedding.writeFloatLE(1, 0);
+    vi.stubGlobal("fetch", async () =>
+      Response.json({
+        data: [{
+          index: 0,
+          embedding: invalidEmbedding.toString("base64"),
+        }],
+      }),
+    );
+    await expect(registry.createEmbeddingGateway().embedTexts(
+      ["hello"],
+      {
+        model: "existing-embedding-model",
+        dimensions: 1536,
+        provider: binding.provider,
+        endpointScopeFingerprint: binding.endpointScopeFingerprint,
+      },
+    )).rejects.toThrow(
+      "dimensions 2 do not match expected dimensions 1536",
+    );
+  });
+
+  it("preserves the fixed-width request contract for an existing uncatalogued Gemini binding", async () => {
+    const config = resolveLlmConfig({
+      OPENAI_API_KEY: "openai-key",
+      GEMINI_API_KEY: "gemini-key",
+      LLM_EMBEDDING_PROVIDER: "gemini",
+      LLM_EMBEDDING_MODEL: "configured-gemini-model",
+    });
+    let requestBody: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+      return Response.json({
+        embedding: {
+          values: [2, ...new Array(1535).fill(0)],
+        },
+      });
+    });
+
+    const registry = new LlmProviderRegistry(config);
+    expect(registry.canServeEmbeddingModel("existing-gemini-model")).toBe(false);
+    const binding = registry.resolveEmbeddingModelBinding(
+      "existing-gemini-model",
+    );
+    await expect(registry.createEmbeddingGateway().embedTexts(
+      ["hello"],
+      {
+        model: "existing-gemini-model",
+        dimensions: 1536,
+        purpose: "retrieval_query",
+        provider: binding.provider,
+        endpointScopeFingerprint: binding.endpointScopeFingerprint,
+      },
+    )).resolves.toEqual([[1, ...new Array(1535).fill(0)]]);
+
+    expect(requestBody).toMatchObject({
+      model: "models/existing-gemini-model",
+      outputDimensionality: 1536,
+      content: {
+        parts: [{ text: "hello" }],
+      },
+    });
+    expect(requestBody).not.toHaveProperty("taskType");
+  });
+
   it("rejects malformed provider vectors through the production gateway", async () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",

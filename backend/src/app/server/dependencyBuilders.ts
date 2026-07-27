@@ -159,7 +159,10 @@ import type {
   PinnedDocumentEmbeddingPort,
   QueryEmbeddingPort,
 } from "../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
-import { EmbeddingProfileCleanupService } from "../../modules/embeddingProfiles/public.js";
+import {
+  EmbeddingProfileCleanupService,
+  type EmbeddingProfileProjectionCleanupPort,
+} from "../../modules/embeddingProfiles/public.js";
 import type { VectorCandidateSearchPort } from "../../modules/retrieval/domain/vectorAdapter.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
@@ -643,6 +646,7 @@ export const buildDocumentServices = (input: {
     }): Promise<void>;
   };
   embeddingProfileTerminalFailures?: EmbeddingProfileTerminalFailurePort;
+  embeddingProfileProjectionCleanup: EmbeddingProfileProjectionCleanupPort;
 }) => {
   const {
     auditService,
@@ -695,6 +699,7 @@ export const buildDocumentServices = (input: {
     : undefined;
   const embeddingProfileCleanupService = new EmbeddingProfileCleanupService(
     repositories.embeddingProfileCleanupRepository,
+    input.embeddingProfileProjectionCleanup,
   );
   const documentIngestionService = new DocumentIngestionService(
     repositories.documentRepository,

@@ -13,11 +13,22 @@ export interface EmbeddingProfileCleanupRepositoryPort {
   cleanupIfSafe(input: {
     candidate: EmbeddingProfileCleanupCandidate;
     now: Date;
+    cleanupProjection(): Promise<void>;
   }): Promise<"cleaned" | "refused" | "already_cleaned">;
 }
 
+export interface EmbeddingProfileProjectionCleanupPort {
+  resetWorkspaceSpace(input: {
+    workspaceId: string;
+    embeddingSpaceId: string;
+  }): Promise<void>;
+}
+
 export class EmbeddingProfileCleanupService {
-  constructor(private readonly repository: EmbeddingProfileCleanupRepositoryPort) {}
+  constructor(
+    private readonly repository: EmbeddingProfileCleanupRepositoryPort,
+    private readonly projectionCleanup: EmbeddingProfileProjectionCleanupPort,
+  ) {}
 
   async runDue(input: {
     now?: Date;
@@ -35,7 +46,15 @@ export class EmbeddingProfileCleanupService {
     const candidates = await this.repository.listDue({ now, limit });
     const counts = { cleaned: 0, refused: 0, alreadyCleaned: 0 };
     for (const candidate of candidates) {
-      const outcome = await this.repository.cleanupIfSafe({ candidate, now });
+      const outcome = await this.repository.cleanupIfSafe({
+        candidate,
+        now,
+        cleanupProjection: () =>
+          this.projectionCleanup.resetWorkspaceSpace({
+            workspaceId: candidate.workspaceId,
+            embeddingSpaceId: candidate.embeddingSpaceId,
+          }),
+      });
       if (outcome === "cleaned") {
         counts.cleaned += 1;
       } else if (outcome === "refused") {

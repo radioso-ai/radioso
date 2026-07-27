@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 
-import { getSupportedEmbeddingModel } from "./supportedEmbeddingModels.js";
+import {
+  getSupportedEmbeddingModel,
+  isSupportedEmbeddingModel,
+} from "./supportedEmbeddingModels.js";
 import {
   ProviderConfigurationError,
   type LlmCapabilityConfig,
@@ -39,8 +42,17 @@ export const resolveEmbeddingProviderBinding = (
   primary: LlmCapabilityConfig,
   configured: readonly LlmCapabilityConfig[],
   requestedBinding?: EmbeddingProviderBindingSelection,
+  options: { readonly acceptExistingSelection?: boolean } = {},
 ): EmbeddingCapabilityConfig => {
-  const descriptor = getSupportedEmbeddingModel(model);
+  if (
+    !isSupportedEmbeddingModel(model)
+    && !options.acceptExistingSelection
+  ) {
+    getSupportedEmbeddingModel(model);
+  }
+  const descriptor = isSupportedEmbeddingModel(model)
+    ? getSupportedEmbeddingModel(model)
+    : null;
   const candidates = [primary, ...configured]
     .filter(isEmbeddingProvider)
     .filter(
@@ -71,16 +83,23 @@ export const resolveEmbeddingProviderBinding = (
       ? requested
       : (
           primaryEmbedding &&
-          supportsDescriptor(primaryEmbedding, descriptor.providerFamily)
+          (
+            !descriptor
+            || supportsDescriptor(primaryEmbedding, descriptor.providerFamily)
+          )
             ? primaryEmbedding
             : candidates.find((candidate) =>
-                supportsDescriptor(candidate, descriptor.providerFamily),
+                descriptor
+                && supportsDescriptor(candidate, descriptor.providerFamily),
               )
         );
 
   if (
     !resolved ||
-    !supportsDescriptor(resolved, descriptor.providerFamily) ||
+    (
+      descriptor
+      && !supportsDescriptor(resolved, descriptor.providerFamily)
+    ) ||
     (requestedBinding?.provider
       && resolved.provider !== requestedBinding.provider)
     || (requestedBinding?.endpointScopeFingerprint

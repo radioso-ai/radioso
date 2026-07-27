@@ -9,41 +9,6 @@ Agents are the user-facing conversational agents in a workspace. Directives are 
 
 The key point is that authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
-## Relevant endpoints
-
-```text
-GET    /api/v1/agents
-POST   /api/v1/agents
-GET    /api/v1/agents/{agentId}
-PUT    /api/v1/agents/{agentId}
-POST   /api/v1/agents/{agentId}/assistant-logo
-DELETE /api/v1/agents/{agentId}/assistant-logo
-POST   /api/v1/agents/{agentId}/default
-GET    /api/v1/agents/{agentId}/skill-capabilities
-GET    /api/v1/agents/{agentId}/directives
-POST   /api/v1/agents/{agentId}/directives
-POST   /api/v1/agents/{agentId}/directives/draft
-PATCH  /api/v1/agents/{agentId}/directives/{directiveId}
-DELETE /api/v1/agents/{agentId}/directives/{directiveId}
-GET    /api/v1/agents/{agentId}/skills
-POST   /api/v1/agents/{agentId}/skills
-PATCH  /api/v1/agents/{agentId}/skills/{skillId}
-DELETE /api/v1/agents/{agentId}/skills/{skillId}
-GET    /api/v1/context-variables
-POST   /api/v1/context-variables
-GET    /api/v1/context-variables/{id}
-PATCH  /api/v1/context-variables/{id}
-DELETE /api/v1/context-variables/{id}
-GET    /api/v1/agents/{agentId}/context-variables
-PUT    /api/v1/agents/{agentId}/context-variables/{variableId}
-DELETE /api/v1/agents/{agentId}/context-variables/{variableId}
-GET    /api/v1/context-variables/{id}/values
-PUT    /api/v1/context-variables/{id}/values
-DELETE /api/v1/context-variables/{id}/values
-GET    /api/v1/skills
-GET    /api/v1/skills/{skillName}
-```
-
 ## Agents
 
 Each workspace has a default agent. Chat calls use that agent when `agentId` is omitted.
@@ -261,6 +226,43 @@ Skill entries include:
 - required capabilities
 - diagnostic fields exposed by the implementation
 - skill-owned outcomes, each mapped to a normalized status such as `completed` or `failed`
+
+## Endpoint reference
+
+Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+
+```text
+GET    /api/v1/agents
+POST   /api/v1/agents
+GET    /api/v1/agents/{agentId}
+PUT    /api/v1/agents/{agentId}
+POST   /api/v1/agents/{agentId}/assistant-logo
+DELETE /api/v1/agents/{agentId}/assistant-logo
+POST   /api/v1/agents/{agentId}/default
+GET    /api/v1/agents/{agentId}/skill-capabilities
+GET    /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives/draft
+PATCH  /api/v1/agents/{agentId}/directives/{directiveId}
+DELETE /api/v1/agents/{agentId}/directives/{directiveId}
+GET    /api/v1/agents/{agentId}/skills
+POST   /api/v1/agents/{agentId}/skills
+PATCH  /api/v1/agents/{agentId}/skills/{skillId}
+DELETE /api/v1/agents/{agentId}/skills/{skillId}
+GET    /api/v1/context-variables
+POST   /api/v1/context-variables
+GET    /api/v1/context-variables/{id}
+PATCH  /api/v1/context-variables/{id}
+DELETE /api/v1/context-variables/{id}
+GET    /api/v1/agents/{agentId}/context-variables
+PUT    /api/v1/agents/{agentId}/context-variables/{variableId}
+DELETE /api/v1/agents/{agentId}/context-variables/{variableId}
+GET    /api/v1/context-variables/{id}/values
+PUT    /api/v1/context-variables/{id}/values
+DELETE /api/v1/context-variables/{id}/values
+GET    /api/v1/skills
+GET    /api/v1/skills/{skillName}
+```
 
 ## Common failure modes
 

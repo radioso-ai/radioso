@@ -7,22 +7,6 @@ description: List accounts, invite users, manage organization roles, and switch 
 
 These routes manage who can access an account, which account the current session is operating on, and account-level usage visibility for signed-in members.
 
-## Relevant endpoints
-
-```text
-GET    /api/v1/account/users
-GET    /api/v1/account/accounts
-GET    /api/v1/account/usage-trends
-POST   /api/v1/account/accounts
-POST   /api/v1/account/invitations
-POST   /api/v1/account/switch
-PATCH  /api/v1/account/users/{membershipId}
-PUT    /api/v1/account/workspaces/{workspaceId}/grants/{userId}
-DELETE /api/v1/account/invitations/{invitationId}
-DELETE /api/v1/account/workspaces/{workspaceId}/grants/{userId}
-DELETE /api/v1/account/users/{membershipId}
-```
-
 ## How it works
 
 Use these routes after a session has already been established.
@@ -116,6 +100,24 @@ Use the membership id from `GET /api/v1/account/users` when removing access.
 The route is:
 
 ```text
+DELETE /api/v1/account/users/{membershipId}
+```
+
+## Endpoint reference
+
+Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+
+```text
+GET    /api/v1/account/users
+GET    /api/v1/account/accounts
+GET    /api/v1/account/usage-trends
+POST   /api/v1/account/accounts
+POST   /api/v1/account/invitations
+POST   /api/v1/account/switch
+PATCH  /api/v1/account/users/{membershipId}
+PUT    /api/v1/account/workspaces/{workspaceId}/grants/{userId}
+DELETE /api/v1/account/invitations/{invitationId}
+DELETE /api/v1/account/workspaces/{workspaceId}/grants/{userId}
 DELETE /api/v1/account/users/{membershipId}
 ```
 

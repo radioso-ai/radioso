@@ -9,30 +9,6 @@ Settings are workspace-scoped. They control how Radioso processes documents, pre
 
 Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values for unset fields.
 
-## Relevant endpoints
-
-```text
-GET /api/v1/settings/retrieval-defaults
-GET /api/v1/settings/ingestion
-PUT /api/v1/settings/ingestion
-POST /api/v1/settings/ingestion/reprocess
-GET /api/v1/settings/general
-PUT /api/v1/settings/general
-GET /api/v1/settings
-PUT /api/v1/settings
-GET /api/v1/settings/credentials
-PUT /api/v1/settings/credentials/:provider
-DELETE /api/v1/settings/credentials/:provider
-GET /api/v1/settings/webhook-destinations
-POST /api/v1/settings/webhook-destinations
-GET /api/v1/settings/webhook-destinations/:id
-PUT /api/v1/settings/webhook-destinations/:id
-POST /api/v1/settings/webhook-destinations/:id/rotate-secret
-DELETE /api/v1/settings/webhook-destinations/:id
-GET /api/v1/settings/llm-models
-PUT /api/v1/settings/llm-models
-```
-
 ## How it works
 
 There are four main setting groups:
@@ -280,6 +256,32 @@ Workspaces choose which provider and model are used for each capability (chat, q
 The `openai-compatible` provider also requires `OPENAI_COMPATIBLE_BASE_URL` to be configured on the backend. Selecting it for a workspace without a base URL fails at resolve time with a clear error instead of silently calling the default OpenAI endpoint.
 
 For per-agent chat model overrides, set `chatModelOverride` on the agent through `PUT /api/v1/agents/<agentId>`. `null` clears the override; `{ "provider": "...", "model": "..." }` sets it.
+
+## Endpoint reference
+
+Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+
+```text
+GET /api/v1/settings/retrieval-defaults
+GET /api/v1/settings/ingestion
+PUT /api/v1/settings/ingestion
+POST /api/v1/settings/ingestion/reprocess
+GET /api/v1/settings/general
+PUT /api/v1/settings/general
+GET /api/v1/settings
+PUT /api/v1/settings
+GET /api/v1/settings/credentials
+PUT /api/v1/settings/credentials/:provider
+DELETE /api/v1/settings/credentials/:provider
+GET /api/v1/settings/webhook-destinations
+POST /api/v1/settings/webhook-destinations
+GET /api/v1/settings/webhook-destinations/:id
+PUT /api/v1/settings/webhook-destinations/:id
+POST /api/v1/settings/webhook-destinations/:id/rotate-secret
+DELETE /api/v1/settings/webhook-destinations/:id
+GET /api/v1/settings/llm-models
+PUT /api/v1/settings/llm-models
+```
 
 ## Common failure modes
 

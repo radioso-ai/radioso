@@ -9,16 +9,6 @@ import { Steps } from 'nextra/components'
 
 These routes are the entry point for account creation, session establishment, invitation inspection, and invitation acceptance.
 
-## Relevant endpoints
-
-```text
-GET  /api/v1/auth/registration
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-GET  /api/v1/auth/invitations/{invitationToken}
-POST /api/v1/auth/invitations/{invitationToken}/accept
-```
-
 ## How it works
 
 <Steps>
@@ -99,6 +89,18 @@ In practice, the invitation flow has two steps:
 2. Accept it with `POST /api/v1/auth/invitations/{invitationToken}/accept`.
 
 The accept request establishes a session for the joined account.
+
+## Endpoint reference
+
+Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+
+```text
+GET  /api/v1/auth/registration
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /api/v1/auth/invitations/{invitationToken}
+POST /api/v1/auth/invitations/{invitationToken}/accept
+```
 
 ## Common failure modes
 

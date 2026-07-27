@@ -23,6 +23,7 @@ Different surfaces need different amounts of warmth, but it is always the same p
 Rules that hold in every register:
 
 - Lead with what the reader gets, not with what the system is.
+- Never open with an inventory — endpoint lists, artifact lists, file lists. An inventory means nothing before the reader knows the job. Open with the task, introduce each endpoint or artifact at the step that uses it, and if a compact list earns its place at all, it goes at the end as reference.
 - Concrete over abstract: real example values, real commands, real error text. "About 2 seconds on a laptop" beats "fast".
 - Name limits plainly. "The SDK does not cover browser sign-in" beats silence, and far beats spin.
 - Explain in the order a reader meets the problem: what it is, why they'd want it, how to use it, what can go wrong.

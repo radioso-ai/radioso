@@ -9,29 +9,6 @@ import { Callout, Steps } from 'nextra/components'
 
 This part of the API manages document content and the search layer that grounded answers depend on.
 
-## Relevant endpoints
-
-```text
-GET    /api/v1/document/
-POST   /api/v1/document/
-POST   /api/v1/document/import
-GET    /api/v1/document/{documentId}
-PUT    /api/v1/document/{documentId}
-DELETE /api/v1/document/{documentId}
-POST   /api/v1/document/{documentId}/reprocess
-GET    /api/v1/document/sources
-GET    /api/v1/document/sources/{sourceId}/documents
-PATCH  /api/v1/document/sources/{sourceId}
-POST   /api/v1/document/sources/{sourceId}/reprocess
-POST   /api/v1/document/sources/{sourceId}/recrawl
-POST   /api/v1/document/sources/{sourceId}/pause-crawl
-POST   /api/v1/document/sources/{sourceId}/resume-crawl
-DELETE /api/v1/document/sources/{sourceId}
-POST   /api/v1/document/search
-GET    /api/v1/document/search/history
-GET    /api/v1/document/search/history/{searchId}
-```
-
 ## How it works
 
 <Steps>
@@ -168,6 +145,31 @@ In practice, this is useful when you are tuning retrieval and want to compare cu
 <Callout type="info" emoji="i">
   A successful create or import response only means the document was accepted and queued. It does not mean the document is already available to grounded chat.
 </Callout>
+
+## Endpoint reference
+
+Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+
+```text
+GET    /api/v1/document/
+POST   /api/v1/document/
+POST   /api/v1/document/import
+GET    /api/v1/document/{documentId}
+PUT    /api/v1/document/{documentId}
+DELETE /api/v1/document/{documentId}
+POST   /api/v1/document/{documentId}/reprocess
+GET    /api/v1/document/sources
+GET    /api/v1/document/sources/{sourceId}/documents
+PATCH  /api/v1/document/sources/{sourceId}
+POST   /api/v1/document/sources/{sourceId}/reprocess
+POST   /api/v1/document/sources/{sourceId}/recrawl
+POST   /api/v1/document/sources/{sourceId}/pause-crawl
+POST   /api/v1/document/sources/{sourceId}/resume-crawl
+DELETE /api/v1/document/sources/{sourceId}
+POST   /api/v1/document/search
+GET    /api/v1/document/search/history
+GET    /api/v1/document/search/history/{searchId}
+```
 
 ## Common failure modes
 

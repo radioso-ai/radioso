@@ -2,7 +2,7 @@
 # <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
 ## Self-hosted conversational agents, grounded in your data and following your rules.
 
-You can wire up LangChain and build a rocketship. You can get a degree in dragging nodes around a low-code canvas. Or you can run one script, and get a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first, today.
+Run one script and you have a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
 
 Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
 
@@ -117,6 +117,8 @@ Postgres is the system of record for everything, not just vectors: accounts, set
 
 There are five ways to reach an agent: the web app, the REST API, the TypeScript SDK, an MCP client, and a website embed.
 
+One naming note: the persona you configure is an **agent**; the chat surface you call to talk to it is named **assistant** in API paths such as `/api/v1/assistant/chat`. Same thing, two names.
+
 ### Web app
 
 1. Run `./run-dev.sh`.
@@ -131,7 +133,7 @@ On an empty open-source server, the first registration creates the server's orga
 
 The organization limit does not limit workspaces. Authorized users can create additional workspaces inside the existing organization in either edition.
 
-Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. Older `/account/<account-id>/...` dashboard links still work, but they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
+Authenticated dashboard URLs are workspace-first. After sign-in, the app navigates under `/w/<workspace-public-route-key>/...`. `/account/<account-id>/...` dashboard links also work; they redirect to the canonical workspace URL after the app restores the correct organization and workspace context.
 
 ### REST API
 
@@ -229,13 +231,13 @@ Operators can review assistant-answer quality with `GET /api/v1/quality/turns`. 
 
 Operators can also take over a conversation, reply as a named human, and resolve routine approval gates. The dashboard surfaces this under **Activity → Needs attention**, which lists pending approvals and human-owned conversations. See [Human takeover](./docs/human-takeover.md) for the ownership model, the approval queue (`GET /api/v1/decisions`) and resolve endpoint, and the tail endpoints that stream new messages to both operators and visitors.
 
-**Debug output.** Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload. This is a breaking response-shape change for SDK and direct REST consumers that previously read diagnostics from top-level fields. Update TypeScript SDK clients to `@radioso/typescript-sdk` 0.2.0 or later and read diagnostic data from `response.debug`.
+**Debug output.** Assistant, retrieval, and search responses are lean by default. Add `includeDebug: true` to supported request bodies when an authenticated operator or integration needs diagnostic metadata. Debug responses place routing, retrieval summaries, activity traces, and full evidence under a `debug` field instead of mixing them into the normal user-facing payload. TypeScript SDK clients (`@radioso/typescript-sdk` 0.2.0 or later) read diagnostic data from `response.debug`.
 
 ### TypeScript SDK
 
 The SDK chat facade is for agent-backed assistant chat. Use the REST retrieval endpoints above for retrieval-only search or grounded answers when you do not want assistant behavior.
 
-SDK 0.2.0 follows the lean response contract. Existing callers that read `route`, `activitySummary`, `activityTrace`, or retrieval `evidence` from top-level API responses should request debug output and read those values from `response.debug`.
+The SDK follows the lean response contract: when you need `route`, `activitySummary`, `activityTrace`, or retrieval `evidence`, request debug output and read those values from `response.debug`.
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
@@ -380,7 +382,7 @@ Radioso keeps Express `trust proxy` disabled by default. Set `TRUST_PROXY_HOPS` 
 
 Public chat and website embed rate limits are configured by operators, not workspace users. The optional `PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS`, `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`, and `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS` environment variables tune those limits; backend defaults apply when they are unset.
 
-Older workspace-level `anonymousRateLimit` and `messagesPerMinute` settings are ignored. Operators with custom public-chat limits should set the environment variables above.
+Workspace-level `anonymousRateLimit` and `messagesPerMinute` settings have no effect; the environment variables above are the only public-chat limit controls.
 
 ### Authenticated LLM request limits
 

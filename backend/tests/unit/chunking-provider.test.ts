@@ -217,10 +217,11 @@ describe("provider-backed chunking", () => {
 
   it("uses ChonkieJS semantic chunking with the configured embedding provider", async () => {
     const content = "Alpha topic starts here. Alpha topic continues here. Beta topic starts here. Beta topic continues here.";
+    const embedForClustering = vi.fn(async (request: { texts: readonly string[] }) => ({
+      vectors: request.texts.map((text) => text.includes("Beta") ? [0, 1] : [1, 0]),
+    }));
     const provider = new ChonkieChunkingProvider({
-      async embedTexts(texts) {
-        return texts.map((text) => text.includes("Beta") ? [0, 1] : [1, 0]);
-      },
+      embedForClustering,
     });
 
     const chunks = await provider.chunkText({
@@ -228,12 +229,71 @@ describe("provider-backed chunking", () => {
       content,
       chunkSize: 80,
       minCharactersPerChunk: 8,
+      embeddingUsageContext: {
+        workspaceId: "workspace-1",
+        requestId: "request-1",
+        surface: "documents",
+        operation: "semantic_chunking_embedding",
+        attemptKey: "attempt-1",
+      },
     });
 
+    expect(embedForClustering).toHaveBeenCalled();
+    const request = embedForClustering.mock.calls[0]![0] as Record<string, unknown>;
+    expect(request).toEqual(expect.objectContaining({
+      workspaceId: "workspace-1",
+      texts: expect.any(Array),
+      usageContext: expect.objectContaining({
+        requestId: "request-1",
+        attemptKey: "attempt-1",
+      }),
+    }));
+    expect(request).not.toHaveProperty("provider");
+    expect(request).not.toHaveProperty("model");
+    expect(request).not.toHaveProperty("dimensions");
+    expect(request).not.toHaveProperty("purpose");
     expect(chunks.length).toBeGreaterThan(0);
     for (const chunk of chunks) {
       expect(chunk.content).toBe(content.slice(chunk.startOffset, chunk.endOffset));
     }
+  });
+
+  it("keeps clustering usage context scoped to each semantic chunking request", async () => {
+    const seenWorkspaces: string[] = [];
+    const provider = new ChonkieChunkingProvider({
+      async embedForClustering(request) {
+        seenWorkspaces.push(request.workspaceId);
+        return { vectors: request.texts.map(() => [1, 0]) };
+      },
+    });
+    const baseRequest = {
+      method: "semantic" as const,
+      content: "Alpha topic starts here. Alpha topic continues here. Beta topic starts here. Beta topic continues here.",
+      chunkSize: 80,
+      minCharactersPerChunk: 8,
+    };
+
+    await provider.chunkText({
+      ...baseRequest,
+      embeddingUsageContext: {
+        workspaceId: "workspace-1",
+        surface: "documents",
+        operation: "semantic_chunking_embedding",
+        attemptKey: "attempt-1",
+      },
+    });
+    await provider.chunkText({
+      ...baseRequest,
+      embeddingUsageContext: {
+        workspaceId: "workspace-2",
+        surface: "documents",
+        operation: "semantic_chunking_embedding",
+        attemptKey: "attempt-2",
+      },
+    });
+
+    expect(seenWorkspaces).toContain("workspace-1");
+    expect(seenWorkspaces).toContain("workspace-2");
   });
 
   it("falls back to recursive chunking when semantic provider chunking fails", async () => {
@@ -306,8 +366,8 @@ What changes now?
 
 Only future ingests change.`;
     const provider = new ChonkieChunkingProvider({
-      async embedTexts(texts) {
-        return texts.map(() => [1, 0]);
+      async embedForClustering(request) {
+        return { vectors: request.texts.map(() => [1, 0]) };
       },
     });
 
@@ -316,6 +376,13 @@ Only future ingests change.`;
       content,
       chunkSize: 220,
       minCharactersPerChunk: 24,
+      embeddingUsageContext: {
+        workspaceId: "workspace-1",
+        requestId: "request-heading",
+        surface: "documents",
+        operation: "semantic_chunking_embedding",
+        attemptKey: "attempt-heading",
+      },
     });
 
     expect(chunks).toHaveLength(2);

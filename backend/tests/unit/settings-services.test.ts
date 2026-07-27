@@ -4,8 +4,39 @@ import { defaultAssistantBootstrapSettings, validateAssistantBootstrapSettings }
 import type { AccessGrant } from "../../src/modules/accessGrants/public.js";
 import type { AgentRecord } from "../../src/modules/agents/public.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
+import type {
+  EmbeddingModelTransitionPort,
+  EmbeddingModelTransitionState,
+} from "../../src/modules/settings/contracts/services.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
+
+const transitionState = (
+  overrides: Partial<EmbeddingModelTransitionState> = {},
+): EmbeddingModelTransitionState => ({
+  activeModel: "text-embedding-3-small",
+  pendingModel: null,
+  status: "idle",
+  readiness: null,
+  failureReason: null,
+  ...overrides,
+});
+
+const transitionPort = (
+  overrides: Partial<EmbeddingModelTransitionPort> = {},
+): EmbeddingModelTransitionPort => ({
+  getState: vi.fn().mockResolvedValue(null),
+  start: vi.fn().mockResolvedValue(transitionState({
+    pendingModel: "text-embedding-3-large",
+    status: "building",
+    readiness: "building",
+  })),
+  cancel: vi.fn().mockResolvedValue(transitionState({
+    status: "cancelled",
+  })),
+  reconcile: vi.fn().mockResolvedValue(null),
+  ...overrides,
+});
 
 describe("settings services", () => {
   const createAgent = (
@@ -457,7 +488,86 @@ describe("settings services", () => {
     );
   });
 
-  it("keeps the active embedding model and records a pending model when documents already exist", async () => {
+  it("treats an older client's echo of the active legacy model as an unchanged selection", async () => {
+    const legacyModel = "legacy-compatible-embedding";
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      embeddingModel: legacyModel,
+    } as unknown as ReturnType<typeof defaultIngestionSettings>;
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = { record: vi.fn() };
+    const service = new IngestionSettingsService(
+      repository,
+      auditService as never,
+    );
+
+    const settings = await service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "structured_semantic",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: legacyModel,
+      documentEnrichmentEnabled: true,
+    });
+
+    expect(settings).toMatchObject({
+      embeddingModel: legacyModel,
+      pendingEmbeddingModel: null,
+      documentEnrichmentEnabled: true,
+    });
+  });
+
+  it("rejects a different unsupported model without starting a transition", async () => {
+    const legacyModel = "legacy-compatible-embedding";
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      embeddingModel: legacyModel,
+    } as unknown as ReturnType<typeof defaultIngestionSettings>;
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(),
+    };
+    const auditService = { record: vi.fn() };
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "different-unsupported-model",
+    } as never)).rejects.toThrow(
+      "embeddingModel must be a supported embedding model",
+    );
+    expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it("keeps the supported embedding choices fixed to the existing four-model catalog", () => {
+    const service = new IngestionSettingsService(
+      {} as never,
+      { record: vi.fn() } as never,
+    );
+
+    expect(service.listSupportedEmbeddingModels()).toEqual([
+      "text-embedding-3-small",
+      "text-embedding-3-large",
+      "text-embedding-ada-002",
+      "gemini-embedding-001",
+    ]);
+  });
+
+  it("delegates embedding model changes to the internal transition port", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
@@ -469,12 +579,13 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn(),
     };
-    const documentRepository = {
-      summarizeWorkspace: vi.fn().mockResolvedValue({
-        documentCount: 2,
-      }),
-    };
-    const service = new IngestionSettingsService(repository as never, auditService as never, documentRepository as never);
+    const transitions = transitionPort();
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      undefined,
+      transitions,
+    );
 
     const settings = await service.updateForWorkspace("workspace-1", {
       chunkingStrategy: "fixed_window",
@@ -487,9 +598,15 @@ describe("settings services", () => {
 
     expect(settings.embeddingModel).toBe("text-embedding-3-small");
     expect(settings.pendingEmbeddingModel).toBe("text-embedding-3-large");
+    expect(transitions.start).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeModel: "text-embedding-3-small",
+      targetModel: "text-embedding-3-large",
+    });
+    expect(transitions.reconcile).toHaveBeenCalledWith("workspace-1");
   });
 
-  it("queues workspace reprocessing when a model change becomes pending", async () => {
+  it("does not persist a pending setting when transition startup fails", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
@@ -501,65 +618,15 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn(),
     };
-    const documentRepository = {
-      summarizeWorkspace: vi.fn().mockResolvedValue({
-        documentCount: 2,
-      }),
-    };
-    const reprocessService = {
-      reprocessWorkspace: vi.fn().mockResolvedValue({ status: "queued" }),
-    };
-    const service = new IngestionSettingsService(
-      repository as never,
-      auditService as never,
-      documentRepository as never,
-      undefined,
-      reprocessService,
-    );
-
-    await service.updateForWorkspace("workspace-1", {
-      chunkingStrategy: "fixed_window",
-      fixedWindowChunkSize: 800,
-      fixedWindowChunkOverlap: 120,
-      structuredMinChunkSize: 24,
-      structuredMaxChunkSize: 220,
-      embeddingModel: "text-embedding-3-large",
+    const startError = new Error("transition unavailable");
+    const transitions = transitionPort({
+      start: vi.fn().mockRejectedValue(startError),
     });
-
-    expect(reprocessService.reprocessWorkspace).toHaveBeenCalledWith("workspace-1");
-  });
-
-  it("rolls back a newly pending model when automatic workspace reprocessing fails", async () => {
-    const existing = defaultIngestionSettings("workspace-1");
-    const writtenInputs: unknown[] = [];
-    const repository = {
-      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
-      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => {
-        writtenInputs.push(input);
-        return {
-          ...existing,
-          ...input,
-        };
-      }),
-    };
-    const auditService = {
-      record: vi.fn(),
-    };
-    const documentRepository = {
-      summarizeWorkspace: vi.fn().mockResolvedValue({
-        documentCount: 2,
-      }),
-    };
-    const reprocessError = new Error("queue down");
-    const reprocessService = {
-      reprocessWorkspace: vi.fn().mockRejectedValue(reprocessError),
-    };
     const service = new IngestionSettingsService(
       repository as never,
       auditService as never,
-      documentRepository as never,
       undefined,
-      reprocessService,
+      transitions,
     );
 
     await expect(service.updateForWorkspace("workspace-1", {
@@ -569,17 +636,33 @@ describe("settings services", () => {
       structuredMinChunkSize: 24,
       structuredMaxChunkSize: 220,
       embeddingModel: "text-embedding-3-large",
-    })).rejects.toBe(reprocessError);
-    expect(writtenInputs).toEqual([
-      expect.objectContaining({
-        embeddingModel: "text-embedding-3-small",
-        pendingEmbeddingModel: "text-embedding-3-large",
-      }),
-      expect.objectContaining({
-        embeddingModel: "text-embedding-3-small",
-        pendingEmbeddingModel: null,
-      }),
-    ]);
+    })).rejects.toBe(startError);
+    expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it("fails safely when the internal transition coordinator is not composed", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(),
+    };
+    const service = new IngestionSettingsService(
+      repository as never,
+      { record: vi.fn() } as never,
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-3-large",
+    })).rejects.toMatchObject({
+      code: "service_unavailable",
+      message: "Embedding model transitions are temporarily unavailable",
+    });
+    expect(repository.upsert).not.toHaveBeenCalled();
   });
 
   it("rejects replacing an embedding model change while one is pending", async () => {
@@ -607,77 +690,397 @@ describe("settings services", () => {
     expect(repository.upsert).not.toHaveBeenCalled();
   });
 
-  it("checks pending embedding model promotion when settings are read", async () => {
+  it("projects transition state on reads without triggering promotion", async () => {
     const pending = {
       ...defaultIngestionSettings("workspace-1"),
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
-    const promoted = {
-      ...defaultIngestionSettings("workspace-1"),
-      embeddingModel: "text-embedding-3-large" as const,
-    };
     const repository = {
       findByWorkspaceId: vi.fn().mockResolvedValue(pending),
-      promotePendingEmbeddingModelIfReady: vi.fn().mockResolvedValue(promoted),
       upsert: vi.fn(),
     };
     const auditService = {
       record: vi.fn(),
     };
-    const service = new IngestionSettingsService(repository as never, auditService as never);
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(transitionState({
+        activeModel: "text-embedding-3-large",
+        status: "promoted",
+      })),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      undefined,
+      transitions,
+    );
 
     await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
       embeddingModel: "text-embedding-3-large",
       pendingEmbeddingModel: null,
     });
-    expect(repository.promotePendingEmbeddingModelIfReady).toHaveBeenCalledWith("workspace-1");
+    expect(transitions.getState).toHaveBeenCalledWith("workspace-1");
+    expect(repository.upsert).not.toHaveBeenCalled();
   });
 
-  it("does not attempt pending model promotion on settings reads without a pending model", async () => {
-    const existing = defaultIngestionSettings("workspace-1");
+  it("durably clears a failed pending model before accepting a new selection", async () => {
+    let stored = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as
+        | "text-embedding-3-large"
+        | "gemini-embedding-001"
+        | null,
+    };
+    let revision = "1";
+    const clearPendingEmbeddingModel = vi.fn(
+      async (
+        _workspaceId: string,
+        expectedPendingModel: string,
+        expectedRevision: string,
+      ) => {
+        if (
+          stored.pendingEmbeddingModel !== expectedPendingModel
+          || revision !== expectedRevision
+        ) {
+          return null;
+        }
+        stored = {
+          ...stored,
+          pendingEmbeddingModel: null,
+        };
+        revision = "2";
+        return stored;
+      },
+    );
     const repository = {
-      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
-      promotePendingEmbeddingModelIfReady: vi.fn(),
-      upsert: vi.fn(),
+      findByWorkspaceId: vi.fn(async () => stored),
+      findVersionedByWorkspaceId: vi.fn(async () => ({
+        settings: stored,
+        revision,
+      })),
+      clearPendingEmbeddingModel,
+      upsert: vi.fn(async (_workspaceId: string, input: typeof stored) => {
+        stored = { ...stored, ...input };
+        revision = String(Number(revision) + 1);
+        return stored;
+      }),
     };
-    const auditService = {
-      record: vi.fn(),
-    };
-    const service = new IngestionSettingsService(repository as never, auditService as never);
+    const failed = transitionState({
+      status: "failed",
+      readiness: "unavailable",
+      failureReason: "terminal_failure",
+    });
+    const building = transitionState({
+      pendingModel: "gemini-embedding-001",
+      status: "building",
+      readiness: "building",
+    });
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(failed),
+      start: vi.fn().mockResolvedValue(building),
+      reconcile: vi.fn().mockResolvedValue(building),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      { record: vi.fn() } as never,
+      undefined,
+      transitions,
+    );
 
     await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
       embeddingModel: "text-embedding-3-small",
       pendingEmbeddingModel: null,
     });
-    expect(repository.promotePendingEmbeddingModelIfReady).not.toHaveBeenCalled();
+    expect(clearPendingEmbeddingModel).toHaveBeenCalledWith(
+      "workspace-1",
+      "text-embedding-3-large",
+      "1",
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "gemini-embedding-001",
+    })).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: "gemini-embedding-001",
+    });
+    expect(transitions.start).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeModel: "text-embedding-3-small",
+      targetModel: "gemini-embedding-001",
+    });
   });
 
-  it("cancels a pending embedding model change without requiring the reprocess queue", async () => {
-    const existing = {
+  it("repairs a failed pending model during a direct update without a preceding read", async () => {
+    let stored = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as
+        | "text-embedding-3-large"
+        | "text-embedding-ada-002"
+        | null,
+    };
+    let revision = "1";
+    const clearPendingEmbeddingModel = vi.fn(
+      async (
+        _workspaceId: string,
+        expectedPendingModel: string,
+        expectedRevision: string,
+      ) => {
+        if (
+          stored.pendingEmbeddingModel !== expectedPendingModel
+          || revision !== expectedRevision
+        ) {
+          return null;
+        }
+        stored = { ...stored, pendingEmbeddingModel: null };
+        revision = "2";
+        return stored;
+      },
+    );
+    const repository = {
+      findByWorkspaceId: vi.fn(async () => stored),
+      findVersionedByWorkspaceId: vi.fn(async () => ({
+        settings: stored,
+        revision,
+      })),
+      clearPendingEmbeddingModel,
+      upsert: vi.fn(async (_workspaceId: string, input: typeof stored) => {
+        stored = { ...stored, ...input };
+        revision = String(Number(revision) + 1);
+        return stored;
+      }),
+    };
+    const building = transitionState({
+      pendingModel: "text-embedding-ada-002",
+      status: "building",
+      readiness: "building",
+    });
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(transitionState({
+        status: "failed",
+        readiness: "unavailable",
+        failureReason: "terminal_failure",
+      })),
+      start: vi.fn().mockResolvedValue(building),
+      reconcile: vi.fn().mockResolvedValue(building),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      { record: vi.fn() } as never,
+      undefined,
+      transitions,
+    );
+
+    await expect(service.updateForWorkspace("workspace-1", {
+      chunkingStrategy: "fixed_window",
+      fixedWindowChunkSize: 800,
+      fixedWindowChunkOverlap: 120,
+      structuredMinChunkSize: 24,
+      structuredMaxChunkSize: 220,
+      embeddingModel: "text-embedding-ada-002",
+    })).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: "text-embedding-ada-002",
+    });
+
+    expect(clearPendingEmbeddingModel).toHaveBeenCalledWith(
+      "workspace-1",
+      "text-embedding-3-large",
+      "1",
+    );
+    expect(transitions.start).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeModel: "text-embedding-3-small",
+      targetModel: "text-embedding-ada-002",
+    });
+  });
+
+  it("does not clear a concurrently restarted transition to the same model", async () => {
+    const original = {
       ...defaultIngestionSettings("workspace-1"),
       pendingEmbeddingModel: "text-embedding-3-large" as const,
     };
-    const cleared = {
-      ...existing,
-      pendingEmbeddingModel: null,
+    const restarted = {
+      ...original,
+      updatedAt: new Date(original.updatedAt.getTime() + 1),
     };
+    const findByWorkspaceId = vi.fn().mockResolvedValue(restarted);
+    const findVersionedByWorkspaceId = vi.fn()
+      .mockResolvedValueOnce({
+        settings: original,
+        revision: "1",
+      })
+      .mockResolvedValueOnce({
+        settings: restarted,
+        revision: "2",
+      });
+    const clearPendingEmbeddingModel = vi.fn(
+      async (
+        _workspaceId: string,
+        _expectedPendingModel: string,
+        _expectedRevision: string,
+      ) => null,
+    );
+    const service = new IngestionSettingsService(
+      {
+        findByWorkspaceId,
+        findVersionedByWorkspaceId,
+        clearPendingEmbeddingModel,
+        upsert: vi.fn(),
+      } as never,
+      { record: vi.fn() } as never,
+      undefined,
+      transitionPort({
+        getState: vi.fn().mockResolvedValue(transitionState({
+          status: "failed",
+          readiness: "unavailable",
+          failureReason: "terminal_failure",
+        })),
+      }),
+    );
+
+    await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
+      pendingEmbeddingModel: "text-embedding-3-large",
+    });
+    expect(clearPendingEmbeddingModel).toHaveBeenCalledWith(
+      "workspace-1",
+      "text-embedding-3-large",
+      "1",
+    );
+  });
+
+  it("keeps persisted settings when no internal profile has been materialized", async () => {
+    const existing = defaultIngestionSettings("workspace-1");
     const repository = {
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
-      clearPendingEmbeddingModel: vi.fn().mockResolvedValue(cleared),
       upsert: vi.fn(),
     };
     const auditService = {
       record: vi.fn(),
     };
+    const transitions = transitionPort();
     const service = new IngestionSettingsService(
       repository as never,
       auditService as never,
+      undefined,
+      transitions,
+    );
+
+    await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: null,
+    });
+    expect(transitions.getState).toHaveBeenCalledWith("workspace-1");
+  });
+
+  it("resumes a legacy persisted pending model through the internal transition port", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(),
+    };
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(null),
+      start: vi.fn().mockResolvedValue(transitionState({
+        pendingModel: "text-embedding-3-large",
+        status: "building",
+        readiness: "building",
+      })),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      { record: vi.fn() } as never,
+      undefined,
+      transitions,
+    );
+
+    await expect(service.getForWorkspace("workspace-1")).resolves.toMatchObject({
+      embeddingModel: "text-embedding-3-small",
+      pendingEmbeddingModel: "text-embedding-3-large",
+    });
+    expect(transitions.start).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeModel: "text-embedding-3-small",
+      targetModel: "text-embedding-3-large",
+    });
+    expect(transitions.reconcile).not.toHaveBeenCalled();
+    expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it("attaches a legacy pending model to an existing idle embedding profile", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(transitionState()),
+    });
+    const service = new IngestionSettingsService(
+      {
+        findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+        upsert: vi.fn(),
+      } as never,
+      { record: vi.fn() } as never,
+      undefined,
+      transitions,
+    );
+
+    await service.getForWorkspace("workspace-1");
+
+    expect(transitions.start).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeModel: "text-embedding-3-small",
+      targetModel: "text-embedding-3-large",
+    });
+  });
+
+  it("cancels a pending embedding model change through the transition port", async () => {
+    const existing = {
+      ...defaultIngestionSettings("workspace-1"),
+      pendingEmbeddingModel: "text-embedding-3-large" as const,
+    };
+    const repository = {
+      findByWorkspaceId: vi.fn().mockResolvedValue(existing),
+      upsert: vi.fn(async (_workspaceId: string, input: typeof existing) => ({
+        ...existing,
+        ...input,
+      })),
+    };
+    const auditService = {
+      record: vi.fn(),
+    };
+    const transitions = transitionPort({
+      getState: vi.fn().mockResolvedValue(transitionState({
+        pendingModel: "text-embedding-3-large",
+        status: "building",
+        readiness: "building",
+      })),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      undefined,
+      transitions,
     );
 
     await expect(service.cancelPendingEmbeddingModel("workspace-1")).resolves.toMatchObject({
       pendingEmbeddingModel: null,
     });
-    expect(repository.clearPendingEmbeddingModel).toHaveBeenCalledWith("workspace-1");
+    expect(transitions.cancel).toHaveBeenCalledWith("workspace-1");
+    expect(repository.upsert).toHaveBeenCalledWith(
+      "workspace-1",
+      expect.objectContaining({
+        embeddingModel: "text-embedding-3-small",
+        pendingEmbeddingModel: null,
+      }),
+    );
   });
 
   it("rejects switching to an embedding model without a configured provider", async () => {
@@ -692,7 +1095,6 @@ describe("settings services", () => {
     const service = new IngestionSettingsService(
       repository as never,
       auditService as never,
-      undefined,
       ["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
     );
 
@@ -707,7 +1109,7 @@ describe("settings services", () => {
     expect(repository.upsert).not.toHaveBeenCalled();
   });
 
-  it("switches the active embedding model immediately for empty workspaces", async () => {
+  it("accepts an immediately promoted transition result for an empty workspace", async () => {
     const existing = defaultIngestionSettings("workspace-1");
     const repository = {
       findByWorkspaceId: vi.fn().mockResolvedValue(existing),
@@ -719,12 +1121,18 @@ describe("settings services", () => {
     const auditService = {
       record: vi.fn(),
     };
-    const documentRepository = {
-      summarizeWorkspace: vi.fn().mockResolvedValue({
-        documentCount: 0,
-      }),
-    };
-    const service = new IngestionSettingsService(repository as never, auditService as never, documentRepository as never);
+    const transitions = transitionPort({
+      start: vi.fn().mockResolvedValue(transitionState({
+        activeModel: "text-embedding-3-large",
+        status: "promoted",
+      })),
+    });
+    const service = new IngestionSettingsService(
+      repository as never,
+      auditService as never,
+      undefined,
+      transitions,
+    );
 
     const settings = await service.updateForWorkspace("workspace-1", {
       chunkingStrategy: "fixed_window",

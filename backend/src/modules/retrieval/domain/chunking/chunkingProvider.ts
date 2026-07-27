@@ -2,10 +2,6 @@ import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallU
 
 export type TextChunkingMethod = "fixed_window" | "recursive" | "semantic";
 
-export interface TextChunkingEmbeddingPort {
-  embedTexts(texts: string[], options?: { model?: string; usageContext?: ModelCallUsageContext }): Promise<number[][]>;
-}
-
 export interface TextChunkingProviderRequest {
   method: TextChunkingMethod;
   title?: string;
@@ -13,7 +9,6 @@ export interface TextChunkingProviderRequest {
   chunkSize: number;
   chunkOverlap?: number;
   minCharactersPerChunk?: number;
-  embeddingModel?: string;
   embeddingUsageContext?: ModelCallUsageContext;
 }
 

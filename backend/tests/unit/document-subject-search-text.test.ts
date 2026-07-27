@@ -4,20 +4,20 @@ import { DocumentProcessingService } from "../../src/modules/documents/services/
 import type { DocumentEnrichmentStagePort } from "../../src/modules/documents/services/documentEnrichmentService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
 import { ChunkingStrategyRegistry } from "../../src/modules/retrieval/domain/chunking/chunkingStrategyRegistry.js";
-import { EmbeddingService } from "../../src/modules/retrieval/services/embeddingService.js";
 import { defaultIngestionSettings } from "../../src/modules/settings/domain/ingestionSettings.js";
 import {
   createAuditService,
   InMemoryChunkRepository,
   InMemoryDocumentRepository,
 } from "../support/fakes.js";
+import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 describe("document subject search text", () => {
   it("anchors later chunks to the document subject even when the chunk text omits the subject name", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
-    const embeddingService = new EmbeddingService({
+    const embeddingService = createDocumentEmbeddingPort({
       async embedTexts(texts: string[]): Promise<number[][]> {
         persistedSearchTexts.push(...texts);
         return texts.map(() => [1, 2, 3]);
@@ -108,7 +108,7 @@ describe("document subject search text", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
-    const embeddingService = new EmbeddingService({
+    const embeddingService = createDocumentEmbeddingPort({
       async embedTexts(texts: string[]): Promise<number[][]> {
         persistedSearchTexts.push(...texts);
         return texts.map(() => [1, 2, 3]);
@@ -202,7 +202,7 @@ describe("document subject search text", () => {
     const documentRepository = new InMemoryDocumentRepository();
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const persistedSearchTexts: string[] = [];
-    const embeddingService = new EmbeddingService({
+    const embeddingService = createDocumentEmbeddingPort({
       async embedTexts(texts: string[]): Promise<number[][]> {
         persistedSearchTexts.push(...texts);
         return texts.map(() => [1, 2, 3]);

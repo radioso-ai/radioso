@@ -1,9 +1,4 @@
 export {
-  ModelEmbeddingGateway,
-  OpenAIEmbeddingGateway,
-  type EmbeddingGateway,
-} from "./services/embeddingService.js";
-export {
   ModelQueryRewriteGateway,
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,

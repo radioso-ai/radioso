@@ -1,8 +1,8 @@
 import { z } from "zod";
 import {
   reprocessIngestionBodySchema,
+  documentedUpdateIngestionSettingsSchema,
   updateGeneralSettingsSchema,
-  updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
   updateSettingsSchema,
 } from "../../routes/settingsRouteSchemas.js";
@@ -93,7 +93,10 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     z.object({
       workspaceId: z.string().uuid(),
       chunkingStrategy: z.enum(chunkingStrategyIds),
-      embeddingModel: z.enum(embeddingModelIds),
+      embeddingModel: z.string().openapi({
+        description:
+          "The embedding model currently used for document indexing and retrieval.",
+      }),
       pendingEmbeddingModel: z.enum(embeddingModelIds).nullable(),
       supportedEmbeddingModels: z.array(z.enum(embeddingModelIds)),
       fixedWindowChunkSize: z.number().int(),
@@ -108,7 +111,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
 
   const UpdateIngestionSettingsRequestSchema = registry.register(
     "UpdateIngestionSettingsRequest",
-    updateIngestionSettingsSchema,
+    documentedUpdateIngestionSettingsSchema,
   );
 
   const ReprocessIngestionRequestSchema = registry.register(

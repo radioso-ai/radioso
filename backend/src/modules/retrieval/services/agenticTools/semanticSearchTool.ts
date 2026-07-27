@@ -1,13 +1,15 @@
 import { z } from "zod";
 
+import type {
+  QueryEmbeddingPort,
+} from "../../../embeddingProfiles/contracts/embeddingConsumers.js";
+import { type Clock, systemClock } from "../../../../shared/domain/clock.js";
 import type { ModelCallUsageContext } from "../../../../shared/domain/modelCallUsageContext.js";
 import type { AgentTool } from "../../../../shared/agent-runtime/index.js";
-import { EMBEDDING_MODEL_DEFAULT } from "../../../settings/contracts/ingestion.js";
-import type { VectorIndexPort } from "../../domain/vectorIndex.js";
+import type { VectorCandidateSearchPort } from "../../domain/vectorAdapter.js";
 import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.js";
 import { mergeVectorMetadataFilters, type VectorMetadataFilter } from "../../domain/vectorFilter.js";
 import type { ChunkCandidateHydratorPort } from "../../infra/chunkCandidateHydrator.js";
-import type { EmbeddingGateway } from "../embeddingService.js";
 import { fromRetrievedChunk, type ChunkRegistry } from "./chunkRegistry.js";
 
 const DEFAULT_TOP_K = 5;
@@ -16,14 +18,14 @@ const DEFAULT_SIMILARITY_THRESHOLD = 0.2;
 
 export interface SemanticSearchToolDeps {
   readonly workspaceId: string;
-  readonly embeddings: EmbeddingGateway;
-  readonly vectorIndex: VectorIndexPort;
+  readonly queryEmbeddings: QueryEmbeddingPort;
+  readonly vectorSearch: VectorCandidateSearchPort;
   readonly chunkHydrator: ChunkCandidateHydratorPort;
   readonly registry: ChunkRegistry;
   readonly sourceFilter?: RetrievalSourceFilter;
-  readonly embeddingModel?: string;
   readonly similarityThreshold?: number;
   readonly snippetChars?: number;
+  readonly clock?: Clock;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
   /**
    * The caller-supplied metadata filter from the retrieval request. Always
@@ -79,8 +81,9 @@ export const createSemanticSearchTool = (
   outputSchema,
   async invoke(input, ctx) {
     const topK = input.topK ?? DEFAULT_TOP_K;
-    const [queryEmbedding] = await deps.embeddings.embedTexts([input.query], {
-      model: deps.embeddingModel,
+    const embeddingResult = await deps.queryEmbeddings.embedQueries({
+      workspaceId: deps.workspaceId,
+      texts: [input.query],
       usageContext: deps.usageContext
         ? {
             ...deps.usageContext,
@@ -89,21 +92,22 @@ export const createSemanticSearchTool = (
           }
         : undefined,
     });
+    const queryEmbedding = embeddingResult.vectors[0];
     if (!queryEmbedding) {
       return { results: [] };
     }
     const metadataFilter = mergeMetadataFilters(input.metadataFilter, deps.callerMetadataFilter);
-    const embeddingModel = deps.embeddingModel ?? EMBEDDING_MODEL_DEFAULT;
-    const candidates = await deps.vectorIndex.search({
+    const candidates = await deps.vectorSearch.search({
       workspaceId: deps.workspaceId,
-      queryEmbedding,
-      queryEmbeddingDimensions: queryEmbedding.length,
+      space: embeddingResult.space,
+      queryVector: queryEmbedding,
       topK,
-      similarityThreshold: deps.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD,
-      embeddingModel,
+      minimumScore: deps.similarityThreshold ?? DEFAULT_SIMILARITY_THRESHOLD,
       filter: {
         metadataContains: metadataFilter,
         source: deps.sourceFilter,
+        retrievalEnabled: true,
+        notExpiredAt: (deps.clock ?? systemClock)().toISOString(),
       },
     });
     const chunks = await deps.chunkHydrator.hydrate({
@@ -111,7 +115,6 @@ export const createSemanticSearchTool = (
       candidates,
       metadataFilter,
       sourceFilter: deps.sourceFilter,
-      embeddingModel,
     });
     const registered = chunks.map((chunk) => fromRetrievedChunk(chunk, deps.snippetChars));
     deps.registry.record(registered);

@@ -65,6 +65,7 @@ export const createDocumentWorkerTaskRoutes = (
         }
         processedJobCount += 1;
       }
+      await dependencies.documentProcessingWorker.runPostJobMaintenance(10);
 
       res.status(200).json({ processedJobCount });
     } catch (error) {

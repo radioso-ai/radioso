@@ -1,4 +1,7 @@
-import type { IngestionSettingsRecord } from "../../../modules/settings/contracts/ingestion.js";
+import type {
+  EmbeddingModelId,
+  IngestionSettingsRecord,
+} from "../../../modules/settings/contracts/ingestion.js";
 import type {
   MetadataFieldSuggestion,
   RetrievalSettingsRecord,
@@ -7,7 +10,7 @@ import type { PlatformSettingsResource } from "../../../modules/settings/contrac
 
 export const presentIngestionSettings = (
   settings: IngestionSettingsRecord,
-  supportedEmbeddingModels: readonly IngestionSettingsRecord["embeddingModel"][],
+  supportedEmbeddingModels: readonly EmbeddingModelId[],
 ) => ({
   ...settings,
   supportedEmbeddingModels,

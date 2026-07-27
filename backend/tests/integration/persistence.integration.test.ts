@@ -24,7 +24,10 @@ import { AuditEventAnalyticsSink } from "../../src/shared/analytics/auditEventAn
 import { ProductAnalyticsService } from "../../src/shared/analytics/productAnalyticsService.js";
 import { AuditErrorSink } from "../../src/shared/errors/auditErrorSink.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
-import { EmbeddingService, type EmbeddingGateway } from "../../src/modules/retrieval/services/embeddingService.js";
+import {
+  EmbeddingGenerationService,
+  type EmbeddingGenerationGateway,
+} from "../../src/modules/embeddingProfiles/public.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
@@ -527,7 +530,7 @@ describeIfDatabase("persistence integration", () => {
     const vectorSearch = new PgVectorSearch(database);
 
     const capturedTexts: string[] = [];
-    const embeddingGateway: EmbeddingGateway = {
+    const embeddingGateway: EmbeddingGenerationGateway = {
       async embedTexts(texts: string[]): Promise<number[][]> {
         capturedTexts.push(...texts);
         return texts.map((text) =>
@@ -538,14 +541,51 @@ describeIfDatabase("persistence integration", () => {
 
     const auditService = new AuditService(createLogger("silent"), noopAuditRepository);
     const ingestionSettingsService = new IngestionSettingsService(new IngestionSettingsRepository(database.kysely), auditService);
-    const embeddingService = new EmbeddingService(embeddingGateway);
+    const embeddingService = new EmbeddingGenerationService(embeddingGateway);
+    const embeddingSpaceId = randomUUID();
+    await database.query(
+      `INSERT INTO embedding_spaces (
+         id, identity_fingerprint, provider, endpoint_scope_fingerprint, model,
+         dimensions, distance_metric, normalization, document_task, query_task,
+         vector_options
+       )
+       VALUES ($1, $2, 'openai', 'persistence-test-scope',
+               'text-embedding-3-small', 1536, 'cosine', 'provider_unit',
+               NULL, NULL, '{}'::jsonb)`,
+      [embeddingSpaceId, `persistence-title-aware-${embeddingSpaceId}`],
+    );
     const processingWorker = new DocumentProcessingWorker(
       documentRepository,
       jobRepository,
       new DocumentProcessingService(
         documentRepository,
         chunkRepository,
-        embeddingService,
+        {
+          async embedDocumentChunks(request) {
+            const result = await embeddingService.embedChunksWithUsage(
+              [...request.texts],
+              {
+                model: "text-embedding-3-small",
+                purpose: "retrieval_document",
+                usageContext: request.usageContext,
+                sourceId: request.sourceId,
+                documentId: request.documentId,
+                documentRevision: request.documentRevision,
+                jobId: request.jobId,
+                usageItems: request.usageItems,
+              },
+            );
+            return {
+              space: {
+                id: embeddingSpaceId,
+                dimensions: 1536,
+                distanceMetric: "cosine",
+              },
+              vectors: result.vectors,
+              usage: result.usage,
+            };
+          },
+        },
         auditService,
         ingestionSettingsService,
         new ChunkingStrategyRegistry([new FixedWindowChunkingStrategy(new ChonkieChunkingProvider())]),
@@ -599,7 +639,10 @@ describeIfDatabase("persistence integration", () => {
     expect(matches[0]?.content).toContain("Used for account registration");
 
     await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM vector_index_work WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM vector_index_checkpoints WHERE workspace_id = $1", [workspace.id]);
     await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspace.id]);
+    await database.query("DELETE FROM embedding_spaces WHERE id = $1", [embeddingSpaceId]);
     await database.query("DELETE FROM workspaces WHERE id = $1", [workspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
     expect(auditEvents.status).toBe("queued");

@@ -18,7 +18,11 @@ import { fileURLToPath } from "node:url";
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
   "shared/infra/database.ts", // the pg Pool wrapper + DatabaseExecutor the runner/legacy paths use
+  "db/repositories/chunkEmbeddingRepository.ts", // canonical vector batch shares document publication's existing pg transaction
+  "db/repositories/documentProcessingJobRepository.ts", // profile jobs are inserted inside canonical publication's existing pg transaction
+  "db/repositories/vectorIndexWorkRepository.ts", // projection work/tombstones share canonical mutation transactions
   "modules/retrieval/infra/vectorSearch.ts", // pgvector `<=>` distance + hnsw.iterative_scan
+  "modules/retrieval/infra/pgVectorAdapter.ts", // canonical pgvector exact candidate search
   "modules/retrieval/infra/chunkVectorStorage.ts", // pgvector `::vector` chunk insert
   "modules/retrieval/infra/lexicalSearch.ts", // full-text `@@` / ts_rank
   "modules/documents/infra/chunkRepository.ts", // pgvector chunk insert

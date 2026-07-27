@@ -23,7 +23,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MIGRATIONS_DIR="$ROOT/backend/src/db/migrations"
 OUT="$ROOT/backend/src/db/schema.sql"
 
-IMAGE="pgvector/pgvector:pg16"
+IMAGE="pgvector/pgvector:0.8.5-pg16"
 CONTAINER="radioso-schema-snapshot-$$"
 DB="radioso"
 

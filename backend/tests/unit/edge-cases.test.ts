@@ -12,6 +12,47 @@ import { CandidatePreparationService } from "../../src/modules/retrieval/service
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
+import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
+
+const embeddingSpace = { id: "space-active", dimensions: 3, distanceMetric: "cosine" as const };
+
+const createSemanticTestPorts = (input: {
+  embed: (texts: readonly string[]) => number[][] | Promise<number[][]>;
+  search: (request: {
+    queryVector: number[];
+    minimumScore: number;
+  }) => RetrievedChunk[] | Promise<RetrievedChunk[]>;
+}) => {
+  let rowsByChunkId = new Map<string, RetrievedChunk>();
+  return {
+    queryEmbeddings: {
+      async embedQueries(request: { texts: readonly string[] }) {
+        return { space: embeddingSpace, vectors: await input.embed(request.texts) };
+      },
+    },
+    vectorSearch: {
+      async search(request: { queryVector: number[]; minimumScore: number }) {
+        const rows = await input.search(request);
+        rowsByChunkId = new Map(rows.map((row) => [row.chunkId, row]));
+        return rows.map((row) => ({
+          chunkId: row.chunkId,
+          documentId: row.documentId,
+          embeddingSpaceId: embeddingSpace.id,
+          version: "1",
+          score: row.similarity,
+        }));
+      },
+    },
+    chunkHydrator: {
+      async hydrate(request: { candidates: Array<{ chunkId: string; score: number }> }) {
+        return request.candidates.flatMap((candidate) => {
+          const row = rowsByChunkId.get(candidate.chunkId);
+          return row ? [{ ...row, similarity: candidate.score }] : [];
+        });
+      },
+    },
+  };
+};
 
 describe("edge cases", () => {
   it("normalizes short content into a single provider-backed chunk", async () => {
@@ -79,6 +120,10 @@ describe("edge cases", () => {
   });
 
   it("preserves a caller-supplied response language through retrieval prompt assembly", async () => {
+    const semantic = createSemanticTestPorts({
+      embed: () => [[1, 0, 0]],
+      search: () => [],
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -97,16 +142,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks() {
-          return [[1, 0, 0]];
-        },
-      } as never,
-      {
-        async search() {
-          return [];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -120,6 +157,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const interpretation = await service.interpret({
@@ -241,6 +281,13 @@ describe("edge cases", () => {
 
   it("keeps the configured retrieval threshold when first-pass search returns no candidates", async () => {
     const thresholdsSeen: number[] = [];
+    const semantic = createSemanticTestPorts({
+      embed: () => [[1, 0, 0]],
+      search(input) {
+        thresholdsSeen.push(input.minimumScore);
+        return [];
+      },
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -257,28 +304,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks() {
-          return [[1, 0, 0]];
-        },
-      } as never,
-      {
-        async search(input) {
-          thresholdsSeen.push(input.similarityThreshold);
-          if (input.similarityThreshold >= 0.8) {
-            return [];
-          }
-          return [
-            {
-              chunkId: "c1",
-              documentId: "d1",
-              title: "Rate Limits",
-              content: "The API allows 60 requests per minute.",
-              similarity: 0.61,
-            },
-          ];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -292,6 +319,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const result = await service.run({
@@ -309,6 +339,30 @@ describe("edge cases", () => {
 
   it("drops rewritten retrieval candidates when rewrite evidence materially disagrees", async () => {
     const embeddedQueries: string[] = [];
+    const semantic = createSemanticTestPorts({
+      embed(texts) {
+        embeddedQueries.push(...texts);
+        return texts.map(() => [1, 0, 0]);
+      },
+      search(input) {
+        if ((input.queryVector[0] ?? 0) > 25) {
+          return [{
+            chunkId: "c2",
+            documentId: "d2",
+            title: "Arudra",
+            content: "Arudra later work.",
+            similarity: 0.9,
+          }];
+        }
+        return [{
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Narayani",
+          content: "Narayani later work.",
+          similarity: 0.8,
+        }];
+      },
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -325,37 +379,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks(chunks: string[]) {
-          embeddedQueries.push(...chunks);
-          return chunks.map(() => [1, 0, 0]);
-        },
-      } as never,
-      {
-        async search(input) {
-          if ((input.queryEmbedding[0] ?? 0) > 25) {
-            return [
-              {
-                chunkId: "c2",
-                documentId: "d2",
-                title: "Arudra",
-                content: "Arudra later work.",
-                similarity: 0.9,
-              },
-            ];
-          }
-
-          return [
-            {
-              chunkId: "c1",
-              documentId: "d1",
-              title: "Narayani",
-              content: "Narayani later work.",
-              similarity: 0.8,
-            },
-          ];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -380,6 +405,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const result = await service.run({
@@ -405,6 +433,27 @@ describe("edge cases", () => {
   });
 
   it("rejects a subject switch when raw retrieval only mentions the rewritten subject incidentally", async () => {
+    const semantic = createSemanticTestPorts({
+      embed: (texts) => texts.map((text) => [text.toLowerCase().includes("arudra") ? 1 : 0, 0, 0]),
+      search(input) {
+        if ((input.queryVector[0] ?? 0) === 1) {
+          return [{
+            chunkId: "c2",
+            documentId: "d2",
+            title: "Arudra",
+            content: "Arudra later work and publications.",
+            similarity: 0.95,
+          }];
+        }
+        return [{
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Narayani",
+          content: "Narayani sometimes collaborates with Arudra on events.",
+          similarity: 0.75,
+        }];
+      },
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -421,36 +470,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks(chunks: string[]) {
-          return chunks.map((chunk) => [chunk.toLowerCase().includes("arudra") ? 1 : 0, 0, 0]);
-        },
-      } as never,
-      {
-        async search(input) {
-          if ((input.queryEmbedding[0] ?? 0) === 1) {
-            return [
-              {
-                chunkId: "c2",
-                documentId: "d2",
-                title: "Arudra",
-                content: "Arudra later work and publications.",
-                similarity: 0.95,
-              },
-            ];
-          }
-
-          return [
-            {
-              chunkId: "c1",
-              documentId: "d1",
-              title: "Narayani",
-              content: "Narayani sometimes collaborates with Arudra on events.",
-              similarity: 0.75,
-            },
-          ];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -475,6 +496,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const result = await service.run({
@@ -507,6 +531,10 @@ describe("edge cases", () => {
   });
 
   it("preserves unresolved continuity decisions for blocked rewrites", async () => {
+    const semantic = createSemanticTestPorts({
+      embed: () => [[1, 0, 0]],
+      search: () => [],
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -523,16 +551,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks() {
-          return [[1, 0, 0]];
-        },
-      } as never,
-      {
-        async search() {
-          return [];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -557,6 +577,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const result = await service.run({
@@ -627,6 +650,28 @@ describe("edge cases", () => {
 
   it("rejects rewritten retrieval when the proposed subject is unsupported in rewritten evidence", async () => {
     let searchCallCount = 0;
+    const semantic = createSemanticTestPorts({
+      embed: () => [[1, 0, 0]],
+      search() {
+        searchCallCount += 1;
+        if (searchCallCount === 2) {
+          return [{
+            chunkId: "c2",
+            documentId: "d2",
+            title: "Publication timeline",
+            content: "Later publications from the archive are listed chronologically.",
+            similarity: 0.88,
+          }];
+        }
+        return [{
+          chunkId: "c1",
+          documentId: "d1",
+          title: "Arudra",
+          content: "Arudra later work and publications.",
+          similarity: 0.81,
+        }];
+      },
+    });
     const service = new RetrievalPipelineService(
       {
         getDefaults() {
@@ -643,37 +688,8 @@ describe("edge cases", () => {
           };
         },
       } as never,
-      {
-        async embedChunks() {
-          return [[1, 0, 0]];
-        },
-      } as never,
-      {
-        async search() {
-          searchCallCount += 1;
-          if (searchCallCount === 2) {
-            return [
-              {
-                chunkId: "c2",
-                documentId: "d2",
-                title: "Publication timeline",
-                content: "Later publications from the archive are listed chronologically.",
-                similarity: 0.88,
-              },
-            ];
-          }
-
-          return [
-            {
-              chunkId: "c1",
-              documentId: "d1",
-              title: "Arudra",
-              content: "Arudra later work and publications.",
-              similarity: 0.81,
-            },
-          ];
-        },
-      },
+      semantic.queryEmbeddings,
+      semantic.vectorSearch,
       {
         async search() {
           return [];
@@ -698,6 +714,9 @@ describe("edge cases", () => {
       new PromptContextSelectorService(),
       new PromptBuilder(),
       new RetrievalExecutionTelemetryService(),
+      undefined,
+      undefined,
+      semantic.chunkHydrator,
     );
 
     const result = await service.run({

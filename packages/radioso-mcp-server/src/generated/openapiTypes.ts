@@ -13920,7 +13920,7 @@ export interface operations {
                                 key: string;
                                 label: string;
                                 /** @enum {string} */
-                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope" | "metadata_rules";
                                 help?: string;
                                 dependsOnKey?: string;
                                 options?: {

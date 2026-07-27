@@ -26185,7 +26185,8 @@
                                     "textarea",
                                     "select",
                                     "string_list",
-                                    "source_scope"
+                                    "source_scope",
+                                    "metadata_rules"
                                   ]
                                 },
                                 "help": {

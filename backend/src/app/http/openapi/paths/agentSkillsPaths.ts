@@ -54,7 +54,7 @@ const CapabilityTargetSchema = z.object({
 const CapabilitySettingsFieldSchema = z.object({
   key: z.string(),
   label: z.string(),
-  type: z.enum(["boolean", "number", "text", "textarea", "select", "string_list", "source_scope"]),
+  type: z.enum(["boolean", "number", "text", "textarea", "select", "string_list", "source_scope", "metadata_rules"]),
   help: z.string().optional(),
   dependsOnKey: z.string().optional(),
   options: z.array(z.object({

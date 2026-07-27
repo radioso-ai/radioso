@@ -59,7 +59,7 @@ export type SkillCapabilityTarget = {
 export type SkillCapabilitySettingsField = {
   key: string
   label: string
-  type: 'boolean' | 'number' | 'text' | 'textarea' | 'select' | 'string_list' | 'source_scope'
+  type: 'boolean' | 'number' | 'text' | 'textarea' | 'select' | 'string_list' | 'source_scope' | 'metadata_rules'
   help?: string
   defaultValue?: boolean | number | string
   dependsOnKey?: string

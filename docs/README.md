@@ -8,7 +8,7 @@ last_updated: 2026-06-18
 
 This directory holds source material for operators, SDK users, and internal contributors. Some of it is published directly. Some of it supports the docs portal or settings UI.
 
-Before creating or revising documentation in this repo, read [Document Writer Prompt](./document-writer-prompt.md) and follow it. That brief is the default writing standard for `readme.md`, `docs/`, `docs-portal/content/`, and settings docs that feed the product UI.
+Before creating or revising documentation in this repo, read the [Docs Style Guide](./document-writer-prompt.md) and follow it. That guide is the writing standard for `readme.md`, `docs/`, `docs-portal/content/`, and settings docs that feed the product UI.
 
 ## Start here
 

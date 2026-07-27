@@ -1,4 +1,4 @@
-CREATE TABLE embedding_spaces (
+CREATE TABLE IF NOT EXISTS embedding_spaces (
   id UUID PRIMARY KEY,
   identity_fingerprint TEXT NOT NULL UNIQUE,
   provider TEXT NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE embedding_spaces (
   )
 );
 
-CREATE FUNCTION reject_embedding_space_identity_mutation()
+CREATE OR REPLACE FUNCTION reject_embedding_space_identity_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
@@ -58,12 +58,14 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS embedding_spaces_identity_immutable ON embedding_spaces;
+
 CREATE TRIGGER embedding_spaces_identity_immutable
 BEFORE UPDATE ON embedding_spaces
 FOR EACH ROW
 EXECUTE FUNCTION reject_embedding_space_identity_mutation();
 
-CREATE TABLE workspace_embedding_profiles (
+CREATE TABLE IF NOT EXISTS workspace_embedding_profiles (
   workspace_id UUID PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
   active_embedding_space_id UUID NOT NULL REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
   pending_embedding_space_id UUID REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
@@ -76,14 +78,14 @@ CREATE TABLE workspace_embedding_profiles (
   )
 );
 
-CREATE INDEX idx_workspace_embedding_profiles_active_space
+CREATE INDEX IF NOT EXISTS idx_workspace_embedding_profiles_active_space
   ON workspace_embedding_profiles (active_embedding_space_id);
 
-CREATE INDEX idx_workspace_embedding_profiles_pending_space
+CREATE INDEX IF NOT EXISTS idx_workspace_embedding_profiles_pending_space
   ON workspace_embedding_profiles (pending_embedding_space_id)
   WHERE pending_embedding_space_id IS NOT NULL;
 
-CREATE TABLE workspace_embedding_transitions (
+CREATE TABLE IF NOT EXISTS workspace_embedding_transitions (
   id UUID PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   source_embedding_space_id UUID NOT NULL REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
@@ -108,14 +110,14 @@ CREATE TABLE workspace_embedding_transitions (
   )
 );
 
-CREATE UNIQUE INDEX idx_workspace_embedding_transitions_one_live
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_embedding_transitions_one_live
   ON workspace_embedding_transitions (workspace_id)
   WHERE status IN ('building', 'blocked', 'quarantined');
 
-CREATE INDEX idx_workspace_embedding_transitions_target
+CREATE INDEX IF NOT EXISTS idx_workspace_embedding_transitions_target
   ON workspace_embedding_transitions (workspace_id, target_embedding_space_id);
 
-CREATE TABLE chunk_embeddings (
+CREATE TABLE IF NOT EXISTS chunk_embeddings (
   workspace_id UUID NOT NULL,
   chunk_id UUID NOT NULL,
   embedding_space_id UUID NOT NULL REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
@@ -133,24 +135,24 @@ CREATE TABLE chunk_embeddings (
   CHECK (vector_dims(embedding) = dimensions)
 );
 
-CREATE INDEX idx_chunk_embeddings_space
+CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_space
   ON chunk_embeddings (workspace_id, embedding_space_id);
 
-CREATE INDEX idx_chunk_embeddings_chunk
+CREATE INDEX IF NOT EXISTS idx_chunk_embeddings_chunk
   ON chunk_embeddings (workspace_id, chunk_id);
 
 ALTER TABLE document_processing_jobs
-  ADD COLUMN embedding_space_id UUID REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
-  ADD COLUMN workspace_profile_generation BIGINT CHECK (workspace_profile_generation >= 1);
+  ADD COLUMN IF NOT EXISTS embedding_space_id UUID REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS workspace_profile_generation BIGINT CHECK (workspace_profile_generation >= 1);
 
 ALTER TABLE document_processing_jobs
-  DROP CONSTRAINT document_processing_jobs_document_id_document_revision_kind_key;
+  DROP CONSTRAINT IF EXISTS document_processing_jobs_document_id_document_revision_kind_key;
 
-CREATE UNIQUE INDEX idx_document_processing_jobs_revision_phase
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_processing_jobs_revision_phase
   ON document_processing_jobs (document_id, document_revision, kind)
   WHERE kind <> 'embedding_profile';
 
-CREATE UNIQUE INDEX idx_document_processing_jobs_embedding_profile
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_processing_jobs_embedding_profile
   ON document_processing_jobs (
     document_id,
     document_revision,
@@ -160,22 +162,33 @@ CREATE UNIQUE INDEX idx_document_processing_jobs_embedding_profile
   )
   WHERE kind = 'embedding_profile';
 
-ALTER TABLE document_processing_jobs
-  ADD CONSTRAINT document_processing_jobs_embedding_profile_fence_check
-  CHECK (
-    (
-      kind = 'embedding_profile'
-      AND embedding_space_id IS NOT NULL
-      AND workspace_profile_generation IS NOT NULL
-    )
-    OR (
-      kind <> 'embedding_profile'
-      AND embedding_space_id IS NULL
-      AND workspace_profile_generation IS NULL
-    )
-  );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'document_processing_jobs'::regclass
+      AND conname = 'document_processing_jobs_embedding_profile_fence_check'
+  ) THEN
+    ALTER TABLE document_processing_jobs
+      ADD CONSTRAINT document_processing_jobs_embedding_profile_fence_check
+      CHECK (
+        (
+          kind = 'embedding_profile'
+          AND embedding_space_id IS NOT NULL
+          AND workspace_profile_generation IS NOT NULL
+        )
+        OR (
+          kind <> 'embedding_profile'
+          AND embedding_space_id IS NULL
+          AND workspace_profile_generation IS NULL
+        )
+      );
+  END IF;
+END;
+$$;
 
-CREATE TABLE vector_index_work (
+CREATE TABLE IF NOT EXISTS vector_index_work (
   sequence BIGSERIAL PRIMARY KEY,
   id UUID NOT NULL UNIQUE,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -203,10 +216,10 @@ CREATE TABLE vector_index_work (
   )
 );
 
-CREATE INDEX idx_vector_index_work_claim
+CREATE INDEX IF NOT EXISTS idx_vector_index_work_claim
   ON vector_index_work (status, available_at, sequence);
 
-CREATE INDEX idx_vector_index_work_chunk_version
+CREATE INDEX IF NOT EXISTS idx_vector_index_work_chunk_version
   ON vector_index_work (
     workspace_id,
     embedding_space_id,
@@ -214,7 +227,7 @@ CREATE INDEX idx_vector_index_work_chunk_version
     canonical_version DESC
   );
 
-CREATE TABLE vector_index_checkpoints (
+CREATE TABLE IF NOT EXISTS vector_index_checkpoints (
   backend_key TEXT NOT NULL,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   embedding_space_id UUID NOT NULL REFERENCES embedding_spaces(id) ON DELETE RESTRICT,
@@ -225,5 +238,5 @@ CREATE TABLE vector_index_checkpoints (
   PRIMARY KEY (backend_key, workspace_id, embedding_space_id)
 );
 
-CREATE INDEX idx_vector_index_checkpoints_space
+CREATE INDEX IF NOT EXISTS idx_vector_index_checkpoints_space
   ON vector_index_checkpoints (workspace_id, embedding_space_id);

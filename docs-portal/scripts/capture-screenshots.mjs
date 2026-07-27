@@ -18,7 +18,6 @@
 //   RADIOSO_WORKSPACE_KEY=<workspace public route key> \
 //   RADIOSO_DEMO_AGENT_ID=<agent uuid> \
 //   RADIOSO_DEMO_ROUTINE_ID=<routine uuid> \
-//   RADIOSO_DEMO_CONVERSATION_ID=<conversation uuid> \
 //   node ../docs-portal/scripts/capture-screenshots.mjs
 //
 // Output: docs-portal/public/screenshots/*.png at a 1440x900 viewport.
@@ -40,7 +39,6 @@ const PASSWORD = env('RADIOSO_DEMO_PASSWORD')
 const WS_KEY = env('RADIOSO_WORKSPACE_KEY')
 const AGENT_ID = env('RADIOSO_DEMO_AGENT_ID')
 const ROUTINE_ID = env('RADIOSO_DEMO_ROUTINE_ID')
-const CONVERSATION_ID = env('RADIOSO_DEMO_CONVERSATION_ID')
 
 for (const [name, value] of Object.entries({ RADIOSO_DEMO_EMAIL: EMAIL, RADIOSO_DEMO_PASSWORD: PASSWORD, RADIOSO_WORKSPACE_KEY: WS_KEY, RADIOSO_DEMO_AGENT_ID: AGENT_ID })) {
   if (!value) {

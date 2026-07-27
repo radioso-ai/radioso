@@ -7,7 +7,7 @@ import { Callout, Steps } from 'nextra/components'
 
 # Run locally in 5 minutes
 
-Use this path when you want to evaluate the full product quickly on one machine. In practice, this is the best starting point if you want to see the UI, upload documents, and verify grounded answers before thinking about deployment.
+This is the fastest way to see Radioso doing its job: one script, a local stack, and a grounded answer from your own document a few minutes later. You get the dashboard, the API, and the background worker on one machine, so you can upload real content and check the answers before you think about deployment.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Use this path when you want to evaluate the full product quickly on one machine.
   - `GEMINI_API_KEY`
   - `ANTHROPIC_API_KEY`
 
-`Node.js` is required because `./run-dev.sh` uses a small Node-based bootstrap script before the containers come up.
+You need Node.js because `./run-dev.sh` runs a small Node bootstrap script before the containers come up. The provider key is what turns your documents into embeddings and your questions into answers, so pick the provider you already have credit with.
 
 ## Start the stack
 
@@ -26,7 +26,7 @@ Use this path when you want to evaluate the full product quickly on one machine.
 ./run-dev.sh
 ```
 
-This is the intended local bootstrap path. It:
+This is the bootstrap path, and it does the fiddly parts for you. It:
 
 - checks local prerequisites
 - creates or reuses `.env`
@@ -36,15 +36,17 @@ This is the intended local bootstrap path. It:
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
 
-When it finishes successfully, open:
+When it finishes, open:
 
 - App: `http://localhost:3000`
 - API: `http://localhost:8080`
 - Enterprise embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
-For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. The normal `./run-dev.sh` path removes those generated routes before starting the OSS stack.
+For Enterprise Edition embed development, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. The `./run-dev.sh` path removes those generated routes before starting the OSS stack.
 
 ## Pick a local goal
+
+You don't have to do everything at once. Pick the goal that matches why you're here.
 
 <Steps>
 ### Goal 1: evaluate the product UI
@@ -67,6 +69,14 @@ Start the local embed harness and verify both an approved origin and a blocked o
 3. Upload a document or let the starter documents finish processing
 4. Ask one suggested question
 
+While the worker chews through your upload, the Documents list is where you watch it happen. A document is only a retrieval candidate once its status reads Ready.
+
+![The Documents list with four uploaded files, each showing a green Ready status, so you can tell processing has finished before you test chat](/screenshots/dashboard-knowledge-documents.png)
+
+Now ask something you know the document answers. The Chat workbench is where you talk to your agent, and a good answer cites the source it came from rather than guessing.
+
+![The agent Chat workbench answering a shipping question with a grounded reply, a Sources control, and suggested follow-up questions](/screenshots/dashboard-agents-workbench.png)
+
 Success looks like this:
 
 - the frontend loads
@@ -76,9 +86,9 @@ Success looks like this:
 
 ## Verify first success through the API
 
-You do not need to open the web app at all.
+You don't need to open the web app at all. The assistant chat API is how you talk to an agent from your own scripts, and the same routes back the dashboard.
 
-Check whether this deployment currently allows open registration:
+Check whether this deployment allows open registration:
 
 ```bash
 curl -sS http://localhost:8080/api/v1/auth/registration
@@ -93,7 +103,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-Registration creates the open-source server's sole organization and default workspace. It returns workspace bootstrap data and sends a verification email, but does not set a session cookie. Verify the email address, then log in. Local mail delivery logs messages unless you configure a Resend API key.
+Registration creates the open-source server's sole organization and default workspace. It returns workspace bootstrap data and sends a verification email, but does not set a session cookie. Verify the email address, then log in. Local mail delivery logs messages unless you configure a Resend API key, so if no email arrives, read the backend logs.
 
 After the first organization exists, open-source registration availability is `false`. Later users join the existing organization by invitation. Enterprise Edition keeps open registration available and supports additional organizations. In either edition, authorized users can create more workspaces inside an organization.
 
@@ -113,24 +123,26 @@ curl -sS -b cookies.txt \
   http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
 ```
 
+That token is what your scripts and SDK clients authenticate with once you leave the browser behind.
+
 ## What local development changes
 
-Local bootstrap configures the development stack:
+Local bootstrap tunes the stack for a fast look, not for mirroring every production constraint:
 
 - uploaded source files are stored on the local filesystem
 - Docker Compose runs the app, API, worker, and Postgres together
 
 <Callout type="info" emoji="i">
-  The key point is that local setup is optimized for fast evaluation, not for mirroring every production constraint.
+  Local setup is built for quick evaluation. When you move to production, storage, dispatch, and secrets are the surfaces that change.
 </Callout>
 
 ## Common failure modes
 
-- If the stack starts but answers fail, the most common issue is missing or invalid provider credentials in `.env`.
-- If upload works but chat ignores the new document, document processing may still be running.
-- If auth links do not arrive by email, check backend logs first because local mail defaults to log mode.
+- If the stack starts but answers fail, the usual cause is missing or invalid provider credentials in `.env`.
+- If upload works but chat ignores the new document, processing is probably still running. Check the document's status before you blame retrieval.
+- If auth links don't arrive by email, read the backend logs first, because local mail defaults to log mode.
 
 ## What to do next
 
-- If the local app experience looks correct, continue with [API first success](/quickstarts/api-first-success) or [Embed on your website](/quickstarts/website-embed).
-- If you are trying to understand why answers look wrong, review [Document upload](/guides/document-upload) and [Agents and skills](/api/agents-and-skills).
+- If the local app looks right, continue with [API first success](/quickstarts/api-first-success) or [Embed on your website](/quickstarts/website-embed).
+- If you're trying to understand why answers look wrong, review [Document upload](/guides/document-upload) and [Agents and skills](/api/agents-and-skills).

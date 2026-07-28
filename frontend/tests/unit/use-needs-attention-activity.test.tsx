@@ -208,6 +208,11 @@ describe('useNeedsAttentionActivity', () => {
     await advanceOnePoll()
 
     expect(observed.current).toBe(0)
+    expect(chatApiMock.listChatHistory).toHaveBeenCalledWith({
+      limit: 50,
+      offset: 0,
+      ownership: 'human_owned',
+    })
   })
 
   it('counts fresh approvals that appear after the baseline', async () => {
@@ -294,6 +299,36 @@ describe('useNeedsAttentionActivity', () => {
     await advanceOnePoll()
 
     expect(observed.current).toBe(1)
+  })
+
+  it('clears stale polled keys when the displayed baseline changes', async () => {
+    const decisions = [decisionSummary()]
+    const conversations = [conversationSummary()]
+    const displayedQuality = [qualityTurn({ assistantMessageId: 'quality-1' })]
+    mockInbox(decisions, conversations)
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: displayedQuality,
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe(
+      inboxItemKeys(asDecisions(decisions), asConversations(conversations), displayedQuality as LowQualityTurn[]),
+      true,
+      groundingActions,
+    )
+    await advanceOnePoll()
+    expect(observed.current).toBe(0)
+
+    renderProbe(
+      inboxItemKeys(asDecisions(decisions), asConversations(conversations), []),
+      true,
+      groundingActions,
+    )
+
+    expect(observed.current).toBe(0)
   })
 
   it('keeps escalation keys current when the quality poll fails', async () => {

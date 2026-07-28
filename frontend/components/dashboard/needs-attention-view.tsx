@@ -203,6 +203,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       chatApi.listChatHistory({
         limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
         offset: 0,
+        ownership: 'human_owned',
       }),
       loadQualityTurns(),
     ])

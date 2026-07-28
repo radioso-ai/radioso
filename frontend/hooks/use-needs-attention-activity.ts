@@ -42,6 +42,11 @@ export const useNeedsAttentionActivity = ({
   backgroundIntervalMs = 30000,
 }: UseNeedsAttentionActivityInput): number => {
   const [latestKeys, setLatestKeys] = useState<string[] | null>(null)
+  const baselineSignature = baselineKeys === null ? null : baselineKeys.join('\u0000')
+
+  useEffect(() => {
+    setLatestKeys(null)
+  }, [baselineSignature])
 
   useEffect(() => {
     if (!enabled) {
@@ -84,7 +89,11 @@ export const useNeedsAttentionActivity = ({
         : null
       const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
         hitlApi.listPendingDecisions(),
-        chatApi.listChatHistory({ limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE, offset: 0 }),
+        chatApi.listChatHistory({
+          limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
+          offset: 0,
+          ownership: 'human_owned',
+        }),
         qualityRequest ?? Promise.resolve(null),
       ])
       if (cancelled) {

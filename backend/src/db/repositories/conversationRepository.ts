@@ -7,6 +7,7 @@ import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
+import type { ConversationOwnershipScope } from "../../modules/handoff/ownershipState.js";
 import {
   currentTimestamp,
   toJsonb,
@@ -59,7 +60,13 @@ export interface ConversationRepositoryPort {
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
+    input: {
+      limit: number;
+      offset?: number;
+      cursor?: string;
+      sourceScope?: ConversationSourceScope;
+      ownership?: ConversationOwnershipScope;
+    },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
   listPageByAnonymousSession(
@@ -290,25 +297,38 @@ export class ConversationRepository implements ConversationRepositoryPort {
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
+    input: {
+      limit: number;
+      offset?: number;
+      cursor?: string;
+      sourceScope?: ConversationSourceScope;
+      ownership?: ConversationOwnershipScope;
+    },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const scope: ConversationSourceScope = input.sourceScope ?? "end_user";
     const total = cursor?.totalSnapshot !== undefined
       ? Number(cursor.totalSnapshot)
       : Number((await this.db
-          .selectFrom("conversations")
+          .selectFrom("conversations as c")
           .select((eb) => eb.fn.countAll<string>().as("count"))
-          .where("workspace_id", "=", workspaceId)
+          .where("c.workspace_id", "=", workspaceId)
           .$if(scope === "end_user", (qb) =>
             qb.where((eb) =>
               eb.or([
-                eb("source_channel", "is", null),
-                eb("source_channel", "not in", operatorTestChannels),
+                eb("c.source_channel", "is", null),
+                eb("c.source_channel", "not in", operatorTestChannels),
               ]),
             ),
           )
-          .$if(scope === "operator_test", (qb) => qb.where("source_channel", "in", operatorTestChannels))
+          .$if(scope === "operator_test", (qb) => qb.where("c.source_channel", "in", operatorTestChannels))
+          .$if(input.ownership === "human_owned", (qb) =>
+            qb
+              .innerJoin("conversation_ownership as co", (join) =>
+                join.onRef("co.conversation_id", "=", "c.id").onRef("co.workspace_id", "=", "c.workspace_id"),
+              )
+              .where("co.state", "=", "human_owned"),
+          )
           .executeTakeFirst())?.count ?? "0");
     const query = this.db
       .selectFrom("conversations as c")
@@ -317,6 +337,13 @@ export class ConversationRepository implements ConversationRepositoryPort {
       )
       .select(conversationSelectColumns)
       .where("c.workspace_id", "=", workspaceId)
+      .$if(input.ownership === "human_owned", (qb) =>
+        qb
+          .innerJoin("conversation_ownership as co", (join) =>
+            join.onRef("co.conversation_id", "=", "c.id").onRef("co.workspace_id", "=", "c.workspace_id"),
+          )
+          .where("co.state", "=", "human_owned"),
+      )
       .$if(scope === "end_user", (qb) =>
         qb.where((eb) =>
           eb.or([

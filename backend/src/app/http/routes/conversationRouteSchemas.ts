@@ -21,6 +21,10 @@ export const collectionPageQuerySchema = z.object({
   sourceScope: z.enum(["end_user", "operator_test", "all"]).default("end_user"),
 });
 
+export const chatHistoryPageQuerySchema = collectionPageQuerySchema.extend({
+  ownership: z.enum(["human_owned"]).optional(),
+});
+
 export const historyItemsPageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).optional(),

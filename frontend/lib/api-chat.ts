@@ -123,12 +123,14 @@ export const chatApi = {
     // `end_user` (server default) hides the operator's own test chats; `operator_test`
     // returns only them (the workbench's recent test sessions); `all` returns both.
     sourceScope?: 'end_user' | 'operator_test' | 'all'
+    ownership?: 'human_owned'
   }): Promise<ChatHistoryListResponse> {
     return request<ChatHistoryListResponse>(withQuery('/history/chat', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,
       sourceScope: input?.sourceScope,
+      ownership: input?.ownership,
     }), {
       method: 'GET',
     }, { withApiToken: true })

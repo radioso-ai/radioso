@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import type { GeneratedRadiosoClient } from "../../src/generated/client.js";
 
 const operationIdsForPaths = (paths: string[]) => {
   const spec = JSON.parse(readFileSync(new URL("../../openapi/radioso.json", import.meta.url), "utf8")) as {
@@ -15,6 +16,16 @@ const operationIdsForPaths = (paths: string[]) => {
 };
 
 describe("generated client operation coverage", () => {
+  it("types chat history-specific query filters", () => {
+    const query: Parameters<GeneratedRadiosoClient["listChatHistory"]>[0] = {
+      limit: 1,
+      sourceScope: "end_user",
+      ownership: "human_owned",
+    };
+
+    expect(query).toMatchObject({ ownership: "human_owned" });
+  });
+
   it("keeps performance-critical history and workspace operations wired", () => {
     const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
     const operationIds = operationIdsForPaths([

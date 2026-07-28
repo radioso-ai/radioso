@@ -4,9 +4,11 @@ import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, Pe
 import {
   buildInboxItems,
   countNewInboxItems,
+  formatInboxDuration,
   inboxItemKeys,
   ownershipLabel,
   selectHumanOwnedConversations,
+  waitingTone,
   type HumanOwnedConversationSummary,
 } from '@/lib/needs-attention'
 
@@ -110,35 +112,47 @@ describe('inboxItemKeys', () => {
     const c1 = humanOwned({ id: 'c-1' })
     const c2 = humanOwned({ id: 'c-2' })
 
-    expect(inboxItemKeys([a, b], [c1, c2])).toEqual(inboxItemKeys([b, a], [c2, c1]))
+    expect(inboxItemKeys([a, b], [c1, c2], [])).toEqual(inboxItemKeys([b, a], [c2, c1], []))
   })
 
   it('distinguishes identical handles across different agents', () => {
-    const sameAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-1' })], [])
-    const otherAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-2' })], [])
+    const sameAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-1' })], [], [])
+    const otherAgent = inboxItemKeys([decision({ handle: 'a', agentId: 'agent-2' })], [], [])
 
     expect(otherAgent).not.toEqual(sameAgent)
   })
 
   it('changes the key when a human-owned conversation receives new activity', () => {
-    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })])
-    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })])
+    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })], [])
+    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })], [])
 
     expect(after).not.toEqual(before)
   })
 
   it('changes the key when ownership transitions on an existing conversation', () => {
-    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 1 }) })])
-    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 2 }) })])
+    const before = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 1 }) })], [])
+    const after = inboxItemKeys([], [humanOwned({ id: 'c-1', ownership: ownership({ version: 2 }) })], [])
 
     expect(after).not.toEqual(before)
   })
 
   it('namespaces approval and conversation keys so they cannot collide', () => {
-    const keys = inboxItemKeys([decision({ handle: 'x' })], [humanOwned({ id: 'c-1' })])
+    const keys = inboxItemKeys([decision({ handle: 'x' })], [humanOwned({ id: 'c-1' })], [])
 
     expect(keys.some((key) => key.startsWith('approval:'))).toBe(true)
     expect(keys.some((key) => key.startsWith('conversation:'))).toBe(true)
+  })
+
+  it('includes identity-only keys for quality turns', () => {
+    expect(inboxItemKeys([], [], [qualityTurn({ assistantMessageId: 'quality-1' })])).toEqual(['quality:quality-1'])
+  })
+
+  it('omits a quality key when the same conversation has a critical escalation', () => {
+    expect(inboxItemKeys(
+      [decision({ conversationId: 'shared-conversation' })],
+      [],
+      [qualityTurn({ conversationId: 'shared-conversation' })],
+    )).toEqual([`approval:agent-1:decision-1`])
   })
 })
 
@@ -180,6 +194,8 @@ describe('buildInboxItems', () => {
     expect(byConversation['c-noctx'].assistantMessageId).toBe('m-noctx')
     expect(byConversation['c-approval'].assistantMessageId).toBeUndefined()
     expect(byConversation['c-handoff'].assistantMessageId).toBeUndefined()
+    expect(byConversation['c-approval'].escalatedAt).toBe('2026-06-19T10:00:00.000Z')
+    expect(byConversation['c-handoff'].escalatedAt).toBe('2026-06-19T10:00:00.000Z')
   })
 
   it('orders critical escalations above lower-concern quality signals', () => {
@@ -191,6 +207,27 @@ describe('buildInboxItems', () => {
 
     const severities = items.map((item) => item.severity)
     expect(severities).toEqual(['critical', 'critical', 'lower'])
+  })
+
+  it('orders critical items oldest-first while keeping quality signals newest-first below them', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'approval-newer', createdAt: '2026-06-19T11:00:00.000Z' })],
+      conversations: [humanOwned({
+        id: 'handoff-older',
+        ownership: ownership({ updatedAt: '2026-06-19T09:00:00.000Z' }),
+      })],
+      qualityTurns: [
+        qualityTurn({ conversationId: 'quality-older', createdAt: '2026-06-19T08:00:00.000Z' }),
+        qualityTurn({ conversationId: 'quality-newer', createdAt: '2026-06-19T12:00:00.000Z' }),
+      ],
+    })
+
+    expect(items.map((item) => item.conversationId)).toEqual([
+      'handoff-older',
+      'approval-newer',
+      'quality-newer',
+      'quality-older',
+    ])
   })
 
   it('drops a quality signal whose conversation is already escalated (critical wins)', () => {
@@ -222,33 +259,50 @@ describe('buildInboxItems', () => {
 
 describe('countNewInboxItems', () => {
   it('counts approvals and conversations that arrived after the baseline', () => {
-    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
+    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })], [])
     const latest = inboxItemKeys(
       [decision({ handle: 'a' }), decision({ handle: 'b' })],
       [humanOwned({ id: 'c-1' }), humanOwned({ id: 'c-2' })],
+      [],
     )
 
     expect(countNewInboxItems(baseline, latest)).toBe(2)
   })
 
   it('counts an updated conversation as one new item', () => {
-    const baseline = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })])
-    const latest = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })])
+    const baseline = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:00:00.000Z' })], [])
+    const latest = inboxItemKeys([], [humanOwned({ id: 'c-1', updatedAt: '2026-06-19T10:05:00.000Z' })], [])
 
     expect(countNewInboxItems(baseline, latest)).toBe(1)
   })
 
   it('does not count removals such as a resolved approval', () => {
-    const baseline = inboxItemKeys([decision({ handle: 'a' }), decision({ handle: 'b' })], [])
-    const latest = inboxItemKeys([decision({ handle: 'a' })], [])
+    const baseline = inboxItemKeys([decision({ handle: 'a' }), decision({ handle: 'b' })], [], [])
+    const latest = inboxItemKeys([decision({ handle: 'a' })], [], [])
 
     expect(countNewInboxItems(baseline, latest)).toBe(0)
   })
 
   it('returns zero for an unchanged inbox', () => {
-    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
-    const latest = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })])
+    const baseline = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })], [])
+    const latest = inboxItemKeys([decision({ handle: 'a' })], [humanOwned({ id: 'c-1' })], [])
 
     expect(countNewInboxItems(baseline, latest)).toBe(0)
+  })
+})
+
+describe('inbox waiting durations', () => {
+  it('formats minute and hour boundaries compactly', () => {
+    expect(formatInboxDuration(0)).toBe('0 min')
+    expect(formatInboxDuration(14 * 60_000)).toBe('14 min')
+    expect(formatInboxDuration(60 * 60_000)).toBe('1 h')
+    expect(formatInboxDuration(72 * 60_000)).toBe('1 h 12 min')
+  })
+
+  it('uses amber from 15 minutes and destructive from 60 minutes', () => {
+    expect(waitingTone(14 * 60_000)).toBe('default')
+    expect(waitingTone(15 * 60_000)).toBe('amber')
+    expect(waitingTone(59 * 60_000)).toBe('amber')
+    expect(waitingTone(60 * 60_000)).toBe('destructive')
   })
 })

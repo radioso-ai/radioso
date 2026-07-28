@@ -40,6 +40,7 @@ export type {
   AgentSettings,
   AgentSettingsRequest,
   ChatConversationDetail,
+  ChatHistoryListQuery,
   ChatHistoryListResponse,
   HistoryItemsResponse,
   DocumentCreateRequest,

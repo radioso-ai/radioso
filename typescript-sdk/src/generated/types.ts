@@ -13920,7 +13920,7 @@ export interface operations {
                                 key: string;
                                 label: string;
                                 /** @enum {string} */
-                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope";
+                                type: "boolean" | "number" | "text" | "textarea" | "select" | "string_list" | "source_scope" | "metadata_rules";
                                 help?: string;
                                 dependsOnKey?: string;
                                 options?: {
@@ -15742,6 +15742,7 @@ export interface operations {
                 offset?: number;
                 cursor?: string;
                 sourceScope?: "end_user" | "operator_test" | "all";
+                ownership?: "human_owned";
             };
             header?: never;
             path?: never;

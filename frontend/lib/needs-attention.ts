@@ -32,6 +32,10 @@ export interface InboxItem {
   /** Secondary descriptor: the agent, or the human owner for a handoff. */
   detail: string
   timestamp: string
+  /** When the operator-facing escalation began; present for critical rows only. */
+  escalatedAt?: string
+  /** Present for handoffs; distinguishes an unassigned wait from an active takeover. */
+  takenOverAt?: string | null
   /** Present only for quality signals — the turn to triage so the row can be cleared. */
   assistantMessageId?: string
 }
@@ -45,10 +49,37 @@ const severityRank: Record<EscalationSeverity, number> = { critical: 0, lower: 1
 const byTimestampDesc = (left: string, right: string): number =>
   new Date(right).getTime() - new Date(left).getTime()
 
+const byTimestampAsc = (left: string, right: string): number =>
+  new Date(left).getTime() - new Date(right).getTime()
+
+export type WaitingTone = 'default' | 'amber' | 'destructive'
+
+export const formatInboxDuration = (elapsedMs: number): string => {
+  const totalMinutes = Number.isFinite(elapsedMs) ? Math.max(0, Math.floor(elapsedMs / 60_000)) : 0
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+
+  if (hours === 0) {
+    return `${minutes} min`
+  }
+
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`
+}
+
+export const waitingTone = (elapsedMs: number): WaitingTone => {
+  if (elapsedMs >= 60 * 60_000) {
+    return 'destructive'
+  }
+  if (elapsedMs >= 15 * 60_000) {
+    return 'amber'
+  }
+  return 'default'
+}
+
 /**
  * Merges the inbox's three sources into one severity-ordered list. Critical items
- * (approvals, handoffs) sort above lower-concern quality signals; within a severity
- * the newest is first.
+ * (approvals, handoffs) sort above lower-concern quality signals. Critical items are
+ * oldest-first, while lower-concern quality signals remain newest-first.
  *
  * Dedup is by conversation, critical wins: a quality gap whose conversation is already
  * escalated (e.g. a no-context that triggered a handoff) is dropped so it isn't shown
@@ -68,6 +99,7 @@ export const buildInboxItems = (input: {
     title: decision.reason ?? 'Approval requested',
     detail: decision.agentId,
     timestamp: decision.createdAt,
+    escalatedAt: decision.createdAt,
   }))
 
   const handoffs: InboxItem[] = input.conversations.map((conversation) => ({
@@ -78,6 +110,8 @@ export const buildInboxItems = (input: {
     title: conversation.preview || 'Untitled conversation',
     detail: ownershipLabel(conversation.ownership),
     timestamp: conversation.updatedAt,
+    escalatedAt: conversation.ownership.updatedAt,
+    takenOverAt: conversation.ownership.takenOverAt,
   }))
 
   const escalatedConversationIds = new Set(
@@ -109,11 +143,16 @@ export const buildInboxItems = (input: {
     }
   })
 
-  return [...approvals, ...handoffs, ...quality].sort(
-    (left, right) =>
-      severityRank[left.severity] - severityRank[right.severity] ||
-      byTimestampDesc(left.timestamp, right.timestamp),
-  )
+  return [...approvals, ...handoffs, ...quality].sort((left, right) => {
+    const severityDifference = severityRank[left.severity] - severityRank[right.severity]
+    if (severityDifference !== 0) {
+      return severityDifference
+    }
+    if (left.severity === 'critical' && right.severity === 'critical') {
+      return byTimestampAsc(left.escalatedAt ?? left.timestamp, right.escalatedAt ?? right.timestamp)
+    }
+    return byTimestampDesc(left.timestamp, right.timestamp)
+  })
 }
 
 /** Page size used when loading the human-owned conversations shown in the inbox. */
@@ -129,20 +168,30 @@ export const selectHumanOwnedConversations = (
 /**
  * Builds an order-independent key per inbox item. The indicator poll diffs the latest keys against
  * the displayed state to detect new activity: a key changes when an approval is created, or a
- * human-owned conversation gains a message or changes ownership. Keys capture only identity +
- * freshness markers (never payloads), and approval vs conversation keys are namespaced so they
- * can't collide.
+ * human-owned conversation gains a message or changes ownership. Quality keys are limited to the
+ * rows the inbox would display, so a quality signal represented by a critical escalation does not
+ * create false new activity. Keys capture only identity + freshness markers (never payloads), and
+ * approval vs conversation keys are namespaced so they can't collide.
  */
 export const inboxItemKeys = (
   decisions: PendingApprovalDecision[],
   conversations: HumanOwnedConversationSummary[],
+  qualityTurns: LowQualityTurn[],
 ): string[] => {
   const approvalKeys = decisions.map((decision) => `approval:${decision.agentId}:${decision.handle}`)
   const conversationKeys = conversations.map(
     (conversation) => `conversation:${conversation.id}:${conversation.updatedAt}:${conversation.ownership.version}`,
   )
 
-  return [...approvalKeys, ...conversationKeys].sort()
+  const displayedQualityMessageIds = new Set(
+    buildInboxItems({ decisions, conversations, qualityTurns })
+      .flatMap((item) => item.assistantMessageId ? [item.assistantMessageId] : []),
+  )
+  const qualityKeys = qualityTurns
+    .filter((turn) => displayedQualityMessageIds.has(turn.assistantMessageId))
+    .map((turn) => `quality:${turn.assistantMessageId}`)
+
+  return [...approvalKeys, ...conversationKeys, ...qualityKeys].sort()
 }
 
 /**

@@ -6,6 +6,7 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
 import {
+  chatHistoryPageQuerySchema,
   collectionPageQuerySchema,
   conversationParamsSchema,
   conversationTailQuerySchema,
@@ -43,7 +44,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
   router.get("/chat", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const parsedQuery = collectionPageQuerySchema.safeParse(req.query);
+      const parsedQuery = chatHistoryPageQuerySchema.safeParse(req.query);
       if (!parsedQuery.success) {
         next(badRequest("Invalid request query", parsedQuery.error.flatten()));
         return;

@@ -15742,6 +15742,7 @@ export interface operations {
                 offset?: number;
                 cursor?: string;
                 sourceScope?: "end_user" | "operator_test" | "all";
+                ownership?: "human_owned";
             };
             header?: never;
             path?: never;

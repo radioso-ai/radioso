@@ -11,6 +11,7 @@ export type {
   CanResumeInput,
   CanResumeResult,
   ConversationOwnershipRecord,
+  ConversationOwnershipScope,
   ConversationOwnershipState,
   ResolvedOwnership,
   ResumeClassification,

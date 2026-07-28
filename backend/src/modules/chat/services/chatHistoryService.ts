@@ -1,6 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
   ConversationRepositoryPort,
@@ -714,7 +715,13 @@ export class ChatHistoryService {
 
   async listConversations(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope } = { limit: 50, offset: 0 },
+    input: {
+      limit: number;
+      offset?: number;
+      cursor?: string;
+      sourceScope?: ConversationSourceScope;
+      ownership?: ConversationOwnershipScope;
+    } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
       workspaceId,

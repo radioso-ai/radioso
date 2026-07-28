@@ -55,6 +55,11 @@ export interface PaginationQuery {
 
 export type DocumentListQuery = PaginationQuery;
 
+export interface ChatHistoryListQuery extends PaginationQuery {
+  sourceScope?: "end_user" | "operator_test" | "all";
+  ownership?: "human_owned";
+}
+
 export interface WebsiteCrawlJobListQuery {
   status?: WebsiteCrawlJobStatus;
   sinceMinutes?: number;
@@ -293,7 +298,7 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  listChatHistory(query?: PaginationQuery): Promise<ChatHistoryListResponse> {
+  listChatHistory(query?: ChatHistoryListQuery): Promise<ChatHistoryListResponse> {
     return requestJson(this.config, {
       method: "GET",
       path: "/api/v1/history/chat",

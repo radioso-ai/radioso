@@ -115,4 +115,26 @@ describe("history contract", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("filters chat history to human-owned conversations and returns the filtered total", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-human-owned@example.com");
+    const humanOwned = await repositories.conversationRepository.create(session.workspaceId);
+    await repositories.conversationRepository.create(session.workspaceId);
+    await repositories.conversationOwnershipRepository.requestHandoff({
+      conversationId: humanOwned.id,
+      workspaceId: session.workspaceId,
+      reason: "retrieval_miss",
+    });
+
+    const response = await request(app)
+      .get("/api/v1/history/chat?limit=1&ownership=human_owned")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      total: 1,
+      conversations: [expect.objectContaining({ id: humanOwned.id })],
+    });
+  });
 });

@@ -10,7 +10,7 @@ import type { SelectedHistoryItem } from '@/components/dashboard/history/history
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
-import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision, type QualityTriageState } from '@/lib/api'
+import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision, type QualityActionFilter, type QualityTriageState } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -18,12 +18,14 @@ import { ACTIVE_TRIAGE_STATES, groundingGapActions } from '@/lib/quality-signals
 import { cn } from '@/lib/utils'
 import {
   buildInboxItems,
+  formatInboxDuration,
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
   inboxItemKeys,
   type EscalationType,
   type HumanOwnedConversationSummary,
   type InboxItem,
   selectHumanOwnedConversations,
+  waitingTone,
 } from '@/lib/needs-attention'
 
 interface NeedsAttentionViewProps {
@@ -34,6 +36,11 @@ interface NeedsAttentionViewProps {
 // Cap the lower-concern quality signals pulled into the live inbox so they never crowd out
 // critical escalations. The Quality view remains the full, paginated backlog.
 const QUALITY_INBOX_LIMIT = 25
+
+interface QualityInboxData {
+  actions: QualityActionFilter[]
+  turns: LowQualityTurn[]
+}
 
 const ESCALATION_META: Record<EscalationType, { label: string; className: string }> = {
   approval: { label: 'Approval', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
@@ -87,15 +94,27 @@ function EscalationBadge({ type }: { type: EscalationType }) {
 
 function InboxRow({
   item,
+  now,
   onSelect,
   onTriage,
   isTriaging,
 }: {
   item: InboxItem
+  now: Date
   onSelect: (item: InboxItem) => void
   onTriage: (item: InboxItem, state: QualityTriageState) => void
   isTriaging: boolean
 }) {
+  const isTakenOverHandoff = item.type === 'handoff' && item.takenOverAt !== null && item.takenOverAt !== undefined
+  const durationStart = isTakenOverHandoff ? item.takenOverAt : item.escalatedAt
+  const elapsedMs = durationStart
+    ? Math.max(0, now.getTime() - new Date(durationStart).getTime())
+    : 0
+  const timeLabel = item.severity === 'critical'
+    ? `${isTakenOverHandoff ? 'With them' : 'Waiting'} ${formatInboxDuration(elapsedMs)}`
+    : formatApprovalCreatedAt(item.timestamp, now)
+  const tone = waitingTone(elapsedMs)
+
   return (
     <DashboardTableRow>
       <DashboardTableCell className="w-32">
@@ -113,8 +132,17 @@ function InboxRow({
       <DashboardTableCell className="w-48 text-sm text-muted-foreground">
         <span className="block truncate">{item.detail}</span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-40 text-sm text-muted-foreground">
-        {formatApprovalCreatedAt(item.timestamp)}
+      <DashboardTableCell
+        className={cn(
+          'w-40 text-sm',
+          item.severity !== 'critical' || isTakenOverHandoff || tone === 'default'
+            ? 'text-muted-foreground'
+            : tone === 'amber'
+              ? 'font-medium text-amber-700 dark:text-amber-300'
+              : 'font-medium text-destructive',
+        )}
+      >
+        {timeLabel}
       </DashboardTableCell>
       <DashboardTableCell className="w-32">
         {item.assistantMessageId ? (
@@ -142,10 +170,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
   const [qualityTurns, setQualityTurns] = useState<LowQualityTurn[]>([])
+  const [qualityActions, setQualityActions] = useState<QualityActionFilter[] | null>(null)
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [conversationError, setConversationError] = useState<string | null>(null)
+  const [qualityLoadFailed, setQualityLoadFailed] = useState(false)
+  const [now, setNow] = useState(() => new Date())
   const isMountedRef = useRef(false)
   const inboxRequestIdRef = useRef(0)
 
@@ -153,20 +184,18 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     const requestId = inboxRequestIdRef.current + 1
     inboxRequestIdRef.current = requestId
 
-    // Quality signals are lower concern and best-effort: a failure here never blocks the
-    // inbox or surfaces an error, it just omits the quality rows.
-    const loadQualityTurns = async (): Promise<LowQualityTurn[]> => {
+    const loadQualityTurns = async (): Promise<QualityInboxData> => {
       const { skills } = await skillsApi.list()
       const actions = groundingGapActions(skills)
       if (actions.length === 0) {
-        return []
+        return { actions, turns: [] }
       }
       const page = await qualityApi.listTurns({
         actions,
         triageStates: [...ACTIVE_TRIAGE_STATES],
         limit: QUALITY_INBOX_LIMIT,
       })
-      return page.items
+      return { actions, turns: page.items }
     }
 
     const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
@@ -174,6 +203,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       chatApi.listChatHistory({
         limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
         offset: 0,
+        ownership: 'human_owned',
       }),
       loadQualityTurns(),
     ])
@@ -201,7 +231,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       setConversationError(getApiErrorMessage(conversationsResult.reason, 'Failed to load human-owned conversations.'))
     }
 
-    setQualityTurns(qualityResult.status === 'fulfilled' ? qualityResult.value : [])
+    if (qualityResult.status === 'fulfilled') {
+      setQualityActions(qualityResult.value.actions)
+      setQualityTurns(qualityResult.value.turns)
+      setQualityLoadFailed(false)
+    } else {
+      setQualityActions(null)
+      setQualityTurns([])
+      setQualityLoadFailed(true)
+    }
 
     setIsLoading(false)
   }, [])
@@ -219,6 +257,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       inboxRequestIdRef.current += 1
     }
   }, [refreshInbox])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 30_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   const handleSelectedItemChange = useCallback((next: SelectedHistoryItem) => {
     setSelectedItem(next)
@@ -279,14 +322,20 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   )
   const needsAttentionCount = items.length
 
-  // The activity indicator tracks critical escalations only; lower-concern quality signals
-  // refresh on manual refresh / drawer close so they never spam the "new activity" badge.
+  const displayedQualityTurns = useMemo(() => {
+    const displayedMessageIds = new Set(
+      items.flatMap((item) => item.assistantMessageId ? [item.assistantMessageId] : []),
+    )
+    return qualityTurns.filter((turn) => displayedMessageIds.has(turn.assistantMessageId))
+  }, [items, qualityTurns])
+
   const baselineKeys = useMemo(
-    () => (isLoading ? null : inboxItemKeys(decisions, humanOwnedConversations)),
-    [decisions, humanOwnedConversations, isLoading],
+    () => (isLoading ? null : inboxItemKeys(decisions, humanOwnedConversations, displayedQualityTurns)),
+    [decisions, displayedQualityTurns, humanOwnedConversations, isLoading],
   )
   const newItemCount = useNeedsAttentionActivity({
     baselineKeys,
+    qualityActions: qualityActions ?? undefined,
     // Pause the background poll while a conversation is open; closing it already triggers a refresh.
     enabled: selectedItem === null,
   })
@@ -327,6 +376,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               {conversationError}
             </div>
           ) : null}
+          {qualityLoadFailed ? (
+            <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+              Quality signals couldn&apos;t be loaded — showing approvals and handoffs only.
+            </div>
+          ) : null}
 
           {isLoading ? (
             <div className="flex min-h-48 items-center justify-center">
@@ -342,7 +396,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                 <DashboardTableHeader className="w-32">Type</DashboardTableHeader>
                 <DashboardTableHeader>Item</DashboardTableHeader>
                 <DashboardTableHeader className="w-48">Detail</DashboardTableHeader>
-                <DashboardTableHeader className="w-40">Updated</DashboardTableHeader>
+                <DashboardTableHeader className="w-40">Time</DashboardTableHeader>
                 <DashboardTableHeader className="w-32">
                   <span className="sr-only">Actions</span>
                 </DashboardTableHeader>
@@ -352,6 +406,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                   <InboxRow
                     key={item.key}
                     item={item}
+                    now={now}
                     onSelect={handleSelectItem}
                     onTriage={handleTriage}
                     isTriaging={item.assistantMessageId ? triagingMessageIds.has(item.assistantMessageId) : false}

@@ -95,7 +95,7 @@ describe('offset-backed list APIs', () => {
     })
   })
 
-  it('requests filtered chat history with offset pagination', async () => {
+  it('requests filtered chat history with offset pagination and ownership scope', async () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() })
     const fetchMock = vi.fn().mockResolvedValue(
       createJsonResponse({
@@ -107,10 +107,10 @@ describe('offset-backed list APIs', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await chatApi.listChatHistory({ limit: 50, offset: 100 })
+    await chatApi.listChatHistory({ limit: 50, offset: 100, ownership: 'human_owned' })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/backend/api/v1/history/chat?limit=50&offset=100',
+      '/backend/api/v1/history/chat?limit=50&offset=100&ownership=human_owned',
       expect.objectContaining({ method: 'GET' }),
     )
   })

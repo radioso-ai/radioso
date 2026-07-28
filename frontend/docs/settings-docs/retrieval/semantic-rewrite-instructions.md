@@ -12,7 +12,7 @@ Guide the meaning-preserving rewrite used for semantic retrieval.
 ## Details
 ### Overview
 
-These instructions control how the system rewrites a query for semantic retrieval.
+These instructions control how this agent rewrites a query for semantic retrieval.
 
 ### Objectives
 

@@ -201,7 +201,7 @@ const retrievalAnswer = await client.skills.get("retrieval.answer");
 console.log(retrievalAnswer.contractReferences);
 ```
 
-Retrieval answer settings now live on the default-answer `retrieve` skill.
+Retrieval answer settings live on the default-answer `retrieve` skill.
 Suggested questions are part of that skill's config. Contact escalation is a
 `notify` skill, and routine completion export is a `webhook_call` skill.
 
@@ -469,5 +469,5 @@ try {
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. Pass `includeDebug: true` when callers need shape, resolved-step diagnostics, or retrieval answer evidence. Callers do not select shapes directly.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings are exposed separately through the settings API.
-- Workspace creation, rename, and deletion are not exposed because those routes are currently session-authenticated rather than token-authenticated.
+- Workspace creation, rename, and deletion are not exposed because those routes are session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.

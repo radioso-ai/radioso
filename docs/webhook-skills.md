@@ -46,7 +46,7 @@ The unified endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-Legacy webhook skill endpoints may remain available during cutover:
+The per-type webhook routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints above are the primary surface:
 
 - `GET /api/v1/agents/{agentId}/webhook-skills`
 - `POST /api/v1/agents/{agentId}/webhook-skills`

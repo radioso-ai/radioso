@@ -9,41 +9,6 @@ Agents are the user-facing conversational agents in a workspace. Directives are 
 
 The key point is that authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
-## Relevant endpoints
-
-```text
-GET    /api/v1/agents
-POST   /api/v1/agents
-GET    /api/v1/agents/{agentId}
-PUT    /api/v1/agents/{agentId}
-POST   /api/v1/agents/{agentId}/assistant-logo
-DELETE /api/v1/agents/{agentId}/assistant-logo
-POST   /api/v1/agents/{agentId}/default
-GET    /api/v1/agents/{agentId}/skill-capabilities
-GET    /api/v1/agents/{agentId}/directives
-POST   /api/v1/agents/{agentId}/directives
-POST   /api/v1/agents/{agentId}/directives/draft
-PATCH  /api/v1/agents/{agentId}/directives/{directiveId}
-DELETE /api/v1/agents/{agentId}/directives/{directiveId}
-GET    /api/v1/agents/{agentId}/skills
-POST   /api/v1/agents/{agentId}/skills
-PATCH  /api/v1/agents/{agentId}/skills/{skillId}
-DELETE /api/v1/agents/{agentId}/skills/{skillId}
-GET    /api/v1/context-variables
-POST   /api/v1/context-variables
-GET    /api/v1/context-variables/{id}
-PATCH  /api/v1/context-variables/{id}
-DELETE /api/v1/context-variables/{id}
-GET    /api/v1/agents/{agentId}/context-variables
-PUT    /api/v1/agents/{agentId}/context-variables/{variableId}
-DELETE /api/v1/agents/{agentId}/context-variables/{variableId}
-GET    /api/v1/context-variables/{id}/values
-PUT    /api/v1/context-variables/{id}/values
-DELETE /api/v1/context-variables/{id}/values
-GET    /api/v1/skills
-GET    /api/v1/skills/{skillName}
-```
-
 ## Agents
 
 Each workspace has a default agent. Chat calls use that agent when `agentId` is omitted.
@@ -67,6 +32,10 @@ If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and r
 
 Directives add steering to matching turns. A directive has a `condition`, an
 `action`, optional priority and relationship fields, and optional scope tags.
+
+In the dashboard you author directives in the agent's **Directives** settings, where your own rules sit above the built-in Radioso directives you can **Override**.
+
+![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
 
 Create a directive with `POST /api/v1/agents/{agentId}/directives`:
 
@@ -178,8 +147,8 @@ one agent:
 - `surfacing`: `always`, `on_reference`, or `operator_only`
 - `enabled`
 
-The dashboard currently exposes the `pushed` source. Resolver-backed variables
-are part of the API contract, but the operator UI does not configure them yet.
+The dashboard exposes the `pushed` source. Resolver-backed variables
+are part of the API contract; the operator UI does not configure them.
 
 Host backends push runtime values through
 `PUT /api/v1/context-variables/{id}/values`. The request identifies the scope:
@@ -257,6 +226,43 @@ Skill entries include:
 - required capabilities
 - diagnostic fields exposed by the implementation
 - skill-owned outcomes, each mapped to a normalized status such as `completed` or `failed`
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+GET    /api/v1/agents
+POST   /api/v1/agents
+GET    /api/v1/agents/{agentId}
+PUT    /api/v1/agents/{agentId}
+POST   /api/v1/agents/{agentId}/assistant-logo
+DELETE /api/v1/agents/{agentId}/assistant-logo
+POST   /api/v1/agents/{agentId}/default
+GET    /api/v1/agents/{agentId}/skill-capabilities
+GET    /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives
+POST   /api/v1/agents/{agentId}/directives/draft
+PATCH  /api/v1/agents/{agentId}/directives/{directiveId}
+DELETE /api/v1/agents/{agentId}/directives/{directiveId}
+GET    /api/v1/agents/{agentId}/skills
+POST   /api/v1/agents/{agentId}/skills
+PATCH  /api/v1/agents/{agentId}/skills/{skillId}
+DELETE /api/v1/agents/{agentId}/skills/{skillId}
+GET    /api/v1/context-variables
+POST   /api/v1/context-variables
+GET    /api/v1/context-variables/{id}
+PATCH  /api/v1/context-variables/{id}
+DELETE /api/v1/context-variables/{id}
+GET    /api/v1/agents/{agentId}/context-variables
+PUT    /api/v1/agents/{agentId}/context-variables/{variableId}
+DELETE /api/v1/agents/{agentId}/context-variables/{variableId}
+GET    /api/v1/context-variables/{id}/values
+PUT    /api/v1/context-variables/{id}/values
+DELETE /api/v1/context-variables/{id}/values
+GET    /api/v1/skills
+GET    /api/v1/skills/{skillName}
+```
 
 ## Common failure modes
 

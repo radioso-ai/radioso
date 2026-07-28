@@ -1,31 +1,26 @@
 ---
-title: "Radioso Skills RFC"
-description: "RFC defining workspace skills as product-facing units of work with consistent discovery, execution, and diagnostic contracts."
-last_updated: 2026-06-11
+title: "Radioso Skills Vocabulary and Catalog"
+description: "The shipped skills model: how Radioso describes grounded work as discoverable, capability-checked, diagnosable skills with a read-only catalog."
+last_updated: 2026-07-27
 ---
 
-# Radioso Skills RFC
+# Radioso Skills Vocabulary and Catalog
 
-Status: Draft  
-Audience: product, architecture, backend, SDK, MCP
+Audience: product, architecture, backend, SDK, MCP.
 
-Radioso should treat grounded work as skills, not only as chat or retrieval endpoints.
+Radioso treats grounded work as skills, not only as chat or retrieval endpoints. Skills give assistants, MCP clients, SDK users, and embeds a common way to discover and run useful workspace-grounded work while keeping permissions, diagnostics, and public contracts clear.
 
-The goal is to give assistants, MCP clients, SDK users, embeds, and future agents a common way to discover and execute useful workspace-grounded work while keeping permissions, diagnostics, and public contracts clear.
+This page defines the vocabulary and shows how the shipped pieces fit together. It is not one implementation plan; the model spans several focused areas of the codebase.
 
-This RFC defines the vocabulary and direction. It is not one implementation plan. The work should span focused specs.
+## Customer Value
 
-## Customer Promise
+Radioso lets AI applications discover what a workspace can safely do, choose the right grounded work surface, and inspect why the system behaved the way it did.
 
-Radioso should let AI applications discover what a workspace can safely do, choose the right grounded work surface, and inspect why the system behaved the way it did.
+A caller no longer has to already know which Radioso surface to use before it makes a request. Assistant chat, retrieval answer, retrieval search, and MCP tools each expose useful work, and the skills catalog describes them as one coherent workspace contract.
 
-Today, a caller has to know which Radioso surface to use before it makes a request. Assistant chat, retrieval answer, retrieval search, MCP tools, and future integrations each expose useful work, but the product does not yet describe them as one coherent workspace contract.
+An SDK or MCP client can discover that a workspace supports `retrieval.answer`, see that it requires document-read capability, understand that the stable execution path is the retrieval answer endpoint, and receive diagnostics that explain which retrieval shape and step overrides ran.
 
-The skills model should make that contract explicit.
-
-For example, an SDK or MCP client should be able to discover that a workspace supports `retrieval.answer`, see that it requires document-read capability, understand that the stable execution path is still the retrieval answer endpoint, and receive diagnostics that explain which retrieval shape and step overrides ran.
-
-The practical value is not a generic agent layer. The practical value is that customers can build against a workspace that says what it can do, enforces what it is allowed to do, and explains what happened after each grounded action.
+The practical value is not a generic agent layer. It is that customers can build against a workspace that says what it can do, enforces what it is allowed to do, and explains what happened after each grounded action.
 
 ## Core Idea
 
@@ -42,7 +37,7 @@ Examples include:
 
 Some skills are interactive. Some are background or administrative. Some are deterministic once selected. Others use probabilistic planning or ranking internally.
 
-The key point is that the caller should understand what was attempted, what contract was used, and why the system chose a particular execution path.
+The key point is that the caller understands what was attempted, what contract was used, and why the system chose a particular execution path.
 
 ## Vocabulary
 
@@ -73,32 +68,30 @@ Radioso already has several proto-skills:
 - document ingestion
 - MCP capability discovery and tool execution
 
-The first implementation should not replace these surfaces with a generic executor. Existing public contracts should remain stable while the skills model is introduced around them.
-
-The skills model should make current contracts easier to describe:
+The skills model does not replace these surfaces with a generic executor. Existing public contracts stay stable, and the skills model describes them:
 
 - Assistant chat can select and call skills when it needs workspace-grounded work.
-- Retrieval-only clients can keep using retrieval contracts directly.
-- MCP can describe and expose available skills without forcing every tool through assistant chat.
-- SDK users can discover what the workspace can do before choosing a specific endpoint.
+- Retrieval-only clients keep using retrieval contracts directly.
+- MCP describes and exposes available skills without forcing every tool through assistant chat.
+- SDK users discover what the workspace can do before choosing a specific endpoint.
 
 ## Deterministic And Probabilistic Execution
 
-Skills may execute in different modes.
+Skills execute in different modes.
 
 Deterministic skills run a known action once selected. Examples include sending a password reset email, submitting a human contact request, or deleting a document after authorization.
 
 Probabilistic skills may use LLMs, classifiers, ranking, or reranking as part of selection or execution. Retrieval answer is the main example. It may classify the query shape, rewrite the query, resolve a retrieval shape, rerank candidates, and synthesize a grounded response.
 
-The system should not hide probabilistic behavior. A skill execution should expose enough metadata for operators and developers to inspect what happened.
+The system does not hide probabilistic behavior. A skill execution exposes enough metadata for operators and developers to inspect what happened.
 
-## Retrieval As The Pilot Skill
+## Retrieval As The Shape-Aware Skill
 
-Retrieval should be the first shape-aware skill because it already has multiple execution shapes.
+Retrieval is the first shape-aware skill, because it already has multiple execution shapes.
 
-The current product often treats grounded questions as one broad retrieval problem. In practice, query shape matters.
+Grounded questions are not one broad retrieval problem. In practice, query shape matters.
 
-Example shapes for `retrieval.answer`:
+Shapes for `retrieval.answer`:
 
 | Shape | Best for | Likely behavior |
 |---|---|---|
@@ -108,15 +101,15 @@ Example shapes for `retrieval.answer`:
 | `exploratory_summary` | broad synthesis, overview, or comparison answers | broader candidate pool, diversity, synthesis across sources |
 | `follow_up_grounding` | conversational follow-ups | context-aware rewrite before search, then shape resolution |
 
-These shapes should not become user-facing promises until the contracts and diagnostics are ready. They are an internal execution model first.
+These shapes are not user-facing promises. They are an internal execution model: a caller does not select a shape through the API.
 
-In the first shape-aware slice, `retrieval.answer` selects one of these shapes from language-neutral structured query interpretation metadata and existing continuity metadata, then resolves the skill steps by merging default step clauses with the selected shape's partial overrides. The selected shape and safe resolved-step summary are exposed through the `activityTrace` response, `activitySummary`, and the activity/debug graph. There is no new generic skill execution endpoint and no separate trace store.
+`retrieval.answer` selects one of these shapes from language-neutral structured query interpretation metadata and existing continuity metadata, then resolves the skill steps by merging default step clauses with the selected shape's partial overrides. The selected shape and safe resolved-step summary are exposed through the `activityTrace` response, `activitySummary`, and the activity/debug graph. There is no generic skill execution endpoint and no separate trace store.
 
 ## Skill Diagnostics
 
-Every skill execution should be inspectable.
+Every skill execution is inspectable.
 
-At minimum, diagnostics should include:
+At minimum, diagnostics include:
 
 - selected skill
 - selected shape, when applicable
@@ -131,13 +124,11 @@ At minimum, diagnostics should include:
 
 Diagnostics are part of the product value. They keep expansion from becoming opaque.
 
-For retrieval answer, the operator-facing diagnostic surface is the shared activity trace graph. New runs include a `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist activity debug data.
+For retrieval answer, the operator-facing diagnostic surface is the shared activity trace graph. Runs include a `shape_selection` stage and summary fields such as `shapeName`, `queryShape`, `resolvedSteps`, and `skillDiagnostic`. The same trace is stored in the existing audit-backed chat or search history metadata when those surfaces already persist activity debug data.
 
 ## Skill Catalog
 
-The first contract is descriptive.
-
-It exposes:
+The catalog contract is descriptive. It exposes:
 
 ```http
 GET /api/v1/skills
@@ -156,21 +147,19 @@ A catalog entry can describe:
 - supported steps and shapes, when a skill definition exists
 - related stable endpoints
 
-The catalog does not add generic execution. It describes existing public contracts before a future execution surface exists.
+The catalog describes existing public contracts rather than adding a generic execution path. It is useful only if it describes real callable work, so it is kept tied to the API, SDK, and MCP server rather than becoming a static taxonomy page.
 
-The catalog is useful only if it describes real callable work. It should not become a static taxonomy page disconnected from the API, SDK, or MCP server.
+The `retrieval.answer` entry identifies the related stable endpoint, the required capability, the supported caller surfaces, and whether shape diagnostics are available. It also makes clear that callers do not need to switch to a new execution endpoint to benefit from the skills model.
 
-A first useful catalog entry for `retrieval.answer` should identify the related stable endpoint, the required capability, the supported caller surfaces, and whether shape diagnostics are available. It should also make clear that callers do not need to switch to a new execution endpoint to benefit from the skills model.
-
-In practice, the catalog should help a caller answer three questions:
+In practice, the catalog helps a caller answer three questions:
 
 - What can this workspace do?
 - What permission is required?
 - Which stable contract should I call?
 
-## Current Built-In Skills
+## Built-In Skills
 
-The first catalog includes these built-in entries:
+Built-in catalog entries include:
 
 | Skill | Owner | Current contract |
 |---|---|---|
@@ -184,59 +173,38 @@ The first catalog includes these built-in entries:
 
 These entries are discovery metadata. Callers still use the listed existing contracts to perform work.
 
-Contact requests are handled by the built-in chat routine and `contact.send` action handler. The public chat button still uses `human_contact.request` as its intake action identifier, but that identifier is not an Enterprise skill catalog entry.
+Contact requests are handled by the built-in chat routine and `contact.send` action handler. The public chat button uses `human_contact.request` as its intake action identifier, but that identifier is not an Enterprise skill catalog entry.
 
 ## Skill Definitions
 
 A skill definition is data, not an executor. It contains stable catalog metadata, typed step definitions, optional named shapes, and partial step overrides. A resolver combines the default step clauses with the selected shape's overrides and returns a resolved run that execution services can inspect.
 
-For `retrieval.answer`, the retrieval pipeline still owns query interpretation, candidate retrieval, context selection, prompt assembly, and diagnostics. The skill definition only describes those steps and the shape-specific clauses. For example, `definition_lookup` overrides the `context_selection` step so rerank is disabled and lexical bias is preferred; the context-selection stage reads that resolved clause instead of checking the shape name directly.
+For `retrieval.answer`, the retrieval pipeline owns query interpretation, candidate retrieval, context selection, prompt assembly, and diagnostics. The skill definition only describes those steps and the shape-specific clauses. For example, `definition_lookup` overrides the `context_selection` step so rerank is disabled and lexical bias is preferred; the context-selection stage reads that resolved clause instead of checking the shape name directly.
 
-For contact requests, the chat routine owns field collection and emits a durable `contact.send` action. The action handler owns delivery. This keeps the flow inside the normal turn spine without adding a generic `POST /skills/{name}/execute` surface.
+For contact requests, the chat routine owns field collection and emits a durable `contact.send` action. The action handler owns delivery. This keeps the flow inside the normal turn spine without a generic `POST /skills/{name}/execute` surface.
 
-The direct contact draft and submit routes are intentionally retired. Human
-contact now enters through normal chat messages or the public chat
-`human_contact.request` intent click, then the built-in contact routine collects
-the required fields and emits `contact.send`.
+The direct contact draft and submit routes are intentionally retired. Human contact enters through normal chat messages or the public chat `human_contact.request` intent click, then the built-in contact routine collects the required fields and emits `contact.send`.
 
-A chat suggestion may now carry an optional `action`. When `action.kind` is
-`"start_intent"`, the suggestion is an entry chip for a structured workflow
-rather than a free-text follow-up question. Clients activate the chip by sending
-the chip text with `inputMetadata.method = "intent_click"` and the `intent`
-object verbatim; the registered routine or intake provider receives the
-structured trigger and runs through the normal chat turn spine.
+A chat suggestion may carry an optional `action`. When `action.kind` is `"start_intent"`, the suggestion is an entry chip for a structured workflow rather than a free-text follow-up question. Clients activate the chip by sending the chip text with `inputMetadata.method = "intent_click"` and the `intent` object verbatim; the registered routine or intake provider receives the structured trigger and runs through the normal chat turn spine.
 
-Action chips do not own execution. The chip is a hint surface that starts a
-workflow; all validation, permissions, state, side effects, and audit remain
-with the routine, action handler, or intake provider. Modules contribute chips
-by registering a `ChatActionSuggestionProvider`, which is evaluated against the
-skill-owned turn outcome (for example, `retrieval.answer` with `no_context`) and
-normalized status, then returns at most one chip per turn.
+Action chips do not own execution. The chip is a hint surface that starts a workflow; all validation, permissions, state, side effects, and audit remain with the routine, action handler, or intake provider. Modules contribute chips by registering a `ChatActionSuggestionProvider`, which is evaluated against the skill-owned turn outcome (for example, `retrieval.answer` with `no_context`) and normalized status, then returns at most one chip per turn.
 
 ## Skill Intake And Execution
 
 Some skills can be started from natural chat and need the assistant surface to collect typed inputs before execution. These skills may declare an optional `intake` block alongside their catalog metadata.
 
-A skill definition uses the same interface for retrieval, webhooks, and future integrations:
+A skill definition uses the same interface for retrieval, webhooks, and external integrations:
 
 - `intake` describes fields that must be available before execution, how interruption should work, and whether confirmation is required.
 - `execution` describes the adapter that runs after required intake is valid, such as an internal retrieval adapter, a webhook, or a durable delivery pipeline.
 
 The LLM may propose field candidates from user language, but deterministic application code owns required fields, validation, permissions, sensitive-field TTLs, confirmation policy, state transitions, and execution.
 
-For example, `retrieval.answer` declares a `query` intake field and an internal `retrieval_answer` execution adapter. A Make-backed appointment scheduling skill can declare required `email` and `preferred_date` fields, deterministic validators, `pause_and_resume` interruption, and a webhook execution adapter. The chat runtime can then ask only for missing or invalid fields before calling the configured webhook.
+For example, `retrieval.answer` declares a `query` intake field and an internal `retrieval_answer` execution adapter. A Make-backed appointment scheduling skill can declare required `email` and `preferred_date` fields, deterministic validators, `pause_and_resume` interruption, and a webhook execution adapter. The chat runtime then asks only for missing or invalid fields before calling the configured webhook.
 
 For `human_contact.request`, execution is a durable delivery pipeline, not an internal service. The submission is accepted and audited, then delivered through the workspace's configured email and/or webhook adapters.
 
-Workspace webhook destinations are the registry side of routine completion export.
-They store named HTTPS endpoints and encrypted signing secrets once per workspace.
-Routines reference a destination by stable id. The registry and reference checks do
-not introduce a new document-worker queue or AMQP queue. The routine engine emits
-a generic `webhook.send` action when a completion-export-enabled routine reaches a
-matching terminal. The action handler uses the existing routine action outbox and
-dispatch worker, signs requests with the destination secret, records latest
-delivery outcome fields on the destination, and treats missing destinations or
-disabled agent webhook export as terminal skips.
+Workspace webhook destinations are the registry side of routine completion export. They store named HTTPS endpoints and encrypted signing secrets once per workspace. Routines reference a destination by stable id. The registry and reference checks do not introduce a new document-worker queue or AMQP queue. The routine engine emits a generic `webhook.send` action when a completion-export-enabled routine reaches a matching terminal. The action handler uses the existing routine action outbox and dispatch worker, signs requests with the destination secret, records latest delivery outcome fields on the destination, and treats missing destinations or disabled agent webhook export as terminal skips.
 
 ## Diagnostic Definition
 
@@ -259,68 +227,23 @@ Core fields include:
 
 Retrieval-specific evidence metadata can include query shape, retrieval shape, resolved-step summaries, candidate source summary, ranking choices, evidence status, support status, and grounding outcome.
 
-The catalog exposes whether diagnostics are defined and whether a skill is shape-aware. Retrieval answer now emits concrete diagnostic records through its existing trace contract. Later execution features can reuse the vocabulary without changing the trace surface again.
-
-## Generic Execution
-
-A generic execution endpoint may be useful later:
-
-```http
-POST /api/v1/skills/{skillName}/execute
-```
-
-Do not start there.
-
-Generic execution is only useful after Radioso has clear skill definitions, capability checks, diagnostics, and at least one proven shape-aware skill. If added too early, it can blur the assistant and retrieval boundary that the current architecture is trying to clarify.
-
-Before adding generic execution, Radioso should have evidence that the catalog and diagnostics are already useful through existing surfaces.
-
-Reasonable gates include:
-
-- at least one retrieval skill exposes shape diagnostics through an existing public contract
-- at least one deterministic skill is represented in the catalog without special-case vocabulary
-- at least two caller surfaces, such as SDK and MCP, can consume skill metadata
-- capability checks are described consistently between the catalog and runtime enforcement
-- operators can debug a failed or unsupported skill execution from diagnostics alone
-
-If these gates are not met, generic execution is likely to hide unfinished product decisions behind a broad endpoint.
+The catalog exposes whether diagnostics are defined and whether a skill is shape-aware. Retrieval answer emits concrete diagnostic records through its existing trace contract. Other execution features can reuse the vocabulary without changing the trace surface again.
 
 ## Non-Goals
 
-This RFC does not require:
+The skills model does not:
 
-- replacing assistant chat with a generic agent runtime
-- forcing retrieval-only customers through assistant chat
-- replacing existing public retrieval endpoints
-- exposing every internal capability as a public skill
-- allowing unbounded tool use by default
-- adding external connector workflows as part of the first pass
-
-## Sensible Sequence
-
-The work should proceed in stages.
-
-First, define the skills vocabulary and document how it relates to existing assistant, retrieval, MCP, SDK, and capability-policy contracts.
-
-Second, inventory existing proto-skills and identify which stable endpoint or module owns each one.
-
-Third, add a read-only skill catalog that describes current supported skills without changing execution.
-
-Fourth, make retrieval answer the first shape-aware skill. Add shape resolution and diagnostics behind the existing retrieval answer contract where possible. This should be the first visible product slice, not only an internal refactor.
-
-This fourth step is intentionally narrow. It adds shape resolution for `retrieval.answer`, emits shape tags in `retrieval.pipeline.completed` telemetry, and adds shape and resolved-step metadata to the existing trace graph. It does not make shapes a caller-selected API parameter.
-
-Fifth, let assistant chat and MCP surface skill metadata without forcing all execution through one generic path.
-
-Sixth, represent one narrow deterministic skill in the catalog. Prefer product-native work such as `human_contact.request` before broader external workflows like ticket creation or email delivery.
-
-Finally, consider a generic skill execution endpoint after the model has proven itself with retrieval and at least one deterministic skill.
+- replace assistant chat with a generic agent runtime
+- force retrieval-only customers through assistant chat
+- replace existing public retrieval endpoints
+- expose every internal capability as a public skill
+- allow unbounded tool use by default
 
 ## Design Principle
 
-Radioso should make skills easy to add, but hard to make invisible.
+Radioso makes skills easy to add, but hard to make invisible.
 
-Every expansion should preserve:
+Every expansion preserves:
 
 - stable public contracts
 - explicit capability checks
@@ -330,3 +253,27 @@ Every expansion should preserve:
 - separation between assistant behavior and retrieval-only behavior
 
 That is the difference between a grounded skill runtime and a black-box agent wrapper.
+
+## Open Directions
+
+These ideas are not shipped. They are recorded here so the model stays honest about what exists versus what is deliberately deferred.
+
+### Generic execution endpoint
+
+A generic execution endpoint could be useful:
+
+```http
+POST /api/v1/skills/{skillName}/execute
+```
+
+It is deliberately not built yet. Generic execution is only worthwhile once Radioso has clear skill definitions, capability checks, diagnostics, and a proven shape-aware skill — which it now does — plus evidence that a single execution surface would not blur the assistant and retrieval boundary the current architecture keeps clear.
+
+Reasonable gates before adding it:
+
+- at least one retrieval skill exposes shape diagnostics through an existing public contract
+- at least one deterministic skill is represented in the catalog without special-case vocabulary
+- at least two caller surfaces, such as SDK and MCP, consume skill metadata
+- capability checks are described consistently between the catalog and runtime enforcement
+- operators can debug a failed or unsupported skill execution from diagnostics alone
+
+Until those hold together for a candidate skill, a generic endpoint would mostly hide unfinished product decisions behind a broad surface.

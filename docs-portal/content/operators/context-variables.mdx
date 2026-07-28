@@ -26,8 +26,8 @@ They are code-owned platform context.
 
 ### Page context is relevance-gated
 
-The embed still captures page context with each message, but the agent no longer
-sees it on every turn. Each turn is classified first. Page data — including the
+The embed captures page context with each message, but the agent does not see it
+on every turn. Each turn is classified first. Page data — including the
 URL, title, and locale — reaches the model only when the turn actually asks
 about the current page, or when an active routine declares a `page_context`
 dependency. Unrelated turns contribute no page data to model input or stored
@@ -58,12 +58,12 @@ Each declaration belongs to the workspace catalog:
 Then each agent enables the variables it should use. In the agent **Context**
 section, choose the source and surfacing policy for that agent.
 
-The current dashboard supports one source:
+The dashboard supports one source:
 
 - **Pushed API** — the host backend writes values through the REST API.
 
-Resolver-backed variables exist in the API model, but are not configurable in
-the dashboard yet.
+Resolver-backed variables exist in the API model. The dashboard does not
+configure them.
 
 ## Trust tiers
 
@@ -125,7 +125,7 @@ window.Radioso.identify(token)
 Radioso verifies the token on each message. Verification is strict:
 
 - the signature must match the current or previous workspace token secret
-- `issuedAt` must be within the acceptance window, currently five minutes
+- `issuedAt` must be within the acceptance window, five minutes
 - `sessionId` must match the established public chat session
 - `origin` must match the approved embed origin
 - `nonce` must not have been used before inside the acceptance window

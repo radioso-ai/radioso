@@ -7,27 +7,30 @@ last_updated: 2026-04-02
 # Rerank Top K
 
 ## Summary
-Keep this many candidates after reranking.
+Choose how many retrieved candidates are sent through reranking.
 
 ## Details
 ### Overview
 
-This setting determines how many candidates survive after reranking.
+This setting determines the size of the shortlist that reranking evaluates.
 
 ### Pipeline Role
 
 1. Search returns a candidate pool.
-2. Reranking sorts that pool from strongest to weakest.
-3. `Rerank Top K` decides how many of the top results continue into downstream context assembly.
+2. `Rerank Top K` chooses a shortlist from that pool.
+3. Reranking sorts that shortlist from strongest to weakest.
+4. Final context assembly then applies its own separate context count and token budget.
 
-So this setting does not control whether reranking happens. It controls how strict reranking becomes.
+So this setting does not directly set the number of citations in the final answer. It controls how much retrieved evidence reranking gets to judge before the final prompt is assembled.
+
+In practice, the system will keep enough rerank candidates to fill the final context target when that many candidates are available. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources.
 
 ### Lower Values
 
 Lower values mean:
 
 - tighter focus
-- fewer chunks in the final context pool
+- fewer chunks considered by reranking
 - less noise in the answer prompt
 
 This is useful when you want very direct answers and the best evidence is usually concentrated in just a few chunks.
@@ -38,7 +41,7 @@ The downside is that you can cut away useful supporting context too early, espec
 
 Higher values mean:
 
-- more evidence survives
+- more evidence reaches reranking
 - recall is preserved better
 - the answer generator has more context to work with
 
@@ -48,8 +51,8 @@ The downside is that weaker chunks also survive, which can make answers feel les
 
 Imagine retrieval returns 20 candidates and reranking sorts them well.
 
-- `Top K = 3`: only the top 3 move on
-- `Top K = 10`: the top 10 move on
+- `Top K = 3`: reranking uses the minimum shortlist needed for final context assembly
+- `Top K = 10`: reranking evaluates a wider shortlist
 
 If the best answer depends on one main passage plus two supporting passages, `3` may be enough.
 

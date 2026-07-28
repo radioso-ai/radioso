@@ -7,19 +7,6 @@ description: Create public chat sessions and use the public chat routes that pre
 
 These routes support anonymous public chat and website embed sessions. They do not use the workspace API token.
 
-## Relevant endpoints
-
-```text
-POST /api/v1/public/chat/{token}/sessions
-GET  /api/v1/public/chat/{token}
-POST /api/v1/public/chat/{token}
-GET  /api/v1/public/chat/{token}/history/{conversationId}
-GET  /api/v1/public/chat/{token}/tail/{conversationId}
-GET  /api/v1/public/chat/{token}/events/{conversationId}
-GET  /api/v1/public/chat/{token}/embed-config
-GET  /api/v1/public/chat/{token}/assistant-logo
-```
-
 ## How it works
 
 1. Enable public chat or website embed in general settings.
@@ -72,7 +59,7 @@ To resume an existing visitor session, include the previous response's `resumeTo
 
 The response includes `publicChatToken`, `publicSessionId`, `publicSessionToken`, `resumeToken`, `workspaceName`, `assistantBootstrapActive`, `expiresAt`, and `resumeExpiresAt`. Internally, `publicSessionId` is the chat session boundary for conversation continuity.
 
-`chatSessionId` and the older `anonymousSessionId` are accepted as legacy client hints but are not trusted as resume credentials. New clients normally should not send either; use `resumeToken` to resume and the returned `publicSessionToken` for chat requests.
+`chatSessionId` and `anonymousSessionId` are accepted as client hints but are not trusted as resume credentials. Use `resumeToken` to resume and the returned `publicSessionToken` for chat requests.
 
 ## Send a public chat message
 
@@ -185,6 +172,21 @@ Use `GET /api/v1/public/chat/{token}/history/{conversationId}` to fetch one conv
 Use `GET /api/v1/public/chat/{token}/tail/{conversationId}` to read messages created after a cursor. A conversation detail response includes `tailCursor`; send that cursor to receive only later visitor, AI, or human-agent messages. If `cursor` is omitted, tail returns the newest bounded page and a cursor for the newest returned message. Public tail responses do not include operator ownership metadata.
 
 Use `GET /api/v1/public/chat/{token}/events/{conversationId}` to open a server-sent event stream for the same anonymous session. The stream emits `ready` after subscription and `message.created` when a new message is available. Browser clients that store the public session in local storage should consume this stream with `fetch`, not native `EventSource`, so they can send `x-radioso-public-session`.
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+POST /api/v1/public/chat/{token}/sessions
+GET  /api/v1/public/chat/{token}
+POST /api/v1/public/chat/{token}
+GET  /api/v1/public/chat/{token}/history/{conversationId}
+GET  /api/v1/public/chat/{token}/tail/{conversationId}
+GET  /api/v1/public/chat/{token}/events/{conversationId}
+GET  /api/v1/public/chat/{token}/embed-config
+GET  /api/v1/public/chat/{token}/assistant-logo
+```
 
 ## Common failure modes
 

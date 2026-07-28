@@ -1,17 +1,17 @@
 ---
 title: "Settings Docs"
 description: "Index and structure for the workspace control copy files that power the frontend dashboard ingestion and retrieval settings UI."
-last_updated: 2026-05-22
+last_updated: 2026-07-27
 ---
 
 # Settings Docs
 
-This directory is the source of truth for workspace settings copy used by the frontend settings UI.
+Workspace settings copy for the frontend settings UI. The repo holds two identical copies — the source at `docs/settings-docs/` and the dashboard import at `frontend/docs/settings-docs/` — edit both so they stay in sync.
 
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
-- `general/`: copy for assistant identity, startup behavior, and channel controls
+- `general/`: source copy for assistant identity and startup behavior fields; the settings registry does not import these files
 - `retrieval/`: copy for retrieval-stage and retrieval-owned answer evidence controls
 - one setting per file
 
@@ -29,7 +29,7 @@ Short inline copy shown next to the setting control.
 Long-form explanation shown in the right-side help panel.
 ```
 
-The frontend parser in [`frontend/components/dashboard/settings/settings-docs.ts`](../../frontend/components/dashboard/settings/settings-docs.ts) reads these sections and maps them into the settings UI.
+The frontend parser in `frontend/components/dashboard/settings/settings-docs.ts` reads these sections and maps them into the settings UI. Its registry imports the `ingestion/` and `retrieval/` files.
 
 ## UI mapping
 
@@ -42,9 +42,9 @@ The dashboard presents settings in product order:
 
 Embedding model selection belongs on the Settings -> Providers surface because it is a provider-backed model choice. It still uses ingestion settings behind the scenes because changing the embedding model affects existing chunks and may trigger re-indexing.
 
-Assistant behavior fields such as conversation mode, custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, and citation presentation.
+Assistant behavior fields such as custom answer instruction, suggested follow-ups, identity, and first greeting belong to the assistant settings surface. Retrieval settings should stay focused on rewrite, ranking, metadata filters, and citation presentation.
 
-The settings navigation shell and per-tab section metadata now live in [`frontend/components/dashboard/settings/settings-tab-shell.tsx`](../../frontend/components/dashboard/settings/settings-tab-shell.tsx) and [`frontend/components/dashboard/settings/settings-tab-metadata.ts`](../../frontend/components/dashboard/settings/settings-tab-metadata.ts).
+The settings navigation shell and per-tab section metadata live in `frontend/components/dashboard/settings/settings-tab-shell.tsx` and `frontend/components/dashboard/settings/settings-tab-metadata.ts`.
 
 ## Editing guidance
 

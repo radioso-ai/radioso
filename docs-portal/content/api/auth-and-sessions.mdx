@@ -9,16 +9,6 @@ import { Steps } from 'nextra/components'
 
 These routes are the entry point for account creation, session establishment, invitation inspection, and invitation acceptance.
 
-## Relevant endpoints
-
-```text
-GET  /api/v1/auth/registration
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-GET  /api/v1/auth/invitations/{invitationToken}
-POST /api/v1/auth/invitations/{invitationToken}/accept
-```
-
 ## How it works
 
 <Steps>
@@ -35,7 +25,7 @@ After registration, verify the email address. Login and invitation acceptance re
 Once the cookie is stored, use it for workspace management and token reveal flows.
 </Steps>
 
-The key point is that registration does not establish browser or cookie-jar state. Login, invitation acceptance, and password reset confirmation do. These session flows are separate from the workspace token flow used by the SDK.
+Registration does not establish browser or cookie-jar state. Login, invitation acceptance, and password reset confirmation do. These session flows are separate from the workspace token flow used by the SDK.
 
 ## Check registration availability
 
@@ -99,6 +89,18 @@ In practice, the invitation flow has two steps:
 2. Accept it with `POST /api/v1/auth/invitations/{invitationToken}/accept`.
 
 The accept request establishes a session for the joined account.
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+GET  /api/v1/auth/registration
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+GET  /api/v1/auth/invitations/{invitationToken}
+POST /api/v1/auth/invitations/{invitationToken}/accept
+```
 
 ## Common failure modes
 

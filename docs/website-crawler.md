@@ -306,7 +306,7 @@ Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each r
 
 ### Rollout ordering
 
-When upgrading from a single combined worker to the split topology (this PR), the order matters:
+When upgrading from a single combined worker to the split topology, the order matters:
 
 1. Deploy the new `crawler_worker` Cloud Run service (or `backend-crawler-worker` container).
 2. Apply Terraform / restart the backend so newly enqueued crawl Cloud Tasks land on the new worker URL via `WORKER_TASKS_CRAWL_SERVICE_URL`.

@@ -7,16 +7,18 @@ import { Callout, Steps } from 'nextra/components'
 
 # Document upload
 
-Document upload is the start of grounded answer quality. If the wrong content enters the system, or processing never completes, retrieval quality will never recover later in the pipeline.
+Everything grounded starts here. Whatever you upload is the evidence your agent answers from, so if the wrong content goes in, or processing never finishes, no later stage of retrieval can rescue the answer. Getting upload right is the highest-leverage thing you do for answer quality.
 
 ## Two ingestion paths
 
 - Inline text ingestion: create a document from title, content, optional metadata, and optional external id.
 - File import: upload a file and let Radioso extract source content before chunking.
 
-Inline documents can also include a `source`. For website-backed content, pass `source: { kind: "website", url: "https://example.com/docs" }`. Radioso creates or reuses a source inside the current workspace and links the document to it.
+Inline documents can also carry a `source`. For website-backed content, pass `source: { kind: "website", url: "https://example.com/docs" }`. Radioso creates or reuses a source inside the current workspace and links the document to it.
 
 ## What happens after upload
+
+Upload doesn't finish the job; it starts a background pipeline. Here's the sequence.
 
 <Steps>
 ### The API accepts the document
@@ -25,7 +27,7 @@ The document is created or updated and the API responds with `202 Accepted`.
 
 ### Processing is queued
 
-Document work moves to the background worker rather than being completed inline.
+Document work moves to the background worker instead of being completed inline.
 
 ### Source content is normalized
 
@@ -41,8 +43,12 @@ When metadata extraction is enabled for the workspace, source, or reprocess run,
 
 ### Retrieval can use the document
 
-Only after processing completes should you expect grounded answers to cite that document.
+Grounded answers can cite a document only after its processing completes.
 </Steps>
+
+The Documents list is where this becomes visible. A document reads Ready once its latest revision has finished processing, and that's your signal that it's a retrieval candidate.
+
+![The Documents list with four uploaded files, each showing a green Ready status next to its size and updated time](/screenshots/dashboard-knowledge-documents.png)
 
 ## What to verify after import
 
@@ -54,13 +60,13 @@ Only after processing completes should you expect grounded answers to cite that 
 
 ## Metadata and external ids
 
-If you plan to filter or bias retrieval later, add metadata at ingestion time. Metadata becomes part of document and chunk search behavior and can be used by metadata rules and direct metadata filters.
+If you plan to filter or bias retrieval later, add metadata at ingestion time. Metadata becomes part of document and chunk search behavior, and metadata rules and direct metadata filters can act on it.
 
-`externalDocumentId` is useful when Radioso mirrors documents that already exist in another system and you need a stable reference for sync or reconciliation. When a document has a source, the external id is scoped to that workspace source.
+`externalDocumentId` earns its keep when Radioso mirrors documents that already live in another system and you need a stable reference for sync or reconciliation. When a document has a source, the external id is scoped to that workspace source.
 
 ## Common failure pattern
 
-The most common operator mistake is testing chat immediately after upload and assuming a weak answer means retrieval is broken. In practice, the document often just has not completed processing yet.
+The most common mistake is testing chat the moment upload returns and reading a weak answer as broken retrieval. More often the document hasn't finished processing.
 
 <Callout type="info" emoji="i">
   Treat document status as part of the ingestion contract. Upload success and retrieval readiness are not the same event.

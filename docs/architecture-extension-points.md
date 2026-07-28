@@ -1,7 +1,7 @@
 ---
 title: "Architecture Extension Points"
 description: "How to design pluggable product behavior and module boundaries using extension categories, capability policy, and public surfaces."
-last_updated: 2026-05-27
+last_updated: 2026-07-27
 ---
 
 # Architecture Extension Points
@@ -89,7 +89,7 @@ Settings and audit now use the same structure. Settings DTOs, validation helpers
 
 Backend tests are excluded from these boundary checks. Focused unit tests may still import internals while each production boundary is proven.
 
-Future pilots should add one module public surface at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
+Adding a module public surface follows the same shape: introduce one at a time, document the contract, and keep the enforcement rule narrow enough that contributors can understand the failure.
 
 ## Adding A New Extension
 

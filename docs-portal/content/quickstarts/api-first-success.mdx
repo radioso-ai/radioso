@@ -7,7 +7,7 @@ import { Steps } from 'nextra/components'
 
 # API first success
 
-You can use Radioso without opening the web app. This path is for teams that already know they want agent behavior but want to integrate it behind their own scripts, jobs, or UI first.
+You can reach a grounded answer without opening the web app once. This path is for teams that already know they want agent behavior but want it behind their own scripts, jobs, or UI. The assistant chat API is how you talk to an agent from that code.
 
 ## The happy path
 
@@ -44,7 +44,7 @@ Use the workspace token for document and chat routes.
 
 ## One concrete example
 
-Suppose you upload a document that says:
+Say you upload a document that reads:
 
 `Refunds are available within 14 days of purchase with proof of payment.`
 
@@ -54,7 +54,7 @@ A good first API test is then:
 - wait for processing to complete
 - ask, `What is the refund window?`
 
-If the system is working, the answer should come back grounded in that document rather than sounding generic.
+If the system is working, the answer comes back grounded in that document rather than sounding generic. That contrast, your text versus a plausible guess, is the thing you're checking for.
 
 ## Register
 
@@ -103,6 +103,10 @@ The token response looks like:
 ```json
 {"token":"radioso_..."}
 ```
+
+The same token is available in the dashboard under Settings, in the API access panel. Reveal it there when you want to copy it into another client, and note that the panel also shows a ready-made `curl` example against your own host.
+
+![Workspace Settings showing the organization name, workspace name, an API access panel with a Reveal API token button and curl example, and webhook destinations](/screenshots/dashboard-settings.png)
 
 If a workspace token, public chat link, or Enterprise embed token is ever exposed, rotate it from the settings screen instead of relying on disable and re-enable toggles.
 
@@ -162,7 +166,7 @@ console.log(response.answer)
 
 ## Common failure mode
 
-If upload works but chat does not, one of these is usually true:
+If upload works but chat doesn't, one of these is usually true:
 
 - document processing is still running
 - the backend does not have a valid provider key

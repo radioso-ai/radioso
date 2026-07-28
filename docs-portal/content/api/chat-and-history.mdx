@@ -7,23 +7,6 @@ description: Ask agent questions, continue conversations, and inspect saved conv
 
 This is the main agent chat workflow for authenticated API clients.
 
-## Relevant endpoints
-
-```text
-GET  /api/v1/agents
-POST /api/v1/agents
-GET  /api/v1/agents/{agentId}
-PUT  /api/v1/agents/{agentId}
-POST /api/v1/agents/{agentId}/default
-POST /api/v1/assistant/chat
-GET  /api/v1/history
-GET  /api/v1/history/chat
-GET  /api/v1/history/chat/{conversationId}
-GET  /api/v1/history/chat/{conversationId}/tail
-GET  /api/v1/history/search
-GET  /api/v1/history/search/{searchId}
-```
-
 ## How it works
 
 1. Send a chat request with a workspace token.
@@ -57,7 +40,7 @@ If the bootstrap response includes `bootstrapGreetingId`, send it with the first
 
 ## Streaming and non-streaming modes
 
-`stream` is required.
+`stream` defaults to `false`; set it per request.
 
 In practice:
 
@@ -88,6 +71,25 @@ Use `GET /api/v1/history/chat/{conversationId}` to retrieve one conversation and
 That second route is the one to use when you need to inspect how a specific answer was produced.
 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+GET  /api/v1/agents
+POST /api/v1/agents
+GET  /api/v1/agents/{agentId}
+PUT  /api/v1/agents/{agentId}
+POST /api/v1/agents/{agentId}/default
+POST /api/v1/assistant/chat
+GET  /api/v1/history
+GET  /api/v1/history/chat
+GET  /api/v1/history/chat/{conversationId}
+GET  /api/v1/history/chat/{conversationId}/tail
+GET  /api/v1/history/search
+GET  /api/v1/history/search/{searchId}
+```
 
 ## Common failure modes
 

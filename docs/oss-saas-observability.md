@@ -84,7 +84,7 @@ Application telemetry answers operational questions such as:
 
 ### Current metric set
 
-The current Prometheus-style surface is intentionally small and low-cardinality:
+The Prometheus-style surface is intentionally small and low-cardinality:
 
 - `radioso_http_requests_total`
 - `radioso_http_request_duration_ms`

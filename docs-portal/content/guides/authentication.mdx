@@ -7,7 +7,7 @@ import { Steps } from 'nextra/components'
 
 # Authentication
 
-Radioso supports more than one authentication model because the product serves more than one surface. The web app, API, public chat, and Enterprise embed flows do not use the same credentials.
+Radioso has more than one authentication model because it serves more than one audience. A person in the dashboard, a script calling the API, and an anonymous visitor on your website all need to be trusted differently, so the web app, API, public chat, and Enterprise embed flows don't share credentials. Pick the mode that matches who's knocking.
 
 ## Main access modes
 
@@ -26,15 +26,15 @@ The main auth routes are:
 - login
 - invitation accept
 
-Use `GET /api/v1/auth/registration` to check whether open registration is available. It returns `{ "available": true }` or `{ "available": false }` without requiring authentication.
+Use `GET /api/v1/auth/registration` to check whether open registration is available. It returns `{ "available": true }` or `{ "available": false }` without requiring authentication, so you can decide whether to show signup before anyone tries it.
 
-On an empty open-source server, the first registration creates the server's sole organization and default workspace. Open registration then closes, and later users join the existing organization by invitation. Enterprise Edition keeps open registration available and allows signed-in users to create additional organizations. Authorized users can create additional workspaces in either edition; the edition boundary applies to organizations, not workspaces.
+On an empty open-source server, the first registration creates the server's sole organization and default workspace. Open registration then closes, and later users join the existing organization by invitation. Enterprise Edition keeps open registration available and lets signed-in users create additional organizations. Authorized users can create additional workspaces in either edition; the edition boundary applies to organizations, not workspaces.
 
 Registration sends a verification email and does not set a session cookie. The backend sets the cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address.
 
 ## Workspace API tokens
 
-Use workspace tokens when you want to call the workspace-scoped API without a browser session. A common pattern is:
+Use a workspace token when you want to call the workspace-scoped API without a browser session. The usual pattern is:
 
 <Steps>
 ### Sign in with a normal user account
@@ -50,13 +50,13 @@ Fetch the workspace token from the authenticated workspace route.
 Use the bearer token for document, chat, settings, and related automation flows.
 </Steps>
 
-Workspace tokens are high-value credentials. If one leaks, rotate it from workspace settings rather than trying to work around the exposure.
+A workspace token is a high-value credential: anyone holding it can act on the whole workspace. If one leaks, rotate it from workspace settings rather than trying to work around the exposure.
 
 ## Public chat and embed access
 
-Public website chat does not use a normal operator session. Instead, it relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
+Public website chat doesn't use an operator session. It relies on workspace-controlled public settings, public chat tokens, or embed session flows that are scoped to the workspace configuration.
 
-This is the right model for customer-facing agents, not for operator automation. The hosted website widget is an Enterprise Edition surface; anonymous public chat uses the same public-session model without the widget routes.
+That's the right model for customer-facing agents, and the wrong one for operator automation, because a public visitor should never hold an operator's credentials. The hosted website widget is an Enterprise Edition surface; anonymous public chat uses the same public-session model without the widget routes.
 
 ## Choose the right mode
 

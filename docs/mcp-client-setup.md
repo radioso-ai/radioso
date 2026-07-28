@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Setup guide covering the agent converse surface, the workspace document tools, MCP deployment modes, and authentication flows."
-last_updated: 2026-07-24
+last_updated: 2026-07-27
 ---
 
 # MCP Client Setup
@@ -114,9 +114,9 @@ Authorization: Bearer <session token>
 - A converse grant is bound to the `mcp-converse` channel. Embed and public-chat launch tokens are rejected, so a public website token cannot be used to converse over MCP.
 - A converse grant is a secret. Unlike an embed token, it is never exposed in client-side surfaces.
 
-### Authentication roadmap
+### Authentication limits
 
-Today the converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. A standard MCP OAuth 2.1 front door, for public connectors such as Claude or ChatGPT, is planned and not yet available. Until then, public connectors can use a session token minted through the exchange flow.
+The converse surface uses the grant-for-session exchange described above. This fits self-hosted setups and applications that hold the grant on a server. There is no standard MCP OAuth 2.1 front door for public connectors such as Claude or ChatGPT; public connectors authenticate with a session token minted through the exchange flow.
 
 ## Deployment Modes
 
@@ -246,7 +246,7 @@ Claude custom connectors are true remote connectors. Anthropic connects to your 
 To use Radioso from Claude or Claude Desktop as a remote connector:
 
 1. Deploy the MCP server to a public HTTPS URL such as `https://mcp.example.com/mcp`.
-2. Add connector-compatible authentication in front of that public deployment. The current package ships its own `/v1/auth/exchange` flow, which works for local and API-driven clients, but it is not a native Claude connector auth flow yet.
+2. Add connector-compatible authentication in front of that public deployment. The package ships its own `/v1/auth/exchange` flow, which works for local and API-driven clients but is not a native Claude connector auth flow.
 3. In Claude, open `Customize -> Connectors` and add a custom connector with that remote URL.
 4. If your hosted server uses OAuth, provide the client ID and client secret in Claude's advanced settings.
 5. Authenticate the connector, then enable it in a conversation.
@@ -291,7 +291,7 @@ ChatGPT custom apps and OpenAI API integrations also require a public remote MCP
 ### ChatGPT App
 
 1. Deploy the MCP server to a public HTTPS URL.
-2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The current package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
+2. Add app-compatible authentication. In practice that means OAuth or OpenID Connect with refresh-token support. The package's `/v1/auth/exchange` flow is not enough for native ChatGPT app onboarding by itself.
 3. In ChatGPT workspace settings, enable developer mode and create a custom app from that MCP server URL.
 4. If your deployment uses OAuth or OpenID Connect, configure refresh-token-capable auth before publishing.
 5. Connect the app in ChatGPT and test read and write paths. ChatGPT will prompt the user before any tool advertised with `requiresApproval: true`; that is the host-side approval gate for writes.

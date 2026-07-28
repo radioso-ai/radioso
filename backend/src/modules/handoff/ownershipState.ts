@@ -1,4 +1,5 @@
 export type ConversationOwnershipState = "ai_owned" | "human_owned";
+export type ConversationOwnershipScope = "human_owned";
 export type ConversationOwnershipReason =
   | "routine_handoff"
   | "retrieval_miss"

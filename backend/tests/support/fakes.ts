@@ -107,6 +107,8 @@ import type {
   ConversationRecord,
   ConversationRepositoryPort,
 } from "../../src/db/repositories/conversationRepository.js";
+import type { ConversationSourceScope } from "../../src/shared/domain/conversationSource.js";
+import type { ConversationOwnershipScope } from "../../src/modules/handoff/ownershipState.js";
 import type {
   ConversationOwnershipHandBackInput,
   ConversationOwnershipMutationResult,
@@ -3417,9 +3419,14 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
 export class InMemoryConversationRepository implements ConversationRepositoryPort {
   readonly items = new Map<string, ConversationRecord>();
   private messageRepository: InMemoryMessageRepository | null = null;
+  private ownershipReader: Pick<InMemoryConversationOwnershipRepository, "load"> | null = null;
 
   setMessageRepository(messageRepository: InMemoryMessageRepository): void {
     this.messageRepository = messageRepository;
+  }
+
+  setOwnershipReader(ownershipReader: Pick<InMemoryConversationOwnershipRepository, "load">): void {
+    this.ownershipReader = ownershipReader;
   }
 
   async getOrCreateByAnonymousSession(input: {
@@ -3533,14 +3540,26 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    input: {
+      limit: number;
+      offset?: number;
+      cursor?: string;
+      sourceScope?: ConversationSourceScope;
+      ownership?: ConversationOwnershipScope;
+    } = { limit: 50, offset: 0 },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
-    const conversations = [...this.items.values()]
+    const workspaceConversations = [...this.items.values()]
       .filter((item) => item.workspaceId === workspaceId)
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
       });
+    const conversations = input.ownership === "human_owned" && this.ownershipReader
+      ? (await Promise.all(workspaceConversations.map(async (conversation) => ({
+          conversation,
+          ownership: await this.ownershipReader!.load(conversation.id),
+        })))).filter(({ ownership }) => ownership?.state === "human_owned").map(({ conversation }) => conversation)
+      : workspaceConversations;
 
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
     const startIndex = cursor

@@ -1,4 +1,5 @@
 import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { ChatHistoryService } from "./chatHistoryService.js";
 
 export class AssistantHistoryService {
@@ -6,7 +7,13 @@ export class AssistantHistoryService {
 
   listConversations(
     workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string; sourceScope?: ConversationSourceScope },
+    input: {
+      limit: number;
+      offset?: number;
+      cursor?: string;
+      sourceScope?: ConversationSourceScope;
+      ownership?: ConversationOwnershipScope;
+    },
   ) {
     return this.chatHistoryService.listConversations(workspaceId, input);
   }

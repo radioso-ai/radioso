@@ -6,9 +6,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
-import { chatApi } from '@/lib/api'
+import { chatApi, qualityApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
-import type { PendingApprovalDecision } from '@/lib/api-types'
+import type { LowQualityTurn, PendingApprovalDecision, QualityActionFilter } from '@/lib/api'
 import { inboxItemKeys, type HumanOwnedConversationSummary } from '@/lib/needs-attention'
 
 const asDecisions = (decisions: unknown[]) => decisions as unknown as PendingApprovalDecision[]
@@ -17,6 +17,7 @@ const asConversations = (conversations: unknown[]) =>
 
 vi.mock('@/lib/api', () => ({
   chatApi: { listChatHistory: vi.fn() },
+  qualityApi: { listTurns: vi.fn() },
 }))
 
 vi.mock('@/lib/api-hitl', () => ({
@@ -24,6 +25,7 @@ vi.mock('@/lib/api-hitl', () => ({
 }))
 
 const chatApiMock = vi.mocked(chatApi)
+const qualityApiMock = vi.mocked(qualityApi)
 const hitlApiMock = vi.mocked(hitlApi)
 
 const INTERVAL = 15000
@@ -72,6 +74,24 @@ const decisionSummary = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
+const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
+  assistantMessageId: 'quality-1',
+  conversationId: 'quality-conversation-1',
+  agentId: 'agent-1',
+  agentName: 'Marta',
+  channel: 'authenticated_chat',
+  question: 'Can I change my booking?',
+  answerPreview: 'I could not find that in the documents.',
+  skillName: 'retrieval.answer',
+  skillOutcome: 'no_context',
+  skillStatus: 'completed',
+  totalLatencyMs: 1200,
+  createdAt: '2026-06-19T10:00:00.000Z',
+  feedback: { upCount: 0, downCount: 0, comments: [] },
+  triage: { state: 'open', reason: null, updatedAt: null },
+  ...overrides,
+})
+
 const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
   hitlApiMock.listPendingDecisions.mockResolvedValue({ decisions } as never)
   chatApiMock.listChatHistory.mockResolvedValue({
@@ -82,6 +102,8 @@ const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
   } as never)
 }
 
+const groundingActions: QualityActionFilter[] = [{ skillName: 'retrieval.answer', outcome: 'no_context' }]
+
 let container: HTMLDivElement
 let root: Root
 const observed = { current: 0 }
@@ -89,15 +111,18 @@ const observed = { current: 0 }
 function Probe({
   baselineKeys,
   enabled,
+  qualityActions,
   onChange,
 }: {
   baselineKeys: readonly string[] | null
   enabled: boolean
+  qualityActions?: QualityActionFilter[]
   onChange: (newItemCount: number) => void
 }) {
   const newItemCount = useNeedsAttentionActivity({
     baselineKeys,
     enabled,
+    qualityActions,
     intervalMs: INTERVAL,
     backgroundIntervalMs: BACKGROUND_INTERVAL,
   })
@@ -107,12 +132,17 @@ function Probe({
   return null
 }
 
-const renderProbe = (baselineKeys: readonly string[] | null, enabled = true) => {
+const renderProbe = (
+  baselineKeys: readonly string[] | null,
+  enabled = true,
+  qualityActions?: QualityActionFilter[],
+) => {
   act(() => {
     root.render(
       <Probe
         baselineKeys={baselineKeys}
         enabled={enabled}
+        qualityActions={qualityActions}
         onChange={(value) => {
           observed.current = value
         }}
@@ -174,7 +204,7 @@ describe('useNeedsAttentionActivity', () => {
     const conversations = [conversationSummary()]
     mockInbox(decisions, conversations)
 
-    renderProbe(inboxItemKeys(asDecisions(decisions), asConversations(conversations)))
+    renderProbe(inboxItemKeys(asDecisions(decisions), asConversations(conversations), []))
     await advanceOnePoll()
 
     expect(observed.current).toBe(0)
@@ -182,7 +212,7 @@ describe('useNeedsAttentionActivity', () => {
 
   it('counts fresh approvals that appear after the baseline', async () => {
     const conversations = [conversationSummary()]
-    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
+    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations), [])
 
     mockInbox(
       [
@@ -209,7 +239,7 @@ describe('useNeedsAttentionActivity', () => {
 
   it('keeps polling on a slower cadence while the document is hidden', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
-    renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()])))
+    renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
 
     becomeHidden()
 
@@ -226,7 +256,7 @@ describe('useNeedsAttentionActivity', () => {
 
   it('polls immediately when the document becomes visible again', async () => {
     const conversations = [conversationSummary()]
-    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations))
+    const baseline = inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations), [])
     mockInbox([decisionSummary({ handle: 'decision-1' }), decisionSummary({ handle: 'decision-2' })], conversations)
 
     renderProbe(baseline)
@@ -238,5 +268,79 @@ describe('useNeedsAttentionActivity', () => {
 
     expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
     expect(observed.current).toBe(1)
+  })
+
+  it('counts quality signals that arrive after the displayed baseline', async () => {
+    const decisions = [decisionSummary()]
+    const conversations = [conversationSummary()]
+    const baselineQuality = [qualityTurn({ assistantMessageId: 'quality-1' })]
+    mockInbox(decisions, conversations)
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [...baselineQuality, qualityTurn({
+        assistantMessageId: 'quality-2',
+        conversationId: 'quality-conversation-2',
+      })],
+      total: 2,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe(
+      inboxItemKeys(asDecisions(decisions), asConversations(conversations), baselineQuality as LowQualityTurn[]),
+      true,
+      groundingActions,
+    )
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(1)
+  })
+
+  it('keeps escalation keys current when the quality poll fails', async () => {
+    const conversations = [conversationSummary()]
+    mockInbox([decisionSummary({ handle: 'decision-1' }), decisionSummary({ handle: 'decision-2' })], conversations)
+    qualityApiMock.listTurns.mockRejectedValue(new Error('quality unavailable'))
+
+    renderProbe(
+      inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations), []),
+      true,
+      groundingActions,
+    )
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(1)
+  })
+
+  it('keeps quality keys current when an escalation source fails', async () => {
+    const conversations = [conversationSummary()]
+    hitlApiMock.listPendingDecisions.mockRejectedValue(new Error('approvals unavailable'))
+    chatApiMock.listChatHistory.mockResolvedValue({
+      conversations,
+      total: conversations.length,
+      nextCursor: null,
+      hasMore: false,
+    } as never)
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [qualityTurn()],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe(inboxItemKeys([], asConversations(conversations), []), true, groundingActions)
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(1)
+  })
+
+  it('falls back to escalation-only polling when quality actions are unavailable', async () => {
+    mockInbox([decisionSummary()], [conversationSummary()])
+    renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
+    await advanceOnePoll()
+
+    expect(qualityApiMock.listTurns).not.toHaveBeenCalled()
+    expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
+    expect(chatApiMock.listChatHistory).toHaveBeenCalledTimes(1)
   })
 })

@@ -61,6 +61,9 @@ export const registerHistoryPaths = (
           description:
             "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
         }),
+        ownership: z.enum(["human_owned"]).optional().openapi({
+          description: "Restrict results to conversations currently owned by a human operator.",
+        }),
       }),
     },
     responses: {

@@ -148,7 +148,7 @@ one agent:
 - `enabled`
 
 The dashboard exposes the `pushed` source. Resolver-backed variables
-are part of the API contract, but the operator UI does not configure them yet.
+are part of the API contract; the operator UI does not configure them.
 
 Host backends push runtime values through
 `PUT /api/v1/context-variables/{id}/values`. The request identifies the scope:
@@ -229,7 +229,7 @@ Skill entries include:
 
 ## Endpoint reference
 
-Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/agents

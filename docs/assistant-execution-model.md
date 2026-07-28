@@ -6,7 +6,7 @@ last_updated: 2026-07-27
 
 # Assistant Execution Model
 
-Radioso uses two knowledge-agent execution classes on purpose. Only the interactive path is shipped; the deferred class is a design boundary the product holds to, not a running subsystem yet.
+Radioso uses two knowledge-agent execution classes on purpose. Only the interactive path is shipped; the deferred class is a design boundary the product holds to, not a running subsystem.
 
 ## Live Chat Stays Immediate
 

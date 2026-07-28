@@ -11,7 +11,7 @@ An eval is a real conversation you froze so you can replay it and check the agen
 
 ## Cases come from real conversations
 
-You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench or the Activity view, hover an assistant answer and click the **flask icon** to save that turn as a case. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
+You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench or the Activity view, hover an assistant answer (the agent's reply — API paths say assistant, same thing) and click the **flask icon** to save that turn as a case. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
 
 Under the hood the snapshot and case are two API calls, both under `/api/v1/evals`:
 
@@ -40,6 +40,8 @@ Answer assertions:
 - `llm_judge` — a model compares the new answer to an `expectedAnswer`, with optional `criteria` describing what counts as correct. Use it when exact text is too brittle but meaning matters.
 
 A case holds up to 20 assertions.
+
+For the shipping case in the screenshot above, three assertions pin the behavior from different angles: `answer_contains` with pattern `3–5 business days` pins the number, `answer_cites_document` pins it to the Shipping policy document, and `llm_judge` with the original answer as reference catches drift in meaning that exact text matching would miss.
 
 ## Run a case
 

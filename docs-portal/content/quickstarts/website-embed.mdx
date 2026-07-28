@@ -53,7 +53,9 @@ Those two URLs differ only by host, on purpose. That single difference is enough
 
 ## Example launcher snippet
 
-In production, the Enterprise launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings.
+In production, the Enterprise launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings — the agent's **Identity & appearance** screen previews them live as you edit.
+
+![The Identity & appearance settings with assistant name, brand color, and surface style beside a live preview of the chat widget answering a question.](/screenshots/dashboard-agent-behavior.png)
 
 ```html
 <script
@@ -151,7 +153,7 @@ Open the approved origin, confirm the launcher appears, open the widget, and con
 
 The browser sends its `Origin` header to the frontend session route. The frontend forwards that origin to the backend, which decides whether the launch is allowed.
 
-After a successful launch, the channels settings screen shows when the website embed credential was last used. If an install code is exposed, revoke it to stop new launches immediately. Revocation does not create a replacement code; rotate the credential when you're ready to install a new one.
+After a successful launch, the channels settings screen shows when the website embed credential was last used. If an install code is exposed, rotate the credential — the old install code stops launching new sessions the moment the token changes, and the settings screen shows the new code to deploy.
 
 ### Test the blocked path
 

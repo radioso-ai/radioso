@@ -8,7 +8,7 @@ last_updated: 2026-07-27
 
 The backend OpenAPI document is the single source contract for every generated client surface. The TypeScript SDK types and the MCP server types are both derived from it, so the backend describes the API once and the downstream clients inherit that description instead of re-declaring it.
 
-Regeneration runs in one direction — backend first, then SDK, then MCP — because each downstream artifact is generated from the one before it. Run the steps out of order and a client can end up generated against a contract the backend no longer serves, which is exactly the drift the contract check is there to catch.
+Regeneration starts at the backend because both clients read `backend/openapi.json` directly — the SDK sync copies it and generates types, and the MCP server generates its types from the same file. Regenerate the backend artifact first, or a client ends up generated against a contract the backend no longer serves, which is exactly the drift the contract check is there to catch.
 
 These artifacts move together:
 

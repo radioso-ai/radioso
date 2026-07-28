@@ -1,12 +1,13 @@
 // Captures the dashboard screenshots used by the docs portal.
 //
 // Prerequisites:
-//   1. A running local stack (./run-dev.sh) with a seeded demo workspace.
-//      The demo data this script expects (org "Aurora Coffee Roasters",
-//      workspace "Customer Support", agent "Aurora Support" with four
-//      processed documents, one directive, one published routine, and one
-//      conversation) can be created through the normal API flows described
-//      in docs-portal/content/quickstarts/api-first-success.mdx.
+//   1. A running local stack (./run-dev.sh) with a seeded demo workspace:
+//      org "Aurora Coffee Roasters", workspace "Customer Support", agent
+//      "Aurora Support" with four processed documents, one directive, one
+//      published routine, one passing eval case, and one cited conversation.
+//      Seed it through the normal REST API (document, agents, directives,
+//      routines/portable, evals, and assistant/chat endpoints) with a
+//      workspace token.
 //   2. Playwright installed (the frontend workspace already depends on it):
 //      pnpm --dir frontend exec playwright install chromium
 //
@@ -69,12 +70,31 @@ const openDirectives = async (page) => {
   await page.waitForTimeout(2000)
 }
 
+// A published routine is read-only and its Prose tab is disabled; open an
+// editable revision first, then switch tabs. Safe to re-run: when a revision
+// draft already exists the editor opens straight into it.
+const openProseView = async (page) => {
+  const editRevision = page.getByRole('button', { name: 'Edit revision' })
+  if (await editRevision.isVisible().catch(() => false)) {
+    await editRevision.click()
+    await page.waitForTimeout(2500)
+  }
+  const proseTab = page.getByRole('tab', { name: 'Prose' })
+  if (await proseTab.isVisible().catch(() => false)) {
+    await proseTab.click()
+    await page.waitForTimeout(2000)
+  }
+}
+
 const shots = [
   { name: 'dashboard-agents-workbench.png', url: ws(`/agents/${AGENT_ID}?tab=chat`), settle: 3000, action: askInWorkbench },
   { name: 'dashboard-knowledge-documents.png', url: ws('/documents'), settle: 2000 },
   { name: 'dashboard-agent-behavior.png', url: ws(`/agents/${AGENT_ID}?tab=behavior`), settle: 2000 },
   { name: 'dashboard-agent-directives.png', url: ws(`/agents/${AGENT_ID}?tab=behavior`), settle: 2000, action: openDirectives },
-  ...(ROUTINE_ID ? [{ name: 'dashboard-routine-editor.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500 }] : []),
+  ...(ROUTINE_ID ? [
+    { name: 'dashboard-routine-editor.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500 },
+    { name: 'dashboard-routine-prose.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500, action: openProseView },
+  ] : []),
   { name: 'dashboard-activity.png', url: ws('/history?tab=all'), settle: 2000 },
   { name: 'dashboard-settings.png', url: ws('/settings'), settle: 2000 },
   { name: 'dashboard-eval.png', url: ws('/eval'), settle: 2000 },

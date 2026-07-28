@@ -5,7 +5,7 @@ description: Connect Radioso agents to Slack as an inbound conversation channel,
 
 # Slack channel
 
-The Slack channel lets people talk to your Radioso agents from Slack. One Slack workspace maps to one Radioso organization. Inside it, the default agent answers direct messages and any channel without a specific binding, and individual Slack channels can be routed to specific agents.
+The Slack channel lets people talk to your Radioso agents from Slack. One Slack workspace connects to one Radioso workspace — the one that installed the Slack app. Inside it, the default agent answers direct messages and any channel without a specific binding, and individual Slack channels can be routed to specific agents.
 
 Slack is a channel, not a document source. Radioso does not read Slack history, does not call Slack search, and does not add Slack messages to the knowledge base. Answers still come from the agent's curated Radioso knowledge; if that knowledge does not cover the question, the agent declines safely or escalates.
 
@@ -19,7 +19,7 @@ You manage it from an agent's **Channels**, alongside the public chat link, webs
 - `@mention` events in Slack channels are answered in the originating thread. A channel-specific binding wins when one exists; otherwise Radioso uses the default agent.
 - While the agent works on a message, Radioso adds an `eyes` reaction. Once the reply is posted, that reaction is replaced with a check mark, or an `x` if the reply could not be delivered.
 - Each DM user and each mentioned channel thread maps to one Radioso conversation.
-- When a turn's outcome is `no_context` and an escalation channel is configured, Radioso posts a human follow-up to that channel.
+- When a turn's outcome is `no_context`, gap escalation is enabled, and an escalation channel is configured, Radioso posts a human follow-up to that channel. Setting only the channel is not enough — the escalation toggle must also be on.
 - Approval gates, handoffs, and unanswered questions arrive as interactive messages an operator can act on from Slack.
 
 ## Operator actions in Slack

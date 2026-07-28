@@ -16,6 +16,8 @@ The editor has two views of one draft. Switching between them re-projects the sa
 - **Prose** is the primary view. You write the routine in plain language and drop inline chips where structure is needed.
 - **Form** is a strict, lower-level view. It exposes slot, step, transition, and terminal fields directly. Some shapes — more than one handoff, an activation gate — open in Form because Prose cannot show them.
 
+![The same routine in the Prose view: plain-language step lines with inline chips for the order_number and issue_description values.](/screenshots/dashboard-routine-prose.png)
+
 The graph the engine runs is compiled from the draft. You never draw or edit the graph by hand.
 
 ![The Damaged delivery intake routine open in the Form editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
@@ -65,11 +67,11 @@ Every branch line shows how it is decided. A line with a condition chip or a cap
 
 The key point: chips for structure, prose for instruction. You never type curly braces or arrows.
 
-## Validate and publish
+## Validation and publishing
 
-Run **Validate** before you publish. It reports problems in author terms — a branch target that no longer exists, a step that cannot reach an end, a required skill input that nothing fills, a comparison on a slot that does not exist.
+The editor validates as you work — there is no button to press. Problems are reported in author terms — a branch target that no longer exists, a step that cannot reach an end, a required skill input that nothing fills, a comparison on a slot that does not exist.
 
-Use **Save draft** to keep work in progress. Use **Publish** to create an immutable version the chat runtime runs. A routine has four statuses: `draft`, `published`, `superseded` (an older published version), and `archived` (retired). To change a published routine, choose **Edit revision** to open its draft, then publish again — the new version takes the same id in place and the previous one is marked superseded.
+Edits save on their own: the editor autosaves a moment after you stop typing. **Publish** creates an immutable version the chat runtime runs, and it stays gated until the draft validates clean. A routine has four statuses: `draft`, `published`, `superseded` (an older published version), and `archived` (retired). To change a published routine, choose **Edit revision** to open its draft, then publish again — the new version takes the same id in place and the previous one is marked superseded.
 
 Conversations already running keep the version they started on. If a routine is superseded or archived mid-flow, that visitor finishes on the pinned version; only new conversations consider the current published version.
 
@@ -77,7 +79,7 @@ Conversations already running keep the version they started on. If a routine is 
 
 You do not have to publish to see how a routine behaves. On a saved draft, choose **Test draft** to slide out a live test chat over the editor. In it the draft is eligible to activate, runs turn by turn, and hands back to normal answering when it ends — exactly as it would after publishing.
 
-- **Test draft** runs the last *saved* draft, so save your edits first.
+- **Test draft** runs the last *saved* draft; autosave runs a moment after you stop typing, so pause briefly before testing.
 - The test conversation is separate from your other test chats.
 - Only the draft you opened is made eligible; the agent's published routines still run alongside it.
 
@@ -92,7 +94,7 @@ Select the whole routine in Prose and copy it; Radioso puts it on the clipboard 
 - A routine never starts: the trigger describes the wrong situation, or a higher-priority routine claims the turn first. Test the trigger with **Test draft**.
 - A step does not wait for a value: it references the slot as literal text instead of an `@` chip. Insert the chip so the step compiles to a real slot.
 - A backward jump fails validation: give it a max count so the loop is bounded.
-- **Test draft** shows stale behavior: it runs the last saved draft. Save, then test again.
+- **Test draft** shows stale behavior: it runs the last saved draft. Give autosave a beat to catch up, then test again.
 
 ## Read next
 

@@ -73,7 +73,7 @@ Owners and admins can revoke. A revoked invitation can no longer be accepted, an
 
 Workspace grants are optional. If no grant exists, the user inherits their organization role for the workspace.
 
-Use workspace grants to give a user `admin` or `member` access for a workspace. Grants do not remove inherited access in this release.
+Use workspace grants to give a user `admin` or `member` access for a workspace. Grants do not remove inherited access.
 
 ```text
 PUT /api/v1/account/workspaces/{workspaceId}/grants/{userId}
@@ -105,7 +105,7 @@ DELETE /api/v1/account/users/{membershipId}
 
 ## Endpoint reference
 
-Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/account/users

@@ -80,7 +80,7 @@ Real examples from this repo. The "before" text shipped.
 
 Guides that walk through the dashboard show it.
 
-- Images live in `docs-portal/public/screenshots/`, named `<section>-<page>-<subject>.png` (for example `quickstarts-run-locally-first-answer.png`).
+- Images live in `docs-portal/public/screenshots/`, named for the screen they show — `dashboard-<screen>.png`, for example `dashboard-agents-workbench.png` — because one screen's capture is shared by every page that walks through it.
 - Capture with the checked-in script `docs-portal/scripts/capture-screenshots.mjs` against a local stack (`./run-dev.sh`) with the seeded demo workspace, so screens show believable data rather than empty states. Consistent viewport; light theme.
 - Alt text says what the reader should notice ("The Sources list with three documents in Processed state"), not "screenshot of the app".
 - When a screen changes meaningfully, retake its screenshot in the same change. A stale screenshot is worse than none.

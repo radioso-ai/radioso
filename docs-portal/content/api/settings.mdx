@@ -11,7 +11,7 @@ Retrieval configuration is not a workspace setting. It lives on each agent's `re
 
 ## How it works
 
-There are four main setting groups:
+The setting groups are:
 
 - ingestion settings for chunking behavior
 - general settings for anonymous chat, assistant defaults, and Enterprise website widget behavior
@@ -108,14 +108,12 @@ This payload covers user-facing workspace behavior such as:
 
 - `anonymousChatEnabled`
 - `anonymousChatLastUsedAt`
-- `anonymousChatStatus`
 - `assistantName`
 - `greetingInstruction`
 - `assistantDefaultLocale`
 - `proactiveGreetingEnabled`
 - `websiteEmbedEnabled`
 - `websiteEmbedLastUsedAt`
-- `websiteEmbedStatus`
 - `websiteEmbedAllowedOrigins`
 - `websiteEmbedLauncherLabel`
 - `websiteEmbedLauncherPosition`
@@ -132,7 +130,7 @@ POST /api/v1/settings/general/anonymous-chat-token/rotate
 POST /api/v1/settings/general/website-embed-token/rotate
 ```
 
-To revoke the current public launch credential without issuing a replacement, send a settings update with `channels.revokeAnonymousChatToken` or `channels.revokeWebsiteEmbedToken` set to `true`. Revocation is separate from the enabled toggle. The current link or install code stops launching new sessions until it is rotated.
+Rotation is also the revocation lever: the old link or install code stops launching new sessions the moment the token changes.
 
 ## Provider credentials
 
@@ -259,7 +257,7 @@ For per-agent chat model overrides, set `chatModelOverride` on the agent through
 
 ## Endpoint reference
 
-Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET /api/v1/settings/retrieval-defaults

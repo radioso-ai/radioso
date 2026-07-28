@@ -1,10 +1,9 @@
 ---
-title: "Connectors"
+title: "Connectors and webhooks"
 description: "Read connector state, save connector config, enable or disable connectors, and run manual syncs."
-last_updated: 2026-07-25
 ---
 
-# Connectors
+# Connectors and webhooks
 
 Connectors link a workspace to external systems. The exact config shape depends on the connector type.
 
@@ -16,7 +15,7 @@ Connectors link a workspace to external systems. The exact config shape depends 
 4. Enable the connector when the config is ready.
 5. Run a manual sync when the connector supports it.
 
-The key point is that connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
+Connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
 
 Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, count ingested by the last sync, and the operator-safe `lastError` from the latest failed sync. A successful sync clears `lastError`.
 
@@ -77,7 +76,7 @@ A workspace WordPress connector accepts one configured site. Companion-plugin we
 
 ## Endpoint reference
 
-Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET  /api/v1/connectors

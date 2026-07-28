@@ -13,10 +13,7 @@ This is the fastest way to see Radioso doing its job: one script, a local stack,
 
 - Node.js 24+
 - Docker with `docker compose`
-- At least one supported provider key:
-  - `OPENAI_API_KEY`
-  - `GEMINI_API_KEY`
-  - `ANTHROPIC_API_KEY`
+- A provider API key (OpenAI, Gemini, or Anthropic) — optional at startup, needed before your first grounded answer
 
 You need Node.js because `./run-dev.sh` runs a small Node bootstrap script before the containers come up. The provider key is what turns your documents into embeddings and your questions into answers, so pick the provider you already have credit with.
 
@@ -30,7 +27,7 @@ This is the bootstrap path, and it does the fiddly parts for you. It:
 
 - checks local prerequisites
 - creates or reuses `.env`
-- prompts for the AI provider and required credentials
+- offers to store an AI provider key; enter one now or add it later in the app under Settings → Credentials
 - generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `PUBLIC_CHAT_SESSION_SECRET`
 - configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose

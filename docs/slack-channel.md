@@ -1,15 +1,15 @@
 ---
 title: "Slack Channel"
-description: "Connect a Radioso organization and its agents to Slack direct messages, mentions, human escalation posts, and operator callbacks."
+description: "Connect a Radioso workspace and its agents to Slack direct messages, mentions, human escalation posts, and operator callbacks."
 last_updated: 2026-06-30
 ---
 
 # Slack Channel
 
 The Slack channel lets people talk to Radioso agents from Slack. One Slack
-workspace maps to one Radioso organization. Inside that organization, the
-default agent answers direct messages and channels that do not have a specific
-agent. Individual Slack channels can be assigned to specific agents.
+workspace connects to one Radioso workspace — the one that installed the Slack
+app. That workspace's default agent answers direct messages and channels that
+do not have a specific agent. Individual Slack channels can be assigned to specific agents.
 
 The same Slack connection can also post an escalation to a human Slack channel
 when the agent has no grounded answer.
@@ -29,8 +29,9 @@ the knowledge base.
   an `x` if the reply could not be delivered.
 - Each DM user and each mentioned channel thread maps to one Radioso
   conversation.
-- When the turn outcome is `no_context` and an escalation channel is configured,
-  Radioso posts a human follow-up message to that channel.
+- When the turn outcome is `no_context`, gap escalation is enabled, and an
+  escalation channel is configured, Radioso posts a human follow-up message to
+  that channel.
 - Routines can also use allowlisted Slack skills to post deliberate handoff or
   lead messages.
 - Approval gates, handoffs, and unanswered questions arrive as interactive

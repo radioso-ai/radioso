@@ -14,7 +14,7 @@ Workspaces are the unit that holds documents, settings, chat history, and connec
 3. Reveal that workspace's API token.
 4. Send that token as `Authorization: Bearer <token>` on token-authenticated routes.
 
-The key point is that workspace management is session-based, but most developer automation after that point is token-based.
+Workspace management is session-based; most developer automation after that point is token-based.
 
 ## Create a workspace
 
@@ -44,7 +44,7 @@ In practice, deletion is a high-impact operation. Make sure the workspace is not
 
 ## Endpoint reference
 
-Every route this page walks through, in one place. Exact schemas and status codes live in the [API Reference](/api-reference).
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/workspace

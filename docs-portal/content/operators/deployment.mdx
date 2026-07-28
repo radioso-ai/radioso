@@ -100,7 +100,7 @@ Startup migration metadata checks use separate lock and statement timeout budget
 
 In practice, a blocked migration metadata check should now fail with an application log that names startup migrations as the failing phase. It should not look only like a platform port-listen failure. A lock timeout usually means another database session is holding or waiting on the migration metadata table. The migration SQL body disables those local metadata timeouts so large index builds and backfills can still finish.
 
-The current backend still owns migrations during startup. A separate pre-deploy migration job is a future deployment architecture improvement, not a requirement for the current production contract.
+The backend owns migrations during startup; there is no separate pre-deploy migration job.
 
 ## Docs portal deployment
 

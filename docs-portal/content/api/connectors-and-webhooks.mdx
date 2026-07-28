@@ -1,23 +1,11 @@
 ---
-title: "Connectors"
+title: "Connectors and webhooks"
 description: "Read connector state, save connector config, enable or disable connectors, and run manual syncs."
-last_updated: 2026-07-25
 ---
 
-# Connectors
+# Connectors and webhooks
 
 Connectors link a workspace to external systems. The exact config shape depends on the connector type.
-
-## Relevant endpoints
-
-```text
-GET  /api/v1/connectors
-GET  /api/v1/connectors/{connectorId}
-PUT  /api/v1/connectors/{connectorId}
-POST /api/v1/connectors/{connectorId}/enable
-POST /api/v1/connectors/{connectorId}/disable
-POST /api/v1/connectors/{connectorId}/sync
-```
 
 ## How it works
 
@@ -27,7 +15,7 @@ POST /api/v1/connectors/{connectorId}/sync
 4. Enable the connector when the config is ready.
 5. Run a manual sync when the connector supports it.
 
-The key point is that connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
+Connector config is not one global schema. The body depends on the connector you are configuring, so the [API Reference](/api-reference) is the authoritative place for the exact shape.
 
 Connector detail responses also include `syncState`. This shows whether a sync is queued or running, the latest backfill completion time, latest sync attempt, upstream modified cursor, count ingested by the last sync, and the operator-safe `lastError` from the latest failed sync. A successful sync clears `lastError`.
 
@@ -85,6 +73,19 @@ The sync continues after the HTTP request returns. Re-read the connector detail 
 For WordPress, the connector creates its source record before it calls the WordPress REST API. This keeps failed syncs visible under **Knowledge → Sources**, including failures that happen before WordPress returns the first post.
 
 A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects events when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret; copy the new secret into the plugin settings for the new site.
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+GET  /api/v1/connectors
+GET  /api/v1/connectors/{connectorId}
+PUT  /api/v1/connectors/{connectorId}
+POST /api/v1/connectors/{connectorId}/enable
+POST /api/v1/connectors/{connectorId}/disable
+POST /api/v1/connectors/{connectorId}/sync
+```
 
 ## Common failure modes
 

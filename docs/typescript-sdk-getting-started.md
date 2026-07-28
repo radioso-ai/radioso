@@ -14,7 +14,7 @@ This guide shows how to install the SDK, configure a client, and make your first
 - A Radioso base URL
 - An API token
 
-The current SDK uses workspace API tokens. These are secret bearer credentials bound to one workspace. Public chat URLs and website embed launch values are not API tokens and cannot be used with the SDK.
+The SDK uses workspace API tokens. These are secret bearer credentials bound to one workspace. Public chat URLs and website embed launch values are not API tokens and cannot be used with the SDK.
 
 ## Install
 
@@ -59,7 +59,7 @@ pnpm run build
 
 `pnpm run sync` updates the SDK's generated types from the backend API description.
 
-## What You Can Do With It Right Now
+## What You Can Do With It
 
 ```ts
 client.settings.getIngestion(...)

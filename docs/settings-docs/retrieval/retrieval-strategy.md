@@ -1,7 +1,7 @@
 ---
 title: "Answering Strategy"
 description: "Choice between fixed-pipeline standard, agent-driven reasoning, or automatic strategy selection for grounded answers."
-last_updated: 2026-06-09
+last_updated: 2026-07-27
 ---
 
 # Answering Strategy
@@ -18,7 +18,7 @@ The answering strategy decides *how* retrieval runs for each question. The resul
 
 - **Standard** runs a fixed pipeline: interpret the question, search, rank, and answer in a set order. It is fast and predictable.
 - **Reasoning (experimental)** runs an agent that decides its own steps. It can search more than once and refine the query before answering. It is slower and costs more, but handles harder, multi-part questions better.
-- **Automatic** is reserved for a future router that picks the strategy per question. Until that ships, it behaves like Standard.
+- **Automatic** behaves exactly like Standard.
 
 ### How it works
 

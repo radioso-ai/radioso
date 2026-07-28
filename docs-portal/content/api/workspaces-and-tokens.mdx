@@ -7,16 +7,6 @@ description: Create and manage workspaces, then reveal the workspace token used 
 
 Workspaces are the unit that holds documents, settings, chat history, and connector state. The workspace token is what server-side API clients use after setup.
 
-## Relevant endpoints
-
-```text
-GET    /api/v1/workspace
-POST   /api/v1/workspace
-PATCH  /api/v1/workspace/{workspaceId}
-DELETE /api/v1/workspace/{workspaceId}
-GET    /api/v1/account/workspaces/{workspaceId}/token
-```
-
 ## How it works
 
 1. Use a session-authenticated route to list or create a workspace.
@@ -24,7 +14,7 @@ GET    /api/v1/account/workspaces/{workspaceId}/token
 3. Reveal that workspace's API token.
 4. Send that token as `Authorization: Bearer <token>` on token-authenticated routes.
 
-The key point is that workspace management is session-based, but most developer automation after that point is token-based.
+Workspace management is session-based; most developer automation after that point is token-based.
 
 ## Create a workspace
 
@@ -51,6 +41,18 @@ Use `PATCH /api/v1/workspace/{workspaceId}` to rename a workspace.
 Use `DELETE /api/v1/workspace/{workspaceId}` to remove it.
 
 In practice, deletion is a high-impact operation. Make sure the workspace is not the one you still need for documents, settings, or public chat.
+
+## Endpoint reference
+
+Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+
+```text
+GET    /api/v1/workspace
+POST   /api/v1/workspace
+PATCH  /api/v1/workspace/{workspaceId}
+DELETE /api/v1/workspace/{workspaceId}
+GET    /api/v1/account/workspaces/{workspaceId}/token
+```
 
 ## Common failure modes
 

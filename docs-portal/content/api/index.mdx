@@ -13,6 +13,8 @@ The Radioso API has three access patterns.
 
 In practice, that split matters more than the endpoint count. It tells you which credential to use and where state is stored.
 
+One naming note before you dive in: the persona you configure in the dashboard is an **agent**. The chat surface you call to talk to it is still named **assistant** in API paths, such as `/api/v1/assistant/chat`. Same thing, two names — the assistant chat API is how you talk to an agent.
+
 ## Start with the right path
 
 - If you are signing users into the product, start with [Auth and sessions](/api/auth-and-sessions).
@@ -23,7 +25,7 @@ In practice, that split matters more than the endpoint count. It tells you which
 
 ## Reference and scenarios
 
-The key point is that there are two useful docs surfaces:
+There are two useful docs surfaces:
 
 - [API Reference](/api-reference) for exact schemas, status codes, and payload contracts
 - API scenario pages for the order in which you call those endpoints

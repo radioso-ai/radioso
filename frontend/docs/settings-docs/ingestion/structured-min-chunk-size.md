@@ -1,23 +1,15 @@
 ---
 title: "Minimum Chunk Size"
 description: "Chunking setting that prevents semantic chunking from creating tiny unusable text segments."
-last_updated: 2026-05-17
+last_updated: 2026-07-27
 ---
 
 # Minimum Chunk Size
 
 ## Summary
-Avoid tiny semantic text segments during chunking.
+Keep semantic and recursive chunking from emitting fragments too small to be useful.
 
 ## Details
-### Overview
+Semantic and recursive text chunking split at natural boundaries, and sometimes a natural boundary lands almost immediately — a one-line heading, a short aside, a two-sentence note. On its own, such a fragment carries little for retrieval to match against. This lower bound tells the chunker to keep pulling in neighboring text until a segment reaches a usable size before it stands as its own chunk.
 
-This setting gives semantic and recursive text chunking a lower bound for very small text segments.
-
-### Typical Small Segments
-
-- a short sentence
-- a small note
-- a brief paragraph
-
-The chunker keeps nearby text together until the segment is large enough to be useful for retrieval.
+Raise it if you see very short, context-poor chunks surfacing in results. Lower it if genuinely distinct short passages are being glued onto unrelated neighbors. It does not affect fixed-window chunking, which sizes every chunk the same way regardless.

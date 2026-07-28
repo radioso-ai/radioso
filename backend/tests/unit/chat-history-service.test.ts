@@ -196,6 +196,25 @@ describe("chat history service ownership read surface", () => {
     expect(aiRow?.ownership).toBeUndefined();
   });
 
+  it("passes the human-owned ownership scope through to the conversation page", async () => {
+    const { conversationRepository, service } = createService();
+    const requestedInputs: unknown[] = [];
+    const listPageByWorkspaceId = conversationRepository.listPageByWorkspaceId.bind(conversationRepository);
+    conversationRepository.listPageByWorkspaceId = async (workspaceId, input) => {
+      requestedInputs.push(input);
+      return listPageByWorkspaceId(workspaceId, input);
+    };
+
+    await service.listConversations("workspace-1", {
+      limit: 1,
+      ownership: "human_owned",
+    });
+
+    expect(requestedInputs).toEqual([
+      expect.objectContaining({ ownership: "human_owned" }),
+    ]);
+  });
+
   it("projects persisted channel context into list and detail responses", async () => {
     const { conversationRepository, service } = createService();
     const slackContext = {

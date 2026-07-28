@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 
-import { chatApi } from '@/lib/api'
+import { chatApi, qualityApi, type LowQualityTurn, type QualityActionFilter } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
+import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import {
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
   countNewInboxItems,
@@ -14,6 +15,8 @@ import {
 interface UseNeedsAttentionActivityInput {
   /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
   baselineKeys: readonly string[] | null
+  /** Grounding-gap actions from the skills catalog; undefined means the catalog is unavailable. */
+  qualityActions?: readonly QualityActionFilter[]
   enabled?: boolean
   /** Poll cadence while the tab is in the foreground. */
   intervalMs?: number
@@ -33,11 +36,17 @@ interface UseNeedsAttentionActivityInput {
  */
 export const useNeedsAttentionActivity = ({
   baselineKeys,
+  qualityActions,
   enabled = true,
   intervalMs = 15000,
   backgroundIntervalMs = 30000,
 }: UseNeedsAttentionActivityInput): number => {
   const [latestKeys, setLatestKeys] = useState<string[] | null>(null)
+  const baselineSignature = baselineKeys === null ? null : baselineKeys.join('\u0000')
+
+  useEffect(() => {
+    setLatestKeys(null)
+  }, [baselineSignature])
 
   useEffect(() => {
     if (!enabled) {
@@ -46,6 +55,9 @@ export const useNeedsAttentionActivity = ({
 
     let cancelled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let latestDecisions: Parameters<typeof inboxItemKeys>[0] = []
+    let latestConversations: Parameters<typeof inboxItemKeys>[1] = []
+    let latestQualityTurns: LowQualityTurn[] = []
 
     const isDocumentVisible = () =>
       typeof document === 'undefined' || document.visibilityState !== 'hidden'
@@ -68,23 +80,46 @@ export const useNeedsAttentionActivity = ({
     }
 
     const poll = async () => {
-      try {
-        const [approvalsResult, conversationsResult] = await Promise.all([
-          hitlApi.listPendingDecisions(),
-          chatApi.listChatHistory({ limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE, offset: 0 }),
-        ])
-        if (cancelled) {
-          return
-        }
+      const qualityRequest = qualityActions && qualityActions.length > 0
+        ? qualityApi.listTurns({
+            actions: [...qualityActions],
+            triageStates: [...ACTIVE_TRIAGE_STATES],
+            limit: 25,
+          })
+        : null
+      const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
+        hitlApi.listPendingDecisions(),
+        chatApi.listChatHistory({
+          limit: HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
+          offset: 0,
+          ownership: 'human_owned',
+        }),
+        qualityRequest ?? Promise.resolve(null),
+      ])
+      if (cancelled) {
+        return
+      }
 
-        setLatestKeys(
-          inboxItemKeys(
-            approvalsResult.decisions,
-            selectHumanOwnedConversations(conversationsResult.conversations),
-          ),
-        )
-      } catch {
-        // The indicator is best-effort; a failed poll just leaves the previous keys in place.
+      let hasFreshSource = false
+      if (approvalsResult.status === 'fulfilled') {
+        latestDecisions = approvalsResult.value.decisions
+        hasFreshSource = true
+      }
+      if (conversationsResult.status === 'fulfilled') {
+        latestConversations = selectHumanOwnedConversations(conversationsResult.value.conversations)
+        hasFreshSource = true
+      }
+      if (qualityResult.status === 'fulfilled') {
+        if (qualityResult.value) {
+          latestQualityTurns = qualityResult.value.items
+          hasFreshSource = true
+        } else if (qualityActions !== undefined) {
+          latestQualityTurns = []
+        }
+      }
+
+      if (hasFreshSource) {
+        setLatestKeys(inboxItemKeys(latestDecisions, latestConversations, latestQualityTurns))
       }
 
       scheduleNextPoll()
@@ -118,7 +153,7 @@ export const useNeedsAttentionActivity = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [enabled, intervalMs, backgroundIntervalMs])
+  }, [enabled, intervalMs, backgroundIntervalMs, qualityActions])
 
   if (!enabled || latestKeys === null || baselineKeys === null) {
     return 0

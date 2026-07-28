@@ -627,6 +627,7 @@ export const createTestDependencies = (overrides: {
   const documentStorage = new InMemoryDocumentStorage();
   const conversationRepository = new InMemoryConversationRepository();
   const conversationOwnershipRepository = new InMemoryConversationOwnershipRepository();
+  conversationRepository.setOwnershipReader(conversationOwnershipRepository);
   const messageRepository = new InMemoryMessageRepository();
   conversationRepository.setMessageRepository(messageRepository);
   const bootstrapGreetingCacheRepository = new InMemoryBootstrapGreetingCacheRepository();

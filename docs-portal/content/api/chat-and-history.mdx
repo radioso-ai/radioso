@@ -81,7 +81,7 @@ Use the [API Reference](/api-reference) for the exact streaming and non-streamin
 
 Use `GET /api/v1/history` to list merged chat and document-search history.
 
-Use `GET /api/v1/history/chat` to list saved conversations.
+Use `GET /api/v1/history/chat` to list saved conversations. Add `ownership=human_owned` to return only conversations currently owned by a human operator; the response `total` then counts waiting handoffs.
 
 Use `GET /api/v1/history/chat/{conversationId}` to retrieve one conversation and its debug metadata. The older `GET /api/v1/history/{conversationId}` route is a compatibility alias.
 

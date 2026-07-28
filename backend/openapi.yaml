@@ -18693,6 +18693,14 @@ paths:
           required: false
           name: sourceScope
           in: query
+        - schema:
+            type: string
+            enum:
+              - human_owned
+            description: Restrict results to conversations currently owned by a human operator.
+          required: false
+          name: ownership
+          in: query
       responses:
         "200":
           description: Chat history summaries

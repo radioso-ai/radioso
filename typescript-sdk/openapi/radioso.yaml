@@ -16835,6 +16835,7 @@ paths:
                                   - select
                                   - string_list
                                   - source_scope
+                                  - metadata_rules
                               help:
                                 type: string
                               dependsOnKey:
@@ -18691,6 +18692,14 @@ paths:
             description: Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.
           required: false
           name: sourceScope
+          in: query
+        - schema:
+            type: string
+            enum:
+              - human_owned
+            description: Restrict results to conversations currently owned by a human operator.
+          required: false
+          name: ownership
           in: query
       responses:
         "200":

@@ -69,6 +69,7 @@ import {
   type DashboardRouteState,
   type QualityFeedbackFilter,
   type QualityLatencyFilter,
+  type QualitySortFilter,
   type QualityStatusFilter,
   type QualityTriageFilter,
 } from '@/lib/dashboard-routes'
@@ -574,6 +575,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const triageKey = (routeState.qualityTriageStates ?? []).join(',')
   const latency = routeState.qualityLatency
+  const sort: QualitySortFilter = routeState.qualitySort ?? 'turn_created_at'
+  const activeNegativeFeedbackOnly = routeState.qualityActiveNegativeFeedbackOnly ?? false
   // Health window (zone 1). Deliberately independent of the queue filters below.
   const range: QualityStatsRange = routeState.qualityRange ?? DEFAULT_QUALITY_RANGE
   // The queue's signal preset (zone 2), now a first-class server filter rather
@@ -904,6 +907,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           latencyValue?.kind === 'single-select'
             ? (latencyValue.value as QualityLatencyFilter)
             : undefined,
+        qualitySort: undefined,
+        qualityActiveNegativeFeedbackOnly: undefined,
         qualityHasComment: hasCommentValue?.kind === 'boolean' ? true : undefined,
         qualityPage: undefined,
       })
@@ -933,6 +938,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       qualityActions: undefined,
       qualityLatency: undefined,
       qualityStatuses: undefined,
+      qualitySort: undefined,
+      qualityActiveNegativeFeedbackOnly: undefined,
       qualityHasComment: undefined,
       qualityPage: undefined,
     })
@@ -944,6 +951,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     navigateWith({
       qualityShowAll: next ? true : undefined,
       qualitySignal: undefined,
+      qualitySort: undefined,
+      qualityActiveNegativeFeedbackOnly: undefined,
       qualityPage: undefined,
     })
 
@@ -983,6 +992,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           statuses: statusesList,
           feedback: feedbackList,
           triageStates: queueScope.triageStates,
+          sort: sort === 'turn_created_at' ? undefined : sort,
+          activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
           hasComment: hasComment || undefined,
           minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
           maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
@@ -1024,6 +1035,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     actionsKey,
     statusesKey,
     triageKey,
+    sort,
+    activeNegativeFeedbackOnly,
     turnsRefreshKey,
   ])
 
@@ -1147,7 +1160,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     || statuses.length > 0
     || actions.length > 0
     || feedback.length > 0
+    || sort !== 'turn_created_at'
     || triageStates.length > 0
+    || activeNegativeFeedbackOnly
     || hasComment
     || Boolean(latency)
 

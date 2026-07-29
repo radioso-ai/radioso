@@ -118,7 +118,12 @@ describeIfDatabase("quality turns integration", () => {
     expect(refusal?.question).toBe("What is the capital of Mars?");
     expect(refusal?.agentName).toBe("Support Bot");
     expect(refusal?.channel).toBe("embed");
-    expect(refusal?.feedback).toEqual({ upCount: 0, downCount: 0, comments: [] });
+    expect(refusal?.feedback).toEqual({
+      upCount: 0,
+      downCount: 0,
+      latestDownUpdatedAt: null,
+      comments: [],
+    });
 
     const grounded = page.items.find((item) => item.assistantMessageId === groundedAssistantMessageId);
     expect(grounded?.feedback.downCount).toBe(1);
@@ -680,6 +685,152 @@ describeIfDatabase("quality turns integration", () => {
     });
     expect(unionWithStatus.items.map((item) => item.assistantMessageId)).toEqual([failedMessageId]);
     expect(unionWithStatus.total).toBe(1);
+  });
+
+  it("orders feedback by its latest update even when the answer is older than the first page", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Feedback Order Account", `feedback-order-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Feedback Order WS", `fo-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')`,
+      [conversationId, workspaceId],
+    );
+
+    const oldMessageId = randomUUID();
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+       VALUES ($1, $2, $3, 'assistant', 'Old answer with fresh feedback', $4)`,
+      [oldMessageId, conversationId, workspaceId, "2026-01-01T00:00:00.000Z"],
+    );
+    await database.query(
+      `INSERT INTO assistant_answer_feedback
+         (id, workspace_id, conversation_id, assistant_message_id, actor_type, actor_id, value, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'authenticated_user', 'fresh-actor', 'down', $5, $5)`,
+      [randomUUID(), workspaceId, conversationId, oldMessageId, "2026-06-30T12:00:00.000Z"],
+    );
+
+    for (let index = 0; index < 26; index += 1) {
+      const messageId = randomUUID();
+      const messageCreatedAt = new Date(Date.UTC(2026, 5, 1, 0, index)).toISOString();
+      const feedbackUpdatedAt = new Date(Date.UTC(2026, 5, 1, 1, index)).toISOString();
+      await database.query(
+        `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+         VALUES ($1, $2, $3, 'assistant', $4, $5)`,
+        [messageId, conversationId, workspaceId, `Newer answer ${index}`, messageCreatedAt],
+      );
+      await database.query(
+        `INSERT INTO assistant_answer_feedback
+           (id, workspace_id, conversation_id, assistant_message_id, actor_type, actor_id, value, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 'authenticated_user', $5, 'down', $6, $6)`,
+        [randomUUID(), workspaceId, conversationId, messageId, `actor-${index}`, feedbackUpdatedAt],
+      );
+    }
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const page = await service.listLowQualityTurns(workspaceId, {
+      feedbackValues: ["down"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
+      limit: 25,
+    });
+
+    expect(page.items).toHaveLength(25);
+    expect(page.items[0]?.assistantMessageId).toBe(oldMessageId);
+    expect(page.items[0]?.feedback.latestDownUpdatedAt).toBe("2026-06-30T12:00:00.000Z");
+  });
+
+  it("treats negative feedback newer than terminal triage as active until it is triaged again", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const messageId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Feedback Triage Account", `feedback-triage-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Feedback Triage WS", `ft-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')`,
+      [conversationId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+       VALUES ($1, $2, $3, 'assistant', 'Previously dismissed answer', $4)`,
+      [messageId, conversationId, workspaceId, "2026-05-01T00:00:00.000Z"],
+    );
+    await database.query(
+      `INSERT INTO assistant_answer_triage
+         (workspace_id, assistant_message_id, state, updated_at)
+       VALUES ($1, $2, 'dismissed', $3)`,
+      [workspaceId, messageId, "2026-05-02T00:00:00.000Z"],
+    );
+    await database.query(
+      `INSERT INTO assistant_answer_feedback
+         (id, workspace_id, conversation_id, assistant_message_id, actor_type, actor_id, value, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'authenticated_user', 'later-actor', 'down', $5, $5)`,
+      [randomUUID(), workspaceId, conversationId, messageId, "2026-05-03T00:00:00.000Z"],
+    );
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const reopened = await service.listLowQualityTurns(workspaceId, {
+      feedbackValues: ["down"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
+      limit: 25,
+    });
+
+    expect(reopened.items).toHaveLength(1);
+    expect(reopened.items[0]?.assistantMessageId).toBe(messageId);
+    expect(reopened.items[0]?.triage).toEqual({
+      state: "open",
+      reason: null,
+      updatedAt: null,
+    });
+
+    const reopenedOpenOnly = await service.listLowQualityTurns(workspaceId, {
+      feedbackValues: ["down"],
+      triageStates: ["open"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
+      limit: 25,
+    });
+    expect(reopenedOpenOnly.items).toHaveLength(1);
+    expect(reopenedOpenOnly.items[0]?.triage.state).toBe("open");
+
+    const reopenedResolvedOnly = await service.listLowQualityTurns(workspaceId, {
+      feedbackValues: ["down"],
+      triageStates: ["resolved"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
+      limit: 25,
+    });
+    expect(reopenedResolvedOnly.items).toHaveLength(0);
+
+    await service.setTriageState(workspaceId, {
+      assistantMessageId: messageId,
+      state: "resolved",
+    });
+    const resolved = await service.listLowQualityTurns(workspaceId, {
+      feedbackValues: ["down"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
+      limit: 25,
+    });
+
+    expect(resolved.items).toHaveLength(0);
   });
 
   it("returns null when setting triage on a turn outside the workspace", async () => {

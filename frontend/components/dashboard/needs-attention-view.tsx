@@ -10,11 +10,11 @@ import type { SelectedHistoryItem } from '@/components/dashboard/history/history
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
-import { chatApi, qualityApi, skillsApi, type LowQualityTurn, type PendingApprovalDecision, type QualityActionFilter, type QualityTriageState } from '@/lib/api'
+import { chatApi, qualityApi, type LowQualityTurn, type PendingApprovalDecision, type QualityTriageState } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { ACTIVE_TRIAGE_STATES, groundingGapActions } from '@/lib/quality-signals'
+import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import { cn } from '@/lib/utils'
 import {
   buildInboxItems,
@@ -36,11 +36,6 @@ interface NeedsAttentionViewProps {
 // Cap the lower-concern quality signals pulled into the live inbox so they never crowd out
 // critical escalations. The Quality view remains the full, paginated backlog.
 const QUALITY_INBOX_LIMIT = 25
-
-interface QualityInboxData {
-  actions: QualityActionFilter[]
-  turns: LowQualityTurn[]
-}
 
 const ESCALATION_META: Record<EscalationType, { label: string; className: string }> = {
   approval: { label: 'Approval', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
@@ -170,7 +165,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
   const [qualityTurns, setQualityTurns] = useState<LowQualityTurn[]>([])
-  const [qualityActions, setQualityActions] = useState<QualityActionFilter[] | null>(null)
   const [selectedItem, setSelectedItem] = useState<SelectedHistoryItem>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [approvalError, setApprovalError] = useState<string | null>(null)
@@ -184,18 +178,13 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     const requestId = inboxRequestIdRef.current + 1
     inboxRequestIdRef.current = requestId
 
-    const loadQualityTurns = async (): Promise<QualityInboxData> => {
-      const { skills } = await skillsApi.list()
-      const actions = groundingGapActions(skills)
-      if (actions.length === 0) {
-        return { actions, turns: [] }
-      }
+    const loadQualityTurns = async (): Promise<LowQualityTurn[]> => {
       const page = await qualityApi.listTurns({
-        actions,
+        signal: 'grounding_gaps',
         triageStates: [...ACTIVE_TRIAGE_STATES],
         limit: QUALITY_INBOX_LIMIT,
       })
-      return { actions, turns: page.items }
+      return page.items
     }
 
     const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
@@ -232,11 +221,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
 
     if (qualityResult.status === 'fulfilled') {
-      setQualityActions(qualityResult.value.actions)
-      setQualityTurns(qualityResult.value.turns)
+      setQualityTurns(qualityResult.value)
       setQualityLoadFailed(false)
     } else {
-      setQualityActions(null)
       setQualityTurns([])
       setQualityLoadFailed(true)
     }
@@ -335,7 +322,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   )
   const newItemCount = useNeedsAttentionActivity({
     baselineKeys,
-    qualityActions: qualityActions ?? undefined,
     // Pause the background poll while a conversation is open; closing it already triggers a refresh.
     enabled: selectedItem === null,
   })

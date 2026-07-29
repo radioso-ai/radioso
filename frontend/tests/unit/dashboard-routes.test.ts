@@ -5,11 +5,13 @@ import {
   buildAccountRoute,
   buildDashboardHref,
   buildLegacyDashboardHref,
+  DEFAULT_QUALITY_RANGE,
   type DashboardRouteState,
   parseDashboardRoute,
   retargetDashboardRouteToWorkspace,
 } from '@/lib/dashboard-routes'
 import { buildActivityTabHref } from '@/components/dashboard/activity-tabs'
+import { QUALITY_SIGNAL_IDS, QUALITY_STATS_RANGES } from '@/lib/api-quality'
 import { agentSectionFromRoute, agentSectionRoute } from '@/lib/dashboard-areas'
 
 describe('dashboard route state', () => {
@@ -430,6 +432,116 @@ describe('dashboard route state', () => {
       qualityFeedback: ['down'],
       qualityTriageStates: ['open', 'acknowledged'],
     })
+  })
+
+  it('round-trips the health range, omitting the default window', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityRange: '7d',
+    })).toBe('/w/ws-key/quality?range=7d')
+
+    // 30d is the default, so it stays out of the URL.
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityRange: '30d',
+    })).toBe('/w/ws-key/quality')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ range: '7d' }))).toEqual({
+      section: 'quality',
+      qualityRange: '7d',
+    })
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ range: '90d' }))).toEqual({
+      section: 'quality',
+    })
+  })
+
+  it('round-trips the queue signal preset independently of the health range', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualitySignal: 'grounding_gaps',
+      qualityTriageStates: ['open', 'acknowledged'],
+    })).toBe('/w/ws-key/quality?signal=grounding_gaps&triage=open%2Cacknowledged')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      range: '7d',
+      signal: 'skill_failures',
+      triage: 'open',
+    }))).toEqual({
+      section: 'quality',
+      qualityRange: '7d',
+      qualitySignal: 'skill_failures',
+      qualityTriageStates: ['open'],
+    })
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ signal: 'made_up' }))).toEqual({
+      section: 'quality',
+    })
+  })
+
+  it('round-trips the All answers escape hatch, omitting it when off', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityShowAll: true,
+    })).toBe('/w/ws-key/quality?all=true')
+
+    // Off is the default queue scope, so it never reaches the URL.
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityShowAll: false,
+    })).toBe('/w/ws-key/quality')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'true' }))).toEqual({
+      section: 'quality',
+      qualityShowAll: true,
+    })
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'false' }))).toEqual({
+      section: 'quality',
+    })
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'yes' }))).toEqual({
+      section: 'quality',
+    })
+
+    // It survives alongside the filters it is meant to widen.
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      all: 'true',
+      feedback: 'down',
+    }))).toEqual({
+      section: 'quality',
+      qualityShowAll: true,
+      qualityFeedback: ['down'],
+    })
+  })
+
+  // Route state and the fetch layer must speak one vocabulary. If the backend adds a
+  // signal or a range, this fails until the URL parser accepts it too — otherwise a
+  // valid link would be silently dropped on parse.
+  it('parses every signal and range the API contract defines', () => {
+    for (const signal of QUALITY_SIGNAL_IDS) {
+      expect(
+        parseDashboardRoute(['quality'], new URLSearchParams({ signal })),
+      ).toEqual({ section: 'quality', qualitySignal: signal })
+    }
+
+    // The default range is normalised out of the URL, so assert the effective range
+    // rather than its presence in the parsed state.
+    for (const range of QUALITY_STATS_RANGES) {
+      const parsed = parseDashboardRoute(['quality'], new URLSearchParams({ range }))
+      expect(parsed).not.toBeNull()
+      expect(parsed?.qualityRange ?? DEFAULT_QUALITY_RANGE).toBe(range)
+    }
+  })
+
+  it('treats range and signal as distinguishing route state', () => {
+    const base: DashboardRouteState = { section: 'quality', workspacePublicRouteKey: 'ws-key' }
+
+    expect(areDashboardRouteStatesEqual(base, { ...base, qualityRange: '30d' })).toBe(true)
+    expect(areDashboardRouteStatesEqual(base, { ...base, qualityRange: '7d' })).toBe(false)
+    expect(areDashboardRouteStatesEqual(base, { ...base, qualitySignal: 'slow_responses' })).toBe(false)
   })
 
   it('parses the eval list route', () => {

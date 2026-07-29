@@ -434,6 +434,32 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('preserves active negative-feedback queue semantics in quality links', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityFeedback: ['down'],
+      qualitySort: 'negative_feedback_updated_at',
+      qualityTriageStates: ['open', 'acknowledged'],
+      qualityActiveNegativeFeedbackOnly: true,
+    })).toBe(
+      '/w/ws-key/quality?feedback=down&sort=negative_feedback_updated_at&triage=open%2Cacknowledged&activeNegativeFeedbackOnly=true',
+    )
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      feedback: 'down',
+      sort: 'negative_feedback_updated_at',
+      triage: 'open,acknowledged',
+      activeNegativeFeedbackOnly: 'true',
+    }))).toEqual({
+      section: 'quality',
+      qualityFeedback: ['down'],
+      qualitySort: 'negative_feedback_updated_at',
+      qualityTriageStates: ['open', 'acknowledged'],
+      qualityActiveNegativeFeedbackOnly: true,
+    })
+  })
+
   it('round-trips the health range, omitting the default window', () => {
     expect(buildDashboardHref('account-1', {
       section: 'quality',

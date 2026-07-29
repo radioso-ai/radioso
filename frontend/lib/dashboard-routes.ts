@@ -1,6 +1,8 @@
 import {
   QUALITY_SIGNAL_IDS,
   QUALITY_STATS_RANGES,
+  GROUNDING_VERDICTS,
+  type GroundingVerdict,
   type QualitySignalId,
   type QualityStatsRange,
 } from './api-quality'
@@ -97,6 +99,9 @@ export interface DashboardRouteState {
   qualityTriageStates?: QualityTriageFilter[]
   qualityActiveNegativeFeedbackOnly?: boolean
   qualityHasComment?: boolean
+  qualityGroundingVerdicts?: GroundingVerdict[]
+  qualityHasUnsourcedClaims?: boolean
+  qualityHasInvalidSources?: boolean
   /**
    * Widens the queue past its default. The queue normally shows the active-triage backlog
    * for the answers carrying a quality signal; this asks for every assistant answer
@@ -139,6 +144,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityTriageStates',
   'qualityActiveNegativeFeedbackOnly',
   'qualityHasComment',
+  'qualityGroundingVerdicts',
+  'qualityHasUnsourcedClaims',
+  'qualityHasInvalidSources',
   'qualityShowAll',
   'evalCaseId',
   'anchor',
@@ -267,6 +275,14 @@ const parseQualityTriageStates = (value: string | null): QualityTriageFilter[] |
       QUALITY_TRIAGE_VALUES.has(entry as QualityTriageFilter),
     )
   return parsed.length > 0 ? parsed : undefined
+}
+
+const parseGroundingVerdicts = (value: string | null): GroundingVerdict[] | undefined => {
+  if (!value) return undefined
+  const allowed = new Set<string>(GROUNDING_VERDICTS)
+  const parsed = value.split(',').map((entry) => entry.trim())
+    .filter((entry): entry is GroundingVerdict => allowed.has(entry))
+  return parsed.length > 0 ? [...new Set(parsed)] : undefined
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -459,6 +475,15 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
     }
+    if (state.qualityGroundingVerdicts && state.qualityGroundingVerdicts.length > 0) {
+      normalized.qualityGroundingVerdicts = [...new Set(state.qualityGroundingVerdicts)]
+    }
+    if (state.qualityHasUnsourcedClaims) {
+      normalized.qualityHasUnsourcedClaims = true
+    }
+    if (state.qualityHasInvalidSources) {
+      normalized.qualityHasInvalidSources = true
+    }
     if (state.qualityShowAll) {
       normalized.qualityShowAll = true
     }
@@ -593,6 +618,15 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
+    }
+    if (normalized.qualityGroundingVerdicts && normalized.qualityGroundingVerdicts.length > 0) {
+      searchParams.set('groundingVerdict', normalized.qualityGroundingVerdicts.join(','))
+    }
+    if (normalized.qualityHasUnsourcedClaims) {
+      searchParams.set('hasUnsourcedClaims', 'true')
+    }
+    if (normalized.qualityHasInvalidSources) {
+      searchParams.set('hasInvalidSources', 'true')
     }
     if (normalized.qualityShowAll) {
       searchParams.set('all', 'true')
@@ -869,6 +903,9 @@ export const parseDashboardRoute = (
         ? true
         : undefined,
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
+      qualityGroundingVerdicts: parseGroundingVerdicts(searchParams?.get('groundingVerdict') ?? null),
+      qualityHasUnsourcedClaims: searchParams?.get('hasUnsourcedClaims') === 'true' ? true : undefined,
+      qualityHasInvalidSources: searchParams?.get('hasInvalidSources') === 'true' ? true : undefined,
       qualityShowAll: searchParams?.get('all') === 'true' ? true : undefined,
     })
   }

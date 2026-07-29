@@ -12,6 +12,15 @@ export type QualitySkillStatus =
   | 'failed'
 export type FeedbackValue = 'up' | 'down'
 export type QualityTriageState = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+export const GROUNDING_VERDICTS = ['grounded', 'degraded', 'no_support'] as const
+export type GroundingVerdict = (typeof GROUNDING_VERDICTS)[number]
+export interface GroundingDiagnostic {
+  verdict: GroundingVerdict
+  claimCount: number
+  sourcedClaimCount: number
+  unsourcedClaimCount: number
+  invalidSourceCount: number
+}
 
 /**
  * Operator triage signals. The backend owns the predicate behind each id (see
@@ -66,6 +75,7 @@ export interface LowQualityTurn {
   skillOutcome: string | null
   skillStatus: string | null
   totalLatencyMs: number | null
+  grounding: GroundingDiagnostic | null
   createdAt: string
   feedback: QualityFeedbackSummary
   triage: QualityTriageRecord
@@ -139,6 +149,9 @@ export interface ListLowQualityTurnsOptions {
   hasComment?: boolean
   minTotalLatencyMs?: number
   maxTotalLatencyMs?: number
+  groundingVerdict?: GroundingVerdict | readonly GroundingVerdict[]
+  hasUnsourcedClaims?: boolean
+  hasInvalidSources?: boolean
   from?: string
   to?: string
   offset?: number
@@ -157,6 +170,13 @@ const encodeSignals = (
   return signal.length > 0 ? signal.join(',') : undefined
 }
 
+const encodeGroundingVerdicts = (
+  verdict: GroundingVerdict | readonly GroundingVerdict[] | undefined,
+): string | undefined => {
+  if (verdict === undefined) return undefined
+  return typeof verdict === 'string' ? verdict : verdict.length > 0 ? verdict.join(',') : undefined
+}
+
 const encodeActions = (actions: QualityActionFilter[] | undefined): string | undefined => {
   if (!actions || actions.length === 0) {
     return undefined
@@ -168,6 +188,9 @@ export const qualityApi = {
   async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
       signal: encodeSignals(options.signal),
+      groundingVerdict: encodeGroundingVerdicts(options.groundingVerdict),
+      hasUnsourcedClaims: options.hasUnsourcedClaims === undefined ? undefined : String(options.hasUnsourcedClaims),
+      hasInvalidSources: options.hasInvalidSources === undefined ? undefined : String(options.hasInvalidSources),
       actions: encodeActions(options.actions),
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,

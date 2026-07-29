@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 
 import { createTestEnv } from "../support/testApp.js";
 import {
@@ -27,6 +27,10 @@ import type {
 } from "../../src/shared/domain/organizationCreationGuard.js";
 import { InMemoryOrganizationProvisioner } from "../support/organizationProvisioner.js";
 
+it("does not expose an ambiguous account lookup by email", () => {
+  expectTypeOf<AccountRepositoryPort>().not.toHaveProperty("findByEmail");
+});
+
 class TrackingAccountRepository implements AccountRepositoryPort {
   readonly items = new Map<string, AccountRecord>();
   readonly deletedIds: string[] = [];
@@ -42,10 +46,6 @@ class TrackingAccountRepository implements AccountRepositoryPort {
     };
     this.items.set(record.id, record);
     return record;
-  }
-
-  async findByEmail(email: string): Promise<AccountRecord | null> {
-    return [...this.items.values()].find((item) => item.email === email) ?? null;
   }
 
   async findById(id: string): Promise<AccountRecord | null> {

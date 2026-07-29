@@ -37,14 +37,6 @@ describeIntegration("AccountRepository (Postgres)", () => {
     expect(account.updatedAt).toBeInstanceOf(Date);
   });
 
-  it("findByEmail returns the account, and null for an unknown email", async () => {
-    const found = await repository.findByEmail(email);
-    expect(found?.id).toBe(createdId);
-
-    const missing = await repository.findByEmail(`missing-${randomUUID()}@example.com`);
-    expect(missing).toBeNull();
-  });
-
   it("findById returns the account, and null for an unknown id", async () => {
     const found = await repository.findById(createdId);
     expect(found?.email).toBe(email);

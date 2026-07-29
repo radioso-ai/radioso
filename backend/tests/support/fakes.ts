@@ -200,10 +200,6 @@ export class InMemoryAccountRepository implements AccountRepositoryPort {
     return record;
   }
 
-  async findByEmail(email: string): Promise<AccountRecord | null> {
-    return [...this.items.values()].find((item) => item.email === email) ?? null;
-  }
-
   async findById(id: string): Promise<AccountRecord | null> {
     return this.items.get(id) ?? null;
   }

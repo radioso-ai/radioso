@@ -87,16 +87,18 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   skillStatus: 'completed',
   totalLatencyMs: 1200,
   createdAt: '2026-06-19T10:00:00.000Z',
-  feedback: { upCount: 0, downCount: 0, comments: [] },
+  feedback: {
+    upCount: 0,
+    downCount: 0,
+    latestDownUpdatedAt: null,
+    comments: [],
+  },
   triage: { state: 'open', reason: null, updatedAt: null },
   ...overrides,
 })
 
-const emptyQualityPage = { items: [], total: 0, page: 1, pageSize: 25, totalPages: 1 }
-
 const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
   hitlApiMock.listPendingDecisions.mockResolvedValue({ decisions } as never)
-  qualityApiMock.listTurns.mockResolvedValue(emptyQualityPage as never)
   chatApiMock.listChatHistory.mockResolvedValue({
     conversations,
     total: conversations.length,
@@ -130,7 +132,10 @@ function Probe({
   return null
 }
 
-const renderProbe = (baselineKeys: readonly string[] | null, enabled = true) => {
+const renderProbe = (
+  baselineKeys: readonly string[] | null,
+  enabled = true,
+) => {
   act(() => {
     root.render(
       <Probe
@@ -176,6 +181,13 @@ beforeAll(() => {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  qualityApiMock.listTurns.mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 25,
+    totalPages: 1,
+  } as never)
   setVisibility('visible')
   observed.current = 0
   container = document.createElement('div')
@@ -293,6 +305,43 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
+  it('counts a newly added down-vote or comment as fresh activity', async () => {
+    const baselineTurn = qualityTurn({
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:04:00.000Z',
+        comments: [],
+      },
+    })
+    const commentedTurn = qualityTurn({
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:05:00.000Z',
+        comments: [{
+          value: 'down',
+          comment: 'The exception is missing.',
+          createdAt: '2026-06-19T10:05:00.000Z',
+          updatedAt: '2026-06-19T10:05:00.000Z',
+        }],
+      },
+    })
+    mockInbox([], [])
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [commentedTurn],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe(inboxItemKeys([], [], [baselineTurn] as LowQualityTurn[]))
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(1)
+  })
+
   it('clears stale polled keys when the displayed baseline changes', async () => {
     const decisions = [decisionSummary()]
     const conversations = [conversationSummary()]
@@ -352,18 +401,40 @@ describe('useNeedsAttentionActivity', () => {
       totalPages: 1,
     } as never)
 
-    renderProbe(inboxItemKeys([], asConversations(conversations), []))
+    renderProbe(inboxItemKeys([], asConversations(conversations), []), true)
     await advanceOnePoll()
 
     expect(observed.current).toBe(1)
   })
 
-  it('polls the grounding-gap backlog by signal id', async () => {
+  it('polls feedback partitions and the server-owned grounding-gap signal', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
     renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
     await advanceOnePoll()
 
-    expect(qualityApiMock.listTurns).toHaveBeenCalledWith({
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(3)
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
+      feedback: ['down'],
+      sort: 'negative_feedback_updated_at',
+      activeNegativeFeedbackOnly: true,
+      hasComment: true,
+      limit: 25,
+    })
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(2, {
+      feedback: ['down'],
+      sort: 'negative_feedback_updated_at',
+      activeNegativeFeedbackOnly: true,
+      hasComment: false,
+      limit: 25,
+    })
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(3, {
       signal: 'grounding_gaps',
       triageStates: ['open', 'acknowledged'],
       limit: 25,

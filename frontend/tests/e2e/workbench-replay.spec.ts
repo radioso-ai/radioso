@@ -342,7 +342,12 @@ const installQualityMocks = async (page: Page) => {
             skillStatus: "completed",
             totalLatencyMs: 3200,
             createdAt: nowIso,
-            feedback: { upCount: 0, downCount: 1, comments: [] },
+            feedback: {
+              upCount: 0,
+              downCount: 1,
+              latestDownUpdatedAt: nowIso,
+              comments: [],
+            },
             triage: { state: "open", reason: null, updatedAt: null },
           },
         ],

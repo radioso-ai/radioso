@@ -12116,12 +12116,17 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "value",
           "comment",
-          "createdAt"
+          "createdAt",
+          "updatedAt"
         ]
       },
       "QualityFeedbackSummary": {
@@ -12135,6 +12140,13 @@
             "type": "integer",
             "minimum": 0
           },
+          "latestDownUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
           "comments": {
             "type": "array",
             "items": {
@@ -12145,6 +12157,7 @@
         "required": [
           "upCount",
           "downCount",
+          "latestDownUpdatedAt",
           "comments"
         ]
       },
@@ -31126,6 +31139,33 @@
             "required": false,
             "description": "Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).",
             "name": "triage",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "turn_created_at",
+                "negative_feedback_updated_at"
+              ],
+              "description": "Sort order. Defaults to assistant-turn creation time."
+            },
+            "required": false,
+            "description": "Sort order. Defaults to assistant-turn creation time.",
+            "name": "sort",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "description": "When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open."
+            },
+            "required": false,
+            "description": "When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open.",
+            "name": "activeNegativeFeedbackOnly",
             "in": "query"
           },
           {

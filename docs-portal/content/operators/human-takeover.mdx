@@ -1,6 +1,7 @@
 ---
-title: Human takeover
-description: Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API.
+title: "Human takeover"
+description: "Let an operator own a conversation while the AI stays silent, reply as a human, and hand back — from the dashboard or the API."
+last_updated: 2026-07-29
 ---
 
 # Human takeover
@@ -32,7 +33,7 @@ The dashboard surfaces this work under **Activity**, which has three sections in
 
 ![The Activity view with Needs attention, All activity, and Quality in the sidebar, and a conversation listed with its agent, source, and update time.](/screenshots/dashboard-activity.png)
 
-- **Needs attention** — the operator inbox. Critical escalations (an approval to decide, a handoff awaiting or held by a human) sort to the top; lower-concern quality signals (a degraded or no-context answer the AI already handled) follow below and are capped so they never crowd out critical work. Opening a row shows the conversation with an action bar.
+- **Needs attention** — the operator inbox. Critical escalations (an approval to decide, a handoff awaiting or held by a human) sort to the top. Explicit thumbs-down feedback follows, ordered by the latest feedback creation or edit, then lower-concern quality signals such as degraded or no-context answers. Reviewing feedback opens the exact failed answer with direct paths to add knowledge, improve the agent's behavior, test again, and resolve or dismiss the item. Feedback submitted after an earlier resolution or dismissal reopens the work. Passive quality signals stay capped and retain their one-click dismissal.
 - **All activity** — the full conversation history.
 - **Quality** — the paginated answer-quality backlog and per-turn triage: negative feedback, slow responses, and skill failures, alongside the grounding gaps summarized in the inbox.
 

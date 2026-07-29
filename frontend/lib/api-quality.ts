@@ -45,10 +45,12 @@ export interface QualityActionFilter {
 export interface QualityFeedbackSummary {
   upCount: number
   downCount: number
+  latestDownUpdatedAt: string | null
   comments: Array<{
     value: FeedbackValue
     comment: string
     createdAt: string
+    updatedAt: string
   }>
 }
 
@@ -132,6 +134,8 @@ export interface ListLowQualityTurnsOptions {
   statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
   triageStates?: QualityTriageState[]
+  sort?: 'turn_created_at' | 'negative_feedback_updated_at'
+  activeNegativeFeedbackOnly?: boolean
   hasComment?: boolean
   minTotalLatencyMs?: number
   maxTotalLatencyMs?: number
@@ -168,6 +172,10 @@ export const qualityApi = {
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
       triage: options.triageStates && options.triageStates.length > 0 ? options.triageStates.join(',') : undefined,
+      sort: options.sort,
+      activeNegativeFeedbackOnly: options.activeNegativeFeedbackOnly === undefined
+        ? undefined
+        : String(options.activeNegativeFeedbackOnly),
       hasComment: options.hasComment === undefined ? undefined : String(options.hasComment),
       minTotalLatencyMs: options.minTotalLatencyMs === undefined ? undefined : String(options.minTotalLatencyMs),
       maxTotalLatencyMs: options.maxTotalLatencyMs === undefined ? undefined : String(options.maxTotalLatencyMs),

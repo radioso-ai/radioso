@@ -1,4 +1,10 @@
-import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
+import type {
+  ChatConversationSummary,
+  ConversationOwnership,
+  LowQualityTurn,
+  PendingApprovalDecision,
+  QualityTriageState,
+} from '@/lib/api'
 
 export type HumanOwnedConversationSummary = ChatConversationSummary & {
   ownership: ConversationOwnership
@@ -10,13 +16,19 @@ export type HumanOwnedConversationSummary = ChatConversationSummary & {
  * are quality signals the AI already handled but that an operator may want to review
  * (lower concern). The type is derived on the client from each source's existing data.
  */
-export type EscalationType = 'approval' | 'handoff' | 'degraded' | 'no_context'
+export type EscalationType =
+  | 'approval'
+  | 'handoff'
+  | 'negative_feedback'
+  | 'degraded'
+  | 'no_context'
 
-export type EscalationSeverity = 'critical' | 'lower'
+export type EscalationSeverity = 'critical' | 'feedback' | 'lower'
 
 export const ESCALATION_SEVERITY: Record<EscalationType, EscalationSeverity> = {
   approval: 'critical',
   handoff: 'critical',
+  negative_feedback: 'feedback',
   degraded: 'lower',
   no_context: 'lower',
 }
@@ -38,13 +50,25 @@ export interface InboxItem {
   takenOverAt?: string | null
   /** Present only for quality signals — the turn to triage so the row can be cleared. */
   assistantMessageId?: string
+  /** Quality evidence used by the negative-feedback review accessory. */
+  answerPreview?: string
+  feedbackComment?: string | null
+  feedbackDownCount?: number
+  feedbackUpdatedAt?: string | null
+  triageState?: QualityTriageState
+  agentId?: string | null
+  agentName?: string | null
 }
 
 /** Maps a grounding-gap skill outcome to its escalation type (enum values, not prose). */
 const qualityEscalationType = (skillOutcome: string | null): EscalationType =>
   skillOutcome === 'no_context' ? 'no_context' : 'degraded'
 
-const severityRank: Record<EscalationSeverity, number> = { critical: 0, lower: 1 }
+const severityRank: Record<EscalationSeverity, number> = {
+  critical: 0,
+  feedback: 1,
+  lower: 2,
+}
 
 const byTimestampDesc = (left: string, right: string): number =>
   new Date(right).getTime() - new Date(left).getTime()
@@ -76,21 +100,57 @@ export const waitingTone = (elapsedMs: number): WaitingTone => {
   return 'default'
 }
 
+const latestDownComment = (turn: LowQualityTurn) =>
+  turn.feedback.comments
+    .filter((entry) => entry.value === 'down')
+    .sort((left, right) => byTimestampDesc(left.updatedAt, right.updatedAt))[0] ?? null
+
+const isNegativeFeedback = (turn: LowQualityTurn): boolean => turn.feedback.downCount > 0
+
+const shouldReplaceQualityTurn = (
+  existing: LowQualityTurn,
+  candidate: LowQualityTurn,
+): boolean => {
+  const existingIsFeedback = isNegativeFeedback(existing)
+  const candidateIsFeedback = isNegativeFeedback(candidate)
+  if (existingIsFeedback !== candidateIsFeedback) {
+    return candidateIsFeedback
+  }
+
+  if (candidateIsFeedback) {
+    const existingHasComment = latestDownComment(existing) !== null
+    const candidateHasComment = latestDownComment(candidate) !== null
+    if (existingHasComment !== candidateHasComment) {
+      return candidateHasComment
+    }
+  }
+
+  return byTimestampDesc(candidate.createdAt, existing.createdAt) < 0
+}
+
+export const QUALITY_INBOX_ITEM_LIMIT = 25
+
+export interface InboxModel {
+  items: InboxItem[]
+  hasMoreQualityItems: boolean
+}
+
 /**
  * Merges the inbox's three sources into one severity-ordered list. Critical items
- * (approvals, handoffs) sort above lower-concern quality signals. Critical items are
- * oldest-first, while lower-concern quality signals remain newest-first.
+ * (approvals, handoffs) sort above explicit negative feedback, which sorts above
+ * passive quality signals. Critical items are oldest-first, while feedback and
+ * passive quality signals remain newest-first within their tier.
  *
  * Dedup is by conversation, critical wins: a quality gap whose conversation is already
  * escalated (e.g. a no-context that triggered a handoff) is dropped so it isn't shown
  * twice and the escalated-vs-not distinction stays honest. Multiple low-quality turns in
  * one conversation collapse to its most recent, keeping the inbox conversation-scoped.
  */
-export const buildInboxItems = (input: {
+export const buildInboxModel = (input: {
   decisions: PendingApprovalDecision[]
   conversations: HumanOwnedConversationSummary[]
   qualityTurns: LowQualityTurn[]
-}): InboxItem[] => {
+}): InboxModel => {
   const approvals: InboxItem[] = input.decisions.map((decision) => ({
     key: `approval:${decision.agentId}:${decision.handle}`,
     conversationId: decision.conversationId,
@@ -118,42 +178,73 @@ export const buildInboxItems = (input: {
     [...approvals, ...handoffs].map((item) => item.conversationId),
   )
 
-  const latestQualityByConversation = new Map<string, LowQualityTurn>()
+  const selectedQualityByConversation = new Map<string, LowQualityTurn>()
   for (const turn of input.qualityTurns) {
     if (escalatedConversationIds.has(turn.conversationId)) {
       continue
     }
-    const existing = latestQualityByConversation.get(turn.conversationId)
-    if (!existing || byTimestampDesc(turn.createdAt, existing.createdAt) < 0) {
-      latestQualityByConversation.set(turn.conversationId, turn)
+    const existing = selectedQualityByConversation.get(turn.conversationId)
+    if (!existing || shouldReplaceQualityTurn(existing, turn)) {
+      selectedQualityByConversation.set(turn.conversationId, turn)
     }
   }
 
-  const quality: InboxItem[] = [...latestQualityByConversation.values()].map((turn) => {
-    const type = qualityEscalationType(turn.skillOutcome)
+  const quality: InboxItem[] = [...selectedQualityByConversation.values()].map((turn) => {
+    const negativeFeedback = isNegativeFeedback(turn)
+    const type = negativeFeedback
+      ? 'negative_feedback'
+      : qualityEscalationType(turn.skillOutcome)
+    const feedbackComment = negativeFeedback ? latestDownComment(turn) : null
     return {
       key: `quality:${turn.assistantMessageId}`,
       conversationId: turn.conversationId,
       type,
       severity: ESCALATION_SEVERITY[type],
       title: turn.question || 'Low-quality answer',
-      detail: turn.agentName ?? '',
-      timestamp: turn.createdAt,
+      detail: negativeFeedback
+        ? feedbackComment?.comment ?? 'No written comment'
+        : turn.agentName ?? '',
+      timestamp: negativeFeedback
+        ? turn.feedback.latestDownUpdatedAt ?? turn.createdAt
+        : turn.createdAt,
       assistantMessageId: turn.assistantMessageId,
+      answerPreview: turn.answerPreview,
+      feedbackComment: feedbackComment?.comment ?? null,
+      feedbackDownCount: turn.feedback.downCount,
+      feedbackUpdatedAt: turn.feedback.latestDownUpdatedAt,
+      triageState: turn.triage.state,
+      agentId: turn.agentId,
+      agentName: turn.agentName,
     }
   })
 
-  return [...approvals, ...handoffs, ...quality].sort((left, right) => {
+  const sortedQuality = quality.sort((left, right) => {
     const severityDifference = severityRank[left.severity] - severityRank[right.severity]
     if (severityDifference !== 0) {
       return severityDifference
     }
-    if (left.severity === 'critical' && right.severity === 'critical') {
-      return byTimestampAsc(left.escalatedAt ?? left.timestamp, right.escalatedAt ?? right.timestamp)
+    if (left.severity === 'feedback' && right.severity === 'feedback') {
+      const commentDifference = Number(Boolean(right.feedbackComment)) - Number(Boolean(left.feedbackComment))
+      if (commentDifference !== 0) {
+        return commentDifference
+      }
     }
     return byTimestampDesc(left.timestamp, right.timestamp)
   })
+
+  const critical = [...approvals, ...handoffs].sort((left, right) =>
+    byTimestampAsc(left.escalatedAt ?? left.timestamp, right.escalatedAt ?? right.timestamp))
+  const hasMoreQualityItems = sortedQuality.length > QUALITY_INBOX_ITEM_LIMIT
+
+  return {
+    items: [...critical, ...sortedQuality.slice(0, QUALITY_INBOX_ITEM_LIMIT)],
+    hasMoreQualityItems,
+  }
 }
+
+export const buildInboxItems = (
+  input: Parameters<typeof buildInboxModel>[0],
+): InboxItem[] => buildInboxModel(input).items
 
 /** Page size used when loading the human-owned conversations shown in the inbox. */
 export const HUMAN_OWNED_CONVERSATION_PAGE_SIZE = 50
@@ -183,13 +274,11 @@ export const inboxItemKeys = (
     (conversation) => `conversation:${conversation.id}:${conversation.updatedAt}:${conversation.ownership.version}`,
   )
 
-  const displayedQualityMessageIds = new Set(
-    buildInboxItems({ decisions, conversations, qualityTurns })
-      .flatMap((item) => item.assistantMessageId ? [item.assistantMessageId] : []),
-  )
-  const qualityKeys = qualityTurns
-    .filter((turn) => displayedQualityMessageIds.has(turn.assistantMessageId))
-    .map((turn) => `quality:${turn.assistantMessageId}`)
+  const qualityKeys = buildInboxItems({ decisions, conversations, qualityTurns })
+    .filter((item) => item.assistantMessageId)
+    .map((item) => item.type === 'negative_feedback'
+      ? `quality:${item.assistantMessageId}:down:${item.feedbackDownCount ?? 0}:comment:${item.feedbackUpdatedAt ?? 'none'}`
+      : `quality:${item.assistantMessageId}`)
 
   return [...approvalKeys, ...conversationKeys, ...qualityKeys].sort()
 }

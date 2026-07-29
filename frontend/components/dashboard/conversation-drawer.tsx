@@ -201,6 +201,11 @@ export interface ConversationDrawerProps {
   onSelectedItemChange: (item: SelectedHistoryItem) => void
   anchorMessageId?: string | null
   /**
+   * Optional caller-owned context rendered below the drawer chrome and above
+   * the scrollable detail workspace.
+   */
+  accessory?: ReactNode
+  /**
    * Optional callback fired after the drawer closes (either via user action or
    * because the conversation was not found). Use this to sync URL state.
    */
@@ -228,6 +233,7 @@ export function ConversationDrawer({
   selectedItem,
   onSelectedItemChange,
   anchorMessageId,
+  accessory,
   onAfterClose,
   onOperatorChanged,
   pendingDecisions,
@@ -539,6 +545,8 @@ export function ConversationDrawer({
             </div>
             <DrawerDescription className="sr-only">Conversation details panel</DrawerDescription>
           </DrawerHeader>
+
+          {accessory}
 
           <div className="min-h-0 flex-1 overflow-hidden p-4">
             {isDetailLoading ? (

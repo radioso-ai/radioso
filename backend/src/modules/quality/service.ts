@@ -59,6 +59,7 @@ type TurnRow = {
   user_question: string | null;
   up_count: string;
   down_count: string;
+  latest_down_updated_at: Date | string | null;
   created_at: Date | string;
   triage_state: string;
   triage_reason: string | null;
@@ -70,6 +71,7 @@ type CommentRow = {
   value: QualityFeedbackValue;
   comment: string;
   created_at: Date | string;
+  updated_at: Date | string;
 };
 
 const MAX_LIMIT = 100;
@@ -124,6 +126,17 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
     const triageStates = input.triageStates ?? [];
+    const sort = input.sort ?? "turn_created_at";
+    const activeNegativeFeedbackOnly = input.activeNegativeFeedbackOnly ?? false;
+    const effectiveOpenExpression = activeNegativeFeedbackOnly
+      ? `tr.state IN ('resolved', 'dismissed')
+         AND feedback_activity.latest_down_updated_at > tr.updated_at`
+      : "FALSE";
+    const effectiveTriageStateExpression =
+      `CASE
+         WHEN ${effectiveOpenExpression} THEN 'open'
+         ELSE COALESCE(tr.state, 'open')
+       END`;
 
     // Signals are server-resolved predicates layered on top of the explicit filters, never
     // a replacement for them: OR within the signal list, AND with everything else. The list
@@ -148,7 +161,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     }
 
     if (triageStates.length > 0) {
-      filters.push(`COALESCE(tr.state, 'open') = ANY(${bindParam(params, triageStates)}::text[])`);
+      filters.push(`${effectiveTriageStateExpression} = ANY(${bindParam(params, triageStates)}::text[])`);
     }
 
     if (feedbackValues.length > 0) {
@@ -189,17 +202,40 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       filters.push(`m.created_at <= ${bindParam(params, input.to)}::timestamptz`);
     }
 
+    if (activeNegativeFeedbackOnly) {
+      filters.push(
+        `feedback_activity.latest_down_updated_at IS NOT NULL
+         AND ${effectiveTriageStateExpression} IN ('open', 'acknowledged')`,
+      );
+    }
+
     const whereClause = filters.join("\n         AND ");
 
     // The list query always projects triage state, so it joins unconditionally
     // below. The count query only needs the join when a triage filter is set.
-    const countTriageJoin = triageStates.length > 0 ? TRIAGE_JOIN : "";
+    const countTriageJoin = triageStates.length > 0 || activeNegativeFeedbackOnly
+      ? TRIAGE_JOIN
+      : "";
+    const feedbackActivityJoin =
+      `LEFT JOIN LATERAL (
+         SELECT
+           COUNT(*) FILTER (WHERE f.value = 'up')::text AS up_count,
+           COUNT(*) FILTER (WHERE f.value = 'down')::text AS down_count,
+           MAX(f.updated_at) FILTER (WHERE f.value = 'down') AS latest_down_updated_at
+         FROM assistant_answer_feedback f
+         WHERE f.workspace_id = m.workspace_id
+           AND f.assistant_message_id = m.id
+       ) feedback_activity ON TRUE`;
+    const countFeedbackActivityJoin = activeNegativeFeedbackOnly
+      ? feedbackActivityJoin
+      : "";
 
     const totalResult = await this.db.executeQuery<{ total: string }>(
       CompiledQuery.raw(
         `SELECT COUNT(*)::text AS total
        ${TURN_POPULATION_SOURCE}
        ${countTriageJoin}
+       ${countFeedbackActivityJoin}
        WHERE ${whereClause}`,
         // Pass a copy: CompiledQuery.raw freezes the parameter array, and the
         // list query below extends `params` with limit/offset.
@@ -212,6 +248,10 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     const limitParamIndex = params.length;
     params.push(offset);
     const offsetParamIndex = params.length;
+
+    const orderByClause = sort === "negative_feedback_updated_at"
+      ? "feedback_activity.latest_down_updated_at DESC NULLS LAST, m.created_at DESC, m.id DESC"
+      : "m.created_at DESC, m.id DESC";
 
     const rowsResult = await this.db.executeQuery<TurnRow>(
       CompiledQuery.raw(
@@ -227,9 +267,9 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          m.skill_status,
          ${RESOLVED_LATENCY_EXPRESSION} AS total_latency_ms,
          m.created_at,
-         COALESCE(tr.state, 'open') AS triage_state,
-         tr.reason AS triage_reason,
-         tr.updated_at AS triage_updated_at,
+         ${effectiveTriageStateExpression} AS triage_state,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.reason END AS triage_reason,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.updated_at END AS triage_updated_at,
          (
            SELECT um.content
            FROM messages um
@@ -239,21 +279,15 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
            ORDER BY um.created_at DESC, um.id DESC
            LIMIT 1
          ) AS user_question,
-         COALESCE((
-           SELECT COUNT(*) FILTER (WHERE f.value = 'up')
-           FROM assistant_answer_feedback f
-           WHERE f.assistant_message_id = m.id
-         ), 0)::text AS up_count,
-         COALESCE((
-           SELECT COUNT(*) FILTER (WHERE f.value = 'down')
-           FROM assistant_answer_feedback f
-           WHERE f.assistant_message_id = m.id
-         ), 0)::text AS down_count
+         COALESCE(feedback_activity.up_count, '0') AS up_count,
+         COALESCE(feedback_activity.down_count, '0') AS down_count,
+         feedback_activity.latest_down_updated_at
        ${TURN_POPULATION_SOURCE}
        LEFT JOIN agents a ON a.id = c.agent_id
        ${TRIAGE_JOIN}
+       ${feedbackActivityJoin}
        WHERE ${whereClause}
-       ORDER BY m.created_at DESC, m.id DESC
+       ORDER BY ${orderByClause}
        LIMIT $${limitParamIndex}
        OFFSET $${offsetParamIndex}`,
         params,
@@ -279,6 +313,9 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       feedback: {
         upCount: Number(row.up_count),
         downCount: Number(row.down_count),
+        latestDownUpdatedAt: row.latest_down_updated_at === null
+          ? null
+          : serializeDate(row.latest_down_updated_at),
         comments: commentsByMessageId.get(row.assistant_message_id) ?? [],
       },
       triage: {
@@ -403,7 +440,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
 
     const result = await this.db.executeQuery<CommentRow>(
       CompiledQuery.raw(
-        `SELECT assistant_message_id, value, comment, created_at
+        `SELECT assistant_message_id, value, comment, created_at, updated_at
        FROM assistant_answer_feedback
        WHERE workspace_id = $1
          AND assistant_message_id = ANY($2::uuid[])
@@ -419,6 +456,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
         value: row.value,
         comment: row.comment,
         createdAt: serializeDate(row.created_at),
+        updatedAt: serializeDate(row.updated_at),
       });
       grouped.set(row.assistant_message_id, entries);
     }

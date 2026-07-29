@@ -171,6 +171,7 @@ export interface OpenApiSchemaCatalog {
   HumanReplyMessageResponseSchema: z.ZodTypeAny;
   HumanReplyMessageSchema: z.ZodTypeAny;
   LowQualityTurnSchema: z.ZodTypeAny;
+  GroundingDiagnosticSchema: z.ZodTypeAny;
   LowQualityTurnsPageSchema: z.ZodTypeAny;
   QualityFeedbackCommentSchema: z.ZodTypeAny;
   QualityFeedbackSummarySchema: z.ZodTypeAny;

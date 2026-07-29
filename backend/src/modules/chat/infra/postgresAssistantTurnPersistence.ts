@@ -15,6 +15,7 @@ import {
 } from "../services/chatTurnLifecycle.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
+import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -29,6 +30,11 @@ interface MessageRow {
   skill_outcome: string | null;
   skill_status: string | null;
   total_latency_ms: number | null;
+  grounding_verdict: GroundingDiagnosticSnapshot["verdict"] | null;
+  grounding_claim_count: number | null;
+  grounding_sourced_claim_count: number | null;
+  grounding_unsourced_claim_count: number | null;
+  grounding_invalid_source_count: number | null;
   created_at: Date;
 }
 
@@ -45,6 +51,15 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
   totalLatencyMs: row.total_latency_ms ?? undefined,
+  grounding: row.grounding_verdict === null
+    ? undefined
+    : {
+        verdict: row.grounding_verdict,
+        claimCount: row.grounding_claim_count!,
+        sourcedClaimCount: row.grounding_sourced_claim_count!,
+        unsourcedClaimCount: row.grounding_unsourced_claim_count!,
+        invalidSourceCount: row.grounding_invalid_source_count!,
+      },
   createdAt: new Date(row.created_at),
 });
 
@@ -243,7 +258,12 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const result = await sql<MessageRow>`
-        INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, total_latency_ms, created_at)
+        INSERT INTO messages (
+          id, conversation_id, workspace_id, role, content, metadata_json,
+          skill_name, skill_outcome, skill_status, total_latency_ms,
+          grounding_verdict, grounding_claim_count, grounding_sourced_claim_count,
+          grounding_unsourced_claim_count, grounding_invalid_source_count, created_at
+        )
         VALUES (
           ${messageId},
           ${input.assistantMessage.conversationId},
@@ -255,9 +275,17 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
           ${input.assistantMessage.skillOutcome ?? null},
           ${input.assistantMessage.skillStatus ?? null},
           ${input.assistantMessage.totalLatencyMs ?? null},
+          ${input.assistantMessage.grounding?.verdict ?? null},
+          ${input.assistantMessage.grounding?.claimCount ?? null},
+          ${input.assistantMessage.grounding?.sourcedClaimCount ?? null},
+          ${input.assistantMessage.grounding?.unsourcedClaimCount ?? null},
+          ${input.assistantMessage.grounding?.invalidSourceCount ?? null},
           clock_timestamp()
         )
-        RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, total_latency_ms, created_at
+        RETURNING id, conversation_id, workspace_id, role, content, metadata_json,
+          skill_name, skill_outcome, skill_status, total_latency_ms,
+          grounding_verdict, grounding_claim_count, grounding_sourced_claim_count,
+          grounding_unsourced_claim_count, grounding_invalid_source_count, created_at
       `.execute(db);
       const message = result.rows[0];
       if (!message) {

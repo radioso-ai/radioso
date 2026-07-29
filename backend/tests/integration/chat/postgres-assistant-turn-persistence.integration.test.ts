@@ -83,6 +83,13 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         workspaceId: workspace.id,
         role: "assistant",
         content: "Saved.",
+        grounding: {
+          verdict: "degraded",
+          claimCount: 2,
+          sourcedClaimCount: 1,
+          unsourcedClaimCount: 1,
+          invalidSourceCount: 0,
+        },
       },
       auditEvent: {
         eventType: "chat.answer",
@@ -104,6 +111,13 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     });
 
     expect(message.id).toBe(assistantMessageId);
+    expect(message.grounding).toEqual({
+      verdict: "degraded",
+      claimCount: 2,
+      sourcedClaimCount: 1,
+      unsourcedClaimCount: 1,
+      invalidSourceCount: 0,
+    });
 
     const savedState = await database.queryOne<{
       status: string;

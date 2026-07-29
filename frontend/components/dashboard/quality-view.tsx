@@ -52,6 +52,8 @@ import {
   evalsApi,
   skillsApi,
   QUALITY_SIGNAL_IDS,
+  GROUNDING_VERDICTS,
+  type GroundingVerdict,
   type QualityActionFilter,
   type LowQualityTurn,
   type QualitySignalId,
@@ -112,6 +114,12 @@ interface LatencyBucketMeta {
 const FEEDBACK_LABEL: Record<QualityFeedbackFilter, string> = {
   down: 'Thumbs down',
   up: 'Thumbs up',
+}
+
+const GROUNDING_VERDICT_LABEL: Record<GroundingVerdict, string> = {
+  grounded: 'Grounded',
+  degraded: 'Degraded',
+  no_support: 'No support',
 }
 
 const STATUS_META: Record<QualityStatusFilter, StatusMeta> = {
@@ -574,6 +582,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const triageKey = (routeState.qualityTriageStates ?? []).join(',')
+  const groundingVerdictsKey = (routeState.qualityGroundingVerdicts ?? []).join(',')
+  const hasUnsourcedClaims = routeState.qualityHasUnsourcedClaims ?? false
+  const hasInvalidSources = routeState.qualityHasInvalidSources ?? false
   const latency = routeState.qualityLatency
   const sort: QualitySortFilter = routeState.qualitySort ?? 'turn_created_at'
   const activeNegativeFeedbackOnly = routeState.qualityActiveNegativeFeedbackOnly ?? false
@@ -622,6 +633,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const triageStates = useMemo<QualityTriageFilter[]>(
     () => (triageKey ? (triageKey.split(',') as QualityTriageFilter[]) : []),
     [triageKey],
+  )
+  const groundingVerdicts = useMemo<GroundingVerdict[]>(
+    () => (groundingVerdictsKey ? (groundingVerdictsKey.split(',') as GroundingVerdict[]) : []),
+    [groundingVerdictsKey],
   )
 
   useEffect(() => {
@@ -729,6 +744,22 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const qualityFilters = useMemo<ReadonlyArray<FilterDefinition>>(
     () => [
       {
+        id: 'groundingVerdict',
+        kind: 'multi-select',
+        label: 'Grounding verdict',
+        options: GROUNDING_VERDICTS.map((value) => ({ value, label: GROUNDING_VERDICT_LABEL[value] })),
+      },
+      {
+        id: 'hasUnsourcedClaims',
+        kind: 'boolean',
+        label: 'Has unsourced claims',
+      },
+      {
+        id: 'hasInvalidSources',
+        kind: 'boolean',
+        label: 'Has invalid sources',
+      },
+      {
         id: 'status',
         kind: 'multi-select',
         label: 'Conversation status',
@@ -786,6 +817,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // default; the per-skill action groups collapse under one "Assistant outcome".
   const qualitySections = useMemo(
     () => [
+      {
+        id: 'evidence',
+        label: 'Evidence',
+        defaultOpen: true,
+        filterIds: ['groundingVerdict', 'hasUnsourcedClaims', 'hasInvalidSources'],
+      },
       { id: 'status', label: 'Conversation status', defaultOpen: true, filterIds: ['status'] },
       { id: 'feedback', label: 'Feedback', defaultOpen: true, filterIds: ['feedback', 'hasComment'] },
       { id: 'triage', label: 'Triage state', defaultOpen: true, filterIds: ['triage'] },
@@ -837,11 +874,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     if (latency) {
       next.latency = { kind: 'single-select', value: latency }
     }
+    if (groundingVerdicts.length > 0) {
+      next.groundingVerdict = { kind: 'multi-select', values: groundingVerdicts }
+    }
+    if (hasUnsourcedClaims) {
+      next.hasUnsourcedClaims = { kind: 'boolean', value: true }
+    }
+    if (hasInvalidSources) {
+      next.hasInvalidSources = { kind: 'boolean', value: true }
+    }
     return next
     // statusesKey/actionsKey/feedbackKey/triageKey/hasComment/latency plus the loaded action catalog
     // together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, triageKey, hasComment, latency])
+  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, triageKey, hasComment, latency, groundingVerdictsKey, hasUnsourcedClaims, hasInvalidSources])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -883,6 +929,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       const triageValue = next.triage
       const latencyValue = next.latency
       const hasCommentValue = next.hasComment
+      const groundingVerdictValue = next.groundingVerdict
       const uniqueActionValues = [...new Set(actionValues)]
       navigateWith({
         qualityStatuses:
@@ -910,6 +957,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualitySort: undefined,
         qualityActiveNegativeFeedbackOnly: undefined,
         qualityHasComment: hasCommentValue?.kind === 'boolean' ? true : undefined,
+        qualityGroundingVerdicts:
+          groundingVerdictValue?.kind === 'multi-select' && groundingVerdictValue.values.length > 0
+            ? (groundingVerdictValue.values as GroundingVerdict[])
+            : undefined,
+        qualityHasUnsourcedClaims: next.hasUnsourcedClaims?.kind === 'boolean' ? true : undefined,
+        qualityHasInvalidSources: next.hasInvalidSources?.kind === 'boolean' ? true : undefined,
         qualityPage: undefined,
       })
     },
@@ -941,6 +994,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       qualitySort: undefined,
       qualityActiveNegativeFeedbackOnly: undefined,
       qualityHasComment: undefined,
+      qualityGroundingVerdicts: undefined,
+      qualityHasUnsourcedClaims: undefined,
+      qualityHasInvalidSources: undefined,
       qualityPage: undefined,
     })
   }
@@ -995,6 +1051,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           sort: sort === 'turn_created_at' ? undefined : sort,
           activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
           hasComment: hasComment || undefined,
+          groundingVerdict: groundingVerdicts.length > 0 ? groundingVerdicts : undefined,
+          hasUnsourcedClaims: hasUnsourcedClaims || undefined,
+          hasInvalidSources: hasInvalidSources || undefined,
           minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
           maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
           limit: PAGE_SIZE,
@@ -1031,6 +1090,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     currentPage,
     feedbackKey,
     hasComment,
+    groundingVerdictsKey,
+    groundingVerdicts,
+    hasUnsourcedClaims,
+    hasInvalidSources,
     latency,
     actionsKey,
     statusesKey,
@@ -1164,6 +1227,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     || triageStates.length > 0
     || activeNegativeFeedbackOnly
     || hasComment
+    || groundingVerdicts.length > 0
+    || hasUnsourcedClaims
+    || hasInvalidSources
     || Boolean(latency)
 
   return (
@@ -1301,18 +1367,41 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         </button>
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
-                        {actionLabel ? (
-                          <Badge
-                            variant={action && actionTone === 'neutral' ? 'secondary' : 'outline'}
-                            className={cn('whitespace-nowrap', badgeToneClass(actionTone))}
-                            title={actionTooltip}
-                            aria-label={actionTooltip || actionLabel}
-                          >
-                            {actionLabel}
-                          </Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                        <div className="flex flex-col items-start gap-1.5">
+                          {actionLabel ? (
+                            <Badge
+                              variant={action && actionTone === 'neutral' ? 'secondary' : 'outline'}
+                              className={cn('whitespace-nowrap', badgeToneClass(actionTone))}
+                              title={actionTooltip}
+                              aria-label={actionTooltip || actionLabel}
+                            >
+                              {actionLabel}
+                            </Badge>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                          {turn.grounding ? (
+                            <div className="space-y-0.5 text-[11px] leading-4">
+                              <div className="text-muted-foreground">
+                                {turn.grounding.claimCount === 0
+                                  ? turn.grounding.verdict === 'no_support'
+                                    ? 'No supported claims'
+                                    : 'No claims evaluated'
+                                  : `${turn.grounding.sourcedClaimCount} of ${turn.grounding.claimCount} ${turn.grounding.claimCount === 1 ? 'claim' : 'claims'} sourced`}
+                              </div>
+                              {turn.grounding.unsourcedClaimCount > 0 ? (
+                                <div className="font-medium text-amber-700 dark:text-amber-400">
+                                  {turn.grounding.unsourcedClaimCount} unsourced {turn.grounding.unsourcedClaimCount === 1 ? 'claim' : 'claims'}
+                                </div>
+                              ) : null}
+                              {turn.grounding.invalidSourceCount > 0 ? (
+                                <div className="font-medium text-destructive">
+                                  {turn.grounding.invalidSourceCount} invalid {turn.grounding.invalidSourceCount === 1 ? 'citation' : 'citations'}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </DashboardTableCell>
                       <DashboardTableCell className="w-28">
                         {statusMeta ? (
@@ -1382,7 +1471,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       sections={qualitySections}
       values={filterValues}
       title="Filter assistant answers"
-      description="Choose the statuses, actions, feedback, and latency band you want to inspect."
+      description="Choose the evidence, statuses, actions, feedback, and latency band you want to inspect."
       onApply={applyFilters}
     />
     <ConversationDrawer

@@ -101,6 +101,13 @@
       "tone": "warning"
     },
     {
+      "name": "out_of_scope",
+      "displayName": "Out of scope",
+      "description": "The retrieval skill correctly declined a request that falls outside the agent's configured remit. This is working as designed, not a grounding failure, so it counts on neither side of the grounded-answer rate.",
+      "status": "completed",
+      "tone": "info"
+    },
+    {
       "name": "clarification_needed",
       "displayName": "Clarification needed",
       "description": "The retrieval skill needs a clearer question before it can answer.",

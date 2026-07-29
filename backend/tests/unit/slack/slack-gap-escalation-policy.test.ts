@@ -50,7 +50,7 @@ const basePersistence = (): SlackPersistencePort => ({
 });
 
 const makeHandler = (input: {
-  outcome: "answered" | "no_context";
+  outcome: "answered" | "no_context" | "out_of_scope";
   answer?: string;
   escalationChannelId?: string | null;
   gapEscalationEnabled?: boolean;
@@ -171,6 +171,18 @@ describe("Slack gap escalation policy", () => {
       conversationId: "44444444-4444-4444-4444-444444444444",
       workspaceId: installation.workspaceId,
     });
+  });
+
+  it("does not escalate an out-of-scope decline, which is correct behavior rather than a gap", async () => {
+    const { handler, outbox } = makeHandler({
+      outcome: "out_of_scope",
+      answer: "That's outside what I can help with.",
+      gapEscalationEnabled: true,
+    });
+
+    await handler.handleMessageIm(event);
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it("does not auto-escalate no_context turns when gap escalation is disabled", async () => {

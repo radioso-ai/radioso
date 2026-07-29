@@ -18,7 +18,8 @@ import type {
 } from "../../../shared/domain/answerSideChannel.js";
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
-import type { FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import type { ComposedDecline, FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
 import { retrievalAnswerSkillDefinition } from "../../skills/public.js";
@@ -68,6 +69,10 @@ export class RetrievalAnswerComposer {
     private readonly answerSideChannel?: AnswerSideChannelFactory,
   ) {}
 
+  private isEnvelopeDecline(outcome: GroundedAnswerEnvelope["outcome"]): boolean {
+    return outcome === "no_support" || outcome === "out_of_scope";
+  }
+
   private recordGroundingOutcome(
     summary: GroundingSummary,
     envelope: Pick<GroundedAnswerEnvelope, "outcome">,
@@ -86,7 +91,7 @@ export class RetrievalAnswerComposer {
         ? "invalid_index"
         : summary.assertionMismatch
           ? "mismatch"
-          : envelope.outcome === "no_support" && summary.verdict !== "no_support"
+          : this.isEnvelopeDecline(envelope.outcome) && summary.verdict !== "no_support"
             ? "invalid_no_support"
             : summary.claimCount === 0 && summary.verdict !== "no_support"
               ? "anchor_free"
@@ -95,7 +100,14 @@ export class RetrievalAnswerComposer {
                 : "complete";
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
-      labels: { protocol, verdict: summary.verdict, reason, stream: String(stream) },
+      labels: {
+        protocol,
+        verdict: summary.verdict,
+        reason,
+        stream: String(stream),
+        // Content-free: why the turn declined, or `none` when it did not decline.
+        decline: summary.declineReason ?? "none",
+      },
     });
   }
 
@@ -110,10 +122,16 @@ export class RetrievalAnswerComposer {
     return this.answerSideChannel?.forSteeringRules(session.directiveSteering?.rules ?? []);
   }
 
-  private recordGroundingGateBound(): void {
+  private recordGroundingGateBound(declineReason: TurnDeclineReason): void {
     this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
       help: "Computed chat grounding assertion outcomes",
-      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true" },
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "gate_bound",
+        stream: "true",
+        decline: declineReason,
+      },
     });
   }
 
@@ -196,6 +214,7 @@ export class RetrievalAnswerComposer {
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
+    let declineReason: TurnDeclineReason | undefined;
 
     if (session.retrieval.contexts.length === 0) {
       const fallback = await this.generateAnswerWithPageContext(session, query, accountId);
@@ -210,7 +229,7 @@ export class RetrievalAnswerComposer {
         });
         this.recordGroundingOutcome(grounding, fallback, false);
       } else {
-        answer = await this.fallbackReplyComposer.composeNoContext({
+        const decline = await this.fallbackReplyComposer.composeNoContext({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -218,6 +237,8 @@ export class RetrievalAnswerComposer {
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
         });
+        answer = decline.text;
+        declineReason = decline.declineReason;
       }
     } else {
       const envelope = await this.generateGroundedAnswerEnvelope(
@@ -244,7 +265,7 @@ export class RetrievalAnswerComposer {
       query,
       plannedSuggestions,
       userExpectedLocale,
-      grounding,
+      { grounding, ...(declineReason ? { declineReason } : {}) },
     );
     return {
       ...presentation,
@@ -264,7 +285,7 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     attemptKey: string,
     signal?: AbortSignal,
-  ): Promise<string> {
+  ): Promise<ComposedDecline> {
     return this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
@@ -299,14 +320,17 @@ export class RetrievalAnswerComposer {
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
     let metadataPatch: Record<string, unknown> | undefined;
     let grounding: GroundingSummary | GroundingVerdict = "no_support";
+    let declineReason: TurnDeclineReason | undefined;
     let hasStreamedAnswer = false;
     let streamedAnswer = "";
     let groundingGateWaitMs: number | undefined;
 
     if (session.retrieval.contexts.length === 0) {
       const fallbackEnvelope = await this.generateAnswerWithPageContext(session, query, accountId, signal);
-      rawAnswer = fallbackEnvelope?.answer
-        ?? await this.fallbackReplyComposer.composeNoContext({
+      if (fallbackEnvelope) {
+        rawAnswer = fallbackEnvelope.answer;
+      } else {
+        const decline = await this.fallbackReplyComposer.composeNoContext({
           query,
           userExpectedLocale,
           answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -315,6 +339,9 @@ export class RetrievalAnswerComposer {
           usageContext: this.support.buildChatUsageContext(session, accountId, "stream_grounded_miss"),
           ...(signal ? { signal } : {}),
         });
+        rawAnswer = decline.text;
+        declineReason = decline.declineReason;
+      }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       metadataPatch = this.sideChannel(session)?.resolve(fallbackEnvelope?.extras);
       if (fallbackEnvelope) {
@@ -368,7 +395,6 @@ export class RetrievalAnswerComposer {
         throw signal.reason ?? new Error("chat_turn_aborted");
       }
       if (gateBound) {
-        this.recordGroundingGateBound();
         const decline = await this.composeFocusedDecline(
           session,
           query,
@@ -380,8 +406,11 @@ export class RetrievalAnswerComposer {
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
         }
+        // Recorded once the decline is composed so the counter carries the same
+        // classification the persisted turn outcome does.
+        this.recordGroundingGateBound(decline.declineReason);
         return {
-          finalPresentation: await this.chatAnswerPresenter.presentGroundedMissAnswer(decline),
+          finalPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(decline.text, decline.declineReason),
           suggestions: { mode: "assistant", planned: [] },
           hasStreamedAnswer: false,
           streamedAnswer: "",
@@ -417,7 +446,7 @@ export class RetrievalAnswerComposer {
       rawAnswer,
       query,
       userExpectedLocale,
-      grounding,
+      { grounding, ...(declineReason ? { declineReason } : {}) },
     );
     return {
       finalPresentation: {

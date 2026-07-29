@@ -74,7 +74,22 @@ imports from `services/`.
   attestation appears only on the operator-facing compose trace output.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
-  semantic answer generation on compliant paths. A valid in-range `[[n]]`
+  semantic answer generation on compliant paths.
+- Decline classification: a declined turn also carries *why* it declined
+  (`TurnDeclineReason` in `assistantTurnOutcomeTypes.ts`). `content_gap` keeps the
+  turn on `retrieval.answer:no_context`; `out_of_scope` moves it to
+  `retrieval.answer:out_of_scope`, an outcome the catalog leaves without a
+  `groundedAnswer` flag so it scores on neither side of the grounded rate. The
+  classification is only ever a model-returned enum, never a keyword test: the
+  grounded envelope adds an `out_of_scope` outcome value, and
+  `fallbackReplyComposer.composeNoContext` returns `{text, declineReason}` from a
+  strict JSON schema. Every path with no model judgement — missing credentials,
+  provider failure, the static template, unparseable output — reports
+  `content_gap`, so an unclassifiable decline still counts against the agent.
+  `ChatAnswerPresenter` resolves the reason (explicit argument, then the grounding
+  summary, then `content_gap`) and picks the outcome tuple; `chatService`'s
+  retrieval-miss handoff and the Slack gap escalation both key off the outcome and
+  therefore leave out-of-scope declines alone. A valid in-range `[[n]]`
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and

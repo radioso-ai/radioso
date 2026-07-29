@@ -19,7 +19,7 @@ You manage it from an agent's **Channels**, alongside the public chat link, webs
 - `@mention` events in Slack channels are answered in the originating thread. A channel-specific binding wins when one exists; otherwise Radioso uses the default agent.
 - While the agent works on a message, Radioso adds an `eyes` reaction. Once the reply is posted, that reaction is replaced with a check mark, or an `x` if the reply could not be delivered.
 - Each DM user and each mentioned channel thread maps to one Radioso conversation.
-- When a turn's outcome is `no_context`, gap escalation is enabled, and an escalation channel is configured, Radioso posts a human follow-up to that channel. Setting only the channel is not enough — the escalation toggle must also be on.
+- When a turn's outcome is `no_context`, gap escalation is enabled, and an escalation channel is configured, Radioso posts a human follow-up to that channel. Setting only the channel is not enough — the escalation toggle must also be on. A question the agent declined as out of scope carries the `out_of_scope` outcome instead and never escalates, so scope probes don't page a person.
 - Approval gates, handoffs, and unanswered questions arrive as interactive messages an operator can act on from Slack.
 
 ## Operator actions in Slack

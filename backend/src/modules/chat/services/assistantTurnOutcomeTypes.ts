@@ -22,6 +22,20 @@ export interface SkillTurnOutcome {
   status: SkillTurnStatus;
 }
 
+/**
+ * Why a turn declined to answer.
+ *
+ * `content_gap` — the request is the kind of thing this agent covers and nothing
+ * supported an answer. Actionable: an operator can close it by ingesting content.
+ * `out_of_scope` — the request falls outside the agent's configured remit, so
+ * declining is correct behavior rather than a defect.
+ *
+ * `content_gap` is the default. `out_of_scope` requires positive evidence from the
+ * classifying model, so an unclassifiable decline counts against the agent rather
+ * than being silently excluded from its quality numbers.
+ */
+export type TurnDeclineReason = "content_gap" | "out_of_scope";
+
 export const SKILL_TURN_OUTCOME = {
   ASSISTANT_CONVERSATIONAL: {
     skillName: "assistant.chat",
@@ -43,6 +57,11 @@ export const SKILL_TURN_OUTCOME = {
     outcome: "no_context",
     status: "completed",
   },
+  RETRIEVAL_OUT_OF_SCOPE: {
+    skillName: "retrieval.answer",
+    outcome: "out_of_scope",
+    status: "completed",
+  },
 } as const satisfies Record<string, SkillTurnOutcome>;
 
 export const legacyAnswerOutcomeForSkillTurnOutcome = (
@@ -57,7 +76,13 @@ export const legacyAnswerOutcomeForSkillTurnOutcome = (
     // finer distinction (and is what the Quality dashboard filters on).
     return ASSISTANT_TURN_OUTCOME.GROUNDED_SUCCESS;
   }
-  if (skillTurnOutcome.skillName === "retrieval.answer" && skillTurnOutcome.outcome === "no_context") {
+  if (
+    skillTurnOutcome.skillName === "retrieval.answer"
+    && (skillTurnOutcome.outcome === "no_context" || skillTurnOutcome.outcome === "out_of_scope")
+  ) {
+    // The legacy answer_outcome enum has no out-of-scope value; both declines
+    // collapse to the coarse refusal there. The skill_outcome column carries the
+    // finer distinction, which is what the Quality dashboard filters on.
     return ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL;
   }
   if (skillTurnOutcome.skillName === "assistant.chat" && skillTurnOutcome.outcome === "conversational") {
@@ -73,6 +98,7 @@ export const skillTurnOutcomeFromLegacyAnswerOutcome = (
     return { ...SKILL_TURN_OUTCOME.RETRIEVAL_GROUNDED };
   }
   if (answerOutcome === ASSISTANT_TURN_OUTCOME.NO_CONTEXT_REFUSAL) {
+    // A legacy row cannot say which decline it was, so it stays the conservative one.
     return { ...SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT };
   }
   if (answerOutcome === ASSISTANT_TURN_OUTCOME.NON_RETRIEVAL_RESPONSE) {

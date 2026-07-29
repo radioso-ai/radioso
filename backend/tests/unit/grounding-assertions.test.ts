@@ -10,10 +10,12 @@ import {
   DEGRADED_V2_BODY,
   GROUNDED_V2_BODY,
   NO_SUPPORT_V2_BODY,
+  OUT_OF_SCOPE_V2_BODY,
   degradedV2Envelope,
   formatV2Envelope,
   groundedV2Envelope,
   noSupportV2Envelope,
+  outOfScopeV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
 
 const summarize = (raw: string, contextCount = 3) => {
@@ -57,7 +59,42 @@ describe("grounding assertions", () => {
       sourcedClaimCount: 0,
       unsourcedClaimCount: 0,
       assertionMismatch: false,
+      declineReason: "content_gap",
     });
+  });
+
+  it("computes no_support for an out-of-scope decline and records why it declined", () => {
+    // Scope is a different question from evidence support, so the verdict stays
+    // `no_support`; only the decline reason distinguishes the two.
+    expect(summarize(outOfScopeV2Envelope())).toMatchObject({
+      verdict: "no_support",
+      claimCount: 0,
+      sourcedClaimCount: 0,
+      declineReason: "out_of_scope",
+    });
+  });
+
+  it("leaves the decline reason unset when the turn did not decline", () => {
+    expect(summarize(groundedV2Envelope()).declineReason).toBeUndefined();
+    expect(summarize(degradedV2Envelope()).declineReason).toBeUndefined();
+  });
+
+  it("holds an out-of-scope decline to the same strict gate as no_support", () => {
+    const cases = [
+      formatV2Envelope("Fact[[1]].", { v: 2, outcome: "out_of_scope", claims: [[1]], suggestions: [] }),
+      formatV2Envelope(OUT_OF_SCOPE_V2_BODY, {
+        v: 2,
+        outcome: "out_of_scope",
+        claims: [],
+        suggestions: [{ text: "Why?", kind: "deeper", contextIndex: 1 }],
+      }),
+      formatV2Envelope("Limit[[999]].", { v: 2, outcome: "out_of_scope", claims: [[999]], suggestions: [] }),
+    ];
+    for (const raw of cases) {
+      const summary = summarize(raw);
+      expect(summary.verdict).toBe("degraded");
+      expect(summary.declineReason).toBeUndefined();
+    }
   });
 
   it("allows matching unsourced assertions on no-support copy", () => {

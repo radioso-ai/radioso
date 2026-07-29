@@ -8,6 +8,7 @@ import {
   ModelFallbackReplyComposer,
   type ChatGateway,
   type ChatGatewayInput,
+  type ComposedDecline,
   type FallbackReplyComposer,
   type FallbackReplyInput,
 } from "../../../modules/chat/llmAdapters.js";
@@ -168,7 +169,7 @@ export class ContextualFallbackReplyComposer implements FallbackReplyComposer {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
 
-  async composeNoContext(input: FallbackReplyInput): Promise<string> {
+  async composeNoContext(input: FallbackReplyInput): Promise<ComposedDecline> {
     const ctx = requireWorkspaceContext(input);
     if (!ctx) {
       return this.fallback.composeNoContext(input);

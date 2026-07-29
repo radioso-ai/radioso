@@ -362,8 +362,10 @@ export class SlackMessageHandler {
     gapEscalationEnabled: boolean;
     query: string;
     conversationId: string;
-    outcome: "answered" | "no_context";
+    outcome: "answered" | "no_context" | "out_of_scope";
   }): Promise<void> {
+    // Only a real content gap escalates. An out-of-scope decline is the agent working
+    // as configured, so surfacing it to a human would be noise.
     if (
       input.outcome !== "no_context" ||
       !input.gapEscalationEnabled ||

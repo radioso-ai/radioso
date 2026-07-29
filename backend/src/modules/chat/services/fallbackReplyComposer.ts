@@ -1,9 +1,11 @@
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type {
+  JsonSchemaResponseFormat,
   TextGenerationRequest,
   TextGenerationResult,
 } from "../../../shared/infra/llm/providerTypes.js";
+import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { SteeringRule } from "../../../shared/domain/steeringRule.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
@@ -22,13 +24,24 @@ export interface FallbackReplyInput {
   signal?: AbortSignal;
 }
 
+/**
+ * A composed decline plus why the turn declined. Every non-model path reports
+ * `content_gap`: without a model judgement there is no positive evidence that the
+ * request was outside the agent's remit, and the conservative default keeps the
+ * turn inside the grounding-gap queue rather than silently excusing it.
+ */
+export interface ComposedDecline {
+  text: string;
+  declineReason: TurnDeclineReason;
+}
+
 export interface FallbackReplyComposer {
-  composeNoContext(input: FallbackReplyInput): Promise<string>;
+  composeNoContext(input: FallbackReplyInput): Promise<ComposedDecline>;
 }
 
 export class MissingFallbackReplyComposer implements FallbackReplyComposer {
-  async composeNoContext(_input: FallbackReplyInput): Promise<string> {
-    return getGroundedMissFallback();
+  async composeNoContext(_input: FallbackReplyInput): Promise<ComposedDecline> {
+    return contentGap(getGroundedMissFallback());
   }
 }
 
@@ -73,6 +86,60 @@ const buildAnswerInstructionBlock = (answerInstructionBlock?: string): string =>
 export const getGroundedMissFallback = (): string =>
   loadPromptTemplate("chat/grounded-miss-fallback.md").trim();
 
+const contentGap = (text: string): ComposedDecline => ({ text, declineReason: "content_gap" });
+
+const DECLINE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+  type: "json_schema",
+  name: "grounded_miss_decline",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reply", "declineReason"],
+    properties: {
+      reply: {
+        type: "string",
+        description: "The visible decline text only. No bullets, headings, citations, or commentary.",
+      },
+      declineReason: { type: "string", enum: ["content_gap", "out_of_scope"] },
+    },
+  },
+};
+
+/**
+ * Reads the strict decline object. Providers without API-level schema enforcement can
+ * still return bare prose, so text that never claimed to be an envelope degrades to the
+ * raw reply as a content gap rather than failing the turn or inventing a scope judgement.
+ *
+ * Text that *does* open as an envelope but does not parse is discarded instead: the
+ * token cap has to cover a reasoning pass as well as the reply, so a half-written object
+ * is a real outcome here, and showing a visitor `{"reply":"I can't help with th` is worse
+ * than the canned decline the empty result falls through to.
+ */
+const readComposedDecline = (raw: string | undefined): ComposedDecline => {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed.startsWith("{")) {
+    return contentGap(trimmed);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return contentGap("");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return contentGap("");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.reply !== "string") {
+    return contentGap("");
+  }
+  return {
+    text: record.reply,
+    declineReason: record.declineReason === "out_of_scope" ? "out_of_scope" : "content_gap",
+  };
+};
+
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
   appendSteeringBlock(
     renderPromptTemplate("chat/grounded-miss.md", {
@@ -113,7 +180,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
     throw lastError;
   }
 
-  async composeNoContext(input: FallbackReplyInput): Promise<string> {
+  async composeNoContext(input: FallbackReplyInput): Promise<ComposedDecline> {
     try {
       const request = {
         systemPrompt: buildGroundedMissSystemPrompt(input),
@@ -123,16 +190,20 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         // Short utility decline: keep reasoning spend minimal so the token budget
         // leaves room for visible text on reasoning models.
         reasoningEffort: "minimal" as const,
+        responseFormat: DECLINE_RESPONSE_FORMAT,
         signal: input.signal,
       };
       const { result } = await this.completeWithRetry(request, input);
 
-      const normalized = normalizeModelResponse(result.text);
+      const decline = readComposedDecline(result.text);
+      const normalized = normalizeModelResponse(decline.text);
       if (normalized) {
-        return normalized;
+        return { text: normalized, declineReason: decline.declineReason };
       }
 
-      return getGroundedMissFallback();
+      // A reply that failed the length or emptiness guard is discarded together with
+      // its classification: the static asset is not the response the model judged.
+      return contentGap(getGroundedMissFallback());
     } catch (error) {
       if (input.signal?.aborted) {
         throw input.signal.reason ?? error;
@@ -141,7 +212,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         throw error;
       }
 
-      return getGroundedMissFallback();
+      return contentGap(getGroundedMissFallback());
     }
   }
 }

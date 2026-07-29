@@ -140,13 +140,82 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
       "Grounded answer[[1]].",
       "What is X?",
       undefined,
-      "degraded",
+      { grounding: "degraded" },
     );
 
     expect(result.skillName).toBe("retrieval.answer");
     expect(result.skillOutcome).toBe("grounded_degraded");
     // The legacy answer_outcome enum has no degraded value; it collapses to success.
     expect(result.answerOutcome).toBe("grounded_success");
+  });
+
+  it("reports a content gap as no_context when the decline reason is unknown", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    const result = await presenter.presentWithoutSuggestions(
+      buildSession(),
+      "I can't help with that.",
+      "What is X?",
+      undefined,
+      { grounding: "no_support" },
+    );
+
+    expect(result.skillOutcome).toBe("no_context");
+    expect(result.answerOutcome).toBe("no_context_refusal");
+  });
+
+  it("reports an out-of-scope decline carried on the grounding summary", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    const result = await presenter.presentWithoutSuggestions(
+      buildSession(),
+      "That's outside what I help with.",
+      "What is the capital of Mars?",
+      undefined,
+      {
+        grounding: {
+          protocolVersion: 2,
+          parseStatus: "valid_v2",
+          verdict: "no_support",
+          claimCount: 0,
+          sourcedClaimCount: 0,
+          unsourcedClaimCount: 0,
+          invalidSourceCount: 0,
+          assertionMismatch: false,
+          declineReason: "out_of_scope",
+        },
+      },
+    );
+
+    expect(result.skillOutcome).toBe("out_of_scope");
+    // Legacy answer_outcome stays coarse; skill_outcome carries the distinction.
+    expect(result.answerOutcome).toBe("no_context_refusal");
+  });
+
+  it("prefers an explicitly supplied decline reason over the grounding summary", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    const result = await presenter.presentWithoutSuggestions(
+      buildSession(),
+      "That's outside what I help with.",
+      "What is the capital of Mars?",
+      undefined,
+      { grounding: "no_support", declineReason: "out_of_scope" },
+    );
+
+    expect(result.skillOutcome).toBe("out_of_scope");
+  });
+});
+
+describe("ChatAnswerPresenter.presentGroundedMissAnswer", () => {
+  it("defaults to the content-gap outcome", () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    expect(presenter.presentGroundedMissAnswer("No luck.").skillOutcome).toBe("no_context");
+  });
+
+  it("uses the out-of-scope outcome when the composer classified the decline", () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+    expect(presenter.presentGroundedMissAnswer("Not my remit.", "out_of_scope").skillOutcome).toBe("out_of_scope");
   });
 });
 
@@ -169,14 +238,17 @@ describe("ChatAnswerPresenter.applyActionSuggestions", () => {
       [{ text: "Unsupported follow-up", kind: "deeper", contextIndex: 1 }],
       undefined,
       {
-        protocolVersion: 2,
-        parseStatus: "valid_v2",
-        verdict: "no_support",
-        claimCount: 0,
-        sourcedClaimCount: 0,
-        unsourcedClaimCount: 0,
-        invalidSourceCount: 0,
-        assertionMismatch: false,
+        grounding: {
+          protocolVersion: 2,
+          parseStatus: "valid_v2",
+          verdict: "no_support",
+          claimCount: 0,
+          sourcedClaimCount: 0,
+          unsourcedClaimCount: 0,
+          invalidSourceCount: 0,
+          assertionMismatch: false,
+          declineReason: "content_gap",
+        },
       },
     );
 

@@ -32,6 +32,18 @@ export const degradedV2Envelope = (): string =>
     grounding: "degraded",
   });
 
+export const OUT_OF_SCOPE_V2_BODY =
+  "That's not something I can help with here, but I can help with our workshop schedule and registration options.";
+
+export const outOfScopeV2Envelope = (): string =>
+  formatV2Envelope(OUT_OF_SCOPE_V2_BODY, {
+    v: 2,
+    outcome: "out_of_scope",
+    claims: [],
+    suggestions: [],
+    grounding: "degraded",
+  });
+
 export const noSupportV2Envelope = (): string =>
   formatV2Envelope(NO_SUPPORT_V2_BODY, {
     v: 2,

@@ -5714,10 +5714,14 @@ export interface components {
             comment: string;
             /** Format: date-time */
             createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         QualityFeedbackSummary: {
             upCount: number;
             downCount: number;
+            /** Format: date-time */
+            latestDownUpdatedAt: string | null;
             comments: components["schemas"]["QualityFeedbackComment"][];
         };
         LowQualityTurn: {
@@ -16791,6 +16795,10 @@ export interface operations {
                 feedback?: string;
                 /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
                 triage?: string;
+                /** @description Sort order. Defaults to assistant-turn creation time. */
+                sort?: "turn_created_at" | "negative_feedback_updated_at";
+                /** @description When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open. */
+                activeNegativeFeedbackOnly?: boolean | null;
                 /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. */
                 hasComment?: boolean | null;
                 agentId?: string;

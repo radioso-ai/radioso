@@ -37,6 +37,15 @@ export const registerQualityPaths = (
         triage: csvOrArrayString
           .describe("Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).")
           .optional(),
+        sort: z.enum(["turn_created_at", "negative_feedback_updated_at"])
+          .describe("Sort order. Defaults to assistant-turn creation time.")
+          .optional(),
+        activeNegativeFeedbackOnly: z.coerce.boolean()
+          .describe(
+            "When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. " +
+            "Feedback newer than terminal triage is treated as open.",
+          )
+          .optional(),
         hasComment: z.coerce.boolean()
           .describe("When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.")
           .optional(),

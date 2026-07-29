@@ -2,15 +2,20 @@
 
 import { useEffect, useState } from 'react'
 
-import { chatApi, qualityApi, type LowQualityTurn, type QualityActionFilter } from '@/lib/api'
+import { chatApi, type QualityActionFilter } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
-import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import {
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
   countNewInboxItems,
   inboxItemKeys,
   selectHumanOwnedConversations,
 } from '@/lib/needs-attention'
+import {
+  createEmptyQualityInboxSnapshot,
+  loadQualityInboxSourceAttempts,
+  qualityInboxPresentation,
+  reduceQualityInboxSnapshot,
+} from '@/lib/needs-attention-quality'
 
 interface UseNeedsAttentionActivityInput {
   /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
@@ -41,12 +46,11 @@ export const useNeedsAttentionActivity = ({
   intervalMs = 15000,
   backgroundIntervalMs = 30000,
 }: UseNeedsAttentionActivityInput): number => {
-  const [latestKeys, setLatestKeys] = useState<string[] | null>(null)
   const baselineSignature = baselineKeys === null ? null : baselineKeys.join('\u0000')
-
-  useEffect(() => {
-    setLatestKeys(null)
-  }, [baselineSignature])
+  const [latestState, setLatestState] = useState<{
+    baselineSignature: string | null
+    keys: string[] | null
+  }>({ baselineSignature: null, keys: null })
 
   useEffect(() => {
     if (!enabled) {
@@ -57,7 +61,7 @@ export const useNeedsAttentionActivity = ({
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let latestDecisions: Parameters<typeof inboxItemKeys>[0] = []
     let latestConversations: Parameters<typeof inboxItemKeys>[1] = []
-    let latestQualityTurns: LowQualityTurn[] = []
+    let latestQualitySnapshot = createEmptyQualityInboxSnapshot()
 
     const isDocumentVisible = () =>
       typeof document === 'undefined' || document.visibilityState !== 'hidden'
@@ -80,13 +84,6 @@ export const useNeedsAttentionActivity = ({
     }
 
     const poll = async () => {
-      const qualityRequest = qualityActions && qualityActions.length > 0
-        ? qualityApi.listTurns({
-            actions: [...qualityActions],
-            triageStates: [...ACTIVE_TRIAGE_STATES],
-            limit: 25,
-          })
-        : null
       const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
         hitlApi.listPendingDecisions(),
         chatApi.listChatHistory({
@@ -94,7 +91,7 @@ export const useNeedsAttentionActivity = ({
           offset: 0,
           ownership: 'human_owned',
         }),
-        qualityRequest ?? Promise.resolve(null),
+        loadQualityInboxSourceAttempts(qualityActions ?? []),
       ])
       if (cancelled) {
         return
@@ -110,16 +107,21 @@ export const useNeedsAttentionActivity = ({
         hasFreshSource = true
       }
       if (qualityResult.status === 'fulfilled') {
-        if (qualityResult.value) {
-          latestQualityTurns = qualityResult.value.items
-          hasFreshSource = true
-        } else if (qualityActions !== undefined) {
-          latestQualityTurns = []
-        }
+        latestQualitySnapshot = reduceQualityInboxSnapshot(
+          latestQualitySnapshot,
+          qualityResult.value,
+        )
+        hasFreshSource = true
       }
 
       if (hasFreshSource) {
-        setLatestKeys(inboxItemKeys(latestDecisions, latestConversations, latestQualityTurns))
+        const latestQualityTurns = qualityInboxPresentation(
+          latestQualitySnapshot,
+        ).turns
+        setLatestState({
+          baselineSignature,
+          keys: inboxItemKeys(latestDecisions, latestConversations, latestQualityTurns),
+        })
       }
 
       scheduleNextPoll()
@@ -153,11 +155,16 @@ export const useNeedsAttentionActivity = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [enabled, intervalMs, backgroundIntervalMs, qualityActions])
+  }, [baselineSignature, enabled, intervalMs, backgroundIntervalMs, qualityActions])
 
-  if (!enabled || latestKeys === null || baselineKeys === null) {
+  if (
+    !enabled
+    || latestState.keys === null
+    || baselineKeys === null
+    || latestState.baselineSignature !== baselineSignature
+  ) {
     return 0
   }
 
-  return countNewInboxItems(baselineKeys, latestKeys)
+  return countNewInboxItems(baselineKeys, latestState.keys)
 }

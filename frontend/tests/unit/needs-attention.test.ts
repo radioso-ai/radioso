@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import type { ChatConversationSummary, ConversationOwnership, LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
 import {
+  buildInboxModel,
   buildInboxItems,
   countNewInboxItems,
   formatInboxDuration,
   inboxItemKeys,
   ownershipLabel,
+  QUALITY_INBOX_ITEM_LIMIT,
   selectHumanOwnedConversations,
   waitingTone,
   type HumanOwnedConversationSummary,
@@ -147,6 +149,36 @@ describe('inboxItemKeys', () => {
     expect(inboxItemKeys([], [], [qualityTurn({ assistantMessageId: 'quality-1' })])).toEqual(['quality:quality-1'])
   })
 
+  it('changes a quality key when a down-vote or written comment is added', () => {
+    const before = inboxItemKeys([], [], [qualityTurn({ assistantMessageId: 'quality-1' })])
+    const afterVote = inboxItemKeys([], [], [qualityTurn({
+      assistantMessageId: 'quality-1',
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:04:00.000Z',
+        comments: [],
+      },
+    })])
+    const afterComment = inboxItemKeys([], [], [qualityTurn({
+      assistantMessageId: 'quality-1',
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:05:00.000Z',
+        comments: [{
+          value: 'down',
+          comment: 'This misses the exception.',
+          createdAt: '2026-06-19T10:05:00.000Z',
+          updatedAt: '2026-06-19T10:05:00.000Z',
+        }],
+      },
+    })])
+
+    expect(afterVote).not.toEqual(before)
+    expect(afterComment).not.toEqual(afterVote)
+  })
+
   it('omits a quality key when the same conversation has a critical escalation', () => {
     expect(inboxItemKeys(
       [decision({ conversationId: 'shared-conversation' })],
@@ -169,7 +201,12 @@ const qualityTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn =>
   skillStatus: 'completed',
   totalLatencyMs: 1200,
   createdAt: '2026-06-19T10:00:00.000Z',
-  feedback: { upCount: 0, downCount: 0, comments: [] },
+  feedback: {
+    upCount: 0,
+    downCount: 0,
+    latestDownUpdatedAt: null,
+    comments: [],
+  },
   triage: { state: 'open', reason: null, updatedAt: null },
   ...overrides,
 })
@@ -198,6 +235,53 @@ describe('buildInboxItems', () => {
     expect(byConversation['c-handoff'].escalatedAt).toBe('2026-06-19T10:00:00.000Z')
   })
 
+  it('maps a down-vote to explicit negative feedback and preserves its evidence', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({
+          assistantMessageId: 'm-feedback',
+          conversationId: 'c-feedback',
+          agentId: 'agent-feedback',
+          agentName: 'Support',
+          question: 'Can I return an opened item?',
+          answerPreview: 'Items can be returned within 30 days.',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T10:05:00.000Z',
+            comments: [{
+              value: 'down',
+              comment: 'This does not explain the opened-item exception.',
+              createdAt: '2026-06-19T10:05:00.000Z',
+              updatedAt: '2026-06-19T10:05:00.000Z',
+            }],
+          },
+          triage: {
+            state: 'acknowledged',
+            reason: null,
+            updatedAt: '2026-06-19T10:06:00.000Z',
+          },
+        }),
+      ],
+    })
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        type: 'negative_feedback',
+        severity: 'feedback',
+        title: 'Can I return an opened item?',
+        detail: 'This does not explain the opened-item exception.',
+        feedbackComment: 'This does not explain the opened-item exception.',
+        answerPreview: 'Items can be returned within 30 days.',
+        agentId: 'agent-feedback',
+        agentName: 'Support',
+        triageState: 'acknowledged',
+      }),
+    ])
+  })
+
   it('orders critical escalations above lower-concern quality signals', () => {
     const items = buildInboxItems({
       decisions: [decision({ handle: 'd1', conversationId: 'c-approval' })],
@@ -207,6 +291,116 @@ describe('buildInboxItems', () => {
 
     const severities = items.map((item) => item.severity)
     expect(severities).toEqual(['critical', 'critical', 'lower'])
+  })
+
+  it('orders explicit feedback below blocking work and above passive quality signals', () => {
+    const items = buildInboxItems({
+      decisions: [decision({ conversationId: 'approval' })],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({
+          assistantMessageId: 'passive-newer',
+          conversationId: 'passive',
+          createdAt: '2026-06-19T12:00:00.000Z',
+        }),
+        qualityTurn({
+          assistantMessageId: 'feedback-older',
+          conversationId: 'feedback',
+          createdAt: '2026-06-19T09:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T09:05:00.000Z',
+            comments: [],
+          },
+        }),
+      ],
+    })
+
+    expect(items.map((item) => item.conversationId)).toEqual(['approval', 'feedback', 'passive'])
+  })
+
+  it('prioritizes commented feedback and keeps it over a newer passive signal in the same conversation', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({
+          assistantMessageId: 'feedback-commented',
+          conversationId: 'commented',
+          createdAt: '2026-06-19T08:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T08:05:00.000Z',
+            comments: [{
+              value: 'down',
+              comment: 'The exception is missing.',
+              createdAt: '2026-06-19T08:05:00.000Z',
+              updatedAt: '2026-06-19T08:05:00.000Z',
+            }],
+          },
+        }),
+        qualityTurn({
+          assistantMessageId: 'feedback-uncommented',
+          conversationId: 'uncommented',
+          createdAt: '2026-06-19T11:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T11:05:00.000Z',
+            comments: [],
+          },
+        }),
+        qualityTurn({
+          assistantMessageId: 'passive-newer',
+          conversationId: 'commented',
+          createdAt: '2026-06-19T12:00:00.000Z',
+        }),
+      ],
+    })
+
+    expect(items.map((item) => item.assistantMessageId)).toEqual([
+      'feedback-commented',
+      'feedback-uncommented',
+    ])
+  })
+
+  it('orders equal-priority feedback by feedback activity instead of answer creation time', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({
+          assistantMessageId: 'new-answer-old-feedback',
+          conversationId: 'new-answer',
+          createdAt: '2026-06-19T12:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T12:05:00.000Z',
+            comments: [],
+          },
+        }),
+        qualityTurn({
+          assistantMessageId: 'old-answer-fresh-feedback',
+          conversationId: 'old-answer',
+          createdAt: '2026-01-01T08:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-20T09:00:00.000Z',
+            comments: [],
+          },
+        }),
+      ],
+    })
+
+    expect(items.map((item) => item.assistantMessageId)).toEqual([
+      'old-answer-fresh-feedback',
+      'new-answer-old-feedback',
+    ])
+    expect(items[0]?.timestamp).toBe('2026-06-20T09:00:00.000Z')
   })
 
   it('orders critical items oldest-first while keeping quality signals newest-first below them', () => {
@@ -254,6 +448,30 @@ describe('buildInboxItems', () => {
 
     expect(items).toHaveLength(1)
     expect(items[0]?.key).toBe('quality:newer')
+  })
+
+  it('caps quality rows after conversation deduplication and reports overflow', () => {
+    const turns = Array.from({ length: QUALITY_INBOX_ITEM_LIMIT + 2 }, (_, index) =>
+      qualityTurn({
+        assistantMessageId: `message-${index}`,
+        conversationId: `conversation-${index}`,
+        createdAt: new Date(Date.UTC(2026, 5, 19, 10, index)).toISOString(),
+      }))
+    turns.push(qualityTurn({
+      assistantMessageId: 'duplicate-older',
+      conversationId: 'conversation-0',
+      createdAt: '2026-06-19T08:00:00.000Z',
+    }))
+
+    const model = buildInboxModel({
+      decisions: [],
+      conversations: [],
+      qualityTurns: turns,
+    })
+
+    expect(model.items).toHaveLength(QUALITY_INBOX_ITEM_LIMIT)
+    expect(new Set(model.items.map((item) => item.conversationId))).toHaveLength(QUALITY_INBOX_ITEM_LIMIT)
+    expect(model.hasMoreQualityItems).toBe(true)
   })
 })
 

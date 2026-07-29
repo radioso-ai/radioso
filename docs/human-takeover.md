@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-06-18
+last_updated: 2026-07-29
 ---
 
 # Human Takeover
@@ -194,15 +194,18 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
 
 - **Needs attention** — the operator inbox. One categorized table with an
   escalation-type column. Critical escalations (an **Approval** to decide, a
-  **Handoff** awaiting or held by a human) sort to the top; lower-concern quality
-  signals (a **Degraded** or **No context** answer the AI already handled) follow
-  below. Quality signals are capped so they never crowd out critical work, and a
-  signal whose conversation is already escalated is shown once, as the escalation.
-  Opening a row shows the conversation with an action bar. A quality row can be
-  cleared in place with **Dismiss** (it sets the turn's triage state, so the row
-  drops out of the inbox); the full resolved/acknowledged/dismissed triage
-  workflow stays in the Quality tab. Approvals and handoffs clear by resolving or
-  handing back from the conversation drawer.
+  **Handoff** awaiting or held by a human) sort to the top. Explicit thumbs-down
+  feedback follows, ordered by its latest creation or edit, then lower-concern
+  quality signals (a **Degraded** or **No context** answer the AI already
+  handled). Quality signals are capped so they never crowd out critical work,
+  and a signal whose conversation is already escalated is shown once, as the
+  escalation. Reviewing feedback opens the exact failed answer and keeps direct
+  links to Knowledge, the agent's Behavior settings, and agent chat beside the
+  evidence. Mark it resolved after updating and testing, or choose **Not
+  actionable**. A later thumbs down reopens the work even if that answer was
+  previously resolved or dismissed. Passive quality rows retain the one-click
+  **Dismiss** action. Approvals and handoffs clear by resolving or handing back
+  from the conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — the full, paginated answer-quality backlog and per-turn triage
   (negative feedback, slow responses, and skill failures, in addition to the

@@ -53,6 +53,14 @@ const turnsQuerySchema = z.object({
   ),
   feedback: csvOrArray(z.enum(["up", "down"])),
   triage: csvOrArray(triageStateSchema),
+  sort: z.enum(["turn_created_at", "negative_feedback_updated_at"]).optional(),
+  activeNegativeFeedbackOnly: z.preprocess((value) => {
+    if (value === undefined) return undefined;
+    if (typeof value === "boolean") return value;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    return value;
+  }, z.boolean().optional()),
   hasComment: z.preprocess((value) => {
     if (value === undefined) return undefined;
     if (typeof value === "boolean") return value;
@@ -101,6 +109,8 @@ export const createQualityRoutes = (
         statuses: query.statuses,
         feedbackValues: query.feedback,
         triageStates: query.triage,
+        sort: query.sort,
+        activeNegativeFeedbackOnly: query.activeNegativeFeedbackOnly,
         hasComment: query.hasComment,
         minTotalLatencyMs: query.minTotalLatencyMs,
         maxTotalLatencyMs: query.maxTotalLatencyMs,

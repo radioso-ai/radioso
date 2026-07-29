@@ -31,10 +31,13 @@ export interface QualityActionFilter {
 export interface QualityFeedbackSummary {
   upCount: number;
   downCount: number;
+  /** Latest creation or edit time among thumbs-down feedback entries. */
+  latestDownUpdatedAt: string | null;
   comments: Array<{
     value: QualityFeedbackValue;
     comment: string;
     createdAt: string;
+    updatedAt: string;
   }>;
 }
 
@@ -66,6 +69,14 @@ export interface ListLowQualityTurnsInput {
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
   triageStates?: QualityTriageState[];
+  /** Defaults to answer creation time; feedback inboxes use latest thumbs-down activity. */
+  sort?: "turn_created_at" | "negative_feedback_updated_at";
+  /**
+   * Returns thumbs-down feedback that has not been handled since its latest
+   * creation or edit. A feedback event newer than resolved/dismissed triage is
+   * exposed as open until an operator triages the turn again.
+   */
+  activeNegativeFeedbackOnly?: boolean;
   /** true returns turns with written feedback comments; false returns turns without them. */
   hasComment?: boolean;
   minTotalLatencyMs?: number;

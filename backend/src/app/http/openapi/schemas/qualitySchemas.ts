@@ -43,6 +43,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       value: QualityFeedbackValueSchema,
       comment: z.string(),
       createdAt: z.string().datetime(),
+      updatedAt: z.string().datetime(),
     }),
   );
 
@@ -51,6 +52,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.object({
       upCount: z.number().int().min(0),
       downCount: z.number().int().min(0),
+      latestDownUpdatedAt: z.string().datetime().nullable(),
       comments: z.array(QualityFeedbackCommentSchema),
     }),
   );

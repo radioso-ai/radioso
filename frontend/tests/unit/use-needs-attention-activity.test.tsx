@@ -87,7 +87,12 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   skillStatus: 'completed',
   totalLatencyMs: 1200,
   createdAt: '2026-06-19T10:00:00.000Z',
-  feedback: { upCount: 0, downCount: 0, comments: [] },
+  feedback: {
+    upCount: 0,
+    downCount: 0,
+    latestDownUpdatedAt: null,
+    comments: [],
+  },
   triage: { state: 'open', reason: null, updatedAt: null },
   ...overrides,
 })
@@ -183,6 +188,13 @@ beforeAll(() => {
 beforeEach(() => {
   vi.useFakeTimers()
   vi.clearAllMocks()
+  qualityApiMock.listTurns.mockResolvedValue({
+    items: [],
+    total: 0,
+    page: 1,
+    pageSize: 25,
+    totalPages: 1,
+  } as never)
   setVisibility('visible')
   observed.current = 0
   container = document.createElement('div')
@@ -301,6 +313,43 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
+  it('counts a newly added down-vote or comment as fresh activity', async () => {
+    const baselineTurn = qualityTurn({
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:04:00.000Z',
+        comments: [],
+      },
+    })
+    const commentedTurn = qualityTurn({
+      feedback: {
+        upCount: 0,
+        downCount: 1,
+        latestDownUpdatedAt: '2026-06-19T10:05:00.000Z',
+        comments: [{
+          value: 'down',
+          comment: 'The exception is missing.',
+          createdAt: '2026-06-19T10:05:00.000Z',
+          updatedAt: '2026-06-19T10:05:00.000Z',
+        }],
+      },
+    })
+    mockInbox([], [])
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [commentedTurn],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe(inboxItemKeys([], [], [baselineTurn] as LowQualityTurn[]))
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(1)
+  })
+
   it('clears stale polled keys when the displayed baseline changes', async () => {
     const decisions = [decisionSummary()]
     const conversations = [conversationSummary()]
@@ -369,12 +418,33 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
-  it('falls back to escalation-only polling when quality actions are unavailable', async () => {
+  it('continues polling negative feedback when grounding actions are unavailable', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
     renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
     await advanceOnePoll()
 
-    expect(qualityApiMock.listTurns).not.toHaveBeenCalled()
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(2)
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
+      feedback: ['down'],
+      sort: 'negative_feedback_updated_at',
+      activeNegativeFeedbackOnly: true,
+      hasComment: true,
+      limit: 25,
+    })
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(2, {
+      feedback: ['down'],
+      sort: 'negative_feedback_updated_at',
+      activeNegativeFeedbackOnly: true,
+      hasComment: false,
+      limit: 25,
+    })
     expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)
     expect(chatApiMock.listChatHistory).toHaveBeenCalledTimes(1)
   })

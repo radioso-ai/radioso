@@ -28,6 +28,7 @@ interface MessageRow {
   skill_name: string | null;
   skill_outcome: string | null;
   skill_status: string | null;
+  total_latency_ms: number | null;
   created_at: Date;
 }
 
@@ -43,6 +44,7 @@ const mapMessage = (row: MessageRow): MessageRecord => ({
   skillName: row.skill_name ?? undefined,
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
+  totalLatencyMs: row.total_latency_ms ?? undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -241,7 +243,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const result = await sql<MessageRow>`
-        INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at)
+        INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, total_latency_ms, created_at)
         VALUES (
           ${messageId},
           ${input.assistantMessage.conversationId},
@@ -252,9 +254,10 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
           ${input.assistantMessage.skillName ?? null},
           ${input.assistantMessage.skillOutcome ?? null},
           ${input.assistantMessage.skillStatus ?? null},
+          ${input.assistantMessage.totalLatencyMs ?? null},
           clock_timestamp()
         )
-        RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, created_at
+        RETURNING id, conversation_id, workspace_id, role, content, metadata_json, skill_name, skill_outcome, skill_status, total_latency_ms, created_at
       `.execute(db);
       const message = result.rows[0];
       if (!message) {

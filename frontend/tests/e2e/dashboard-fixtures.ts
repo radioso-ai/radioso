@@ -700,6 +700,51 @@ const buildWorkspaceSummary = (input: {
   };
 };
 
+const qualityMetric = (count: number, denominator: number) => ({
+  count,
+  denominator,
+  rate: denominator === 0 ? null : count / denominator,
+});
+
+/**
+ * Quality health rollup. Every window sits well above the dashboard's
+ * MIN_RATE_SAMPLE floor so rates and deltas render by default; a spec that wants
+ * the "too few to rate" path passes its own thin payload via `qualityStats`.
+ */
+export const baseQualityStats = () => ({
+  range: "30d" as const,
+  filters: {},
+  current: {
+    from: "2026-03-27T00:00:00.000Z",
+    to: "2026-04-26T00:00:00.000Z",
+    turnCount: 600,
+    grounded: qualityMetric(420, 480),
+    negativeFeedback: qualityMetric(24, 120),
+    skillFailures: qualityMetric(12, 600),
+  },
+  previous: {
+    from: "2026-02-25T00:00:00.000Z",
+    to: "2026-03-27T00:00:00.000Z",
+    turnCount: 500,
+    grounded: qualityMetric(391, 460),
+    negativeFeedback: qualityMetric(39, 130),
+    skillFailures: qualityMetric(20, 500),
+  },
+  buckets: Array.from({ length: 30 }, (_, index) => ({
+    date: `2026-04-${String(index + 1).padStart(2, "0")}`,
+    turnCount: 12 + index,
+    grounded: qualityMetric(10 + index, 14 + index),
+    negativeFeedback: qualityMetric(1, 6),
+    skillFailures: qualityMetric(index % 3, 12 + index),
+  })),
+  backlog: {
+    negative_feedback: 7,
+    grounding_gaps: 3,
+    slow_responses: 5,
+    skill_failures: 2,
+  },
+});
+
 export const installDashboardApiMocks = async (
   page: Page,
   options: {
@@ -741,6 +786,7 @@ export const installDashboardApiMocks = async (
     ingestionSettingsUpdates?: unknown[];
     ingestionSettingsUpdateError?: string;
     usageTrends?: unknown;
+    qualityStats?: unknown;
     mcpConnections?: McpConnectionFixture[];
     mcpConnectionRequests?: string[];
     mcpConverseGrants?: McpConverseGrantFixture[];
@@ -938,6 +984,7 @@ export const installDashboardApiMocks = async (
       },
     ],
   };
+  const qualityStats = options.qualityStats ?? baseQualityStats();
 
   await page.route("**/backend/health", async (route) => {
     await json(route, {
@@ -1093,6 +1140,14 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/decisions") {
       await json(route, { decisions: pendingDecisions });
+      return;
+    }
+
+    // Quality health rollup. Echoes the requested range so a spec can assert the
+    // range control actually refetches with the new window.
+    if (request.method() === "GET" && path === "/quality/stats") {
+      const requestedRange = url.searchParams.get("range") === "7d" ? "7d" : "30d";
+      await json(route, { ...(qualityStats as Record<string, unknown>), range: requestedRange });
       return;
     }
 

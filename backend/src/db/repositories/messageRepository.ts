@@ -20,6 +20,8 @@ export interface MessageRecord {
   skillName?: string;
   skillOutcome?: string;
   skillStatus?: string;
+  /** Turn wall time in milliseconds. Assistant turns only; absent when the turn produced no measurement. */
+  totalLatencyMs?: number;
   createdAt: Date;
 }
 
@@ -73,6 +75,7 @@ export interface MessageRepositoryPort {
     skillName?: string;
     skillOutcome?: string;
     skillStatus?: string;
+    totalLatencyMs?: number;
   }): Promise<MessageRecord>;
 }
 
@@ -87,6 +90,7 @@ export interface MessageRow {
   skill_name: string | null;
   skill_outcome: string | null;
   skill_status: string | null;
+  total_latency_ms: number | null;
   created_at: Date;
 }
 
@@ -140,6 +144,7 @@ const messageColumns = [
   "skill_name",
   "skill_outcome",
   "skill_status",
+  "total_latency_ms",
   "created_at",
 ] as const;
 
@@ -157,6 +162,7 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
   skillName: row.skill_name ?? undefined,
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
+  totalLatencyMs: row.total_latency_ms ?? undefined,
   createdAt: new Date(row.created_at),
 });
 
@@ -406,6 +412,7 @@ export class MessageRepository implements MessageRepositoryPort {
     skillName?: string;
     skillOutcome?: string;
     skillStatus?: string;
+    totalLatencyMs?: number;
   }): Promise<MessageRecord> {
     const metadata = {
       ...(input.metadata ?? input.inputMetadata ?? {}),
@@ -431,6 +438,7 @@ export class MessageRepository implements MessageRepositoryPort {
         skill_name: input.skillName ?? null,
         skill_outcome: input.skillOutcome ?? null,
         skill_status: input.skillStatus ?? null,
+        total_latency_ms: input.totalLatencyMs ?? null,
         created_at: clockTimestamp(),
       })
       .returning(messageColumns)

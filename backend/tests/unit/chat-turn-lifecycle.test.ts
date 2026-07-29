@@ -575,6 +575,27 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(assistantMessage.metadata).toHaveProperty("conversationSummary", null);
   });
 
+  it("persists turn wall time on the assistant message and the answer stage from one measurement", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:02.500Z"));
+    const answerStartedAt = Date.now() - 1500;
+
+    const { assistantMessage, activityTrace } = buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: presentation(),
+      answerStartedAt,
+      stream: false,
+      engineTrace: engineTrace(),
+    });
+
+    expect(assistantMessage.totalLatencyMs).toBe(1500);
+    // Same measurement, so the persisted column and the trace can never disagree.
+    const answerStage = activityTrace.stages.find((stage) => stage.stageId === "answer");
+    expect(answerStage?.durationMs).toBe(assistantMessage.totalLatencyMs);
+    vi.useRealTimers();
+  });
+
   it("reports retrieval as invoked when a direct-classified routine turn dispatches retrieval.context", async () => {
     const { lifecycle, records } = harness();
     const prepared = session();

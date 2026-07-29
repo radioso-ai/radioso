@@ -244,4 +244,66 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     );
     expect(ownershipAudit.event_type).toBe("hitl.ownership");
   });
+
+  // This transactional raw INSERT is the second write path for assistant turns
+  // (MessageRepository.create is the other). A column wired on only one of them is
+  // NULL for half the traffic, so the persister gets its own assertion.
+  it("persists total_latency_ms from the assistant message payload", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+
+    await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Timed answer.",
+        totalLatencyMs: 2450,
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    const stored = await database.queryOne<{ total_latency_ms: number | null }>(
+      "SELECT total_latency_ms FROM messages WHERE id = $1",
+      [assistantMessageId],
+    );
+    expect(stored.total_latency_ms).toBe(2450);
+  });
+
+  it("leaves total_latency_ms null when the turn payload carries no latency", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+
+    await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Untimed answer.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    const stored = await database.queryOne<{ total_latency_ms: number | null }>(
+      "SELECT total_latency_ms FROM messages WHERE id = $1",
+      [assistantMessageId],
+    );
+    expect(stored.total_latency_ms).toBeNull();
+  });
 });

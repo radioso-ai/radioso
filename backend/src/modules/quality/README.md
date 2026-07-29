@@ -30,6 +30,13 @@ signals is still exactly one row — a join or `UNION ALL` per signal would list
 it twice. This is what lets the dashboard queue ask for "anything worth
 reviewing" and a chip ask for one signal through the same parameter.
 
+Claim-level grounding detail is a separate immutable message snapshot. Quality
+reads only the five dedicated `messages.grounding_*` columns and exposes a
+complete object or `null`; it never reconstructs diagnostics from message or
+audit JSON. `groundingDiagnostic.ts` owns row mapping and scalar predicates.
+Verdicts are OR-ed within their list, then AND-ed with count-presence and all
+other filters.
+
 Grounding derives from the catalog's `groundedAnswer` flag. **An absent flag is
 not `false`.** An outcome such as a clarifying question deliberately omits the
 flag: it neither grounded an answer nor failed to, so it belongs to neither the

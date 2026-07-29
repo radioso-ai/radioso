@@ -1,12 +1,13 @@
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import type { GroundedAnswerEnvelope, GroundingEnvelopeParseStatus } from "./groundedAnswerEnvelope.js";
+import type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
 
 /**
  * How well evidence supported the answer. Scope is deliberately *not* a verdict here:
  * an out-of-scope decline is as unsupported as any other decline, so it computes to
  * `no_support` and carries its reason on {@link GroundingSummary.declineReason}.
  */
-export type GroundingVerdict = "grounded" | "degraded" | "no_support";
+export type { GroundingVerdict };
 
 export interface GroundingSummary {
   protocolVersion: 1 | 2 | null;

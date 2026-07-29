@@ -222,6 +222,21 @@ out of its own remit — the turn carries the **Out of scope** action instead, a
 sits on neither side of the grounded-answer rate. That keeps the gap queue to
 the questions worth ingesting content for.
 
+For retrieval answers with a complete diagnostic, the Outcome cell explains the
+evidence: how many claims were sourced, plus separate warnings for unsourced
+claims and invalid source references. A no-support answer with zero claims says
+`No supported claims`; turns without a complete diagnostic show no evidence
+line, so missing history is not mistaken for a zero. Open **Filter → Evidence**
+to select one or more grounding verdicts or focus on answers with unsourced
+claims or invalid sources. These choices live in the URL and can be shared.
+
+The same data is available from `GET /api/v1/quality/turns` as
+`grounding: { verdict, claimCount, sourcedClaimCount, unsourcedClaimCount,
+invalidSourceCount }` or `null`. Use `groundingVerdict` (CSV or repeated),
+`hasUnsourcedClaims`, and `hasInvalidSources` to filter server-side. A `false`
+presence filter matches complete diagnostics with a zero count; it does not
+match unknown diagnostics.
+
 Both zones measure AI turns only. A reply you write during a takeover is stored
 as an assistant message, but it carries your authorship, so it is left out of the
 quality counts and rates. The same applies to conversations from the dashboard

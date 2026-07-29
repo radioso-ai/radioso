@@ -12,7 +12,12 @@ export type GroundingEnvelopeParseStatus =
   | "malformed"
   | "invalid_v2";
 
-export type GroundingEnvelopeOutcome = "answer" | "no_support";
+/**
+ * `no_support` and `out_of_scope` are both final declines and obey the same body
+ * rules; they differ only in why the turn declined. The envelope transports the
+ * distinction, {@link ./groundingAssertions.js} interprets it.
+ */
+export type GroundingEnvelopeOutcome = "answer" | "no_support" | "out_of_scope";
 
 export interface PlannedEnvelopeSuggestion {
   text: string;
@@ -53,7 +58,7 @@ const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
         description: "Visible markdown answer only. Never include a follow-up-question heading, menu, or list here.",
       },
       v: { type: "integer", enum: [2] },
-      outcome: { type: "string", enum: ["answer", "no_support"] },
+      outcome: { type: "string", enum: ["answer", "no_support", "out_of_scope"] },
       claims: {
         type: "array",
         items: {
@@ -186,7 +191,9 @@ const parseEnvelopeValue = (parsed: unknown): ParsedEnvelopeTail => {
   }
 
   const isV2 = record.v === 2 || record.v === "2";
-  const outcome = record.outcome === "answer" || record.outcome === "no_support"
+  const outcome = record.outcome === "answer"
+    || record.outcome === "no_support"
+    || record.outcome === "out_of_scope"
     ? record.outcome
     : null;
   const claims = Array.isArray(record.claims) && record.claims.every(Array.isArray)

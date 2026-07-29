@@ -37,7 +37,7 @@ import {
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
-    return "No supporting material found.";
+    return { text: "No supporting material found.", declineReason: "content_gap" as const };
   },
 };
 

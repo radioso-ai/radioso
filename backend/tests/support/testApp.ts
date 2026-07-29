@@ -39,6 +39,7 @@ import { AssistantHistoryService } from "../../src/modules/chat/services/assista
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../src/modules/agents/public.js";
 import { RoutineDefinitionService, RoutineDraftAssistService } from "../../src/modules/routines/public.js";
 import {
+  type ComposedDecline,
   type FallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { ChatHistoryService } from "../../src/modules/chat/services/chatHistoryService.js";
@@ -357,8 +358,11 @@ const appDependencyMap = new WeakMap<object, AppDependencies>();
 const appRepositoryMap = new WeakMap<object, TestRepositories>();
 
 class TestFallbackReplyComposer implements FallbackReplyComposer {
-  async composeNoContext(): Promise<string> {
-    return "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.";
+  async composeNoContext(): Promise<ComposedDecline> {
+    return {
+      text: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+      declineReason: "content_gap",
+    };
   }
 }
 

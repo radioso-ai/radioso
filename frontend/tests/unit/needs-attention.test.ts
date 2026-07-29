@@ -403,6 +403,43 @@ describe('buildInboxItems', () => {
     expect(items[0]?.timestamp).toBe('2026-06-20T09:00:00.000Z')
   })
 
+  it('keeps the freshest feedback turn when one conversation has multiple downvoted answers', () => {
+    const items = buildInboxItems({
+      decisions: [],
+      conversations: [],
+      qualityTurns: [
+        qualityTurn({
+          assistantMessageId: 'new-answer-old-feedback',
+          conversationId: 'shared-conversation',
+          createdAt: '2026-06-19T12:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-19T12:05:00.000Z',
+            comments: [],
+          },
+        }),
+        qualityTurn({
+          assistantMessageId: 'old-answer-fresh-feedback',
+          conversationId: 'shared-conversation',
+          createdAt: '2026-01-01T08:00:00.000Z',
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: '2026-06-20T09:00:00.000Z',
+            comments: [],
+          },
+        }),
+      ],
+    })
+
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      assistantMessageId: 'old-answer-fresh-feedback',
+      timestamp: '2026-06-20T09:00:00.000Z',
+    })
+  })
+
   it('orders critical items oldest-first while keeping quality signals newest-first below them', () => {
     const items = buildInboxItems({
       decisions: [decision({ conversationId: 'approval-newer', createdAt: '2026-06-19T11:00:00.000Z' })],

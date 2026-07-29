@@ -35,6 +35,7 @@ const QUALITY_STATUS_VALUES: ReadonlySet<QualityStatusFilter> = new Set([
 ])
 export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
+export type QualitySortFilter = 'turn_created_at' | 'negative_feedback_updated_at'
 export type QualityTriageFilter = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
 
 const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
@@ -92,7 +93,9 @@ export interface DashboardRouteState {
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
   qualityLatency?: QualityLatencyFilter
+  qualitySort?: QualitySortFilter
   qualityTriageStates?: QualityTriageFilter[]
+  qualityActiveNegativeFeedbackOnly?: boolean
   qualityHasComment?: boolean
   /**
    * Widens the queue past its default. The queue normally shows the active-triage backlog
@@ -132,7 +135,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityStatuses',
   'qualityFeedback',
   'qualityLatency',
+  'qualitySort',
   'qualityTriageStates',
+  'qualityActiveNegativeFeedbackOnly',
   'qualityHasComment',
   'qualityShowAll',
   'evalCaseId',
@@ -231,6 +236,12 @@ const parseQualityStatuses = (value: string | null): QualityStatusFilter[] | und
 
 const parseQualityLatency = (value: string | null): QualityLatencyFilter | undefined => {
   return value === 'lt_2s' || value === '2s_5s' || value === '5s_10s' || value === 'gte_10s'
+    ? value
+    : undefined
+}
+
+const parseQualitySort = (value: string | null): QualitySortFilter | undefined => {
+  return value === 'turn_created_at' || value === 'negative_feedback_updated_at'
     ? value
     : undefined
 }
@@ -436,8 +447,14 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityLatency) {
       normalized.qualityLatency = state.qualityLatency
     }
+    if (state.qualitySort && state.qualitySort !== 'turn_created_at') {
+      normalized.qualitySort = state.qualitySort
+    }
     if (state.qualityTriageStates && state.qualityTriageStates.length > 0) {
       normalized.qualityTriageStates = [...state.qualityTriageStates]
+    }
+    if (state.qualityActiveNegativeFeedbackOnly) {
+      normalized.qualityActiveNegativeFeedbackOnly = true
     }
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
@@ -565,8 +582,14 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.qualityLatency) {
       searchParams.set('latency', normalized.qualityLatency)
     }
+    if (normalized.qualitySort) {
+      searchParams.set('sort', normalized.qualitySort)
+    }
     if (normalized.qualityTriageStates && normalized.qualityTriageStates.length > 0) {
       searchParams.set('triage', normalized.qualityTriageStates.join(','))
+    }
+    if (normalized.qualityActiveNegativeFeedbackOnly) {
+      searchParams.set('activeNegativeFeedbackOnly', 'true')
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
@@ -840,7 +863,11 @@ export const parseDashboardRoute = (
       qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
+      qualitySort: parseQualitySort(searchParams?.get('sort') ?? null),
       qualityTriageStates: parseQualityTriageStates(searchParams?.get('triage') ?? null),
+      qualityActiveNegativeFeedbackOnly: searchParams?.get('activeNegativeFeedbackOnly') === 'true'
+        ? true
+        : undefined,
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
       qualityShowAll: searchParams?.get('all') === 'true' ? true : undefined,
     })

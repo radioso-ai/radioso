@@ -76,6 +76,9 @@ const byTimestampDesc = (left: string, right: string): number =>
 const byTimestampAsc = (left: string, right: string): number =>
   new Date(left).getTime() - new Date(right).getTime()
 
+const feedbackActivityTimestamp = (turn: LowQualityTurn): string =>
+  turn.feedback.latestDownUpdatedAt ?? turn.createdAt
+
 export type WaitingTone = 'default' | 'amber' | 'destructive'
 
 export const formatInboxDuration = (elapsedMs: number): string => {
@@ -123,6 +126,11 @@ const shouldReplaceQualityTurn = (
     if (existingHasComment !== candidateHasComment) {
       return candidateHasComment
     }
+
+    return byTimestampDesc(
+      feedbackActivityTimestamp(candidate),
+      feedbackActivityTimestamp(existing),
+    ) < 0
   }
 
   return byTimestampDesc(candidate.createdAt, existing.createdAt) < 0
@@ -205,7 +213,7 @@ export const buildInboxModel = (input: {
         ? feedbackComment?.comment ?? 'No written comment'
         : turn.agentName ?? '',
       timestamp: negativeFeedback
-        ? turn.feedback.latestDownUpdatedAt ?? turn.createdAt
+        ? feedbackActivityTimestamp(turn)
         : turn.createdAt,
       assistantMessageId: turn.assistantMessageId,
       answerPreview: turn.answerPreview,

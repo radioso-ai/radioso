@@ -2,7 +2,6 @@ import {
   qualityApi,
   type LowQualityTurn,
   type LowQualityTurnsPage,
-  type QualityActionFilter,
 } from '@/lib/api'
 import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 
@@ -66,9 +65,7 @@ const attempt = async (
   }
 }
 
-export const loadQualityInboxSourceAttempts = async (
-  groundingActions: readonly QualityActionFilter[],
-): Promise<QualityInboxSourceAttempts> => {
+export const loadQualityInboxSourceAttempts = async (): Promise<QualityInboxSourceAttempts> => {
   const activeTriageStates = [...ACTIVE_TRIAGE_STATES]
   const commentedFeedback = attempt(qualityApi.listTurns({
     feedback: ['down'],
@@ -84,13 +81,11 @@ export const loadQualityInboxSourceAttempts = async (
     hasComment: false,
     limit: QUALITY_INBOX_SOURCE_LIMIT,
   }))
-  const grounding = groundingActions.length > 0
-    ? attempt(qualityApi.listTurns({
-        actions: [...groundingActions],
-        triageStates: activeTriageStates,
-        limit: QUALITY_INBOX_SOURCE_LIMIT,
-      }))
-    : Promise.resolve<QualityInboxSourceAttempt>({ status: 'skipped' })
+  const grounding = attempt(qualityApi.listTurns({
+    signal: 'grounding_gaps',
+    triageStates: activeTriageStates,
+    limit: QUALITY_INBOX_SOURCE_LIMIT,
+  }))
 
   const [commentedFeedbackResult, uncommentedFeedbackResult, groundingResult] =
     await Promise.all([commentedFeedback, uncommentedFeedback, grounding])

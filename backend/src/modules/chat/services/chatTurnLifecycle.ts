@@ -293,6 +293,10 @@ export const buildTurnTraceForPresentation = (
     path: route.type === "direct" ? "assistant_direct" as const : "assistant_retrieval" as const,
     retrievalInvoked: route.type === "retrieval",
   };
+  // One measurement of turn wall time, used for both the persisted
+  // `messages.total_latency_ms` column and the trace's answer/generation stages, so the
+  // quality dashboard and the debug trace can never report different numbers for a turn.
+  const totalLatencyMs = Date.now() - input.answerStartedAt;
   const activitySummary = {
     ...activitySummaryPresenter.present(retrieval.diagnostics, {
       execution,
@@ -313,7 +317,7 @@ export const buildTurnTraceForPresentation = (
           stream: input.stream,
           hadContexts: retrieval.contexts.length > 0,
           retrievalSkipped: retrieval.diagnostics.retrievalSkipped,
-          durationMs: Date.now() - input.answerStartedAt,
+          durationMs: totalLatencyMs,
           answerOutcome: input.presentation.answerOutcome,
           skillName: skillTurnOutcome.skillName,
           skillOutcome: skillTurnOutcome.outcome,
@@ -361,6 +365,7 @@ export const buildTurnTraceForPresentation = (
     skillName: skillTurnOutcome.skillName,
     skillOutcome: skillTurnOutcome.outcome,
     skillStatus: skillTurnOutcome.status,
+    totalLatencyMs,
     metadata: {
       skillTurn: skillTurnOutcome,
       // Per-turn context required for full-fidelity eval snapshot capture.

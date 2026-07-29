@@ -207,9 +207,19 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   **Dismiss** action. Approvals and handoffs clear by resolving or handing back
   from the conversation drawer.
 - **All activity** — the full conversation history.
-- **Quality** — the full, paginated answer-quality backlog and per-turn triage
+- **Quality** — answer quality in two zones with different scopes. **Health**
+  covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,
+  negative-feedback rate, and skill-failure rate, each shown against the equal
+  preceding window. **Queue** is the full, paginated backlog and per-turn triage
   (negative feedback, slow responses, and skill failures, in addition to the
-  grounding gaps summarized in the inbox).
+  grounding gaps summarized in the inbox). The queue is not windowed, so a turn
+  that is still untriaged stays visible however old it is.
+
+Both zones measure AI turns only. A reply you write during a takeover is stored
+as an assistant message, but it carries your authorship, so it is left out of the
+quality counts and rates. The same applies to conversations from the dashboard
+test chat and the workbench replay. In practice this means your own work as an
+operator never moves the agent's quality numbers.
 
 The conversation view shows message attribution (a badge for human-agent and
 system messages) and an operator action bar: take over, reply, hand back, and

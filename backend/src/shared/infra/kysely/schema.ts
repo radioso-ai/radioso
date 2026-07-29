@@ -624,6 +624,7 @@ export interface Messages {
   skill_outcome: string | null;
   skill_status: string | null;
   source: string | null;
+  total_latency_ms: number | null;
   workspace_id: string;
 }
 

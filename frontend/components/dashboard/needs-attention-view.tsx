@@ -26,15 +26,13 @@ import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import {
   chatApi,
   qualityApi,
-  skillsApi,
   type PendingApprovalDecision,
-  type QualityActionFilter,
   type QualityTriageState,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { ACTIVE_TRIAGE_STATES, groundingGapActions } from '@/lib/quality-signals'
+import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import { cn } from '@/lib/utils'
 import {
   buildInboxModel,
@@ -543,8 +541,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [decisions, setDecisions] = useState<PendingApprovalDecision[]>([])
   const [humanOwnedConversations, setHumanOwnedConversations] = useState<HumanOwnedConversationSummary[]>([])
   const [qualitySnapshot, setQualitySnapshot] = useState(createEmptyQualityInboxSnapshot)
-  const [qualityActions, setQualityActions] = useState<QualityActionFilter[]>([])
-  const [qualityCatalogLoadFailed, setQualityCatalogLoadFailed] = useState(false)
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [approvalError, setApprovalError] = useState<string | null>(null)
@@ -569,23 +565,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     const requestId = inboxRequestIdRef.current + 1
     inboxRequestIdRef.current = requestId
 
-    const loadQualitySources = async () => {
-      let actions: QualityActionFilter[] = []
-      let catalogLoadFailed = false
-      try {
-        const { skills } = await skillsApi.list()
-        actions = groundingGapActions(skills)
-      } catch {
-        catalogLoadFailed = true
-      }
-
-      return {
-        actions,
-        catalogLoadFailed,
-        attempts: await loadQualityInboxSourceAttempts(actions),
-      }
-    }
-
     const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
       hitlApi.listPendingDecisions(),
       chatApi.listChatHistory({
@@ -593,7 +572,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         offset: 0,
         ownership: 'human_owned',
       }),
-      loadQualitySources(),
+      loadQualityInboxSourceAttempts(),
     ])
 
     if (!isMountedRef.current || requestId !== inboxRequestIdRef.current) {
@@ -620,12 +599,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
 
     if (qualityResult.status === 'fulfilled') {
-      setQualityActions(qualityResult.value.actions)
-      setQualityCatalogLoadFailed(qualityResult.value.catalogLoadFailed)
       setQualitySnapshot((previous) =>
-        reduceQualityInboxSnapshot(previous, qualityResult.value.attempts))
-    } else {
-      setQualityCatalogLoadFailed(true)
+        reduceQualityInboxSnapshot(previous, qualityResult.value))
     }
 
     setIsLoading(false)
@@ -877,7 +852,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   )
   const newItemCount = useNeedsAttentionActivity({
     baselineKeys,
-    qualityActions,
     // Pause the background poll while a conversation is open; closing it already triggers a refresh.
     enabled: selectedInboxItem === null,
   })
@@ -941,7 +915,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   }, [refreshInbox])
 
   const showEmptyState = !isLoading && !approvalError && !conversationError && items.length === 0
-  const hasQualityLoadFailure = qualityCatalogLoadFailed || qualityPresentation.hasLoadFailure
+  const hasQualityLoadFailure = qualityPresentation.hasLoadFailure
   const hasMoreQualityItems = qualityPresentation.isTruncated || inboxModel.hasMoreQualityItems
   const selectedFeedbackItem = selectedInboxItem?.type === 'negative_feedback'
     ? selectedInboxItem

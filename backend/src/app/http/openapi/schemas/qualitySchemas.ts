@@ -77,6 +77,91 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     }),
   );
 
+  const QualitySignalIdSchema = registry.register(
+    "QualitySignalId",
+    z.enum(["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"]),
+  );
+
+  const QualityStatsRangeSchema = registry.register("QualityStatsRange", z.enum(["7d", "30d"]));
+
+  const QualityStatsMetricSchema = registry.register(
+    "QualityStatsMetric",
+    z.object({
+      count: z.number().int().min(0).describe("Turns matching the metric within the window."),
+      denominator: z
+        .number()
+        .int()
+        .min(0)
+        .describe("Turns the metric is defined over."),
+      rate: z
+        .number()
+        .min(0)
+        .max(1)
+        .nullable()
+        .describe("`count / denominator`, or null when the denominator is zero."),
+    }),
+  );
+
+  const QualityStatsWindowSchema = registry.register(
+    "QualityStatsWindow",
+    z.object({
+      from: z.string().datetime().describe("Start of the window, inclusive."),
+      to: z.string().datetime().describe("End of the window, exclusive."),
+      turnCount: z.number().int().min(0),
+      grounded: QualityStatsMetricSchema.describe(
+        "Grounded answers over turns that attempted one. Outcomes the skill catalog leaves unflagged, such as a clarifying question, are in neither the count nor the denominator.",
+      ),
+      negativeFeedback: QualityStatsMetricSchema.describe(
+        "Turns with at least one down vote, over turns with any vote. A turn with several votes counts once.",
+      ),
+      skillFailures: QualityStatsMetricSchema.describe(
+        "Turns whose skill ended in `failed`, over all turns.",
+      ),
+    }),
+  );
+
+  const QualityStatsBucketSchema = registry.register(
+    "QualityStatsBucket",
+    z.object({
+      date: z.string().describe("UTC day as `YYYY-MM-DD`."),
+      turnCount: z.number().int().min(0),
+      grounded: QualityStatsMetricSchema,
+      negativeFeedback: QualityStatsMetricSchema,
+      skillFailures: QualityStatsMetricSchema,
+    }),
+  );
+
+  const QualityStatsSchema = registry.register(
+    "QualityStats",
+    z.object({
+      range: QualityStatsRangeSchema,
+      filters: z.object({
+        agentId: z.string().uuid().optional(),
+        channel: z.string().optional(),
+      }),
+      current: QualityStatsWindowSchema,
+      previous: QualityStatsWindowSchema.describe(
+        "Equal length, immediately preceding the current window.",
+      ),
+      buckets: z
+        .array(QualityStatsBucketSchema)
+        .describe("Current window only, one entry per UTC day, zero-filled."),
+      // Spelled out rather than z.record(QualitySignalIdSchema, ...): a record generates every
+      // key as optional, but the service always emits all four, and the UI reads them
+      // unconditionally. A fixed object keeps the generated SDK types honest about that.
+      backlog: z
+        .object({
+          negative_feedback: z.number().int().min(0),
+          grounding_gaps: z.number().int().min(0),
+          slow_responses: z.number().int().min(0),
+          skill_failures: z.number().int().min(0),
+        })
+        .describe(
+          "Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.",
+        ),
+    }),
+  );
+
   const SetQualityTriageRequestSchema = registry.register(
     "SetQualityTriageRequest",
     z.object({
@@ -105,4 +190,10 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
   schemas.QualityFeedbackSummarySchema = QualityFeedbackSummarySchema;
   schemas.LowQualityTurnSchema = LowQualityTurnSchema;
   schemas.LowQualityTurnsPageSchema = LowQualityTurnsPageSchema;
+  schemas.QualitySignalIdSchema = QualitySignalIdSchema;
+  schemas.QualityStatsRangeSchema = QualityStatsRangeSchema;
+  schemas.QualityStatsMetricSchema = QualityStatsMetricSchema;
+  schemas.QualityStatsWindowSchema = QualityStatsWindowSchema;
+  schemas.QualityStatsBucketSchema = QualityStatsBucketSchema;
+  schemas.QualityStatsSchema = QualityStatsSchema;
 };

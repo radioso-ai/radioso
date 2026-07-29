@@ -28,6 +28,20 @@ export interface QualityActionFilter {
   outcome: string;
 }
 
+/**
+ * The operator signals surfaced above the assistant-answers table. Each one names a
+ * class of turn worth reviewing; `backend/src/modules/quality/domain/qualitySignals.ts`
+ * owns what each means.
+ */
+export const QUALITY_SIGNAL_IDS = [
+  "negative_feedback",
+  "grounding_gaps",
+  "slow_responses",
+  "skill_failures",
+] as const;
+
+export type QualitySignalId = (typeof QUALITY_SIGNAL_IDS)[number];
+
 export interface QualityFeedbackSummary {
   upCount: number;
   downCount: number;
@@ -65,6 +79,15 @@ export interface QualityTriageRecord {
 }
 
 export interface ListLowQualityTurnsInput {
+  /**
+   * Narrows to the turns carrying **any** of these operator signals, resolved server-side
+   * from the skill catalog. One entry expresses a single chip, several express "anything
+   * worth reviewing" — the queue's default — without a second vocabulary for the two.
+   *
+   * OR across the list, AND with the explicit filters below: a signal narrows the
+   * population, it never replaces a filter the operator set.
+   */
+  signals?: QualitySignalId[];
   actions?: QualityActionFilter[];
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
@@ -102,6 +125,69 @@ export interface SetTriageStateInput {
   state: QualityTriageState;
   reason?: string | null;
   updatedBy?: string | null;
+}
+
+export type QualityStatsRange = "7d" | "30d";
+
+export const QUALITY_STATS_RANGES: readonly QualityStatsRange[] = ["7d", "30d"];
+
+/**
+ * A rate and the population it is defined over. The denominator ships with the count so
+ * the caller can tell "no failures out of 500 turns" from "no failures out of 2".
+ */
+export interface QualityStatsMetric {
+  count: number;
+  denominator: number;
+  /** `count / denominator`, or null when the denominator is zero. */
+  rate: number | null;
+}
+
+export interface QualityStatsWindow {
+  /** ISO 8601, inclusive. */
+  from: string;
+  /** ISO 8601, exclusive. */
+  to: string;
+  turnCount: number;
+  /** Grounded answers over turns that attempted one (grounded + grounding gaps). */
+  grounded: QualityStatsMetric;
+  /** Down-voted turns over rated turns. */
+  negativeFeedback: QualityStatsMetric;
+  /** Failed skill dispatches over all turns. */
+  skillFailures: QualityStatsMetric;
+}
+
+export interface QualityStatsBucket {
+  /** UTC day, `YYYY-MM-DD`. Present for every day in the window, zero-filled. */
+  date: string;
+  turnCount: number;
+  grounded: QualityStatsMetric;
+  negativeFeedback: QualityStatsMetric;
+  skillFailures: QualityStatsMetric;
+}
+
+export interface QualityStatsInput {
+  range: QualityStatsRange;
+  agentId?: string;
+  channel?: string;
+}
+
+export interface QualityStats {
+  range: QualityStatsRange;
+  filters: { agentId?: string; channel?: string };
+  current: QualityStatsWindow;
+  /** Equal length, immediately preceding the current window. */
+  previous: QualityStatsWindow;
+  /** Current window only, one entry per UTC day. */
+  buckets: QualityStatsBucket[];
+  /**
+   * Active-triage counts per signal. All-time and range-independent, so an untriaged
+   * turn older than the window is never silently hidden from the operator.
+   */
+  backlog: Record<QualitySignalId, number>;
+}
+
+export interface QualityStatsServicePort {
+  getQualityStats(workspaceId: string, input: QualityStatsInput): Promise<QualityStats>;
 }
 
 export interface QualityTurnsServicePort {

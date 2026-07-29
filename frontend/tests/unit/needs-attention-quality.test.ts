@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { qualityApi, type LowQualityTurn, type QualityActionFilter } from '@/lib/api'
+import { qualityApi, type LowQualityTurn } from '@/lib/api'
 import {
   createEmptyQualityInboxSnapshot,
   loadQualityInboxSourceAttempts,
@@ -15,11 +15,6 @@ vi.mock('@/lib/api', () => ({
 }))
 
 const qualityApiMock = vi.mocked(qualityApi)
-const activeActions: QualityActionFilter[] = [{
-  skillName: 'retrieval.answer',
-  outcome: 'no_context',
-}]
-
 const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
   assistantMessageId: 'message-1',
   conversationId: 'conversation-1',
@@ -62,7 +57,7 @@ describe('loadQualityInboxSourceAttempts', () => {
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'uncommented' })]))
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'grounding' })]))
 
-    const attempts = await loadQualityInboxSourceAttempts(activeActions)
+    const attempts = await loadQualityInboxSourceAttempts()
 
     expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
       feedback: ['down'],
@@ -79,22 +74,25 @@ describe('loadQualityInboxSourceAttempts', () => {
       limit: 25,
     })
     expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(3, {
-      actions: activeActions,
+      signal: 'grounding_gaps',
       triageStates: ['open', 'acknowledged'],
       limit: 25,
     })
     expect(attempts.grounding.status).toBe('fulfilled')
   })
 
-  it('still loads feedback when no grounding actions exist', async () => {
+  it('still loads feedback when the grounding source fails', async () => {
     qualityApiMock.listTurns
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'commented' })]))
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'uncommented' })]))
+      .mockRejectedValueOnce(new Error('grounding unavailable'))
 
-    const attempts = await loadQualityInboxSourceAttempts([])
+    const attempts = await loadQualityInboxSourceAttempts()
 
-    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(2)
-    expect(attempts.grounding).toEqual({ status: 'skipped' })
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(3)
+    expect(attempts.commentedFeedback.status).toBe('fulfilled')
+    expect(attempts.uncommentedFeedback.status).toBe('fulfilled')
+    expect(attempts.grounding.status).toBe('failed')
   })
 })
 

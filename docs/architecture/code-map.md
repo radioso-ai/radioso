@@ -628,6 +628,44 @@ Related specs:
 - `specs/049-workspace-route-keys/`
 - `specs/062-multiple-role-tokens/`
 
+## Answer Quality And Triage
+
+Owns the operator's read-only view of answer quality: which assistant turns are
+worth reviewing, the triage state an operator assigns them, and the rates those
+turns aggregate to. Signal meaning is derived from skill-catalog metadata rather
+than outcome-name matching.
+
+Should not own anything that influences a turn. Nothing here feeds retrieval,
+routing, or answer composition. Triage state is its only write.
+
+`GET /quality/turns` and `GET /quality/stats` select from one shared turn
+population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
+and human-authored takeover replies, so a signal's count always matches the rows
+behind it. This is distinct from the offline eval suite below, which measures
+conversation behavior rather than triaging production turns.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/quality/README.md`
+- `backend/src/modules/quality/composition.ts`
+- `backend/src/modules/quality/contracts/`
+- `backend/src/modules/quality/domain/qualitySignals.ts`
+- `backend/src/modules/quality/turnPopulationSql.ts`
+
+Useful searches:
+
+- `rg "quality/turns|quality/stats|QualitySignalId|groundedAnswer" backend/src frontend`
+- `rg "triage|assistant_answer_triage|assistant_answer_feedback" backend/src`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/quality-signals.test.ts tests/unit/quality-stats-query.test.ts tests/unit/quality-routes.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/quality-stats.integration.test.ts tests/integration/quality-turns.integration.test.ts`
+
+Related docs:
+
+- `docs/human-takeover.md` (Activity tabs and the operator console)
+
 ## Frontend Dashboard And Public Chat
 
 Owns dashboard views, frontend API adapters, auth and workspace contexts,

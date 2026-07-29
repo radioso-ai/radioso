@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { chatApi, type QualityActionFilter } from '@/lib/api'
+import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import {
   HUMAN_OWNED_CONVERSATION_PAGE_SIZE,
@@ -20,8 +20,6 @@ import {
 interface UseNeedsAttentionActivityInput {
   /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
   baselineKeys: readonly string[] | null
-  /** Grounding-gap actions from the skills catalog; undefined means the catalog is unavailable. */
-  qualityActions?: readonly QualityActionFilter[]
   enabled?: boolean
   /** Poll cadence while the tab is in the foreground. */
   intervalMs?: number
@@ -41,7 +39,6 @@ interface UseNeedsAttentionActivityInput {
  */
 export const useNeedsAttentionActivity = ({
   baselineKeys,
-  qualityActions,
   enabled = true,
   intervalMs = 15000,
   backgroundIntervalMs = 30000,
@@ -91,7 +88,7 @@ export const useNeedsAttentionActivity = ({
           offset: 0,
           ownership: 'human_owned',
         }),
-        loadQualityInboxSourceAttempts(qualityActions ?? []),
+        loadQualityInboxSourceAttempts(),
       ])
       if (cancelled) {
         return
@@ -155,7 +152,7 @@ export const useNeedsAttentionActivity = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [baselineSignature, enabled, intervalMs, backgroundIntervalMs, qualityActions])
+  }, [baselineSignature, enabled, intervalMs, backgroundIntervalMs])
 
   if (
     !enabled

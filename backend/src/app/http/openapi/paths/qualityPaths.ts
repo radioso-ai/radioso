@@ -19,12 +19,21 @@ export const registerQualityPaths = (
     summary: "List low-quality assistant turns",
     description:
       "Returns assistant turns for the dashboard's quality review surface. Admin/owner only " +
-      "(requires the `workspace.quality.read` permission). Filters apply to skill action, skill " +
-      "status, user feedback, latency, agent, channel, and time range.",
+      "(requires the `workspace.quality.read` permission). Filters apply to operator signal, skill " +
+      "action, skill status, user feedback, latency, agent, channel, and time range. Operator-test " +
+      "conversations and replies authored by a human teammate are excluded.",
     operationId: "listLowQualityTurns",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       query: z.object({
+        signal: csvOrArrayString
+          .describe(
+            "Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, " +
+            "`slow_responses`, `skill_failures`), resolved server-side from the skill catalog. " +
+            "A turn matches if it carries any listed signal, and the result is layered on top " +
+            "of the other filters rather than replacing them.",
+          )
+          .optional(),
         actions: csvOrArrayString
           .describe("Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`.")
           .optional(),
@@ -65,6 +74,65 @@ export const registerQualityPaths = (
         content: {
           "application/json": {
             schema: schemas.LowQualityTurnsPageSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid query parameter",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks the workspace.quality.read permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/quality/stats",
+    tags: ["Quality"],
+    summary: "Read assistant answer-quality statistics",
+    description:
+      "Returns answer-quality rates for a rolling window, the equal-length window before it, " +
+      "one zero-filled bucket per UTC day, and the all-time active-triage backlog per signal. " +
+      "Admin/owner only (requires the `workspace.quality.read` permission). Every rate ships with " +
+      "the population it is defined over, and reports `null` rather than a rate when that " +
+      "population is empty. The turn population matches `GET /api/v1/quality/turns`: operator-test " +
+      "conversations and replies authored by a human teammate are excluded.",
+    operationId: "getQualityStats",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      query: z.object({
+        range: schemas.QualityStatsRangeSchema
+          .describe("Length of the health window. Defaults to `30d`.")
+          .optional(),
+        agentId: z.string().uuid().optional(),
+        channel: z.string().min(1).max(64).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Answer-quality statistics for the requested window",
+        content: {
+          "application/json": {
+            schema: schemas.QualityStatsSchema,
           },
         },
       },

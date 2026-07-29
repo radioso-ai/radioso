@@ -5,9 +5,24 @@ import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
-import type { QualityTurnsServicePort } from "./contracts/index.js";
+import type { QualityStatsServicePort, QualityTurnsServicePort } from "./contracts/index.js";
+import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
 
 const triageStateSchema = z.enum(["open", "acknowledged", "resolved", "dismissed"]);
+
+const signalSchema = z.enum(QUALITY_SIGNAL_IDS);
+
+const statsQuerySchema = z.object({
+  range: z.enum(["7d", "30d"]).default("30d"),
+  agentId: z.string().uuid().optional(),
+  channel: z.string().trim().min(1).max(64).optional(),
+});
+
+/**
+ * The route consumes both quality ports. They stay separate so a caller that only reads
+ * turns, or only reads stats, can depend on the narrower one.
+ */
+export type QualityServicePort = QualityTurnsServicePort & QualityStatsServicePort;
 
 export type QualityRouteDependencies = WorkspaceSessionDependencies
   & Pick<AppDependencies, "accountAccessService">;
@@ -38,6 +53,9 @@ const actionTupleSchema = z
   });
 
 const turnsQuerySchema = z.object({
+  // One or more signals, CSV or repeated. A turn matches if it satisfies any of them, so a
+  // single id is one chip and the full list is "anything worth reviewing".
+  signal: csvOrArray(signalSchema),
   actions: csvOrArray(actionTupleSchema),
   statuses: csvOrArray(
     z.enum([
@@ -78,17 +96,17 @@ const turnsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
-const parseRequest = <T extends z.ZodTypeAny>(schema: T, value: unknown): z.infer<T> => {
+const parseRequest = <T extends z.ZodTypeAny>(schema: T, value: unknown, message: string): z.infer<T> => {
   const parsed = schema.safeParse(value);
   if (parsed.success) {
     return parsed.data;
   }
-  throw badRequest("Invalid quality turns query", parsed.error.flatten());
+  throw badRequest(message, parsed.error.flatten());
 };
 
 export const createQualityRoutes = (
   dependencies: QualityRouteDependencies,
-  service: QualityTurnsServicePort,
+  service: QualityServicePort,
 ): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
@@ -102,9 +120,10 @@ export const createQualityRoutes = (
 
   router.get("/turns", workspaceSession, qualityRead, async (req, res, next) => {
     try {
-      const query = parseRequest(turnsQuerySchema, req.query);
+      const query = parseRequest(turnsQuerySchema, req.query, "Invalid quality turns query");
       const { workspaceId } = res.locals as { workspaceId: string };
       const page = await service.listLowQualityTurns(workspaceId, {
+        signals: query.signal,
         actions: query.actions,
         statuses: query.statuses,
         feedbackValues: query.feedback,
@@ -122,6 +141,21 @@ export const createQualityRoutes = (
         limit: query.limit ?? 25,
       });
       res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/stats", workspaceSession, qualityRead, async (req, res, next) => {
+    try {
+      const query = parseRequest(statsQuerySchema, req.query, "Invalid quality stats query");
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const stats = await service.getQualityStats(workspaceId, {
+        range: query.range,
+        agentId: query.agentId,
+        channel: query.channel,
+      });
+      res.status(200).json(stats);
     } catch (error) {
       next(error);
     }

@@ -13,6 +13,24 @@ export type QualitySkillStatus =
 export type FeedbackValue = 'up' | 'down'
 export type QualityTriageState = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
 
+/**
+ * Operator triage signals. The backend owns the predicate behind each id (see
+ * `modules/quality/domain/qualitySignals.ts`), so the dashboard never has to
+ * reconstruct one from the skill catalog.
+ */
+export const QUALITY_SIGNAL_IDS = [
+  'negative_feedback',
+  'grounding_gaps',
+  'slow_responses',
+  'skill_failures',
+] as const
+
+export type QualitySignalId = (typeof QUALITY_SIGNAL_IDS)[number]
+
+export const QUALITY_STATS_RANGES = ['7d', '30d'] as const
+
+export type QualityStatsRange = (typeof QUALITY_STATS_RANGES)[number]
+
 export interface QualityTriageRecord {
   state: QualityTriageState
   reason: string | null
@@ -61,7 +79,57 @@ export interface LowQualityTurnsPage {
   totalPages: number
 }
 
+/** A numerator with the population it is defined over. `rate` is null when the population is empty. */
+export interface QualityStatsMetric {
+  count: number
+  denominator: number
+  rate: number | null
+}
+
+export interface QualityStatsWindow {
+  /** ISO 8601, inclusive. */
+  from: string
+  /** ISO 8601, exclusive. */
+  to: string
+  turnCount: number
+  grounded: QualityStatsMetric
+  negativeFeedback: QualityStatsMetric
+  skillFailures: QualityStatsMetric
+}
+
+export interface QualityStatsBucket {
+  /** YYYY-MM-DD, one UTC day, zero-filled across the window. */
+  date: string
+  turnCount: number
+  grounded: QualityStatsMetric
+  negativeFeedback: QualityStatsMetric
+  skillFailures: QualityStatsMetric
+}
+
+export interface QualityStats {
+  range: QualityStatsRange
+  filters: { agentId?: string; channel?: string }
+  current: QualityStatsWindow
+  /** Equal length, immediately preceding `current`. */
+  previous: QualityStatsWindow
+  /** Current window only, one entry per UTC day. */
+  buckets: QualityStatsBucket[]
+  /** Active-triage counts, all-time and range-independent — what the signal chips display. */
+  backlog: Record<QualitySignalId, number>
+}
+
+export interface GetQualityStatsOptions {
+  range?: QualityStatsRange
+  agentId?: string
+  channel?: string
+}
+
 export interface ListLowQualityTurnsOptions {
+  /**
+   * One signal or several. Several means "any of these" server-side, which is how the
+   * queue asks for everything worth reviewing without a second vocabulary for it.
+   */
+  signal?: QualitySignalId | readonly QualitySignalId[]
   actions?: QualityActionFilter[]
   statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
@@ -77,6 +145,18 @@ export interface ListLowQualityTurnsOptions {
   limit?: number
 }
 
+const encodeSignals = (
+  signal: QualitySignalId | readonly QualitySignalId[] | undefined,
+): string | undefined => {
+  if (signal === undefined) {
+    return undefined
+  }
+  if (typeof signal === 'string') {
+    return signal
+  }
+  return signal.length > 0 ? signal.join(',') : undefined
+}
+
 const encodeActions = (actions: QualityActionFilter[] | undefined): string | undefined => {
   if (!actions || actions.length === 0) {
     return undefined
@@ -87,6 +167,7 @@ const encodeActions = (actions: QualityActionFilter[] | undefined): string | und
 export const qualityApi = {
   async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
+      signal: encodeSignals(options.signal),
       actions: encodeActions(options.actions),
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
@@ -105,6 +186,15 @@ export const qualityApi = {
     }
     const path = withQuery('/quality/turns', query)
     return request<LowQualityTurnsPage>(path, { method: 'GET' }, { withApiToken: true })
+  },
+
+  async getStats(options: GetQualityStatsOptions = {}): Promise<QualityStats> {
+    const path = withQuery('/quality/stats', {
+      range: options.range,
+      agentId: options.agentId,
+      channel: options.channel,
+    })
+    return request<QualityStats>(path, { method: 'GET' }, { withApiToken: true })
   },
 
   async setTriageState(

@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import { chatApi, qualityApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
-import type { LowQualityTurn, PendingApprovalDecision, QualityActionFilter } from '@/lib/api'
+import type { LowQualityTurn, PendingApprovalDecision } from '@/lib/api'
 import { inboxItemKeys, type HumanOwnedConversationSummary } from '@/lib/needs-attention'
 
 const asDecisions = (decisions: unknown[]) => decisions as unknown as PendingApprovalDecision[]
@@ -107,8 +107,6 @@ const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
   } as never)
 }
 
-const groundingActions: QualityActionFilter[] = [{ skillName: 'retrieval.answer', outcome: 'no_context' }]
-
 let container: HTMLDivElement
 let root: Root
 const observed = { current: 0 }
@@ -116,18 +114,15 @@ const observed = { current: 0 }
 function Probe({
   baselineKeys,
   enabled,
-  qualityActions,
   onChange,
 }: {
   baselineKeys: readonly string[] | null
   enabled: boolean
-  qualityActions?: QualityActionFilter[]
   onChange: (newItemCount: number) => void
 }) {
   const newItemCount = useNeedsAttentionActivity({
     baselineKeys,
     enabled,
-    qualityActions,
     intervalMs: INTERVAL,
     backgroundIntervalMs: BACKGROUND_INTERVAL,
   })
@@ -140,14 +135,12 @@ function Probe({
 const renderProbe = (
   baselineKeys: readonly string[] | null,
   enabled = true,
-  qualityActions?: QualityActionFilter[],
 ) => {
   act(() => {
     root.render(
       <Probe
         baselineKeys={baselineKeys}
         enabled={enabled}
-        qualityActions={qualityActions}
         onChange={(value) => {
           observed.current = value
         }}
@@ -306,7 +299,6 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(
       inboxItemKeys(asDecisions(decisions), asConversations(conversations), baselineQuality as LowQualityTurn[]),
       true,
-      groundingActions,
     )
     await advanceOnePoll()
 
@@ -366,7 +358,6 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(
       inboxItemKeys(asDecisions(decisions), asConversations(conversations), displayedQuality as LowQualityTurn[]),
       true,
-      groundingActions,
     )
     await advanceOnePoll()
     expect(observed.current).toBe(0)
@@ -374,7 +365,6 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(
       inboxItemKeys(asDecisions(decisions), asConversations(conversations), []),
       true,
-      groundingActions,
     )
 
     expect(observed.current).toBe(0)
@@ -388,7 +378,6 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(
       inboxItemKeys(asDecisions([decisionSummary({ handle: 'decision-1' })]), asConversations(conversations), []),
       true,
-      groundingActions,
     )
     await advanceOnePoll()
 
@@ -412,13 +401,13 @@ describe('useNeedsAttentionActivity', () => {
       totalPages: 1,
     } as never)
 
-    renderProbe(inboxItemKeys([], asConversations(conversations), []), true, groundingActions)
+    renderProbe(inboxItemKeys([], asConversations(conversations), []), true)
     await advanceOnePoll()
 
     expect(observed.current).toBe(1)
   })
 
-  it('continues polling negative feedback when grounding actions are unavailable', async () => {
+  it('polls feedback partitions and the server-owned grounding-gap signal', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
     qualityApiMock.listTurns.mockResolvedValue({
       items: [],
@@ -430,7 +419,7 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
     await advanceOnePoll()
 
-    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(2)
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(3)
     expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
       feedback: ['down'],
       sort: 'negative_feedback_updated_at',
@@ -443,6 +432,11 @@ describe('useNeedsAttentionActivity', () => {
       sort: 'negative_feedback_updated_at',
       activeNegativeFeedbackOnly: true,
       hasComment: false,
+      limit: 25,
+    })
+    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(3, {
+      signal: 'grounding_gaps',
+      triageStates: ['open', 'acknowledged'],
       limit: 25,
     })
     expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)

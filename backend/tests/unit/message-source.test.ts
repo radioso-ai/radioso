@@ -17,6 +17,7 @@ const row = (overrides: Partial<MessageRow> = {}): MessageRow => ({
   skill_name: null,
   skill_outcome: null,
   skill_status: null,
+  total_latency_ms: null,
   created_at: new Date("2026-06-17T10:00:00.000Z"),
   ...overrides,
 });

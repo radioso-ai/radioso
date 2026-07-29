@@ -1658,7 +1658,8 @@ CREATE TABLE public.messages (
     skill_name text,
     skill_outcome text,
     skill_status text,
-    source text
+    source text,
+    total_latency_ms integer
 );
 
 

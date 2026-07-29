@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { chatApi, qualityApi, type LowQualityTurn, type QualityActionFilter } from '@/lib/api'
+import { chatApi, qualityApi, type LowQualityTurn } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
 import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import {
@@ -15,8 +15,6 @@ import {
 interface UseNeedsAttentionActivityInput {
   /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
   baselineKeys: readonly string[] | null
-  /** Grounding-gap actions from the skills catalog; undefined means the catalog is unavailable. */
-  qualityActions?: readonly QualityActionFilter[]
   enabled?: boolean
   /** Poll cadence while the tab is in the foreground. */
   intervalMs?: number
@@ -36,7 +34,6 @@ interface UseNeedsAttentionActivityInput {
  */
 export const useNeedsAttentionActivity = ({
   baselineKeys,
-  qualityActions,
   enabled = true,
   intervalMs = 15000,
   backgroundIntervalMs = 30000,
@@ -80,13 +77,6 @@ export const useNeedsAttentionActivity = ({
     }
 
     const poll = async () => {
-      const qualityRequest = qualityActions && qualityActions.length > 0
-        ? qualityApi.listTurns({
-            actions: [...qualityActions],
-            triageStates: [...ACTIVE_TRIAGE_STATES],
-            limit: 25,
-          })
-        : null
       const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
         hitlApi.listPendingDecisions(),
         chatApi.listChatHistory({
@@ -94,7 +84,11 @@ export const useNeedsAttentionActivity = ({
           offset: 0,
           ownership: 'human_owned',
         }),
-        qualityRequest ?? Promise.resolve(null),
+        qualityApi.listTurns({
+          signal: 'grounding_gaps',
+          triageStates: [...ACTIVE_TRIAGE_STATES],
+          limit: 25,
+        }),
       ])
       if (cancelled) {
         return
@@ -110,12 +104,8 @@ export const useNeedsAttentionActivity = ({
         hasFreshSource = true
       }
       if (qualityResult.status === 'fulfilled') {
-        if (qualityResult.value) {
-          latestQualityTurns = qualityResult.value.items
-          hasFreshSource = true
-        } else if (qualityActions !== undefined) {
-          latestQualityTurns = []
-        }
+        latestQualityTurns = qualityResult.value.items
+        hasFreshSource = true
       }
 
       if (hasFreshSource) {
@@ -153,7 +143,7 @@ export const useNeedsAttentionActivity = ({
         document.removeEventListener('visibilitychange', handleVisibilityChange)
       }
     }
-  }, [enabled, intervalMs, backgroundIntervalMs, qualityActions])
+  }, [enabled, intervalMs, backgroundIntervalMs])
 
   if (!enabled || latestKeys === null || baselineKeys === null) {
     return 0

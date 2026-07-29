@@ -119,7 +119,7 @@ function UsagePeriodChart({
               type="button"
               size="sm"
               variant="outline"
-              className={chartMode === mode.value ? 'border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background' : undefined}
+              className={chartMode === mode.value ? 'border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background dark:border-foreground dark:bg-foreground dark:hover:bg-foreground/90' : undefined}
               onClick={() => setChartMode(mode.value)}
               aria-pressed={chartMode === mode.value}
             >

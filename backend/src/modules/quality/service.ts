@@ -1,17 +1,49 @@
 import { CompiledQuery } from "kysely";
 
-import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
+import { systemClock, type Clock } from "../../shared/domain/clock.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityFeedbackValue,
+  QualitySignalId,
+  QualityStats,
+  QualityStatsInput,
+  QualityStatsServicePort,
   QualityTriageRecord,
   QualityTriageState,
   QualityTurnsServicePort,
   SetTriageStateInput,
 } from "./contracts/index.js";
+import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
+import {
+  resolveGroundedOutcomeTuples,
+  resolveQualitySignalPredicate,
+  type GroundedOutcomeTuples,
+  type QualityOutcomeCatalogPort,
+} from "./domain/qualitySignals.js";
+import {
+  buildEmptyQualityStatsBuckets,
+  buildQualityStatsBacklogQuery,
+  buildQualityStatsDailyQuery,
+  mergeQualityStatsBuckets,
+  resolveQualityStatsWindows,
+  summarizeQualityStatsWindow,
+  type QualityBacklogRow,
+  type QualityStatsAggregateRow,
+} from "./statsQuery.js";
+import {
+  RESOLVED_LATENCY_EXPRESSION,
+  TRIAGE_JOIN,
+  TURN_POPULATION_SOURCE,
+  bindParam,
+  buildActionTuplePredicate,
+  buildAnySignalPredicate,
+  buildFeedbackExistsPredicate,
+  buildTurnPopulationFilters,
+  type SqlQuery,
+} from "./turnPopulationSql.js";
 
 type TurnRow = {
   assistant_message_id: string;
@@ -69,53 +101,58 @@ const clampOffset = (offset: number | undefined): number => {
   return Math.trunc(offset);
 };
 
-export class QualityTurnsService implements QualityTurnsServicePort {
-  constructor(private readonly db: Db) {}
+export class QualityTurnsService implements QualityTurnsServicePort, QualityStatsServicePort {
+  constructor(
+    private readonly db: Db,
+    private readonly outcomeCatalog: QualityOutcomeCatalogPort,
+    private readonly clock: Clock = systemClock,
+  ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
     const limit = clampLimit(input.limit);
     const offset = clampOffset(input.offset);
-    const params: unknown[] = [workspaceId];
-    const filters: string[] = ["m.workspace_id = $1", "m.role = 'assistant'"];
+    const params: unknown[] = [];
+    // The shared turn population: assistant turns in this workspace, minus operator-test
+    // traffic and human-authored replies. `/quality/stats` selects from the same predicate,
+    // so a signal's count always matches the rows behind it.
+    const filters = buildTurnPopulationFilters(
+      { workspaceId, agentId: input.agentId, channel: input.channel },
+      params,
+    );
 
     const actions = input.actions ?? [];
     const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
     const triageStates = input.triageStates ?? [];
 
-    if (actions.length > 0) {
-      params.push(actions.map((action) => action.skillName));
-      const skillsParam = params.length;
-      params.push(actions.map((action) => action.outcome));
-      const outcomesParam = params.length;
+    // Signals are server-resolved predicates layered on top of the explicit filters, never
+    // a replacement for them: OR within the signal list, AND with everything else. The list
+    // is de-duplicated so a repeated id costs no extra clause.
+    const signals = [...new Set(input.signals ?? [])];
+    if (signals.length > 0) {
+      const tuples = await this.loadGroundedOutcomeTuples(workspaceId);
       filters.push(
-        `EXISTS (
-           SELECT 1
-           FROM unnest($${skillsParam}::text[], $${outcomesParam}::text[]) AS t(skill_name, outcome)
-           WHERE t.skill_name = m.skill_name AND t.outcome = m.skill_outcome
-         )`,
+        buildAnySignalPredicate(
+          signals.map((signal) => resolveQualitySignalPredicate(signal, tuples)),
+          params,
+        ),
       );
+    }
+
+    if (actions.length > 0) {
+      filters.push(buildActionTuplePredicate(actions, params));
     }
 
     if (statuses.length > 0) {
-      params.push(statuses);
-      filters.push(`m.skill_status = ANY($${params.length}::text[])`);
+      filters.push(`m.skill_status = ANY(${bindParam(params, statuses)}::text[])`);
     }
 
     if (triageStates.length > 0) {
-      params.push(triageStates);
-      filters.push(`COALESCE(tr.state, 'open') = ANY($${params.length}::text[])`);
+      filters.push(`COALESCE(tr.state, 'open') = ANY(${bindParam(params, triageStates)}::text[])`);
     }
 
     if (feedbackValues.length > 0) {
-      params.push(feedbackValues);
-      filters.push(
-        `EXISTS (
-           SELECT 1 FROM assistant_answer_feedback f
-           WHERE f.assistant_message_id = m.id
-             AND f.value = ANY($${params.length}::text[])
-         )`,
-      );
+      filters.push(buildFeedbackExistsPredicate(feedbackValues, params));
     }
 
     if (input.hasComment === true) {
@@ -137,86 +174,31 @@ export class QualityTurnsService implements QualityTurnsServicePort {
     }
 
     if (input.minTotalLatencyMs !== undefined) {
-      params.push(input.minTotalLatencyMs);
-      filters.push(`turn_event.total_latency_ms >= $${params.length}`);
+      filters.push(`${RESOLVED_LATENCY_EXPRESSION} >= ${bindParam(params, input.minTotalLatencyMs)}`);
     }
 
     if (input.maxTotalLatencyMs !== undefined) {
-      params.push(input.maxTotalLatencyMs);
-      filters.push(`turn_event.total_latency_ms <= $${params.length}`);
-    }
-
-    if (input.agentId) {
-      params.push(input.agentId);
-      filters.push(`c.agent_id = $${params.length}`);
-    }
-
-    if (input.channel) {
-      params.push(input.channel);
-      filters.push(`c.source_channel = $${params.length}`);
+      filters.push(`${RESOLVED_LATENCY_EXPRESSION} <= ${bindParam(params, input.maxTotalLatencyMs)}`);
     }
 
     if (input.from) {
-      params.push(input.from);
-      filters.push(`m.created_at >= $${params.length}::timestamptz`);
+      filters.push(`m.created_at >= ${bindParam(params, input.from)}::timestamptz`);
     }
 
     if (input.to) {
-      params.push(input.to);
-      filters.push(`m.created_at <= $${params.length}::timestamptz`);
+      filters.push(`m.created_at <= ${bindParam(params, input.to)}::timestamptz`);
     }
-
-    // Operator-driven test traffic (dashboard test chat, workbench replay) never counts as a
-    // real quality signal, so it is excluded unconditionally. NULL-safe: `NOT IN` yields NULL
-    // (not TRUE) for NULL source rows, which would wrongly drop real conversations.
-    const operatorTestPlaceholders = OPERATOR_TEST_SOURCE_CHANNELS.map((channel) => {
-      params.push(channel);
-      return `$${params.length}`;
-    });
-    filters.push(
-      `(c.source_channel IS NULL OR c.source_channel NOT IN (${operatorTestPlaceholders.join(", ")}))`,
-    );
-
-    const needsLatency = input.minTotalLatencyMs !== undefined || input.maxTotalLatencyMs !== undefined;
 
     const whereClause = filters.join("\n         AND ");
 
-    // The audit-event lateral join is only needed to project per-turn latency.
-    // The count query can skip it unless a latency filter is set, since the
-    // count itself doesn't need the latency value. The list query always reads
-    // latency for the row.
-    // TODO(#follow-up): store totalLatencyMs on `messages` at write time so the
-    // dashboard read path stops scanning audit_events.metadata_json.
-    const countLatencyJoin = needsLatency
-      ? `LEFT JOIN LATERAL (
-         SELECT
-           CASE
-             WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
-               THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
-             ELSE NULL
-           END AS total_latency_ms
-         FROM audit_events ae
-         WHERE ae.workspace_id = m.workspace_id
-           AND ae.event_type = 'chat.answer'
-           AND ae.metadata_json ->> 'assistantMessageId' = m.id::text
-         ORDER BY ae.created_at DESC, ae.id DESC
-         LIMIT 1
-       ) turn_event ON TRUE`
-      : "";
-
     // The list query always projects triage state, so it joins unconditionally
     // below. The count query only needs the join when a triage filter is set.
-    const triageJoin =
-      `LEFT JOIN assistant_answer_triage tr
-         ON tr.workspace_id = m.workspace_id AND tr.assistant_message_id = m.id`;
-    const countTriageJoin = triageStates.length > 0 ? triageJoin : "";
+    const countTriageJoin = triageStates.length > 0 ? TRIAGE_JOIN : "";
 
     const totalResult = await this.db.executeQuery<{ total: string }>(
       CompiledQuery.raw(
         `SELECT COUNT(*)::text AS total
-       FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
-       ${countLatencyJoin}
+       ${TURN_POPULATION_SOURCE}
        ${countTriageJoin}
        WHERE ${whereClause}`,
         // Pass a copy: CompiledQuery.raw freezes the parameter array, and the
@@ -243,7 +225,7 @@ export class QualityTurnsService implements QualityTurnsServicePort {
          m.skill_name,
          m.skill_outcome,
          m.skill_status,
-         turn_event.total_latency_ms,
+         ${RESOLVED_LATENCY_EXPRESSION} AS total_latency_ms,
          m.created_at,
          COALESCE(tr.state, 'open') AS triage_state,
          tr.reason AS triage_reason,
@@ -267,24 +249,9 @@ export class QualityTurnsService implements QualityTurnsServicePort {
            FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
          ), 0)::text AS down_count
-       FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id AND c.workspace_id = m.workspace_id
+       ${TURN_POPULATION_SOURCE}
        LEFT JOIN agents a ON a.id = c.agent_id
-       ${triageJoin}
-       LEFT JOIN LATERAL (
-         SELECT
-           CASE
-             WHEN jsonb_typeof(ae.metadata_json #> '{activityTrace,totalDurationMs}') = 'number'
-               THEN ((ae.metadata_json #>> '{activityTrace,totalDurationMs}')::numeric)::int
-             ELSE NULL
-           END AS total_latency_ms
-         FROM audit_events ae
-         WHERE ae.workspace_id = m.workspace_id
-           AND ae.event_type = 'chat.answer'
-           AND ae.metadata_json ->> 'assistantMessageId' = m.id::text
-         ORDER BY ae.created_at DESC, ae.id DESC
-         LIMIT 1
-       ) turn_event ON TRUE
+       ${TRIAGE_JOIN}
        WHERE ${whereClause}
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT $${limitParamIndex}
@@ -331,6 +298,58 @@ export class QualityTurnsService implements QualityTurnsServicePort {
       pageSize: limit,
       totalPages,
     };
+  }
+
+  async getQualityStats(workspaceId: string, input: QualityStatsInput): Promise<QualityStats> {
+    const windows = resolveQualityStatsWindows(input.range, this.clock());
+    const tuples = await this.loadGroundedOutcomeTuples(workspaceId);
+    const scope = { workspaceId, agentId: input.agentId, channel: input.channel, tuples };
+
+    // One daily-bucket query spans both windows, and the two window totals are summed from
+    // its rows. Every turn falls in exactly one UTC day and every column is a per-turn
+    // count, so this is exactly equivalent to querying each window — and it makes `current`,
+    // `previous` and `buckets` consistent by construction. Four independent statements would
+    // each read their own READ COMMITTED snapshot, letting one response report a turn count
+    // its own buckets do not sum to. A REPEATABLE READ transaction would fix that too, at
+    // the price of serialising every round trip of a polled endpoint onto one connection.
+    //
+    // `backlog` stays a separate statement and is deliberately NOT made consistent with the
+    // windowed numbers: it answers a different question — all-time active triage, with no
+    // date bound at all — so there is no shared total for it to agree with.
+    const [dailyRows, backlogRows] = await Promise.all([
+      this.runStatsQuery<QualityStatsAggregateRow>(
+        buildQualityStatsDailyQuery({ ...scope, window: windows.span }),
+      ),
+      this.runStatsQuery<QualityBacklogRow>(buildQualityStatsBacklogQuery(scope)),
+    ]);
+
+    const backlogRow = backlogRows[0];
+    const backlog = Object.fromEntries(
+      QUALITY_SIGNAL_IDS.map((signal) => [signal, Number(backlogRow?.[signal] ?? 0)]),
+    ) as Record<QualitySignalId, number>;
+
+    return {
+      range: input.range,
+      filters: {
+        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.channel ? { channel: input.channel } : {}),
+      },
+      current: summarizeQualityStatsWindow(windows.current, dailyRows),
+      previous: summarizeQualityStatsWindow(windows.previous, dailyRows),
+      // Buckets stay scoped to the current window per the contract; the previous window's
+      // days are queried only so its totals can be summed.
+      buckets: mergeQualityStatsBuckets(buildEmptyQualityStatsBuckets(windows), dailyRows),
+      backlog,
+    };
+  }
+
+  private async runStatsQuery<Row>(query: SqlQuery): Promise<Row[]> {
+    const result = await this.db.executeQuery<Row>(CompiledQuery.raw(query.text, query.params));
+    return result.rows;
+  }
+
+  private async loadGroundedOutcomeTuples(workspaceId: string): Promise<GroundedOutcomeTuples> {
+    return resolveGroundedOutcomeTuples(await this.outcomeCatalog.listOutcomeCatalog(workspaceId));
   }
 
   async setTriageState(

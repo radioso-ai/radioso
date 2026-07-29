@@ -36,16 +36,23 @@ export type {
   SkillAuthoringInputType,
   SkillAuthoringOutcome,
 } from './api-routine-skill-catalog'
-export { qualityApi } from './api-quality'
+export { qualityApi, QUALITY_SIGNAL_IDS, QUALITY_STATS_RANGES } from './api-quality'
 export { getHitlApiErrorStatus, hitlApi, isHitlApiStatusError } from './api-hitl'
 export type {
   FeedbackValue,
+  GetQualityStatsOptions,
   ListLowQualityTurnsOptions,
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityActionFilter,
   QualityFeedbackSummary,
+  QualitySignalId,
   QualitySkillStatus,
+  QualityStats,
+  QualityStatsBucket,
+  QualityStatsMetric,
+  QualityStatsRange,
+  QualityStatsWindow,
   QualityTriageState,
   QualityTriageRecord,
 } from './api-quality'

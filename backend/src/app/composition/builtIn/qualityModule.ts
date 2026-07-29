@@ -1,5 +1,6 @@
 import {
   QualityTurnsService,
+  SkillCatalogOutcomeSource,
   createQualityRoutes,
 } from "../../../modules/quality/composition.js";
 import type { ApplicationModule } from "../applicationModule.js";
@@ -11,7 +12,12 @@ export const createQualityApplicationModule = (): ApplicationModule => ({
     context.registerRouteMount({
       path: "/api/v1/quality",
       createRouter(dependencies) {
-        const service = new QualityTurnsService(dependencies.connectorDb.kysely);
+        // Signal classification reads the skill catalog to learn which outcomes ground an
+        // answer. The adapter narrows the catalog to that one question.
+        const service = new QualityTurnsService(
+          dependencies.connectorDb.kysely,
+          new SkillCatalogOutcomeSource(dependencies.skillCatalogService),
+        );
         return createQualityRoutes(dependencies, service);
       },
     });

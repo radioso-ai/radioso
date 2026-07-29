@@ -49,6 +49,7 @@ import type {
 } from "../types/assistantApi.js";
 import type { UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
 import { CHAT_TURN_ROUTE } from "../../../shared/domain/chatTurnRoute.js";
+import { isHumanAuthoredMessageSource } from "../../../shared/domain/messageAuthorship.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -235,8 +236,7 @@ export interface SuspendedRoutineReader {
 // A teammate has engaged the thread once any message was authored by a human
 // operator (a direct reply, or one sent on behalf of the AI).
 const isHumanAgentMessage = (message: { source?: string }): boolean =>
-  message.source === "human_agent" ||
-  message.source === "human_agent_on_behalf_of_ai_agent";
+  isHumanAuthoredMessageSource(message.source);
 
 const suppressedHumanOwnedResponse = (
   session: PreparedSession,

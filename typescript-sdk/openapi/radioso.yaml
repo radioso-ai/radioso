@@ -8289,6 +8289,146 @@ components:
         - createdAt
         - feedback
         - triage
+    QualitySignalId:
+      type: string
+      enum:
+        - negative_feedback
+        - grounding_gaps
+        - slow_responses
+        - skill_failures
+    QualityStatsRange:
+      type: string
+      enum:
+        - 7d
+        - 30d
+    QualityStatsMetric:
+      type: object
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: Turns matching the metric within the window.
+        denominator:
+          type: integer
+          minimum: 0
+          description: Turns the metric is defined over.
+        rate:
+          type:
+            - number
+            - "null"
+          minimum: 0
+          maximum: 1
+          description: "`count / denominator`, or null when the denominator is zero."
+      required:
+        - count
+        - denominator
+        - rate
+    QualityStatsWindow:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: Start of the window, inclusive.
+        to:
+          type: string
+          format: date-time
+          description: End of the window, exclusive.
+        turnCount:
+          type: integer
+          minimum: 0
+        grounded:
+          allOf:
+            - $ref: "#/components/schemas/QualityStatsMetric"
+            - description: Grounded answers over turns that attempted one. Outcomes the skill catalog leaves unflagged, such as a clarifying question, are in neither the count nor the denominator.
+        negativeFeedback:
+          allOf:
+            - $ref: "#/components/schemas/QualityStatsMetric"
+            - description: Turns with at least one down vote, over turns with any vote. A turn with several votes counts once.
+        skillFailures:
+          allOf:
+            - $ref: "#/components/schemas/QualityStatsMetric"
+            - description: Turns whose skill ended in `failed`, over all turns.
+      required:
+        - from
+        - to
+        - turnCount
+        - grounded
+        - negativeFeedback
+        - skillFailures
+    QualityStatsBucket:
+      type: object
+      properties:
+        date:
+          type: string
+          description: UTC day as `YYYY-MM-DD`.
+        turnCount:
+          type: integer
+          minimum: 0
+        grounded:
+          $ref: "#/components/schemas/QualityStatsMetric"
+        negativeFeedback:
+          $ref: "#/components/schemas/QualityStatsMetric"
+        skillFailures:
+          $ref: "#/components/schemas/QualityStatsMetric"
+      required:
+        - date
+        - turnCount
+        - grounded
+        - negativeFeedback
+        - skillFailures
+    QualityStats:
+      type: object
+      properties:
+        range:
+          $ref: "#/components/schemas/QualityStatsRange"
+        filters:
+          type: object
+          properties:
+            agentId:
+              type: string
+              format: uuid
+            channel:
+              type: string
+        current:
+          $ref: "#/components/schemas/QualityStatsWindow"
+        previous:
+          allOf:
+            - $ref: "#/components/schemas/QualityStatsWindow"
+            - description: Equal length, immediately preceding the current window.
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/QualityStatsBucket"
+          description: Current window only, one entry per UTC day, zero-filled.
+        backlog:
+          type: object
+          properties:
+            negative_feedback:
+              type: integer
+              minimum: 0
+            grounding_gaps:
+              type: integer
+              minimum: 0
+            slow_responses:
+              type: integer
+              minimum: 0
+            skill_failures:
+              type: integer
+              minimum: 0
+          required:
+            - negative_feedback
+            - grounding_gaps
+            - slow_responses
+            - skill_failures
+          description: Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.
+      required:
+        - range
+        - filters
+        - current
+        - previous
+        - buckets
+        - backlog
     SetQualityTriageRequest:
       type: object
       properties:
@@ -19676,11 +19816,18 @@ paths:
       tags:
         - Quality
       summary: List low-quality assistant turns
-      description: Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to skill action, skill status, user feedback, latency, agent, channel, and time range.
+      description: Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to operator signal, skill action, skill status, user feedback, latency, agent, channel, and time range. Operator-test conversations and replies authored by a human teammate are excluded.
       operationId: listLowQualityTurns
       security:
         - bearerAuth: []
       parameters:
+        - schema:
+            type: string
+            description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+          required: false
+          description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+          name: signal
+          in: query
         - schema:
             type: string
             description: Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`.
@@ -19781,6 +19928,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LowQualityTurnsPage"
+        "400":
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks the workspace.quality.read permission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/quality/stats:
+    get:
+      tags:
+        - Quality
+      summary: Read assistant answer-quality statistics
+      description: "Returns answer-quality rates for a rolling window, the equal-length window before it, one zero-filled bucket per UTC day, and the all-time active-triage backlog per signal. Admin/owner only (requires the `workspace.quality.read` permission). Every rate ships with the population it is defined over, and reports `null` rather than a rate when that population is empty. The turn population matches `GET /api/v1/quality/turns`: operator-test conversations and replies authored by a human teammate are excluded."
+      operationId: getQualityStats
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            allOf:
+              - $ref: "#/components/schemas/QualityStatsRange"
+              - description: Length of the health window. Defaults to `30d`.
+          required: false
+          description: Length of the health window. Defaults to `30d`.
+          name: range
+          in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 64
+          required: false
+          name: channel
+          in: query
+      responses:
+        "200":
+          description: Answer-quality statistics for the requested window
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityStats"
         "400":
           description: Invalid query parameter
           content:

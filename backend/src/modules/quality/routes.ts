@@ -7,10 +7,12 @@ import { requireWorkspacePermission } from "../../app/http/middleware/requirePer
 import { badRequest, notFound } from "../../shared/domain/errors.js";
 import type { QualityStatsServicePort, QualityTurnsServicePort } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
+import { GROUNDING_VERDICTS } from "../../shared/domain/groundingDiagnostic.js";
 
 const triageStateSchema = z.enum(["open", "acknowledged", "resolved", "dismissed"]);
 
 const signalSchema = z.enum(QUALITY_SIGNAL_IDS);
+const groundingVerdictSchema = z.enum(GROUNDING_VERDICTS);
 
 const statsQuerySchema = z.object({
   range: z.enum(["7d", "30d"]).default("30d"),
@@ -52,10 +54,18 @@ const actionTupleSchema = z
     };
   });
 
+const strictBoolean = z.preprocess((value) => {
+  if (value === undefined || typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}, z.boolean().optional());
+
 const turnsQuerySchema = z.object({
   // One or more signals, CSV or repeated. A turn matches if it satisfies any of them, so a
   // single id is one chip and the full list is "anything worth reviewing".
   signal: csvOrArray(signalSchema),
+  groundingVerdict: csvOrArray(groundingVerdictSchema),
   actions: csvOrArray(actionTupleSchema),
   statuses: csvOrArray(
     z.enum([
@@ -72,20 +82,10 @@ const turnsQuerySchema = z.object({
   feedback: csvOrArray(z.enum(["up", "down"])),
   triage: csvOrArray(triageStateSchema),
   sort: z.enum(["turn_created_at", "negative_feedback_updated_at"]).optional(),
-  activeNegativeFeedbackOnly: z.preprocess((value) => {
-    if (value === undefined) return undefined;
-    if (typeof value === "boolean") return value;
-    if (value === "true") return true;
-    if (value === "false") return false;
-    return value;
-  }, z.boolean().optional()),
-  hasComment: z.preprocess((value) => {
-    if (value === undefined) return undefined;
-    if (typeof value === "boolean") return value;
-    if (value === "true") return true;
-    if (value === "false") return false;
-    return value;
-  }, z.boolean().optional()),
+  activeNegativeFeedbackOnly: strictBoolean,
+  hasComment: strictBoolean,
+  hasUnsourcedClaims: strictBoolean,
+  hasInvalidSources: strictBoolean,
   agentId: z.string().uuid().optional(),
   channel: z.string().trim().min(1).max(64).optional(),
   from: z.string().datetime().optional(),
@@ -124,6 +124,9 @@ export const createQualityRoutes = (
       const { workspaceId } = res.locals as { workspaceId: string };
       const page = await service.listLowQualityTurns(workspaceId, {
         signals: query.signal,
+        groundingVerdicts: query.groundingVerdict,
+        hasUnsourcedClaims: query.hasUnsourcedClaims,
+        hasInvalidSources: query.hasInvalidSources,
         actions: query.actions,
         statuses: query.statuses,
         feedbackValues: query.feedback,

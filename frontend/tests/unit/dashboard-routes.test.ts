@@ -507,6 +507,26 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips normalized grounding evidence filters', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityGroundingVerdicts: ['degraded', 'no_support'],
+      qualityHasUnsourcedClaims: true,
+      qualityHasInvalidSources: true,
+    })).toBe('/w/ws-key/quality?groundingVerdict=degraded%2Cno_support&hasUnsourcedClaims=true&hasInvalidSources=true')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      groundingVerdict: 'degraded,unknown,no_support',
+      hasUnsourcedClaims: 'true',
+      hasInvalidSources: 'false',
+    }))).toEqual({
+      section: 'quality',
+      qualityGroundingVerdicts: ['degraded', 'no_support'],
+      qualityHasUnsourcedClaims: true,
+    })
+  })
+
   it('round-trips the All answers escape hatch, omitting it when off', () => {
     expect(buildDashboardHref('account-1', {
       section: 'quality',

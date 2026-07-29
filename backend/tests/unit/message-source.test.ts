@@ -18,6 +18,11 @@ const row = (overrides: Partial<MessageRow> = {}): MessageRow => ({
   skill_outcome: null,
   skill_status: null,
   total_latency_ms: null,
+  grounding_verdict: null,
+  grounding_claim_count: null,
+  grounding_sourced_claim_count: null,
+  grounding_unsourced_claim_count: null,
+  grounding_invalid_source_count: null,
   created_at: new Date("2026-06-17T10:00:00.000Z"),
   ...overrides,
 });

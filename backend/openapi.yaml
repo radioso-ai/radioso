@@ -8154,6 +8154,34 @@ components:
       enum:
         - up
         - down
+    GroundingDiagnostic:
+      type: object
+      properties:
+        verdict:
+          type: string
+          enum:
+            - grounded
+            - degraded
+            - no_support
+        claimCount:
+          type: integer
+          minimum: 0
+        sourcedClaimCount:
+          type: integer
+          minimum: 0
+        unsourcedClaimCount:
+          type: integer
+          minimum: 0
+        invalidSourceCount:
+          type: integer
+          minimum: 0
+      required:
+        - verdict
+        - claimCount
+        - sourcedClaimCount
+        - unsourcedClaimCount
+        - invalidSourceCount
+      description: Complete immutable grounding snapshot for this answer. Null means no complete diagnostic is available.
     QualitySkillStatus:
       type: string
       enum:
@@ -8277,6 +8305,11 @@ components:
           type:
             - integer
             - "null"
+        grounding:
+          anyOf:
+            - $ref: "#/components/schemas/GroundingDiagnostic"
+            - type: "null"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -8296,6 +8329,7 @@ components:
         - skillOutcome
         - skillStatus
         - totalLatencyMs
+        - grounding
         - createdAt
         - feedback
         - triage
@@ -19837,6 +19871,33 @@ paths:
           required: false
           description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
           name: signal
+          in: query
+        - schema:
+            type: string
+            description: Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict.
+          required: false
+          description: Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict.
+          name: groundingVerdict
+          in: query
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            description: Filter complete diagnostics by whether the unsourced claim count is positive. Unknown diagnostics match neither value.
+          required: false
+          description: Filter complete diagnostics by whether the unsourced claim count is positive. Unknown diagnostics match neither value.
+          name: hasUnsourcedClaims
+          in: query
+        - schema:
+            type: string
+            enum:
+              - "true"
+              - "false"
+            description: Filter complete diagnostics by whether the invalid source count is positive. Unknown diagnostics match neither value.
+          required: false
+          description: Filter complete diagnostics by whether the invalid source count is positive. Unknown diagnostics match neither value.
+          name: hasInvalidSources
           in: query
         - schema:
             type: string

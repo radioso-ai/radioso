@@ -44,8 +44,14 @@ import {
   buildTurnPopulationFilters,
   type SqlQuery,
 } from "./turnPopulationSql.js";
+import {
+  buildGroundingCountPresencePredicate,
+  buildGroundingVerdictPredicate,
+  mapGroundingDiagnostic,
+  type GroundingDiagnosticRow,
+} from "./groundingDiagnostic.js";
 
-type TurnRow = {
+type TurnRow = GroundingDiagnosticRow & {
   assistant_message_id: string;
   conversation_id: string;
   agent_id: string | null;
@@ -160,6 +166,23 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       filters.push(`m.skill_status = ANY(${bindParam(params, statuses)}::text[])`);
     }
 
+    const groundingVerdicts = [...new Set(input.groundingVerdicts ?? [])];
+    if (groundingVerdicts.length > 0) {
+      filters.push(buildGroundingVerdictPredicate(groundingVerdicts, params));
+    }
+    if (input.hasUnsourcedClaims !== undefined) {
+      filters.push(buildGroundingCountPresencePredicate(
+        "grounding_unsourced_claim_count",
+        input.hasUnsourcedClaims,
+      ));
+    }
+    if (input.hasInvalidSources !== undefined) {
+      filters.push(buildGroundingCountPresencePredicate(
+        "grounding_invalid_source_count",
+        input.hasInvalidSources,
+      ));
+    }
+
     if (triageStates.length > 0) {
       filters.push(`${effectiveTriageStateExpression} = ANY(${bindParam(params, triageStates)}::text[])`);
     }
@@ -265,6 +288,11 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          m.skill_name,
          m.skill_outcome,
          m.skill_status,
+         m.grounding_verdict,
+         m.grounding_claim_count,
+         m.grounding_sourced_claim_count,
+         m.grounding_unsourced_claim_count,
+         m.grounding_invalid_source_count,
          ${RESOLVED_LATENCY_EXPRESSION} AS total_latency_ms,
          m.created_at,
          ${effectiveTriageStateExpression} AS triage_state,
@@ -309,6 +337,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       skillOutcome: row.skill_outcome,
       skillStatus: row.skill_status,
       totalLatencyMs: row.total_latency_ms === null ? null : Number(row.total_latency_ms),
+      grounding: mapGroundingDiagnostic(row),
       createdAt: serializeDate(row.created_at),
       feedback: {
         upCount: Number(row.up_count),

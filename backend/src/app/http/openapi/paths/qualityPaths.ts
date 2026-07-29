@@ -34,6 +34,15 @@ export const registerQualityPaths = (
             "of the other filters rather than replacing them.",
           )
           .optional(),
+        groundingVerdict: csvOrArrayString
+          .describe("Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict.")
+          .optional(),
+        hasUnsourcedClaims: z.enum(["true", "false"])
+          .describe("Filter complete diagnostics by whether the unsourced claim count is positive. Unknown diagnostics match neither value.")
+          .optional(),
+        hasInvalidSources: z.enum(["true", "false"])
+          .describe("Filter complete diagnostics by whether the invalid source count is positive. Unknown diagnostics match neither value.")
+          .optional(),
         actions: csvOrArrayString
           .describe("Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`.")
           .optional(),

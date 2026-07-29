@@ -5719,6 +5719,15 @@ export interface components {
         };
         /** @enum {string} */
         QualityFeedbackValue: "up" | "down";
+        /** @description Complete immutable grounding snapshot for this answer. Null means no complete diagnostic is available. */
+        GroundingDiagnostic: {
+            /** @enum {string} */
+            verdict: "grounded" | "degraded" | "no_support";
+            claimCount: number;
+            sourcedClaimCount: number;
+            unsourcedClaimCount: number;
+            invalidSourceCount: number;
+        };
         /** @enum {string} */
         QualitySkillStatus: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
         /** @enum {string} */
@@ -5759,6 +5768,7 @@ export interface components {
             skillOutcome: string | null;
             skillStatus: components["schemas"]["QualitySkillStatus"] & (string | null);
             totalLatencyMs: number | null;
+            grounding: components["schemas"]["GroundingDiagnostic"] | null;
             /** Format: date-time */
             createdAt: string;
             feedback: components["schemas"]["QualityFeedbackSummary"];
@@ -16864,6 +16874,12 @@ export interface operations {
             query?: {
                 /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
                 signal?: string;
+                /** @description Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict. */
+                groundingVerdict?: string;
+                /** @description Filter complete diagnostics by whether the unsourced claim count is positive. Unknown diagnostics match neither value. */
+                hasUnsourcedClaims?: "true" | "false";
+                /** @description Filter complete diagnostics by whether the invalid source count is positive. Unknown diagnostics match neither value. */
+                hasInvalidSources?: "true" | "false";
                 /** @description Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`. */
                 actions?: string;
                 /** @description Comma-separated `QualitySkillStatus` values. */

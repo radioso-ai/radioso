@@ -35,4 +35,21 @@ describe('quality API', () => {
       { withApiToken: true },
     )
   })
+
+  it('encodes grounding verdict and evidence-presence filters', async () => {
+    requestMock.mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 25, totalPages: 0 })
+    const { qualityApi } = await import('@/lib/api-quality')
+
+    await qualityApi.listTurns({
+      groundingVerdict: ['degraded', 'no_support'],
+      hasUnsourcedClaims: true,
+      hasInvalidSources: false,
+    })
+
+    expect(requestMock).toHaveBeenCalledWith(
+      '/quality/turns?groundingVerdict=degraded%2Cno_support&hasUnsourcedClaims=true&hasInvalidSources=false',
+      { method: 'GET' },
+      { withApiToken: true },
+    )
+  })
 })

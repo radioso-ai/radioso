@@ -182,6 +182,13 @@ describe("quality routes", () => {
           skillOutcome: "no_context",
           skillStatus: "completed",
           totalLatencyMs: 3200,
+          grounding: {
+            verdict: "no_support",
+            claimCount: 0,
+            sourcedClaimCount: 0,
+            unsourcedClaimCount: 0,
+            invalidSourceCount: 0,
+          },
           createdAt: "2026-05-22T10:00:00.000Z",
           feedback: {
             upCount: 0,
@@ -405,6 +412,41 @@ describe("quality routes", () => {
       signals: ["slow_responses", "skill_failures"],
       limit: 25,
     });
+  });
+
+  it("parses grounding verdicts and strict claim-presence booleans", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns?groundingVerdict=degraded&groundingVerdict=no_support")
+      .query({ hasUnsourcedClaims: "false", hasInvalidSources: "true" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      groundingVerdicts: ["degraded", "no_support"],
+      hasUnsourcedClaims: false,
+      hasInvalidSources: true,
+      limit: 25,
+    });
+  });
+
+  it.each([
+    ["groundingVerdict", "unknown"],
+    ["hasUnsourcedClaims", "yes"],
+    ["hasInvalidSources", "1"],
+  ])("rejects invalid %s values", async (key, value) => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ [key]: value })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.calls).toHaveLength(0);
   });
 
   it("rejects an unknown signal with 400", async () => {

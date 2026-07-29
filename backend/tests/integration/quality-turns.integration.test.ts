@@ -76,12 +76,16 @@ describeIfDatabase("quality turns integration", () => {
     const refusalAssistantMessageId = randomUUID();
 
     await database.query(
-      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
+      `INSERT INTO messages (
+         id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status,
+         grounding_verdict, grounding_claim_count, grounding_sourced_claim_count,
+         grounding_unsourced_claim_count, grounding_invalid_source_count, created_at
+       )
        VALUES
-         ($1, $2, $3, 'user',      'What is the refund policy?', NULL,               NULL,           NULL,         $4),
-         ($5, $2, $3, 'assistant', 'Refunds are processed within 7 days.', 'retrieval.answer', 'grounded',     'completed',  $6),
-         ($7, $8, $3, 'user',      'What is the capital of Mars?', NULL,               NULL,           NULL,         $9),
-         ($10, $8, $3, 'assistant', 'I do not have information about that.', 'retrieval.answer', 'no_context',   'completed',  $11)`,
+         ($1, $2, $3, 'user',      'What is the refund policy?', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $4),
+         ($5, $2, $3, 'assistant', 'Refunds are processed within 7 days.', 'retrieval.answer', 'grounded', 'completed', 'grounded', 2, 2, 0, 0, $6),
+         ($7, $8, $3, 'user',      'What is the capital of Mars?', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, $9),
+         ($10, $8, $3, 'assistant', 'I do not have information about that.', 'retrieval.answer', 'no_context', 'completed', NULL, NULL, NULL, NULL, NULL, $11)`,
       [
         groundedUserMessageId,
         groundedConversationId,
@@ -126,6 +130,14 @@ describeIfDatabase("quality turns integration", () => {
     });
 
     const grounded = page.items.find((item) => item.assistantMessageId === groundedAssistantMessageId);
+    expect(grounded?.grounding).toEqual({
+      verdict: "grounded",
+      claimCount: 2,
+      sourcedClaimCount: 2,
+      unsourcedClaimCount: 0,
+      invalidSourceCount: 0,
+    });
+    expect(refusal?.grounding).toBeNull();
     expect(grounded?.feedback.downCount).toBe(1);
     expect(grounded?.feedback.comments).toEqual([
       expect.objectContaining({ value: "down", comment: "Did not help" }),
@@ -852,5 +864,66 @@ describeIfDatabase("quality turns integration", () => {
       state: "acknowledged",
     });
     expect(result).toBeNull();
+  });
+
+  it("filters grounding diagnostics with OR verdicts, complete zero semantics, AND composition, and stable totals", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    await database.query(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Grounding', $2, 'hash')",
+      [accountId, `grounding-${accountId}@example.com`],
+    );
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'Grounding WS', $3)",
+      [workspaceId, accountId, `gr-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')",
+      [conversationId, workspaceId],
+    );
+    const ids = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    await database.query(
+      `INSERT INTO messages (
+         id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status,
+         grounding_verdict, grounding_claim_count, grounding_sourced_claim_count,
+         grounding_unsourced_claim_count, grounding_invalid_source_count, created_at
+       ) VALUES
+         ($1, $5, $6, 'assistant', 'grounded', 'retrieval.answer', 'grounded', 'completed', 'grounded', 2, 2, 0, 0, '2026-06-01T00:00:01Z'),
+         ($2, $5, $6, 'assistant', 'degraded', 'retrieval.answer', 'degraded', 'completed', 'degraded', 2, 1, 1, 1, '2026-06-01T00:00:02Z'),
+         ($3, $5, $6, 'assistant', 'no support', 'retrieval.answer', 'no_context', 'failed', 'no_support', 0, 0, 0, 0, '2026-06-01T00:00:03Z'),
+         ($4, $5, $6, 'assistant', 'unknown', 'assistant.chat', 'conversational', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-06-01T00:00:04Z')`,
+      [...ids, conversationId, workspaceId],
+    );
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+
+    const verdictPage = await service.listLowQualityTurns(workspaceId, {
+      groundingVerdicts: ["degraded", "no_support", "degraded"],
+      limit: 1,
+      offset: 0,
+    });
+    expect(verdictPage.total).toBe(2);
+    expect(verdictPage.items).toHaveLength(1);
+    expect(verdictPage.totalPages).toBe(2);
+
+    const unsourced = await service.listLowQualityTurns(workspaceId, { hasUnsourcedClaims: true, limit: 25 });
+    expect(unsourced.items.map((item) => item.assistantMessageId)).toEqual([ids[1]]);
+    const invalid = await service.listLowQualityTurns(workspaceId, { hasInvalidSources: true, limit: 25 });
+    expect(invalid.items.map((item) => item.assistantMessageId)).toEqual([ids[1]]);
+
+    const zeroAndCompleted = await service.listLowQualityTurns(workspaceId, {
+      hasUnsourcedClaims: false,
+      statuses: ["completed"],
+      limit: 25,
+    });
+    expect(zeroAndCompleted.items.map((item) => item.assistantMessageId)).toEqual([ids[0]]);
+    expect(zeroAndCompleted.items.some((item) => item.assistantMessageId === ids[3])).toBe(false);
+
+    const incompatible = await service.listLowQualityTurns(workspaceId, {
+      groundingVerdicts: ["degraded"],
+      statuses: ["failed"],
+      limit: 25,
+    });
+    expect(incompatible.total).toBe(0);
   });
 });

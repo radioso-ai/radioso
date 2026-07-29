@@ -9,6 +9,17 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.enum(["up", "down"]),
   );
 
+  const GroundingDiagnosticSchema = registry.register(
+    "GroundingDiagnostic",
+    z.object({
+      verdict: z.enum(["grounded", "degraded", "no_support"]),
+      claimCount: z.number().int().min(0),
+      sourcedClaimCount: z.number().int().min(0),
+      unsourcedClaimCount: z.number().int().min(0),
+      invalidSourceCount: z.number().int().min(0),
+    }).describe("Complete immutable grounding snapshot for this answer. Null means no complete diagnostic is available."),
+  );
+
   const QualitySkillStatusSchema = registry.register(
     "QualitySkillStatus",
     z.enum([
@@ -71,6 +82,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       skillOutcome: z.string().nullable(),
       skillStatus: QualitySkillStatusSchema.nullable(),
       totalLatencyMs: z.number().int().nullable(),
+      grounding: z.union([GroundingDiagnosticSchema, z.null()]),
       createdAt: z.string().datetime(),
       feedback: QualityFeedbackSummarySchema,
       triage: QualityTriageRecordSchema,
@@ -182,6 +194,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
   );
 
   schemas.QualityFeedbackValueSchema = QualityFeedbackValueSchema;
+  schemas.GroundingDiagnosticSchema = GroundingDiagnosticSchema;
   schemas.QualitySkillStatusSchema = QualitySkillStatusSchema;
   schemas.QualityTriageStateSchema = QualityTriageStateSchema;
   schemas.QualityTriageRecordSchema = QualityTriageRecordSchema;

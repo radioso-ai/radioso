@@ -20,9 +20,56 @@ const turn = (assistantMessageId: string, question: string) => ({
   skillOutcome: "no_context",
   skillStatus: "completed",
   totalLatencyMs: 1200,
+  grounding: null,
   createdAt: nowIso,
   feedback: { upCount: 0, downCount: 0, comments: [] },
   triage: { state: "open", reason: null, updatedAt: null },
+});
+
+test("the Outcome cell explains grounding evidence without inventing missing values", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const items = [
+      { ...turn("grounded", "Grounded question"), grounding: { verdict: "grounded", claimCount: 1, sourcedClaimCount: 1, unsourcedClaimCount: 0, invalidSourceCount: 0 } },
+      { ...turn("degraded", "Degraded question"), grounding: { verdict: "degraded", claimCount: 3, sourcedClaimCount: 2, unsourcedClaimCount: 1, invalidSourceCount: 1 } },
+      { ...turn("unsupported", "Unsupported question"), grounding: { verdict: "no_support", claimCount: 0, sourcedClaimCount: 0, unsourcedClaimCount: 0, invalidSourceCount: 0 } },
+      turn("unknown", "Unknown question"),
+    ];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items, total: 4, page: 1, pageSize: 25, totalPages: 1 }) });
+  });
+
+  await page.goto(`/w/${workspaceKey}/quality?all=true`);
+
+  await expect(page.getByText("1 of 1 claim sourced")).toBeVisible();
+  await expect(page.getByText("2 of 3 claims sourced")).toBeVisible();
+  await expect(page.getByText("1 unsourced claim")).toBeVisible();
+  await expect(page.getByText("1 invalid citation")).toBeVisible();
+  await expect(page.getByText("No supported claims")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Unknown question" })).toBeVisible();
+});
+
+test("evidence filters restore from the URL, reach the API, and clear with a signal preset", async ({ page }) => {
+  const turnsUrls: string[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installQualityTurnsMock(page, turnsUrls);
+
+  await page.goto(`/w/${workspaceKey}/quality?all=true&groundingVerdict=degraded%2Cno_support&hasUnsourcedClaims=true&hasInvalidSources=true`);
+
+  await expect.poll(() => turnsUrls.at(-1)).toContain("groundingVerdict=degraded%2Cno_support");
+  await expect.poll(() => turnsUrls.at(-1)).toContain("hasUnsourcedClaims=true");
+  await expect.poll(() => turnsUrls.at(-1)).toContain("hasInvalidSources=true");
+  await expect(page.getByRole("button", { name: "Remove filter: Grounding verdict" })).toContainText("Degraded or No support");
+  await expect(page.getByRole("button", { name: "Remove filter: Has unsourced claims" })).toBeVisible();
+  const invalidSourcesPill = page.getByRole("button", { name: "Remove filter: Has invalid sources" });
+  await expect(invalidSourcesPill).toBeVisible();
+  await invalidSourcesPill.click();
+  await expect(page).not.toHaveURL(/hasInvalidSources/);
+  await expect(page).toHaveURL(/hasUnsourcedClaims=true/);
+
+  await page.getByRole("button", { name: "7 Negative feedback" }).click();
+  await expect(page).not.toHaveURL(/groundingVerdict|hasUnsourcedClaims|hasInvalidSources/);
 });
 
 const UNFILTERED_QUESTION = "Do you sell gift cards?";

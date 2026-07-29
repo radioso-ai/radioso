@@ -1,6 +1,7 @@
 import type { GroundedAnswerEnvelope, GroundingEnvelopeParseStatus } from "./groundedAnswerEnvelope.js";
+import type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
 
-export type GroundingVerdict = "grounded" | "degraded" | "no_support";
+export type { GroundingVerdict } from "../../../shared/domain/groundingDiagnostic.js";
 
 export interface GroundingSummary {
   protocolVersion: 1 | 2 | null;

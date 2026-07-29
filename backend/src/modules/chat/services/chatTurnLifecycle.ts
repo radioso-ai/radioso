@@ -9,6 +9,7 @@ import type { ConversationRepositoryPort } from "../../../db/repositories/conver
 import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
+import { groundingDiagnosticFromSummary } from "./groundingDiagnostic.js";
 import type {
   ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
@@ -366,6 +367,7 @@ export const buildTurnTraceForPresentation = (
     skillOutcome: skillTurnOutcome.outcome,
     skillStatus: skillTurnOutcome.status,
     totalLatencyMs,
+    grounding: groundingDiagnosticFromSummary(input.presentation.groundingSummary),
     metadata: {
       skillTurn: skillTurnOutcome,
       // Per-turn context required for full-fidelity eval snapshot capture.

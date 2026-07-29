@@ -617,6 +617,11 @@ export interface Messages {
   content: string;
   conversation_id: string;
   created_at: Generated<Timestamp>;
+  grounding_claim_count: number | null;
+  grounding_invalid_source_count: number | null;
+  grounding_sourced_claim_count: number | null;
+  grounding_unsourced_claim_count: number | null;
+  grounding_verdict: string | null;
   id: string;
   metadata_json: Generated<Json>;
   role: string;

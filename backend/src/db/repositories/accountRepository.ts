@@ -42,16 +42,6 @@ export class AccountRepository implements AccountRepositoryPort {
     return mapAccount(row);
   }
 
-  async findByEmail(email: string): Promise<AccountRecord | null> {
-    const row = await this.db
-      .selectFrom("accounts")
-      .select(accountColumns)
-      .where("email", "=", email)
-      .executeTakeFirst();
-
-    return row ? mapAccount(row) : null;
-  }
-
   async findById(id: string): Promise<AccountRecord | null> {
     const row = await this.db
       .selectFrom("accounts")

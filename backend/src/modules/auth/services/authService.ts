@@ -65,7 +65,6 @@ export type WorkspaceApiTokenPrincipal = {
 
 export interface AccountRepositoryPort {
   create(params: { name: string; email: string; passwordHash: string }): Promise<AccountRecord>;
-  findByEmail(email: string): Promise<AccountRecord | null>;
   findById(id: string): Promise<AccountRecord | null>;
   updateName(id: string, name: string): Promise<AccountRecord>;
   deleteById(id: string): Promise<boolean>;

@@ -2540,9 +2540,29 @@ export interface paths {
         };
         /**
          * List low-quality assistant turns
-         * @description Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to skill action, skill status, user feedback, latency, agent, channel, and time range.
+         * @description Returns assistant turns for the dashboard's quality review surface. Admin/owner only (requires the `workspace.quality.read` permission). Filters apply to operator signal, skill action, skill status, user feedback, latency, agent, channel, and time range. Operator-test conversations and replies authored by a human teammate are excluded.
          */
         get: operations["listLowQualityTurns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read assistant answer-quality statistics
+         * @description Returns answer-quality rates for a rolling window, the equal-length window before it, one zero-filled bucket per UTC day, and the all-time active-triage backlog per signal. Admin/owner only (requires the `workspace.quality.read` permission). Every rate ships with the population it is defined over, and reports `null` rather than a rate when that population is empty. The turn population matches `GET /api/v1/quality/turns`: operator-test conversations and replies authored by a human teammate are excluded.
+         */
+        get: operations["getQualityStats"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5739,6 +5759,61 @@ export interface components {
             createdAt: string;
             feedback: components["schemas"]["QualityFeedbackSummary"];
             triage: components["schemas"]["QualityTriageRecord"];
+        };
+        /** @enum {string} */
+        QualitySignalId: "negative_feedback" | "grounding_gaps" | "slow_responses" | "skill_failures";
+        /** @enum {string} */
+        QualityStatsRange: "7d" | "30d";
+        QualityStatsMetric: {
+            /** @description Turns matching the metric within the window. */
+            count: number;
+            /** @description Turns the metric is defined over. */
+            denominator: number;
+            /** @description `count / denominator`, or null when the denominator is zero. */
+            rate: number | null;
+        };
+        QualityStatsWindow: {
+            /**
+             * Format: date-time
+             * @description Start of the window, inclusive.
+             */
+            from: string;
+            /**
+             * Format: date-time
+             * @description End of the window, exclusive.
+             */
+            to: string;
+            turnCount: number;
+            grounded: components["schemas"]["QualityStatsMetric"] & unknown;
+            negativeFeedback: components["schemas"]["QualityStatsMetric"] & unknown;
+            skillFailures: components["schemas"]["QualityStatsMetric"] & unknown;
+        };
+        QualityStatsBucket: {
+            /** @description UTC day as `YYYY-MM-DD`. */
+            date: string;
+            turnCount: number;
+            grounded: components["schemas"]["QualityStatsMetric"];
+            negativeFeedback: components["schemas"]["QualityStatsMetric"];
+            skillFailures: components["schemas"]["QualityStatsMetric"];
+        };
+        QualityStats: {
+            range: components["schemas"]["QualityStatsRange"];
+            filters: {
+                /** Format: uuid */
+                agentId?: string;
+                channel?: string;
+            };
+            current: components["schemas"]["QualityStatsWindow"];
+            previous: components["schemas"]["QualityStatsWindow"] & unknown;
+            /** @description Current window only, one entry per UTC day, zero-filled. */
+            buckets: components["schemas"]["QualityStatsBucket"][];
+            /** @description Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`. */
+            backlog: {
+                negative_feedback: number;
+                grounding_gaps: number;
+                slow_responses: number;
+                skill_failures: number;
+            };
         };
         SetQualityTriageRequest: {
             state: components["schemas"]["QualityTriageState"];
@@ -16783,6 +16858,8 @@ export interface operations {
     listLowQualityTurns: {
         parameters: {
             query?: {
+                /** @description Narrows to one operator signal, resolved server-side from the skill catalog. Layered on top of the other filters. */
+                signal?: components["schemas"]["QualitySignalId"] & unknown;
                 /** @description Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`. */
                 actions?: string;
                 /** @description Comma-separated `QualitySkillStatus` values. */
@@ -16815,6 +16892,58 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LowQualityTurnsPage"];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getQualityStats: {
+        parameters: {
+            query?: {
+                /** @description Length of the health window. Defaults to `30d`. */
+                range?: components["schemas"]["QualityStatsRange"] & unknown;
+                agentId?: string;
+                channel?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Answer-quality statistics for the requested window */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityStats"];
                 };
             };
             /** @description Invalid query parameter */

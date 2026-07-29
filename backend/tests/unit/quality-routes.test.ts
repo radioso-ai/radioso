@@ -2,12 +2,17 @@ import express from "express";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createQualityRoutes, type QualityRouteDependencies } from "../../src/modules/quality/routes.js";
+import {
+  createQualityRoutes,
+  type QualityRouteDependencies,
+  type QualityServicePort,
+} from "../../src/modules/quality/routes.js";
 import type {
   ListLowQualityTurnsInput,
   LowQualityTurnsPage,
+  QualityStats,
+  QualityStatsInput,
   QualityTriageRecord,
-  QualityTurnsServicePort,
   SetTriageStateInput,
 } from "../../src/modules/quality/contracts/index.js";
 
@@ -21,13 +26,39 @@ const DEFAULT_TRIAGE_RESULT: QualityTriageRecord = {
   updatedAt: "2026-05-23T10:00:00.000Z",
 };
 
-class CapturingService implements QualityTurnsServicePort {
+const emptyMetric = { count: 0, denominator: 0, rate: null };
+const emptyWindow = {
+  from: "2026-06-28T00:00:00.000Z",
+  to: "2026-07-28T00:00:00.000Z",
+  turnCount: 0,
+  grounded: emptyMetric,
+  negativeFeedback: emptyMetric,
+  skillFailures: emptyMetric,
+};
+
+const DEFAULT_STATS: QualityStats = {
+  range: "30d",
+  filters: {},
+  current: emptyWindow,
+  previous: emptyWindow,
+  buckets: [],
+  backlog: {
+    negative_feedback: 3,
+    grounding_gaps: 7,
+    slow_responses: 1,
+    skill_failures: 0,
+  },
+};
+
+class CapturingService implements QualityServicePort {
   readonly calls: Array<{ workspaceId: string; input: ListLowQualityTurnsInput }> = [];
   readonly triageCalls: Array<{ workspaceId: string; input: SetTriageStateInput }> = [];
+  readonly statsCalls: Array<{ workspaceId: string; input: QualityStatsInput }> = [];
 
   constructor(
     private readonly page: LowQualityTurnsPage,
     private readonly triageResult: QualityTriageRecord | null = DEFAULT_TRIAGE_RESULT,
+    private readonly stats: QualityStats = DEFAULT_STATS,
   ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
@@ -38,6 +69,11 @@ class CapturingService implements QualityTurnsServicePort {
   async setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<QualityTriageRecord | null> {
     this.triageCalls.push({ workspaceId, input });
     return this.triageResult;
+  }
+
+  async getQualityStats(workspaceId: string, input: QualityStatsInput): Promise<QualityStats> {
+    this.statsCalls.push({ workspaceId, input });
+    return this.stats;
   }
 }
 
@@ -83,7 +119,7 @@ const createDependencies = (): QualityRouteDependencies =>
     },
   }) as unknown as QualityRouteDependencies;
 
-const createApp = (service: QualityTurnsServicePort) => {
+const createApp = (service: QualityServicePort) => {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -301,6 +337,36 @@ describe("quality routes", () => {
     expect(service.triageCalls).toHaveLength(0);
   });
 
+  it("forwards a signal filter alongside the explicit filters", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ signal: "grounding_gaps", triage: "open,acknowledged" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      signal: "grounding_gaps",
+      triageStates: ["open", "acknowledged"],
+      limit: 25,
+    });
+  });
+
+  it("rejects an unknown signal with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ signal: "vibes" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.calls).toHaveLength(0);
+  });
+
   it("returns 404 when the turn is not in the workspace", async () => {
     const service = new CapturingService(emptyPage, null);
     const app = createApp(service);
@@ -311,5 +377,74 @@ describe("quality routes", () => {
       .send({ state: "acknowledged" });
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe("quality stats route", () => {
+  it("rejects unauthenticated callers", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app).get("/api/v1/quality/stats");
+    expect(response.status).toBe(401);
+    expect(service.statsCalls).toHaveLength(0);
+  });
+
+  it("defaults to the 30d range and returns the service payload", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/stats")
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(DEFAULT_STATS);
+    expect(service.statsCalls).toEqual([
+      { workspaceId: WORKSPACE_ID, input: { range: "30d" } },
+    ]);
+  });
+
+  it("forwards the range, agent, and channel filters", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/stats")
+      .query({ range: "7d", agentId: "55555555-5555-5555-5555-555555555555", channel: "embed" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.statsCalls[0]?.input).toEqual({
+      range: "7d",
+      agentId: "55555555-5555-5555-5555-555555555555",
+      channel: "embed",
+    });
+  });
+
+  it("rejects an unsupported range with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/stats")
+      .query({ range: "90d" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.statsCalls).toHaveLength(0);
+  });
+
+  it("rejects a non-uuid agent filter with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/stats")
+      .query({ agentId: "not-a-uuid" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.statsCalls).toHaveLength(0);
   });
 });

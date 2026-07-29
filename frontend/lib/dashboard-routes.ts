@@ -1,3 +1,10 @@
+import {
+  QUALITY_SIGNAL_IDS,
+  QUALITY_STATS_RANGES,
+  type QualitySignalId,
+  type QualityStatsRange,
+} from './api-quality'
+
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
@@ -37,6 +44,19 @@ const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
   'dismissed',
 ])
 
+/**
+ * Route state speaks the API's vocabulary directly rather than restating it. These are
+ * aliases, not copies: a signal the backend adds reaches the URL parser and the fetch
+ * layer together, instead of being silently dropped by a parser nobody remembered to
+ * widen.
+ *
+ * Window for the Quality health tiles. Scopes zone 1 only, never the queue below it.
+ */
+export type QualityRangeFilter = QualityStatsRange
+
+/** Server-side triage signal preset. */
+export type QualitySignalFilter = QualitySignalId
+
 export interface QualityActionRoute {
   skillName: string
   outcome: string
@@ -66,6 +86,8 @@ export interface DashboardRouteState {
   historyItemId?: string
   historyMessageId?: string
   qualityPage?: number
+  qualityRange?: QualityRangeFilter
+  qualitySignal?: QualitySignalFilter
   qualityActions?: QualityActionRoute[]
   qualityStatuses?: QualityStatusFilter[]
   qualityFeedback?: QualityFeedbackFilter[]
@@ -98,6 +120,8 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyItemId',
   'historyMessageId',
   'qualityPage',
+  'qualityRange',
+  'qualitySignal',
   'qualityActions',
   'qualityStatuses',
   'qualityFeedback',
@@ -115,6 +139,7 @@ const DEFAULT_ACTIVITY_TAB: ActivityTab = 'needs-attention'
 const DEFAULT_HISTORY_FILTER: HistoryFilter = 'all'
 const DEFAULT_SETTINGS_TAB: SettingsTab = 'workspace'
 const DEFAULT_ACCOUNT_TAB: AccountTab = 'members'
+export const DEFAULT_QUALITY_RANGE: QualityRangeFilter = '30d'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 const parsePositiveInt = (value: string | null): number | undefined => {
@@ -202,6 +227,16 @@ const parseQualityLatency = (value: string | null): QualityLatencyFilter | undef
     ? value
     : undefined
 }
+
+const parseQualityRange = (value: string | null): QualityRangeFilter | undefined =>
+  value !== null && (QUALITY_STATS_RANGES as readonly string[]).includes(value)
+    ? (value as QualityRangeFilter)
+    : undefined
+
+const parseQualitySignal = (value: string | null): QualitySignalFilter | undefined =>
+  value !== null && (QUALITY_SIGNAL_IDS as readonly string[]).includes(value)
+    ? (value as QualitySignalFilter)
+    : undefined
 
 const parseQualityTriageStates = (value: string | null): QualityTriageFilter[] | undefined => {
   if (!value) {
@@ -376,6 +411,12 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityPage && state.qualityPage > 1) {
       normalized.qualityPage = state.qualityPage
     }
+    if (state.qualityRange && state.qualityRange !== DEFAULT_QUALITY_RANGE) {
+      normalized.qualityRange = state.qualityRange
+    }
+    if (state.qualitySignal) {
+      normalized.qualitySignal = state.qualitySignal
+    }
     if (state.qualityActions && state.qualityActions.length > 0) {
       normalized.qualityActions = [...state.qualityActions]
     }
@@ -495,6 +536,12 @@ const buildQueryString = (normalized: DashboardRouteState) => {
   if (normalized.section === 'quality') {
     if (normalized.qualityPage && normalized.qualityPage > 1) {
       searchParams.set('page', String(normalized.qualityPage))
+    }
+    if (normalized.qualityRange) {
+      searchParams.set('range', normalized.qualityRange)
+    }
+    if (normalized.qualitySignal) {
+      searchParams.set('signal', normalized.qualitySignal)
     }
     if (normalized.qualityActions && normalized.qualityActions.length > 0) {
       searchParams.set('actions', serializeQualityActions(normalized.qualityActions))
@@ -774,6 +821,8 @@ export const parseDashboardRoute = (
       section: 'quality',
       workspaceId,
       qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
+      qualityRange: parseQualityRange(searchParams?.get('range') ?? null),
+      qualitySignal: parseQualitySignal(searchParams?.get('signal') ?? null),
       qualityActions: parseQualityActions(searchParams?.get('actions') ?? null),
       qualityStatuses: parseQualityStatuses(searchParams?.get('statuses') ?? null),
       qualityFeedback: parseQualityFeedback(searchParams?.get('feedback') ?? null),

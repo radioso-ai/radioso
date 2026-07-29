@@ -50,15 +50,21 @@ import {
   qualityApi,
   evalsApi,
   skillsApi,
+  QUALITY_SIGNAL_IDS,
   type QualityActionFilter,
   type LowQualityTurn,
+  type QualitySignalId,
+  type QualityStats,
+  type QualityStatsRange,
   type QualityTriageState,
   type SkillCatalogEntry,
   type SkillOwner,
   type SkillOutcomeDefinition,
 } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/api-error'
 import {
   buildDashboardHref,
+  DEFAULT_QUALITY_RANGE,
   type DashboardRouteState,
   type QualityFeedbackFilter,
   type QualityLatencyFilter,
@@ -67,14 +73,8 @@ import {
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
-import {
-  activeQualitySignal,
-  groundingGapActions,
-  ACTIVE_TRIAGE_STATES,
-  SKILL_FAILURE_STATUSES,
-  SLOW_RESPONSE_LATENCY_BUCKET,
-  type QualitySignalId,
-} from '@/lib/quality-signals'
+import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
+import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 
 const PAGE_SIZE = 25
 
@@ -353,38 +353,54 @@ interface QualitySignalDefinition {
   iconClass: string
 }
 
-const QUALITY_SIGNALS: ReadonlyArray<QualitySignalDefinition> = [
-  {
-    id: 'negative_feedback',
+/**
+ * Keyed by the API's signal union rather than listed as an array, so a signal added to the
+ * contract fails to compile here until it has a label and an icon. Deriving the chips from
+ * `QUALITY_SIGNAL_IDS` alone would render a nameless chip instead of failing the build —
+ * a broken affordance is worse than a missing one.
+ */
+const QUALITY_SIGNAL_PRESENTATION: Record<
+  QualitySignalId,
+  Omit<QualitySignalDefinition, 'id'>
+> = {
+  negative_feedback: {
     label: 'Negative feedback',
     description: 'Answers users rated thumbs-down',
     icon: ThumbsDown,
     iconClass: 'text-destructive',
   },
-  {
-    id: 'grounding_gaps',
+  grounding_gaps: {
     label: 'Grounding gaps',
     description: 'No context or degraded evidence',
     icon: FileSearch,
     iconClass: 'text-amber-600 dark:text-amber-400',
   },
-  {
-    id: 'slow_responses',
+  slow_responses: {
     label: 'Slow responses',
     description: '10 seconds or more to answer',
     icon: Clock,
     iconClass: 'text-muted-foreground',
   },
-  {
-    id: 'skill_failures',
+  skill_failures: {
     label: 'Skill failures',
     description: 'The turn’s skill ended in failure',
     icon: CircleX,
     iconClass: 'text-destructive',
   },
-]
+}
 
-function QualitySignalTile({
+// Order and completeness come from the canonical contract array; the presentation record
+// guarantees every entry in it has something to render.
+const QUALITY_SIGNALS: ReadonlyArray<QualitySignalDefinition> = QUALITY_SIGNAL_IDS.map((id) => ({
+  id,
+  ...QUALITY_SIGNAL_PRESENTATION[id],
+}))
+
+/**
+ * Count-forward filter preset for the queue. The count is the all-time active
+ * backlog, so it never disagrees with what clicking the chip shows.
+ */
+function QualitySignalChip({
   signal,
   count,
   active,
@@ -401,40 +417,38 @@ function QualitySignalTile({
       type="button"
       onClick={() => onSelect(active ? null : signal.id)}
       aria-pressed={active}
+      title={signal.description}
       className={cn(
-        'flex items-start justify-between gap-3 rounded-lg border bg-card p-4 text-left transition-colors',
+        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
         'hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        active ? 'border-primary ring-1 ring-primary/30' : 'border-border',
+        active ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary/30' : 'border-border text-muted-foreground',
       )}
     >
-      <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">{signal.label}</p>
-        <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-          {count === null ? '—' : count}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{signal.description}</p>
-      </div>
-      <Icon className={cn('h-4 w-4 shrink-0', signal.iconClass)} aria-hidden />
+      <Icon className={cn('h-3.5 w-3.5 shrink-0', signal.iconClass)} aria-hidden />
+      <span className="tabular-nums text-sm font-semibold text-foreground">
+        {count === null ? '—' : count}
+      </span>
+      <span>{signal.label}</span>
     </button>
   )
 }
 
-function QualitySignalsBar({
+function QualitySignalChips({
   counts,
   activeSignal,
   onSelect,
 }: {
-  counts: Record<QualitySignalId, number | null>
+  counts: Record<QualitySignalId, number> | null
   activeSignal: QualitySignalId | null
   onSelect: (id: QualitySignalId | null) => void
 }) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="flex flex-wrap items-center gap-2" aria-label="Queue signal filters">
       {QUALITY_SIGNALS.map((signal) => (
-        <QualitySignalTile
+        <QualitySignalChip
           key={signal.id}
           signal={signal}
-          count={counts[signal.id]}
+          count={counts ? counts[signal.id] : null}
           active={activeSignal === signal.id}
           onSelect={onSelect}
         />
@@ -522,6 +536,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const triageKey = (routeState.qualityTriageStates ?? []).join(',')
   const latency = routeState.qualityLatency
+  // Health window (zone 1). Deliberately independent of the queue filters below.
+  const range: QualityStatsRange = routeState.qualityRange ?? DEFAULT_QUALITY_RANGE
+  // The queue's signal preset (zone 2), now a first-class server filter rather
+  // than a tuple of client-derived action filters.
+  const activeSignal: QualitySignalId | null = routeState.qualitySignal ?? null
 
   const [items, setItems] = useState<LowQualityTurn[]>([])
   const [total, setTotal] = useState(0)
@@ -536,12 +555,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   } | null>(null)
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [skillCatalog, setSkillCatalog] = useState<SkillCatalogEntry[]>([])
-  const [signalCounts, setSignalCounts] = useState<Record<QualitySignalId, number | null>>({
-    negative_feedback: null,
-    grounding_gaps: null,
-    slow_responses: null,
-    skill_failures: null,
-  })
+  const [stats, setStats] = useState<QualityStats | null>(null)
+  const [statsError, setStatsError] = useState<string | null>(null)
+  const [isStatsFetching, setIsStatsFetching] = useState(false)
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
   // Bumped after a triage change so the active-backlog signal counts refetch.
   const [countsRefreshKey, setCountsRefreshKey] = useState(0)
@@ -586,82 +602,43 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   const actionLookup = useMemo(() => buildActionLookup(skillCatalog), [skillCatalog])
 
-  const groundingActions = useMemo(() => groundingGapActions(skillCatalog), [skillCatalog])
-
-  const decodedActions = useMemo<QualityActionFilter[]>(
-    () =>
-      actions
-        .map(decodeAction)
-        .filter((entry): entry is QualityActionFilter => entry !== null),
-    [actions],
-  )
-
-  const activeSignal = useMemo(
-    () =>
-      activeQualitySignal(
-        { feedback, actions: decodedActions, statuses, triageStates, latency: latency ?? null },
-        groundingActions,
-      ),
-    [feedback, decodedActions, statuses, triageStates, latency, groundingActions],
-  )
-
-  // Stable dependency for the count effect: groundingActions is a fresh array
-  // each render, so depend on its serialized form instead.
-  const groundingActionsKey = groundingActions
-    .map((action) => encodeAction(action.skillName, action.outcome))
-    .join(',')
-
-  // Signal counts are the at-a-glance triage totals across the whole dataset,
-  // independent of the current page or applied filters — cheap `total`-only
-  // probes that reuse the same filters the tiles apply when clicked.
+  // One rollup call backs both zones: windowed rates for the health tiles and the
+  // all-time active backlog for the queue chips. Health is windowed; backlog is not.
   useEffect(() => {
     let cancelled = false
 
-    const countFor = async (
-      options: Parameters<typeof qualityApi.listTurns>[0],
-    ): Promise<number | null> => {
+    const loadStats = async () => {
+      setIsStatsFetching(true)
       try {
-        const page = await qualityApi.listTurns({ ...options, offset: 0, limit: 1 })
-        return page.total
-      } catch {
-        // Signals are an enhancement over the table; a failed probe shows "—"
-        // rather than blocking the page.
-        return null
+        const response = await qualityApi.getStats({ range })
+        if (!cancelled) {
+          setStats(response)
+          setStatsError(null)
+        }
+      } catch (caught) {
+        if (!cancelled) {
+          // Drop the previous rollup rather than leaving it on screen. A refetch
+          // fires after every triage change, so keeping the old object would show
+          // backlog counts that the operator's own action just invalidated —
+          // precisely the dishonest-count problem this view exists to fix. The
+          // chips render "—" for a null count.
+          setStats(null)
+          // Health is an overlay on the queue: degrade to a muted panel and leave
+          // the table fully usable rather than failing the page.
+          setStatsError(getApiErrorMessage(caught, 'Failed to load quality stats'))
+        }
+      } finally {
+        if (!cancelled) {
+          setIsStatsFetching(false)
+        }
       }
     }
 
-    // Only count the active backlog so resolved/dismissed turns drain out.
-    const triageStatesFilter = [...ACTIVE_TRIAGE_STATES]
-    const loadSignalCounts = async () => {
-      const [negative, grounding, slow, failures] = await Promise.all([
-        countFor({ feedback: ['down'], triageStates: triageStatesFilter }),
-        groundingActions.length > 0
-          ? countFor({ actions: groundingActions, triageStates: triageStatesFilter })
-          : Promise.resolve(0),
-        countFor({
-          minTotalLatencyMs: LATENCY_BUCKETS[SLOW_RESPONSE_LATENCY_BUCKET].minTotalLatencyMs,
-          triageStates: triageStatesFilter,
-        }),
-        countFor({ statuses: [...SKILL_FAILURE_STATUSES], triageStates: triageStatesFilter }),
-      ])
-      if (!cancelled) {
-        setSignalCounts({
-          negative_feedback: negative,
-          grounding_gaps: grounding,
-          slow_responses: slow,
-          skill_failures: failures,
-        })
-      }
-    }
-
-    void loadSignalCounts()
+    void loadStats()
     return () => {
       cancelled = true
     }
-    // groundingActionsKey fully captures the grounding-action dependency;
-    // countsRefreshKey forces a refetch after a triage change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groundingActionsKey, countsRefreshKey])
+  }, [range, countsRefreshKey])
 
   const actionFilterGroups = useMemo<ActionFilterGroup[]>(() => {
     const groups = new Map<string, ActionFilterGroup>()
@@ -907,15 +884,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // other filters; selecting the active signal again (null) clears it.
   const applySignal = (signalId: QualitySignalId | null) => {
     navigateWith({
-      qualityFeedback: signalId === 'negative_feedback' ? ['down'] : undefined,
-      qualityActions: signalId === 'grounding_gaps' ? groundingActions : undefined,
-      qualityLatency: signalId === 'slow_responses' ? SLOW_RESPONSE_LATENCY_BUCKET : undefined,
-      qualityStatuses: signalId === 'skill_failures' ? [...SKILL_FAILURE_STATUSES] : undefined,
+      qualitySignal: signalId ?? undefined,
       qualityTriageStates: signalId ? [...ACTIVE_TRIAGE_STATES] : undefined,
+      qualityFeedback: undefined,
+      qualityActions: undefined,
+      qualityLatency: undefined,
+      qualityStatuses: undefined,
       qualityHasComment: undefined,
       qualityPage: undefined,
     })
   }
+
+  // The health window lives in the URL so a shared link reproduces what the
+  // operator was looking at. It never touches the queue's filters or page.
+  const applyRange = (next: QualityStatsRange) => navigateWith({ qualityRange: next })
 
   useEffect(() => {
     let cancelled = false
@@ -939,6 +921,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         setIsFetching(true)
         setError(null)
         const page = await qualityApi.listTurns({
+          signal: activeSignal ?? undefined,
           actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
           statuses: statusesList,
           feedback: feedbackList,
@@ -960,7 +943,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         if (cancelled) {
           return
         }
-        setError(caught instanceof Error ? caught.message : 'Failed to load assistant answers')
+        setError(getApiErrorMessage(caught, 'Failed to load assistant answers'))
       } finally {
         if (!cancelled) {
           setIsFetching(false)
@@ -974,7 +957,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     return () => {
       cancelled = true
     }
-  }, [currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey, turnsRefreshKey])
+  }, [activeSignal, currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey, turnsRefreshKey])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -1020,7 +1003,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         workspacePublicRouteKey: routeState.workspacePublicRouteKey,
       })))
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Failed to create eval case')
+      setError(getApiErrorMessage(caught, 'Failed to create eval case'))
     } finally {
       setCreatingEvalMessageId((current) => (current === turn.assistantMessageId ? null : current))
     }
@@ -1043,7 +1026,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       setCountsRefreshKey((key) => key + 1)
       setTurnsRefreshKey((key) => key + 1)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Failed to update triage state')
+      setError(getApiErrorMessage(caught, 'Failed to update triage state'))
     } finally {
       setPendingTriageId((current) => (current === turn.assistantMessageId ? null : current))
     }
@@ -1091,10 +1074,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     </Button>
   )
 
-  const headerPills =
-    appliedFilterCount > 0 ? (
-      <ActiveFilterPills filters={qualityFilters} values={filterValues} onRemove={removeFilter} />
-    ) : null
+  const hasQueueFilter =
+    activeSignal !== null
+    || statuses.length > 0
+    || actions.length > 0
+    || feedback.length > 0
+    || triageStates.length > 0
+    || hasComment
+    || Boolean(latency)
 
   return (
     <>
@@ -1102,8 +1089,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       title="Quality review"
       description="Triage the answers that need attention — negative feedback, grounding gaps, and slow responses — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
-      actions={filterButton}
-      headerContent={headerPills}
     >
       {error ? (
         <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
@@ -1111,13 +1096,37 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : null}
 
-      <div className="mb-6">
-        <QualitySignalsBar
-          counts={signalCounts}
-          activeSignal={activeSignal}
-          onSelect={applySignal}
+      <div className="mb-8">
+        <QualityHealthRow
+          stats={stats}
+          range={range}
+          onRangeChange={applyRange}
+          isRefreshing={isStatsFetching}
+          error={statsError}
         />
       </div>
+
+      <section aria-labelledby="quality-queue-heading" className="space-y-4">
+        <div>
+          <h2 id="quality-queue-heading" className="text-sm font-medium text-foreground">
+            Queue · all time
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Everything still awaiting triage, with no date bound — an older answer never quietly ages out.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <QualitySignalChips
+            counts={stats?.backlog ?? null}
+            activeSignal={activeSignal}
+            onSelect={applySignal}
+          />
+          {appliedFilterCount > 0 ? (
+            <ActiveFilterPills filters={qualityFilters} values={filterValues} onRemove={removeFilter} />
+          ) : null}
+          {filterButton}
+        </div>
 
       {!hasLoadedOnce ? (
         <div className="flex min-h-48 items-center justify-center">
@@ -1125,9 +1134,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {statuses.length === 0 && actions.length === 0 && feedback.length === 0 && triageStates.length === 0 && !hasComment && !latency
-            ? 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'
-            : 'No assistant turns match these filters. Try clearing one of them.'}
+          {hasQueueFilter
+            ? 'No assistant turns match these filters. Try clearing one of them.'
+            : 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'}
         </div>
       ) : (
         <DashboardPaginatedContent className="space-y-4" isRefreshing={isFetching}>
@@ -1275,6 +1284,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           {renderPagination()}
         </DashboardPaginatedContent>
       )}
+      </section>
     </DashboardPage>
     <FilterDialog
       open={isFilterDialogOpen}

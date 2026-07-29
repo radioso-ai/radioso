@@ -77,10 +77,14 @@ export interface QualityTriageRecord {
 
 export interface ListLowQualityTurnsInput {
   /**
-   * Narrows to one operator signal, resolved server-side from the skill catalog. Layered
-   * on top of the explicit filters below rather than replacing them.
+   * Narrows to the turns carrying **any** of these operator signals, resolved server-side
+   * from the skill catalog. One entry expresses a single chip, several express "anything
+   * worth reviewing" — the queue's default — without a second vocabulary for the two.
+   *
+   * OR across the list, AND with the explicit filters below: a signal narrows the
+   * population, it never replaces a filter the operator set.
    */
-  signal?: QualitySignalId;
+  signals?: QualitySignalId[];
   actions?: QualityActionFilter[];
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];

@@ -94,6 +94,12 @@ export interface DashboardRouteState {
   qualityLatency?: QualityLatencyFilter
   qualityTriageStates?: QualityTriageFilter[]
   qualityHasComment?: boolean
+  /**
+   * Widens the queue past its default. The queue normally shows the active-triage backlog
+   * for the answers carrying a quality signal; this asks for every assistant answer
+   * instead, so "show me everything" stays reachable and shareable.
+   */
+  qualityShowAll?: boolean
   evalCaseId?: string
   anchor?: string
 }
@@ -128,6 +134,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityLatency',
   'qualityTriageStates',
   'qualityHasComment',
+  'qualityShowAll',
   'evalCaseId',
   'anchor',
 ]
@@ -435,6 +442,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityHasComment) {
       normalized.qualityHasComment = true
     }
+    if (state.qualityShowAll) {
+      normalized.qualityShowAll = true
+    }
     return normalized
   }
 
@@ -560,6 +570,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityHasComment) {
       searchParams.set('hasComment', 'true')
+    }
+    if (normalized.qualityShowAll) {
+      searchParams.set('all', 'true')
     }
   }
 
@@ -829,6 +842,7 @@ export const parseDashboardRoute = (
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
       qualityTriageStates: parseQualityTriageStates(searchParams?.get('triage') ?? null),
       qualityHasComment: searchParams?.get('hasComment') === 'true' ? true : undefined,
+      qualityShowAll: searchParams?.get('all') === 'true' ? true : undefined,
     })
   }
 

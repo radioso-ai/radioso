@@ -39,8 +39,8 @@ import {
   TURN_POPULATION_SOURCE,
   bindParam,
   buildActionTuplePredicate,
+  buildAnySignalPredicate,
   buildFeedbackExistsPredicate,
-  buildSignalPredicate,
   buildTurnPopulationFilters,
   type SqlQuery,
 } from "./turnPopulationSql.js";
@@ -125,15 +125,15 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     const feedbackValues = input.feedbackValues ?? [];
     const triageStates = input.triageStates ?? [];
 
-    // A signal is one server-resolved predicate layered on top of the explicit filters,
-    // never a replacement for them.
-    if (input.signal) {
+    // Signals are server-resolved predicates layered on top of the explicit filters, never
+    // a replacement for them: OR within the signal list, AND with everything else. The list
+    // is de-duplicated so a repeated id costs no extra clause.
+    const signals = [...new Set(input.signals ?? [])];
+    if (signals.length > 0) {
+      const tuples = await this.loadGroundedOutcomeTuples(workspaceId);
       filters.push(
-        buildSignalPredicate(
-          resolveQualitySignalPredicate(
-            input.signal,
-            await this.loadGroundedOutcomeTuples(workspaceId),
-          ),
+        buildAnySignalPredicate(
+          signals.map((signal) => resolveQualitySignalPredicate(signal, tuples)),
           params,
         ),
       );

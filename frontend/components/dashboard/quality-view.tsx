@@ -7,6 +7,7 @@ import {
   CircleX,
   Clock,
   FileSearch,
+  ListFilter,
   MessageSquareWarning,
   SquareArrowOutUpRight,
   SlidersHorizontal,
@@ -73,7 +74,7 @@ import {
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
-import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
+import { resolveQueueScope } from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 
 const PAGE_SIZE = 25
@@ -433,14 +434,50 @@ function QualitySignalChip({
   )
 }
 
+/**
+ * The escape hatch from the queue's default. The default hides healthy answers, which is
+ * the point — but an operator who wants to browse everything must be able to say so, and
+ * to share that link.
+ */
+function AllAnswersToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean
+  onToggle: (next: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(!active)}
+      aria-pressed={active}
+      title="Include answers with no quality signal, in any triage state"
+      className={cn(
+        'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+        'hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        active
+          ? 'border-primary bg-primary/10 text-foreground ring-1 ring-primary/30'
+          : 'border-border text-muted-foreground',
+      )}
+    >
+      <ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span>All answers</span>
+    </button>
+  )
+}
+
 function QualitySignalChips({
   counts,
   activeSignal,
   onSelect,
+  showAll,
+  onShowAllChange,
 }: {
   counts: Record<QualitySignalId, number> | null
   activeSignal: QualitySignalId | null
   onSelect: (id: QualitySignalId | null) => void
+  showAll: boolean
+  onShowAllChange: (next: boolean) => void
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2" aria-label="Queue signal filters">
@@ -449,10 +486,11 @@ function QualitySignalChips({
           key={signal.id}
           signal={signal}
           count={counts ? counts[signal.id] : null}
-          active={activeSignal === signal.id}
+          active={!showAll && activeSignal === signal.id}
           onSelect={onSelect}
         />
       ))}
+      <AllAnswersToggle active={showAll} onToggle={onShowAllChange} />
     </div>
   )
 }
@@ -541,6 +579,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // The queue's signal preset (zone 2), now a first-class server filter rather
   // than a tuple of client-derived action filters.
   const activeSignal: QualitySignalId | null = routeState.qualitySignal ?? null
+  // Opting out of the queue's default scope: every answer, any triage state.
+  const showAll = routeState.qualityShowAll ?? false
 
   const [items, setItems] = useState<LowQualityTurn[]>([])
   const [total, setTotal] = useState(0)
@@ -880,12 +920,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const setPage = (next: number) =>
     navigateWith({ qualityPage: next > 1 ? next : undefined })
 
-  // Selecting a signal narrows the table to that active issue class and clears
-  // other filters; selecting the active signal again (null) clears it.
+  // Selecting a signal narrows the table to that active issue class and clears other
+  // filters; selecting the active signal again (null) falls back to the queue default,
+  // which is every signal rather than every answer. Triage is left to the default
+  // resolver instead of being written into the URL, so the chip presets stay one concept.
   const applySignal = (signalId: QualitySignalId | null) => {
     navigateWith({
       qualitySignal: signalId ?? undefined,
-      qualityTriageStates: signalId ? [...ACTIVE_TRIAGE_STATES] : undefined,
+      qualityShowAll: undefined,
+      qualityTriageStates: undefined,
       qualityFeedback: undefined,
       qualityActions: undefined,
       qualityLatency: undefined,
@@ -894,6 +937,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       qualityPage: undefined,
     })
   }
+
+  // "All answers" drops the queue's defaults only. Explicit filters survive, so an
+  // operator who widened the scope keeps the filter pills they set.
+  const applyShowAll = (next: boolean) =>
+    navigateWith({
+      qualityShowAll: next ? true : undefined,
+      qualitySignal: undefined,
+      qualityPage: undefined,
+    })
 
   // The health window lives in the URL so a shared link reproduces what the
   // operator was looking at. It never touches the queue's filters or page.
@@ -910,8 +962,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       : undefined
     const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
-    const triageList = triageKey ? (triageKey.split(',') as QualityTriageState[]) : undefined
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
+    // The queue defaults to work that needs doing; the operator's own choices override it.
+    const queueScope = resolveQueueScope({
+      showAll,
+      signal: activeSignal,
+      triageStates: triageKey ? (triageKey.split(',') as QualityTriageState[]) : [],
+    })
 
     const loadTurns = async () => {
       try {
@@ -921,11 +978,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         setIsFetching(true)
         setError(null)
         const page = await qualityApi.listTurns({
-          signal: activeSignal ?? undefined,
+          signal: queueScope.signals,
           actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
           statuses: statusesList,
           feedback: feedbackList,
-          triageStates: triageList,
+          triageStates: queueScope.triageStates,
           hasComment: hasComment || undefined,
           minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
           maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
@@ -957,7 +1014,18 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     return () => {
       cancelled = true
     }
-  }, [activeSignal, currentPage, feedbackKey, hasComment, latency, actionsKey, statusesKey, triageKey, turnsRefreshKey])
+  }, [
+    activeSignal,
+    showAll,
+    currentPage,
+    feedbackKey,
+    hasComment,
+    latency,
+    actionsKey,
+    statusesKey,
+    triageKey,
+    turnsRefreshKey,
+  ])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -1112,7 +1180,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             Queue · all time
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Everything still awaiting triage, with no date bound — an older answer never quietly ages out.
+            {showAll
+              ? 'Every assistant answer, with no date bound — including the ones carrying no signal and the ones already triaged.'
+              : 'Answers carrying a signal and still awaiting triage, with no date bound — an older answer never quietly ages out.'}
           </p>
         </div>
 
@@ -1121,6 +1191,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             counts={stats?.backlog ?? null}
             activeSignal={activeSignal}
             onSelect={applySignal}
+            showAll={showAll}
+            onShowAllChange={applyShowAll}
           />
           {appliedFilterCount > 0 ? (
             <ActiveFilterPills filters={qualityFilters} values={filterValues} onRemove={removeFilter} />
@@ -1136,7 +1208,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
           {hasQueueFilter
             ? 'No assistant turns match these filters. Try clearing one of them.'
-            : 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'}
+            : showAll
+              ? 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'
+              : 'Nothing is waiting for triage. Turn on All answers to browse every answer, including the healthy ones.'}
         </div>
       ) : (
         <DashboardPaginatedContent className="space-y-4" isRefreshing={isFetching}>

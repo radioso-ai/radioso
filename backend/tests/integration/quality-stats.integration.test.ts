@@ -460,7 +460,7 @@ describeIfDatabase("quality stats integration", () => {
     const service = createService();
     const page = await service.listLowQualityTurns(workspaceId, {
       limit: 25,
-      signal: "grounding_gaps",
+      signals: ["grounding_gaps"],
       triageStates: ["open", "acknowledged"],
     });
 
@@ -483,7 +483,7 @@ describeIfDatabase("quality stats integration", () => {
 
     const page = await createService().listLowQualityTurns(workspaceId, {
       limit: 25,
-      signal: "slow_responses",
+      signals: ["slow_responses"],
     });
 
     expect(page.items.map((item) => item.assistantMessageId)).toEqual([slow]);

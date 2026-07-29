@@ -192,3 +192,25 @@ export const buildSignalPredicate = (
       return buildSkillStatusPredicate(predicate.statuses, params);
   }
 };
+
+/**
+ * Matches a turn carrying any of the given signals.
+ *
+ * Every per-signal predicate is a scalar test or a correlated EXISTS over the row already
+ * in scope, so OR-ing them narrows the same single scan of the turn population rather than
+ * fanning it out: a turn that is both slow and down-voted is still exactly one row. A join
+ * or `UNION ALL` per signal would duplicate it, which is why neither is used.
+ *
+ * `slow_responses` inlines the resolved-latency expression, and it stays correct inside an
+ * OR because the expression is a correlated scalar over `m` rather than anything the query
+ * has to join in. Combining signals therefore never changes whether latency is available.
+ */
+export const buildAnySignalPredicate = (
+  predicates: readonly QualitySignalPredicate[],
+  params: unknown[],
+): string => {
+  const clauses = predicates.map((predicate) => buildSignalPredicate(predicate, params));
+  // A single signal emits exactly the predicate it always did — no wrapper, so the
+  // one-signal query is byte-identical to the pre-list behaviour.
+  return clauses.length === 1 ? clauses[0]! : `(${clauses.join("\n           OR ")})`;
+};

@@ -53,7 +53,9 @@ const actionTupleSchema = z
   });
 
 const turnsQuerySchema = z.object({
-  signal: signalSchema.optional(),
+  // One or more signals, CSV or repeated. A turn matches if it satisfies any of them, so a
+  // single id is one chip and the full list is "anything worth reviewing".
+  signal: csvOrArray(signalSchema),
   actions: csvOrArray(actionTupleSchema),
   statuses: csvOrArray(
     z.enum([
@@ -113,7 +115,7 @@ export const createQualityRoutes = (
       const query = parseRequest(turnsQuerySchema, req.query, "Invalid quality turns query");
       const { workspaceId } = res.locals as { workspaceId: string };
       const page = await service.listLowQualityTurns(workspaceId, {
-        signal: query.signal,
+        signals: query.signal,
         actions: query.actions,
         statuses: query.statuses,
         feedbackValues: query.feedback,

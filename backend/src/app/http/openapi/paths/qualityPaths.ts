@@ -26,9 +26,12 @@ export const registerQualityPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       query: z.object({
-        signal: schemas.QualitySignalIdSchema
+        signal: csvOrArrayString
           .describe(
-            "Narrows to one operator signal, resolved server-side from the skill catalog. Layered on top of the other filters.",
+            "Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, " +
+            "`slow_responses`, `skill_failures`), resolved server-side from the skill catalog. " +
+            "A turn matches if it carries any listed signal, and the result is layered on top " +
+            "of the other filters rather than replacing them.",
           )
           .optional(),
         actions: csvOrArrayString

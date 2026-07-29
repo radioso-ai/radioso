@@ -481,6 +481,42 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips the All answers escape hatch, omitting it when off', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityShowAll: true,
+    })).toBe('/w/ws-key/quality?all=true')
+
+    // Off is the default queue scope, so it never reaches the URL.
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityShowAll: false,
+    })).toBe('/w/ws-key/quality')
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'true' }))).toEqual({
+      section: 'quality',
+      qualityShowAll: true,
+    })
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'false' }))).toEqual({
+      section: 'quality',
+    })
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({ all: 'yes' }))).toEqual({
+      section: 'quality',
+    })
+
+    // It survives alongside the filters it is meant to widen.
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      all: 'true',
+      feedback: 'down',
+    }))).toEqual({
+      section: 'quality',
+      qualityShowAll: true,
+      qualityFeedback: ['down'],
+    })
+  })
+
   // Route state and the fetch layer must speak one vocabulary. If the backend adds a
   // signal or a range, this fails until the URL parser accepts it too — otherwise a
   // valid link would be silently dropped on parse.

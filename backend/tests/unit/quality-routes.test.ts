@@ -348,8 +348,39 @@ describe("quality routes", () => {
 
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
-      signal: "grounding_gaps",
+      signals: ["grounding_gaps"],
       triageStates: ["open", "acknowledged"],
+      limit: 25,
+    });
+  });
+
+  it("parses a comma-separated signal list", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ signal: "negative_feedback,grounding_gaps, slow_responses ,skill_failures" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      signals: ["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"],
+      limit: 25,
+    });
+  });
+
+  it("parses a repeated signal param", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns?signal=slow_responses&signal=skill_failures")
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(200);
+    expect(service.calls[0]?.input).toEqual({
+      signals: ["slow_responses", "skill_failures"],
       limit: 25,
     });
   });
@@ -361,6 +392,19 @@ describe("quality routes", () => {
     const response = await request(app)
       .get("/api/v1/quality/turns")
       .query({ signal: "vibes" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.calls).toHaveLength(0);
+  });
+
+  it("rejects a signal list containing an unknown id", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ signal: "grounding_gaps,vibes" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(400);

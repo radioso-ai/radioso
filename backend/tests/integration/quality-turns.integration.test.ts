@@ -544,6 +544,144 @@ describeIfDatabase("quality turns integration", () => {
     expect(filtered.total).toBe(1);
   });
 
+  it("returns the union of several signals, counting a turn that matches two only once", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const conversationId = randomUUID();
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Signal Union Account", `signals-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Signal Union WS", `su-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      `INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`,
+      [agentId, workspaceId, "Signal Bot"],
+    );
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
+       VALUES ($1, $2, $3, 'embed')`,
+      [conversationId, workspaceId, agentId],
+    );
+
+    const gapMessageId = randomUUID();
+    const downVotedMessageId = randomUUID();
+    const slowMessageId = randomUUID();
+    const failedMessageId = randomUUID();
+    // Slow *and* down-voted: the row an OR built out of joins or UNION ALL would return twice.
+    const doubleSignalMessageId = randomUUID();
+    const healthyMessageId = randomUUID();
+
+    await database.query(
+      `INSERT INTO messages
+         (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, total_latency_ms, created_at)
+       VALUES
+         ($1, $7, $8, 'assistant', 'No context answer',  'retrieval.answer', 'no_context',           'completed',   900, $9),
+         ($2, $7, $8, 'assistant', 'Disliked answer',    'retrieval.answer', 'grounded',             'completed',   950, $10),
+         ($3, $7, $8, 'assistant', 'Slow answer',        'retrieval.answer', 'grounded',             'completed', 12000, $11),
+         ($4, $7, $8, 'assistant', 'Broken skill',       'retrieval.answer', 'clarification_needed', 'failed',      800, $12),
+         ($5, $7, $8, 'assistant', 'Slow and disliked',  'retrieval.answer', 'grounded',             'completed', 15000, $13),
+         ($6, $7, $8, 'assistant', 'Healthy answer',     'retrieval.answer', 'grounded',             'completed',   700, $14)`,
+      [
+        gapMessageId,
+        downVotedMessageId,
+        slowMessageId,
+        failedMessageId,
+        doubleSignalMessageId,
+        healthyMessageId,
+        conversationId,
+        workspaceId,
+        "2026-05-27T09:00:00.000Z",
+        "2026-05-27T09:00:01.000Z",
+        "2026-05-27T09:00:02.000Z",
+        "2026-05-27T09:00:03.000Z",
+        "2026-05-27T09:00:04.000Z",
+        "2026-05-27T09:00:05.000Z",
+      ],
+    );
+
+    // Two down votes on the doubly-signalled turn, so a fanned-out feedback join would
+    // duplicate it a second way.
+    await database.query(
+      `INSERT INTO assistant_answer_feedback
+         (id, workspace_id, conversation_id, assistant_message_id, actor_type, actor_id, value, comment)
+       VALUES
+         ($1, $2, $3, $4, 'authenticated_user', 'user-1', 'down', NULL),
+         ($5, $2, $3, $6, 'authenticated_user', 'user-1', 'down', NULL),
+         ($7, $2, $3, $6, 'authenticated_user', 'user-2', 'down', NULL)`,
+      [
+        randomUUID(),
+        workspaceId,
+        conversationId,
+        downVotedMessageId,
+        randomUUID(),
+        doubleSignalMessageId,
+        randomUUID(),
+      ],
+    );
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+
+    const union = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"],
+    });
+
+    const unionIds = union.items.map((item) => item.assistantMessageId);
+    expect([...unionIds].sort()).toEqual(
+      [
+        gapMessageId,
+        downVotedMessageId,
+        slowMessageId,
+        failedMessageId,
+        doubleSignalMessageId,
+      ].sort(),
+    );
+    // Exactly once each, and the healthy turn is not in the queue at all.
+    expect(new Set(unionIds).size).toBe(unionIds.length);
+    expect(unionIds).not.toContain(healthyMessageId);
+    expect(union.total).toBe(5);
+
+    // A two-signal query is the union of the two, still deduplicated.
+    const slowOrNegative = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["slow_responses", "negative_feedback"],
+    });
+    expect([...slowOrNegative.items.map((item) => item.assistantMessageId)].sort()).toEqual(
+      [downVotedMessageId, slowMessageId, doubleSignalMessageId].sort(),
+    );
+    expect(slowOrNegative.total).toBe(3);
+
+    // A repeated id is not a second predicate.
+    const repeated = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["skill_failures", "skill_failures"],
+    });
+    expect(repeated.items.map((item) => item.assistantMessageId)).toEqual([failedMessageId]);
+    expect(repeated.total).toBe(1);
+
+    // One signal behaves exactly as it did before the list.
+    const gapsOnly = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["grounding_gaps"],
+    });
+    expect(gapsOnly.items.map((item) => item.assistantMessageId)).toEqual([gapMessageId]);
+    expect(gapsOnly.total).toBe(1);
+
+    // Signals AND the explicit filters: the union narrowed to failed skills only.
+    const unionWithStatus = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"],
+      statuses: ["failed"],
+    });
+    expect(unionWithStatus.items.map((item) => item.assistantMessageId)).toEqual([failedMessageId]);
+    expect(unionWithStatus.total).toBe(1);
+  });
+
   it("returns null when setting triage on a turn outside the workspace", async () => {
     const accountId = randomUUID();
     const workspaceId = randomUUID();

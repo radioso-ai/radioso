@@ -22,6 +22,14 @@ it does not know SQL. The query layer decides how a predicate becomes a
 statement. Signal meaning is never expressed as keyword or outcome-name
 matching, so it stays correct across locales and as skills evolve.
 
+`GET /quality/turns` takes one signal or several, and several means **any of
+them**: the per-signal predicates are OR-ed into a single clause, which is then
+AND-ed with the explicit filters. Every predicate is a scalar test or a
+correlated `EXISTS` over the row already in scope, so a turn carrying two
+signals is still exactly one row — a join or `UNION ALL` per signal would list
+it twice. This is what lets the dashboard queue ask for "anything worth
+reviewing" and a chip ask for one signal through the same parameter.
+
 Grounding derives from the catalog's `groundedAnswer` flag. **An absent flag is
 not `false`.** An outcome such as a clarifying question deliberately omits the
 flag: it neither grounded an answer nor failed to, so it belongs to neither the

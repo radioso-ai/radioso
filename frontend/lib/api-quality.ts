@@ -123,7 +123,11 @@ export interface GetQualityStatsOptions {
 }
 
 export interface ListLowQualityTurnsOptions {
-  signal?: QualitySignalId
+  /**
+   * One signal or several. Several means "any of these" server-side, which is how the
+   * queue asks for everything worth reviewing without a second vocabulary for it.
+   */
+  signal?: QualitySignalId | readonly QualitySignalId[]
   actions?: QualityActionFilter[]
   statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
@@ -137,6 +141,18 @@ export interface ListLowQualityTurnsOptions {
   limit?: number
 }
 
+const encodeSignals = (
+  signal: QualitySignalId | readonly QualitySignalId[] | undefined,
+): string | undefined => {
+  if (signal === undefined) {
+    return undefined
+  }
+  if (typeof signal === 'string') {
+    return signal
+  }
+  return signal.length > 0 ? signal.join(',') : undefined
+}
+
 const encodeActions = (actions: QualityActionFilter[] | undefined): string | undefined => {
   if (!actions || actions.length === 0) {
     return undefined
@@ -147,7 +163,7 @@ const encodeActions = (actions: QualityActionFilter[] | undefined): string | und
 export const qualityApi = {
   async listTurns(options: ListLowQualityTurnsOptions = {}): Promise<LowQualityTurnsPage> {
     const query: Record<string, string | undefined> = {
-      signal: options.signal,
+      signal: encodeSignals(options.signal),
       actions: encodeActions(options.actions),
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,

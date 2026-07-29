@@ -16858,8 +16858,8 @@ export interface operations {
     listLowQualityTurns: {
         parameters: {
             query?: {
-                /** @description Narrows to one operator signal, resolved server-side from the skill catalog. Layered on top of the other filters. */
-                signal?: components["schemas"]["QualitySignalId"] & unknown;
+                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
+                signal?: string;
                 /** @description Comma-separated `skillName:outcome` tuples, e.g. `retrieval.answer:no_context`. */
                 actions?: string;
                 /** @description Comma-separated `QualitySkillStatus` values. */

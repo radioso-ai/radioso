@@ -1659,7 +1659,15 @@ CREATE TABLE public.messages (
     skill_outcome text,
     skill_status text,
     source text,
-    total_latency_ms integer
+    total_latency_ms integer,
+    grounding_verdict text,
+    grounding_claim_count integer,
+    grounding_sourced_claim_count integer,
+    grounding_unsourced_claim_count integer,
+    grounding_invalid_source_count integer,
+    CONSTRAINT messages_grounding_complete_check CHECK ((((grounding_verdict IS NULL) AND (grounding_claim_count IS NULL) AND (grounding_sourced_claim_count IS NULL) AND (grounding_unsourced_claim_count IS NULL) AND (grounding_invalid_source_count IS NULL)) OR ((grounding_verdict IS NOT NULL) AND (grounding_claim_count IS NOT NULL) AND (grounding_sourced_claim_count IS NOT NULL) AND (grounding_unsourced_claim_count IS NOT NULL) AND (grounding_invalid_source_count IS NOT NULL)))),
+    CONSTRAINT messages_grounding_counts_check CHECK (((grounding_claim_count IS NULL) OR ((grounding_claim_count >= 0) AND (grounding_sourced_claim_count >= 0) AND (grounding_unsourced_claim_count >= 0) AND (grounding_invalid_source_count >= 0) AND ((grounding_sourced_claim_count + grounding_unsourced_claim_count) = grounding_claim_count)))),
+    CONSTRAINT messages_grounding_verdict_check CHECK (((grounding_verdict IS NULL) OR (grounding_verdict = ANY (ARRAY['grounded'::text, 'degraded'::text, 'no_support'::text]))))
 );
 
 

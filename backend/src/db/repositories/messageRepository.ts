@@ -5,6 +5,7 @@ import type { MessageSource } from "@radioso/conversation-contract";
 import { clockTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -22,6 +23,7 @@ export interface MessageRecord {
   skillStatus?: string;
   /** Turn wall time in milliseconds. Assistant turns only; absent when the turn produced no measurement. */
   totalLatencyMs?: number;
+  grounding?: GroundingDiagnosticSnapshot;
   createdAt: Date;
 }
 
@@ -76,6 +78,7 @@ export interface MessageRepositoryPort {
     skillOutcome?: string;
     skillStatus?: string;
     totalLatencyMs?: number;
+    grounding?: GroundingDiagnosticSnapshot;
   }): Promise<MessageRecord>;
 }
 
@@ -91,6 +94,11 @@ export interface MessageRow {
   skill_outcome: string | null;
   skill_status: string | null;
   total_latency_ms: number | null;
+  grounding_verdict: GroundingDiagnosticSnapshot["verdict"] | null;
+  grounding_claim_count: number | null;
+  grounding_sourced_claim_count: number | null;
+  grounding_unsourced_claim_count: number | null;
+  grounding_invalid_source_count: number | null;
   created_at: Date;
 }
 
@@ -145,6 +153,11 @@ const messageColumns = [
   "skill_outcome",
   "skill_status",
   "total_latency_ms",
+  "grounding_verdict",
+  "grounding_claim_count",
+  "grounding_sourced_claim_count",
+  "grounding_unsourced_claim_count",
+  "grounding_invalid_source_count",
   "created_at",
 ] as const;
 
@@ -163,6 +176,15 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
   skillOutcome: row.skill_outcome ?? undefined,
   skillStatus: row.skill_status ?? undefined,
   totalLatencyMs: row.total_latency_ms ?? undefined,
+  grounding: row.grounding_verdict === null
+    ? undefined
+    : {
+        verdict: row.grounding_verdict,
+        claimCount: row.grounding_claim_count!,
+        sourcedClaimCount: row.grounding_sourced_claim_count!,
+        unsourcedClaimCount: row.grounding_unsourced_claim_count!,
+        invalidSourceCount: row.grounding_invalid_source_count!,
+      },
   createdAt: new Date(row.created_at),
 });
 
@@ -413,6 +435,7 @@ export class MessageRepository implements MessageRepositoryPort {
     skillOutcome?: string;
     skillStatus?: string;
     totalLatencyMs?: number;
+    grounding?: GroundingDiagnosticSnapshot;
   }): Promise<MessageRecord> {
     const metadata = {
       ...(input.metadata ?? input.inputMetadata ?? {}),
@@ -439,6 +462,11 @@ export class MessageRepository implements MessageRepositoryPort {
         skill_outcome: input.skillOutcome ?? null,
         skill_status: input.skillStatus ?? null,
         total_latency_ms: input.totalLatencyMs ?? null,
+        grounding_verdict: input.grounding?.verdict ?? null,
+        grounding_claim_count: input.grounding?.claimCount ?? null,
+        grounding_sourced_claim_count: input.grounding?.sourcedClaimCount ?? null,
+        grounding_unsourced_claim_count: input.grounding?.unsourcedClaimCount ?? null,
+        grounding_invalid_source_count: input.grounding?.invalidSourceCount ?? null,
         created_at: clockTimestamp(),
       })
       .returning(messageColumns)

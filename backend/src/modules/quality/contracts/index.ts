@@ -1,3 +1,10 @@
+import type {
+  GroundingDiagnosticSnapshot,
+  GroundingVerdict,
+} from "../../../shared/domain/groundingDiagnostic.js";
+
+export type { GroundingDiagnosticSnapshot, GroundingVerdict };
+
 export type QualitySkillStatus =
   | "active"
   | "paused"
@@ -67,6 +74,7 @@ export interface LowQualityTurn {
   skillOutcome: string | null;
   skillStatus: string | null;
   totalLatencyMs: number | null;
+  grounding: GroundingDiagnosticSnapshot | null;
   createdAt: string;
   feedback: QualityFeedbackSummary;
   triage: QualityTriageRecord;
@@ -104,6 +112,9 @@ export interface ListLowQualityTurnsInput {
   hasComment?: boolean;
   minTotalLatencyMs?: number;
   maxTotalLatencyMs?: number;
+  groundingVerdicts?: GroundingVerdict[];
+  hasUnsourcedClaims?: boolean;
+  hasInvalidSources?: boolean;
   agentId?: string;
   channel?: string;
   from?: string;

@@ -318,6 +318,13 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
 
     const create = vi.mocked(messageRepository.create);
     const assistantMessage = create.mock.calls[0]?.[0];
+    expect(assistantMessage?.grounding).toEqual({
+      verdict: "degraded",
+      claimCount: 2,
+      sourcedClaimCount: 1,
+      unsourcedClaimCount: 1,
+      invalidSourceCount: 0,
+    });
     expect(assistantMessage?.metadata?.contextVariables).toEqual({
       page_context: {
         kind: "page_context",
@@ -809,6 +816,13 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(auditService.record).not.toHaveBeenCalled();
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.assistantMessage.grounding).toEqual({
+      verdict: "degraded",
+      claimCount: 2,
+      sourcedClaimCount: 1,
+      unsourcedClaimCount: 1,
+      invalidSourceCount: 0,
+    });
     expect(persisted.actions).toEqual([{ type: "contact.send", payload: { email: "alex@example.com" } }]);
     expect(persisted.routineStateTransition).toEqual({ kind: "clear", sessionId: "conv_1" });
     expect(persisted.pendingDecisionTransition).toBeUndefined();

@@ -6,6 +6,7 @@ import {
   type AssistantTurnOutcome,
   SKILL_TURN_OUTCOME,
   type SkillTurnOutcome,
+  type TurnDeclineReason,
   legacyAnswerOutcomeForSkillTurnOutcome,
 } from "./assistantTurnOutcomeTypes.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
@@ -53,6 +54,18 @@ export interface ChatPresentedAnswer {
    * chat→engine adapter forwards the recognized keys onto the trace.
    */
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * What the composer concluded about the answer it produced: how well evidence
+ * supported it, and — when the composer already knows, because it composed the
+ * decline itself — why the turn declined. One named parameter rather than a growing
+ * tail of positional arguments; a decline reason carried on the grounding summary
+ * needs no second argument at all.
+ */
+export interface AnswerVerdict {
+  grounding?: GroundingSummary | GroundingVerdict;
+  declineReason?: TurnDeclineReason;
 }
 
 export interface SkillOutcomeCapabilityProvider {
@@ -244,9 +257,9 @@ export class ChatAnswerPresenter {
     query: string,
     plannedSuggestions: PlannedEnvelopeSuggestion[],
     userExpectedLocale?: string | null,
-    grounding: GroundingSummary | GroundingVerdict = "grounded",
+    verdict: AnswerVerdict = {},
   ): Promise<ChatPresentedAnswer> {
-    const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale, grounding);
+    const presentation = await this.presentWithoutSuggestions(session, answer, query, userExpectedLocale, verdict);
     const withQuestionSuggestions = this.applyAssistantSuggestions(session, presentation, plannedSuggestions);
     return await this.applyActionSuggestions(session, withQuestionSuggestions, userExpectedLocale);
   }
@@ -256,8 +269,9 @@ export class ChatAnswerPresenter {
     answer: string,
     query: string,
     userExpectedLocale?: string | null,
-    grounding: GroundingSummary | GroundingVerdict = "grounded",
+    verdict: AnswerVerdict = {},
   ): Promise<ChatPresentedAnswer> {
+    const grounding = verdict.grounding ?? "grounded";
     const citationEvidence = toCitationEvidence(session);
     const groundingSummary = typeof grounding === "string" ? undefined : grounding;
     const groundingVerdict = typeof grounding === "string" ? grounding : grounding.verdict;
@@ -277,7 +291,11 @@ export class ChatAnswerPresenter {
 
     if (groundingVerdict === "no_support" || session.retrieval.contexts.length === 0) {
       return {
-        ...this.presentNoContextRefusal(answer, citationEvidence),
+        ...this.presentNoContextRefusal(
+          answer,
+          citationEvidence,
+          verdict.declineReason ?? groundingSummary?.declineReason ?? "content_gap",
+        ),
         grounding: groundingVerdict,
         groundingSummary,
         groundingDiagnostics,
@@ -377,23 +395,30 @@ export class ChatAnswerPresenter {
   private presentNoContextRefusal(
     answer: string,
     citationEvidence: CitationEvidence[],
+    declineReason: TurnDeclineReason,
   ): ChatPresentedAnswer {
     const presented = this.answerPresentationService.present({
       answer,
       citations: citationEvidence,
     });
+    const declineOutcome = declineReason === "out_of_scope"
+      ? SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE
+      : SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT;
 
     return withLegacyAnswerOutcome({
       ...presented,
       suggestions: undefined,
       planningCitations: [],
-      skillName: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.skillName,
-      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
-      skillStatus: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.status,
+      skillName: declineOutcome.skillName,
+      skillOutcome: declineOutcome.outcome,
+      skillStatus: declineOutcome.status,
     });
   }
 
-  presentGroundedMissAnswer(answer: string): ChatPresentedAnswer {
-    return this.presentNoContextRefusal(answer, []);
+  presentGroundedMissAnswer(
+    answer: string,
+    declineReason: TurnDeclineReason = "content_gap",
+  ): ChatPresentedAnswer {
+    return this.presentNoContextRefusal(answer, [], declineReason);
   }
 }

@@ -112,7 +112,13 @@ const focusedGroundedMiss = "I couldn't find supporting material for that in you
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
-    return focusedGroundedMiss;
+    return { text: focusedGroundedMiss, declineReason: "content_gap" };
+  },
+};
+
+const outOfScopeReplyComposer: FallbackReplyComposer = {
+  async composeNoContext() {
+    return { text: "That's outside what I can help with.", declineReason: "out_of_scope" };
   },
 };
 
@@ -1121,6 +1127,7 @@ describe("chat service streaming", () => {
     handoffOnRetrievalMiss: boolean;
     retrievalPipeline: ReturnType<typeof createRetrievalMissPipeline> | ReturnType<typeof createGroundedPipeline>;
     chatGateway: ChatGateway;
+    fallbackComposer?: FallbackReplyComposer;
   }) => {
     const { agentService } = await createAgentServiceWithRetrievalMissHandoff(input.handoffOnRetrievalMiss);
     const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
@@ -1130,7 +1137,7 @@ describe("chat service streaming", () => {
       new RetrievalTurnController(asChatActivityPipeline(input.retrievalPipeline) as never),
       input.chatGateway,
       createAuditService(),
-      fallbackReplyComposer,
+      input.fallbackComposer ?? fallbackReplyComposer,
       undefined,
       undefined,
       undefined,
@@ -2730,6 +2737,29 @@ describe("chat service streaming", () => {
         reason: "retrieval_miss",
       }),
     });
+  });
+
+  it("does not hand off an out-of-scope decline, which is not a retrieval miss", async () => {
+    const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
+      handoffOnRetrievalMiss: true,
+      retrievalPipeline: createRetrievalMissPipeline(),
+      fallbackComposer: outOfScopeReplyComposer,
+      chatGateway: {
+        async answer() {
+          return "unused";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "what is the capital of Mars", stream: false });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome);
+    expect(persisted.ownershipHandoff).toBeNull();
+    expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
   });
 
   it("does not request ownership or notify operators for non-streaming retrieval misses when the agent is not opted in", async () => {
@@ -4417,7 +4447,10 @@ describe("chat service streaming", () => {
     const fallbackComposer: FallbackReplyComposer = {
       async composeNoContext(input) {
         observedNoContextInstruction = input.answerInstructionBlock ?? "";
-        return "I can't tell from that. I can help you choose and book Ananda courses.";
+        return {
+          text: "I can't tell from that. I can help you choose and book Ananda courses.",
+          declineReason: "content_gap",
+        };
       },
     };
     const service = makeChatService(
@@ -5236,7 +5269,7 @@ describe("chat service streaming", () => {
     const focusedDeclineComposer: FallbackReplyComposer = {
       async composeNoContext(input) {
         declineAttemptKeys.push(input.usageContext.attemptKey);
-        return focusedDecline;
+        return { text: focusedDecline, declineReason: "content_gap" };
       },
     };
     const service = makeChatService(
@@ -7155,7 +7188,7 @@ describe("chat service streaming", () => {
     const fallbackComposer: FallbackReplyComposer = {
       async composeNoContext() {
         groundedMissCalls += 1;
-        return "I couldn't find supporting material.";
+        return { text: "I couldn't find supporting material.", declineReason: "content_gap" };
       },
     };
     const service = makeChatService(

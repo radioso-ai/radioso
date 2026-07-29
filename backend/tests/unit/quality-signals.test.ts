@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SkillCatalogOutcomeSource } from "../../src/modules/quality/infra/skillCatalogOutcomeSource.js";
-import type { SkillCatalogService } from "../../src/modules/skills/public.js";
+import { retrievalAnswerSkillDefinition, type SkillCatalogService } from "../../src/modules/skills/public.js";
 import {
   QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES,
   SKILL_FAILURE_STATUSES,
@@ -49,6 +49,26 @@ describe("resolveGroundedOutcomeTuples", () => {
 
     expect(tuples.grounded).toEqual([]);
     expect(tuples.gaps).toEqual([]);
+  });
+
+  it("leaves the shipped retrieval.answer out-of-scope decline out of both sides of the rate", () => {
+    // Derived from the real catalog: `out_of_scope` is excluded because the catalog omits
+    // the flag, not because anything in this module matches on the outcome name.
+    const tuples = resolveGroundedOutcomeTuples([
+      {
+        name: retrievalAnswerSkillDefinition.name,
+        outcomes: retrievalAnswerSkillDefinition.outcomes?.map((entry) => ({
+          name: entry.name,
+          ...(entry.groundedAnswer === undefined ? {} : { groundedAnswer: entry.groundedAnswer }),
+        })),
+      },
+    ]);
+
+    expect(tuples.grounded).toEqual([
+      { skillName: "retrieval.answer", outcome: "grounded" },
+      { skillName: "retrieval.answer", outcome: "grounded_degraded" },
+    ]);
+    expect(tuples.gaps).toEqual([{ skillName: "retrieval.answer", outcome: "no_context" }]);
   });
 
   it("tolerates skills with no outcomes at all", () => {

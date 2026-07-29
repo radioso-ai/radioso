@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getGroundedMissFallback,
   ModelFallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { buildTurnInterpretationPrompt } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
@@ -94,7 +95,118 @@ describe("grounded miss response composer", () => {
         query: "What is the capital of France?",
         usageContext,
       }),
-    ).resolves.toBe("MODEL_NO_CONTEXT");
+    ).resolves.toEqual({ text: "MODEL_NO_CONTEXT", declineReason: "content_gap" });
+  });
+
+  it("asks the provider for a strict decline schema and returns the classified reply", async () => {
+    let observedRequest: { responseFormat?: { name: string; strict: boolean; schema: Record<string, unknown> } } = {};
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete(request) {
+        observedRequest = request;
+        return textResult(JSON.stringify({
+          reply: "That's outside what I can help with, but I can help with our courses.",
+          declineReason: "out_of_scope",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    const result = await composer.composeNoContext({ query: "What is the capital of Mars?", usageContext });
+
+    expect(result).toEqual({
+      text: "That's outside what I can help with, but I can help with our courses.",
+      declineReason: "out_of_scope",
+    });
+    expect(observedRequest.responseFormat?.strict).toBe(true);
+    const properties = observedRequest.responseFormat?.schema.properties as Record<string, { enum?: string[] }>;
+    expect(properties.declineReason?.enum).toEqual(["content_gap", "out_of_scope"]);
+  });
+
+  it("classifies an in-remit decline as a content gap", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({ reply: "I can't confirm that today.", declineReason: "content_gap" }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "What does the refund policy say?", usageContext }))
+      .resolves.toEqual({ text: "I can't confirm that today.", declineReason: "content_gap" });
+  });
+
+  it("degrades to a content gap when the model returns an unusable classification", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({ reply: "Not my area.", declineReason: "definitely_not_a_reason" }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
+      .resolves.toEqual({ text: "Not my area.", declineReason: "content_gap" });
+  });
+
+  it("never shows a truncated decline envelope to the visitor", async () => {
+    // The cap has to cover a reasoning pass plus the reply, so a truncated structured
+    // response is a real failure mode here. Half-written JSON must not become visible text.
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult('{"reply":"I can\'t help with th');
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    const result = await composer.composeNoContext({ query: "Anything", usageContext });
+
+    expect(result.text).toBe(getGroundedMissFallback());
+    expect(result.declineReason).toBe("content_gap");
+  });
+
+  it("still returns bare prose from a provider that did not honor the schema", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult("That's outside what I can help with.");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    await expect(composer.composeNoContext({ query: "Anything", usageContext }))
+      .resolves.toEqual({ text: "That's outside what I can help with.", declineReason: "content_gap" });
+  });
+
+  it("applies the length guard to the reply field", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: { capability: "chat", provider: "openai", model: "test-model" },
+      async complete() {
+        return textResult(JSON.stringify({
+          reply: "x".repeat(CHAT_BEHAVIOR.groundedMiss.maxResponseLength + 1),
+          declineReason: "out_of_scope",
+        }));
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    const result = await composer.composeNoContext({ query: "Anything", usageContext });
+
+    expect(result.text).toBe(getGroundedMissFallback());
+    expect(result.declineReason).toBe("content_gap");
   });
 
   it("requests minimal reasoning effort with budget for the decline so reasoning models don't return empty", async () => {
@@ -235,7 +347,7 @@ describe("grounded miss response composer", () => {
         usageContext,
         userExpectedLocale: "it-IT",
       }),
-    ).resolves.toBe("MODEL_LOCALE_SPECIFIC");
+    ).resolves.toEqual({ text: "MODEL_LOCALE_SPECIFIC", declineReason: "content_gap" });
   });
 
   it("records no-context assistant usage when usage context is present", async () => {
@@ -356,12 +468,12 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "What is the capital of France?", usageContext });
-    expect(fallback).toEqual(expect.any(String));
-    expect(fallback.length).toBeGreaterThan(0);
-    expect(fallback).toContain("my current focus");
-    expect(fallback).not.toContain("narrower question");
-    expect(fallback).not.toContain("this assistant");
-    expect(fallback).not.toContain("the assistant");
+    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.text.length).toBeGreaterThan(0);
+    expect(fallback.text).toContain("my current focus");
+    expect(fallback.text).not.toContain("narrower question");
+    expect(fallback.text).not.toContain("this assistant");
+    expect(fallback.text).not.toContain("the assistant");
   });
 
   it("keeps a scoped no-context response instead of discarding it as boilerplate-worthy", async () => {
@@ -389,7 +501,7 @@ describe("grounded miss response composer", () => {
 
     await expect(
       composer.composeNoContext({ query: "Who is Tesla?", usageContext }),
-    ).resolves.toBe(scopedResponse);
+    ).resolves.toEqual({ text: scopedResponse, declineReason: "content_gap" });
   });
 
   it("falls back when no-context generation returns empty output for another locale", async () => {
@@ -408,8 +520,8 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "Qual è la capitale della Francia?", usageContext });
-    expect(fallback).toEqual(expect.any(String));
-    expect(fallback.length).toBeGreaterThan(0);
+    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.text.length).toBeGreaterThan(0);
   });
 
   it("falls back without trying to infer locale from ambiguous English tokens", async () => {
@@ -428,8 +540,8 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "Was changed in the pricing docs?", usageContext });
-    expect(fallback).toEqual(expect.any(String));
-    expect(fallback.length).toBeGreaterThan(0);
+    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.text.length).toBeGreaterThan(0);
   });
 
   it("propagates provider credential errors instead of masking them with fallback copy", async () => {

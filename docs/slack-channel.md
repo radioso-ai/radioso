@@ -31,7 +31,9 @@ the knowledge base.
   conversation.
 - When the turn outcome is `no_context`, gap escalation is enabled, and an
   escalation channel is configured, Radioso posts a human follow-up message to
-  that channel.
+  that channel. A turn the agent declined as `out_of_scope` never escalates:
+  the agent handled it as configured, so there is nothing for a person to pick
+  up.
 - Routines can also use allowlisted Slack skills to post deliberate handoff or
   lead messages.
 - Approval gates, handoffs, and unanswered questions arrive as interactive

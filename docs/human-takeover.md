@@ -215,6 +215,13 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   grounding gaps summarized in the inbox). The queue is not windowed, so a turn
   that is still untriaged stays visible however old it is.
 
+A turn only counts as a grounding gap when the agent tried to ground an answer
+and came up empty. When it declines because the question falls outside what its
+instructions cover — the capital of Mars, a maths puzzle, an attempt to talk it
+out of its own remit — the turn carries the **Out of scope** action instead, and
+sits on neither side of the grounded-answer rate. That keeps the gap queue to
+the questions worth ingesting content for.
+
 Both zones measure AI turns only. A reply you write during a takeover is stored
 as an assistant message, but it carries your authorship, so it is left out of the
 quality counts and rates. The same applies to conversations from the dashboard

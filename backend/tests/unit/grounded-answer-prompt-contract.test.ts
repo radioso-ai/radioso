@@ -91,6 +91,7 @@ describe("grounded answer prompt contract", () => {
       expect(result.systemPrompt).toContain('"v":2');
       expect(result.systemPrompt).toContain('"outcome":"answer"');
       expect(result.systemPrompt).toContain('"outcome":"no_support"');
+      expect(result.systemPrompt).toContain('"outcome":"out_of_scope"');
       expect(result.systemPrompt).toContain('"grounding":"degraded"');
     }
     expect(disabled.suggestionsExpected).toBe(false);
@@ -179,12 +180,33 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).not.toContain("Outside-scope subrequests include");
   });
 
+  it("separates the two declines in both decline-producing prompts", () => {
+    const envelope = loadPromptTemplate("chat/answer-envelope.md");
+    const focused = loadPromptTemplate("chat/grounded-miss.md");
+
+    // The envelope owns the inline decline; it must offer both values and default
+    // to the conservative one so an unclassifiable decline still counts against us.
+    expect(envelope).toContain("`out_of_scope`");
+    expect(envelope).toContain("`no_support`");
+    expect(envelope).toMatch(/when unsure/i);
+
+    // The focused-miss prompt now returns a JSON object, not bare text.
+    expect(focused).toContain("declineReason");
+    expect(focused).toContain("content_gap");
+    expect(focused).toContain("out_of_scope");
+    expect(focused).not.toContain("Return only the response text");
+    // Scope is judged against configuration, never against the language of the question.
+    expect(focused).toMatch(/configured answer instructions/i);
+  });
+
   it("keeps the protocol assets within their locked word budgets", () => {
     const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
     // Tightened in #863: the #903 provider schema enforces the field set and the
     // v/outcome/kind/grounding value sets, so the envelope no longer restates them.
     expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeGreaterThanOrEqual(200);
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(260);
+    // Widened in #946: the envelope now distinguishes the two declines and carries an
+    // out-of-scope example alongside the miss example.
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(290);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
     // Tightened in #863: the strict provider schema hard-enforces the item field
     // set (additionalProperties:false + required) and JSON-only output, so the
@@ -195,7 +217,8 @@ describe("grounded answer prompt contract", () => {
     expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeGreaterThanOrEqual(690);
     expect(countWords(loadPromptTemplate("retrieval/answer.md")) + countWords(loadPromptTemplate("chat/grounded-inline-decline.md"))).toBeLessThanOrEqual(760);
     expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeGreaterThanOrEqual(300);
-    expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeLessThanOrEqual(380);
+    // Widened in #946: the focused decline also returns a decline classification.
+    expect(countWords(loadPromptTemplate("chat/grounded-miss.md")) + countWords(loadPromptTemplate("chat/grounded-decline-rules.md"))).toBeLessThanOrEqual(460);
   });
 
   it("budgets the composed instruction sheet per turn type (#863)", () => {
@@ -215,7 +238,7 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1450);
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(1600);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(1650);
 
     // Grounded answer, suggestions disabled.
     const groundedNoSuggestions = stack(
@@ -224,12 +247,12 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-envelope.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(900);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(980);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1020);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");
     expect(focusedDecline).toBeGreaterThanOrEqual(300);
-    expect(focusedDecline).toBeLessThanOrEqual(380);
+    expect(focusedDecline).toBeLessThanOrEqual(460);
 
     // Clarification and direct/non-retrieval turns each stay lean and, by AC,
     // carry no citation/link/suggestion authoring rules.

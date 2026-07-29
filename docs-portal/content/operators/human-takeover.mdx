@@ -37,6 +37,8 @@ The dashboard surfaces this work under **Activity**, which has three sections in
 - **All activity** — the full conversation history.
 - **Quality** — the paginated answer-quality backlog and per-turn triage: negative feedback, slow responses, and skill failures, alongside the grounding gaps summarized in the inbox.
 
+A turn counts as a grounding gap only when the agent tried to ground an answer and found nothing. When it declines because the question sits outside what its instructions cover — the capital of Mars, a maths puzzle, an attempt to talk it out of its own remit — the turn carries the **Out of scope** action and sits on neither side of the grounded-answer rate. That leaves the gap queue holding the questions actually worth ingesting content for.
+
 The conversation view shows message attribution (a badge for human-agent and system messages) and an operator action bar: take over, reply, hand back, and approve or reject a pending decision. While it is open it reads the tail endpoint, so new visitor messages and your own replies appear without a manual refresh.
 
 ## Operator API

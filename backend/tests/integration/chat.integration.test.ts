@@ -1201,7 +1201,7 @@ describe("chat integration", () => {
       fallbackReplyComposer: {
         async composeNoContext(input) {
           declineAttemptKeys.push(input.usageContext.attemptKey);
-          return focusedDecline;
+          return { text: focusedDecline, declineReason: "content_gap" as const };
         },
       },
     });
@@ -1241,7 +1241,7 @@ describe("chat integration", () => {
       fallbackReplyComposer: {
         async composeNoContext(input) {
           declineAttemptKeys.push(input.usageContext.attemptKey);
-          return focusedDecline;
+          return { text: focusedDecline, declineReason: "content_gap" as const };
         },
       },
     });

@@ -33,7 +33,11 @@ reviewing" and a chip ask for one signal through the same parameter.
 Grounding derives from the catalog's `groundedAnswer` flag. **An absent flag is
 not `false`.** An outcome such as a clarifying question deliberately omits the
 flag: it neither grounded an answer nor failed to, so it belongs to neither the
-numerator nor the denominator of the grounded rate.
+numerator nor the denominator of the grounded rate. `retrieval.answer`'s
+`out_of_scope` decline omits it for the same reason — declining a request outside
+the agent's configured remit is correct behavior, not a grounding failure. This
+module recognizes no outcome by name; the exclusion falls out of the catalog
+metadata alone.
 
 `/quality/turns` and `/quality/stats` **must select from one turn population**.
 `turnPopulationSql.ts` owns that predicate: assistant role, workspace scope, the

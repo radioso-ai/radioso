@@ -5,7 +5,10 @@ import { AssistantSuggestionExpansionService } from "../../src/modules/chat/serv
 import { ChatAnswerPresenter } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { ChatAnswerSupport } from "../../src/modules/chat/services/chatAnswerSupport.js";
 import type { PreparedSession } from "../../src/modules/chat/services/chatSessionPreparer.js";
-import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import type {
+  ComposedDecline,
+  FallbackReplyComposer,
+} from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { getGroundedMissFallback } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import {
   buildGroundedAnswerResponseFormat,
@@ -23,6 +26,7 @@ import {
   degradedV2Envelope,
   groundedV2Envelope,
   noSupportV2Envelope,
+  outOfScopeV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
 
 const context = (index: number) => ({
@@ -65,7 +69,13 @@ const drain = async (generator: AsyncGenerator<string, TurnStreamResult>) => {
   return { chunks, result: step.value };
 };
 
-const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
+const buildComposer = (
+  raw: string,
+  decline: string | ComposedDecline = "FOCUSED GROUNDED MISS",
+) => {
+  const composedDecline: ComposedDecline = typeof decline === "string"
+    ? { text: decline, declineReason: "content_gap" }
+    : decline;
   let answerCalls = 0;
   let streamCalls = 0;
   let fallbackCalls = 0;
@@ -99,7 +109,7 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
       fallbackCalls += 1;
       fallbackWorkspaceContext = input.workspaceContext;
       attemptKeys.push(input.usageContext.attemptKey);
-      return decline;
+      return composedDecline;
     },
   };
   return {
@@ -116,6 +126,72 @@ const buildComposer = (raw: string, decline = "FOCUSED GROUNDED MISS") => {
     gateAbortObserved: () => gateAbortObserved,
   };
 };
+
+describe("retrieval answer decline classification", () => {
+  const zeroContextSession = (): PreparedSession => {
+    const session = baseSession();
+    (session.retrieval as { contexts: unknown[] }).contexts = [];
+    return session;
+  };
+
+  it("tags a zero-context out-of-scope decline with the out_of_scope outcome", async () => {
+    const { composer } = buildComposer("unused", { text: "Not my remit.", declineReason: "out_of_scope" });
+
+    const presented = await composer.composeAnswer(zeroContextSession(), "Capital of Mars?", undefined, undefined);
+
+    expect(presented.answer).toBe("Not my remit.");
+    expect(presented.skillOutcome).toBe("out_of_scope");
+  });
+
+  it("keeps a zero-context content-gap decline on the no_context outcome", async () => {
+    const { composer } = buildComposer("unused", { text: "I can't confirm that.", declineReason: "content_gap" });
+
+    const presented = await composer.composeAnswer(zeroContextSession(), "Refund policy?", undefined, undefined);
+
+    expect(presented.skillOutcome).toBe("no_context");
+  });
+
+  it("carries the classification through the zero-context streaming path", async () => {
+    const { composer } = buildComposer("unused", { text: "Not my remit.", declineReason: "out_of_scope" });
+
+    const { result } = await drain(
+      composer.streamAnswer(zeroContextSession(), "Capital of Mars?", undefined, undefined),
+    );
+
+    expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+  });
+
+  it("tags an out-of-scope envelope decline with the out_of_scope outcome", async () => {
+    const { composer } = buildComposer(outOfScopeV2Envelope());
+
+    const presented = await composer.composeAnswer(baseSession(), "Capital of Mars?", undefined, undefined);
+
+    expect(presented.skillOutcome).toBe("out_of_scope");
+    expect(presented.groundingSummary).toMatchObject({ verdict: "no_support", declineReason: "out_of_scope" });
+  });
+
+  it("labels the outcome counter with the decline reason", async () => {
+    const { composer, metricWrites } = buildComposer(outOfScopeV2Envelope());
+
+    await composer.composeAnswer(baseSession(), "Capital of Mars?", undefined, undefined);
+
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: { protocol: "v2", verdict: "no_support", reason: "complete", stream: "false", decline: "out_of_scope" },
+    }]);
+  });
+
+  it("carries the gate-bound focused decline classification into the outcome", async () => {
+    const { composer } = buildComposer(
+      "PRIVATE ".repeat(1_000),
+      { text: "Not my remit.", declineReason: "out_of_scope" },
+    );
+
+    const { result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
+
+    expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+  });
+});
 
 describe("retrieval answer envelope v2", () => {
   it("keeps provider-enforced suggestions out of visible answer text", async () => {
@@ -304,7 +380,7 @@ describe("retrieval answer envelope v2", () => {
     expect(fallbackWorkspaceContext()).toEqual({ workspaceId: "workspace-1" });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true" },
+      labels: { protocol: "v2", verdict: "no_support", reason: "gate_bound", stream: "true", decline: "content_gap" },
     }]);
   });
 
@@ -332,7 +408,7 @@ describe("retrieval answer envelope v2", () => {
       new ChatAnswerSupport(),
       gateway,
       presenter(),
-      { async composeNoContext() { return "must not run"; } },
+      { async composeNoContext() { return { text: "must not run", declineReason: "content_gap" as const }; } },
     );
     const pending = drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined, controller.signal));
 
@@ -359,7 +435,7 @@ describe("retrieval answer envelope v2", () => {
         declineStarted();
         expect(input.signal).toBe(controller.signal);
         await blockedDecline;
-        return "DECLINE";
+        return { text: "DECLINE", declineReason: "content_gap" as const };
       },
     };
     const composer = new RetrievalAnswerComposer(new ChatAnswerSupport(), gateway, presenter(), fallback);
@@ -378,7 +454,7 @@ describe("retrieval answer envelope v2", () => {
 
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "degraded", reason: "unsourced", stream: "false" },
+      labels: { protocol: "v2", verdict: "degraded", reason: "unsourced", stream: "false", decline: "none" },
     }]);
     expect(JSON.stringify(metricWrites)).not.toContain("workshop");
   });
@@ -400,7 +476,7 @@ describe("retrieval answer envelope v2", () => {
     expect(presented.groundingSummary).toMatchObject({ verdict: "degraded", sourcedClaimCount: 0 });
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "degraded", reason: "anchor_free", stream: "false" },
+      labels: { protocol: "v2", verdict: "degraded", reason: "anchor_free", stream: "false", decline: "none" },
     }]);
     expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
   });

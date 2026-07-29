@@ -1,5 +1,11 @@
+import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import type { GroundedAnswerEnvelope, GroundingEnvelopeParseStatus } from "./groundedAnswerEnvelope.js";
 
+/**
+ * How well evidence supported the answer. Scope is deliberately *not* a verdict here:
+ * an out-of-scope decline is as unsupported as any other decline, so it computes to
+ * `no_support` and carries its reason on {@link GroundingSummary.declineReason}.
+ */
 export type GroundingVerdict = "grounded" | "degraded" | "no_support";
 
 export interface GroundingSummary {
@@ -11,6 +17,8 @@ export interface GroundingSummary {
   unsourcedClaimCount: number;
   invalidSourceCount: number;
   assertionMismatch: boolean;
+  /** Present only on a `no_support` verdict: why the turn declined. */
+  declineReason?: TurnDeclineReason;
 }
 
 export interface ParsedInlineAssertions {
@@ -139,13 +147,15 @@ export const computeGroundingSummary = (input: {
   const invalidSourceCount = inline.invalidSourceCount + manifest.invalidSourceCount;
 
   let verdict: GroundingVerdict = "degraded";
+  let declineReason: TurnDeclineReason | undefined;
   if (input.envelope.parseStatus === "valid_v2" && !assertionMismatch && invalidSourceCount === 0) {
     if (
-      input.envelope.outcome === "no_support"
+      (input.envelope.outcome === "no_support" || input.envelope.outcome === "out_of_scope")
       && sourcedClaimCount === 0
       && input.envelope.suggestions.length === 0
     ) {
       verdict = "no_support";
+      declineReason = input.envelope.outcome === "out_of_scope" ? "out_of_scope" : "content_gap";
     } else if (
       input.envelope.outcome === "answer"
       && claimCount > 0
@@ -165,5 +175,6 @@ export const computeGroundingSummary = (input: {
     unsourcedClaimCount,
     invalidSourceCount,
     assertionMismatch,
+    ...(declineReason ? { declineReason } : {}),
   };
 };

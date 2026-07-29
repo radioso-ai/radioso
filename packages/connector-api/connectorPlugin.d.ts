@@ -28,7 +28,12 @@ export interface ConnectorChatPort {
   }): Promise<{
     conversationId: string;
     answer: string;
-    outcome: "answered" | "no_context";
+    /**
+     * The turn's typed result. `no_context` is an in-remit content gap a connector may
+     * escalate; `out_of_scope` is a correct decline for a request outside the agent's
+     * configured remit and must not be treated as a gap.
+     */
+    outcome: "answered" | "no_context" | "out_of_scope";
   }>;
 }
 

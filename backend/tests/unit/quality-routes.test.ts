@@ -183,7 +183,12 @@ describe("quality routes", () => {
           skillStatus: "completed",
           totalLatencyMs: 3200,
           createdAt: "2026-05-22T10:00:00.000Z",
-          feedback: { upCount: 0, downCount: 1, comments: [] },
+          feedback: {
+            upCount: 0,
+            downCount: 1,
+            latestDownUpdatedAt: "2026-05-22T10:05:00.000Z",
+            comments: [],
+          },
           triage: { state: "open", reason: null, updatedAt: null },
         },
       ],
@@ -215,6 +220,8 @@ describe("quality routes", () => {
         actions: "retrieval.answer:no_context,human_contact.request:sent",
         statuses: "paused,failed",
         feedback: "down",
+        sort: "negative_feedback_updated_at",
+        activeNegativeFeedbackOnly: "true",
         hasComment: "true",
         minTotalLatencyMs: "2000",
         maxTotalLatencyMs: "10000",
@@ -234,6 +241,8 @@ describe("quality routes", () => {
       ],
       statuses: ["paused", "failed"],
       feedbackValues: ["down"],
+      sort: "negative_feedback_updated_at",
+      activeNegativeFeedbackOnly: true,
       hasComment: true,
       minTotalLatencyMs: 2000,
       maxTotalLatencyMs: 10000,
@@ -294,6 +303,19 @@ describe("quality routes", () => {
     const response = await request(app)
       .get("/api/v1/quality/turns")
       .query({ triage: "bogus" })
+      .set("Authorization", "Bearer valid-token");
+
+    expect(response.status).toBe(400);
+    expect(service.calls).toHaveLength(0);
+  });
+
+  it("rejects an unknown quality-turn sort with 400", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .get("/api/v1/quality/turns")
+      .query({ sort: "feedback_count" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(400);

@@ -66,6 +66,41 @@ const installQualityStats = async (
   });
 };
 
+test("choosing Dismissed keeps the close-review dialog isolated from conversation details", async ({
+  page,
+}) => {
+  const turn = qualityTurn("message-dismiss", "Should this answer be reviewed?");
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installQualityStats(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [turn],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/quality`);
+  await page.getByRole("button", {
+    name: "Triage state: Open. Change state.",
+  }).click();
+  await page.getByRole("menuitemradio", { name: "Dismissed" }).click();
+
+  await expect(page.getByRole("heading", { name: "Mark not actionable" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+});
+
 test("closure reviews a canonical winner before replacement and removes locally when refetch fails", async ({
   page,
 }) => {

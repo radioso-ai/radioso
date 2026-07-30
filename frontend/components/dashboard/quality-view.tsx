@@ -1211,6 +1211,15 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
+  const requestCloseReview = (
+    turn: LowQualityTurn,
+    state: 'resolved' | 'dismissed',
+  ) => {
+    setOpenedConversation(null)
+    setCloseReview({ turn, state, conflict: null })
+    setError(null)
+  }
+
   const openEval = async (turn: LowQualityTurn) => {
     setCreatingEvalMessageId(turn.assistantMessageId)
     setError(null)
@@ -1263,8 +1272,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       return
     }
     if (next === 'resolved' || next === 'dismissed') {
-      setCloseReview({ turn, state: next, conflict: null })
-      setError(null)
+      requestCloseReview(turn, next)
       return
     }
     setPendingTriageId(turn.assistantMessageId)
@@ -1591,9 +1599,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           verification={turn.verification}
                           pending={creatingEvalMessageId === turn.assistantMessageId}
                           onOpen={() => void openEval(turn)}
-                          onReviewAndResolve={() => {
-                            setCloseReview({ turn, state: 'resolved', conflict: null })
-                          }}
+                          onReviewAndResolve={() => requestCloseReview(turn, 'resolved')}
                         />
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
@@ -1727,7 +1733,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       onApply={applyFilters}
     />
     <ConversationDrawer
-      selectedItem={drawerSelectedItem}
+      selectedItem={closeReview ? null : drawerSelectedItem}
       onSelectedItemChange={(next) => {
         if (!next) {
           setOpenedConversation(null)
@@ -1750,6 +1756,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         onOpenChange={(open) => {
           if (!open) {
             setCloseReview(null)
+            setOpenedConversation(null)
             setError(null)
           }
         }}

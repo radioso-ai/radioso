@@ -89,7 +89,7 @@ clicks through.
 - [X] T037 Run focused suites, backend/frontend builds, schema/type drift checks, architecture validation, and `pnpm run ci:local -- origin/main`; record evidence in the PR body
 - [X] T038 Run senior-engineer review loops and apply all in-scope findings
 - [X] T039 Run one engineering-manager review and apply all in-scope feedback
-- [ ] T040 Commit, push `954-quality-eval-loop`, and open a PR against `main` linking spec, plan, tasks, validation, and issue #940
+- [X] T040 Commit, push `954-quality-eval-loop`, and open a PR against `main` linking spec, plan, tasks, validation, and issue #940
 
 ## Dependencies
 

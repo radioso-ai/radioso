@@ -7,7 +7,7 @@ cd backend
 pnpm exec vitest run tests/unit/quality-resolution.test.ts tests/unit/quality-routes.test.ts
 pnpm exec vitest run tests/unit/eval-message-case-service.test.ts
 pnpm exec vitest run tests/integration/quality-triage.integration.test.ts
-pnpm exec vitest run tests/integration/eval-repository.integration.test.ts
+pnpm exec vitest run tests/integration/eval-repository.integration.test.ts tests/integration/quality-turns.integration.test.ts
 pnpm run test:contract
 ```
 
@@ -40,7 +40,7 @@ restoration, and breakdown click-through.
 ```bash
 pnpm --dir backend run db:schema
 pnpm --dir backend run db:types
-pnpm run ci:local -- origin/main
+pnpm run ci:local -- --all
 ```
 
 Inspect logs and transition rows to verify no resolution note, prompt, answer,

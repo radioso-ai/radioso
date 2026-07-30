@@ -1,7 +1,7 @@
 # Specification Quality Checklist: Quality Resolution and Eval Learning Loop
 
-**Purpose**: Validate specification completeness and quality before planning  
-**Created**: 2026-07-30  
+**Purpose**: Validate specification completeness and quality before planning
+**Created**: 2026-07-30
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality

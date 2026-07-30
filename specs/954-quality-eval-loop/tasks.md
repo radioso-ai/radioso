@@ -39,7 +39,7 @@ and one `409` with the current record; history contains accepted transitions in
 order.
 
 - [X] T013 [US2] Write failing transition concurrency/history tests in `backend/tests/integration/quality-triage.integration.test.ts` and conflict route tests in `backend/tests/unit/quality-routes.test.ts`
-- [X] T014 [US2] Implement conditional versioned transition and atomic audit persistence in `backend/src/modules/quality/service.ts`
+- [X] T014 [US2] Implement conditional versioned transition and atomic history persistence in `backend/src/modules/quality/triageStore.ts`, with orchestration in `backend/src/modules/quality/service.ts`
 - [X] T015 [US2] Add typed conflict response handling in `backend/src/modules/quality/routes.ts`, `frontend/lib/api-quality.ts`, and `frontend/components/dashboard/quality/close-review-dialog.tsx`
 - [X] T016 [US2] Extend Needs Attention triage data/pending-state safety in `frontend/lib/needs-attention.ts`, `frontend/hooks/use-needs-attention-activity.ts`, and `frontend/components/dashboard/needs-attention-view.tsx`
 
@@ -51,11 +51,11 @@ cases follow the documented behavior.
 
 - [X] T017 [US3] Write failing Eval message-case service/repository tests in `backend/tests/unit/eval-message-case-service.test.ts` and `backend/tests/integration/eval-repository.integration.test.ts`
 - [X] T018 [US3] Refactor snapshot preparation without behavior change in `backend/src/modules/eval/services/evalSnapshotService.ts`
-- [X] T019 [US3] Implement atomic association persistence and batch lookup in `backend/src/modules/eval/services/evalRepository.ts`
+- [X] T019 [US3] Implement atomic association persistence and batch lookup in `backend/src/modules/eval/services/evalMessageCaseRepository.ts`, sharing persistence mappings from `backend/src/modules/eval/services/evalPersistence.ts`
 - [X] T020 [US3] Implement the focused orchestration service in `backend/src/modules/eval/services/evalMessageCaseService.ts` and export it from `backend/src/modules/eval/composition.ts`
-- [X] T021 [US3] Write failing Eval route tests, then add GET/PUT message routes in `backend/tests/unit/eval-routes.test.ts` and `backend/src/modules/eval/routes/evalRoutes.ts`
-- [X] T022 [US3] Wire the new Eval service in `backend/src/app/server/dependencyBuilders.ts` and `backend/src/app/server/types.ts`
-- [X] T023 [US3] Replace client-side capture/create scanning with idempotent Add/Open Eval in `frontend/lib/api-eval.ts` and `frontend/components/dashboard/send-to-eval-action.tsx`
+- [X] T021 [US3] Write failing Eval route tests, then add GET/PUT message routes in `backend/tests/unit/eval-message-case-routes.test.ts` and `backend/src/modules/eval/routes/evalRoutes.ts`
+- [X] T022 [US3] Wire the new Eval service in `backend/src/app/server/dependencies.ts` and `backend/src/app/server/types.ts`
+- [X] T023 [US3] Replace client-side capture/create scanning with idempotent Add/Open Eval in `frontend/lib/api-eval.ts`, `frontend/components/dashboard/quality-view.tsx`, and `frontend/components/dashboard/quality/eval-verification-action.tsx`
 
 ## Phase 6: User Story 4 — See whether a fix has been verified (P2)
 
@@ -64,7 +64,7 @@ passing, failing, error, recorded-only, or missing projections and the UI shows
 honest timestamped evidence.
 
 - [X] T024 [US4] Write failing Eval batch projection and Quality enrichment tests in `backend/tests/integration/eval-repository.integration.test.ts` and `backend/tests/unit/quality-verification.test.ts`
-- [X] T025 [US4] Implement Eval-owned batch projection in `backend/src/modules/eval/services/evalRepository.ts` and `backend/src/modules/eval/services/evalMessageCaseService.ts`
+- [X] T025 [US4] Implement Eval-owned batch projection in `backend/src/modules/eval/services/evalMessageCaseRepository.ts` and `backend/src/modules/eval/services/evalMessageCaseService.ts`
 - [X] T026 [US4] Inject the narrow port through `backend/src/app/composition/builtIn/qualityModule.ts` and enrich pages in `backend/src/modules/quality/service.ts`
 - [X] T027 [US4] Present Add/Open Eval status, latest-run time, and Review and resolve in `frontend/components/dashboard/quality/eval-verification-action.tsx` and consuming Quality surfaces
 
@@ -74,8 +74,8 @@ honest timestamped evidence.
 count/list parity; reopening removes a row; URL state restores and breakdown
 clicks through.
 
-- [X] T028 [US5] Write failing Quality reason-filter and breakdown tests in `backend/tests/unit/quality-stats-query.test.ts`, `backend/tests/integration/quality-turns.integration.test.ts`, and `backend/tests/integration/quality-stats.integration.test.ts`
-- [X] T029 [US5] Implement reason and distinct terminal-transition-window predicates plus breakdown aggregation in `backend/src/modules/quality/service.ts` and `backend/src/modules/quality/statsQuery.ts`
+- [X] T028 [US5] Write failing Quality reason-filter and breakdown tests in `backend/tests/unit/quality-stats-query.test.ts`, `backend/tests/integration/quality-turns.integration.test.ts`, `backend/tests/integration/quality-stats.integration.test.ts`, and `backend/tests/integration/quality-resolution-reporting.integration.test.ts`
+- [X] T029 [US5] Implement reason and distinct terminal-transition-window predicates plus breakdown aggregation in `backend/src/modules/quality/service.ts`, `backend/src/modules/quality/statsQuery.ts`, and `backend/src/modules/quality/turnPopulationSql.ts`
 - [X] T030 [US5] Add reason query validation in `backend/src/modules/quality/routes.ts`
 - [X] T031 [US5] Write non-visual URL/API tests and add normalized reason plus terminal-transition-window state in `frontend/tests/unit/dashboard-routes.test.ts`, `frontend/lib/dashboard-routes.ts`, and `frontend/lib/api-quality.ts`
 - [X] T032 [US5] Add reason filters, active chips, closed details, and clickable compact breakdown in `frontend/components/dashboard/quality-view.tsx` and `frontend/components/dashboard/quality/resolution-breakdown.tsx`
@@ -86,7 +86,7 @@ clicks through.
 - [X] T034 Regenerate `backend/openapi.{json,yaml}`, TypeScript SDK OpenAPI/types, and MCP OpenAPI types; run `pnpm run check:api-contracts`
 - [X] T035 Add Playwright coverage for shared closure, conflict, focus/live announcement, Add/Open Eval, timestamped evidence, URL restoration, and breakdown navigation in `frontend/tests/e2e/quality-resolution.spec.ts`
 - [X] T036 Update operator/API docs and affected module briefs in `docs/quality-eval-learning-loop.md`, `docs-portal/content/guides/evals.mdx`, and `backend/src/modules/quality/README.md`
-- [X] T037 Run focused suites, backend/frontend builds, schema/type drift checks, architecture validation, and `pnpm run ci:local -- origin/main`; record evidence in the PR body
+- [X] T037 Run focused suites, the 100-row real-Postgres performance fixture, backend/frontend builds, schema/type drift checks, architecture validation, and `pnpm run ci:local -- --all`; record evidence in the PR body
 - [X] T038 Run senior-engineer review loops and apply all in-scope findings
 - [X] T039 Run one engineering-manager review and apply all in-scope feedback
 - [X] T040 Commit, push `954-quality-eval-loop`, and open a PR against `main` linking spec, plan, tasks, validation, and issue #940

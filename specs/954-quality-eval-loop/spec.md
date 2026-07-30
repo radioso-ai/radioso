@@ -1,8 +1,8 @@
 # Feature Specification: Quality Resolution and Eval Learning Loop
 
-**Feature Branch**: `954-quality-eval-loop`  
-**Created**: 2026-07-30  
-**Status**: Approved for implementation  
+**Feature Branch**: `954-quality-eval-loop`
+**Created**: 2026-07-30
+**Status**: Approved for implementation
 **Input**: User description: "Implement GitHub issue #940. Before coding, choose the best operator UI and public API for structured triage resolution reasons and an Eval verification learning loop."
 
 ## Existing Behavior And Feature Delta

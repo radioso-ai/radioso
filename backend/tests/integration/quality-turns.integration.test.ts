@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
+import { EvalMessageCaseRepository } from "../../src/modules/eval/services/evalMessageCaseRepository.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
@@ -976,5 +978,96 @@ describeIfDatabase("quality turns integration", () => {
       limit: 25,
     });
     expect(incompatible.total).toBe(0);
+  });
+
+  it("loads 100 linked verification summaries in one batch within the local two-second budget", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const messageIds = Array.from({ length: 100 }, () => randomUUID());
+    const snapshotIds = Array.from({ length: 100 }, () => randomUUID());
+    const caseIds = Array.from({ length: 100 }, () => randomUUID());
+
+    await database.query(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Quality performance', $2, 'hash')",
+      [accountId, `quality-performance-${accountId}@example.com`],
+    );
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'Quality performance', $3)",
+      [workspaceId, accountId, `qp-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')",
+      [conversationId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO messages (
+         id, conversation_id, workspace_id, role, content, source,
+         skill_name, skill_outcome, skill_status, total_latency_ms, created_at
+       )
+       SELECT
+         turn.message_id,
+         $2,
+         $3,
+         'assistant',
+         'Answer ' || turn.ordinality,
+         'ai_agent',
+         'retrieval.answer',
+         'no_context',
+         'completed',
+         10,
+         '2026-07-30T10:00:00.000Z'::timestamptz
+           + turn.ordinality * interval '1 second'
+       FROM unnest($1::uuid[]) WITH ORDINALITY AS turn(message_id, ordinality)`,
+      [messageIds, conversationId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO eval_snapshots (
+         id, workspace_id, source_conversation_id, source_message_id, fidelity, messages
+       )
+       SELECT link.snapshot_id, $3, $4, link.message_id, 'messages_only', '[]'::jsonb
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(snapshot_id, message_id)`,
+      [snapshotIds, messageIds, workspaceId, conversationId],
+    );
+    await database.query(
+      `INSERT INTO eval_cases (id, workspace_id, snapshot_id, name, status)
+       SELECT link.case_id, $3, link.snapshot_id, 'Quality case', 'pending'
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(case_id, snapshot_id)`,
+      [caseIds, snapshotIds, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO eval_message_case_associations (
+         workspace_id, assistant_message_id, case_id
+       )
+       SELECT $3, link.message_id, link.case_id
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(message_id, case_id)`,
+      [messageIds, caseIds, workspaceId],
+    );
+
+    const evalRepository = new EvalMessageCaseRepository(database.kysely);
+    let verificationBatchCalls = 0;
+    const service = new QualityTurnsService(
+      database.kysely,
+      stubOutcomeCatalog(),
+      undefined,
+      {
+        getByAssistantMessageIds: async (requestedWorkspaceId, assistantMessageIds) => {
+          verificationBatchCalls += 1;
+          return evalRepository.lookupMessageCaseVerifications(
+            requestedWorkspaceId,
+            assistantMessageIds,
+          );
+        },
+      },
+    );
+
+    const startedAt = performance.now();
+    const page = await service.listLowQualityTurns(workspaceId, { limit: 100 });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(page.items).toHaveLength(100);
+    expect(page.items.every((item) => item.verification?.caseStatus === "pending")).toBe(true);
+    expect(verificationBatchCalls).toBe(1);
+    expect(elapsedMs).toBeLessThan(2_000);
   });
 });

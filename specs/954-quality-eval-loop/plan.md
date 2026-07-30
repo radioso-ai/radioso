@@ -15,14 +15,14 @@ idempotent server operation.
 
 ## Technical Context
 
-**Language/Version**: TypeScript 5.7 on Node.js 24; React 19 / Next.js 16  
-**Primary Dependencies**: Express, Zod, Kysely, PostgreSQL `pgvector`, Radix UI, Lucide  
-**Storage**: PostgreSQL 16; migration `133` adds triage resolution/history and Eval association  
-**Testing**: Vitest, Supertest, real-Postgres integration tests, Playwright  
-**Target Platform**: Self-hosted Linux backend and modern desktop/mobile browsers  
-**Project Type**: pnpm web monorepo with backend, dashboard, SDK, MCP server, and docs portal  
-**Performance Goals**: One bounded Eval-verification query per Quality page; 100-row page under the existing 2-second local fixture; no per-case client scan  
-**Constraints**: Workspace isolation; 500-character note; no note content in logs/audit/telemetry; explicit integer concurrency version; one linked case per message  
+**Language/Version**: TypeScript 5.7 on Node.js 24; React 19 / Next.js 16
+**Primary Dependencies**: Express, Zod, Kysely, PostgreSQL `pgvector`, Radix UI, Lucide
+**Storage**: PostgreSQL 16; migration `133` adds triage resolution/history and Eval association
+**Testing**: Vitest, Supertest, real-Postgres integration tests, Playwright
+**Target Platform**: Self-hosted Linux backend and modern desktop/mobile browsers
+**Project Type**: pnpm web monorepo with backend, dashboard, SDK, MCP server, and docs portal
+**Performance Goals**: One bounded Eval-verification query per Quality page; 100-row page under the 2-second real-Postgres integration fixture; no per-case client scan
+**Constraints**: Workspace isolation; 500-character note; no note content in logs/audit/telemetry; explicit integer concurrency version; one linked case per message
 **Scale/Scope**: Five approved stories spanning Quality, Eval, dashboard, generated contracts, and product/API docs
 
 ## Constitution Check

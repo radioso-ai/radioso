@@ -89,12 +89,13 @@ imports from `services/`.
   strict JSON schema. Bare model prose without a classification stays the
   conservative `content_gap`; paths where no usable model judgement exists use
   `generation_unavailable`. Direct-answer fallbacks preserve the direct skill
-  identity instead of borrowing a retrieval outcome, and the retrieval-decline
-  presenter requires every retrieval caller to supply its typed reason.
-  `ChatAnswerPresenter` resolves the reason (explicit argument, then the grounding
-  summary, then `content_gap`) and picks the outcome tuple; `chatService`'s
+  identity instead of borrowing a retrieval outcome. Every `no_support`
+  presentation must supply a typed decline reason, either directly on the verdict
+  or through its grounding summary; `ChatAnswerPresenter` rejects the call when
+  neither is present. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
-  therefore leave out-of-scope declines alone. A valid in-range `[[n]]`
+  therefore escalate only content gaps, leaving out-of-scope and unavailable
+  declines alone. A valid in-range `[[n]]`
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and

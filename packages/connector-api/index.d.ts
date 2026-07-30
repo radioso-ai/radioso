@@ -5,6 +5,7 @@ export type {
 } from "./configSchema.js";
 
 export type {
+  ConnectorChatOutcome,
   ConnectorChatPort,
   ConnectorContext,
   ConnectorDatabasePort,

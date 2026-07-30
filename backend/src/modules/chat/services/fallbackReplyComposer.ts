@@ -25,10 +25,9 @@ export interface FallbackReplyInput {
 }
 
 /**
- * A composed decline plus why the turn declined. Every non-model path reports
- * `content_gap`: without a model judgement there is no positive evidence that the
- * request was outside the agent's remit, and the conservative default keeps the
- * turn inside the grounding-gap queue rather than silently excusing it.
+ * A composed decline plus why the turn declined. A missing or failed model reports
+ * `generation_unavailable`: adding documents cannot fix model configuration or
+ * provider availability, so those turns must stay out of the grounding-gap queue.
  */
 export interface ComposedDecline {
   text: string;
@@ -41,7 +40,7 @@ export interface FallbackReplyComposer {
 
 export class MissingFallbackReplyComposer implements FallbackReplyComposer {
   async composeNoContext(_input: FallbackReplyInput): Promise<ComposedDecline> {
-    return contentGap(getGroundedMissFallback());
+    return generationUnavailable(getGroundedMissFallback());
   }
 }
 
@@ -87,6 +86,10 @@ export const getGroundedMissFallback = (): string =>
   loadPromptTemplate("chat/grounded-miss-fallback.md").trim();
 
 const contentGap = (text: string): ComposedDecline => ({ text, declineReason: "content_gap" });
+const generationUnavailable = (text: string): ComposedDecline => ({
+  text,
+  declineReason: "generation_unavailable",
+});
 
 const DECLINE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
   type: "json_schema",
@@ -203,7 +206,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
 
       // A reply that failed the length or emptiness guard is discarded together with
       // its classification: the static asset is not the response the model judged.
-      return contentGap(getGroundedMissFallback());
+      return generationUnavailable(getGroundedMissFallback());
     } catch (error) {
       if (input.signal?.aborted) {
         throw input.signal.reason ?? error;
@@ -212,7 +215,7 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         throw error;
       }
 
-      return contentGap(getGroundedMissFallback());
+      return generationUnavailable(getGroundedMissFallback());
     }
   }
 }

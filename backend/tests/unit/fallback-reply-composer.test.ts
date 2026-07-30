@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   getGroundedMissFallback,
+  MissingFallbackReplyComposer,
   ModelFallbackReplyComposer,
 } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import { buildTurnInterpretationPrompt } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
@@ -75,6 +76,18 @@ describe("scope-neutral interpretation prompt contract", () => {
 });
 
 describe("grounded miss response composer", () => {
+  it("marks the static missing-model fallback as generation unavailable", async () => {
+    const composer = new MissingFallbackReplyComposer();
+
+    await expect(composer.composeNoContext({
+      query: "What is the refund policy?",
+      usageContext,
+    })).resolves.toEqual({
+      text: getGroundedMissFallback(),
+      declineReason: "generation_unavailable",
+    });
+  });
+
   it("lets the model compose the full no-context response", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: {
@@ -171,7 +184,7 @@ describe("grounded miss response composer", () => {
     const result = await composer.composeNoContext({ query: "Anything", usageContext });
 
     expect(result.text).toBe(getGroundedMissFallback());
-    expect(result.declineReason).toBe("content_gap");
+    expect(result.declineReason).toBe("generation_unavailable");
   });
 
   it("still returns bare prose from a provider that did not honor the schema", async () => {
@@ -206,7 +219,7 @@ describe("grounded miss response composer", () => {
     const result = await composer.composeNoContext({ query: "Anything", usageContext });
 
     expect(result.text).toBe(getGroundedMissFallback());
-    expect(result.declineReason).toBe("content_gap");
+    expect(result.declineReason).toBe("generation_unavailable");
   });
 
   it("requests minimal reasoning effort with budget for the decline so reasoning models don't return empty", async () => {
@@ -468,7 +481,7 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "What is the capital of France?", usageContext });
-    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.declineReason).toBe("generation_unavailable");
     expect(fallback.text.length).toBeGreaterThan(0);
     expect(fallback.text).toContain("my current focus");
     expect(fallback.text).not.toContain("narrower question");
@@ -520,7 +533,7 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "Qual è la capitale della Francia?", usageContext });
-    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.declineReason).toBe("generation_unavailable");
     expect(fallback.text.length).toBeGreaterThan(0);
   });
 
@@ -540,8 +553,31 @@ describe("grounded miss response composer", () => {
     }));
 
     const fallback = await composer.composeNoContext({ query: "Was changed in the pricing docs?", usageContext });
-    expect(fallback.declineReason).toBe("content_gap");
+    expect(fallback.declineReason).toBe("generation_unavailable");
     expect(fallback.text.length).toBeGreaterThan(0);
+  });
+
+  it("marks a permanent provider failure as generation unavailable", async () => {
+    const composer = new ModelFallbackReplyComposer(pipeline({
+      metadata: {
+        capability: "chat",
+        provider: "openai",
+        model: "test-model",
+      },
+      async complete() {
+        throw new Error("provider unavailable");
+      },
+      stream() {
+        return streamResult([""]);
+      },
+    }));
+
+    const fallback = await composer.composeNoContext({ query: "What is the refund policy?", usageContext });
+
+    expect(fallback).toEqual({
+      text: getGroundedMissFallback(),
+      declineReason: "generation_unavailable",
+    });
   });
 
   it("propagates provider credential errors instead of masking them with fallback copy", async () => {

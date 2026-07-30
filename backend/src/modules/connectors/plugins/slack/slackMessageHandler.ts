@@ -1,4 +1,5 @@
 import type {
+  ConnectorChatOutcome,
   ConnectorChatPort,
   ConnectorLogger,
 } from "@radioso/connector-api";
@@ -362,10 +363,10 @@ export class SlackMessageHandler {
     gapEscalationEnabled: boolean;
     query: string;
     conversationId: string;
-    outcome: "answered" | "no_context" | "out_of_scope";
+    outcome: ConnectorChatOutcome;
   }): Promise<void> {
-    // Only a real content gap escalates. An out-of-scope decline is the agent working
-    // as configured, so surfacing it to a human would be noise.
+    // Only a real content gap escalates. Out-of-scope declines are correct behavior,
+    // while unavailable generation is an operational failure that ingestion cannot fix.
     if (
       input.outcome !== "no_context" ||
       !input.gapEscalationEnabled ||

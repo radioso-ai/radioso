@@ -37,7 +37,7 @@ export const contactSupportRoutine: RoutineDefinition = {
   updatedAt: FIXED_DATE,
   name: "Contact support",
   activation: {
-    triggerDescription: "the user wants to reach a human, open a support ticket, or report a problem with their account or billing",
+    triggerDescription: "the user explicitly asks to reach a human or open a support ticket so somebody can follow up",
     gateRef: null,
     priority: 10,
     reentryMode: "once_per_conversation",

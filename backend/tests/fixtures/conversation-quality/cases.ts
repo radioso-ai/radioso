@@ -102,9 +102,12 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   {
     id: "directive-refund-empathy",
     name: "Refund complaint is met with empathy and the exact policy",
+    description:
+      "A billing complaint that asks for a policy remedy stays on grounded retrieval unless the user explicitly asks to contact a human or open a support ticket.",
     tags: ["directive", "tone"],
     query: "I was charged twice and I'm really frustrated — I want my money back.",
     assertions: [
+      { type: "turn_route", route: "retrieval" },
       { type: "retrieval_includes_document", documentId: REFUND_POLICY_DOC_ID },
       {
         type: "llm_judge",

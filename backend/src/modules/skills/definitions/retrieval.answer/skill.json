@@ -108,6 +108,13 @@
       "tone": "info"
     },
     {
+      "name": "unavailable",
+      "displayName": "Answer unavailable",
+      "description": "The retrieval skill could not obtain a usable model-authored reply because answer generation was unavailable. This is a configuration or provider failure, not a content gap.",
+      "status": "failed",
+      "tone": "warning"
+    },
+    {
       "name": "clarification_needed",
       "displayName": "Clarification needed",
       "description": "The retrieval skill needs a clearer question before it can answer.",

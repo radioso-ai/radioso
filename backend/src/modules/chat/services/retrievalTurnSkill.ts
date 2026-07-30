@@ -410,7 +410,10 @@ export class RetrievalAnswerComposer {
         // classification the persisted turn outcome does.
         this.recordGroundingGateBound(decline.declineReason);
         return {
-          finalPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(decline.text, decline.declineReason),
+          finalPresentation: this.chatAnswerPresenter.presentRetrievalDeclineAnswer(
+            decline.text,
+            decline.declineReason,
+          ),
           suggestions: { mode: "assistant", planned: [] },
           hasStreamedAnswer: false,
           streamedAnswer: "",

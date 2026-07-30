@@ -12158,15 +12158,15 @@
             "minimum": 0
           },
           "resolution": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/QualityResolution"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -12432,15 +12432,15 @@
             "$ref": "#/components/schemas/QualityTriageRecord"
           },
           "verification": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/QualityVerification"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           }
@@ -12721,15 +12721,15 @@
             "minimum": 0
           },
           "resolution": {
-            "allOf": [
+            "anyOf": [
               {
                 "$ref": "#/components/schemas/QualityResolution"
               },
               {
-                "type": [
-                  "object",
-                  "null"
-                ]
+                "type": "null"
+              },
+              {
+                "type": "null"
               }
             ]
           },

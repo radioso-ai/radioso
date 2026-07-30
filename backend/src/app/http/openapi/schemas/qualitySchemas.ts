@@ -66,7 +66,9 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.object({
       state: QualityTriageStateSchema,
       version: z.number().int().min(0),
-      resolution: QualityResolutionSchema.nullable(),
+      // Registered schemas must use an explicit union here. `.nullable()` emits an
+      // `allOf` intersection that openapi-typescript cannot represent usefully.
+      resolution: z.union([QualityResolutionSchema, z.null()]),
       legacyReason: z.string().nullable(),
       closedAt: z.string().datetime().nullable(),
       updatedAt: z.string().datetime().nullable(),
@@ -134,7 +136,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       createdAt: z.string().datetime(),
       feedback: QualityFeedbackSummarySchema,
       triage: QualityTriageRecordSchema,
-      verification: QualityVerificationSchema.nullable(),
+      verification: z.union([QualityVerificationSchema, z.null()]),
     }),
   );
 
@@ -235,7 +237,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.object({
       state: QualityTriageStateSchema,
       expectedVersion: z.number().int().min(0),
-      resolution: QualityResolutionSchema.nullish(),
+      resolution: z.union([QualityResolutionSchema, z.null()]).optional(),
       reason: z.string().max(500).nullish().openapi({
         deprecated: true,
         description:

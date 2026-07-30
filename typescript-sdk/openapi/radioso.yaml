@@ -8233,11 +8233,10 @@ components:
           type: integer
           minimum: 0
         resolution:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/QualityResolution"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         legacyReason:
           type:
             - string
@@ -8416,11 +8415,10 @@ components:
         triage:
           $ref: "#/components/schemas/QualityTriageRecord"
         verification:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/QualityVerification"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
       required:
         - assistantMessageId
         - conversationId
@@ -8612,11 +8610,10 @@ components:
           type: integer
           minimum: 0
         resolution:
-          allOf:
+          anyOf:
             - $ref: "#/components/schemas/QualityResolution"
-            - type:
-                - object
-                - "null"
+            - type: "null"
+            - type: "null"
         reason:
           type:
             - string

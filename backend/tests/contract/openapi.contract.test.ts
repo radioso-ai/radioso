@@ -46,11 +46,47 @@ describe("openapi contract", () => {
     expect(document.components?.schemas).toMatchObject({
       QualityResolutionReason: expect.any(Object),
       QualityResolution: expect.any(Object),
+      QualityTriageRecord: {
+        properties: {
+          resolution: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityResolution" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
       QualityTriageConflictResponse: expect.any(Object),
       QualityVerification: expect.any(Object),
+      LowQualityTurn: {
+        properties: {
+          verification: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityVerification" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
+      SetQualityTriageRequest: {
+        properties: {
+          resolution: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityResolution" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
       EvalMessageCaseLookup: expect.any(Object),
       EvalMessageCaseMutationResult: expect.any(Object),
     });
+    expect(document.components?.schemas?.QualityTriageRecord)
+      .not.toHaveProperty("properties.resolution.allOf");
+    expect(document.components?.schemas?.LowQualityTurn)
+      .not.toHaveProperty("properties.verification.allOf");
+    expect(document.components?.schemas?.SetQualityTriageRequest)
+      .not.toHaveProperty("properties.resolution.allOf");
     expect(evalMessagePath?.get).toMatchObject({
       operationId: "getEvalCaseBySourceMessage",
       responses: {

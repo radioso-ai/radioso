@@ -5765,7 +5765,7 @@ export interface components {
         QualityTriageRecord: {
             state: components["schemas"]["QualityTriageState"];
             version: number;
-            resolution: components["schemas"]["QualityResolution"] & (Record<string, never> | null);
+            resolution: components["schemas"]["QualityResolution"] | null;
             legacyReason: string | null;
             /** Format: date-time */
             closedAt: string | null;
@@ -5827,7 +5827,7 @@ export interface components {
             createdAt: string;
             feedback: components["schemas"]["QualityFeedbackSummary"];
             triage: components["schemas"]["QualityTriageRecord"];
-            verification: components["schemas"]["QualityVerification"] & (Record<string, never> | null);
+            verification: components["schemas"]["QualityVerification"] | null;
         };
         /** @enum {string} */
         QualitySignalId: "negative_feedback" | "grounding_gaps" | "slow_responses" | "skill_failures";
@@ -5894,7 +5894,7 @@ export interface components {
         SetQualityTriageRequest: {
             state: components["schemas"]["QualityTriageState"];
             expectedVersion: number;
-            resolution?: components["schemas"]["QualityResolution"] & (Record<string, never> | null);
+            resolution?: components["schemas"]["QualityResolution"] | null;
             /**
              * @deprecated
              * @description Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.

@@ -93,6 +93,26 @@ import { ResolutionBreakdown } from '@/components/dashboard/quality/resolution-b
 
 const PAGE_SIZE = 25
 
+const CLEARED_QUALITY_QUEUE_ROUTE_STATE = {
+  qualitySignal: undefined,
+  qualityShowAll: undefined,
+  qualityActions: undefined,
+  qualityStatuses: undefined,
+  qualityFeedback: undefined,
+  qualityLatency: undefined,
+  qualitySort: undefined,
+  qualityTriageStates: undefined,
+  qualityResolutionReasons: undefined,
+  qualityResolutionFrom: undefined,
+  qualityResolutionTo: undefined,
+  qualityActiveNegativeFeedbackOnly: undefined,
+  qualityHasComment: undefined,
+  qualityGroundingVerdicts: undefined,
+  qualityHasUnsourcedClaims: undefined,
+  qualityHasInvalidSources: undefined,
+  qualityPage: undefined,
+} satisfies Partial<DashboardRouteState>
+
 const focusQualityQueueTarget = (assistantMessageId: string | null) => {
   window.requestAnimationFrame(() => {
     const selector = assistantMessageId
@@ -1071,23 +1091,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // resolver instead of being written into the URL, so the chip presets stay one concept.
   const applySignal = (signalId: QualitySignalId | null) => {
     navigateWith({
+      ...CLEARED_QUALITY_QUEUE_ROUTE_STATE,
       qualitySignal: signalId ?? undefined,
-      qualityShowAll: undefined,
-      qualityTriageStates: undefined,
-      qualityResolutionReasons: undefined,
-      qualityResolutionFrom: undefined,
-      qualityResolutionTo: undefined,
-      qualityFeedback: undefined,
-      qualityActions: undefined,
-      qualityLatency: undefined,
-      qualityStatuses: undefined,
-      qualitySort: undefined,
-      qualityActiveNegativeFeedbackOnly: undefined,
-      qualityHasComment: undefined,
-      qualityGroundingVerdicts: undefined,
-      qualityHasUnsourcedClaims: undefined,
-      qualityHasInvalidSources: undefined,
-      qualityPage: undefined,
     })
   }
 
@@ -1111,13 +1116,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     window: { from: string; to: string },
   ) => {
     navigateWith({
+      ...CLEARED_QUALITY_QUEUE_ROUTE_STATE,
       qualityShowAll: true,
-      qualitySignal: undefined,
       qualityTriageStates: [entry.state],
       qualityResolutionReasons: [entry.reason],
       qualityResolutionFrom: window.from,
       qualityResolutionTo: window.to,
-      qualityPage: undefined,
     })
   }
 

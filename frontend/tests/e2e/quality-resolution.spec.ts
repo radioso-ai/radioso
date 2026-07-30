@@ -506,7 +506,35 @@ test("resolution filters restore from the URL and breakdown entries drill into m
     `resolutionTo=${encodeURIComponent(to)}`,
   );
 
-  await page.goto(`/w/${workspaceKey}/quality`);
+  const staleQueueFilters = new URLSearchParams({
+    range: "7d",
+    signal: "grounding_gaps",
+    actions: "retrieval.answer:no_context",
+    statuses: "failed",
+    feedback: "down",
+    latency: "gte_10s",
+    sort: "negative_feedback_updated_at",
+    triage: "open,acknowledged",
+    activeNegativeFeedbackOnly: "true",
+    hasComment: "true",
+    groundingVerdict: "no_support",
+    hasUnsourcedClaims: "true",
+    hasInvalidSources: "true",
+  });
+  const staleQueueFilterNames = [
+    "signal",
+    "actions",
+    "statuses",
+    "feedback",
+    "latency",
+    "sort",
+    "activeNegativeFeedbackOnly",
+    "hasComment",
+    "groundingVerdict",
+    "hasUnsourcedClaims",
+    "hasInvalidSources",
+  ];
+  await page.goto(`/w/${workspaceKey}/quality?${staleQueueFilters}`);
   const breakdown = page.getByRole("region", { name: "Closed review reasons" });
   await expect(
     breakdown.getByRole("group", { name: "Resolved" }).getByRole("button", {
@@ -523,6 +551,11 @@ test("resolution filters restore from the URL and breakdown entries drill into m
   await expect(page).toHaveURL(/triage=resolved/);
   await expect(page).toHaveURL(/resolutionReason=knowledge_gap/);
   await expect(page).toHaveURL(/all=true/);
+  const drilldownUrl = new URL(page.url());
+  expect(drilldownUrl.searchParams.get("range")).toBe("7d");
+  for (const staleFilter of staleQueueFilterNames) {
+    expect(drilldownUrl.searchParams.has(staleFilter), staleFilter).toBe(false);
+  }
   await expect.poll(() => requestedTurnsUrls.at(-1)).toContain("triage=resolved");
   await expect.poll(() => requestedTurnsUrls.at(-1)).toContain(
     "resolutionReason=knowledge_gap",
@@ -533,4 +566,8 @@ test("resolution filters restore from the URL and breakdown entries drill into m
   await expect.poll(() => requestedTurnsUrls.at(-1)).toContain(
     `resolutionTo=${encodeURIComponent(baseQualityStats().current.to)}`,
   );
+  const drilldownRequestUrl = new URL(requestedTurnsUrls.at(-1)!);
+  for (const staleFilter of staleQueueFilterNames) {
+    expect(drilldownRequestUrl.searchParams.has(staleFilter), staleFilter).toBe(false);
+  }
 });

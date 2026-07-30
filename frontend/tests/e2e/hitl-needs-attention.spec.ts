@@ -10,6 +10,7 @@ import {
 } from "./dashboard-fixtures";
 
 test("operator can use activity tabs to open a pending approval", async ({ page }) => {
+  const triageBodies: Array<Record<string, unknown>> = [];
   const conversationId = "conversation-hitl-inbox";
   const humanConversationId = "conversation-human-owned-inbox";
   const aiConversationId = "conversation-ai-owned-inbox";
@@ -237,13 +238,14 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   // Registered after the list route so it wins (Playwright matches last-registered first)
   // for the triage sub-path.
   await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
+    triageBodies.push(route.request().postDataJSON() as Record<string, unknown>);
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         state: "dismissed",
         version: 1,
-        resolution: { reason: "expected_behavior", note: null },
+        resolution: null,
         legacyReason: null,
         closedAt: "2026-06-19T12:00:00.000Z",
         updatedAt: "2026-06-19T12:00:00.000Z",
@@ -285,14 +287,16 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   // Triage clears a quality row from the inbox (criticals resolve from the drawer instead).
   const qualityRow = inbox.locator("tr", { hasText: "Do you sell gift cards?" });
   await qualityRow.getByRole("button", { name: "Dismiss" }).click();
-  const dismissalDialog = page.getByRole("dialog");
-  await expect(dismissalDialog.getByRole("heading", { name: "Mark not actionable" })).toBeVisible();
-  const expectedBehavior = dismissalDialog.getByRole("radio", { name: "Expected behavior" });
-  await expect(expectedBehavior).toBeVisible();
-  await expect(dismissalDialog.getByRole("radio", { name: "Knowledge gap" })).toHaveCount(0);
-  await dismissalDialog.getByText("Expected behavior", { exact: true }).click();
-  await expect(expectedBehavior).toBeChecked();
-  await dismissalDialog.getByRole("button", { name: "Mark not actionable", exact: true }).click();
+  const dismissalPopover = page.getByRole("dialog", { name: "Mark not actionable" });
+  await expect(dismissalPopover).toBeVisible();
+  await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+  await expect(dismissalPopover.getByRole("button", { name: "Expected behavior" })).toBeVisible();
+  await expect(dismissalPopover.getByRole("button", { name: "Knowledge gap" })).toHaveCount(0);
+  await dismissalPopover.getByRole("button", { name: "Close without reason" }).click();
+  await expect.poll(() => triageBodies).toContainEqual({
+    state: "dismissed",
+    expectedVersion: 0,
+  });
   await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
   await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
 
@@ -661,8 +665,7 @@ test("operator can turn written negative feedback into a remediation task", asyn
   await remediation.getByRole("button", { name: "Mark resolved" }).click();
   const resolutionDialog = page.getByRole("dialog");
   await expect(resolutionDialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
-  await resolutionDialog.getByRole("radio", { name: "Knowledge gap" }).check();
-  await resolutionDialog.getByRole("button", { name: "Resolve review" }).click();
+  await resolutionDialog.getByRole("button", { name: "Knowledge gap" }).click();
   await expect.poll(() => triageRequests).toContainEqual({
     state: "resolved",
     expectedVersion: 1,

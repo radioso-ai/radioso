@@ -22,8 +22,8 @@ linked case later passed.
 
 This feature makes closure structured and turns Eval into visible verification:
 
-1. terminal triage records one actionable reason and an optional note through a
-   shared close-review flow;
+1. terminal triage can record one actionable reason through a lightweight,
+   optional close-review flow without blocking routine queue cleanup;
 2. every triage transition is concurrency-safe and auditable, with explicit
    reopen behavior;
 3. one idempotent Eval operation finds or creates the case associated with an
@@ -34,29 +34,30 @@ This feature makes closure structured and turns Eval into visible verification:
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 - Close A Review With A Useful Reason (Priority: P1)
+### User Story 1 - Close A Review Without Mandatory Form-Filling (Priority: P1)
 
 A workspace operator can resolve an actionable Quality item or mark a
-non-actionable item accordingly, select one concise reason, optionally leave a
-note, and return to the queue without losing their place.
+non-actionable item accordingly, optionally select one concise reason, and
+return to the queue without losing their place.
 
-**Why this priority**: A terminal state without a reason clears work but teaches
-the operator nothing. Requiring one short classification creates useful data
-without turning routine triage into a form-filling exercise.
+**Why this priority**: Closing reviewed work is the operator's primary job.
+Classification supports later reporting, but it must not turn routine triage
+into mandatory form-filling before it drives a concrete remediation workflow.
 
 **Independent Test**: Close turns from both the Quality table and the negative
-feedback Needs Attention drawer using every supported reason, verify validation,
-queue removal, announcements, focus restoration, persistence, and subsequent
-display.
+feedback Needs Attention drawer with no reason and with every supported reason;
+verify the lightweight interaction, `other` validation, queue removal,
+announcements, focus restoration, persistence, and subsequent display.
 
 **Acceptance Scenarios**:
 
-1. **Given** an open or acknowledged turn in Quality, **When** the operator chooses Resolve, **Then** one shared close-review dialog requires a resolved reason and allows an optional note.
-2. **Given** an open or acknowledged negative-feedback item in Needs Attention, **When** the operator chooses Mark resolved, **Then** the same reason vocabulary and close-review interaction are used.
-3. **Given** an item the operator considers non-actionable, **When** they choose Not actionable, **Then** the dialog shows only not-actionable reasons.
-4. **Given** the operator chooses `other`, **When** the note is empty, **Then** completion is blocked with an accessible explanation.
-5. **Given** a valid terminal decision, **When** it succeeds, **Then** the item leaves the active queue, success is announced without relying on color, and focus moves predictably to the next item or page heading.
-6. **Given** a previously closed turn, **When** the operator views it with closed items included, **Then** its state, structured reason, optional note, and closure time are visible.
+1. **Given** an open or acknowledged turn in Quality, **When** the operator chooses Resolve, **Then** a compact non-modal close-review popover offers valid resolved reasons and a clear option to close without one.
+2. **Given** an open or acknowledged negative-feedback item in Needs Attention, **When** the operator chooses Mark resolved, **Then** the same optional reason vocabulary and close-review interaction are used.
+3. **Given** an item the operator considers non-actionable, **When** they choose Not actionable, **Then** the popover shows only not-actionable reasons.
+4. **Given** the operator does not want to classify the closure, **When** they choose the skip action, **Then** the terminal transition succeeds with no structured resolution.
+5. **Given** the operator chooses `other`, **When** the note is empty, **Then** completion is blocked with an accessible explanation; the note control is otherwise absent.
+6. **Given** a valid terminal decision, **When** it succeeds, **Then** the item leaves the active queue, success is announced without relying on color, and focus moves predictably to the next item or page heading.
+7. **Given** a previously closed turn, **When** the operator views it with closed items included, **Then** its state, optional structured reason, note when `other`, and closure time are visible.
 
 ---
 
@@ -156,11 +157,11 @@ entries, reload the resulting URL, and verify count/list parity.
 
 - The implicit open state has no persisted triage row or version yet.
 - A stale acknowledge arrives after another operator resolved the turn.
-- The same operator double-submits a terminal dialog.
+- The same operator double-submits a terminal popover.
 - An operator attempts to attach resolution data to `open` or `acknowledged`.
-- An operator attempts to close without a reason, supplies a reason from the
-  wrong terminal-state vocabulary, uses `other` without a note, or exceeds the
-  note length.
+- An operator closes without a reason, supplies a reason from the wrong
+  terminal-state vocabulary, uses `other` without a note, or exceeds the note
+  length.
 - A legacy client sends the old free-text `reason` input.
 - A closed record created before structured reasons has no reason code.
 - A record is reopened and closed more than once with different reasons.
@@ -192,7 +193,7 @@ entries, reload the resulting URL, and verify count/list parity.
 - Frontend user-visible behavior MUST prefer Playwright coverage; frontend unit
   tests remain limited to API encoding, URL state, conflict-state transforms,
   and other non-visual logic.
-- The dashboard MUST reuse existing dialog, table, filter, badge, typography,
+- The dashboard MUST reuse existing menu/popover, dialog, table, filter, badge, typography,
   spacing, color, announcement, and focus-management conventions.
 - Reason meaning MUST come from typed structured values, never English keyword
   matching over notes, questions, answers, prompts, or Eval output.
@@ -244,16 +245,17 @@ entries, reload the resulting URL, and verify count/list parity.
 
 ### Functional Requirements
 
-- **FR-001**: Terminal triage MUST use a structured resolution with one typed
+- **FR-001**: Terminal triage MAY include a structured resolution with one typed
   reason and an optional note of at most 500 characters.
 - **FR-002**: Resolved reasons MUST be `knowledge_gap`, `retrieval_issue`,
   `agent_behavior`, `platform_bug`, or `other`.
 - **FR-003**: Not-actionable reasons MUST be `expected_behavior`,
   `out_of_scope`, `invalid_feedback`, or `other`.
-- **FR-004**: The `other` reason MUST require a non-blank note. All other notes
-  remain optional.
-- **FR-005**: `resolved` and `dismissed` writes MUST include a resolution and
-  MUST accept only the reason vocabulary valid for that state.
+- **FR-004**: The `other` reason MUST require a non-blank note. Other notes
+  remain optional in the public API, while the dashboard reveals note entry only
+  for `other`.
+- **FR-005**: `resolved` and `dismissed` writes MAY omit `resolution`; when
+  supplied, they MUST accept only the reason vocabulary valid for that state.
 - **FR-006**: `open` and `acknowledged` writes MUST reject resolution data.
 - **FR-007**: Every Quality triage representation MUST expose a monotonic integer
   version. The implicit initial open record MUST have a stable initial version
@@ -265,7 +267,7 @@ entries, reload the resulting URL, and verify count/list parity.
   the current resolution and increment the version.
 - **FR-010**: Every accepted transition MUST record an audit event containing
   workspace, assistant message, prior state, next state, resulting version,
-  actor, structured reason when terminal, and linked Eval case identifier when
+  actor, structured reason when supplied, and linked Eval case identifier when
   present.
 - **FR-011**: Audit, logs, metrics, traces, and analytics MUST NOT contain the
   free-text resolution note.
@@ -277,12 +279,14 @@ entries, reload the resulting URL, and verify count/list parity.
   readable as unspecified history; the feature MUST NOT fabricate a reason from
   legacy free text.
 - **FR-014**: Quality and Needs Attention MUST use the same reason labels,
-  validation, close-review dialog, conflict behavior, and terminal success
-  semantics.
-- **FR-015**: The close-review dialog MUST make the selected terminal action
-  clear, expose only valid reasons, support keyboard and screen-reader use,
-  prevent double submission, and preserve the operator's optional note when a
-  recoverable request error occurs.
+  validation, lightweight close-review popover, conflict behavior, and terminal
+  success semantics.
+- **FR-015**: The close-review popover MUST make the selected terminal action
+  clear, expose only valid reasons, offer an explicit close-without-reason
+  action, support keyboard and screen-reader use, and prevent double
+  submission. A modal dialog is reserved for reviewing and explicitly replacing
+  a conflicting operator decision, preserving any selected reason and `other`
+  note across that recoverable conflict.
 - **FR-016**: A successful terminal action from an active queue MUST remove the
   item, announce the result through an accessible live region, and restore focus
   to the next logical target.
@@ -346,7 +350,7 @@ entries, reload the resulting URL, and verify count/list parity.
   OpenAPI.
 - **FR-037**: Generated OpenAPI artifacts, TypeScript SDK types, and MCP OpenAPI
   types MUST match the runtime Quality and Eval contracts.
-- **FR-038**: Operator documentation MUST explain reason selection, reopen,
+- **FR-038**: Operator documentation MUST explain optional reason selection, reopen,
   concurrent-change recovery, Add/Open Eval, timestamped Eval evidence, and the
   clickable reason breakdown. API documentation MUST explain idempotency,
   version conflicts, and legacy compatibility.
@@ -363,11 +367,13 @@ entries, reload the resulting URL, and verify count/list parity.
 
 ### UI Tasks
 
-- Replace direct terminal state changes in Quality with the shared close-review
-  dialog while keeping active-state transitions lightweight.
-- Use the same dialog from the negative-feedback Needs Attention drawer.
-- Add action-specific reason choices, optional note, `other` validation,
-  pending/error/conflict states, success announcement, and focus restoration.
+- Replace direct terminal state changes in Quality with the shared non-modal
+  close-review popover while keeping active-state transitions lightweight.
+- Use the same popover from the negative-feedback Needs Attention drawer.
+- Add action-specific optional reason choices, a close-without-reason action,
+  an `other`-only note, pending/error/conflict states, success announcement, and
+  focus restoration.
+- Reserve a modal dialog for explicit conflict replacement.
 - Show existing structured resolution details when browsing closed turns.
 - Replace the ambiguous Open in Eval behavior with honest Add to Eval and Open
   Eval status labels.
@@ -384,8 +390,8 @@ entries, reload the resulting URL, and verify count/list parity.
 - **Quality Triage Record**: Current workspace-scoped review state for one
   assistant message, including monotonic version, optional current structured
   resolution, actor, and update time.
-- **Structured Resolution**: Terminal classification containing one
-  state-compatible reason and an optional bounded note.
+- **Structured Resolution**: Optional terminal classification containing one
+  state-compatible reason and an `other`-only bounded note.
 - **Triage Transition Audit**: Immutable record of an accepted state transition,
   version, actor, structured reason, and linked Eval identifier, excluding note
   content.
@@ -429,11 +435,12 @@ entries, reload the resulting URL, and verify count/list parity.
 
 ### Measurable Outcomes
 
-- **SC-001**: In usability testing, an operator can close a review with a
-  structured reason in no more than 10 seconds and without leaving Quality or
-  Needs Attention.
-- **SC-002**: Every newly completed terminal review contains a valid structured
-  reason; `other` reviews contain a non-blank note.
+- **SC-001**: In usability testing, an operator can close a review without a
+  reason in no more than 5 seconds, or with a structured reason in no more than
+  10 seconds, without leaving Quality or Needs Attention.
+- **SC-002**: Every supplied structured reason is valid for its terminal state;
+  reasonless closures remain explicitly unspecified and `other` reviews contain
+  a non-blank note.
 - **SC-003**: In concurrent-transition tests, zero stale writes overwrite a
   newer accepted decision, and every rejected caller receives the current
   record.
@@ -452,7 +459,8 @@ entries, reload the resulting URL, and verify count/list parity.
 - **SC-008**: Operators can distinguish no linked Eval, pending, passing,
   failing, and error states without opening the case; passing evidence always
   includes when it occurred.
-- **SC-009**: Playwright verifies close, conflict, focus, announcement, Add/Open
+- **SC-009**: Playwright verifies reasonless and classified close, non-modal
+  interaction, conflict dialog, focus, announcement, Add/Open
   Eval, timestamped evidence, filtering, URL restoration, and breakdown
   navigation on both applicable dashboard surfaces.
 - **SC-010**: OpenAPI, generated SDK/MCP types, operator documentation, and

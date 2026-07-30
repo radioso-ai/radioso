@@ -31,7 +31,7 @@ export function EvalVerificationAction({
   verification: QualityVerification | null
   pending: boolean
   onOpen: () => void
-  onReviewAndResolve: () => void
+  onReviewAndResolve: (anchor: HTMLElement) => void
 }) {
   const passedAt = verification?.latestRunStatus === 'pass'
     ? verification.latestRunAt
@@ -67,12 +67,13 @@ export function EvalVerificationAction({
           </span>
           <Button
             type="button"
+            aria-haspopup="dialog"
             size="sm"
             variant="ghost"
             className="h-7 px-2 text-xs"
             onClick={(event) => {
               event.stopPropagation()
-              onReviewAndResolve()
+              onReviewAndResolve(event.currentTarget)
             }}
           >
             Review and resolve

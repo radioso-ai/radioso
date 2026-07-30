@@ -1,6 +1,6 @@
 ---
 title: "Close the Quality Loop with Evals"
-description: "Resolve answer-quality reviews with structured reasons, preserve weak turns as Eval cases, and verify the fix."
+description: "Close answer-quality reviews, optionally classify the outcome, preserve weak turns as Eval cases, and verify the fix."
 last_updated: 2026-07-30
 ---
 
@@ -9,27 +9,29 @@ last_updated: 2026-07-30
 The Quality queue is where an operator turns a weak assistant answer into a
 decision Radioso can learn from. A useful review has three parts:
 
-1. close the item with a structured reason,
+1. close the item, with a classification when it adds useful context,
 2. preserve the failed turn as an Eval case, and
 3. rerun that case after the underlying fix.
 
 ## Close a review
 
 Open **Activity → Quality** or **Needs attention**, choose **Resolve** or
-**Dismiss**, and select a reason. The two surfaces use the same dialog and the
-same rules:
+**Dismiss**. A small popover lets you close immediately or add an optional
+classification for reporting. The two surfaces use the same choices:
 
 - resolved: **Knowledge gap**, **Retrieval issue**, **Agent behavior**,
   **Platform bug**, or **Other**;
 - dismissed: **Expected behavior**, **Out of scope**, **Invalid feedback**, or
   **Other**.
 
-`Other` requires a note. Notes are limited to 500 characters. They appear in the
-turn detail but are deliberately excluded from aggregate reporting and the
+Choose **Close without reason** when classification would only slow down the
+queue. `Other` opens a note field and requires a note; the other choices close
+the review in one click. Notes are limited to 500 characters. They appear in
+the turn detail but are deliberately excluded from aggregate reporting and the
 transition audit.
 
-If another operator changes the review while your dialog is open, Radioso keeps
-the dialog open, shows the current decision, and lets you reconsider. It never
+If another operator changes the review while the popover is open, Radioso shows
+a confirmation dialog with the current and proposed decisions. It never
 silently overwrites the newer update. Reopening a closed review clears its
 resolution and removes it from terminal-resolution reports.
 
@@ -77,6 +79,18 @@ Content-Type: application/json
 Active states omit `resolution`. A stale `expectedVersion` returns `409
 QUALITY_TRIAGE_CONFLICT` with the current triage record in
 `error.details.current`.
+
+Terminal states may also omit `resolution`:
+
+```json
+{
+  "state": "dismissed",
+  "expectedVersion": 2
+}
+```
+
+That closes the review without classification. The response returns
+`resolution: null`.
 
 Use `resolutionReason` to filter turns by one or more reasons. `unspecified`
 selects terminal records without a structured reason. `resolutionFrom` and `resolutionTo` filter the

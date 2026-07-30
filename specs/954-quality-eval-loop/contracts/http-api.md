@@ -16,8 +16,16 @@
 ```
 
 Active states reject `resolution`. `dismissed` accepts only not-actionable
-reasons. `other` requires a non-blank note. The deprecated top-level `reason`
-string remains parseable and is never converted into a reason code.
+reasons. Terminal writes may omit `resolution` and are then reported as
+`unspecified`. `other` requires a non-blank note. The deprecated top-level
+`reason` string remains parseable and is never converted into a reason code.
+
+```json
+{
+  "state": "dismissed",
+  "expectedVersion": 2
+}
+```
 
 Success returns the current record:
 

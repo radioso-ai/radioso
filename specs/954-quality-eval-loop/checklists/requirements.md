@@ -38,10 +38,15 @@
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] Module ownership and anti-goals prevent Quality, Eval, transport, composition, and UI leakage
 - [x] Requestor has explicitly approved this specification
+- [x] The 2026-07-30 interaction amendment makes closure reasons optional,
+      replaces the routine modal with a non-modal popover, and reserves a dialog
+      for conflict replacement
 
 ## Notes
 
 - The requestor approved the delivery brief on 2026-07-30.
 - The requestor explicitly approved this specification on 2026-07-30.
+- The requestor approved the optional, unobtrusive close-review amendment on
+  2026-07-30 after reviewing the current downstream value of reason capture.
 - A read-only Claude Opus review and a second-round design challenge informed
   concurrency, reopen, audit, Eval association, API, taxonomy, and scope decisions.

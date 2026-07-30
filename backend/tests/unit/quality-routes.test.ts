@@ -408,8 +408,28 @@ describe("quality routes", () => {
     });
   });
 
+  it.each(["resolved", "dismissed"] as const)(
+    "accepts a reasonless %s transition",
+    async (state) => {
+      const service = new CapturingService(emptyPage);
+      const app = createApp(service);
+
+      const response = await request(app)
+        .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+        .set("Cookie", "radioso_session=valid-session")
+        .send({ state, expectedVersion: 0 });
+
+      expect(response.status).toBe(200);
+      expect(service.triageCalls[0]?.input).toMatchObject({
+        state,
+        expectedVersion: 0,
+        resolution: null,
+        legacyReason: null,
+      });
+    },
+  );
+
   it.each([
-    [{ state: "resolved", expectedVersion: 0 }, "missing terminal resolution"],
     [{
       state: "resolved",
       expectedVersion: 0,

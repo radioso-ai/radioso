@@ -61,6 +61,14 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     }),
   );
 
+  const QualityResolutionInputSchema = registry.register(
+    "QualityResolutionInput",
+    z.object({
+      reason: QualityResolutionReasonSchema,
+      note: z.string().max(500).nullish(),
+    }),
+  );
+
   const QualityTriageRecordSchema = registry.register(
     "QualityTriageRecord",
     z.object({
@@ -227,7 +235,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
         reason: z.union([QualityResolutionReasonSchema, z.literal("unspecified")]),
         count: z.number().int().min(0),
       })).describe(
-        "Current-window terminal triage counts grouped by state and structured reason. Legacy closures are grouped as `unspecified`.",
+        "Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`.",
       ),
     }),
   );
@@ -237,7 +245,10 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.object({
       state: QualityTriageStateSchema,
       expectedVersion: z.number().int().min(0),
-      resolution: z.union([QualityResolutionSchema, z.null()]).optional(),
+      resolution: z.union([QualityResolutionInputSchema, z.null()]).optional().openapi({
+        description:
+          "Optional structured context for terminal states. Omit or send null to close without recording a reason.",
+      }),
       reason: z.string().max(500).nullish().openapi({
         deprecated: true,
         description:

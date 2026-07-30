@@ -114,12 +114,6 @@ export const validateQualityTriageUpdate = (
   const resolution = normalizeResolution(candidate.state, candidate.resolution);
   const legacyReason = normalizeOptionalText(candidate.legacyReason);
 
-  if (terminalStates.has(candidate.state) && resolution === null && legacyReason === null) {
-    throw new QualityResolutionValidationError(
-      "Terminal triage states require a structured resolution",
-    );
-  }
-
   return {
     state: candidate.state,
     expectedVersion: candidate.expectedVersion,

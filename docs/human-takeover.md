@@ -202,12 +202,13 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   escalation. Reviewing feedback opens the exact failed answer and keeps direct
   links to Knowledge, the agent's Behavior settings, and agent chat beside the
   evidence. Mark it resolved after updating and testing, or choose **Not
-  actionable**. Both actions ask for a structured reason and optional note; if
-  another operator closes it first, the dialog shows their current decision
-  instead of overwriting it. A later thumbs down reopens the work even if that answer was
-  previously resolved or dismissed. Passive quality rows use the same
-  reason-required **Dismiss** flow. Approvals and handoffs clear by resolving or
-  handing back from the conversation drawer.
+  actionable**. Both actions open a compact popover where the operator can close
+  immediately or add an optional classification. Only **Other** asks for a
+  note. If another operator closes it first, a confirmation dialog shows their
+  current decision instead of overwriting it. A later thumbs down reopens the
+  work even if that answer was previously resolved or dismissed. Passive
+  quality rows use the same optional **Dismiss** flow. Approvals and handoffs
+  clear by resolving or handing back from the conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — answer quality in two zones with different scopes. **Health**
   covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,

@@ -66,10 +66,11 @@ const installQualityStats = async (
   });
 };
 
-test("choosing Dismissed keeps the close-review dialog isolated from conversation details", async ({
+test("choosing Dismissed offers optional context without opening a modal or conversation details", async ({
   page,
 }) => {
   const turn = qualityTurn("message-dismiss", "Should this answer be reviewed?");
+  const triageBodies: Array<Record<string, unknown>> = [];
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
@@ -87,18 +88,73 @@ test("choosing Dismissed keeps the close-review dialog isolated from conversatio
       }),
     });
   });
+  await page.route("**/backend/api/v1/quality/turns/message-dismiss/triage**", async (route) => {
+    triageBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        state: "dismissed",
+        version: 2,
+        resolution: null,
+        legacyReason: null,
+        closedAt: "2026-07-30T12:00:00.000Z",
+        updatedAt: "2026-07-30T12:00:00.000Z",
+      }),
+    });
+  });
 
   await page.goto(`/w/${workspaceKey}/quality`);
-  await page.getByRole("button", {
+  await page.setViewportSize({ width: 1280, height: 360 });
+  const triageTrigger = page.getByRole("button", {
     name: "Triage state: Open. Change state.",
-  }).click();
+  });
+  await triageTrigger.click();
   await page.getByRole("menuitemradio", { name: "Dismissed" }).click();
 
-  await expect(page.getByRole("heading", { name: "Mark not actionable" })).toBeVisible();
+  const closeReview = page.getByRole("dialog", { name: "Mark not actionable" });
+  await expect(closeReview).toBeVisible();
+  await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+  await expect(closeReview.getByRole("textbox")).toHaveCount(0);
+  await expect(closeReview.getByRole("button", {
+    name: "Close without reason",
+  })).toBeVisible();
   await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Cancel" }).click();
+  await closeReview.getByRole("button", { name: "Other…" }).click();
+  await expect(closeReview.getByRole("textbox")).toBeVisible();
+  const bounds = await closeReview.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y).toBeGreaterThanOrEqual(0);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(360);
+
+  await page.keyboard.press("Escape");
+  await expect(closeReview).toHaveCount(0);
+  await expect(triageTrigger).toBeFocused();
+
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await triageTrigger.click();
+  await page.getByRole("menuitemradio", { name: "Dismissed" }).click();
+  await expect(closeReview).toBeVisible();
+  await expect(closeReview.getByRole("textbox")).toHaveCount(0);
+
+  const addToEval = page.getByRole("button", { name: "Add to Eval" });
+  await addToEval.focus();
+  await expect(closeReview).toHaveCount(0);
+  await expect(addToEval).toBeFocused();
+
+  await triageTrigger.click();
+  await page.getByRole("menuitemradio", { name: "Dismissed" }).click();
+  await expect(closeReview).toBeVisible();
+  await closeReview.getByRole("button", { name: "Close without reason" }).click();
+  await expect(closeReview).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+  expect(triageBodies).toEqual([
+    {
+      state: "dismissed",
+      expectedVersion: 1,
+    },
+  ]);
 });
 
 test("closure reviews a canonical winner before replacement and removes locally when refetch fails", async ({
@@ -188,18 +244,13 @@ test("closure reviews a canonical winner before replacement and removes locally 
 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
-  await dialog.getByRole("button", { name: "Resolve review" }).click();
-  await expect(dialog.getByRole("alert")).toHaveText(
-    "Choose the reason that best explains this decision.",
-  );
-
-  await dialog.getByRole("radio", { name: "Other" }).check();
+  await dialog.getByRole("button", { name: "Other…" }).click();
   await dialog.getByRole("button", { name: "Resolve review" }).click();
   await expect(dialog.getByRole("alert")).toHaveText(
     "Add a short note when you choose Other.",
   );
 
-  const note = dialog.getByLabel("Note (required)");
+  const note = dialog.getByLabel("Short note");
   await note.fill("Updated a connector mapping.");
   await dialog.getByRole("button", { name: "Resolve review" }).click();
   await expect(dialog.getByRole("heading", {
@@ -214,7 +265,9 @@ test("closure reviews a canonical winner before replacement and removes locally 
   await expect(conflictPanel.locator(
     'time[datetime="2026-07-30T10:00:00.000Z"]',
   )).toBeVisible();
-  await expect(note).toHaveValue("Updated a connector mapping.");
+  await expect(conflictPanel).toContainText(
+    "Your decision: Other — Updated a connector mapping.",
+  );
   await expect(dialog.getByRole("button", { name: "Keep current decision" })).toBeVisible();
   const replaceButton = dialog.getByRole("button", { name: "Replace current decision" });
   await expect(replaceButton).toBeDisabled();
@@ -383,9 +436,10 @@ for (const scenario of [
       await page.getByRole("button", { name: "Review and resolve" }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
-      await expect(dialog.locator('input[type="radio"]:checked')).toHaveCount(0);
+      await expect(page.locator('[data-slot="dialog-overlay"]')).toHaveCount(0);
+      await expect(dialog.getByRole("textbox")).toHaveCount(0);
       expect(triageRequests).toEqual([]);
-      await dialog.getByRole("button", { name: "Cancel" }).click();
+      await page.keyboard.press("Escape");
     }
     await page.getByRole("button", { name: scenario.name }).click();
 

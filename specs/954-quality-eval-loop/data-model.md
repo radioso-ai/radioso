@@ -17,9 +17,11 @@ One current row per workspace/assistant message.
 | updated_by | UUID nullable | FK user, set null on user deletion |
 | updated_at | timestamptz | display timestamp |
 
-Terminal structured writes require a reason; `other` also requires a note.
-Active writes clear resolution and `closed_at`. Historical or compatibility
-terminal rows may have no typed reason and are presented as unspecified.
+Terminal writes may omit a structured resolution. When supplied, the reason
+must match the terminal state; `other` requires a note while other API clients
+may still supply one. Active writes clear resolution and `closed_at`.
+Reasonless, historical, or compatibility terminal rows are presented as
+unspecified.
 
 ```text
 implicit open@0 -> any accepted state@1

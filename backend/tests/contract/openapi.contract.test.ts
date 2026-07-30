@@ -38,6 +38,7 @@ describe("openapi contract", () => {
     ]));
     expect(qualityTriage).toMatchObject({
       operationId: "setQualityTurnTriage",
+      description: expect.stringContaining("optional structured reason"),
       responses: {
         "200": expect.any(Object),
         "409": expect.any(Object),
@@ -46,6 +47,11 @@ describe("openapi contract", () => {
     expect(document.components?.schemas).toMatchObject({
       QualityResolutionReason: expect.any(Object),
       QualityResolution: expect.any(Object),
+      QualityResolutionInput: {
+        properties: {
+          note: expect.any(Object),
+        },
+      },
       QualityTriageRecord: {
         properties: {
           resolution: {
@@ -72,7 +78,7 @@ describe("openapi contract", () => {
         properties: {
           resolution: {
             anyOf: expect.arrayContaining([
-              { $ref: "#/components/schemas/QualityResolution" },
+              { $ref: "#/components/schemas/QualityResolutionInput" },
               { type: "null" },
             ]),
           },
@@ -87,6 +93,10 @@ describe("openapi contract", () => {
       .not.toHaveProperty("properties.verification.allOf");
     expect(document.components?.schemas?.SetQualityTriageRequest)
       .not.toHaveProperty("properties.resolution.allOf");
+    expect(document.components?.schemas?.SetQualityTriageRequest)
+      .not.toHaveProperty("required", expect.arrayContaining(["resolution"]));
+    expect(document.components?.schemas?.QualityResolutionInput)
+      .not.toHaveProperty("required", expect.arrayContaining(["note"]));
     expect(evalMessagePath?.get).toMatchObject({
       operationId: "getEvalCaseBySourceMessage",
       responses: {

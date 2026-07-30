@@ -12,9 +12,9 @@ import {
 
 import { ConversationDrawer } from './conversation-drawer'
 import {
-  CloseReviewDialog,
+  CloseReviewPopover,
   type CloseReviewInput,
-} from '@/components/dashboard/quality/close-review-dialog'
+} from '@/components/dashboard/quality/close-review-popover'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
@@ -142,10 +142,11 @@ function RemediationActions({
   acknowledgementError: string | null
   triageError: string | null
   onCopyQuestion: () => void
-  onResolve: () => void
-  onDismiss: () => void
+  onResolve: (anchor: HTMLElement) => void
+  onDismiss: (anchor: HTMLElement | null) => void
 }) {
   const unavailableAgentHelpId = `feedback-agent-unavailable-${item.assistantMessageId}`
+  const moreActionsRef = useRef<HTMLButtonElement>(null)
 
   return (
     <div className="space-y-3">
@@ -252,17 +253,19 @@ function RemediationActions({
         <div className="flex items-center gap-2">
           <Button
             type="button"
+            aria-haspopup="dialog"
             size="sm"
             variant="outline"
             className="min-h-11 sm:min-h-9"
             disabled={isTriaging || acknowledgementPending}
-            onClick={onResolve}
+            onClick={(event) => onResolve(event.currentTarget)}
           >
             Mark resolved
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                ref={moreActionsRef}
                 type="button"
                 size="icon"
                 variant="ghost"
@@ -274,7 +277,7 @@ function RemediationActions({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onDismiss}>
+              <DropdownMenuItem onSelect={() => onDismiss(moreActionsRef.current)}>
                 Not actionable
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -315,8 +318,8 @@ function NegativeFeedbackAccessory({
   acknowledgementError: string | null
   triageError: string | null
   onCopyQuestion: () => void
-  onResolve: () => void
-  onDismiss: () => void
+  onResolve: (anchor: HTMLElement) => void
+  onDismiss: (anchor: HTMLElement | null) => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(true)
   const contentProps = {
@@ -379,7 +382,11 @@ function InboxRow({
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (item: InboxItem, state: QualityTriageState) => void
+  onTriage: (
+    item: InboxItem,
+    state: QualityTriageState,
+    anchor: HTMLElement | null,
+  ) => void
   isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
@@ -454,10 +461,11 @@ function InboxRow({
           <div className="flex justify-end">
             <Button
               type="button"
+              aria-haspopup="dialog"
               variant="outline"
               size="sm"
               disabled={isTriaging}
-              onClick={() => onTriage(item, 'dismissed')}
+              onClick={(event) => onTriage(item, 'dismissed', event.currentTarget)}
             >
               Dismiss
             </Button>
@@ -479,7 +487,11 @@ function MobileInboxRow({
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (item: InboxItem, state: QualityTriageState) => void
+  onTriage: (
+    item: InboxItem,
+    state: QualityTriageState,
+    anchor: HTMLElement | null,
+  ) => void
   isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
@@ -527,11 +539,12 @@ function MobileInboxRow({
           {item.assistantMessageId && item.type !== 'negative_feedback' ? (
             <Button
               type="button"
+              aria-haspopup="dialog"
               size="sm"
               variant="ghost"
               className="min-h-11"
               disabled={isTriaging}
-              onClick={() => onTriage(item, 'dismissed')}
+              onClick={(event) => onTriage(item, 'dismissed', event.currentTarget)}
             >
               Dismiss
             </Button>
@@ -557,6 +570,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     item: InboxItem
     state: 'resolved' | 'dismissed'
     conflict: QualityTriageRecord | null
+    anchor: HTMLElement | null
   } | null>(null)
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
@@ -752,10 +766,15 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const requestCloseReview = useCallback((
     item: InboxItem,
     state: QualityTriageState,
+    anchor: HTMLElement | null,
   ) => {
     if (state !== 'resolved' && state !== 'dismissed') return
     setTriageError(null)
-    setCloseReview({ item, state, conflict: null })
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setCloseReview({ item, state, conflict: null, anchor })
+      })
+    })
   }, [])
 
   const handleTriage = useCallback(async (input: CloseReviewInput) => {
@@ -774,7 +793,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       await qualityApi.setTriageState(messageId, {
         state,
         expectedVersion: item.triage?.version ?? 0,
-        resolution: input.resolution,
+        ...(input.resolution ? { resolution: input.resolution } : {}),
       })
       if (!isMountedRef.current) {
         return
@@ -1138,8 +1157,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             acknowledgementError={acknowledgementError}
             triageError={triageError}
             onCopyQuestion={() => void handleCopyQuestion()}
-            onResolve={() => requestCloseReview(selectedFeedbackItem, 'resolved')}
-            onDismiss={() => requestCloseReview(selectedFeedbackItem, 'dismissed')}
+            onResolve={(anchor) =>
+              requestCloseReview(selectedFeedbackItem, 'resolved', anchor)}
+            onDismiss={(anchor) =>
+              requestCloseReview(selectedFeedbackItem, 'dismissed', anchor)}
           />
         ) : null}
         onAfterClose={handleDrawerClosed}
@@ -1148,8 +1169,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         buildRoutineHref={buildRoutineHref}
       />
       {closeReview ? (
-        <CloseReviewDialog
+        <CloseReviewPopover
+          key={`${closeReview.item.key}:${closeReview.state}`}
           open
+          anchor={closeReview.anchor}
           state={closeReview.state}
           submitting={Boolean(
             closeReview.item.assistantMessageId

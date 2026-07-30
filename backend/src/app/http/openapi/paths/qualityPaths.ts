@@ -57,7 +57,7 @@ export const registerQualityPaths = (
           .optional(),
         resolutionReason: csvOrArrayString
           .describe(
-            "Comma-separated structured resolution reasons, plus `unspecified` for legacy terminal records.",
+            "Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one.",
           )
           .optional(),
         sort: z.enum(["turn_created_at", "negative_feedback_updated_at"])
@@ -190,8 +190,9 @@ export const registerQualityPaths = (
     summary: "Set the triage state of an assistant turn",
     description:
       "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an " +
-      "assistant turn using optimistic concurrency. Terminal states require a structured, " +
-      "state-compatible reason. Admin/owner only (requires the `workspace.quality.manage` permission).",
+      "assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; " +
+      "omit it to close without classification. Admin/owner only (requires the " +
+      "`workspace.quality.manage` permission).",
     operationId: "setQualityTurnTriage",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {

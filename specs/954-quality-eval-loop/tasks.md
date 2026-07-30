@@ -7,6 +7,11 @@ Backend test tasks are strict red steps and must fail before their paired
 production tasks. Visible dashboard behavior is covered by Playwright; frontend
 unit tests cover only API/URL/state transforms.
 
+The approved 2026-07-30 interaction amendment is tracked in Phase 9. It changes
+terminal resolution from required to optional, replaces the routine modal with
+a non-modal popover, hides dashboard note entry unless `other` is selected, and
+retains a modal only for explicit conflict replacement.
+
 ## Phase 1: Setup
 
 - [X] T001 Verify feature checklist, current branch, ignore files, and baseline focused Quality/Eval/frontend tests
@@ -91,6 +96,23 @@ clicks through.
 - [X] T039 Run one engineering-manager review and apply all in-scope feedback
 - [X] T040 Commit, push `954-quality-eval-loop`, and open a PR against `main` linking spec, plan, tasks, validation, and issue #940
 
+## Phase 9: Approved amendment — optional, unobtrusive closure context
+
+**Independent test**: both operator surfaces can close without a reason from a
+non-modal popover, can optionally classify with valid state-specific reasons,
+show a note only for `other`, and use a modal only after a stale-write conflict.
+
+- [X] T041 [US1] Write and observe failing backend domain/route tests for reasonless terminal writes in `backend/tests/unit/quality-resolution.test.ts` and `backend/tests/unit/quality-routes.test.ts`
+- [X] T042 [US1] Permit unspecified terminal resolution while retaining state-specific and `other` validation in `backend/src/modules/quality/domain/resolution.ts`
+- [X] T043 [US1] Write and observe failing Playwright coverage for the non-modal reasonless/classified close flows and conflict modal in `frontend/tests/e2e/quality-resolution.spec.ts` and `frontend/tests/e2e/hitl-needs-attention.spec.ts`
+- [X] T044 [US1] Refactor shared closure presentation into lightweight popover, exceptional conflict dialog, and reusable reason labels under `frontend/components/dashboard/quality/`
+- [X] T045 [US1] Wire optional closure context and preserve focus/announcement/error behavior in `frontend/components/dashboard/quality-view.tsx` and `frontend/components/dashboard/needs-attention-view.tsx`
+- [X] T046 Update code-first Quality contract descriptions/tests, regenerate OpenAPI/SDK/MCP artifacts, and confirm the amendment has no document-worker or AMQP impact in `backend/src/app/http/openapi/`, `backend/tests/contract/openapi.contract.test.ts`, and generated contract outputs
+- [X] T047 Update operator/API documentation and amendment artifacts in `docs/quality-eval-learning-loop.md`, `docs-portal/content/operators/human-takeover.mdx`, and `specs/954-quality-eval-loop/`
+- [X] T048 Run focused backend/frontend suites, builds, API contract drift checks, and `pnpm run ci:local -- origin/main`
+- [X] T049 Run senior-engineer review loops and one engineering-manager review; address all in-scope findings
+- [X] T050 Commit, push, and update PR #957 with amendment scope and validation evidence
+
 ## Dependencies
 
 - T001–T007 establish the schema and narrow boundaries.
@@ -98,6 +120,8 @@ clicks through.
 - US3 establishes association identity before US4 consumes its batch projection.
 - US5 depends on structured closure timestamps/reasons, not on Eval.
 - Contracts/docs/Playwright follow the runtime/UI slices; review and PR creation are last.
+- T041–T047 amend US1 without changing Eval association or verification
+  ownership; T048–T050 repeat delivery gates for the amendment.
 
 ## Parallel opportunities
 

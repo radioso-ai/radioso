@@ -79,11 +79,30 @@ describe("validateQualityTriageUpdate", () => {
     })).toThrow(/active/i);
   });
 
-  it("requires structured resolution for new terminal writes", () => {
-    expect(() => validateQualityTriageUpdate({
+  it.each(["resolved", "dismissed"] as const)(
+    "accepts %s without a structured resolution",
+    (state) => {
+      expect(validateQualityTriageUpdate({
+        state,
+        expectedVersion: 0,
+      })).toEqual({
+        state,
+        expectedVersion: 0,
+        resolution: null,
+        legacyReason: null,
+      });
+    },
+  );
+
+  it("still accepts other with a trimmed note", () => {
+    expect(validateQualityTriageUpdate({
       state: "resolved",
       expectedVersion: 0,
-    })).toThrow(/resolution/i);
+      resolution: { reason: "other", note: "  A distinct cause  " },
+    }).resolution).toEqual({
+      reason: "other",
+      note: "A distinct cause",
+    });
   });
 
   it("preserves the deprecated legacy reason without classifying it", () => {

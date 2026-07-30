@@ -2581,7 +2581,7 @@ export interface paths {
         get?: never;
         /**
          * Set the triage state of an assistant turn
-         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states require a structured, state-compatible reason. Admin/owner only (requires the `workspace.quality.manage` permission).
+         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; omit it to close without classification. Admin/owner only (requires the `workspace.quality.manage` permission).
          */
         put: operations["setQualityTurnTriage"];
         post?: never;
@@ -5762,6 +5762,10 @@ export interface components {
             reason: components["schemas"]["QualityResolutionReason"];
             note: string | null;
         };
+        QualityResolutionInput: {
+            reason: components["schemas"]["QualityResolutionReason"];
+            note?: string | null;
+        };
         QualityTriageRecord: {
             state: components["schemas"]["QualityTriageState"];
             version: number;
@@ -5883,7 +5887,7 @@ export interface components {
                 slow_responses: number;
                 skill_failures: number;
             };
-            /** @description Current-window terminal triage counts grouped by state and structured reason. Legacy closures are grouped as `unspecified`. */
+            /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
             resolutionBreakdown: {
                 /** @enum {string} */
                 state: "resolved" | "dismissed";
@@ -5894,7 +5898,8 @@ export interface components {
         SetQualityTriageRequest: {
             state: components["schemas"]["QualityTriageState"];
             expectedVersion: number;
-            resolution?: components["schemas"]["QualityResolution"] | null;
+            /** @description Optional structured context for terminal states. Omit or send null to close without recording a reason. */
+            resolution?: components["schemas"]["QualityResolutionInput"] | null;
             /**
              * @deprecated
              * @description Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.
@@ -17031,7 +17036,7 @@ export interface operations {
                 feedback?: string;
                 /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
                 triage?: string;
-                /** @description Comma-separated structured resolution reasons, plus `unspecified` for legacy terminal records. */
+                /** @description Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one. */
                 resolutionReason?: string;
                 /** @description Sort order. Defaults to assistant-turn creation time. */
                 sort?: "turn_created_at" | "negative_feedback_updated_at";

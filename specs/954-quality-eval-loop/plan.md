@@ -9,9 +9,10 @@ Add structured, concurrency-safe Quality closure and connect each assistant
 message to at most one Eval case. PostgreSQL stores the mutable triage read
 model, immutable transition history, and explicit message/case association.
 Quality consumes a narrow Eval-owned batch projection for page enrichment.
-Code-first OpenAPI drives generated SDK/MCP types, while the dashboard reuses a
-shared close-review dialog and replaces the client-side Eval scan with one
-idempotent server operation.
+Code-first OpenAPI drives generated SDK/MCP types, while the dashboard uses a
+shared non-modal, optional close-review popover, reserves a dialog for conflict
+replacement, and replaces the client-side Eval scan with one idempotent server
+operation.
 
 ## Technical Context
 
@@ -22,7 +23,7 @@ idempotent server operation.
 **Target Platform**: Self-hosted Linux backend and modern desktop/mobile browsers
 **Project Type**: pnpm web monorepo with backend, dashboard, SDK, MCP server, and docs portal
 **Performance Goals**: One bounded Eval-verification query per Quality page; 100-row page under the 2-second real-Postgres integration fixture; no per-case client scan
-**Constraints**: Workspace isolation; 500-character note; no note content in logs/audit/telemetry; explicit integer concurrency version; one linked case per message
+**Constraints**: Workspace isolation; optional terminal resolution; 500-character note; dashboard note entry only for `other`; no note content in logs/audit/telemetry; explicit integer concurrency version; one linked case per message
 **Scale/Scope**: Five approved stories spanning Quality, Eval, dashboard, generated contracts, and product/API docs
 
 ## Constitution Check
@@ -31,7 +32,9 @@ idempotent server operation.
 
 - **PASS — spec gate**: `spec.md` is explicitly approved and its checklist is complete.
 - **PASS — TDD**: backend unit/contract/integration tests are written and observed failing before each production slice.
-- **PASS — frontend tests**: Playwright owns visible dialog, conflict, focus, announcement, Eval, filter, and breakdown flows. Unit tests cover only URL/API transforms.
+- **PASS — frontend tests**: Playwright owns visible popover, reasonless close,
+  conflict dialog, focus, announcement, Eval, filter, and breakdown flows. Unit
+  tests cover only URL/API transforms.
 - **PASS — stack**: Node.js, React, PostgreSQL, and existing dependencies remain unchanged. No LLM integration is added.
 - **PASS — secrets**: no configuration or secrets are introduced.
 - **PASS — data protection**: notes are bounded, workspace-scoped, omitted from transition audit metadata and operational evidence, and protected by existing Quality permissions.
@@ -88,7 +91,7 @@ docs-portal/content/guides/
 validation and transition persistence stay within the Quality module; Eval
 association creation and batch projection stay within Eval. Application
 composition supplies only the narrow port. Shared dashboard components own
-closure and verification presentation.
+lightweight closure, exceptional conflict, and verification presentation.
 
 ## Module Ownership & Seams
 
@@ -98,7 +101,10 @@ closure and verification presentation.
 - **Persistence/Integration Layer**: Quality transition writes and transition-history insertion share one transaction. `EvalRepository` owns association/case/snapshot transactions and one batched latest-run query.
 - **Application Composition**: the built-in Quality module receives an Eval verification adapter from existing Eval dependencies. Composition contains no state/reason rules.
 - **Files Kept Small**: `quality-view.tsx`, `needs-attention-view.tsx`, `quality/service.ts`, and `evalRoutes.ts` receive only wiring; new focused components/services own new behavior.
-- **Planned Extractions**: resolution schemas/helpers, close-review dialog, verification action/presentation, Eval message-case service, Eval verification port, and transition result/conflict types.
+- **Planned Extractions**: resolution schemas/helpers, close-review popover,
+  exceptional conflict dialog, verification action/presentation, Eval
+  message-case service, Eval verification port, and transition result/conflict
+  types.
 - **Required Refactor Stories**: no broad cleanup. The focused extractions above are foundational tasks completed before their consuming stories.
 
 The backend already accepts agent/channel scope, although the current Quality UI

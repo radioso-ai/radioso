@@ -30,8 +30,9 @@ pnpm test
 pnpm exec playwright test tests/e2e/quality-resolution.spec.ts
 ```
 
-Exercise both Quality and Needs Attention: terminal reason validation,
-recoverable errors preserving the note, stale-version recovery, accessible
+Exercise both Quality and Needs Attention: reasonless terminal closure,
+state-compatible optional reasons, the `other`-only note, non-modal popover
+behavior, conflict-dialog recovery preserving context, accessible
 announcement/focus, Add/Open Eval, timestamped pass evidence, URL reason
 restoration, and breakdown click-through.
 

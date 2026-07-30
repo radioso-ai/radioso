@@ -5,7 +5,7 @@ import type {
   QualityStats,
 } from '@/lib/api-quality'
 import { Button } from '@/components/ui/button'
-import { REASON_LABELS } from './close-review-dialog'
+import { REASON_LABELS } from './close-review-popover'
 
 const reasonLabel = (reason: QualityResolutionBreakdownReason): string =>
   reason === 'unspecified' ? 'Reason unspecified' : REASON_LABELS[reason]

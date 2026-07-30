@@ -2,14 +2,31 @@
 
 ## Structured triage compatibility
 
-- **Decision**: Add `resolution: { reason, note }` and `expectedVersion` while
-  continuing to parse the old `reason` property. The old field is stored only
-  as legacy free text and is never converted to a typed reason.
+- **Decision**: Add optional `resolution: { reason, note }` and
+  `expectedVersion` while continuing to parse the old `reason` property. The old
+  field is stored only as legacy free text and is never converted to a typed
+  reason. Terminal writes without either field are accepted as unspecified.
 - **Rationale**: Existing clients remain syntactically compatible and historical
   text is not misclassified. Structured clients receive strict state-specific
   validation. Compatibility-only terminal rows appear as `unspecified`.
 - **Alternatives considered**: Rejecting old requests breaks clients; guessing a
   typed reason violates multilingual and anti-keyword rules.
+
+## Lightweight closure interaction
+
+- **Decision**: Routine terminal actions use one shared non-modal popover with
+  state-compatible optional reasons and an explicit close-without-reason
+  action. Only `other` reveals a note input. A modal is reserved for reviewing
+  and explicitly replacing a conflicting operator decision.
+- **Rationale**: Classification currently feeds reporting but no immediate
+  remediation workflow, so mandatory form-filling imposes operator cost without
+  enough direct value. The exceptional lost-update decision still warrants
+  interruption.
+- **Alternatives considered**: Keeping the required modal overvalues aggregate
+  data; immediate one-click closure followed by a second metadata write creates
+  awkward same-state transition/audit semantics; repurposing dropdown-menu
+  semantics for an interactive form would make focus behavior and composition
+  brittle, so the existing Radix family is extended with its Popover primitive.
 
 ## Concurrency token
 

@@ -12147,6 +12147,24 @@
           "note"
         ]
       },
+      "QualityResolutionInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "$ref": "#/components/schemas/QualityResolutionReason"
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "reason"
+        ]
+      },
       "QualityTriageRecord": {
         "type": "object",
         "properties": {
@@ -12697,7 +12715,7 @@
                 "count"
               ]
             },
-            "description": "Current-window terminal triage counts grouped by state and structured reason. Legacy closures are grouped as `unspecified`."
+            "description": "Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`."
           }
         },
         "required": [
@@ -12723,7 +12741,7 @@
           "resolution": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/QualityResolution"
+                "$ref": "#/components/schemas/QualityResolutionInput"
               },
               {
                 "type": "null"
@@ -12731,7 +12749,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Optional structured context for terminal states. Omit or send null to close without recording a reason."
           },
           "reason": {
             "type": [
@@ -31712,10 +31731,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "Comma-separated structured resolution reasons, plus `unspecified` for legacy terminal records."
+              "description": "Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one."
             },
             "required": false,
-            "description": "Comma-separated structured resolution reasons, plus `unspecified` for legacy terminal records.",
+            "description": "Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one.",
             "name": "resolutionReason",
             "in": "query"
           },
@@ -32009,7 +32028,7 @@
           "Quality"
         ],
         "summary": "Set the triage state of an assistant turn",
-        "description": "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states require a structured, state-compatible reason. Admin/owner only (requires the `workspace.quality.manage` permission).",
+        "description": "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; omit it to close without classification. Admin/owner only (requires the `workspace.quality.manage` permission).",
         "operationId": "setQualityTurnTriage",
         "security": [
           {

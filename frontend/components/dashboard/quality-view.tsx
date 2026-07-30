@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
@@ -84,10 +84,10 @@ import { useWorkspace } from '@/lib/workspace-context'
 import { resolveQueueScope } from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 import {
-  CloseReviewDialog,
+  CloseReviewPopover,
   REASON_LABELS,
   type CloseReviewInput,
-} from '@/components/dashboard/quality/close-review-dialog'
+} from '@/components/dashboard/quality/close-review-popover'
 import { EvalVerificationAction } from '@/components/dashboard/quality/eval-verification-action'
 import { ResolutionBreakdown } from '@/components/dashboard/quality/resolution-breakdown'
 
@@ -541,13 +541,15 @@ function TriageStateControl({
   assistantMessageId: string
   state: QualityTriageState
   pending: boolean
-  onChange: (next: QualityTriageState) => void
+  onChange: (next: QualityTriageState, anchor: HTMLElement | null) => void
 }) {
   const meta = TRIAGE_STATE_META[state]
+  const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           disabled={pending}
           data-quality-triage-id={assistantMessageId}
@@ -569,7 +571,10 @@ function TriageStateControl({
         <DropdownMenuLabel>Triage state</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={state}
-          onValueChange={(value) => onChange(value as QualityTriageState)}
+          onValueChange={(value) => onChange(
+            value as QualityTriageState,
+            triggerRef.current,
+          )}
         >
           {TRIAGE_STATE_ORDER.map((value) => (
             <DropdownMenuRadioItem key={value} value={value}>
@@ -633,6 +638,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     turn: LowQualityTurn
     state: 'resolved' | 'dismissed'
     conflict: QualityTriageRecord | null
+    anchor: HTMLElement | null
   } | null>(null)
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
   // Bumped after a triage change so the active-backlog signal counts refetch.
@@ -1214,10 +1220,25 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const requestCloseReview = (
     turn: LowQualityTurn,
     state: 'resolved' | 'dismissed',
+    anchor: HTMLElement | null,
   ) => {
     setOpenedConversation(null)
-    setCloseReview({ turn, state, conflict: null })
     setError(null)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const currentAnchor = anchor?.isConnected
+          ? anchor
+          : document.querySelector<HTMLElement>(
+              `[data-quality-triage-id="${CSS.escape(turn.assistantMessageId)}"]`,
+            )
+        setCloseReview({
+          turn,
+          state,
+          conflict: null,
+          anchor: currentAnchor ?? null,
+        })
+      })
+    })
   }
 
   const openEval = async (turn: LowQualityTurn) => {
@@ -1267,12 +1288,16 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     }
   }
 
-  const updateTriageState = async (turn: LowQualityTurn, next: QualityTriageState) => {
+  const updateTriageState = async (
+    turn: LowQualityTurn,
+    next: QualityTriageState,
+    anchor: HTMLElement | null,
+  ) => {
     if (turn.triage.state === next || pendingTriageId === turn.assistantMessageId) {
       return
     }
     if (next === 'resolved' || next === 'dismissed') {
-      requestCloseReview(turn, next)
+      requestCloseReview(turn, next, anchor)
       return
     }
     setPendingTriageId(turn.assistantMessageId)
@@ -1323,7 +1348,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       const record = await qualityApi.setTriageState(turn.assistantMessageId, {
         state: input.state,
         expectedVersion: turn.triage.version,
-        resolution: input.resolution,
+        ...(input.resolution ? { resolution: input.resolution } : {}),
       })
       const remainsInTriageScope = !queueScope.triageStates
         || queueScope.triageStates.includes(record.state)
@@ -1599,7 +1624,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                           verification={turn.verification}
                           pending={creatingEvalMessageId === turn.assistantMessageId}
                           onOpen={() => void openEval(turn)}
-                          onReviewAndResolve={() => requestCloseReview(turn, 'resolved')}
+                          onReviewAndResolve={(anchor) =>
+                            requestCloseReview(turn, 'resolved', anchor)}
                         />
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
@@ -1688,7 +1714,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                             assistantMessageId={turn.assistantMessageId}
                             state={turn.triage.state}
                             pending={pendingTriageId === turn.assistantMessageId}
-                            onChange={(next) => void updateTriageState(turn, next)}
+                            onChange={(next, anchor) =>
+                              void updateTriageState(turn, next, anchor)}
                           />
                           {turn.triage.state === 'resolved' || turn.triage.state === 'dismissed' ? (
                             <div className="max-w-48 text-xs text-muted-foreground">
@@ -1747,17 +1774,31 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       {statusAnnouncement}
     </p>
     {closeReview ? (
-      <CloseReviewDialog
+      <CloseReviewPopover
+        key={`${closeReview.turn.assistantMessageId}:${closeReview.state}`}
         open
+        anchor={closeReview.anchor}
         state={closeReview.state}
         submitting={pendingTriageId === closeReview.turn.assistantMessageId}
         error={error}
         conflict={closeReview.conflict}
         onOpenChange={(open) => {
           if (!open) {
+            const messageId = closeReview.turn.assistantMessageId
             setCloseReview(null)
             setOpenedConversation(null)
             setError(null)
+            window.requestAnimationFrame(() => {
+              if (
+                document.activeElement instanceof HTMLElement
+                && document.activeElement !== document.body
+              ) {
+                return
+              }
+              document.querySelector<HTMLElement>(
+                `[data-quality-triage-id="${CSS.escape(messageId)}"]`,
+              )?.focus()
+            })
           }
         }}
         onSubmit={submitCloseReview}

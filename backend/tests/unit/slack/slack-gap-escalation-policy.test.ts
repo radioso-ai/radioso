@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ConnectorChatPort, ConnectorLogger } from "@radioso/connector-api";
+import type {
+  ConnectorChatOutcome,
+  ConnectorChatPort,
+  ConnectorLogger,
+} from "@radioso/connector-api";
 
 import { SlackMessageHandler } from "../../../src/modules/connectors/plugins/slack/slackMessageHandler.js";
 import type {
@@ -50,7 +54,7 @@ const basePersistence = (): SlackPersistencePort => ({
 });
 
 const makeHandler = (input: {
-  outcome: "answered" | "no_context" | "out_of_scope";
+  outcome: ConnectorChatOutcome;
   answer?: string;
   escalationChannelId?: string | null;
   gapEscalationEnabled?: boolean;
@@ -177,6 +181,18 @@ describe("Slack gap escalation policy", () => {
     const { handler, outbox } = makeHandler({
       outcome: "out_of_scope",
       answer: "That's outside what I can help with.",
+      gapEscalationEnabled: true,
+    });
+
+    await handler.handleMessageIm(event);
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not escalate unavailable generation as a content gap", async () => {
+    const { handler, outbox } = makeHandler({
+      outcome: "unavailable",
+      answer: "I can't respond right now.",
       gapEscalationEnabled: true,
     });
 

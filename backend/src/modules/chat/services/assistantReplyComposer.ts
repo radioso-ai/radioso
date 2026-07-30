@@ -105,7 +105,7 @@ export class AssistantReplyComposer {
       workspaceContext: this.support.buildChatWorkspaceContext(session),
       usageContext: this.support.buildChatUsageContext(session, accountId, `${this.config.outcomeKind}_miss`),
     });
-    return this.chatAnswerPresenter.presentGroundedMissAnswer(miss.text, miss.declineReason);
+    return this.presentReply(miss.text);
   }
 
   /**
@@ -161,7 +161,7 @@ export class AssistantReplyComposer {
       signal,
     });
     return {
-      finalPresentation: this.chatAnswerPresenter.presentGroundedMissAnswer(miss.text, miss.declineReason),
+      finalPresentation: this.presentReply(miss.text),
       suggestions: { mode: "presentation" },
       hasStreamedAnswer: false,
       streamedAnswer,

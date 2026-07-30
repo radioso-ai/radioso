@@ -79,17 +79,23 @@ imports from `services/`.
   (`TurnDeclineReason` in `assistantTurnOutcomeTypes.ts`). `content_gap` keeps the
   turn on `retrieval.answer:no_context`; `out_of_scope` moves it to
   `retrieval.answer:out_of_scope`, an outcome the catalog leaves without a
-  `groundedAnswer` flag so it scores on neither side of the grounded rate. The
-  classification is only ever a model-returned enum, never a keyword test: the
-  grounded envelope adds an `out_of_scope` outcome value, and
+  `groundedAnswer` flag so it scores on neither side of the grounded rate.
+  `generation_unavailable` records missing model configuration, provider failure,
+  or an unusable generated decline as `retrieval.answer:unavailable` with failed
+  status, also outside the grounding-gap population. The
+  content-vs-scope classification is only ever a model-returned enum, never a
+  keyword test: the grounded envelope adds an `out_of_scope` outcome value, and
   `fallbackReplyComposer.composeNoContext` returns `{text, declineReason}` from a
-  strict JSON schema. Every path with no model judgement — missing credentials,
-  provider failure, the static template, unparseable output — reports
-  `content_gap`, so an unclassifiable decline still counts against the agent.
-  `ChatAnswerPresenter` resolves the reason (explicit argument, then the grounding
-  summary, then `content_gap`) and picks the outcome tuple; `chatService`'s
+  strict JSON schema. Bare model prose without a classification stays the
+  conservative `content_gap`; paths where no usable model judgement exists use
+  `generation_unavailable`. Direct-answer fallbacks preserve the direct skill
+  identity instead of borrowing a retrieval outcome. Every `no_support`
+  presentation must supply a typed decline reason, either directly on the verdict
+  or through its grounding summary; `ChatAnswerPresenter` rejects the call when
+  neither is present. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
-  therefore leave out-of-scope declines alone. A valid in-range `[[n]]`
+  therefore escalate only content gaps, leaving out-of-scope and unavailable
+  declines alone. A valid in-range `[[n]]`
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and

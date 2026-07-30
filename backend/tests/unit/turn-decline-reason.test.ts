@@ -45,4 +45,17 @@ describe("retrieval.answer catalog", () => {
   it("keeps no_context as the grounding gap", () => {
     expect(outcomeNamed("no_context")?.groundedAnswer).toBe(false);
   });
+
+  it("declares generation unavailability as a failed non-gap outcome", () => {
+    expect(SKILL_TURN_OUTCOME.RETRIEVAL_UNAVAILABLE).toEqual({
+      skillName: "retrieval.answer",
+      outcome: "unavailable",
+      status: "failed",
+    });
+    expect(legacyAnswerOutcomeForSkillTurnOutcome(SKILL_TURN_OUTCOME.RETRIEVAL_UNAVAILABLE)).toBeUndefined();
+
+    const outcome = outcomeNamed("unavailable");
+    expect(outcome?.status).toBe("failed");
+    expect(outcome && "groundedAnswer" in outcome).toBe(false);
+  });
 });

@@ -4,9 +4,9 @@ import type { ConnectorChatPort } from "@radioso/connector-api";
 type ConnectorChatOutcome = Awaited<ReturnType<ConnectorChatPort["answer"]>>["outcome"];
 
 /**
- * Maps the turn's skill outcome onto the connector-facing result. The two declines are
- * kept apart so a connector can escalate a real content gap without escalating a
- * correct out-of-scope refusal.
+ * Maps the turn's skill outcome onto the connector-facing result. Declines and
+ * generation failure stay distinct so connectors can escalate only real content gaps
+ * without presenting provider/configuration failures as successful answers.
  */
 const toConnectorOutcome = (skillOutcome: string | undefined): ConnectorChatOutcome => {
   if (skillOutcome === SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome) {
@@ -14,6 +14,9 @@ const toConnectorOutcome = (skillOutcome: string | undefined): ConnectorChatOutc
   }
   if (skillOutcome === SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome) {
     return "out_of_scope";
+  }
+  if (skillOutcome === SKILL_TURN_OUTCOME.RETRIEVAL_UNAVAILABLE.outcome) {
+    return "unavailable";
   }
   return "answered";
 };

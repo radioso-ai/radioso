@@ -29,12 +29,15 @@ export interface SkillTurnOutcome {
  * supported an answer. Actionable: an operator can close it by ingesting content.
  * `out_of_scope` — the request falls outside the agent's configured remit, so
  * declining is correct behavior rather than a defect.
+ * `generation_unavailable` — the system could not obtain a usable model-authored
+ * reply. Ingesting content cannot fix a missing model configuration or provider
+ * failure, so this must not enter the grounding-gap queue.
  *
  * `content_gap` is the default. `out_of_scope` requires positive evidence from the
  * classifying model, so an unclassifiable decline counts against the agent rather
  * than being silently excluded from its quality numbers.
  */
-export type TurnDeclineReason = "content_gap" | "out_of_scope";
+export type TurnDeclineReason = "content_gap" | "out_of_scope" | "generation_unavailable";
 
 export const SKILL_TURN_OUTCOME = {
   ASSISTANT_CONVERSATIONAL: {
@@ -61,6 +64,11 @@ export const SKILL_TURN_OUTCOME = {
     skillName: "retrieval.answer",
     outcome: "out_of_scope",
     status: "completed",
+  },
+  RETRIEVAL_UNAVAILABLE: {
+    skillName: "retrieval.answer",
+    outcome: "unavailable",
+    status: "failed",
   },
 } as const satisfies Record<string, SkillTurnOutcome>;
 

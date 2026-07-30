@@ -16,6 +16,12 @@ export interface ConnectorDatabasePort {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: unknown[]): Promise<T[]>;
 }
 
+export type ConnectorChatOutcome =
+  | "answered"
+  | "no_context"
+  | "out_of_scope"
+  | "unavailable";
+
 export interface ConnectorChatPort {
   answer(input: {
     workspaceId: string;
@@ -31,9 +37,10 @@ export interface ConnectorChatPort {
     /**
      * The turn's typed result. `no_context` is an in-remit content gap a connector may
      * escalate; `out_of_scope` is a correct decline for a request outside the agent's
-     * configured remit and must not be treated as a gap.
+     * configured remit; `unavailable` means the system could not obtain a usable
+     * model-authored answer, rather than lacking relevant content.
      */
-    outcome: "answered" | "no_context" | "out_of_scope";
+    outcome: ConnectorChatOutcome;
   }>;
 }
 

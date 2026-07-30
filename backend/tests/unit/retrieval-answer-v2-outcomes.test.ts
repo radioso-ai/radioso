@@ -151,6 +151,18 @@ describe("retrieval answer decline classification", () => {
     expect(presented.skillOutcome).toBe("no_context");
   });
 
+  it("keeps fallback-generation failures out of the grounding-gap outcome", async () => {
+    const { composer } = buildComposer("unused", {
+      text: "I can't respond right now.",
+      declineReason: "generation_unavailable",
+    });
+
+    const presented = await composer.composeAnswer(zeroContextSession(), "Refund policy?", undefined, undefined);
+
+    expect(presented.skillOutcome).toBe("unavailable");
+    expect(presented.skillStatus).toBe("failed");
+  });
+
   it("carries the classification through the zero-context streaming path", async () => {
     const { composer } = buildComposer("unused", { text: "Not my remit.", declineReason: "out_of_scope" });
 
@@ -510,6 +522,23 @@ describe("retrieval answer envelope v2", () => {
     await expect(composer.composeAnswer(session, "Question?", undefined, undefined)).rejects.toMatchObject({
       name: "BlankChatAnswerError",
     });
+    expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
+  });
+
+  it("does not label a successful page-context answer as a grounding gap when workspace retrieval is empty", async () => {
+    const session = baseSession();
+    (session.retrieval as { contexts: unknown[] }).contexts = [];
+    session.resolvedContext.renderFragments = [{
+      kind: "page_context",
+      pageUrl: "https://example.test/workshop",
+      content: "The workshop begins in June.",
+    }];
+    const { composer, counts } = buildComposer(degradedV2Envelope());
+
+    const presented = await composer.composeAnswer(session, "When does the workshop begin?", undefined, undefined);
+
+    expect(presented.answer).toBe(DEGRADED_V2_VISIBLE);
+    expect(presented.skillOutcome).toBe("grounded_degraded");
     expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
   });
 });

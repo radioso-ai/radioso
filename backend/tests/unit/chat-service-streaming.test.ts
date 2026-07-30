@@ -1125,7 +1125,10 @@ describe("chat service streaming", () => {
 
   const createRetrievalHandoffTestService = async (input: {
     handoffOnRetrievalMiss: boolean;
-    retrievalPipeline: ReturnType<typeof createRetrievalMissPipeline> | ReturnType<typeof createGroundedPipeline>;
+    retrievalPipeline:
+      | ReturnType<typeof createRetrievalMissPipeline>
+      | ReturnType<typeof createGroundedPipeline>
+      | ReturnType<typeof createIntentRoutedNoContextPipeline>;
     chatGateway: ChatGateway;
     fallbackComposer?: FallbackReplyComposer;
   }) => {
@@ -2762,6 +2765,69 @@ describe("chat service streaming", () => {
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
   });
 
+  it("reports unavailable retrieval generation as a skill failure without a retrieval-miss handoff", async () => {
+    const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
+      handoffOnRetrievalMiss: true,
+      retrievalPipeline: createRetrievalMissPipeline(),
+      fallbackComposer: {
+        async composeNoContext() {
+          return {
+            text: "I can't respond right now.",
+            declineReason: "generation_unavailable",
+          };
+        },
+      },
+      chatGateway: {
+        async answer() {
+          return "unused";
+        },
+        async *streamAnswer() {
+          yield "unused";
+        },
+      },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "missing topic", stream: false });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.assistantMessage).toMatchObject({
+      skillName: "retrieval.answer",
+      skillOutcome: "unavailable",
+      skillStatus: "failed",
+    });
+    expect(persisted.ownershipHandoff).toBeNull();
+    expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+  });
+
+  it("does not hand off a blank direct reply, which never ran retrieval", async () => {
+    const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
+      handoffOnRetrievalMiss: true,
+      retrievalPipeline: createIntentRoutedNoContextPipeline({
+        query: "What is your name?",
+        responseIdentity: { name: "Marta" },
+      }),
+      chatGateway: {
+        async answer() {
+          throw new BlankChatAnswerError();
+        },
+        async *streamAnswer() {
+          yield "";
+        },
+      },
+    });
+
+    await service.answer({ workspaceId: "workspace-1", query: "What is your name?", stream: false });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.assistantMessage).toMatchObject({
+      skillName: "direct.answer",
+      skillOutcome: "direct",
+      skillStatus: "completed",
+    });
+    expect(persisted.ownershipHandoff).toBeNull();
+    expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+  });
+
   it("does not request ownership or notify operators for non-streaming retrieval misses when the agent is not opted in", async () => {
     const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
       handoffOnRetrievalMiss: false,
@@ -4166,6 +4232,12 @@ describe("chat service streaming", () => {
 
     expect(response.answer).toEqual(expect.any(String));
     expect(response.answer.length).toBeGreaterThan(0);
+    const persisted = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(persisted.find((message) => message.role === "assistant")).toMatchObject({
+      skillName: "direct.answer",
+      skillOutcome: "direct",
+      skillStatus: "completed",
+    });
   });
 
   it("does not swallow provider failures from the identity prompt", async () => {
@@ -4328,8 +4400,16 @@ describe("chat service streaming", () => {
       expect.objectContaining({
         type: "done",
         answer: "I couldn't find supporting material for that in your workspace documents. If you'd like, try asking about a topic that's covered there.",
+        skillOutcome: "direct",
       }),
     );
+    const done = events[4] as Extract<ChatStreamEvent, { type: "done" }>;
+    const persisted = await messageRepository.listByConversationId("workspace-1", done.conversationId);
+    expect(persisted.find((message) => message.role === "assistant")).toMatchObject({
+      skillName: "direct.answer",
+      skillOutcome: "direct",
+      skillStatus: "completed",
+    });
   });
 
   it("does not treat broader task questions as assistant identity questions", async () => {

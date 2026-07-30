@@ -149,7 +149,7 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
     expect(result.answerOutcome).toBe("grounded_success");
   });
 
-  it("reports a content gap as no_context when the decline reason is unknown", async () => {
+  it("reports an explicitly classified content gap as no_context", async () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
 
     const result = await presenter.presentWithoutSuggestions(
@@ -157,11 +157,23 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
       "I can't help with that.",
       "What is X?",
       undefined,
-      { grounding: "no_support" },
+      { grounding: "no_support", declineReason: "content_gap" },
     );
 
     expect(result.skillOutcome).toBe("no_context");
     expect(result.answerOutcome).toBe("no_context_refusal");
+  });
+
+  it("rejects a retrieval decline whose caller omitted the reason", async () => {
+    const presenter = new ChatAnswerPresenter(stubExpansionService);
+
+    await expect(presenter.presentWithoutSuggestions(
+      buildSession(),
+      "I can't help with that.",
+      "What is X?",
+      undefined,
+      { grounding: "no_support" },
+    )).rejects.toThrow("retrieval_decline_reason_required");
   });
 
   it("reports an out-of-scope decline carried on the grounding summary", async () => {
@@ -207,15 +219,15 @@ describe("ChatAnswerPresenter.presentWithoutSuggestions", () => {
   });
 });
 
-describe("ChatAnswerPresenter.presentGroundedMissAnswer", () => {
-  it("defaults to the content-gap outcome", () => {
+describe("ChatAnswerPresenter.presentRetrievalDeclineAnswer", () => {
+  it("uses the explicit content-gap outcome", () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
-    expect(presenter.presentGroundedMissAnswer("No luck.").skillOutcome).toBe("no_context");
+    expect(presenter.presentRetrievalDeclineAnswer("No luck.", "content_gap").skillOutcome).toBe("no_context");
   });
 
   it("uses the out-of-scope outcome when the composer classified the decline", () => {
     const presenter = new ChatAnswerPresenter(stubExpansionService);
-    expect(presenter.presentGroundedMissAnswer("Not my remit.", "out_of_scope").skillOutcome).toBe("out_of_scope");
+    expect(presenter.presentRetrievalDeclineAnswer("Not my remit.", "out_of_scope").skillOutcome).toBe("out_of_scope");
   });
 });
 

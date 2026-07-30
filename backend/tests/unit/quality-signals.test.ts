@@ -51,9 +51,9 @@ describe("resolveGroundedOutcomeTuples", () => {
     expect(tuples.gaps).toEqual([]);
   });
 
-  it("leaves the shipped retrieval.answer out-of-scope decline out of both sides of the rate", () => {
-    // Derived from the real catalog: `out_of_scope` is excluded because the catalog omits
-    // the flag, not because anything in this module matches on the outcome name.
+  it("leaves shipped non-gap retrieval outcomes out of both sides of the rate", () => {
+    // Derived from the real catalog: `out_of_scope` and `unavailable` are excluded
+    // because the catalog omits the flag, not because this module matches their names.
     const tuples = resolveGroundedOutcomeTuples([
       {
         name: retrievalAnswerSkillDefinition.name,

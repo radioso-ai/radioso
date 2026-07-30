@@ -289,12 +289,16 @@ export class ChatAnswerPresenter {
         }
       : undefined;
 
-    if (groundingVerdict === "no_support" || session.retrieval.contexts.length === 0) {
+    if (groundingVerdict === "no_support") {
+      const declineReason = verdict.declineReason ?? groundingSummary?.declineReason;
+      if (!declineReason) {
+        throw new Error("retrieval_decline_reason_required");
+      }
       return {
-        ...this.presentNoContextRefusal(
+        ...this.presentRetrievalDecline(
           answer,
           citationEvidence,
-          verdict.declineReason ?? groundingSummary?.declineReason ?? "content_gap",
+          declineReason,
         ),
         grounding: groundingVerdict,
         groundingSummary,
@@ -392,7 +396,7 @@ export class ChatAnswerPresenter {
     };
   }
 
-  private presentNoContextRefusal(
+  private presentRetrievalDecline(
     answer: string,
     citationEvidence: CitationEvidence[],
     declineReason: TurnDeclineReason,
@@ -403,7 +407,9 @@ export class ChatAnswerPresenter {
     });
     const declineOutcome = declineReason === "out_of_scope"
       ? SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE
-      : SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT;
+      : declineReason === "generation_unavailable"
+        ? SKILL_TURN_OUTCOME.RETRIEVAL_UNAVAILABLE
+        : SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT;
 
     return withLegacyAnswerOutcome({
       ...presented,
@@ -415,10 +421,10 @@ export class ChatAnswerPresenter {
     });
   }
 
-  presentGroundedMissAnswer(
+  presentRetrievalDeclineAnswer(
     answer: string,
-    declineReason: TurnDeclineReason = "content_gap",
+    declineReason: TurnDeclineReason,
   ): ChatPresentedAnswer {
-    return this.presentNoContextRefusal(answer, [], declineReason);
+    return this.presentRetrievalDecline(answer, [], declineReason);
   }
 }

@@ -79,6 +79,8 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import {
   ChatGatewayLlmJudge,
   EvalCaseService,
+  EvalMessageCaseRepository,
+  EvalMessageCaseService,
   EvalRepository,
   EvalRunService,
   EvalSnapshotService,
@@ -773,6 +775,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     new ConversationSummaryRepository(infrastructure.database.kysely),
   );
   const evalCaseService = new EvalCaseService(evalRepository);
+  const evalMessageCaseRepository = new EvalMessageCaseRepository(
+    infrastructure.database.kysely,
+  );
+  const evalMessageCaseService = new EvalMessageCaseService(
+    evalMessageCaseRepository,
+    evalSnapshotService,
+    logger,
+  );
   const evalRunService = new EvalRunService(
     evalRepository,
     new RetrievalPipelineEvalRunner(
@@ -882,6 +892,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     retrievalDefaultsProvider,
     actionDispatchWorker: chat.actionDispatchWorker,
     evalSnapshotService,
+    evalMessageCaseService,
     evalCaseService,
     evalRunService,
     evalSuiteService,

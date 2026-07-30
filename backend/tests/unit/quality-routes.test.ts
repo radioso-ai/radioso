@@ -13,6 +13,7 @@ import type {
   QualityStats,
   QualityStatsInput,
   QualityTriageRecord,
+  SetTriageStateResult,
   SetTriageStateInput,
 } from "../../src/modules/quality/contracts/index.js";
 
@@ -22,7 +23,10 @@ const USER_ID = "33333333-3333-3333-3333-333333333333";
 
 const DEFAULT_TRIAGE_RESULT: QualityTriageRecord = {
   state: "resolved",
-  reason: "Fixed",
+  version: 3,
+  resolution: { reason: "knowledge_gap", note: "Fixed" },
+  legacyReason: null,
+  closedAt: "2026-05-23T10:00:00.000Z",
   updatedAt: "2026-05-23T10:00:00.000Z",
 };
 
@@ -48,6 +52,7 @@ const DEFAULT_STATS: QualityStats = {
     slow_responses: 1,
     skill_failures: 0,
   },
+  resolutionBreakdown: [],
 };
 
 class CapturingService implements QualityServicePort {
@@ -57,7 +62,10 @@ class CapturingService implements QualityServicePort {
 
   constructor(
     private readonly page: LowQualityTurnsPage,
-    private readonly triageResult: QualityTriageRecord | null = DEFAULT_TRIAGE_RESULT,
+    private readonly triageResult: SetTriageStateResult = {
+      kind: "updated",
+      record: DEFAULT_TRIAGE_RESULT,
+    },
     private readonly stats: QualityStats = DEFAULT_STATS,
   ) {}
 
@@ -66,7 +74,7 @@ class CapturingService implements QualityServicePort {
     return this.page;
   }
 
-  async setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<QualityTriageRecord | null> {
+  async setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<SetTriageStateResult> {
     this.triageCalls.push({ workspaceId, input });
     return this.triageResult;
   }
@@ -111,6 +119,10 @@ const createDependencies = (): QualityRouteDependencies =>
       async requirePermission() {
         return undefined;
       },
+    },
+    logger: {
+      info() {},
+      warn() {},
     },
     workspaceSessionService: {
       async resolve() {
@@ -196,7 +208,15 @@ describe("quality routes", () => {
             latestDownUpdatedAt: "2026-05-22T10:05:00.000Z",
             comments: [],
           },
-          triage: { state: "open", reason: null, updatedAt: null },
+          triage: {
+            state: "open",
+            version: 0,
+            resolution: null,
+            legacyReason: null,
+            closedAt: null,
+            updatedAt: null,
+          },
+          verification: null,
         },
       ],
     };
@@ -235,6 +255,9 @@ describe("quality routes", () => {
         channel: "embed",
         from: "2026-05-01T00:00:00.000Z",
         to: "2026-05-23T00:00:00.000Z",
+        resolutionReason: "knowledge_gap,unspecified",
+        resolutionFrom: "2026-05-05T00:00:00.000Z",
+        resolutionTo: "2026-05-24T00:00:00.000Z",
         limit: "10",
         offset: "20",
       })
@@ -256,6 +279,9 @@ describe("quality routes", () => {
       channel: "embed",
       from: "2026-05-01T00:00:00.000Z",
       to: "2026-05-23T00:00:00.000Z",
+      resolutionReasons: ["knowledge_gap", "unspecified"],
+      resolutionFrom: "2026-05-05T00:00:00.000Z",
+      resolutionTo: "2026-05-24T00:00:00.000Z",
       limit: 10,
       offset: 20,
     });
@@ -329,14 +355,21 @@ describe("quality routes", () => {
     expect(service.calls).toHaveLength(0);
   });
 
-  it("sets triage state for an authenticated session caller", async () => {
+  it("sets structured triage state for an authenticated session caller", async () => {
     const service = new CapturingService(emptyPage);
     const app = createApp(service);
 
     const response = await request(app)
       .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
-      .send({ state: "resolved", reason: "Added knowledge" });
+      .send({
+        state: "resolved",
+        expectedVersion: 2,
+        resolution: {
+          reason: "knowledge_gap",
+          note: "Added knowledge",
+        },
+      });
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(DEFAULT_TRIAGE_RESULT);
@@ -346,11 +379,86 @@ describe("quality routes", () => {
         input: {
           assistantMessageId: "44444444-4444-4444-4444-444444444444",
           state: "resolved",
-          reason: "Added knowledge",
+          expectedVersion: 2,
+          resolution: {
+            reason: "knowledge_gap",
+            note: "Added knowledge",
+          },
+          legacyReason: null,
           updatedBy: USER_ID,
         },
       },
     ]);
+  });
+
+  it("continues to accept the deprecated free-text reason without classifying it", async () => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({ state: "resolved", expectedVersion: 0, reason: "Added knowledge" });
+
+    expect(response.status).toBe(200);
+    expect(service.triageCalls[0]?.input).toMatchObject({
+      expectedVersion: 0,
+      resolution: null,
+      legacyReason: "Added knowledge",
+    });
+  });
+
+  it.each([
+    [{ state: "resolved", expectedVersion: 0 }, "missing terminal resolution"],
+    [{
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "expected_behavior" },
+    }, "wrong resolution vocabulary"],
+    [{
+      state: "open",
+      expectedVersion: 1,
+      resolution: { reason: "knowledge_gap" },
+    }, "resolution on active state"],
+    [{
+      state: "dismissed",
+      expectedVersion: 0,
+      resolution: { reason: "other", note: " " },
+    }, "blank other note"],
+    [{ state: "acknowledged" }, "missing expected version"],
+  ])("rejects %s (%s) with 400", async (body, _description) => {
+    const service = new CapturingService(emptyPage);
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send(body);
+
+    expect(response.status).toBe(400);
+    expect(service.triageCalls).toHaveLength(0);
+  });
+
+  it("returns 409 with the current triage record for a stale transition", async () => {
+    const service = new CapturingService(emptyPage, {
+      kind: "conflict",
+      current: DEFAULT_TRIAGE_RESULT,
+    });
+    const app = createApp(service);
+
+    const response = await request(app)
+      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({ state: "acknowledged", expectedVersion: 2 });
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: {
+        code: "QUALITY_TRIAGE_CONFLICT",
+        message: "Quality triage changed",
+        details: { current: DEFAULT_TRIAGE_RESULT },
+      },
+    });
   });
 
   it("rejects an invalid triage state with 400", async () => {
@@ -476,13 +584,13 @@ describe("quality routes", () => {
   });
 
   it("returns 404 when the turn is not in the workspace", async () => {
-    const service = new CapturingService(emptyPage, null);
+    const service = new CapturingService(emptyPage, { kind: "not_found" });
     const app = createApp(service);
 
     const response = await request(app)
       .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
-      .send({ state: "acknowledged" });
+      .send({ state: "acknowledged", expectedVersion: 0 });
 
     expect(response.status).toBe(404);
   });

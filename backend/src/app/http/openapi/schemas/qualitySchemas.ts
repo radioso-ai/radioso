@@ -39,12 +39,60 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     z.enum(["open", "acknowledged", "resolved", "dismissed"]),
   );
 
+  const QualityResolutionReasonSchema = registry.register(
+    "QualityResolutionReason",
+    z.enum([
+      "knowledge_gap",
+      "retrieval_issue",
+      "agent_behavior",
+      "platform_bug",
+      "expected_behavior",
+      "out_of_scope",
+      "invalid_feedback",
+      "other",
+    ]),
+  );
+
+  const QualityResolutionSchema = registry.register(
+    "QualityResolution",
+    z.object({
+      reason: QualityResolutionReasonSchema,
+      note: z.string().max(500).nullable(),
+    }),
+  );
+
   const QualityTriageRecordSchema = registry.register(
     "QualityTriageRecord",
     z.object({
       state: QualityTriageStateSchema,
-      reason: z.string().nullable(),
+      version: z.number().int().min(0),
+      resolution: QualityResolutionSchema.nullable(),
+      legacyReason: z.string().nullable(),
+      closedAt: z.string().datetime().nullable(),
       updatedAt: z.string().datetime().nullable(),
+    }),
+  );
+
+  const QualityVerificationSchema = registry.register(
+    "QualityVerification",
+    z.object({
+      caseId: z.string().uuid(),
+      caseStatus: z.enum(["pending", "passing", "failing", "error"]),
+      latestRunStatus: z.enum(["pass", "fail", "error", "recorded"]).nullable(),
+      latestRunAt: z.string().datetime().nullable(),
+    }),
+  );
+
+  const QualityTriageConflictResponseSchema = registry.register(
+    "QualityTriageConflictResponse",
+    z.object({
+      error: z.object({
+        code: z.literal("QUALITY_TRIAGE_CONFLICT"),
+        message: z.string(),
+        details: z.object({
+          current: QualityTriageRecordSchema,
+        }),
+      }),
     }),
   );
 
@@ -86,6 +134,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       createdAt: z.string().datetime(),
       feedback: QualityFeedbackSummarySchema,
       triage: QualityTriageRecordSchema,
+      verification: QualityVerificationSchema.nullable(),
     }),
   );
 
@@ -171,6 +220,13 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
         .describe(
           "Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.",
         ),
+      resolutionBreakdown: z.array(z.object({
+        state: z.enum(["resolved", "dismissed"]),
+        reason: z.union([QualityResolutionReasonSchema, z.literal("unspecified")]),
+        count: z.number().int().min(0),
+      })).describe(
+        "Current-window terminal triage counts grouped by state and structured reason. Legacy closures are grouped as `unspecified`.",
+      ),
     }),
   );
 
@@ -178,7 +234,13 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     "SetQualityTriageRequest",
     z.object({
       state: QualityTriageStateSchema,
-      reason: z.string().max(500).nullish(),
+      expectedVersion: z.number().int().min(0),
+      resolution: QualityResolutionSchema.nullish(),
+      reason: z.string().max(500).nullish().openapi({
+        deprecated: true,
+        description:
+          "Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.",
+      }),
     }),
   );
 
@@ -197,6 +259,10 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
   schemas.GroundingDiagnosticSchema = GroundingDiagnosticSchema;
   schemas.QualitySkillStatusSchema = QualitySkillStatusSchema;
   schemas.QualityTriageStateSchema = QualityTriageStateSchema;
+  schemas.QualityResolutionReasonSchema = QualityResolutionReasonSchema;
+  schemas.QualityResolutionSchema = QualityResolutionSchema;
+  schemas.QualityVerificationSchema = QualityVerificationSchema;
+  schemas.QualityTriageConflictResponseSchema = QualityTriageConflictResponseSchema;
   schemas.QualityTriageRecordSchema = QualityTriageRecordSchema;
   schemas.SetQualityTriageRequestSchema = SetQualityTriageRequestSchema;
   schemas.QualityFeedbackCommentSchema = QualityFeedbackCommentSchema;

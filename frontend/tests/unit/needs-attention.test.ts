@@ -200,6 +200,7 @@ const qualityTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn =>
   skillOutcome: 'no_context',
   skillStatus: 'completed',
   totalLatencyMs: 1200,
+  grounding: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   feedback: {
     upCount: 0,
@@ -207,7 +208,15 @@ const qualityTurn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn =>
     latestDownUpdatedAt: null,
     comments: [],
   },
-  triage: { state: 'open', reason: null, updatedAt: null },
+  triage: {
+    state: 'open',
+    version: 0,
+    resolution: null,
+    legacyReason: null,
+    closedAt: null,
+    updatedAt: null,
+  },
+  verification: null,
   ...overrides,
 })
 
@@ -229,6 +238,7 @@ describe('buildInboxItems', () => {
     expect(byConversation['c-noctx']).toMatchObject({ type: 'no_context', severity: 'lower' })
     // Quality rows carry the turn id so they can be triaged from the inbox; criticals do not.
     expect(byConversation['c-noctx'].assistantMessageId).toBe('m-noctx')
+    expect(byConversation['c-noctx'].triage).toMatchObject({ state: 'open', version: 0 })
     expect(byConversation['c-approval'].assistantMessageId).toBeUndefined()
     expect(byConversation['c-handoff'].assistantMessageId).toBeUndefined()
     expect(byConversation['c-approval'].escalatedAt).toBe('2026-06-19T10:00:00.000Z')
@@ -260,7 +270,10 @@ describe('buildInboxItems', () => {
           },
           triage: {
             state: 'acknowledged',
-            reason: null,
+            version: 1,
+            resolution: null,
+            legacyReason: null,
+            closedAt: null,
             updatedAt: '2026-06-19T10:06:00.000Z',
           },
         }),

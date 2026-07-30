@@ -336,17 +336,31 @@ describeIfDatabase("quality turns integration", () => {
 
     const initial = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const openTurn = initial.items.find((item) => item.assistantMessageId === openMessageId);
-    expect(openTurn?.triage).toEqual({ state: "open", reason: null, updatedAt: null });
+    expect(openTurn?.triage).toEqual({
+      state: "open",
+      version: 0,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    });
 
     const updated = await service.setTriageState(workspaceId, {
       assistantMessageId: resolvedMessageId,
       state: "resolved",
-      reason: "Added knowledge",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: "Added knowledge" },
       updatedBy: userId,
     });
-    expect(updated?.state).toBe("resolved");
-    expect(updated?.reason).toBe("Added knowledge");
-    expect(updated?.updatedAt).toEqual(expect.any(String));
+    expect(updated).toMatchObject({
+      kind: "updated",
+      record: {
+        state: "resolved",
+        version: 1,
+        resolution: { reason: "knowledge_gap", note: "Added knowledge" },
+        updatedAt: expect.any(String),
+      },
+    });
 
     const openOnly = await service.listLowQualityTurns(workspaceId, {
       limit: 25,
@@ -785,8 +799,8 @@ describeIfDatabase("quality turns integration", () => {
     );
     await database.query(
       `INSERT INTO assistant_answer_triage
-         (workspace_id, assistant_message_id, state, updated_at)
-       VALUES ($1, $2, 'dismissed', $3)`,
+         (workspace_id, assistant_message_id, state, closed_at, updated_at)
+       VALUES ($1, $2, 'dismissed', $3, $3)`,
       [workspaceId, messageId, "2026-05-02T00:00:00.000Z"],
     );
     await database.query(
@@ -797,6 +811,37 @@ describeIfDatabase("quality turns integration", () => {
     );
 
     const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const defaultList = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+    expect(defaultList.items.find((item) => item.assistantMessageId === messageId)?.triage).toEqual({
+      state: "open",
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    });
+
+    const defaultOpenOnly = await service.listLowQualityTurns(workspaceId, {
+      triageStates: ["open"],
+      limit: 25,
+    });
+    expect(defaultOpenOnly.items.map((item) => item.assistantMessageId)).toContain(messageId);
+    expect(defaultOpenOnly.total).toBe(1);
+
+    const defaultResolvedOnly = await service.listLowQualityTurns(workspaceId, {
+      triageStates: ["dismissed"],
+      limit: 25,
+    });
+    expect(defaultResolvedOnly.items).toHaveLength(0);
+    expect(defaultResolvedOnly.total).toBe(0);
+
+    const staleReasonOnly = await service.listLowQualityTurns(workspaceId, {
+      resolutionReasons: ["expected_behavior"],
+      limit: 25,
+    });
+    expect(staleReasonOnly.items).toHaveLength(0);
+    expect(staleReasonOnly.total).toBe(0);
+
     const reopened = await service.listLowQualityTurns(workspaceId, {
       feedbackValues: ["down"],
       sort: "negative_feedback_updated_at",
@@ -808,7 +853,10 @@ describeIfDatabase("quality turns integration", () => {
     expect(reopened.items[0]?.assistantMessageId).toBe(messageId);
     expect(reopened.items[0]?.triage).toEqual({
       state: "open",
-      reason: null,
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
       updatedAt: null,
     });
 
@@ -834,6 +882,8 @@ describeIfDatabase("quality turns integration", () => {
     await service.setTriageState(workspaceId, {
       assistantMessageId: messageId,
       state: "resolved",
+      expectedVersion: 1,
+      resolution: { reason: "knowledge_gap", note: null },
     });
     const resolved = await service.listLowQualityTurns(workspaceId, {
       feedbackValues: ["down"],
@@ -862,8 +912,9 @@ describeIfDatabase("quality turns integration", () => {
     const result = await service.setTriageState(workspaceId, {
       assistantMessageId: randomUUID(),
       state: "acknowledged",
+      expectedVersion: 0,
     });
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: "not_found" });
   });
 
   it("filters grounding diagnostics with OR verdicts, complete zero semantics, AND composition, and stable totals", async () => {

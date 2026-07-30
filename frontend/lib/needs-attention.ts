@@ -3,6 +3,7 @@ import type {
   ConversationOwnership,
   LowQualityTurn,
   PendingApprovalDecision,
+  QualityTriageRecord,
   QualityTriageState,
 } from '@/lib/api'
 
@@ -56,6 +57,7 @@ export interface InboxItem {
   feedbackDownCount?: number
   feedbackUpdatedAt?: string | null
   triageState?: QualityTriageState
+  triage?: QualityTriageRecord
   agentId?: string | null
   agentName?: string | null
 }
@@ -221,6 +223,7 @@ export const buildInboxModel = (input: {
       feedbackDownCount: turn.feedback.downCount,
       feedbackUpdatedAt: turn.feedback.latestDownUpdatedAt,
       triageState: turn.triage.state,
+      triage: turn.triage,
       agentId: turn.agentId,
       agentName: turn.agentName,
     }

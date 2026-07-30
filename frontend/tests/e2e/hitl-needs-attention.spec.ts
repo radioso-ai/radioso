@@ -215,7 +215,15 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
               latestDownUpdatedAt: null,
               comments: [],
             },
-            triage: { state: "open", reason: null, updatedAt: null },
+            triage: {
+              state: "open",
+              version: 0,
+              resolution: null,
+              legacyReason: null,
+              closedAt: null,
+              updatedAt: null,
+            },
+            verification: null,
           },
         ],
         total: 1,
@@ -232,7 +240,14 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ state: "dismissed", reason: null, updatedAt: "2026-06-19T12:00:00.000Z" }),
+      body: JSON.stringify({
+        state: "dismissed",
+        version: 1,
+        resolution: { reason: "expected_behavior", note: null },
+        legacyReason: null,
+        closedAt: "2026-06-19T12:00:00.000Z",
+        updatedAt: "2026-06-19T12:00:00.000Z",
+      }),
     });
   });
 
@@ -270,6 +285,14 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   // Triage clears a quality row from the inbox (criticals resolve from the drawer instead).
   const qualityRow = inbox.locator("tr", { hasText: "Do you sell gift cards?" });
   await qualityRow.getByRole("button", { name: "Dismiss" }).click();
+  const dismissalDialog = page.getByRole("dialog");
+  await expect(dismissalDialog.getByRole("heading", { name: "Mark not actionable" })).toBeVisible();
+  const expectedBehavior = dismissalDialog.getByRole("radio", { name: "Expected behavior" });
+  await expect(expectedBehavior).toBeVisible();
+  await expect(dismissalDialog.getByRole("radio", { name: "Knowledge gap" })).toHaveCount(0);
+  await dismissalDialog.getByText("Expected behavior", { exact: true }).click();
+  await expect(expectedBehavior).toBeChecked();
+  await dismissalDialog.getByRole("button", { name: "Mark not actionable", exact: true }).click();
   await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
   await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
 
@@ -295,8 +318,13 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
 test("operator can turn written negative feedback into a remediation task", async ({ page }) => {
   const conversationId = "conversation-negative-feedback";
   const assistantMessageId = "assistant-negative-feedback";
-  const triageRequests: Array<{ state: string }> = [];
+  const triageRequests: Array<{
+    state: string
+    expectedVersion: number
+    resolution?: { reason: string; note: string | null }
+  }> = [];
   let acknowledgementAttempts = 0;
+  let resolutionAttempts = 0;
   const feedbackTurn = {
     assistantMessageId,
     conversationId,
@@ -321,7 +349,15 @@ test("operator can turn written negative feedback into a remediation task", asyn
         updatedAt: "2026-06-19T10:05:00.000Z",
       }],
     },
-    triage: { state: "open", reason: null, updatedAt: null },
+    triage: {
+      state: "open",
+      version: 0,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    },
+    verification: null,
   };
   const passiveTurn = {
     ...feedbackTurn,
@@ -475,14 +511,60 @@ test("operator can turn written negative feedback into a remediation task", asyn
   });
 
   await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
-    const body = route.request().postDataJSON() as { state: string };
+    const body = route.request().postDataJSON() as {
+      state: string
+      expectedVersion: number
+      resolution?: { reason: string; note: string | null }
+    };
     triageRequests.push(body);
     if (body.state === "acknowledged" && acknowledgementAttempts === 0) {
       acknowledgementAttempts += 1;
       await route.fulfill({
-        status: 500,
+        status: 409,
         contentType: "application/json",
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "open",
+                version: 3,
+                resolution: null,
+                legacyReason: null,
+                closedAt: null,
+                updatedAt: "2026-06-19T11:30:00.000Z",
+              },
+            },
+          },
+        }),
+      });
+      return;
+    }
+    if (body.state === "resolved" && resolutionAttempts === 0) {
+      resolutionAttempts += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "dismissed",
+                version: 5,
+                resolution: {
+                  reason: "expected_behavior",
+                  note: "Policy already covers opened products.",
+                },
+                legacyReason: null,
+                closedAt: "2026-06-19T11:45:00.000Z",
+                updatedAt: "2026-06-19T11:45:00.000Z",
+              },
+            },
+          },
+        }),
       });
       return;
     }
@@ -491,7 +573,10 @@ test("operator can turn written negative feedback into a remediation task", asyn
       contentType: "application/json",
       body: JSON.stringify({
         state: body.state,
-        reason: null,
+        version: body.expectedVersion + 1,
+        resolution: body.resolution ?? null,
+        legacyReason: null,
+        closedAt: body.state === "resolved" ? "2026-06-19T12:00:00.000Z" : null,
         updatedAt: "2026-06-19T12:00:00.000Z",
       }),
     });
@@ -518,14 +603,13 @@ test("operator can turn written negative feedback into a remediation task", asyn
 
   const remediation = page.getByLabel("Negative feedback remediation");
   await expect(remediation.getByText(
-    "Could not mark this feedback as reviewed. You can still inspect it and choose a fix.",
+    "Another operator already changed this feedback to open. Their current record has been loaded.",
   )).toBeVisible();
   await expect(remediation.getByRole("link", { name: /Add knowledge/ })).toBeEnabled();
   await page.getByRole("button", { name: "Close details panel" }).click();
   const feedbackReviewButton = mobileInbox.getByRole("button", {
     name: "Review feedback: Can I return an opened item?",
   });
-  await expect(feedbackReviewButton).toBeFocused();
   await feedbackReviewButton.click();
   await expect.poll(() => acknowledgementAttempts).toBe(1);
   await expect.poll(() =>
@@ -575,7 +659,38 @@ test("operator can turn written negative feedback into a remediation task", asyn
   await expect(failedTurn).toContainText("Items can be returned within 30 days.");
 
   await remediation.getByRole("button", { name: "Mark resolved" }).click();
-  await expect.poll(() => triageRequests).toContainEqual({ state: "resolved" });
+  const resolutionDialog = page.getByRole("dialog");
+  await expect(resolutionDialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
+  await resolutionDialog.getByRole("radio", { name: "Knowledge gap" }).check();
+  await resolutionDialog.getByRole("button", { name: "Resolve review" }).click();
+  await expect.poll(() => triageRequests).toContainEqual({
+    state: "resolved",
+    expectedVersion: 1,
+    resolution: { reason: "knowledge_gap", note: null },
+  });
+  await expect(resolutionDialog.getByRole("heading", {
+    name: "Another operator updated this review",
+  })).toBeVisible();
+  await expect(resolutionDialog.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(resolutionDialog.getByText("Expected behavior", { exact: true })).toBeVisible();
+  await expect(resolutionDialog.getByText(
+    "Policy already covers opened products.",
+  )).toBeVisible();
+  await expect(resolutionDialog.getByRole("button", {
+    name: "Replace current decision",
+  })).toBeDisabled();
+  await expect(resolutionDialog.getByRole("button", {
+    name: "Keep current decision",
+  })).toBeVisible();
+  await resolutionDialog.getByLabel(
+    "I reviewed the current decision and want to replace it.",
+  ).check();
+  await resolutionDialog.getByRole("button", { name: "Replace current decision" }).click();
+  await expect.poll(() => triageRequests).toContainEqual({
+    state: "resolved",
+    expectedVersion: 5,
+    resolution: { reason: "knowledge_gap", note: null },
+  });
   await expect(inbox.getByText("Negative feedback", { exact: true })).toHaveCount(0);
   await expect(page.locator("main").getByRole("status")).toContainText("Marked resolved.");
   await expect(page.getByRole("button", { name: "Review: Do you sell gift cards?" })).toBeFocused();

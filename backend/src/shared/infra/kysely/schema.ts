@@ -180,10 +180,27 @@ export interface AssistantAnswerFeedback {
 
 export interface AssistantAnswerTriage {
   assistant_message_id: string;
+  closed_at: Timestamp | null;
   reason: string | null;
+  resolution_note: string | null;
+  resolution_reason: string | null;
   state: Generated<string>;
   updated_at: Generated<Timestamp>;
   updated_by: string | null;
+  version: Generated<number>;
+  workspace_id: string;
+}
+
+export interface AssistantAnswerTriageTransitions {
+  actor_id: string | null;
+  assistant_message_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  linked_eval_case_id: string | null;
+  next_state: string;
+  prior_state: string;
+  resolution_reason: string | null;
+  resulting_version: number;
   workspace_id: string;
 }
 
@@ -509,6 +526,14 @@ export interface EvalCases {
   snapshot_id: string;
   status: string;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface EvalMessageCaseAssociations {
+  assistant_message_id: string;
+  case_id: string;
+  created_at: Generated<Timestamp>;
+  created_by: string | null;
   workspace_id: string;
 }
 
@@ -1054,6 +1079,7 @@ export interface DB {
   agents: Agents;
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;
+  assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audit_events: AuditEvents;
   bootstrap_greeting_cache: BootstrapGreetingCache;
   chunk_embeddings: ChunkEmbeddings;
@@ -1079,6 +1105,7 @@ export interface DB {
   embedding_spaces: EmbeddingSpaces;
   embedding_usage_items: EmbeddingUsageItems;
   eval_cases: EvalCases;
+  eval_message_case_associations: EvalMessageCaseAssociations;
   eval_runs: EvalRuns;
   eval_snapshots: EvalSnapshots;
   ingestion_settings: IngestionSettings;

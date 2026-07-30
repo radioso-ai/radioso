@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-07-22
+last_updated: 2026-07-30
 ---
 
 # Code Map
@@ -630,13 +630,15 @@ Related specs:
 
 ## Answer Quality And Triage
 
-Owns the operator's read-only view of answer quality: which assistant turns are
-worth reviewing, the triage state an operator assigns them, and the rates those
-turns aggregate to. Signal meaning is derived from skill-catalog metadata rather
-than outcome-name matching.
+Owns the operator's view of answer quality: which assistant turns are worth
+reviewing, the structured triage decision an operator assigns them, and the
+rates those turns aggregate to. Signal meaning is derived from skill-catalog
+metadata rather than outcome-name matching.
 
 Should not own anything that influences a turn. Nothing here feeds retrieval,
-routing, or answer composition. Triage state is its only write.
+routing, or answer composition. Current triage and its append-only transition
+history are its only writes. Eval verification enters through a narrow batch
+port; Quality does not read Eval tables or snapshots itself.
 
 `GET /quality/turns` and `GET /quality/stats` select from one shared turn
 population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
@@ -650,21 +652,60 @@ Public surfaces and contracts:
 - `backend/src/modules/quality/composition.ts`
 - `backend/src/modules/quality/contracts/`
 - `backend/src/modules/quality/domain/qualitySignals.ts`
+- `backend/src/modules/quality/domain/resolution.ts`
+- `backend/src/modules/quality/triageStore.ts`
 - `backend/src/modules/quality/turnPopulationSql.ts`
 
 Useful searches:
 
 - `rg "quality/turns|quality/stats|QualitySignalId|groundedAnswer" backend/src frontend`
-- `rg "triage|assistant_answer_triage|assistant_answer_feedback" backend/src`
+- `rg "triage|resolutionReason|assistant_answer_triage|assistant_answer_feedback" backend/src frontend`
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/quality-signals.test.ts tests/unit/quality-stats-query.test.ts tests/unit/quality-routes.test.ts`
-- `cd backend && pnpm exec vitest run tests/integration/quality-stats.integration.test.ts tests/integration/quality-turns.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/quality-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/quality-*.integration.test.ts`
 
 Related docs:
 
 - `docs/human-takeover.md` (Activity tabs and the operator console)
+- `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+
+## Product Eval Cases And Runs
+
+Owns the DB-backed operator Eval surface: immutable conversation snapshots,
+editable cases and assertions, recorded runs, and the stable association from
+one AI-authored assistant message to one current case.
+
+Should not decide whether a production turn needs review or mutate Quality
+triage. Quality consumes only the compact case/run projection exposed through
+its own verification port. The message-scoped create operation validates
+authorship and replayability before its transaction creates the snapshot, case,
+and association together.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/eval/composition.ts`
+- `backend/src/modules/eval/domain/types.ts`
+- `backend/src/modules/eval/routes/evalRoutes.ts`
+- `backend/src/modules/eval/services/evalMessageCaseService.ts`
+- `backend/src/modules/eval/services/evalMessageCaseRepository.ts`
+- `GET|PUT /api/v1/evals/cases/by-source-message/{assistantMessageId}`
+
+Useful searches:
+
+- `rg "EvalMessageCase|by-source-message|eval_message_case_associations" backend/src frontend`
+- `rg "EvalSnapshot|EvalCase|EvalRun" backend/src/modules/eval`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/eval-message-case-service.test.ts tests/unit/eval-message-case-routes.test.ts tests/unit/eval-snapshot-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/eval-repository.integration.test.ts`
+
+Related docs:
+
+- `docs/quality-eval-learning-loop.md`
+- `docs-portal/content/guides/evals.mdx`
 
 ## Frontend Dashboard And Public Chat
 

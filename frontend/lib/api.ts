@@ -36,7 +36,16 @@ export type {
   SkillAuthoringInputType,
   SkillAuthoringOutcome,
 } from './api-routine-skill-catalog'
-export { qualityApi, QUALITY_SIGNAL_IDS, QUALITY_STATS_RANGES, GROUNDING_VERDICTS } from './api-quality'
+export {
+  qualityApi,
+  getQualityTriageConflict,
+  GROUNDING_VERDICTS,
+  QUALITY_NOT_ACTIONABLE_REASONS,
+  QUALITY_RESOLUTION_REASONS,
+  QUALITY_RESOLVED_REASONS,
+  QUALITY_SIGNAL_IDS,
+  QUALITY_STATS_RANGES,
+} from './api-quality'
 export { getHitlApiErrorStatus, hitlApi, isHitlApiStatusError } from './api-hitl'
 export type {
   FeedbackValue,
@@ -57,6 +66,12 @@ export type {
   QualityStatsWindow,
   QualityTriageState,
   QualityTriageRecord,
+  QualityResolution,
+  QualityResolutionReason,
+  QualityResolvedReason,
+  QualityNotActionableReason,
+  QualityResolutionBreakdownReason,
+  QualityVerification,
 } from './api-quality'
 export { skillsApi } from './api-skills'
 export type {

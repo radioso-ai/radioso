@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-07-29
+last_updated: 2026-07-30
 ---
 
 # Human Takeover
@@ -202,10 +202,12 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   escalation. Reviewing feedback opens the exact failed answer and keeps direct
   links to Knowledge, the agent's Behavior settings, and agent chat beside the
   evidence. Mark it resolved after updating and testing, or choose **Not
-  actionable**. A later thumbs down reopens the work even if that answer was
-  previously resolved or dismissed. Passive quality rows retain the one-click
-  **Dismiss** action. Approvals and handoffs clear by resolving or handing back
-  from the conversation drawer.
+  actionable**. Both actions ask for a structured reason and optional note; if
+  another operator closes it first, the dialog shows their current decision
+  instead of overwriting it. A later thumbs down reopens the work even if that answer was
+  previously resolved or dismissed. Passive quality rows use the same
+  reason-required **Dismiss** flow. Approvals and handoffs clear by resolving or
+  handing back from the conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — answer quality in two zones with different scopes. **Health**
   covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,
@@ -213,7 +215,9 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   preceding window. **Queue** is the full, paginated backlog and per-turn triage
   (negative feedback, slow responses, and skill failures, in addition to the
   grounding gaps summarized in the inbox). The queue is not windowed, so a turn
-  that is still untriaged stays visible however old it is.
+  that is still untriaged stays visible however old it is. Its resolution
+  breakdown and filters open exact reason/closure-time queues, while **Add to
+  Eval** preserves a failed answer and later shows timestamped run evidence.
 
 A turn only counts as a grounding gap when the agent tried to ground an answer
 and came up empty. When it declines because the question falls outside what its

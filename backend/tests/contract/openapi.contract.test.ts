@@ -21,6 +21,52 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents structured Quality closure and message-scoped Eval convenience", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+    const qualityList = paths["/api/v1/quality/turns"]?.get;
+    const qualityTriage = paths["/api/v1/quality/turns/{assistantMessageId}/triage"]?.put;
+    const evalMessagePath = paths["/api/v1/evals/cases/by-source-message/{assistantMessageId}"];
+    const qualityQueryNames = (qualityList?.parameters ?? [])
+      .filter((parameter) => "name" in parameter)
+      .map((parameter) => parameter.name);
+
+    expect(qualityQueryNames).toEqual(expect.arrayContaining([
+      "resolutionReason",
+      "resolutionFrom",
+      "resolutionTo",
+    ]));
+    expect(qualityTriage).toMatchObject({
+      operationId: "setQualityTurnTriage",
+      responses: {
+        "200": expect.any(Object),
+        "409": expect.any(Object),
+      },
+    });
+    expect(document.components?.schemas).toMatchObject({
+      QualityResolutionReason: expect.any(Object),
+      QualityResolution: expect.any(Object),
+      QualityTriageConflictResponse: expect.any(Object),
+      QualityVerification: expect.any(Object),
+      EvalMessageCaseLookup: expect.any(Object),
+      EvalMessageCaseMutationResult: expect.any(Object),
+    });
+    expect(evalMessagePath?.get).toMatchObject({
+      operationId: "getEvalCaseBySourceMessage",
+      responses: {
+        "200": expect.any(Object),
+        "404": expect.any(Object),
+      },
+    });
+    expect(evalMessagePath?.put).toMatchObject({
+      operationId: "getOrCreateEvalCaseBySourceMessage",
+      responses: {
+        "200": expect.any(Object),
+        "201": expect.any(Object),
+      },
+    });
+  });
+
   it("documents registration availability and edition-gated organization creation", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};

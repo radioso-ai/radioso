@@ -11,16 +11,43 @@ An eval is a real conversation you froze so you can replay it and check the agen
 
 ## Cases come from real conversations
 
-You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench or the Activity view, hover an assistant answer (the agent's reply — API paths say assistant, same thing) and click the **flask icon** to save that turn as a case. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
+You do not write an eval case from scratch. You capture one from a conversation that already happened. In the workbench, hover an assistant answer (the agent's reply — API paths say assistant, same thing) and click the **flask icon**. From **Activity → Quality**, choose **Add to Eval**. Capturing takes a **snapshot**: it freezes the conversation and the settings that produced the answer, so a later replay compares against a fixed starting point rather than a moving one.
 
-Under the hood the snapshot and case are two API calls, both under `/api/v1/evals`:
+The Quality action uses one idempotent endpoint. Repeating it, including from two browser tabs, opens the same case instead of creating duplicates:
+
+```text
+PUT /api/v1/evals/cases/by-source-message/{assistantMessageId}
+GET /api/v1/evals/cases/by-source-message/{assistantMessageId}
+```
+
+The response includes the linked case and immutable snapshot, so an API client
+does not need to scan the case list. `GET` only looks up an existing link;
+`PUT` returns it or creates it. The case starts without assertions; open it and
+add what should stay true before running it. After creation, the dashboard
+action changes to **Open Eval** and Quality shows the latest case/run status with
+its run time.
+
+The lower-level endpoints remain useful when you want to choose the case name or
+assertions yourself:
 
 ```text
 POST /api/v1/evals/snapshots        { conversationId, messageId? }
 POST /api/v1/evals/cases            { snapshotId, name, assertions? }
 ```
 
-`messageId` picks the assistant turn to capture; omit it to snapshot the latest. A case starts with no assertions unless you seed one — capturing from an answer seeds an LLM-judge check that uses that answer as the reference, so a fresh case can run immediately.
+`messageId` picks the assistant turn to capture; omit it to snapshot the latest.
+The case request accepts assertions when you want the new case ready to run.
+The workbench's flask action seeds an LLM-judge check from the captured answer;
+the Quality **Add to Eval** action leaves assertions for you to choose in the
+editor.
+
+## From review to verified fix
+
+In **Activity → Quality**, resolve or dismiss a turn with a structured reason.
+After you change knowledge, retrieval, behavior, or platform code, run the linked
+Eval. Quality shows timestamped passing or failing evidence beside the turn. A
+pass offers **Review and resolve**, but Radioso still asks you to choose the
+reason; a test result never closes operator work automatically.
 
 ## Assertions: what a run checks
 

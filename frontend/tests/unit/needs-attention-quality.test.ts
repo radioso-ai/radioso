@@ -27,6 +27,7 @@ const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
   skillOutcome: 'no_context',
   skillStatus: 'completed',
   totalLatencyMs: 1200,
+  grounding: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   feedback: {
     upCount: 0,
@@ -34,7 +35,15 @@ const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
     latestDownUpdatedAt: null,
     comments: [],
   },
-  triage: { state: 'open', reason: null, updatedAt: null },
+  triage: {
+    state: 'open',
+    version: 0,
+    resolution: null,
+    legacyReason: null,
+    closedAt: null,
+    updatedAt: null,
+  },
+  verification: null,
   ...overrides,
 })
 
@@ -177,7 +186,10 @@ describe('reduceQualityInboxSnapshot', () => {
       ...current,
       triage: {
         state: 'acknowledged',
-        reason: null,
+        version: 2,
+        resolution: null,
+        legacyReason: null,
+        closedAt: null,
         updatedAt: '2026-06-19T10:05:00.000Z',
       },
     }))

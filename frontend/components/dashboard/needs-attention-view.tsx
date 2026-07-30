@@ -11,6 +11,10 @@ import {
 } from 'lucide-react'
 
 import { ConversationDrawer } from './conversation-drawer'
+import {
+  CloseReviewDialog,
+  type CloseReviewInput,
+} from '@/components/dashboard/quality/close-review-dialog'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
@@ -25,8 +29,10 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import {
   chatApi,
+  getQualityTriageConflict,
   qualityApi,
   type PendingApprovalDecision,
+  type QualityTriageRecord,
   type QualityTriageState,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -249,7 +255,7 @@ function RemediationActions({
             size="sm"
             variant="outline"
             className="min-h-11 sm:min-h-9"
-            disabled={isTriaging}
+            disabled={isTriaging || acknowledgementPending}
             onClick={onResolve}
           >
             Mark resolved
@@ -261,7 +267,7 @@ function RemediationActions({
                 size="icon"
                 variant="ghost"
                 className="h-11 w-11 sm:h-9 sm:w-9"
-                disabled={isTriaging}
+                disabled={isTriaging || acknowledgementPending}
                 aria-label="More feedback actions"
               >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
@@ -443,9 +449,8 @@ function InboxRow({
             </Button>
           </div>
         ) : item.assistantMessageId ? (
-          // Quality signals clear with a single Dismiss (sets the turn's triage state so
-          // it drops out of the inbox). Approvals/handoffs clear from the conversation
-          // drawer instead, so their action cell stays empty.
+          // Quality signals close through the shared reason dialog. Approvals and
+          // handoffs clear from the conversation drawer, so their action cell stays empty.
           <div className="flex justify-end">
             <Button
               type="button"
@@ -548,6 +553,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [acknowledgingMessageId, setAcknowledgingMessageId] = useState<string | null>(null)
   const [acknowledgementError, setAcknowledgementError] = useState<string | null>(null)
   const [triageError, setTriageError] = useState<string | null>(null)
+  const [closeReview, setCloseReview] = useState<{
+    item: InboxItem
+    state: 'resolved' | 'dismissed'
+    conflict: QualityTriageRecord | null
+  } | null>(null)
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
   const [focusAfterTriageKey, setFocusAfterTriageKey] = useState<string | 'page' | null>(null)
@@ -678,6 +688,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     try {
       const triage = await qualityApi.setTriageState(messageId, {
         state: 'acknowledged',
+        expectedVersion: item.triage?.version ?? 0,
       })
       if (!isMountedRef.current) {
         return
@@ -689,13 +700,33 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         })))
       setSelectedInboxItem((current) =>
         current?.assistantMessageId === messageId
-          ? { ...current, triageState: triage.state }
+          ? { ...current, triageState: triage.state, triage }
           : current)
-    } catch {
+    } catch (caught) {
       if (isMountedRef.current) {
-        setAcknowledgementError(
-          'Could not mark this feedback as reviewed. You can still inspect it and choose a fix.',
-        )
+        const current = getQualityTriageConflict(caught)
+        if (current) {
+          setQualitySnapshot((previous) =>
+            updateQualityInboxTurn(previous, messageId, (turn) => ({
+              ...turn,
+              triage: current,
+            })))
+          setSelectedInboxItem((selected) =>
+            selected?.assistantMessageId === messageId
+              ? { ...selected, triageState: current.state, triage: current }
+              : selected)
+          const currentState = current.state === 'dismissed'
+            ? 'dismissed as not actionable'
+            : current.state
+          setAcknowledgementError(
+            `Another operator already changed this feedback to ${currentState}. `
+              + 'Their current record has been loaded.',
+          )
+        } else {
+          setAcknowledgementError(
+            'Could not mark this feedback as reviewed. You can still inspect it and choose a fix.',
+          )
+        }
       }
     } finally {
       if (isMountedRef.current) {
@@ -718,23 +749,34 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
   }, [handleAcknowledge])
 
-  const handleTriage = useCallback(async (item: InboxItem, state: QualityTriageState) => {
+  const requestCloseReview = useCallback((
+    item: InboxItem,
+    state: QualityTriageState,
+  ) => {
+    if (state !== 'resolved' && state !== 'dismissed') return
+    setTriageError(null)
+    setCloseReview({ item, state, conflict: null })
+  }, [])
+
+  const handleTriage = useCallback(async (input: CloseReviewInput) => {
+    const item = closeReview?.item
+    if (!item) return
     const messageId = item.assistantMessageId
     if (!messageId) {
       return
     }
+    const state = input.state
     const isFeedbackTerminalAction = item.type === 'negative_feedback'
     setTriagingMessageIds((prev) => new Set(prev).add(messageId))
     setTriageError(null)
 
-    if (!isFeedbackTerminalAction) {
-      // Passive quality signals keep their fast table-level dismissal.
-      setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
-    }
-
     try {
-      await qualityApi.setTriageState(messageId, { state })
-      if (!isMountedRef.current || !isFeedbackTerminalAction) {
+      await qualityApi.setTriageState(messageId, {
+        state,
+        expectedVersion: item.triage?.version ?? 0,
+        resolution: input.resolution,
+      })
+      if (!isMountedRef.current) {
         return
       }
 
@@ -743,20 +785,45 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       returnFocusKeyRef.current = null
       setFocusAfterTriageKey(nextItem?.key ?? 'page')
       setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
-      setSelectedInboxItem(null)
+      if (isFeedbackTerminalAction) {
+        setSelectedInboxItem(null)
+      }
+      setCloseReview(null)
       setStatusAnnouncement(
         state === 'resolved' ? 'Marked resolved.' : 'Dismissed as not actionable.',
       )
-    } catch {
+    } catch (caught) {
       if (isMountedRef.current) {
-        if (isFeedbackTerminalAction) {
+        const current = getQualityTriageConflict(caught)
+        if (current) {
+          setQualitySnapshot((previous) =>
+            updateQualityInboxTurn(previous, messageId, (turn) => ({ ...turn, triage: current })))
+          setSelectedInboxItem((selected) =>
+            selected?.assistantMessageId === messageId
+              ? { ...selected, triageState: current.state, triage: current }
+              : selected)
+          setCloseReview((pending) =>
+            pending?.item.assistantMessageId === messageId
+              ? {
+                  ...pending,
+                  conflict: current,
+                  item: {
+                    ...pending.item,
+                    triageState: current.state,
+                    triage: current,
+                  },
+                }
+              : pending)
+          setTriageError(null)
+          setStatusAnnouncement(
+            'Another operator changed this review. Their current decision is shown in the dialog.',
+          )
+        } else {
           setTriageError(
             state === 'resolved'
               ? 'Could not mark this feedback as resolved. Try again.'
               : 'Could not dismiss this feedback. Try again.',
           )
-        } else {
-          void refreshInbox()
         }
       }
     } finally {
@@ -768,7 +835,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         })
       }
     }
-  }, [items, refreshInbox])
+  }, [closeReview, items])
 
   const handleCopyQuestion = useCallback(async () => {
     if (!selectedInboxItem || selectedInboxItem.type !== 'negative_feedback') {
@@ -1003,7 +1070,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                       item={item}
                       now={now}
                       onReview={handleReviewItem}
-                      onTriage={handleTriage}
+                      onTriage={requestCloseReview}
                       isTriaging={item.assistantMessageId
                         ? triagingMessageIds.has(item.assistantMessageId)
                         : false}
@@ -1023,7 +1090,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                     item={item}
                     now={now}
                     onReview={handleReviewItem}
-                    onTriage={handleTriage}
+                    onTriage={requestCloseReview}
                     isTriaging={item.assistantMessageId
                       ? triagingMessageIds.has(item.assistantMessageId)
                       : false}
@@ -1071,8 +1138,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             acknowledgementError={acknowledgementError}
             triageError={triageError}
             onCopyQuestion={() => void handleCopyQuestion()}
-            onResolve={() => void handleTriage(selectedFeedbackItem, 'resolved')}
-            onDismiss={() => void handleTriage(selectedFeedbackItem, 'dismissed')}
+            onResolve={() => requestCloseReview(selectedFeedbackItem, 'resolved')}
+            onDismiss={() => requestCloseReview(selectedFeedbackItem, 'dismissed')}
           />
         ) : null}
         onAfterClose={handleDrawerClosed}
@@ -1080,6 +1147,25 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         pendingDecisions={decisions}
         buildRoutineHref={buildRoutineHref}
       />
+      {closeReview ? (
+        <CloseReviewDialog
+          open
+          state={closeReview.state}
+          submitting={Boolean(
+            closeReview.item.assistantMessageId
+            && triagingMessageIds.has(closeReview.item.assistantMessageId),
+          )}
+          error={triageError}
+          conflict={closeReview.conflict}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCloseReview(null)
+              setTriageError(null)
+            }
+          }}
+          onSubmit={handleTriage}
+        />
+      ) : null}
     </>
   )
 }

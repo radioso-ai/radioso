@@ -17042,7 +17042,7 @@ export interface operations {
                 sort?: "turn_created_at" | "negative_feedback_updated_at";
                 /** @description When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open. */
                 activeNegativeFeedbackOnly?: boolean | null;
-                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. */
+                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values. */
                 hasComment?: boolean | null;
                 agentId?: string;
                 channel?: string;

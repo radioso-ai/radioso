@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations and suppressing AI while handling manual responses."
-last_updated: 2026-07-30
+last_updated: 2026-07-31
 ---
 
 # Human Takeover
@@ -194,29 +194,32 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
 
 - **Needs attention** — the operator inbox. One categorized table with an
   escalation-type column. Critical escalations (an **Approval** to decide, a
-  **Handoff** awaiting or held by a human) sort to the top. Explicit thumbs-down
-  feedback follows, ordered by its latest creation or edit, then lower-concern
-  quality signals (a **Degraded** or **No context** answer the AI already
-  handled). Quality signals are capped so they never crowd out critical work,
-  and a signal whose conversation is already escalated is shown once, as the
-  escalation. Reviewing feedback opens the exact failed answer and keeps direct
+  **Handoff** awaiting or held by a human) sort to the top. Thumbs-down feedback
+  with a written customer comment follows, ordered by its latest creation or
+  edit. Automatically detected signals and uncommented feedback stay in
+  **Quality** instead of creating one inbox row per answer. A compact summary
+  shows the unique number of answers in active Quality review without adding
+  that total to the Needs attention item or refresh counts.
+
+  Reviewing written feedback opens the exact failed answer and keeps direct
   links to Knowledge, the agent's Behavior settings, and agent chat beside the
   evidence. Mark it resolved after updating and testing, or choose **Not
   actionable**. Both actions open a compact popover where the operator can close
   immediately or add an optional classification. Only **Other** asks for a
   note. If another operator closes it first, a confirmation dialog shows their
-  current decision instead of overwriting it. A later thumbs down reopens the
-  work even if that answer was previously resolved or dismissed. Passive
-  quality rows use the same optional **Dismiss** flow. Approvals and handoffs
-  clear by resolving or handing back from the conversation drawer.
+  current decision instead of overwriting it. A later written thumbs-down
+  comment reopens the work even if that answer was previously resolved or
+  dismissed. Approvals and handoffs clear by resolving or handing back from the
+  conversation drawer.
 - **All activity** — the full conversation history.
 - **Quality** — answer quality in two zones with different scopes. **Health**
   covers a rolling 7- or 30-day window: answer volume, grounded-answer rate,
   negative-feedback rate, and skill-failure rate, each shown against the equal
   preceding window. **Queue** is the full, paginated backlog and per-turn triage
-  (negative feedback, slow responses, and skill failures, in addition to the
-  grounding gaps summarized in the inbox). The queue is not windowed, so a turn
-  that is still untriaged stays visible however old it is. Its resolution
+  for negative feedback, grounding gaps, slow responses, and skill failures.
+  Needs attention links to this union as one deduplicated count rather than
+  listing its automatic signals individually. The queue is not windowed, so a
+  turn that is still untriaged stays visible however old it is. Its resolution
   breakdown and filters open exact reason/closure-time queues, while **Add to
   Eval** preserves a failed answer and later shows timestamped run evidence.
 

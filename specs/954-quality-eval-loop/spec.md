@@ -44,15 +44,15 @@ return to the queue without losing their place.
 Classification supports later reporting, but it must not turn routine triage
 into mandatory form-filling before it drives a concrete remediation workflow.
 
-**Independent Test**: Close turns from both the Quality table and the negative
-feedback Needs Attention drawer with no reason and with every supported reason;
-verify the lightweight interaction, `other` validation, queue removal,
+**Independent Test**: Close turns from both the Quality table and the written
+negative-feedback Needs Attention drawer with no reason and with every supported
+reason; verify the lightweight interaction, `other` validation, queue removal,
 announcements, focus restoration, persistence, and subsequent display.
 
 **Acceptance Scenarios**:
 
 1. **Given** an open or acknowledged turn in Quality, **When** the operator chooses Resolve, **Then** a compact non-modal close-review popover offers valid resolved reasons and a clear option to close without one.
-2. **Given** an open or acknowledged negative-feedback item in Needs Attention, **When** the operator chooses Mark resolved, **Then** the same optional reason vocabulary and close-review interaction are used.
+2. **Given** an open or acknowledged written negative-feedback item in Needs Attention, **When** the operator chooses Mark resolved, **Then** the same optional reason vocabulary and close-review interaction are used.
 3. **Given** an item the operator considers non-actionable, **When** they choose Not actionable, **Then** the popover shows only not-actionable reasons.
 4. **Given** the operator does not want to classify the closure, **When** they choose the skip action, **Then** the terminal transition succeeds with no structured resolution.
 5. **Given** the operator chooses `other`, **When** the note is empty, **Then** completion is blocked with an accessible explanation; the note control is otherwise absent.
@@ -364,12 +364,20 @@ entries, reload the resulting URL, and verify count/list parity.
 - **FR-041**: No new high-cardinality metric is required. Resolution breakdowns
   are the operator-facing aggregate; structured logs and audit events cover the
   new state-changing failure paths.
+- **FR-042**: Needs Attention MUST create individual Quality rows only for
+  active thumbs-down feedback with a written comment. Uncommented feedback and
+  automatic signals MUST remain in Quality and appear in Needs Attention only
+  through one deduplicated active-answer summary linking to the default Quality
+  queue. That summary MUST NOT increase the Needs Attention item or refresh
+  counts.
 
 ### UI Tasks
 
 - Replace direct terminal state changes in Quality with the shared non-modal
   close-review popover while keeping active-state transitions lightweight.
-- Use the same popover from the negative-feedback Needs Attention drawer.
+- Use the same popover from the written negative-feedback Needs Attention drawer.
+- Replace passive Quality rows in Needs Attention with one unique-answer summary
+  that links to the default active Quality queue.
 - Add action-specific optional reason choices, a close-without-reason action,
   an `other`-only note, pending/error/conflict states, success announcement, and
   focus restoration.
@@ -466,3 +474,6 @@ entries, reload the resulting URL, and verify count/list parity.
 - **SC-010**: OpenAPI, generated SDK/MCP types, operator documentation, and
   runtime behavior agree on the new success, null, validation, deprecation,
   authorization, conflict, and idempotency contracts.
+- **SC-011**: Playwright verifies automatic signals and uncommented feedback do
+  not create Needs Attention rows or refresh counts, while the Quality summary
+  count equals the unique active-answer total returned by the union query.

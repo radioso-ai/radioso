@@ -223,22 +223,27 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       filters.push(buildFeedbackExistsPredicate(feedbackValues, params));
     }
 
-    if (input.hasComment === true) {
-      filters.push(
-        `EXISTS (
+    if (input.hasComment !== undefined) {
+      const commentFeedbackConstraint = feedbackValues.length > 0
+        ? `\n             AND f.value = ANY(${bindParam(params, feedbackValues)}::text[])`
+        : "";
+      if (input.hasComment) {
+        filters.push(
+          `EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
-             AND f.comment IS NOT NULL
+             AND f.comment IS NOT NULL${commentFeedbackConstraint}
          )`,
-      );
-    } else if (input.hasComment === false) {
-      filters.push(
-        `NOT EXISTS (
+        );
+      } else {
+        filters.push(
+          `NOT EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
-             AND f.comment IS NOT NULL
+             AND f.comment IS NOT NULL${commentFeedbackConstraint}
          )`,
-      );
+        );
+      }
     }
 
     if (input.minTotalLatencyMs !== undefined) {

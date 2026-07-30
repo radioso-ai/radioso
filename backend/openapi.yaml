@@ -20303,9 +20303,9 @@ paths:
             type:
               - boolean
               - "null"
-            description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.
+            description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values.
           required: false
-          description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.
+          description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values.
           name: hasComment
           in: query
         - schema:

@@ -38,7 +38,6 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import { cn } from '@/lib/utils'
 import {
   buildInboxModel,
@@ -69,8 +68,6 @@ const ESCALATION_META: Record<EscalationType, { label: string; className: string
   approval: { label: 'Approval', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
   handoff: { label: 'Handoff', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
   negative_feedback: { label: 'Negative feedback', className: 'border-border bg-background text-foreground' },
-  degraded: { label: 'Degraded', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
-  no_context: { label: 'No context', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
 }
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
@@ -375,19 +372,11 @@ function InboxRow({
   item,
   now,
   onReview,
-  onTriage,
-  isTriaging,
   reviewButtonRef,
 }: {
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (
-    item: InboxItem,
-    state: QualityTriageState,
-    anchor: HTMLElement | null,
-  ) => void
-  isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
   const isTakenOverHandoff = item.type === 'handoff' && item.takenOverAt !== null && item.takenOverAt !== undefined
@@ -455,21 +444,6 @@ function InboxRow({
               Review
             </Button>
           </div>
-        ) : item.assistantMessageId ? (
-          // Quality signals close through the shared reason dialog. Approvals and
-          // handoffs clear from the conversation drawer, so their action cell stays empty.
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              aria-haspopup="dialog"
-              variant="outline"
-              size="sm"
-              disabled={isTriaging}
-              onClick={(event) => onTriage(item, 'dismissed', event.currentTarget)}
-            >
-              Dismiss
-            </Button>
-          </div>
         ) : null}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -480,19 +454,11 @@ function MobileInboxRow({
   item,
   now,
   onReview,
-  onTriage,
-  isTriaging,
   reviewButtonRef,
 }: {
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (
-    item: InboxItem,
-    state: QualityTriageState,
-    anchor: HTMLElement | null,
-  ) => void
-  isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
   const isTakenOverHandoff = item.type === 'handoff'
@@ -536,22 +502,45 @@ function MobileInboxRow({
           >
             Review
           </Button>
-          {item.assistantMessageId && item.type !== 'negative_feedback' ? (
-            <Button
-              type="button"
-              aria-haspopup="dialog"
-              size="sm"
-              variant="ghost"
-              className="min-h-11"
-              disabled={isTriaging}
-              onClick={(event) => onTriage(item, 'dismissed', event.currentTarget)}
-            >
-              Dismiss
-            </Button>
-          ) : null}
         </div>
       </div>
     </article>
+  )
+}
+
+function QualityReviewSummary({
+  reviewCount,
+  commentedFeedbackCount,
+  href,
+}: {
+  reviewCount: number | null
+  commentedFeedbackCount: number | null
+  href: string
+}) {
+  const reviewCopy = reviewCount === null
+    ? 'The current review count could not be loaded.'
+    : `${reviewCount} answer${reviewCount === 1 ? '' : 's'} flagged for review.`
+  const feedbackCopy = (commentedFeedbackCount ?? 0) > 0
+    ? ` ${commentedFeedbackCount} include${commentedFeedbackCount === 1 ? 's' : ''} written customer feedback.`
+    : ''
+
+  return (
+    <section
+      aria-labelledby="quality-review-summary-heading"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <h2 id="quality-review-summary-heading" className="text-sm font-medium text-foreground">
+          Quality review
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {reviewCopy}{feedbackCopy}
+        </p>
+      </div>
+      <Button asChild size="sm" variant="outline" className="shrink-0 self-start sm:self-auto">
+        <Link href={href}>Review in Quality</Link>
+      </Button>
+    </section>
   )
 }
 
@@ -983,17 +972,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       : null,
     [accountId, routeState, selectedInboxItem],
   )
-  const qualityOverflowHref = useMemo(
+  const qualityReviewHref = useMemo(
     () => buildDashboardHref(accountId, {
-      ...routeState,
       section: 'quality',
-      qualityPage: 1,
-      qualityFeedback: ['down'],
-      qualitySort: 'negative_feedback_updated_at',
-      qualityTriageStates: [...ACTIVE_TRIAGE_STATES],
-      qualityActiveNegativeFeedbackOnly: true,
-      qualityHasComment: undefined,
-      anchor: undefined,
+      workspaceId: routeState.workspaceId,
+      workspacePublicRouteKey: routeState.workspacePublicRouteKey,
     }),
     [accountId, routeState],
   )
@@ -1002,9 +985,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     void refreshInbox()
   }, [refreshInbox])
 
-  const showEmptyState = !isLoading && !approvalError && !conversationError && items.length === 0
   const hasQualityLoadFailure = qualityPresentation.hasLoadFailure
-  const hasMoreQualityItems = qualityPresentation.isTruncated || inboxModel.hasMoreQualityItems
+  const showEmptyState = !isLoading
+    && !approvalError
+    && !conversationError
+    && !hasQualityLoadFailure
+    && items.length === 0
   const selectedFeedbackItem = selectedInboxItem?.type === 'negative_feedback'
     ? selectedInboxItem
     : null
@@ -1058,13 +1044,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             </div>
           ) : showEmptyState ? (
             <div className="rounded-lg border border-dashed border-border p-6">
-              <p className="text-sm font-medium text-foreground">You&apos;re caught up</p>
+              <p className="text-sm font-medium text-foreground">No immediate action needed</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                New handoffs, approvals, and answer problems will appear here.
+                {qualityPresentation.permissionDenied
+                  ? 'New handoffs and approvals will appear here.'
+                  : 'New handoffs, approvals, and written customer feedback will appear here.'}
               </p>
-              <Button asChild size="sm" variant="outline" className="mt-4">
-                <Link href={qualityOverflowHref}>View quality</Link>
-              </Button>
             </div>
           ) : items.length > 0 ? (
             <>
@@ -1089,10 +1074,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                       item={item}
                       now={now}
                       onReview={handleReviewItem}
-                      onTriage={requestCloseReview}
-                      isTriaging={item.assistantMessageId
-                        ? triagingMessageIds.has(item.assistantMessageId)
-                        : false}
                       reviewButtonRef={(node) =>
                         registerReviewButton(item.key, 'desktop', node)}
                     />
@@ -1109,10 +1090,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                     item={item}
                     now={now}
                     onReview={handleReviewItem}
-                    onTriage={requestCloseReview}
-                    isTriaging={item.assistantMessageId
-                      ? triagingMessageIds.has(item.assistantMessageId)
-                      : false}
                     reviewButtonRef={(node) =>
                       registerReviewButton(item.key, 'mobile', node)}
                   />
@@ -1121,17 +1098,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             </>
           ) : null}
 
-          {hasMoreQualityItems ? (
-            <p className="text-sm text-muted-foreground">
-              More quality items are available in{' '}
-              <Link
-                href={qualityOverflowHref}
-                className="font-medium text-foreground underline underline-offset-4"
-              >
-                Quality
-              </Link>
-              .
-            </p>
+          {!isLoading && !qualityPresentation.permissionDenied ? (
+            <QualityReviewSummary
+              reviewCount={qualityPresentation.reviewCount}
+              commentedFeedbackCount={qualityPresentation.commentedFeedbackCount}
+              href={qualityReviewHref}
+            />
           ) : null}
         </div>
       </DashboardPage>

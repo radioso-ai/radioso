@@ -16,7 +16,7 @@ repo-committed regression suite you run from the CLI.
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
 | `directives.ts` | 3 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 12 seed cases |
+| `cases.ts` | the 19 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary

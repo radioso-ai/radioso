@@ -71,11 +71,20 @@ test("choosing Dismissed offers optional context without opening a modal or conv
 }) => {
   const turn = qualityTurn("message-dismiss", "Should this answer be reviewed?");
   const triageBodies: Array<Record<string, unknown>> = [];
+  let closed = false;
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
   await installQualityStats(page);
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    if (closed) {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({}),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -90,6 +99,7 @@ test("choosing Dismissed offers optional context without opening a modal or conv
   });
   await page.route("**/backend/api/v1/quality/turns/message-dismiss/triage**", async (route) => {
     triageBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+    closed = true;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -104,7 +114,9 @@ test("choosing Dismissed offers optional context without opening a modal or conv
     });
   });
 
-  await page.goto(`/w/${workspaceKey}/quality`);
+  await page.goto(
+    `/w/${workspaceKey}/quality?triage=dismissed&resolutionReason=unspecified&all=true`,
+  );
   await page.setViewportSize({ width: 1280, height: 360 });
   const triageTrigger = page.getByRole("button", {
     name: "Triage state: Open. Change state.",
@@ -149,6 +161,7 @@ test("choosing Dismissed offers optional context without opening a modal or conv
   await closeReview.getByRole("button", { name: "Close without reason" }).click();
   await expect(closeReview).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+  await expect(page.getByText("Should this answer be reviewed?")).toBeVisible();
   expect(triageBodies).toEqual([
     {
       state: "dismissed",

@@ -1356,11 +1356,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       })
       const remainsInTriageScope = !queueScope.triageStates
         || queueScope.triageStates.includes(record.state)
+      const resolutionReason = record.resolution?.reason ?? 'unspecified'
       const remainsInReasonScope = resolutionReasons.length === 0
-        || (
-          record.resolution
-          && resolutionReasons.includes(record.resolution.reason)
-        )
+        || resolutionReasons.includes(resolutionReason)
       const closedAt = record.closedAt ? Date.parse(record.closedAt) : Number.NaN
       const remainsInTimeScope = (
         (!resolutionFrom || (!Number.isNaN(closedAt) && closedAt >= Date.parse(resolutionFrom)))

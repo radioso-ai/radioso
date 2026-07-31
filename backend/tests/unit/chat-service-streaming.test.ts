@@ -5302,7 +5302,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("preserves an anchor-free degraded answer without a second refusal call", async () => {
+  it("suppresses an anchor-free answer even when its prose overlaps retrieved context", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -5338,7 +5338,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        return groundingEnvelope("The available material gives a partial description.", "degraded");
+        return groundingEnvelope("The page explains testing and parsing content for users.", "degraded");
       },
       async *streamAnswer() {
         yield "unused";
@@ -5370,12 +5370,12 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
-    expect(response.answer).toBe("The available material gives a partial description.");
-    expect(response.skillOutcome).toBe("grounded_degraded");
-    expect(declineAttemptKeys).toEqual([]);
+    expect(response.answer).toBe(focusedDecline);
+    expect(response.skillOutcome).toBe("no_context");
+    expect(declineAttemptKeys).toEqual(["unsupported_answer"]);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
-      skillOutcome: "grounded_degraded",
+      skillOutcome: "no_context",
     });
   });
 

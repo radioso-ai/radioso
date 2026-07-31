@@ -6,7 +6,27 @@ const accountId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 test.skip(process.env.RADIOSO_EDITION !== "enterprise", "Operator console routes are generated only for enterprise frontend builds.");
 
-const starterProfile = {
+type TierProfile = {
+  key: string;
+  displayName: string;
+  monthlyAnswerLimit: number;
+  storedDocumentLimit: number;
+  storedIndexedByteLimit: number;
+  monthlyIndexedByteLimit: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type StaffFixture = {
+  id: string;
+  email: string;
+  name: string;
+  role: StaffRole;
+  status: string;
+  lastLoginAt: string | null;
+};
+
+const starterProfile: TierProfile = {
   key: "starter",
   displayName: "Starter",
   monthlyAnswerLimit: 10,
@@ -17,7 +37,7 @@ const starterProfile = {
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
 
-const growthProfile = {
+const growthProfile: TierProfile = {
   key: "growth",
   displayName: "Growth",
   monthlyAnswerLimit: 100,
@@ -28,7 +48,7 @@ const growthProfile = {
   updatedAt: "2026-06-01T00:00:00.000Z",
 };
 
-const usage = (profile = starterProfile) => ({
+const usage = (profile: TierProfile = starterProfile) => ({
   accountId,
   organizationName: "Alpha Research",
   profile,
@@ -60,7 +80,7 @@ const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner"
   const requestLog: string[] = [];
   let currentUsage = usage();
   let tiers = [starterProfile, growthProfile];
-  let staff = [
+  let staff: StaffFixture[] = [
     {
       id: "11111111-1111-4111-8111-111111111111",
       email: "owner@example.com",
@@ -124,7 +144,7 @@ const installOperatorConsoleMocks = async (page: Page, role: StaffRole = "owner"
     }
     if (path.startsWith("/tiers/") && route.request().method() === "PUT") {
       const key = decodeURIComponent(path.replace("/tiers/", ""));
-      const body = route.request().postDataJSON() as typeof starterProfile;
+      const body = route.request().postDataJSON() as TierProfile;
       const profile = {
         ...starterProfile,
         key,

@@ -10,6 +10,9 @@ import { QUALITY_SIGNAL_IDS, type QualitySignalId, type QualityTriageState } fro
  */
 export const ACTIVE_TRIAGE_STATES: readonly QualityTriageState[] = ['open', 'acknowledged']
 
+export const isTerminalQualityTriageState = (state: QualityTriageState): boolean =>
+  state === 'resolved' || state === 'dismissed'
+
 export interface QueueScopeInput {
   /** The operator asked for every answer, signal or not. */
   showAll: boolean

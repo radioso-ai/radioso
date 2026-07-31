@@ -81,7 +81,10 @@ import {
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
-import { resolveQueueScope } from '@/lib/quality-signals'
+import {
+  isTerminalQualityTriageState,
+  resolveQueueScope,
+} from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
 import {
   CloseReviewPopover,
@@ -1320,13 +1323,44 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     } catch (caught) {
       const current = getQualityTriageConflict(caught)
       if (current) {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.assistantMessageId === turn.assistantMessageId
-              ? { ...item, triage: current }
-              : item,
-          ))
-        setError('Another operator changed this review. The current state has been reloaded.')
+        const terminalOutsideActiveScope = isTerminalQualityTriageState(current.state)
+          && (
+            activeNegativeFeedbackOnly
+            || (
+              queueScope.triageStates !== undefined
+              && !queueScope.triageStates.includes(current.state)
+            )
+          )
+        if (terminalOutsideActiveScope) {
+          const turnIndex = items.findIndex(
+            (item) => item.assistantMessageId === turn.assistantMessageId,
+          )
+          const adjacentTargetId = (
+            items[turnIndex + 1]?.assistantMessageId
+            ?? items[turnIndex - 1]?.assistantMessageId
+            ?? null
+          )
+          setItems((prev) =>
+            prev.filter((item) => item.assistantMessageId !== turn.assistantMessageId))
+          setTotal((currentTotal) => Math.max(0, currentTotal - 1))
+          setError(
+            'Another operator already closed this review. '
+              + 'It was removed from the active queue.',
+          )
+          setStatusAnnouncement(
+            'Another operator already closed this review. It was removed from the active queue.',
+          )
+          focusQualityQueueTarget(adjacentTargetId)
+          setCountsRefreshKey((key) => key + 1)
+        } else {
+          setItems((prev) =>
+            prev.map((item) =>
+              item.assistantMessageId === turn.assistantMessageId
+                ? { ...item, triage: current }
+                : item,
+            ))
+          setError('Another operator changed this review. The current state has been reloaded.')
+        }
       } else {
         setError(getApiErrorMessage(caught, 'Failed to update triage state'))
       }

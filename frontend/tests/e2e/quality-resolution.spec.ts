@@ -310,6 +310,70 @@ test("closure reviews a canonical winner before replacement and removes locally 
   ]);
 });
 
+test("a terminal conflict removes a stale row from the active queue", async ({ page }) => {
+  const turn = qualityTurn("message-terminal-conflict", "Was this already reviewed?");
+  const triageBodies: Array<Record<string, unknown>> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installQualityStats(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: [turn],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+        totalPages: 1,
+      }),
+    });
+  });
+  await page.route(
+    "**/backend/api/v1/quality/turns/message-terminal-conflict/triage**",
+    async (route) => {
+      triageBodies.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "resolved",
+                version: 4,
+                resolution: { reason: "knowledge_gap", note: null },
+                legacyReason: null,
+                closedAt: "2026-07-30T10:00:00.000Z",
+                updatedAt: "2026-07-30T10:00:00.000Z",
+              },
+            },
+          },
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/w/${workspaceKey}/quality`);
+  const triageTrigger = page.locator(
+    '[data-quality-triage-id="message-terminal-conflict"]',
+  );
+  await triageTrigger.click();
+  await page.getByRole("menuitemradio", { name: "Acknowledged" }).click();
+
+  await expect(triageTrigger).toHaveCount(0);
+  await expect(page.getByText(
+    "Another operator already closed this review. It was removed from the active queue.",
+  ).first()).toBeVisible();
+  expect(triageBodies).toEqual([{
+    state: "acknowledged",
+    expectedVersion: 1,
+  }]);
+});
+
 test("a deleted linked Eval is recreated honestly through the idempotent message endpoint", async ({
   page,
 }) => {

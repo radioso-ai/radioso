@@ -58,6 +58,7 @@ import {
   removeQualityInboxTurn,
   updateQualityInboxTurn,
 } from '@/lib/needs-attention-quality'
+import { isTerminalQualityTriageState } from '@/lib/quality-signals'
 
 interface NeedsAttentionViewProps {
   accountId: string
@@ -709,22 +710,32 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       if (isMountedRef.current) {
         const current = getQualityTriageConflict(caught)
         if (current) {
-          setQualitySnapshot((previous) =>
-            updateQualityInboxTurn(previous, messageId, (turn) => ({
-              ...turn,
-              triage: current,
-            })))
-          setSelectedInboxItem((selected) =>
-            selected?.assistantMessageId === messageId
-              ? { ...selected, triageState: current.state, triage: current }
-              : selected)
-          const currentState = current.state === 'dismissed'
-            ? 'dismissed as not actionable'
-            : current.state
-          setAcknowledgementError(
-            `Another operator already changed this feedback to ${currentState}. `
-              + 'Their current record has been loaded.',
-          )
+          if (isTerminalQualityTriageState(current.state)) {
+            setQualitySnapshot((previous) =>
+              removeQualityInboxTurn(previous, messageId))
+            setSelectedInboxItem(null)
+            returnFocusKeyRef.current = null
+            setFocusAfterTriageKey('page')
+            setAcknowledgementError(null)
+            setStatusAnnouncement(
+              'Another operator already closed this feedback. '
+                + 'It was removed from Needs attention.',
+            )
+          } else {
+            setQualitySnapshot((previous) =>
+              updateQualityInboxTurn(previous, messageId, (turn) => ({
+                ...turn,
+                triage: current,
+              })))
+            setSelectedInboxItem((selected) =>
+              selected?.assistantMessageId === messageId
+                ? { ...selected, triageState: current.state, triage: current }
+                : selected)
+            setAcknowledgementError(
+              `Another operator already changed this feedback to ${current.state}. `
+                + 'Their current record has been loaded.',
+            )
+          }
         } else {
           setAcknowledgementError(
             'Could not mark this feedback as reviewed. You can still inspect it and choose a fix.',

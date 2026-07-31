@@ -644,6 +644,107 @@ test("operator can turn written negative feedback into a remediation task", asyn
   await expect(page.locator("main").getByText("Needs attention", { exact: true })).toBeFocused();
 });
 
+test("a terminal acknowledgement conflict removes stale feedback actions", async ({ page }) => {
+  const assistantMessageId = "assistant-terminal-feedback";
+  const conversationId = "conversation-terminal-feedback";
+  const triageRequests: Array<Record<string, unknown>> = [];
+  const feedbackTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Can I return an opened item?",
+    answerPreview: "Items can be returned within 30 days.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: "2026-06-19T10:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-06-19T10:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "This does not explain the opened-item exception.",
+        createdAt: "2026-06-19T10:05:00.000Z",
+        updatedAt: "2026-06-19T10:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "open",
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: nowIso,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const isWrittenFeedback =
+      new URL(route.request().url()).searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isWrittenFeedback ? [feedbackTurn] : [],
+        total: isWrittenFeedback ? 1 : 0,
+        page: 1,
+        pageSize: isWrittenFeedback ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+  await page.route(
+    `**/backend/api/v1/quality/turns/${assistantMessageId}/triage**`,
+    async (route) => {
+      triageRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "dismissed",
+                version: 5,
+                resolution: { reason: "expected_behavior", note: null },
+                legacyReason: null,
+                closedAt: "2026-06-19T11:45:00.000Z",
+                updatedAt: "2026-06-19T11:45:00.000Z",
+              },
+            },
+          },
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", {
+    name: "Review feedback: Can I return an opened item?",
+  }).click();
+
+  await expect(page.locator(
+    'button[aria-label="Review feedback: Can I return an opened item?"]',
+  )).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+  await expect(page.locator("main").getByRole("status")).toContainText(
+    "Another operator already closed this feedback. It was removed from Needs attention.",
+  );
+  expect(triageRequests).toEqual([{
+    state: "acknowledged",
+    expectedVersion: 1,
+  }]);
+});
+
 test("operator sees the expected feedback permission boundary without losing the inbox", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);

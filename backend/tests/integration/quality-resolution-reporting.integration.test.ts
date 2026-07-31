@@ -95,12 +95,16 @@ describeIfDatabase("quality resolution reporting", () => {
     );
 
     const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), clock);
-    await service.setTriageState(workspaceId, {
+    const knowledgeGapTransition = await service.setTriageState(workspaceId, {
       assistantMessageId: knowledgeGapId,
       state: "resolved",
       expectedVersion: 0,
       resolution: { reason: "knowledge_gap", note: null },
     });
+    expect(knowledgeGapTransition.kind).toBe("updated");
+    if (knowledgeGapTransition.kind !== "updated" || !knowledgeGapTransition.record.updatedAt) {
+      throw new Error("Expected the knowledge-gap closure to persist");
+    }
     await service.setTriageState(workspaceId, {
       assistantMessageId: dismissedId,
       state: "dismissed",
@@ -158,7 +162,9 @@ describeIfDatabase("quality resolution reporting", () => {
         workspaceId,
         conversationId,
         knowledgeGapId,
-        "2026-07-31T00:00:00.000Z",
+        new Date(
+          Date.parse(knowledgeGapTransition.record.updatedAt) + 1_000,
+        ).toISOString(),
       ],
     );
 

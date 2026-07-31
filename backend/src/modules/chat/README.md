@@ -99,10 +99,14 @@ imports from `services/`.
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
-  returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
-  answer or malformed result with no valid sourced assertion remains visible with a
-  computed `degraded` verdict; it is not replaced by a second generated refusal.
-  Partial answers with at least one valid assertion remain visible and degraded.
+  returns the focused decline; elapsed time never closes the gate. When retrieved
+  contexts exist, a valid `outcome=answer` result without a valid sourced assertion
+  is discarded and rewritten through the focused decline path. Lexical overlap
+  never satisfies this delivery guard. A page-read turn whose typed gate captured
+  page content is exempt because that content is an admitted source outside the
+  citation index. Malformed results remain visible with a computed `degraded`
+  verdict, while partial answers with at least one valid assertion remain visible
+  and degraded.
   Raw envelope JSON is never emitted or persisted.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come

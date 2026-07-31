@@ -53,6 +53,23 @@ export const buildRetrievalTurnOutcome = (session: PreparedSession): TurnOutcome
   buildPreparedTurnOutcome(session, { kind: RETRIEVAL_OUTCOME_KIND, skillName: RETRIEVAL_TURN_SKILL });
 
 /**
+ * Enforces the v2 grounding protocol at delivery time. A valid answer envelope
+ * must carry at least one in-range sourced assertion; lexical similarity is not
+ * evidence and cannot turn an anchor-free draft into a grounded answer. Captured
+ * page content is a separate source admitted by the fused planner's typed gate.
+ */
+const shouldSuppressUnsupportedDraft = (
+  session: PreparedSession,
+  envelope: Pick<GroundedAnswerEnvelope, "parseStatus" | "outcome">,
+  summary: GroundingSummary,
+): boolean =>
+  session.retrieval.contexts.length > 0
+  && session.pageReadOutcome?.gate.kind !== "capture"
+  && envelope.parseStatus === "valid_v2"
+  && envelope.outcome === "answer"
+  && summary.sourcedClaimCount === 0;
+
+/**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
  * envelope call, the page-context fallback, and computed grounding presentation.
  * Grounding is retrieval's *private* business — this only
@@ -130,6 +147,19 @@ export class RetrievalAnswerComposer {
         verdict: "no_support",
         reason: "gate_bound",
         stream: "true",
+        decline: declineReason,
+      },
+    });
+  }
+
+  private recordUnsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "unsupported_answer",
+        stream: String(stream),
         decline: declineReason,
       },
     });
@@ -248,15 +278,30 @@ export class RetrievalAnswerComposer {
         accountId,
         "grounded",
       );
-      answer = envelope.answer;
-      plannedSuggestions = envelope.suggestions;
-      metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
-      grounding = computeGroundingSummary({
+      const summary = computeGroundingSummary({
         body: envelope.answer,
         envelope,
         contextCount: session.retrieval.contexts.length,
       });
-      this.recordGroundingOutcome(grounding, envelope, false);
+      if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "unsupported_answer",
+        );
+        this.recordUnsupportedAnswerDecline(decline.declineReason, false);
+        answer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+      } else {
+        answer = envelope.answer;
+        plannedSuggestions = envelope.suggestions;
+        metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
+        grounding = summary;
+        this.recordGroundingOutcome(summary, envelope, false);
+      }
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -434,12 +479,33 @@ export class RetrievalAnswerComposer {
       if (!rawAnswer.trim()) {
         throw new BlankChatAnswerError();
       }
-      grounding = computeGroundingSummary({
+      const summary = computeGroundingSummary({
         body: rawAnswer,
         envelope: finalized,
         contextCount: session.retrieval.contexts.length,
       });
-      this.recordGroundingOutcome(grounding, finalized, true);
+      if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_unsupported_answer",
+          signal,
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        this.recordUnsupportedAnswerDecline(decline.declineReason, true);
+        rawAnswer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+        plannedSuggestions = [];
+        metadataPatch = undefined;
+      } else {
+        grounding = summary;
+        this.recordGroundingOutcome(summary, finalized, true);
+      }
     }
 
     // Present the same generated body from its computed assertion verdict. Suggestions

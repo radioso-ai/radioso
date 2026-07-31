@@ -73,8 +73,14 @@ const getConversationAuthLabel = (conversation: Pick<ChatConversationSummary, 's
   return 'Authenticated'
 }
 
-const getConversationSourceLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin' | 'channelContext'>) => {
-  const channelContextLabel = formatConversationSource(conversation)
+type ConversationSourceSummary = Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'>
+  & Partial<Pick<ChatConversationSummary, 'channelContext'>>
+
+const getConversationSourceLabel = (conversation: ConversationSourceSummary) => {
+  const channelContextLabel = formatConversationSource({
+    ...conversation,
+    channelContext: conversation.channelContext ?? null,
+  })
   if (channelContextLabel) {
     return channelContextLabel
   }

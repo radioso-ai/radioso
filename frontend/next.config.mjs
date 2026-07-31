@@ -138,9 +138,6 @@ const nextConfig = {
       devBuildContext.worktree,
     NEXT_PUBLIC_MCP_URL: resolvePublicMcpUrl(),
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   experimental: {
     externalDir: true,
   },

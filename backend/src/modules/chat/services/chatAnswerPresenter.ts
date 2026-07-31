@@ -1,6 +1,5 @@
 import { resolveContextSourceUrl } from "../../retrieval/public.js";
 import { AnswerPresentationService } from "./answerPresentationService.js";
-import { toCitationEvidence } from "./citationEvidence.js";
 import type { AnswerSegment, ChatCitation, CitationEvidence } from "../contracts/answerTypes.js";
 import {
   ASSISTANT_TURN_OUTCOME,
@@ -110,6 +109,21 @@ const hasGroundedSuggestionSupport = (input: {
     outcome: input.skillOutcome,
   });
 };
+
+const toCitationEvidence = (session: PreparedSession): CitationEvidence[] =>
+  session.retrieval.contexts.map((context) => {
+    const sourceUrl = resolveContextSourceUrl(context.metadata);
+    const evidence: CitationEvidence = {
+      documentId: context.documentId,
+      chunkId: context.chunkId,
+      title: context.title,
+      content: context.content,
+    };
+    if (sourceUrl) {
+      evidence.sourceUrl = sourceUrl;
+    }
+    return evidence;
+  });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);

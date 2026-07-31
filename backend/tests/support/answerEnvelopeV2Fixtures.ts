@@ -10,8 +10,6 @@ export const DEGRADED_V2_VISIBLE =
   "The advanced workshop runs in June, but I can't confirm the accommodation fee.";
 export const NO_SUPPORT_V2_BODY =
   "I'm sorry this is weighing on you. That's outside what I can help with, but I can help with our workshop schedule and registration options.";
-export const FOCUSED_NO_SUPPORT_REPLY =
-  "I can't confirm that from the available information, but I can help with the workshop schedule and registration options.";
 
 export const formatV2Envelope = (body: string, tail: unknown): string =>
   `${body}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(tail)}`;

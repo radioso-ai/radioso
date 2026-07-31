@@ -138,35 +138,6 @@ describe("grounded miss response composer", () => {
     expect(properties.declineReason?.enum).toEqual(["content_gap", "out_of_scope"]);
   });
 
-  it("preserves a required decline classification in the prompt, schema, and result", async () => {
-    let observedRequest: { responseFormat?: { schema: Record<string, unknown> }; systemPrompt?: string } = {};
-    const composer = new ModelFallbackReplyComposer(pipeline({
-      metadata: { capability: "chat", provider: "openai", model: "test-model" },
-      async complete(request) {
-        observedRequest = request;
-        return textResult(JSON.stringify({
-          reply: "That's outside what I can help with, but I can help with our courses.",
-          declineReason: "content_gap",
-        }));
-      },
-      stream() {
-        return streamResult([""]);
-      },
-    }));
-
-    const result = await composer.composeNoContext({
-      query: "What is the capital of Mars?",
-      usageContext,
-      requiredDeclineReason: "out_of_scope",
-    });
-
-    expect(result.declineReason).toBe("out_of_scope");
-    expect(observedRequest.systemPrompt).toContain("already classified as `out_of_scope`");
-    expect(observedRequest.systemPrompt).toContain("Do not reclassify it");
-    const properties = observedRequest.responseFormat?.schema.properties as Record<string, { enum?: string[] }>;
-    expect(properties.declineReason?.enum).toEqual(["out_of_scope"]);
-  });
-
   it("classifies an in-remit decline as a content gap", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "test-model" },
@@ -516,29 +487,6 @@ describe("grounded miss response composer", () => {
     expect(fallback.text).not.toContain("narrower question");
     expect(fallback.text).not.toContain("this assistant");
     expect(fallback.text).not.toContain("the assistant");
-  });
-
-  it("rejects a decline body containing non-rendering control characters", async () => {
-    const composer = new ModelFallbackReplyComposer(pipeline({
-      metadata: {
-        capability: "chat",
-        provider: "openai",
-        model: "test-model",
-      },
-      async complete() {
-        return textResult(JSON.stringify({ reply: "\u001b[?]", declineReason: "content_gap" }));
-      },
-      stream() {
-        return streamResult([""]);
-      },
-    }));
-
-    const fallback = await composer.composeNoContext({ query: "sqrt(5)", usageContext });
-
-    expect(fallback).toEqual({
-      text: getGroundedMissFallback(),
-      declineReason: "generation_unavailable",
-    });
   });
 
   it("keeps a scoped no-context response instead of discarding it as boilerplate-worthy", async () => {

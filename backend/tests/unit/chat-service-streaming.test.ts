@@ -5302,7 +5302,7 @@ describe("chat service streaming", () => {
     });
   });
 
-  it("preserves an anchor-free degraded answer without a second refusal call", async () => {
+  it("suppresses an anchor-free answer even when its prose overlaps retrieved context", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
     const auditService = createAuditService();
@@ -5338,9 +5338,7 @@ describe("chat service streaming", () => {
     } as const;
     const chatGateway: ChatGateway = {
       async answer() {
-        // Anchor-free, but the prose implicitly matches the retrieved context, so it
-        // is a delivered degraded answer rather than an unsupported-answer decline.
-        return groundingEnvelope("The page mainly explains testing and parsing content.", "degraded");
+        return groundingEnvelope("The page explains testing and parsing content for users.", "degraded");
       },
       async *streamAnswer() {
         yield "unused";
@@ -5372,87 +5370,13 @@ describe("chat service streaming", () => {
 
     const [conversationId] = conversationRepository.items.keys();
     const persisted = await messageRepository.listByConversationId("workspace-1", conversationId!);
-    expect(response.answer).toBe("The page mainly explains testing and parsing content.");
-    expect(response.skillOutcome).toBe("grounded_degraded");
-    expect(declineAttemptKeys).toEqual([]);
+    expect(response.answer).toBe(focusedDecline);
+    expect(response.skillOutcome).toBe("no_context");
+    expect(declineAttemptKeys).toEqual(["unsupported_answer"]);
     expect(persisted.at(-1)).toMatchObject({
       skillName: "retrieval.answer",
-      skillOutcome: "grounded_degraded",
+      skillOutcome: "no_context",
     });
-  });
-
-  it("declines an outcome=answer reply that no retrieved context supports", async () => {
-    const conversationRepository = new InMemoryConversationRepository();
-    const messageRepository = new InMemoryMessageRepository();
-    const auditService = createAuditService();
-    const retrievalPipeline = {
-      async run() {
-        return {
-          rewrittenQuery: "sqrt of five",
-          contexts: [
-            {
-              chunkId: "chunk-1",
-              documentId: "doc-1",
-              title: "Guide",
-              content: "The page explains testing and parsing content for users.",
-            },
-          ],
-          prompt: "prompt text",
-          citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide" }],
-          diagnostics: {
-            rewriteStatus: "skipped",
-            rerankStatus: "skipped",
-            originalCandidateCount: 1,
-            rewrittenCandidateCount: 0,
-            lexicalCandidateCount: 1,
-            normalizedCandidateCount: 1,
-            finalContextCount: 1,
-            candidateFallbackApplied: false,
-            fallbackApplied: false,
-            parsedQuery: { semanticQuery: "sqrt five", lexicalQuery: "sqrt five", constraints: [] },
-          },
-          responseSettings: { citationDisplayEnabled: true },
-        };
-      },
-    } as const;
-    const chatGateway: ChatGateway = {
-      // The model answers the math question from its own knowledge, emitting an
-      // anchor-free outcome=answer that no retrieved context supports.
-      async answer() {
-        return groundingEnvelope("The numerical value of sqrt(5) is approximately 2.2360679.", "degraded");
-      },
-      async *streamAnswer() {
-        yield "unused";
-      },
-    };
-    const focusedDecline = "That's outside what I can help with. Ask me about the guide instead.";
-    const declineAttemptKeys: string[] = [];
-    const focusedDeclineComposer: FallbackReplyComposer = {
-      async composeNoContext(input) {
-        declineAttemptKeys.push(input.usageContext.attemptKey);
-        return { text: focusedDecline, declineReason: "out_of_scope" };
-      },
-    };
-    const service = makeChatService(
-      conversationRepository,
-      messageRepository,
-      new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
-      chatGateway,
-      auditService,
-      focusedDeclineComposer,
-    );
-
-    const response = await service.answer({
-      workspaceId: "workspace-1",
-      accountId: "account-1",
-      query: "sqrt(5)",
-      stream: false,
-    });
-
-    expect(response.answer).toBe(focusedDecline);
-    expect(response.answer).not.toContain("2.2360679");
-    expect(response.skillOutcome).toBe("out_of_scope");
-    expect(declineAttemptKeys).toEqual(["unsupported_answer"]);
   });
 
   it("plans grounded suggestions for cited answers", async () => {

@@ -23,7 +23,15 @@ const turn = (assistantMessageId: string, question: string) => ({
   grounding: null,
   createdAt: nowIso,
   feedback: { upCount: 0, downCount: 0, comments: [] },
-  triage: { state: "open", reason: null, updatedAt: null },
+  triage: {
+    state: "open",
+    version: 0,
+    resolution: null,
+    legacyReason: null,
+    closedAt: null,
+    updatedAt: null,
+  },
+  verification: null,
 });
 
 test("the Outcome cell explains grounding evidence without inventing missing values", async ({ page }) => {

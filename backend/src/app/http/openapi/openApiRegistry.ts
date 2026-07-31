@@ -176,6 +176,10 @@ export interface OpenApiSchemaCatalog {
   QualityFeedbackCommentSchema: z.ZodTypeAny;
   QualityFeedbackSummarySchema: z.ZodTypeAny;
   QualityFeedbackValueSchema: z.ZodTypeAny;
+  QualityResolutionReasonSchema: z.ZodTypeAny;
+  QualityResolutionSchema: z.ZodTypeAny;
+  QualityVerificationSchema: z.ZodTypeAny;
+  QualityTriageConflictResponseSchema: z.ZodTypeAny;
   QualitySignalIdSchema: z.ZodTypeAny;
   QualitySkillStatusSchema: z.ZodTypeAny;
   QualityStatsBucketSchema: z.ZodTypeAny;

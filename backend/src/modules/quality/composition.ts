@@ -15,6 +15,10 @@ export type {
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityFeedbackValue,
+  QualityResolution,
+  QualityResolutionBreakdownEntry,
+  QualityResolutionReason,
+  QualityResolutionReasonOrUnspecified,
   QualitySignalId,
   QualityStats,
   QualityStatsBucket,
@@ -25,9 +29,21 @@ export type {
   QualityStatsWindow,
   QualityTriageState,
   QualityTriageRecord,
+  QualityVerification,
+  QualityVerificationSourcePort,
+  SetTriageStateResult,
   SetTriageStateInput,
   QualityTurnsServicePort,
 } from "./contracts/index.js";
+export {
+  QUALITY_DISMISSED_REASONS,
+  QUALITY_RESOLUTION_NOTE_MAX_LENGTH,
+  QUALITY_RESOLUTION_REASONS,
+  QUALITY_RESOLVED_REASONS,
+  QualityResolutionValidationError,
+  validateQualityTriageUpdate,
+  type QualityTriageUpdateCandidate,
+} from "./domain/resolution.js";
 export {
   QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES,
   SKILL_FAILURE_STATUSES,

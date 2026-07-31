@@ -8,6 +8,7 @@ import type { EvalCaseService } from "../services/evalCaseService.js";
 import type { EvalRunService } from "../services/evalRunService.js";
 import type { EvalSuiteService } from "../services/evalSuiteService.js";
 import type { EvalSnapshotService } from "../services/evalSnapshotService.js";
+import type { EvalMessageCaseService } from "../services/evalMessageCaseService.js";
 import type { InternalAgentConfig } from "../../agents/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { summarizeSuite } from "../domain/suite.js";
@@ -201,6 +202,7 @@ const presentWorkbenchReplayRun = (result: Awaited<ReturnType<EvalRunService["ex
 
 export interface EvalRouteDependencies extends WorkspaceSessionDependencies {
   snapshotService: EvalSnapshotService;
+  messageCaseService: EvalMessageCaseService;
   caseService: EvalCaseService;
   runService: EvalRunService;
   suiteService: EvalSuiteService;
@@ -266,6 +268,58 @@ export const createEvalRoutes = (dependencies: EvalRouteDependencies): Router =>
           assertions: req.body.assertions,
         });
         res.status(201).json(created);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/cases/by-source-message/:assistantMessageId",
+    workspaceSession,
+    requireQuery,
+    async (req, res, next) => {
+      try {
+        const params = z
+          .object({ assistantMessageId: z.string().uuid() })
+          .safeParse(req.params);
+        if (!params.success) {
+          throw badRequest("Invalid assistant message id", params.error.flatten());
+        }
+        const { workspaceId } = res.locals as { workspaceId: string };
+        const association = await dependencies.messageCaseService.get(
+          workspaceId,
+          params.data.assistantMessageId,
+        );
+        res.status(200).json(association);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.put(
+    "/cases/by-source-message/:assistantMessageId",
+    workspaceSession,
+    requireQuery,
+    async (req, res, next) => {
+      try {
+        const params = z
+          .object({ assistantMessageId: z.string().uuid() })
+          .safeParse(req.params);
+        if (!params.success) {
+          throw badRequest("Invalid assistant message id", params.error.flatten());
+        }
+        const { workspaceId, userId } = res.locals as {
+          workspaceId: string;
+          userId?: string | null;
+        };
+        const association = await dependencies.messageCaseService.findOrCreate({
+          workspaceId,
+          assistantMessageId: params.data.assistantMessageId,
+          createdBy: userId ?? null,
+        });
+        res.status(association.created ? 201 : 200).json(association);
       } catch (error) {
         next(error);
       }

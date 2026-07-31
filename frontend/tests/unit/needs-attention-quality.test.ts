@@ -11,6 +11,12 @@ import {
 } from '@/lib/needs-attention-quality'
 
 vi.mock('@/lib/api', () => ({
+  QUALITY_SIGNAL_IDS: [
+    'negative_feedback',
+    'grounding_gaps',
+    'slow_responses',
+    'skill_failures',
+  ],
   qualityApi: { listTurns: vi.fn() },
 }))
 
@@ -27,6 +33,7 @@ const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
   skillOutcome: 'no_context',
   skillStatus: 'completed',
   totalLatencyMs: 1200,
+  grounding: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   feedback: {
     upCount: 0,
@@ -34,7 +41,15 @@ const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
     latestDownUpdatedAt: null,
     comments: [],
   },
-  triage: { state: 'open', reason: null, updatedAt: null },
+  triage: {
+    state: 'open',
+    version: 0,
+    resolution: null,
+    legacyReason: null,
+    closedAt: null,
+    updatedAt: null,
+  },
+  verification: null,
   ...overrides,
 })
 
@@ -51,11 +66,10 @@ beforeEach(() => {
 })
 
 describe('loadQualityInboxSourceAttempts', () => {
-  it('loads commented feedback, uncommented feedback, and grounding gaps as bounded partitions', async () => {
+  it('loads written feedback plus one deduplicated active-quality summary', async () => {
     qualityApiMock.listTurns
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'commented' })]))
-      .mockResolvedValueOnce(page([turn({ assistantMessageId: 'uncommented' })]))
-      .mockResolvedValueOnce(page([turn({ assistantMessageId: 'grounding' })]))
+      .mockResolvedValueOnce(page([turn({ assistantMessageId: 'review-sample' })], 14))
 
     const attempts = await loadQualityInboxSourceAttempts()
 
@@ -67,47 +81,54 @@ describe('loadQualityInboxSourceAttempts', () => {
       limit: 25,
     })
     expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(2, {
-      feedback: ['down'],
-      sort: 'negative_feedback_updated_at',
-      activeNegativeFeedbackOnly: true,
-      hasComment: false,
-      limit: 25,
-    })
-    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(3, {
-      signal: 'grounding_gaps',
+      signal: [
+        'negative_feedback',
+        'grounding_gaps',
+        'slow_responses',
+        'skill_failures',
+      ],
       triageStates: ['open', 'acknowledged'],
-      limit: 25,
+      limit: 1,
     })
-    expect(attempts.grounding.status).toBe('fulfilled')
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(2)
+    expect(attempts.reviewQueue.status).toBe('fulfilled')
   })
 
-  it('still loads feedback when the grounding source fails', async () => {
+  it('can skip the aggregate query when polling only for new actionable work', async () => {
     qualityApiMock.listTurns
       .mockResolvedValueOnce(page([turn({ assistantMessageId: 'commented' })]))
-      .mockResolvedValueOnce(page([turn({ assistantMessageId: 'uncommented' })]))
-      .mockRejectedValueOnce(new Error('grounding unavailable'))
+
+    const attempts = await loadQualityInboxSourceAttempts({ includeReviewSummary: false })
+
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(1)
+    expect(attempts.reviewQueue.status).toBe('skipped')
+  })
+
+  it('still loads feedback when the aggregate source fails', async () => {
+    qualityApiMock.listTurns
+      .mockResolvedValueOnce(page([turn({ assistantMessageId: 'commented' })]))
+      .mockRejectedValueOnce(new Error('quality summary unavailable'))
 
     const attempts = await loadQualityInboxSourceAttempts()
 
-    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(3)
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(2)
     expect(attempts.commentedFeedback.status).toBe('fulfilled')
-    expect(attempts.uncommentedFeedback.status).toBe('fulfilled')
-    expect(attempts.grounding.status).toBe('failed')
+    expect(attempts.reviewQueue.status).toBe('failed')
   })
 })
 
 describe('reduceQualityInboxSnapshot', () => {
-  it('merges exact duplicate turns once and reports source/global truncation', () => {
+  it('presents only written feedback and reports unique review totals separately', () => {
     const duplicate = turn({ assistantMessageId: 'duplicate' })
     const snapshot = reduceQualityInboxSnapshot(createEmptyQualityInboxSnapshot(), {
       commentedFeedback: { status: 'fulfilled', page: page([duplicate], 26) },
-      uncommentedFeedback: { status: 'fulfilled', page: page([]) },
-      grounding: { status: 'fulfilled', page: page([duplicate]) },
+      reviewQueue: { status: 'fulfilled', page: page([duplicate], 41) },
     })
 
     expect(qualityInboxPresentation(snapshot)).toMatchObject({
       turns: [duplicate],
-      isTruncated: true,
+      reviewCount: 41,
+      commentedFeedbackCount: 26,
       hasLoadFailure: false,
       permissionDenied: false,
     })
@@ -119,24 +140,17 @@ describe('reduceQualityInboxSnapshot', () => {
         status: 'fulfilled',
         page: page([turn({ assistantMessageId: 'remembered' })]),
       },
-      uncommentedFeedback: { status: 'fulfilled', page: page([]) },
-      grounding: { status: 'skipped' },
+      reviewQueue: { status: 'fulfilled', page: page([], 8) },
     })
 
     const next = reduceQualityInboxSnapshot(previous, {
       commentedFeedback: { status: 'failed', error: new Error('timeout') },
-      uncommentedFeedback: {
-        status: 'fulfilled',
-        page: page([turn({ assistantMessageId: 'fresh' })]),
-      },
-      grounding: { status: 'skipped' },
+      reviewQueue: { status: 'fulfilled', page: page([], 9) },
     })
 
     expect(qualityInboxPresentation(next)).toMatchObject({
-      turns: [
-        expect.objectContaining({ assistantMessageId: 'remembered' }),
-        expect.objectContaining({ assistantMessageId: 'fresh' }),
-      ],
+      turns: [expect.objectContaining({ assistantMessageId: 'remembered' })],
+      reviewCount: 9,
       hasLoadFailure: true,
       permissionDenied: false,
     })
@@ -148,14 +162,12 @@ describe('reduceQualityInboxSnapshot', () => {
         status: 'fulfilled',
         page: page([turn({ assistantMessageId: 'private' })]),
       },
-      uncommentedFeedback: { status: 'fulfilled', page: page([]) },
-      grounding: { status: 'skipped' },
+      reviewQueue: { status: 'fulfilled', page: page([], 1) },
     })
 
     const next = reduceQualityInboxSnapshot(previous, {
       commentedFeedback: { status: 'forbidden' },
-      uncommentedFeedback: { status: 'forbidden' },
-      grounding: { status: 'skipped' },
+      reviewQueue: { status: 'forbidden' },
     })
 
     expect(qualityInboxPresentation(next)).toMatchObject({
@@ -165,24 +177,35 @@ describe('reduceQualityInboxSnapshot', () => {
     })
   })
 
-  it('updates and removes a turn across every source slice', () => {
+  it('updates written feedback and decrements both totals when it leaves active review', () => {
     const duplicate = turn({ assistantMessageId: 'duplicate' })
     const snapshot = reduceQualityInboxSnapshot(createEmptyQualityInboxSnapshot(), {
       commentedFeedback: { status: 'fulfilled', page: page([duplicate]) },
-      uncommentedFeedback: { status: 'fulfilled', page: page([]) },
-      grounding: { status: 'fulfilled', page: page([duplicate]) },
+      reviewQueue: {
+        status: 'fulfilled',
+        page: page([turn({ assistantMessageId: 'different-review-sample' })], 4),
+      },
     })
 
     const acknowledged = updateQualityInboxTurn(snapshot, 'duplicate', (current) => ({
       ...current,
       triage: {
         state: 'acknowledged',
-        reason: null,
+        version: 2,
+        resolution: null,
+        legacyReason: null,
+        closedAt: null,
         updatedAt: '2026-06-19T10:05:00.000Z',
       },
     }))
 
     expect(qualityInboxPresentation(acknowledged).turns[0]?.triage.state).toBe('acknowledged')
-    expect(qualityInboxPresentation(removeQualityInboxTurn(acknowledged, 'duplicate')).turns).toEqual([])
+    expect(
+      qualityInboxPresentation(removeQualityInboxTurn(acknowledged, 'duplicate')),
+    ).toMatchObject({
+      turns: [],
+      commentedFeedbackCount: 0,
+      reviewCount: 3,
+    })
   })
 })

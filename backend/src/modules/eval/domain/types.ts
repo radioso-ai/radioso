@@ -275,3 +275,32 @@ export interface EvalCaseListItem extends EvalCase {
    * every case pins to a snapshot, though the resolved name may be null. */
   agent: EvalCaseAgentRef;
 }
+
+/**
+ * The stable link from one source assistant message to its current Eval case.
+ * Snapshot and case are returned together so convenience callers never need a
+ * second request or a workspace-wide scan to open the linked case.
+ */
+export interface EvalMessageCaseLookup {
+  assistantMessageId: string;
+  case: EvalCase;
+  snapshot: EvalSnapshot;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+export interface EvalMessageCaseMutationResult extends EvalMessageCaseLookup {
+  /** True only for the request that created the association. */
+  created: boolean;
+}
+
+/**
+ * Lightweight Eval-owned projection consumed by Quality. It deliberately
+ * excludes snapshot content, assertions, observed output, and run details.
+ */
+export interface EvalMessageCaseVerification {
+  caseId: string;
+  caseStatus: EvalCaseStatus;
+  latestRunStatus: EvalRunStatus | null;
+  latestRunAt: string | null;
+}

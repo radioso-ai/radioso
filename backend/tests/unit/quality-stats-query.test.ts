@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { resolveGroundedOutcomeTuples } from "../../src/modules/quality/domain/qualitySignals.js";
 import {
   buildEmptyQualityStatsBuckets,
+  buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
   mergeQualityStatsBuckets,
@@ -11,6 +12,10 @@ import {
   summarizeQualityStatsWindow,
   toQualityStatsWindow,
 } from "../../src/modules/quality/statsQuery.js";
+import {
+  buildEffectiveOpenPredicate,
+  buildEffectiveTriageStateExpression,
+} from "../../src/modules/quality/turnPopulationSql.js";
 
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
 const AGENT_ID = "22222222-2222-2222-2222-222222222222";
@@ -33,6 +38,27 @@ const emptyRow = {
   rated_count: "0",
   skill_failure_count: "0",
 };
+
+describe("effective triage SQL", () => {
+  it("reuses a supplied latest-down aggregate and remains false rather than null without feedback", () => {
+    const predicate = buildEffectiveOpenPredicate({
+      latestDownUpdatedAtExpression: "feedback_activity.latest_down_updated_at",
+    });
+
+    expect(predicate).toContain("tr.state IN ('resolved', 'dismissed')");
+    expect(predicate).toContain("feedback_activity.latest_down_updated_at IS NOT NULL");
+    expect(predicate).toContain("feedback_activity.latest_down_updated_at > tr.updated_at");
+  });
+
+  it("uses a non-fan-out freshness probe when no aggregate is already available", () => {
+    const expression = buildEffectiveTriageStateExpression();
+
+    expect(expression).toContain("THEN 'open'");
+    expect(expression).toContain("EXISTS (");
+    expect(expression).not.toMatch(/JOIN\s+assistant_answer_feedback/);
+    expect(expression).toContain("feedback_freshness.updated_at > tr.updated_at");
+  });
+});
 
 describe("resolveQualityStatsWindows", () => {
   it("ends the current window at the start of the next UTC day so today is included", () => {
@@ -410,7 +436,8 @@ describe("buildQualityStatsBacklogQuery", () => {
 
     expect(query.text).not.toContain("m.created_at >=");
     expect(query.text).not.toContain("m.created_at <");
-    expect(query.text).toContain("COALESCE(tr.state, 'open') = ANY(");
+    expect(query.text).toContain("feedback_freshness.updated_at > tr.updated_at");
+    expect(query.text).toContain("THEN 'open'");
     expect(query.params).toContainEqual(["open", "acknowledged"]);
   });
 
@@ -445,5 +472,41 @@ describe("buildQualityStatsBacklogQuery", () => {
     const referenced = [...query.text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
     expect(Math.max(...referenced)).toBe(query.params.length);
     expect(new Set(referenced).size).toBe(query.params.length);
+  });
+});
+
+describe("buildQualityResolutionBreakdownQuery", () => {
+  const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
+
+  it("counts current terminal rows by typed reason or unspecified in the closure window", () => {
+    const query = buildQualityResolutionBreakdownQuery({
+      workspaceId: WORKSPACE_ID,
+      window: windows.current,
+    });
+
+    expect(query.text).toContain("assistant_answer_triage tr");
+    expect(query.text).toContain("tr.state IN ('resolved', 'dismissed')");
+    expect(query.text).toContain("feedback_freshness.updated_at > tr.updated_at");
+    expect(query.text).toContain("NOT (");
+    expect(query.text).toContain("COALESCE(tr.resolution_reason, 'unspecified')");
+    expect(query.text).toMatch(/tr\.closed_at >= \$\d+::timestamptz/);
+    expect(query.text).toMatch(/tr\.closed_at < \$\d+::timestamptz/);
+    expect(query.text).toContain("GROUP BY tr.state, tr.resolution_reason");
+    expect(query.params).toContain(windows.current.from.toISOString());
+    expect(query.params).toContain(windows.current.to.toISOString());
+  });
+
+  it("uses the shared turn population and honors agent/channel scope", () => {
+    const query = buildQualityResolutionBreakdownQuery({
+      workspaceId: WORKSPACE_ID,
+      window: windows.current,
+      agentId: AGENT_ID,
+      channel: "embed",
+    });
+
+    expect(query.text).toContain("m.role = 'assistant'");
+    expect(query.text).toContain("c.source_channel IS NULL OR c.source_channel NOT IN");
+    expect(query.params).toContain(AGENT_ID);
+    expect(query.params).toContain("embed");
   });
 });

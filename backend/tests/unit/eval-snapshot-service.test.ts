@@ -345,6 +345,68 @@ class CapturingEvalRepository implements EvalRepositoryPort {
 }
 
 describe("EvalSnapshotService.capture", () => {
+  it("prepares an immutable snapshot input without persisting it", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-prepare",
+      workspaceId: "ws-1",
+      agentId: null,
+      agentName: null,
+      sourceChannel: null,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      {
+        id: "u-prepare",
+        conversationId: conversation.id,
+        workspaceId: "ws-1",
+        role: "user",
+        content: "Prepare this",
+        createdAt: fixedDate,
+      },
+      {
+        id: "a-prepare",
+        conversationId: conversation.id,
+        workspaceId: "ws-1",
+        role: "assistant",
+        content: "Prepared answer",
+        createdAt: fixedDate,
+      },
+    ];
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+    );
+
+    const prepared = await service.prepare({
+      workspaceId: "ws-1",
+      conversationId: conversation.id,
+      messageId: "a-prepare",
+      capturedBy: "account-1",
+    });
+
+    expect(repository.lastCreateInput).toBeNull();
+    expect(prepared).toMatchObject({
+      workspaceId: "ws-1",
+      sourceConversationId: conversation.id,
+      sourceMessageId: "a-prepare",
+      replayTarget: {
+        userMessageId: "u-prepare",
+        assistantMessageId: "a-prepare",
+      },
+      capturedBy: "account-1",
+    });
+  });
+
   it("records the replay target for the selected assistant message", async () => {
     const conversation: ConversationRecord = {
       id: "conv-target",

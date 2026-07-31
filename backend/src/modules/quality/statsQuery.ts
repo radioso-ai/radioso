@@ -17,6 +17,8 @@ import {
   bindParam,
   buildActionTuplePredicate,
   buildAnyFeedbackExistsPredicate,
+  buildEffectiveOpenPredicate,
+  buildEffectiveTriageStateExpression,
   buildFeedbackExistsPredicate,
   buildSignalPredicate,
   buildSkillStatusPredicate,
@@ -93,6 +95,12 @@ export interface QualityStatsAggregateRow {
 }
 
 export type QualityBacklogRow = Record<QualitySignalId, string | number>;
+
+export interface QualityResolutionBreakdownRow {
+  state: "resolved" | "dismissed";
+  reason: string;
+  count: string | number;
+}
 
 const toNumber = (value: string | number | null | undefined): number => {
   if (value === null || value === undefined) {
@@ -311,7 +319,9 @@ export const buildQualityStatsBacklogQuery = (input: QualityBacklogQueryInput): 
   const params: unknown[] = [];
   const filters = buildTurnPopulationFilters(input, params);
   filters.push(
-    `COALESCE(tr.state, 'open') = ANY(${bindParam(params, [...QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES])}::text[])`,
+    `${buildEffectiveTriageStateExpression()} = ANY(${
+      bindParam(params, [...QUALITY_SIGNAL_ACTIVE_TRIAGE_STATES])
+    }::text[])`,
   );
 
   const projections = QUALITY_SIGNAL_IDS.map((signal) =>
@@ -327,6 +337,40 @@ export const buildQualityStatsBacklogQuery = (input: QualityBacklogQueryInput): 
        ${TURN_POPULATION_SOURCE}
        ${TRIAGE_JOIN}
        WHERE ${filters.join("\n         AND ")}`,
+    params,
+  };
+};
+
+export interface QualityResolutionBreakdownQueryInput extends TurnPopulationScope {
+  window: QualityStatsPeriod;
+}
+
+/**
+ * Aggregates the mutable current triage read model, not transition events. A
+ * reopened turn therefore disappears and a reclosed turn contributes once at
+ * its latest closure. The closure window is intentionally distinct from the
+ * assistant-message creation window used by health metrics.
+ */
+export const buildQualityResolutionBreakdownQuery = (
+  input: QualityResolutionBreakdownQueryInput,
+): SqlQuery => {
+  const params: unknown[] = [];
+  const filters = buildTurnPopulationFilters(input, params);
+  filters.push("tr.state IN ('resolved', 'dismissed')");
+  filters.push(`NOT (${buildEffectiveOpenPredicate()})`);
+  filters.push(`tr.closed_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`);
+  filters.push(`tr.closed_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`);
+
+  return {
+    text: `SELECT
+         tr.state,
+         COALESCE(tr.resolution_reason, 'unspecified') AS reason,
+         COUNT(*)::text AS count
+       ${TURN_POPULATION_SOURCE}
+       ${TRIAGE_JOIN}
+       WHERE ${filters.join("\n         AND ")}
+       GROUP BY tr.state, tr.resolution_reason
+       ORDER BY tr.state, reason`,
     params,
   };
 };

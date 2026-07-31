@@ -8200,15 +8200,64 @@ components:
         - acknowledged
         - resolved
         - dismissed
+    QualityResolutionReason:
+      type: string
+      enum:
+        - knowledge_gap
+        - retrieval_issue
+        - agent_behavior
+        - platform_bug
+        - expected_behavior
+        - out_of_scope
+        - invalid_feedback
+        - other
+    QualityResolution:
+      type: object
+      properties:
+        reason:
+          $ref: "#/components/schemas/QualityResolutionReason"
+        note:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+      required:
+        - reason
+        - note
+    QualityResolutionInput:
+      type: object
+      properties:
+        reason:
+          $ref: "#/components/schemas/QualityResolutionReason"
+        note:
+          type:
+            - string
+            - "null"
+          maxLength: 500
+      required:
+        - reason
     QualityTriageRecord:
       type: object
       properties:
         state:
           $ref: "#/components/schemas/QualityTriageState"
-        reason:
+        version:
+          type: integer
+          minimum: 0
+        resolution:
+          anyOf:
+            - $ref: "#/components/schemas/QualityResolution"
+            - type: "null"
+            - type: "null"
+        legacyReason:
           type:
             - string
             - "null"
+        closedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
         updatedAt:
           type:
             - string
@@ -8216,8 +8265,68 @@ components:
           format: date-time
       required:
         - state
-        - reason
+        - version
+        - resolution
+        - legacyReason
+        - closedAt
         - updatedAt
+    QualityVerification:
+      type: object
+      properties:
+        caseId:
+          type: string
+          format: uuid
+        caseStatus:
+          type: string
+          enum:
+            - pending
+            - passing
+            - failing
+            - error
+        latestRunStatus:
+          type:
+            - string
+            - "null"
+          enum:
+            - pass
+            - fail
+            - error
+            - recorded
+        latestRunAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+      required:
+        - caseId
+        - caseStatus
+        - latestRunStatus
+        - latestRunAt
+    QualityTriageConflictResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - QUALITY_TRIAGE_CONFLICT
+            message:
+              type: string
+            details:
+              type: object
+              properties:
+                current:
+                  $ref: "#/components/schemas/QualityTriageRecord"
+              required:
+                - current
+          required:
+            - code
+            - message
+            - details
+      required:
+        - error
     QualityFeedbackComment:
       type: object
       properties:
@@ -8317,6 +8426,11 @@ components:
           $ref: "#/components/schemas/QualityFeedbackSummary"
         triage:
           $ref: "#/components/schemas/QualityTriageRecord"
+        verification:
+          anyOf:
+            - $ref: "#/components/schemas/QualityVerification"
+            - type: "null"
+            - type: "null"
       required:
         - assistantMessageId
         - conversationId
@@ -8333,6 +8447,7 @@ components:
         - createdAt
         - feedback
         - triage
+        - verification
     QualitySignalId:
       type: string
       enum:
@@ -8466,6 +8581,30 @@ components:
             - slow_responses
             - skill_failures
           description: Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.
+        resolutionBreakdown:
+          type: array
+          items:
+            type: object
+            properties:
+              state:
+                type: string
+                enum:
+                  - resolved
+                  - dismissed
+              reason:
+                anyOf:
+                  - $ref: "#/components/schemas/QualityResolutionReason"
+                  - type: string
+                    enum:
+                      - unspecified
+              count:
+                type: integer
+                minimum: 0
+            required:
+              - state
+              - reason
+              - count
+          description: Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`.
       required:
         - range
         - filters
@@ -8473,18 +8612,31 @@ components:
         - previous
         - buckets
         - backlog
+        - resolutionBreakdown
     SetQualityTriageRequest:
       type: object
       properties:
         state:
           $ref: "#/components/schemas/QualityTriageState"
+        expectedVersion:
+          type: integer
+          minimum: 0
+        resolution:
+          anyOf:
+            - $ref: "#/components/schemas/QualityResolutionInput"
+            - type: "null"
+            - type: "null"
+          description: Optional structured context for terminal states. Omit or send null to close without recording a reason.
         reason:
           type:
             - string
             - "null"
           maxLength: 500
+          description: Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.
+          deprecated: true
       required:
         - state
+        - expectedVersion
     LowQualityTurnsPage:
       type: object
       properties:
@@ -8962,6 +9114,200 @@ components:
             $ref: "#/components/schemas/PendingApprovalDecision"
       required:
         - decisions
+    EvalMessageCaseLookup:
+      type: object
+      properties:
+        assistantMessageId:
+          type: string
+          format: uuid
+        case:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            workspaceId:
+              type: string
+              format: uuid
+            snapshotId:
+              type: string
+              format: uuid
+            name:
+              type: string
+            assertions:
+              type: array
+              items: {}
+            status:
+              type: string
+              enum:
+                - pending
+                - passing
+                - failing
+                - error
+            lastRunId:
+              type:
+                - string
+                - "null"
+              format: uuid
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+          required:
+            - id
+            - workspaceId
+            - snapshotId
+            - name
+            - assertions
+            - status
+            - lastRunId
+            - createdAt
+            - updatedAt
+        snapshot:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            workspaceId:
+              type: string
+              format: uuid
+            sourceConversationId:
+              type: string
+              format: uuid
+            sourceMessageId:
+              type:
+                - string
+                - "null"
+              format: uuid
+            replayTarget:
+              type:
+                - object
+                - "null"
+              properties:
+                userMessageId:
+                  type: string
+                  format: uuid
+                assistantMessageId:
+                  type:
+                    - string
+                    - "null"
+                  format: uuid
+              required:
+                - userMessageId
+                - assistantMessageId
+            fidelity:
+              type: string
+              enum:
+                - full
+                - messages_only
+            messages:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  role:
+                    type: string
+                    enum:
+                      - user
+                      - assistant
+                      - system
+                  content:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+                  citations:
+                    type: array
+                    items: {}
+                  answerSegments:
+                    type: array
+                    items: {}
+                  groundingSummary: {}
+                  directiveFirings:
+                    type: array
+                    items:
+                      type: string
+                required:
+                  - id
+                  - role
+                  - content
+                  - createdAt
+            originalInstructionBlock:
+              type:
+                - string
+                - "null"
+            originalModelId:
+              type:
+                - string
+                - "null"
+            originalRetrievalSettings: {}
+            originalAgent: {}
+            originalAgentConfig: {}
+            sourceAgentId:
+              type:
+                - string
+                - "null"
+              format: uuid
+            originalRoutineState: {}
+            originalRetrievalResult:
+              type:
+                - array
+                - "null"
+              items: {}
+            conversationSummary:
+              type: string
+            capturedAt:
+              type: string
+              format: date-time
+            capturedBy:
+              type:
+                - string
+                - "null"
+              format: uuid
+          required:
+            - id
+            - workspaceId
+            - sourceConversationId
+            - sourceMessageId
+            - replayTarget
+            - fidelity
+            - messages
+            - originalInstructionBlock
+            - originalModelId
+            - sourceAgentId
+            - originalRetrievalResult
+            - capturedAt
+            - capturedBy
+        createdBy:
+          type:
+            - string
+            - "null"
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - assistantMessageId
+        - case
+        - snapshot
+        - createdBy
+        - createdAt
+    EvalMessageCaseMutationResult:
+      allOf:
+        - $ref: "#/components/schemas/EvalMessageCaseLookup"
+        - type: object
+          properties:
+            created:
+              type: boolean
+              description: True only when this request created the association.
+          required:
+            - created
     AssistantChatSseStream:
       type: string
       description: "A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it."
@@ -19929,6 +20275,13 @@ paths:
           in: query
         - schema:
             type: string
+            description: Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one.
+          required: false
+          description: Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one.
+          name: resolutionReason
+          in: query
+        - schema:
+            type: string
             enum:
               - turn_created_at
               - negative_feedback_updated_at
@@ -19950,9 +20303,9 @@ paths:
             type:
               - boolean
               - "null"
-            description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.
+            description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values.
           required: false
-          description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.
+          description: When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values.
           name: hasComment
           in: query
         - schema:
@@ -19979,6 +20332,22 @@ paths:
             format: date-time
           required: false
           name: to
+          in: query
+        - schema:
+            type: string
+            format: date-time
+            description: Terminal triage closure time, inclusive. Distinct from assistant-turn `from`.
+          required: false
+          description: Terminal triage closure time, inclusive. Distinct from assistant-turn `from`.
+          name: resolutionFrom
+          in: query
+        - schema:
+            type: string
+            format: date-time
+            description: Terminal triage closure time, exclusive. Distinct from assistant-turn `to`.
+          required: false
+          description: Terminal triage closure time, exclusive. Distinct from assistant-turn `to`.
+          name: resolutionTo
           in: query
         - schema:
             type:
@@ -20097,7 +20466,7 @@ paths:
       tags:
         - Quality
       summary: Set the triage state of an assistant turn
-      description: Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).
+      description: Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; omit it to close without classification. Admin/owner only (requires the `workspace.quality.manage` permission).
       operationId: setQualityTurnTriage
       security:
         - bearerAuth: []
@@ -20141,6 +20510,115 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Assistant turn not found in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The triage record changed after the caller loaded it; includes the current record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QualityTriageConflictResponse"
+  /api/v1/evals/cases/by-source-message/{assistantMessageId}:
+    get:
+      tags:
+        - Evals
+      summary: Get the Eval case linked to an assistant message
+      description: Returns the linked case and its immutable snapshot in one request. The lookup is workspace-scoped and never scans the case list.
+      operationId: getEvalCaseBySourceMessage
+      security:
+        - sessionCookie: []
+          workspaceSelection: []
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: assistantMessageId
+          in: path
+      responses:
+        "200":
+          description: The linked Eval case and snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalMessageCaseLookup"
+        "400":
+          description: Invalid assistant message id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace retrieval-query permission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: No Eval case is linked to this assistant message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      tags:
+        - Evals
+      summary: Get or create an Eval case from an assistant message
+      description: Atomically captures the source turn and creates its default Eval case, or returns the existing association. Concurrent retries converge on one case.
+      operationId: getOrCreateEvalCaseBySourceMessage
+      security:
+        - sessionCookie: []
+          workspaceSelection: []
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: assistantMessageId
+          in: path
+      responses:
+        "200":
+          description: Existing linked Eval case and snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalMessageCaseMutationResult"
+        "201":
+          description: New linked Eval case and immutable snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvalMessageCaseMutationResult"
+        "400":
+          description: Invalid id or source message is not an AI-authored assistant turn
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace retrieval-query permission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Assistant message not found in this workspace
           content:
             application/json:
               schema:

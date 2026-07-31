@@ -14,6 +14,7 @@ import {
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../retrieval/public.js";
 import { freezeRetrievalSettings } from "../../settings/contracts/retrieval.js";
 import type { EvalRepositoryPort } from "./evalRepository.js";
+import type { CreateSnapshotInput } from "./evalPersistence.js";
 import type {
   EvalSnapshot,
   EvalSnapshotFidelity,
@@ -290,6 +291,15 @@ export class EvalSnapshotService {
   }
 
   async capture(input: EvalSnapshotCaptureInput): Promise<EvalSnapshot> {
+    return this.repository.createSnapshot(await this.prepare(input));
+  }
+
+  /**
+   * Builds the complete immutable snapshot payload without persisting it.
+   * Message-associated case creation prepares outside its short database lock,
+   * then persists snapshot + case + association in one repository transaction.
+   */
+  async prepare(input: EvalSnapshotCaptureInput): Promise<CreateSnapshotInput> {
     const conversation = await this.conversations.findByIdAndWorkspaceId(
       input.conversationId,
       input.workspaceId,
@@ -376,7 +386,7 @@ export class EvalSnapshotService {
         : defaults,
     );
 
-    return this.repository.createSnapshot({
+    return {
       workspaceId: input.workspaceId,
       sourceConversationId: conversation.id,
       sourceMessageId: replayTarget?.assistantMessageId ?? null,
@@ -393,7 +403,7 @@ export class EvalSnapshotService {
       originalRoutineState,
       ...(conversationSummary ? { conversationSummary } : {}),
       capturedBy: input.capturedBy ?? null,
-    });
+    };
   }
 
   /**

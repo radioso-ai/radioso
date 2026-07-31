@@ -320,6 +320,29 @@ const installWorkbenchMocks = async (
       }),
     });
   });
+
+  // Registered last so this exact path wins over the broad eval-cases route.
+  await page.route(
+    `**/backend/api/v1/evals/cases/by-source-message/${assistantMessageId}`,
+    async (route) => {
+      requestBodies.push({
+        sourceMessageId: assistantMessageId,
+        method: route.request().method(),
+      });
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          assistantMessageId,
+          case: { id: evalCaseId },
+          snapshot: { id: snapshotId },
+          created: true,
+          createdBy: null,
+          createdAt: nowIso,
+        }),
+      });
+    },
+  );
 };
 
 const installQualityMocks = async (page: Page) => {
@@ -348,7 +371,15 @@ const installQualityMocks = async (page: Page) => {
               latestDownUpdatedAt: nowIso,
               comments: [],
             },
-            triage: { state: "open", reason: null, updatedAt: null },
+            triage: {
+              state: "open",
+              version: 0,
+              resolution: null,
+              legacyReason: null,
+              closedAt: null,
+              updatedAt: null,
+            },
+            verification: null,
           },
         ],
         total: 1,
@@ -374,7 +405,7 @@ test("no-override chat tab sends through the normal chat flow", async ({ page })
   expect(requestBodies.some((body) => JSON.stringify(body).includes("agentConfigOverride"))).toBe(false);
 });
 
-test("quality turn creates and opens an eval case", async ({ page }) => {
+test("quality turn adds and opens an eval case with one request", async ({ page }) => {
   const requestBodies: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { conversationDetail: seededConversation });
@@ -382,20 +413,14 @@ test("quality turn creates and opens an eval case", async ({ page }) => {
   await installQualityMocks(page);
 
   await page.goto(`/w/${workspaceKey}/quality`);
-  await page.getByRole("button", { name: "Open turn in Eval" }).click();
+  await page.getByRole("button", { name: "Add to Eval" }).click();
 
   await expect(page).toHaveURL(`/w/${workspaceKey}/eval/${evalCaseId}`);
   await expect(page.getByRole("heading", { name: "Workbench replay regression" })).toBeVisible();
-  expect(requestBodies).toContainEqual({
-    conversationId,
-    messageId: assistantMessageId,
-  });
-  expect(requestBodies).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      snapshotId,
-      assertions: [],
-    }),
-  ]));
+  expect(requestBodies).toEqual([{
+    sourceMessageId: assistantMessageId,
+    method: "PUT",
+  }]);
 });
 
 test("event retrieval eval case shows dated assertions and records a run", async ({ page }) => {

@@ -86,6 +86,7 @@ import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferen
 import type { EmailService } from "../../modules/mail/public.js";
 import type {
   EvalCaseService,
+  EvalMessageCaseService,
   EvalRunService,
   EvalSuiteService,
   EvalSnapshotService,
@@ -169,6 +170,7 @@ export interface AppDependencies {
   retrievalAnswerService: RetrievalAnswerService;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
   evalSnapshotService: EvalSnapshotService;
+  evalMessageCaseService: EvalMessageCaseService;
   evalCaseService: EvalCaseService;
   evalRunService: EvalRunService;
   evalSuiteService: EvalSuiteService;

@@ -527,6 +527,36 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('round-trips structured reasons and their terminal-transition window', () => {
+    const state: DashboardRouteState = {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      qualityResolutionReasons: ['knowledge_gap', 'out_of_scope'],
+      qualityResolutionFrom: '2026-07-01T00:00:00.000Z',
+      qualityResolutionTo: '2026-08-01T00:00:00.000Z',
+      qualityTriageStates: ['resolved', 'dismissed'],
+      qualityShowAll: true,
+    }
+
+    expect(buildDashboardHref('account-1', state)).toBe(
+      '/w/ws-key/quality?triage=resolved%2Cdismissed&resolutionReason=knowledge_gap%2Cout_of_scope&resolutionFrom=2026-07-01T00%3A00%3A00.000Z&resolutionTo=2026-08-01T00%3A00%3A00.000Z&all=true',
+    )
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      triage: 'resolved,dismissed',
+      resolutionReason: 'knowledge_gap,bogus,out_of_scope',
+      resolutionFrom: '2026-07-01T00:00:00.000Z',
+      resolutionTo: 'not-a-date',
+      all: 'true',
+    }))).toEqual({
+      section: 'quality',
+      qualityTriageStates: ['resolved', 'dismissed'],
+      qualityResolutionReasons: ['knowledge_gap', 'out_of_scope'],
+      qualityResolutionFrom: '2026-07-01T00:00:00.000Z',
+      qualityShowAll: true,
+    })
+  })
+
   it('round-trips the All answers escape hatch, omitting it when off', () => {
     expect(buildDashboardHref('account-1', {
       section: 'quality',

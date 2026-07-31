@@ -316,6 +316,7 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
 
   await expect(page).toHaveURL(`/w/${workspaceKey}/agents/${defaultAgentId}?chatConversation=${forkConversationId}`);
   await expect(page.getByRole("heading", { name: "Chat", exact: true })).toBeVisible();
+  await expect(page.getByText("Original answer.", { exact: true })).toBeVisible();
 });
 
 test("turn flow shows offered clarification decisions and candidates", async ({ page }) => {

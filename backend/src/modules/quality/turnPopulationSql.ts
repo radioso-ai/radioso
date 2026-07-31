@@ -84,6 +84,50 @@ export const RESOLVED_LATENCY_EXPRESSION = `COALESCE(m.total_latency_ms, (
 export const TRIAGE_JOIN = `LEFT JOIN assistant_answer_triage tr
          ON tr.workspace_id = m.workspace_id AND tr.assistant_message_id = m.id`;
 
+interface EffectiveTriageSqlOptions {
+  messageAlias?: string;
+  triageAlias?: string;
+  latestDownUpdatedAtExpression?: string;
+}
+
+/**
+ * Persisted terminal triage is superseded when a newer thumbs-down arrives.
+ *
+ * List queries can pass their already-computed latest-down expression. Other
+ * reads use a correlated EXISTS so Postgres can stop at the first fresh vote
+ * and avoids a feedback fan-out or an unconditional aggregate per turn.
+ */
+export const buildEffectiveOpenPredicate = (
+  options: EffectiveTriageSqlOptions = {},
+): string => {
+  const messageAlias = options.messageAlias ?? "m";
+  const triageAlias = options.triageAlias ?? "tr";
+  const freshNegativeFeedback = options.latestDownUpdatedAtExpression
+    ? `${options.latestDownUpdatedAtExpression} IS NOT NULL
+             AND ${options.latestDownUpdatedAtExpression} > ${triageAlias}.updated_at`
+    : `EXISTS (
+             SELECT 1
+             FROM assistant_answer_feedback feedback_freshness
+             WHERE feedback_freshness.workspace_id = ${messageAlias}.workspace_id
+               AND feedback_freshness.assistant_message_id = ${messageAlias}.id
+               AND feedback_freshness.value = 'down'
+               AND feedback_freshness.updated_at > ${triageAlias}.updated_at
+           )`;
+
+  return `${triageAlias}.state IN ('resolved', 'dismissed')
+           AND ${freshNegativeFeedback}`;
+};
+
+export const buildEffectiveTriageStateExpression = (
+  options: EffectiveTriageSqlOptions = {},
+): string => {
+  const triageAlias = options.triageAlias ?? "tr";
+  return `CASE
+         WHEN ${buildEffectiveOpenPredicate(options)} THEN 'open'
+         ELSE COALESCE(${triageAlias}.state, 'open')
+       END`;
+};
+
 export interface TurnPopulationScope {
   workspaceId: string;
   agentId?: string;

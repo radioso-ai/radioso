@@ -86,6 +86,7 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
   skillOutcome: 'no_context',
   skillStatus: 'completed',
   totalLatencyMs: 1200,
+  grounding: null,
   createdAt: '2026-06-19T10:00:00.000Z',
   feedback: {
     upCount: 0,
@@ -93,9 +94,33 @@ const qualityTurn = (overrides: Record<string, unknown> = {}) => ({
     latestDownUpdatedAt: null,
     comments: [],
   },
-  triage: { state: 'open', reason: null, updatedAt: null },
+  triage: {
+    state: 'open',
+    version: 0,
+    resolution: null,
+    legacyReason: null,
+    closedAt: null,
+    updatedAt: null,
+  },
+  verification: null,
   ...overrides,
 })
+
+const commentedQualityTurn = (overrides: Record<string, unknown> = {}) =>
+  qualityTurn({
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: '2026-06-19T10:05:00.000Z',
+      comments: [{
+        value: 'down',
+        comment: 'The exception is missing.',
+        createdAt: '2026-06-19T10:05:00.000Z',
+        updatedAt: '2026-06-19T10:05:00.000Z',
+      }],
+    },
+    ...overrides,
+  })
 
 const mockInbox = (decisions: unknown[], conversations: unknown[]) => {
   hitlApiMock.listPendingDecisions.mockResolvedValue({ decisions } as never)
@@ -280,13 +305,13 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
-  it('counts quality signals that arrive after the displayed baseline', async () => {
+  it('counts written feedback that arrives after the displayed baseline', async () => {
     const decisions = [decisionSummary()]
     const conversations = [conversationSummary()]
-    const baselineQuality = [qualityTurn({ assistantMessageId: 'quality-1' })]
+    const baselineQuality = [commentedQualityTurn({ assistantMessageId: 'quality-1' })]
     mockInbox(decisions, conversations)
     qualityApiMock.listTurns.mockResolvedValue({
-      items: [...baselineQuality, qualityTurn({
+      items: [...baselineQuality, commentedQualityTurn({
         assistantMessageId: 'quality-2',
         conversationId: 'quality-conversation-2',
       })],
@@ -305,7 +330,23 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
-  it('counts a newly added down-vote or comment as fresh activity', async () => {
+  it('does not count an automatic quality signal as new operator activity', async () => {
+    mockInbox([], [])
+    qualityApiMock.listTurns.mockResolvedValue({
+      items: [qualityTurn({ assistantMessageId: 'automatic-no-context' })],
+      total: 1,
+      page: 1,
+      pageSize: 25,
+      totalPages: 1,
+    } as never)
+
+    renderProbe([])
+    await advanceOnePoll()
+
+    expect(observed.current).toBe(0)
+  })
+
+  it('counts a newly written down-vote comment as fresh activity', async () => {
     const baselineTurn = qualityTurn({
       feedback: {
         upCount: 0,
@@ -345,7 +386,7 @@ describe('useNeedsAttentionActivity', () => {
   it('clears stale polled keys when the displayed baseline changes', async () => {
     const decisions = [decisionSummary()]
     const conversations = [conversationSummary()]
-    const displayedQuality = [qualityTurn({ assistantMessageId: 'quality-1' })]
+    const displayedQuality = [commentedQualityTurn({ assistantMessageId: 'quality-1' })]
     mockInbox(decisions, conversations)
     qualityApiMock.listTurns.mockResolvedValue({
       items: displayedQuality,
@@ -394,7 +435,7 @@ describe('useNeedsAttentionActivity', () => {
       hasMore: false,
     } as never)
     qualityApiMock.listTurns.mockResolvedValue({
-      items: [qualityTurn()],
+      items: [commentedQualityTurn()],
       total: 1,
       page: 1,
       pageSize: 25,
@@ -407,7 +448,7 @@ describe('useNeedsAttentionActivity', () => {
     expect(observed.current).toBe(1)
   })
 
-  it('polls feedback partitions and the server-owned grounding-gap signal', async () => {
+  it('polls only written feedback for new actionable activity', async () => {
     mockInbox([decisionSummary()], [conversationSummary()])
     qualityApiMock.listTurns.mockResolvedValue({
       items: [],
@@ -419,24 +460,12 @@ describe('useNeedsAttentionActivity', () => {
     renderProbe(inboxItemKeys(asDecisions([decisionSummary()]), asConversations([conversationSummary()]), []))
     await advanceOnePoll()
 
-    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(3)
+    expect(qualityApiMock.listTurns).toHaveBeenCalledTimes(1)
     expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(1, {
       feedback: ['down'],
       sort: 'negative_feedback_updated_at',
       activeNegativeFeedbackOnly: true,
       hasComment: true,
-      limit: 25,
-    })
-    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(2, {
-      feedback: ['down'],
-      sort: 'negative_feedback_updated_at',
-      activeNegativeFeedbackOnly: true,
-      hasComment: false,
-      limit: 25,
-    })
-    expect(qualityApiMock.listTurns).toHaveBeenNthCalledWith(3, {
-      signal: 'grounding_gaps',
-      triageStates: ['open', 'acknowledged'],
       limit: 25,
     })
     expect(hitlApiMock.listPendingDecisions).toHaveBeenCalledTimes(1)

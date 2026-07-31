@@ -90,6 +90,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/evals", createEvalRoutes({
     ...dependencies,
     snapshotService: dependencies.evalSnapshotService,
+    messageCaseService: dependencies.evalMessageCaseService,
     caseService: dependencies.evalCaseService,
     runService: dependencies.evalRunService,
     suiteService: dependencies.evalSuiteService,

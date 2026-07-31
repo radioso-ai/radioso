@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
@@ -9,7 +9,6 @@ import {
   FileSearch,
   ListFilter,
   MessageSquareWarning,
-  SquareArrowOutUpRight,
   SlidersHorizontal,
   ThumbsDown,
   ThumbsUp,
@@ -48,23 +47,27 @@ import {
   DashboardTableRow,
 } from '@/components/dashboard/shared/dashboard-table'
 import {
+  getQualityTriageConflict,
   qualityApi,
   evalsApi,
   skillsApi,
   QUALITY_SIGNAL_IDS,
   GROUNDING_VERDICTS,
+  QUALITY_RESOLUTION_REASONS,
   type GroundingVerdict,
   type QualityActionFilter,
   type LowQualityTurn,
   type QualitySignalId,
   type QualityStats,
   type QualityStatsRange,
+  type QualityTriageRecord,
   type QualityTriageState,
+  type QualityResolutionBreakdownReason,
   type SkillCatalogEntry,
   type SkillOwner,
   type SkillOutcomeDefinition,
 } from '@/lib/api'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
   buildDashboardHref,
   DEFAULT_QUALITY_RANGE,
@@ -74,24 +77,54 @@ import {
   type QualitySortFilter,
   type QualityStatusFilter,
   type QualityTriageFilter,
+  type QualityResolutionReasonFilter,
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
 import { useWorkspace } from '@/lib/workspace-context'
-import { resolveQueueScope } from '@/lib/quality-signals'
+import {
+  isTerminalQualityTriageState,
+  resolveQueueScope,
+} from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
+import {
+  CloseReviewPopover,
+  REASON_LABELS,
+  type CloseReviewInput,
+} from '@/components/dashboard/quality/close-review-popover'
+import { EvalVerificationAction } from '@/components/dashboard/quality/eval-verification-action'
+import { ResolutionBreakdown } from '@/components/dashboard/quality/resolution-breakdown'
 
 const PAGE_SIZE = 25
 
-const defaultEvalCaseName = (turn: LowQualityTurn): string => {
-  const date = new Intl.DateTimeFormat(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(turn.createdAt))
-  const question = turn.question?.trim()
-  if (!question) return `Eval from quality turn - ${date}`
-  const snippet = question.length > 60 ? `${question.slice(0, 57)}...` : question
-  return `${date} - "${snippet}"`
+const CLEARED_QUALITY_QUEUE_ROUTE_STATE = {
+  qualitySignal: undefined,
+  qualityShowAll: undefined,
+  qualityActions: undefined,
+  qualityStatuses: undefined,
+  qualityFeedback: undefined,
+  qualityLatency: undefined,
+  qualitySort: undefined,
+  qualityTriageStates: undefined,
+  qualityResolutionReasons: undefined,
+  qualityResolutionFrom: undefined,
+  qualityResolutionTo: undefined,
+  qualityActiveNegativeFeedbackOnly: undefined,
+  qualityHasComment: undefined,
+  qualityGroundingVerdicts: undefined,
+  qualityHasUnsourcedClaims: undefined,
+  qualityHasInvalidSources: undefined,
+  qualityPage: undefined,
+} satisfies Partial<DashboardRouteState>
+
+const focusQualityQueueTarget = (assistantMessageId: string | null) => {
+  window.requestAnimationFrame(() => {
+    const selector = assistantMessageId
+      ? `[data-quality-triage-id="${CSS.escape(assistantMessageId)}"]`
+      : '[data-quality-queue-heading]'
+    const target = document.querySelector<HTMLElement>(selector)
+      ?? document.querySelector<HTMLElement>('[data-quality-queue-heading]')
+    target?.focus()
+  })
 }
 
 interface QualityViewProps {
@@ -523,21 +556,26 @@ const TRIAGE_STATE_META: Record<QualityTriageState, { label: string; className: 
 }
 
 function TriageStateControl({
+  assistantMessageId,
   state,
   pending,
   onChange,
 }: {
+  assistantMessageId: string
   state: QualityTriageState
   pending: boolean
-  onChange: (next: QualityTriageState) => void
+  onChange: (next: QualityTriageState, anchor: HTMLElement | null) => void
 }) {
   const meta = TRIAGE_STATE_META[state]
+  const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           disabled={pending}
+          data-quality-triage-id={assistantMessageId}
           aria-label={`Triage state: ${meta.label}. Change state.`}
           // Keep clicks off the surrounding row (which opens the conversation);
           // Radix still opens the menu since stopPropagation doesn't preventDefault.
@@ -556,7 +594,10 @@ function TriageStateControl({
         <DropdownMenuLabel>Triage state</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={state}
-          onValueChange={(value) => onChange(value as QualityTriageState)}
+          onValueChange={(value) => onChange(
+            value as QualityTriageState,
+            triggerRef.current,
+          )}
         >
           {TRIAGE_STATE_ORDER.map((value) => (
             <DropdownMenuRadioItem key={value} value={value}>
@@ -582,6 +623,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const statusesKey = (routeState.qualityStatuses ?? []).join(',')
   const feedbackKey = (routeState.qualityFeedback ?? []).join(',')
   const triageKey = (routeState.qualityTriageStates ?? []).join(',')
+  const resolutionReasonsKey = (routeState.qualityResolutionReasons ?? []).join(',')
+  const resolutionFrom = routeState.qualityResolutionFrom
+  const resolutionTo = routeState.qualityResolutionTo
   const groundingVerdictsKey = (routeState.qualityGroundingVerdicts ?? []).join(',')
   const hasUnsourcedClaims = routeState.qualityHasUnsourcedClaims ?? false
   const hasInvalidSources = routeState.qualityHasInvalidSources ?? false
@@ -613,6 +657,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [statsError, setStatsError] = useState<string | null>(null)
   const [isStatsFetching, setIsStatsFetching] = useState(false)
   const [pendingTriageId, setPendingTriageId] = useState<string | null>(null)
+  const [closeReview, setCloseReview] = useState<{
+    turn: LowQualityTurn
+    state: 'resolved' | 'dismissed'
+    conflict: QualityTriageRecord | null
+    anchor: HTMLElement | null
+  } | null>(null)
+  const [statusAnnouncement, setStatusAnnouncement] = useState('')
   // Bumped after a triage change so the active-backlog signal counts refetch.
   const [countsRefreshKey, setCountsRefreshKey] = useState(0)
   // Bumped after a triage change so server-filtered rows/totals stay current.
@@ -634,10 +685,21 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     () => (triageKey ? (triageKey.split(',') as QualityTriageFilter[]) : []),
     [triageKey],
   )
+  const resolutionReasons = useMemo<QualityResolutionReasonFilter[]>(
+    () => resolutionReasonsKey
+      ? (resolutionReasonsKey.split(',') as QualityResolutionReasonFilter[])
+      : [],
+    [resolutionReasonsKey],
+  )
   const groundingVerdicts = useMemo<GroundingVerdict[]>(
     () => (groundingVerdictsKey ? (groundingVerdictsKey.split(',') as GroundingVerdict[]) : []),
     [groundingVerdictsKey],
   )
+  const queueScope = useMemo(() => resolveQueueScope({
+    showAll,
+    signal: activeSignal,
+    triageStates,
+  }), [activeSignal, showAll, triageStates])
 
   useEffect(() => {
     let cancelled = false
@@ -800,6 +862,18 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         })),
       },
       {
+        id: 'resolutionReason',
+        kind: 'multi-select',
+        label: 'Resolution reason',
+        options: [
+          ...QUALITY_RESOLUTION_REASONS.map((value) => ({
+            value,
+            label: REASON_LABELS[value],
+          })),
+          { value: 'unspecified', label: 'Reason unspecified' },
+        ],
+      },
+      {
         id: 'latency',
         kind: 'single-select',
         label: 'Response time',
@@ -825,7 +899,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       },
       { id: 'status', label: 'Conversation status', defaultOpen: true, filterIds: ['status'] },
       { id: 'feedback', label: 'Feedback', defaultOpen: true, filterIds: ['feedback', 'hasComment'] },
-      { id: 'triage', label: 'Triage state', defaultOpen: true, filterIds: ['triage'] },
+      {
+        id: 'triage',
+        label: 'Triage state',
+        defaultOpen: true,
+        filterIds: ['triage', 'resolutionReason'],
+      },
       {
         id: 'outcome',
         label: 'Assistant outcome',
@@ -868,6 +947,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     if (triageStates.length > 0) {
       next.triage = { kind: 'multi-select', values: triageStates }
     }
+    if (resolutionReasons.length > 0) {
+      next.resolutionReason = { kind: 'multi-select', values: resolutionReasons }
+    }
     if (hasComment) {
       next.hasComment = { kind: 'boolean', value: true }
     }
@@ -887,7 +969,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     // statusesKey/actionsKey/feedbackKey/triageKey/hasComment/latency plus the loaded action catalog
     // together fully determine these values.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, triageKey, hasComment, latency, groundingVerdictsKey, hasUnsourcedClaims, hasInvalidSources])
+  }, [statusesKey, actionsKey, actionFilterGroups, feedbackKey, triageKey, resolutionReasonsKey, hasComment, latency, groundingVerdictsKey, hasUnsourcedClaims, hasInvalidSources])
 
   const appliedFilterCount = countAppliedFilters(filterValues)
 
@@ -927,6 +1009,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       const statusValue = next.status
       const feedbackValue = next.feedback
       const triageValue = next.triage
+      const resolutionReasonValue = next.resolutionReason
       const latencyValue = next.latency
       const hasCommentValue = next.hasComment
       const groundingVerdictValue = next.groundingVerdict
@@ -950,6 +1033,23 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           triageValue?.kind === 'multi-select' && triageValue.values.length > 0
             ? (triageValue.values as QualityTriageFilter[])
             : undefined,
+        qualityResolutionReasons:
+          resolutionReasonValue?.kind === 'multi-select'
+          && resolutionReasonValue.values.length > 0
+            ? (resolutionReasonValue.values as QualityResolutionReasonFilter[])
+            : undefined,
+        // Manual reason changes leave a breakdown's transition window intact only
+        // while at least one reason remains selected.
+        qualityResolutionFrom:
+          resolutionReasonValue?.kind === 'multi-select'
+          && resolutionReasonValue.values.length > 0
+            ? resolutionFrom
+            : undefined,
+        qualityResolutionTo:
+          resolutionReasonValue?.kind === 'multi-select'
+          && resolutionReasonValue.values.length > 0
+            ? resolutionTo
+            : undefined,
         qualityLatency:
           latencyValue?.kind === 'single-select'
             ? (latencyValue.value as QualityLatencyFilter)
@@ -966,13 +1066,23 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         qualityPage: undefined,
       })
     },
-    [actionFilterGroups, navigateWith],
+    [actionFilterGroups, navigateWith, resolutionFrom, resolutionTo],
   )
 
   const removeFilter = (id: string) => {
     const next: FilterValues = { ...filterValues }
     delete next[id]
     applyFilters(next)
+  }
+
+  const removeResolutionReason = (reason: QualityResolutionReasonFilter) => {
+    const remaining = resolutionReasons.filter((value) => value !== reason)
+    navigateWith({
+      qualityResolutionReasons: remaining.length > 0 ? remaining : undefined,
+      qualityResolutionFrom: remaining.length > 0 ? resolutionFrom : undefined,
+      qualityResolutionTo: remaining.length > 0 ? resolutionTo : undefined,
+      qualityPage: undefined,
+    })
   }
 
   const setPage = (next: number) =>
@@ -984,20 +1094,8 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // resolver instead of being written into the URL, so the chip presets stay one concept.
   const applySignal = (signalId: QualitySignalId | null) => {
     navigateWith({
+      ...CLEARED_QUALITY_QUEUE_ROUTE_STATE,
       qualitySignal: signalId ?? undefined,
-      qualityShowAll: undefined,
-      qualityTriageStates: undefined,
-      qualityFeedback: undefined,
-      qualityActions: undefined,
-      qualityLatency: undefined,
-      qualityStatuses: undefined,
-      qualitySort: undefined,
-      qualityActiveNegativeFeedbackOnly: undefined,
-      qualityHasComment: undefined,
-      qualityGroundingVerdicts: undefined,
-      qualityHasUnsourcedClaims: undefined,
-      qualityHasInvalidSources: undefined,
-      qualityPage: undefined,
     })
   }
 
@@ -1016,6 +1114,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   // operator was looking at. It never touches the queue's filters or page.
   const applyRange = (next: QualityStatsRange) => navigateWith({ qualityRange: next })
 
+  const applyResolutionBreakdown = (
+    entry: QualityStats['resolutionBreakdown'][number],
+    window: { from: string; to: string },
+  ) => {
+    navigateWith({
+      ...CLEARED_QUALITY_QUEUE_ROUTE_STATE,
+      qualityShowAll: true,
+      qualityTriageStates: [entry.state],
+      qualityResolutionReasons: [entry.reason],
+      qualityResolutionFrom: window.from,
+      qualityResolutionTo: window.to,
+    })
+  }
+
   useEffect(() => {
     let cancelled = false
 
@@ -1028,13 +1140,6 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     const statusesList = statusesKey ? (statusesKey.split(',') as QualityStatusFilter[]) : undefined
     const feedbackList = feedbackKey ? (feedbackKey.split(',') as QualityFeedbackFilter[]) : undefined
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
-    // The queue defaults to work that needs doing; the operator's own choices override it.
-    const queueScope = resolveQueueScope({
-      showAll,
-      signal: activeSignal,
-      triageStates: triageKey ? (triageKey.split(',') as QualityTriageState[]) : [],
-    })
-
     const loadTurns = async () => {
       try {
         if (cancelled) {
@@ -1048,6 +1153,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           statuses: statusesList,
           feedback: feedbackList,
           triageStates: queueScope.triageStates,
+          resolutionReasons: resolutionReasons.length > 0
+            ? (resolutionReasons as QualityResolutionBreakdownReason[])
+            : undefined,
+          resolutionFrom,
+          resolutionTo,
           sort: sort === 'turn_created_at' ? undefined : sort,
           activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
           hasComment: hasComment || undefined,
@@ -1098,9 +1208,14 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     actionsKey,
     statusesKey,
     triageKey,
+    resolutionReasonsKey,
+    resolutionReasons,
+    resolutionFrom,
+    resolutionTo,
     sort,
     activeNegativeFeedbackOnly,
     turnsRefreshKey,
+    queueScope,
   ])
 
   const openConversation = (turn: LowQualityTurn) =>
@@ -1109,59 +1224,95 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       assistantMessageId: turn.assistantMessageId,
     })
 
+  const requestCloseReview = (
+    turn: LowQualityTurn,
+    state: 'resolved' | 'dismissed',
+    anchor: HTMLElement | null,
+  ) => {
+    setOpenedConversation(null)
+    setError(null)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const currentAnchor = anchor?.isConnected
+          ? anchor
+          : document.querySelector<HTMLElement>(
+              `[data-quality-triage-id="${CSS.escape(turn.assistantMessageId)}"]`,
+            )
+        setCloseReview({
+          turn,
+          state,
+          conflict: null,
+          anchor: currentAnchor ?? null,
+        })
+      })
+    })
+  }
+
   const openEval = async (turn: LowQualityTurn) => {
     setCreatingEvalMessageId(turn.assistantMessageId)
     setError(null)
     try {
-      const existingCases = await evalsApi.listCases()
-      for (const evalCase of existingCases.cases) {
+      let result
+      if (turn.verification) {
         try {
-          const snapshot = await evalsApi.getSnapshot(evalCase.snapshotId)
-          if (
-            snapshot.sourceConversationId === turn.conversationId &&
-            snapshot.sourceMessageId === turn.assistantMessageId
-          ) {
-            router.push(buildDashboardHref(accountId, buildQualityTurnEvalRoute(evalCase.id, {
-              workspaceId: activeWorkspaceId ?? routeState.workspaceId,
-              workspacePublicRouteKey: routeState.workspacePublicRouteKey,
-            })))
+          result = await evalsApi.getCaseBySourceMessage(turn.assistantMessageId)
+        } catch (caught) {
+          if (getApiErrorStatus(caught) !== 404) {
+            throw caught
+          }
+          setItems((previous) =>
+            previous.map((item) =>
+              item.assistantMessageId === turn.assistantMessageId
+                ? { ...item, verification: null }
+                : item))
+          setStatusAnnouncement(
+            'The linked eval was deleted. Creating a replacement from this answer.',
+          )
+          try {
+            result = await evalsApi.getOrCreateCaseBySourceMessage(turn.assistantMessageId)
+          } catch (replacementError) {
+            setError(getApiErrorMessage(
+              replacementError,
+              'The linked eval was deleted, and a replacement could not be created.',
+            ))
             return
           }
-        } catch {
-          // A stale or inaccessible snapshot should not block creating a case
-          // for the quality turn the operator explicitly selected.
         }
+      } else {
+        result = await evalsApi.getOrCreateCaseBySourceMessage(turn.assistantMessageId)
       }
-
-      const snapshot = await evalsApi.captureSnapshot({
-        conversationId: turn.conversationId,
-        messageId: turn.assistantMessageId,
-      })
-      const created = await evalsApi.createCase({
-        snapshotId: snapshot.id,
-        name: defaultEvalCaseName(turn),
-        assertions: [],
-      })
-      router.push(buildDashboardHref(accountId, buildQualityTurnEvalRoute(created.id, {
+      router.push(buildDashboardHref(accountId, buildQualityTurnEvalRoute(result.case.id, {
         workspaceId: activeWorkspaceId ?? routeState.workspaceId,
         workspacePublicRouteKey: routeState.workspacePublicRouteKey,
       })))
     } catch (caught) {
-      setError(getApiErrorMessage(caught, 'Failed to create eval case'))
+      setError(getApiErrorMessage(
+        caught,
+        turn.verification ? 'Failed to open the linked eval case' : 'Failed to create eval case',
+      ))
     } finally {
       setCreatingEvalMessageId((current) => (current === turn.assistantMessageId ? null : current))
     }
   }
 
-  // Optimistically reflect the new state on the row and refresh the active
-  // backlog counts; a failed update reverts and surfaces an error.
-  const updateTriageState = async (turn: LowQualityTurn, next: QualityTriageState) => {
+  const updateTriageState = async (
+    turn: LowQualityTurn,
+    next: QualityTriageState,
+    anchor: HTMLElement | null,
+  ) => {
     if (turn.triage.state === next || pendingTriageId === turn.assistantMessageId) {
+      return
+    }
+    if (next === 'resolved' || next === 'dismissed') {
+      requestCloseReview(turn, next, anchor)
       return
     }
     setPendingTriageId(turn.assistantMessageId)
     try {
-      const record = await qualityApi.setTriageState(turn.assistantMessageId, { state: next })
+      const record = await qualityApi.setTriageState(turn.assistantMessageId, {
+        state: next,
+        expectedVersion: turn.triage.version,
+      })
       setItems((prev) =>
         prev.map((item) =>
           item.assistantMessageId === turn.assistantMessageId ? { ...item, triage: record } : item,
@@ -1170,9 +1321,134 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       setCountsRefreshKey((key) => key + 1)
       setTurnsRefreshKey((key) => key + 1)
     } catch (caught) {
-      setError(getApiErrorMessage(caught, 'Failed to update triage state'))
+      const current = getQualityTriageConflict(caught)
+      if (current) {
+        const terminalOutsideActiveScope = isTerminalQualityTriageState(current.state)
+          && (
+            activeNegativeFeedbackOnly
+            || (
+              queueScope.triageStates !== undefined
+              && !queueScope.triageStates.includes(current.state)
+            )
+          )
+        if (terminalOutsideActiveScope) {
+          const turnIndex = items.findIndex(
+            (item) => item.assistantMessageId === turn.assistantMessageId,
+          )
+          const adjacentTargetId = (
+            items[turnIndex + 1]?.assistantMessageId
+            ?? items[turnIndex - 1]?.assistantMessageId
+            ?? null
+          )
+          setItems((prev) =>
+            prev.filter((item) => item.assistantMessageId !== turn.assistantMessageId))
+          setTotal((currentTotal) => Math.max(0, currentTotal - 1))
+          setError(
+            'Another operator already closed this review. '
+              + 'It was removed from the active queue.',
+          )
+          setStatusAnnouncement(
+            'Another operator already closed this review. It was removed from the active queue.',
+          )
+          focusQualityQueueTarget(adjacentTargetId)
+          setCountsRefreshKey((key) => key + 1)
+        } else {
+          setItems((prev) =>
+            prev.map((item) =>
+              item.assistantMessageId === turn.assistantMessageId
+                ? { ...item, triage: current }
+                : item,
+            ))
+          setError('Another operator changed this review. The current state has been reloaded.')
+        }
+      } else {
+        setError(getApiErrorMessage(caught, 'Failed to update triage state'))
+      }
     } finally {
       setPendingTriageId((current) => (current === turn.assistantMessageId ? null : current))
+    }
+  }
+
+  const submitCloseReview = async (input: CloseReviewInput) => {
+    const turn = closeReview?.turn
+    if (!turn) return
+    setPendingTriageId(turn.assistantMessageId)
+    setError(null)
+    try {
+      const turnIndex = items.findIndex(
+        (item) => item.assistantMessageId === turn.assistantMessageId,
+      )
+      const adjacentTargetId = (
+        items[turnIndex + 1]?.assistantMessageId
+        ?? items[turnIndex - 1]?.assistantMessageId
+        ?? null
+      )
+      const record = await qualityApi.setTriageState(turn.assistantMessageId, {
+        state: input.state,
+        expectedVersion: turn.triage.version,
+        ...(input.resolution ? { resolution: input.resolution } : {}),
+      })
+      const remainsInTriageScope = !queueScope.triageStates
+        || queueScope.triageStates.includes(record.state)
+      const resolutionReason = record.resolution?.reason ?? 'unspecified'
+      const remainsInReasonScope = resolutionReasons.length === 0
+        || resolutionReasons.includes(resolutionReason)
+      const closedAt = record.closedAt ? Date.parse(record.closedAt) : Number.NaN
+      const remainsInTimeScope = (
+        (!resolutionFrom || (!Number.isNaN(closedAt) && closedAt >= Date.parse(resolutionFrom)))
+        && (!resolutionTo || (!Number.isNaN(closedAt) && closedAt < Date.parse(resolutionTo)))
+      )
+      const remainsVisible = Boolean(
+        !activeNegativeFeedbackOnly
+        && remainsInTriageScope
+        && remainsInReasonScope
+        && remainsInTimeScope,
+      )
+
+      setItems((previous) => remainsVisible
+        ? previous.map((item) =>
+            item.assistantMessageId === turn.assistantMessageId
+              ? { ...item, triage: record }
+              : item)
+        : previous.filter((item) => item.assistantMessageId !== turn.assistantMessageId))
+      if (!remainsVisible) {
+        setTotal((current) => Math.max(0, current - 1))
+      }
+      setCloseReview(null)
+      setStatusAnnouncement(
+        input.state === 'resolved'
+          ? 'Review resolved.'
+          : 'Review marked not actionable.',
+      )
+      focusQualityQueueTarget(remainsVisible ? turn.assistantMessageId : adjacentTargetId)
+      setCountsRefreshKey((key) => key + 1)
+      setTurnsRefreshKey((key) => key + 1)
+    } catch (caught) {
+      const current = getQualityTriageConflict(caught)
+      if (current) {
+        setItems((previous) =>
+          previous.map((item) =>
+            item.assistantMessageId === turn.assistantMessageId
+              ? { ...item, triage: current }
+              : item))
+        setCloseReview((pending) =>
+          pending?.turn.assistantMessageId === turn.assistantMessageId
+            ? {
+                ...pending,
+                conflict: current,
+                turn: { ...pending.turn, triage: current },
+              }
+            : pending)
+        setError(null)
+        setStatusAnnouncement(
+          'Another operator changed this review. Their current decision is shown in the dialog.',
+        )
+      } else {
+        setError(getApiErrorMessage(caught, 'Failed to close this review'))
+      }
+    } finally {
+      setPendingTriageId((current) =>
+        current === turn.assistantMessageId ? null : current)
     }
   }
 
@@ -1225,6 +1501,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     || feedback.length > 0
     || sort !== 'turn_created_at'
     || triageStates.length > 0
+    || resolutionReasons.length > 0
     || activeNegativeFeedbackOnly
     || hasComment
     || groundingVerdicts.length > 0
@@ -1253,11 +1530,17 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           isRefreshing={isStatsFetching}
           error={statsError}
         />
+        <ResolutionBreakdown stats={stats} onSelect={applyResolutionBreakdown} />
       </div>
 
       <section aria-labelledby="quality-queue-heading" className="space-y-4">
         <div>
-          <h2 id="quality-queue-heading" className="text-sm font-medium text-foreground">
+          <h2
+            id="quality-queue-heading"
+            data-quality-queue-heading
+            tabIndex={-1}
+            className="text-sm font-medium text-foreground"
+          >
             Queue · all time
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -1276,8 +1559,29 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             onShowAllChange={applyShowAll}
           />
           {appliedFilterCount > 0 ? (
-            <ActiveFilterPills filters={qualityFilters} values={filterValues} onRemove={removeFilter} />
+            <ActiveFilterPills
+              filters={qualityFilters.filter((filter) => filter.id !== 'resolutionReason')}
+              values={filterValues}
+              onRemove={removeFilter}
+            />
           ) : null}
+          {resolutionReasons.map((reason) => (
+            <button
+              key={reason}
+              type="button"
+              onClick={() => removeResolutionReason(reason)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1 text-xs text-foreground hover:bg-accent"
+              aria-label={`Remove resolution reason: ${
+                reason === 'unspecified' ? 'Reason unspecified' : REASON_LABELS[reason]
+              }`}
+            >
+              <span className="text-muted-foreground">Resolution reason:</span>
+              <span className="font-medium">
+                {reason === 'unspecified' ? 'Reason unspecified' : REASON_LABELS[reason]}
+              </span>
+              <CircleX className="h-3 w-3" aria-hidden />
+            </button>
+          ))}
           {filterButton}
         </div>
 
@@ -1352,19 +1656,13 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                           {turn.answerPreview}
                         </p>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            void openEval(turn)
-                          }}
-                          disabled={creatingEvalMessageId === turn.assistantMessageId}
-                          className="mt-2 inline-flex items-center gap-1.5 rounded-md text-xs font-medium text-primary hover:text-primary/80 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                          aria-label="Open turn in Eval"
-                        >
-                          <SquareArrowOutUpRight className="h-3.5 w-3.5" />
-                          {creatingEvalMessageId === turn.assistantMessageId ? 'Opening Eval...' : 'Open in Eval'}
-                        </button>
+                        <EvalVerificationAction
+                          verification={turn.verification}
+                          pending={creatingEvalMessageId === turn.assistantMessageId}
+                          onOpen={() => void openEval(turn)}
+                          onReviewAndResolve={(anchor) =>
+                            requestCloseReview(turn, 'resolved', anchor)}
+                        />
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
                         <div className="flex flex-col items-start gap-1.5">
@@ -1447,11 +1745,34 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                         {formatTimestamp(turn.createdAt)}
                       </DashboardTableCell>
                       <DashboardTableCell className="w-40">
-                        <TriageStateControl
-                          state={turn.triage.state}
-                          pending={pendingTriageId === turn.assistantMessageId}
-                          onChange={(next) => void updateTriageState(turn, next)}
-                        />
+                        <div className="space-y-1">
+                          <TriageStateControl
+                            assistantMessageId={turn.assistantMessageId}
+                            state={turn.triage.state}
+                            pending={pendingTriageId === turn.assistantMessageId}
+                            onChange={(next, anchor) =>
+                              void updateTriageState(turn, next, anchor)}
+                          />
+                          {turn.triage.state === 'resolved' || turn.triage.state === 'dismissed' ? (
+                            <div className="max-w-48 text-xs text-muted-foreground">
+                              <p>
+                                {turn.triage.resolution
+                                  ? REASON_LABELS[turn.triage.resolution.reason]
+                                  : 'Reason unspecified'}
+                              </p>
+                              {turn.triage.resolution?.note ? (
+                                <p className="mt-0.5 line-clamp-2" title={turn.triage.resolution.note}>
+                                  {turn.triage.resolution.note}
+                                </p>
+                              ) : null}
+                              {turn.triage.closedAt ? (
+                                <p className="mt-0.5">
+                                  Closed {formatTimestamp(turn.triage.closedAt)}
+                                </p>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
                       </DashboardTableCell>
                     </DashboardTableRow>
                 )
@@ -1475,7 +1796,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       onApply={applyFilters}
     />
     <ConversationDrawer
-      selectedItem={drawerSelectedItem}
+      selectedItem={closeReview ? null : drawerSelectedItem}
       onSelectedItemChange={(next) => {
         if (!next) {
           setOpenedConversation(null)
@@ -1485,6 +1806,40 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       onAfterClose={() => setOpenedConversation(null)}
       buildRoutineHref={buildRoutineHref}
     />
+    <p className="sr-only" role="status" aria-live="polite">
+      {statusAnnouncement}
+    </p>
+    {closeReview ? (
+      <CloseReviewPopover
+        key={`${closeReview.turn.assistantMessageId}:${closeReview.state}`}
+        open
+        anchor={closeReview.anchor}
+        state={closeReview.state}
+        submitting={pendingTriageId === closeReview.turn.assistantMessageId}
+        error={error}
+        conflict={closeReview.conflict}
+        onOpenChange={(open) => {
+          if (!open) {
+            const messageId = closeReview.turn.assistantMessageId
+            setCloseReview(null)
+            setOpenedConversation(null)
+            setError(null)
+            window.requestAnimationFrame(() => {
+              if (
+                document.activeElement instanceof HTMLElement
+                && document.activeElement !== document.body
+              ) {
+                return
+              }
+              document.querySelector<HTMLElement>(
+                `[data-quality-triage-id="${CSS.escape(messageId)}"]`,
+              )?.focus()
+            })
+          }
+        }}
+        onSubmit={submitCloseReview}
+      />
+    ) : null}
     </>
   )
 }

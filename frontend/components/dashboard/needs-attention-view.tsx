@@ -11,6 +11,10 @@ import {
 } from 'lucide-react'
 
 import { ConversationDrawer } from './conversation-drawer'
+import {
+  CloseReviewPopover,
+  type CloseReviewInput,
+} from '@/components/dashboard/quality/close-review-popover'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { DashboardTable, DashboardTableBody, DashboardTableCell, DashboardTableHead, DashboardTableHeader, DashboardTableRow } from '@/components/dashboard/shared/dashboard-table'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
@@ -25,14 +29,15 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { useNeedsAttentionActivity } from '@/hooks/use-needs-attention-activity'
 import {
   chatApi,
+  getQualityTriageConflict,
   qualityApi,
   type PendingApprovalDecision,
+  type QualityTriageRecord,
   type QualityTriageState,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
 import { cn } from '@/lib/utils'
 import {
   buildInboxModel,
@@ -53,6 +58,7 @@ import {
   removeQualityInboxTurn,
   updateQualityInboxTurn,
 } from '@/lib/needs-attention-quality'
+import { isTerminalQualityTriageState } from '@/lib/quality-signals'
 
 interface NeedsAttentionViewProps {
   accountId: string
@@ -63,8 +69,6 @@ const ESCALATION_META: Record<EscalationType, { label: string; className: string
   approval: { label: 'Approval', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
   handoff: { label: 'Handoff', className: 'border-destructive/40 bg-destructive/10 text-destructive' },
   negative_feedback: { label: 'Negative feedback', className: 'border-border bg-background text-foreground' },
-  degraded: { label: 'Degraded', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
-  no_context: { label: 'No context', className: 'border-amber-400/40 bg-amber-100/50 text-amber-700 dark:text-amber-300' },
 }
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
@@ -136,10 +140,11 @@ function RemediationActions({
   acknowledgementError: string | null
   triageError: string | null
   onCopyQuestion: () => void
-  onResolve: () => void
-  onDismiss: () => void
+  onResolve: (anchor: HTMLElement) => void
+  onDismiss: (anchor: HTMLElement | null) => void
 }) {
   const unavailableAgentHelpId = `feedback-agent-unavailable-${item.assistantMessageId}`
+  const moreActionsRef = useRef<HTMLButtonElement>(null)
 
   return (
     <div className="space-y-3">
@@ -246,29 +251,31 @@ function RemediationActions({
         <div className="flex items-center gap-2">
           <Button
             type="button"
+            aria-haspopup="dialog"
             size="sm"
             variant="outline"
             className="min-h-11 sm:min-h-9"
-            disabled={isTriaging}
-            onClick={onResolve}
+            disabled={isTriaging || acknowledgementPending}
+            onClick={(event) => onResolve(event.currentTarget)}
           >
             Mark resolved
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                ref={moreActionsRef}
                 type="button"
                 size="icon"
                 variant="ghost"
                 className="h-11 w-11 sm:h-9 sm:w-9"
-                disabled={isTriaging}
+                disabled={isTriaging || acknowledgementPending}
                 aria-label="More feedback actions"
               >
                 <MoreHorizontal className="h-4 w-4" aria-hidden />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={onDismiss}>
+              <DropdownMenuItem onSelect={() => onDismiss(moreActionsRef.current)}>
                 Not actionable
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -309,8 +316,8 @@ function NegativeFeedbackAccessory({
   acknowledgementError: string | null
   triageError: string | null
   onCopyQuestion: () => void
-  onResolve: () => void
-  onDismiss: () => void
+  onResolve: (anchor: HTMLElement) => void
+  onDismiss: (anchor: HTMLElement | null) => void
 }) {
   const [mobileOpen, setMobileOpen] = useState(true)
   const contentProps = {
@@ -366,15 +373,11 @@ function InboxRow({
   item,
   now,
   onReview,
-  onTriage,
-  isTriaging,
   reviewButtonRef,
 }: {
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (item: InboxItem, state: QualityTriageState) => void
-  isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
   const isTakenOverHandoff = item.type === 'handoff' && item.takenOverAt !== null && item.takenOverAt !== undefined
@@ -442,21 +445,6 @@ function InboxRow({
               Review
             </Button>
           </div>
-        ) : item.assistantMessageId ? (
-          // Quality signals clear with a single Dismiss (sets the turn's triage state so
-          // it drops out of the inbox). Approvals/handoffs clear from the conversation
-          // drawer instead, so their action cell stays empty.
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={isTriaging}
-              onClick={() => onTriage(item, 'dismissed')}
-            >
-              Dismiss
-            </Button>
-          </div>
         ) : null}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -467,15 +455,11 @@ function MobileInboxRow({
   item,
   now,
   onReview,
-  onTriage,
-  isTriaging,
   reviewButtonRef,
 }: {
   item: InboxItem
   now: Date
   onReview: (item: InboxItem) => void
-  onTriage: (item: InboxItem, state: QualityTriageState) => void
-  isTriaging: boolean
   reviewButtonRef?: (node: HTMLButtonElement | null) => void
 }) {
   const isTakenOverHandoff = item.type === 'handoff'
@@ -519,21 +503,45 @@ function MobileInboxRow({
           >
             Review
           </Button>
-          {item.assistantMessageId && item.type !== 'negative_feedback' ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="min-h-11"
-              disabled={isTriaging}
-              onClick={() => onTriage(item, 'dismissed')}
-            >
-              Dismiss
-            </Button>
-          ) : null}
         </div>
       </div>
     </article>
+  )
+}
+
+function QualityReviewSummary({
+  reviewCount,
+  commentedFeedbackCount,
+  href,
+}: {
+  reviewCount: number | null
+  commentedFeedbackCount: number | null
+  href: string
+}) {
+  const reviewCopy = reviewCount === null
+    ? 'The current review count could not be loaded.'
+    : `${reviewCount} answer${reviewCount === 1 ? '' : 's'} flagged for review.`
+  const feedbackCopy = (commentedFeedbackCount ?? 0) > 0
+    ? ` ${commentedFeedbackCount} include${commentedFeedbackCount === 1 ? 's' : ''} written customer feedback.`
+    : ''
+
+  return (
+    <section
+      aria-labelledby="quality-review-summary-heading"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div>
+        <h2 id="quality-review-summary-heading" className="text-sm font-medium text-foreground">
+          Quality review
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {reviewCopy}{feedbackCopy}
+        </p>
+      </div>
+      <Button asChild size="sm" variant="outline" className="shrink-0 self-start sm:self-auto">
+        <Link href={href}>Review in Quality</Link>
+      </Button>
+    </section>
   )
 }
 
@@ -548,6 +556,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [acknowledgingMessageId, setAcknowledgingMessageId] = useState<string | null>(null)
   const [acknowledgementError, setAcknowledgementError] = useState<string | null>(null)
   const [triageError, setTriageError] = useState<string | null>(null)
+  const [closeReview, setCloseReview] = useState<{
+    item: InboxItem
+    state: 'resolved' | 'dismissed'
+    conflict: QualityTriageRecord | null
+    anchor: HTMLElement | null
+  } | null>(null)
   const [copyStatus, setCopyStatus] = useState<CopyStatus>('idle')
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
   const [focusAfterTriageKey, setFocusAfterTriageKey] = useState<string | 'page' | null>(null)
@@ -678,6 +692,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     try {
       const triage = await qualityApi.setTriageState(messageId, {
         state: 'acknowledged',
+        expectedVersion: item.triage?.version ?? 0,
       })
       if (!isMountedRef.current) {
         return
@@ -689,13 +704,43 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         })))
       setSelectedInboxItem((current) =>
         current?.assistantMessageId === messageId
-          ? { ...current, triageState: triage.state }
+          ? { ...current, triageState: triage.state, triage }
           : current)
-    } catch {
+    } catch (caught) {
       if (isMountedRef.current) {
-        setAcknowledgementError(
-          'Could not mark this feedback as reviewed. You can still inspect it and choose a fix.',
-        )
+        const current = getQualityTriageConflict(caught)
+        if (current) {
+          if (isTerminalQualityTriageState(current.state)) {
+            setQualitySnapshot((previous) =>
+              removeQualityInboxTurn(previous, messageId))
+            setSelectedInboxItem(null)
+            returnFocusKeyRef.current = null
+            setFocusAfterTriageKey('page')
+            setAcknowledgementError(null)
+            setStatusAnnouncement(
+              'Another operator already closed this feedback. '
+                + 'It was removed from Needs attention.',
+            )
+          } else {
+            setQualitySnapshot((previous) =>
+              updateQualityInboxTurn(previous, messageId, (turn) => ({
+                ...turn,
+                triage: current,
+              })))
+            setSelectedInboxItem((selected) =>
+              selected?.assistantMessageId === messageId
+                ? { ...selected, triageState: current.state, triage: current }
+                : selected)
+            setAcknowledgementError(
+              `Another operator already changed this feedback to ${current.state}. `
+                + 'Their current record has been loaded.',
+            )
+          }
+        } else {
+          setAcknowledgementError(
+            'Could not mark this feedback as reviewed. You can still inspect it and choose a fix.',
+          )
+        }
       }
     } finally {
       if (isMountedRef.current) {
@@ -718,23 +763,39 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     }
   }, [handleAcknowledge])
 
-  const handleTriage = useCallback(async (item: InboxItem, state: QualityTriageState) => {
+  const requestCloseReview = useCallback((
+    item: InboxItem,
+    state: QualityTriageState,
+    anchor: HTMLElement | null,
+  ) => {
+    if (state !== 'resolved' && state !== 'dismissed') return
+    setTriageError(null)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setCloseReview({ item, state, conflict: null, anchor })
+      })
+    })
+  }, [])
+
+  const handleTriage = useCallback(async (input: CloseReviewInput) => {
+    const item = closeReview?.item
+    if (!item) return
     const messageId = item.assistantMessageId
     if (!messageId) {
       return
     }
+    const state = input.state
     const isFeedbackTerminalAction = item.type === 'negative_feedback'
     setTriagingMessageIds((prev) => new Set(prev).add(messageId))
     setTriageError(null)
 
-    if (!isFeedbackTerminalAction) {
-      // Passive quality signals keep their fast table-level dismissal.
-      setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
-    }
-
     try {
-      await qualityApi.setTriageState(messageId, { state })
-      if (!isMountedRef.current || !isFeedbackTerminalAction) {
+      await qualityApi.setTriageState(messageId, {
+        state,
+        expectedVersion: item.triage?.version ?? 0,
+        ...(input.resolution ? { resolution: input.resolution } : {}),
+      })
+      if (!isMountedRef.current) {
         return
       }
 
@@ -743,20 +804,45 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       returnFocusKeyRef.current = null
       setFocusAfterTriageKey(nextItem?.key ?? 'page')
       setQualitySnapshot((previous) => removeQualityInboxTurn(previous, messageId))
-      setSelectedInboxItem(null)
+      if (isFeedbackTerminalAction) {
+        setSelectedInboxItem(null)
+      }
+      setCloseReview(null)
       setStatusAnnouncement(
         state === 'resolved' ? 'Marked resolved.' : 'Dismissed as not actionable.',
       )
-    } catch {
+    } catch (caught) {
       if (isMountedRef.current) {
-        if (isFeedbackTerminalAction) {
+        const current = getQualityTriageConflict(caught)
+        if (current) {
+          setQualitySnapshot((previous) =>
+            updateQualityInboxTurn(previous, messageId, (turn) => ({ ...turn, triage: current })))
+          setSelectedInboxItem((selected) =>
+            selected?.assistantMessageId === messageId
+              ? { ...selected, triageState: current.state, triage: current }
+              : selected)
+          setCloseReview((pending) =>
+            pending?.item.assistantMessageId === messageId
+              ? {
+                  ...pending,
+                  conflict: current,
+                  item: {
+                    ...pending.item,
+                    triageState: current.state,
+                    triage: current,
+                  },
+                }
+              : pending)
+          setTriageError(null)
+          setStatusAnnouncement(
+            'Another operator changed this review. Their current decision is shown in the dialog.',
+          )
+        } else {
           setTriageError(
             state === 'resolved'
               ? 'Could not mark this feedback as resolved. Try again.'
               : 'Could not dismiss this feedback. Try again.',
           )
-        } else {
-          void refreshInbox()
         }
       }
     } finally {
@@ -768,7 +854,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         })
       }
     }
-  }, [items, refreshInbox])
+  }, [closeReview, items])
 
   const handleCopyQuestion = useCallback(async () => {
     if (!selectedInboxItem || selectedInboxItem.type !== 'negative_feedback') {
@@ -897,17 +983,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       : null,
     [accountId, routeState, selectedInboxItem],
   )
-  const qualityOverflowHref = useMemo(
+  const qualityReviewHref = useMemo(
     () => buildDashboardHref(accountId, {
-      ...routeState,
       section: 'quality',
-      qualityPage: 1,
-      qualityFeedback: ['down'],
-      qualitySort: 'negative_feedback_updated_at',
-      qualityTriageStates: [...ACTIVE_TRIAGE_STATES],
-      qualityActiveNegativeFeedbackOnly: true,
-      qualityHasComment: undefined,
-      anchor: undefined,
+      workspaceId: routeState.workspaceId,
+      workspacePublicRouteKey: routeState.workspacePublicRouteKey,
     }),
     [accountId, routeState],
   )
@@ -916,9 +996,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     void refreshInbox()
   }, [refreshInbox])
 
-  const showEmptyState = !isLoading && !approvalError && !conversationError && items.length === 0
   const hasQualityLoadFailure = qualityPresentation.hasLoadFailure
-  const hasMoreQualityItems = qualityPresentation.isTruncated || inboxModel.hasMoreQualityItems
+  const showEmptyState = !isLoading
+    && !approvalError
+    && !conversationError
+    && !hasQualityLoadFailure
+    && items.length === 0
   const selectedFeedbackItem = selectedInboxItem?.type === 'negative_feedback'
     ? selectedInboxItem
     : null
@@ -972,13 +1055,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             </div>
           ) : showEmptyState ? (
             <div className="rounded-lg border border-dashed border-border p-6">
-              <p className="text-sm font-medium text-foreground">You&apos;re caught up</p>
+              <p className="text-sm font-medium text-foreground">No immediate action needed</p>
               <p className="mt-1 text-sm text-muted-foreground">
-                New handoffs, approvals, and answer problems will appear here.
+                {qualityPresentation.permissionDenied
+                  ? 'New handoffs and approvals will appear here.'
+                  : 'New handoffs, approvals, and written customer feedback will appear here.'}
               </p>
-              <Button asChild size="sm" variant="outline" className="mt-4">
-                <Link href={qualityOverflowHref}>View quality</Link>
-              </Button>
             </div>
           ) : items.length > 0 ? (
             <>
@@ -1003,10 +1085,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                       item={item}
                       now={now}
                       onReview={handleReviewItem}
-                      onTriage={handleTriage}
-                      isTriaging={item.assistantMessageId
-                        ? triagingMessageIds.has(item.assistantMessageId)
-                        : false}
                       reviewButtonRef={(node) =>
                         registerReviewButton(item.key, 'desktop', node)}
                     />
@@ -1023,10 +1101,6 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
                     item={item}
                     now={now}
                     onReview={handleReviewItem}
-                    onTriage={handleTriage}
-                    isTriaging={item.assistantMessageId
-                      ? triagingMessageIds.has(item.assistantMessageId)
-                      : false}
                     reviewButtonRef={(node) =>
                       registerReviewButton(item.key, 'mobile', node)}
                   />
@@ -1035,17 +1109,12 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             </>
           ) : null}
 
-          {hasMoreQualityItems ? (
-            <p className="text-sm text-muted-foreground">
-              More quality items are available in{' '}
-              <Link
-                href={qualityOverflowHref}
-                className="font-medium text-foreground underline underline-offset-4"
-              >
-                Quality
-              </Link>
-              .
-            </p>
+          {!isLoading && !qualityPresentation.permissionDenied ? (
+            <QualityReviewSummary
+              reviewCount={qualityPresentation.reviewCount}
+              commentedFeedbackCount={qualityPresentation.commentedFeedbackCount}
+              href={qualityReviewHref}
+            />
           ) : null}
         </div>
       </DashboardPage>
@@ -1071,8 +1140,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
             acknowledgementError={acknowledgementError}
             triageError={triageError}
             onCopyQuestion={() => void handleCopyQuestion()}
-            onResolve={() => void handleTriage(selectedFeedbackItem, 'resolved')}
-            onDismiss={() => void handleTriage(selectedFeedbackItem, 'dismissed')}
+            onResolve={(anchor) =>
+              requestCloseReview(selectedFeedbackItem, 'resolved', anchor)}
+            onDismiss={(anchor) =>
+              requestCloseReview(selectedFeedbackItem, 'dismissed', anchor)}
           />
         ) : null}
         onAfterClose={handleDrawerClosed}
@@ -1080,6 +1151,27 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         pendingDecisions={decisions}
         buildRoutineHref={buildRoutineHref}
       />
+      {closeReview ? (
+        <CloseReviewPopover
+          key={`${closeReview.item.key}:${closeReview.state}`}
+          open
+          anchor={closeReview.anchor}
+          state={closeReview.state}
+          submitting={Boolean(
+            closeReview.item.assistantMessageId
+            && triagingMessageIds.has(closeReview.item.assistantMessageId),
+          )}
+          error={triageError}
+          conflict={closeReview.conflict}
+          onOpenChange={(open) => {
+            if (!open) {
+              setCloseReview(null)
+              setTriageError(null)
+            }
+          }}
+          onSubmit={handleTriage}
+        />
+      ) : null}
     </>
   )
 }

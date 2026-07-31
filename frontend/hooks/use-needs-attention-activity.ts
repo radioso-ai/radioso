@@ -88,7 +88,7 @@ export const useNeedsAttentionActivity = ({
           offset: 0,
           ownership: 'human_owned',
         }),
-        loadQualityInboxSourceAttempts(),
+        loadQualityInboxSourceAttempts({ includeReviewSummary: false }),
       ])
       if (cancelled) {
         return

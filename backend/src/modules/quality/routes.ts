@@ -8,11 +8,17 @@ import { badRequest, notFound } from "../../shared/domain/errors.js";
 import type { QualityStatsServicePort, QualityTurnsServicePort } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
 import { GROUNDING_VERDICTS } from "../../shared/domain/groundingDiagnostic.js";
+import {
+  QUALITY_RESOLUTION_REASONS,
+  QualityResolutionValidationError,
+  validateQualityTriageUpdate,
+} from "./domain/resolution.js";
 
 const triageStateSchema = z.enum(["open", "acknowledged", "resolved", "dismissed"]);
 
 const signalSchema = z.enum(QUALITY_SIGNAL_IDS);
 const groundingVerdictSchema = z.enum(GROUNDING_VERDICTS);
+const resolutionReasonSchema = z.enum(QUALITY_RESOLUTION_REASONS);
 
 const statsQuerySchema = z.object({
   range: z.enum(["7d", "30d"]).default("30d"),
@@ -27,7 +33,7 @@ const statsQuerySchema = z.object({
 export type QualityServicePort = QualityTurnsServicePort & QualityStatsServicePort;
 
 export type QualityRouteDependencies = WorkspaceSessionDependencies
-  & Pick<AppDependencies, "accountAccessService">;
+  & Pick<AppDependencies, "accountAccessService" | "logger">;
 
 const csvOrArray = <T extends z.ZodTypeAny>(item: T) =>
   z.preprocess((value) => {
@@ -81,6 +87,7 @@ const turnsQuerySchema = z.object({
   ),
   feedback: csvOrArray(z.enum(["up", "down"])),
   triage: csvOrArray(triageStateSchema),
+  resolutionReason: csvOrArray(z.union([resolutionReasonSchema, z.literal("unspecified")])),
   sort: z.enum(["turn_created_at", "negative_feedback_updated_at"]).optional(),
   activeNegativeFeedbackOnly: strictBoolean,
   hasComment: strictBoolean,
@@ -90,6 +97,8 @@ const turnsQuerySchema = z.object({
   channel: z.string().trim().min(1).max(64).optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
+  resolutionFrom: z.string().datetime().optional(),
+  resolutionTo: z.string().datetime().optional(),
   minTotalLatencyMs: z.coerce.number().int().min(0).optional(),
   maxTotalLatencyMs: z.coerce.number().int().min(0).optional(),
   offset: z.coerce.number().int().min(0).optional(),
@@ -131,6 +140,7 @@ export const createQualityRoutes = (
         statuses: query.statuses,
         feedbackValues: query.feedback,
         triageStates: query.triage,
+        resolutionReasons: query.resolutionReason,
         sort: query.sort,
         activeNegativeFeedbackOnly: query.activeNegativeFeedbackOnly,
         hasComment: query.hasComment,
@@ -140,6 +150,8 @@ export const createQualityRoutes = (
         channel: query.channel,
         from: query.from,
         to: query.to,
+        resolutionFrom: query.resolutionFrom,
+        resolutionTo: query.resolutionTo,
         offset: query.offset,
         limit: query.limit ?? 25,
       });
@@ -176,6 +188,13 @@ export const createQualityRoutes = (
       const body = z
         .object({
           state: triageStateSchema,
+          expectedVersion: z.number().int().min(0),
+          resolution: z.object({
+            reason: resolutionReasonSchema,
+            note: z.string().max(500).nullish(),
+          }).nullish(),
+          // Deprecated compatibility input. It remains opaque and is not
+          // converted to a structured resolution reason.
           reason: z.string().trim().max(500).nullish(),
         })
         .safeParse(req.body);
@@ -184,18 +203,57 @@ export const createQualityRoutes = (
       }
 
       const { workspaceId, userId } = res.locals as { workspaceId: string; userId?: string | null };
-      const record = await service.setTriageState(workspaceId, {
+      let update;
+      try {
+        update = validateQualityTriageUpdate({
+          state: body.data.state,
+          expectedVersion: body.data.expectedVersion,
+          resolution: body.data.resolution,
+          legacyReason: body.data.reason,
+        });
+      } catch (error) {
+        if (error instanceof QualityResolutionValidationError) {
+          throw badRequest("Invalid triage update", { reason: error.message });
+        }
+        throw error;
+      }
+
+      const result = await service.setTriageState(workspaceId, {
         assistantMessageId: params.data.assistantMessageId,
-        state: body.data.state,
-        reason: body.data.reason ?? null,
+        ...update,
         updatedBy: userId ?? null,
       });
 
-      if (!record) {
+      if (result.kind === "not_found") {
         throw notFound("Assistant turn not found");
       }
+      if (result.kind === "conflict") {
+        dependencies.logger.warn({
+          workspaceId,
+          assistantMessageId: params.data.assistantMessageId,
+          requestedState: update.state,
+          expectedVersion: update.expectedVersion,
+          currentState: result.current.state,
+          currentVersion: result.current.version,
+        }, "quality_triage_transition_conflict");
+        res.status(409).json({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: { current: result.current },
+          },
+        });
+        return;
+      }
 
-      res.status(200).json(record);
+      dependencies.logger.info({
+        workspaceId,
+        assistantMessageId: params.data.assistantMessageId,
+        state: result.record.state,
+        version: result.record.version,
+        resolutionReason: result.record.resolution?.reason ?? null,
+      }, "quality_triage_transition_accepted");
+      res.status(200).json(result.record);
     } catch (error) {
       next(error);
     }

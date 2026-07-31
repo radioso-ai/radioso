@@ -30,6 +30,45 @@ export const QUALITY_TRIAGE_STATES: readonly QualityTriageState[] = [
   "dismissed",
 ];
 
+export type QualityResolvedReason =
+  | "knowledge_gap"
+  | "retrieval_issue"
+  | "agent_behavior"
+  | "platform_bug"
+  | "other";
+
+export type QualityDismissedReason =
+  | "expected_behavior"
+  | "out_of_scope"
+  | "invalid_feedback"
+  | "other";
+
+export type QualityResolutionReason = QualityResolvedReason | QualityDismissedReason;
+export type QualityResolutionReasonOrUnspecified = QualityResolutionReason | "unspecified";
+
+export interface QualityResolution {
+  reason: QualityResolutionReason;
+  note: string | null;
+}
+
+export interface QualityVerification {
+  caseId: string;
+  caseStatus: "pending" | "passing" | "failing" | "error";
+  latestRunStatus: "pass" | "fail" | "error" | "recorded" | null;
+  latestRunAt: string | null;
+}
+
+/**
+ * Eval implements this batch projection. Quality depends only on the neutral
+ * evidence it needs for a page and never imports Eval domain or persistence.
+ */
+export interface QualityVerificationSourcePort {
+  getByAssistantMessageIds(
+    workspaceId: string,
+    assistantMessageIds: string[],
+  ): Promise<ReadonlyMap<string, QualityVerification>>;
+}
+
 export interface QualityActionFilter {
   skillName: string;
   outcome: string;
@@ -78,11 +117,15 @@ export interface LowQualityTurn {
   createdAt: string;
   feedback: QualityFeedbackSummary;
   triage: QualityTriageRecord;
+  verification: QualityVerification | null;
 }
 
 export interface QualityTriageRecord {
   state: QualityTriageState;
-  reason: string | null;
+  version: number;
+  resolution: QualityResolution | null;
+  legacyReason: string | null;
+  closedAt: string | null;
   updatedAt: string | null;
 }
 
@@ -100,6 +143,11 @@ export interface ListLowQualityTurnsInput {
   statuses?: QualitySkillStatus[];
   feedbackValues?: QualityFeedbackValue[];
   triageStates?: QualityTriageState[];
+  resolutionReasons?: QualityResolutionReasonOrUnspecified[];
+  /** Inclusive latest terminal-transition timestamp. */
+  resolutionFrom?: string;
+  /** Exclusive latest terminal-transition timestamp. */
+  resolutionTo?: string;
   /** Defaults to answer creation time; feedback inboxes use latest thumbs-down activity. */
   sort?: "turn_created_at" | "negative_feedback_updated_at";
   /**
@@ -134,9 +182,24 @@ export interface LowQualityTurnsPage {
 export interface SetTriageStateInput {
   assistantMessageId: string;
   state: QualityTriageState;
-  reason?: string | null;
+  expectedVersion: number;
+  resolution?: QualityResolution | null;
+  /** Deprecated opaque compatibility text. Never interpreted as a reason code. */
+  legacyReason?: string | null;
   updatedBy?: string | null;
 }
+
+export interface ValidatedQualityTriageUpdate {
+  state: QualityTriageState;
+  expectedVersion: number;
+  resolution: QualityResolution | null;
+  legacyReason: string | null;
+}
+
+export type SetTriageStateResult =
+  | { kind: "updated"; record: QualityTriageRecord }
+  | { kind: "conflict"; current: QualityTriageRecord }
+  | { kind: "not_found" };
 
 export type QualityStatsRange = "7d" | "30d";
 
@@ -195,6 +258,13 @@ export interface QualityStats {
    * turn older than the window is never silently hidden from the operator.
    */
   backlog: Record<QualitySignalId, number>;
+  resolutionBreakdown: QualityResolutionBreakdownEntry[];
+}
+
+export interface QualityResolutionBreakdownEntry {
+  state: "resolved" | "dismissed";
+  reason: QualityResolutionReasonOrUnspecified;
+  count: number;
 }
 
 export interface QualityStatsServicePort {
@@ -203,9 +273,6 @@ export interface QualityStatsServicePort {
 
 export interface QualityTurnsServicePort {
   listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage>;
-  /**
-   * Upserts the triage state for an assistant turn. Returns the stored record,
-   * or null when the turn does not exist in the workspace.
-   */
-  setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<QualityTriageRecord | null>;
+  /** Conditionally transitions triage using the caller's observed version. */
+  setTriageState(workspaceId: string, input: SetTriageStateInput): Promise<SetTriageStateResult>;
 }

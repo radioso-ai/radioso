@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { EvalRepository } from "../../src/modules/eval/services/evalRepository.js";
+import { EvalMessageCaseRepository } from "../../src/modules/eval/services/evalMessageCaseRepository.js";
 import type {
   AssertionVerdict,
   EvalAssertion,
@@ -23,6 +24,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("EvalRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
   const repository = new EvalRepository(database.kysely);
+  const messageCaseRepository = new EvalMessageCaseRepository(database.kysely);
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
@@ -436,5 +438,165 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(runs.map((r) => r.id)).toContain(runB.id);
     // Newest started_at first.
     expect(runs[0]?.id).toBe(runB.id);
+  });
+
+  it("atomically finds or creates one case association for an assistant message", async () => {
+    const assistantMessageId = randomUUID();
+    await database.query(
+      `INSERT INTO messages
+         (id, conversation_id, workspace_id, role, content, source)
+       VALUES ($1, $2, $3, 'assistant', 'Refunds are available within seven days.', 'ai_agent')`,
+      [assistantMessageId, conversationId, workspaceId],
+    );
+
+    await expect(
+      messageCaseRepository.findSourceMessage(workspaceId, assistantMessageId),
+    ).resolves.toMatchObject({
+      id: assistantMessageId,
+      conversationId,
+      role: "assistant",
+      source: "ai_agent",
+    });
+    await expect(
+      messageCaseRepository.findSourceMessage(randomUUID(), assistantMessageId),
+    ).resolves.toBeNull();
+
+    const snapshot = {
+      workspaceId,
+      sourceConversationId: conversationId,
+      sourceMessageId: assistantMessageId,
+      replayTarget: { userMessageId: randomUUID(), assistantMessageId },
+      fidelity: "messages_only" as const,
+      messages: [
+        {
+          id: assistantMessageId,
+          role: "assistant" as const,
+          content: "Refunds are available within seven days.",
+          createdAt: new Date().toISOString(),
+        },
+      ],
+      originalInstructionBlock: null,
+      originalModelId: null,
+      originalRetrievalSettings: null,
+      originalRetrievalResult: null,
+      originalAgent: null,
+      originalAgentConfig: null,
+      sourceAgentId: null,
+      originalRoutineState: null,
+      capturedBy: null,
+    };
+
+    const [first, second] = await Promise.all([
+      messageCaseRepository.findOrCreateMessageCase({
+        workspaceId,
+        assistantMessageId,
+        createdBy: null,
+        snapshot,
+        caseName: "Refund policy",
+      }),
+      messageCaseRepository.findOrCreateMessageCase({
+        workspaceId,
+        assistantMessageId,
+        createdBy: null,
+        snapshot,
+        caseName: "Refund policy",
+      }),
+    ]);
+
+    expect(first.case.id).toBe(second.case.id);
+    expect(first.snapshot.id).toBe(second.snapshot.id);
+    expect([first.created, second.created].sort()).toEqual([false, true]);
+    await expect(
+      messageCaseRepository.findMessageCase(workspaceId, assistantMessageId),
+    ).resolves.toEqual({
+      assistantMessageId,
+      case: first.case,
+      snapshot: first.snapshot,
+      createdBy: null,
+      createdAt: expect.any(String),
+    });
+
+    const counts = await database.query<{ associations: string; cases: string; snapshots: string }>(
+      `SELECT
+         (SELECT count(*) FROM eval_message_case_associations
+          WHERE workspace_id = $1 AND assistant_message_id = $2)::text AS associations,
+         (SELECT count(*) FROM eval_cases
+          WHERE workspace_id = $1 AND id = $3)::text AS cases,
+         (SELECT count(*) FROM eval_snapshots
+          WHERE workspace_id = $1 AND id = $4)::text AS snapshots`,
+      [workspaceId, assistantMessageId, first.case.id, first.snapshot.id],
+    );
+    expect(counts[0]).toEqual({ associations: "1", cases: "1", snapshots: "1" });
+
+    await repository.deleteCase(workspaceId, first.case.id);
+    await expect(
+      messageCaseRepository.findMessageCase(workspaceId, assistantMessageId),
+    ).resolves.toBeNull();
+  });
+
+  it("looks up linked case verification state in one bounded projection", async () => {
+    const assistantMessageId = randomUUID();
+    const unlinkedMessageId = randomUUID();
+    await database.query(
+      `INSERT INTO messages
+         (id, conversation_id, workspace_id, role, content, source)
+       VALUES
+         ($1, $3, $4, 'assistant', 'Linked answer', 'ai_agent'),
+         ($2, $3, $4, 'assistant', 'Unlinked answer', 'ai_agent')`,
+      [assistantMessageId, unlinkedMessageId, conversationId, workspaceId],
+    );
+    const snapshotInput = {
+      workspaceId,
+      sourceConversationId: conversationId,
+      sourceMessageId: assistantMessageId,
+      replayTarget: { userMessageId: randomUUID(), assistantMessageId },
+      fidelity: "messages_only" as const,
+      messages: [],
+      originalInstructionBlock: null,
+      originalModelId: null,
+      originalRetrievalSettings: null,
+      originalRetrievalResult: null,
+      originalAgent: null,
+      originalAgentConfig: null,
+      sourceAgentId: null,
+      originalRoutineState: null,
+      capturedBy: null,
+    };
+    const linked = await messageCaseRepository.findOrCreateMessageCase({
+      workspaceId,
+      assistantMessageId,
+      createdBy: null,
+      snapshot: snapshotInput,
+      caseName: "Linked case",
+    });
+    const completedAt = new Date();
+    const run = await repository.createRun({
+      workspaceId,
+      snapshotId: linked.snapshot.id,
+      caseId: linked.case.id,
+      mode: "full_assistant",
+      overrides: {},
+      resolvedConfig: {},
+      observedOutput: { retrievedChunks: [] },
+      assertionVerdicts: [],
+      status: "pass",
+      outcomeReason: null,
+      completedAt,
+    });
+    await repository.updateCaseLastRun(workspaceId, linked.case.id, run.id, "passing");
+
+    const verifications = await messageCaseRepository.lookupMessageCaseVerifications(
+      workspaceId,
+      [assistantMessageId, unlinkedMessageId],
+    );
+
+    expect([...verifications.entries()]).toEqual([
+      [assistantMessageId, {
+        caseId: linked.case.id,
+        caseStatus: "passing",
+        latestRunStatus: "pass",
+        latestRunAt: completedAt.toISOString(),
+      }],
+    ]);
   });
 });

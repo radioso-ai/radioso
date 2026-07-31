@@ -166,6 +166,7 @@ import type {
 } from "../../src/modules/context-variables/public.js";
 import {
   EvalCaseService,
+  EvalMessageCaseService,
   EvalRunService,
   EvalSuiteService,
   EvalSnapshotService,
@@ -1606,6 +1607,19 @@ export const createTestDependencies = (overrides: {
     },
   );
   const evalRepository = createInMemoryEvalRepository();
+  const evalSnapshotService = new EvalSnapshotService(
+    conversationRepository,
+    messageRepository,
+    agentRepository,
+    retrievalDefaultsProvider,
+    createRetrievalSkillSettingsResolver(),
+    evalRepository,
+  );
+  const evalMessageCaseService = new EvalMessageCaseService(
+    evalRepository,
+    evalSnapshotService,
+    logger,
+  );
   const evalRunService = new EvalRunService(
     evalRepository,
     {
@@ -1741,14 +1755,8 @@ export const createTestDependencies = (overrides: {
     retrievalSearchService,
     retrievalAnswerService,
     retrievalDefaultsProvider,
-    evalSnapshotService: new EvalSnapshotService(
-      conversationRepository,
-      messageRepository,
-      agentRepository,
-      retrievalDefaultsProvider,
-      createRetrievalSkillSettingsResolver(),
-      evalRepository,
-    ),
+    evalSnapshotService,
+    evalMessageCaseService,
     evalCaseService: new EvalCaseService(evalRepository),
     evalRunService,
     evalSuiteService: new EvalSuiteService(evalRepository, evalRunService, logger),

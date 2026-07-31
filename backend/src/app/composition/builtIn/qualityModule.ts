@@ -17,6 +17,14 @@ export const createQualityApplicationModule = (): ApplicationModule => ({
         const service = new QualityTurnsService(
           dependencies.connectorDb.kysely,
           new SkillCatalogOutcomeSource(dependencies.skillCatalogService),
+          undefined,
+          {
+            getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
+              dependencies.evalMessageCaseService.lookupVerifications(
+                workspaceId,
+                assistantMessageIds,
+              ),
+          },
         );
         return createQualityRoutes(dependencies, service);
       },

@@ -386,6 +386,8 @@ describeIfDatabase("quality stats integration", () => {
     await service.setTriageState(workspaceId, {
       assistantMessageId: resolvedGap,
       state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
     });
 
     const stats = await service.getQualityStats(workspaceId, { range: "7d" });
@@ -402,10 +404,19 @@ describeIfDatabase("quality stats integration", () => {
     expect([oldGap, oldSlow, oldFailure, oldDownVoted]).toHaveLength(4);
 
     // Acknowledged turns are still active backlog; dismissing one drains it.
-    await service.setTriageState(workspaceId, { assistantMessageId: oldGap, state: "acknowledged" });
+    await service.setTriageState(workspaceId, {
+      assistantMessageId: oldGap,
+      state: "acknowledged",
+      expectedVersion: 0,
+    });
     expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.grounding_gaps).toBe(1);
 
-    await service.setTriageState(workspaceId, { assistantMessageId: oldGap, state: "dismissed" });
+    await service.setTriageState(workspaceId, {
+      assistantMessageId: oldGap,
+      state: "dismissed",
+      expectedVersion: 1,
+      resolution: { reason: "expected_behavior", note: null },
+    });
     expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.grounding_gaps).toBe(0);
   });
 

@@ -1,4 +1,5 @@
 import {
+  QUALITY_SIGNAL_IDS,
   qualityApi,
   type LowQualityTurn,
   type LowQualityTurnsPage,
@@ -9,8 +10,7 @@ export const QUALITY_INBOX_SOURCE_LIMIT = 25
 
 type QualityInboxSourceName =
   | 'commentedFeedback'
-  | 'uncommentedFeedback'
-  | 'grounding'
+  | 'reviewQueue'
 
 type QualityInboxSourceAttempt =
   | { status: 'fulfilled'; page: LowQualityTurnsPage }
@@ -25,7 +25,7 @@ export type QualityInboxSourceAttempts = Record<
 
 interface QualityInboxSourceSnapshot {
   turns: LowQualityTurn[]
-  isTruncated: boolean
+  total: number
   status: 'ready' | 'stale' | 'failed' | 'forbidden' | 'skipped'
 }
 
@@ -36,14 +36,13 @@ export type QualityInboxSnapshot = Record<
 
 const emptySource = (): QualityInboxSourceSnapshot => ({
   turns: [],
-  isTruncated: false,
+  total: 0,
   status: 'ready',
 })
 
 export const createEmptyQualityInboxSnapshot = (): QualityInboxSnapshot => ({
   commentedFeedback: emptySource(),
-  uncommentedFeedback: emptySource(),
-  grounding: emptySource(),
+  reviewQueue: emptySource(),
 })
 
 const getErrorStatus = (error: unknown): number | undefined => {
@@ -65,7 +64,9 @@ const attempt = async (
   }
 }
 
-export const loadQualityInboxSourceAttempts = async (): Promise<QualityInboxSourceAttempts> => {
+export const loadQualityInboxSourceAttempts = async (
+  options: { includeReviewSummary?: boolean } = {},
+): Promise<QualityInboxSourceAttempts> => {
   const activeTriageStates = [...ACTIVE_TRIAGE_STATES]
   const commentedFeedback = attempt(qualityApi.listTurns({
     feedback: ['down'],
@@ -74,26 +75,21 @@ export const loadQualityInboxSourceAttempts = async (): Promise<QualityInboxSour
     hasComment: true,
     limit: QUALITY_INBOX_SOURCE_LIMIT,
   }))
-  const uncommentedFeedback = attempt(qualityApi.listTurns({
-    feedback: ['down'],
-    sort: 'negative_feedback_updated_at',
-    activeNegativeFeedbackOnly: true,
-    hasComment: false,
-    limit: QUALITY_INBOX_SOURCE_LIMIT,
-  }))
-  const grounding = attempt(qualityApi.listTurns({
-    signal: 'grounding_gaps',
-    triageStates: activeTriageStates,
-    limit: QUALITY_INBOX_SOURCE_LIMIT,
-  }))
+  const reviewQueue: Promise<QualityInboxSourceAttempt> =
+    options.includeReviewSummary === false
+      ? Promise.resolve({ status: 'skipped' })
+      : attempt(qualityApi.listTurns({
+          signal: [...QUALITY_SIGNAL_IDS],
+          triageStates: activeTriageStates,
+          limit: 1,
+        }))
 
-  const [commentedFeedbackResult, uncommentedFeedbackResult, groundingResult] =
-    await Promise.all([commentedFeedback, uncommentedFeedback, grounding])
+  const [commentedFeedbackResult, reviewQueueResult] =
+    await Promise.all([commentedFeedback, reviewQueue])
 
   return {
     commentedFeedback: commentedFeedbackResult,
-    uncommentedFeedback: uncommentedFeedbackResult,
-    grounding: groundingResult,
+    reviewQueue: reviewQueueResult,
   }
 }
 
@@ -105,7 +101,7 @@ const reduceSource = (
     case 'fulfilled':
       return {
         turns: next.page.items,
-        isTruncated: next.page.total > next.page.items.length,
+        total: next.page.total,
         status: 'ready',
       }
     case 'failed':
@@ -116,13 +112,13 @@ const reduceSource = (
     case 'forbidden':
       return {
         turns: [],
-        isTruncated: false,
+        total: 0,
         status: 'forbidden',
       }
     case 'skipped':
       return {
         turns: [],
-        isTruncated: false,
+        total: 0,
         status: 'skipped',
       }
   }
@@ -136,18 +132,15 @@ export const reduceQualityInboxSnapshot = (
     previous.commentedFeedback,
     attempts.commentedFeedback,
   ),
-  uncommentedFeedback: reduceSource(
-    previous.uncommentedFeedback,
-    attempts.uncommentedFeedback,
-  ),
-  grounding: reduceSource(previous.grounding, attempts.grounding),
+  reviewQueue: reduceSource(previous.reviewQueue, attempts.reviewQueue),
 })
 
 export interface QualityInboxPresentation {
   turns: LowQualityTurn[]
+  reviewCount: number | null
+  commentedFeedbackCount: number | null
   hasLoadFailure: boolean
   permissionDenied: boolean
-  isTruncated: boolean
 }
 
 export const qualityInboxPresentation = (
@@ -155,25 +148,20 @@ export const qualityInboxPresentation = (
 ): QualityInboxPresentation => {
   const sources = [
     snapshot.commentedFeedback,
-    snapshot.uncommentedFeedback,
-    snapshot.grounding,
+    snapshot.reviewQueue,
   ]
-  const turnsByMessageId = new Map<string, LowQualityTurn>()
-
-  for (const source of sources) {
-    for (const turn of source.turns) {
-      if (!turnsByMessageId.has(turn.assistantMessageId)) {
-        turnsByMessageId.set(turn.assistantMessageId, turn)
-      }
-    }
-  }
+  const availableTotal = (source: QualityInboxSourceSnapshot): number | null =>
+    source.status === 'failed' || source.status === 'forbidden' || source.status === 'skipped'
+      ? null
+      : source.total
 
   return {
-    turns: [...turnsByMessageId.values()],
+    turns: snapshot.commentedFeedback.turns,
+    reviewCount: availableTotal(snapshot.reviewQueue),
+    commentedFeedbackCount: availableTotal(snapshot.commentedFeedback),
     hasLoadFailure: sources.some((source) =>
       source.status === 'failed' || source.status === 'stale'),
     permissionDenied: sources.some((source) => source.status === 'forbidden'),
-    isTruncated: sources.some((source) => source.isTruncated),
   }
 }
 
@@ -193,8 +181,7 @@ const mapSnapshotTurns = (
 
   return {
     commentedFeedback: mapSource(snapshot.commentedFeedback),
-    uncommentedFeedback: mapSource(snapshot.uncommentedFeedback),
-    grounding: mapSource(snapshot.grounding),
+    reviewQueue: mapSource(snapshot.reviewQueue),
   }
 }
 
@@ -209,6 +196,19 @@ export const updateQualityInboxTurn = (
 export const removeQualityInboxTurn = (
   snapshot: QualityInboxSnapshot,
   assistantMessageId: string,
-): QualityInboxSnapshot =>
-  mapSnapshotTurns(snapshot, (turn) =>
-    turn.assistantMessageId === assistantMessageId ? null : turn)
+): QualityInboxSnapshot => {
+  const removeFromSource = (
+    source: QualityInboxSourceSnapshot,
+  ): QualityInboxSourceSnapshot => ({
+    ...source,
+    turns: source.turns.filter((turn) => turn.assistantMessageId !== assistantMessageId),
+    total: Math.max(0, source.total - 1),
+  })
+
+  return {
+    commentedFeedback: removeFromSource(snapshot.commentedFeedback),
+    // Every written down-vote is one member of the all-signal active queue, even
+    // when the one-row aggregate sample happens to contain a different answer.
+    reviewQueue: removeFromSource(snapshot.reviewQueue),
+  }
+}

@@ -631,11 +631,12 @@ export function AnonymousChatProvider({
       tailCursorRef.current = null
       return
     }
+    const activeConversationId = conversationId
 
     let cancelled = false
     let refreshChain = Promise.resolve()
     let streamController: AbortController | null = null
-    let reconnectTimer: ReturnType<typeof window.setTimeout> | null = null
+    let reconnectTimer: number | null = null
 
     const handleStreamFailure = (error: unknown) => {
       if (cancelled) {
@@ -660,10 +661,10 @@ export function AnonymousChatProvider({
             return
           }
           if (includeSnapshot && tailCursorRef.current === null) {
-            await syncConversationSnapshot(conversationId)
+            await syncConversationSnapshot(activeConversationId)
           }
           if (!cancelled) {
-            await refreshConversationTail(conversationId)
+            await refreshConversationTail(activeConversationId)
           }
         })
         .catch(handleRefreshFailure)
@@ -677,10 +678,10 @@ export function AnonymousChatProvider({
       void withPublicSessionRetry((activeToken) =>
         publicChatApi.streamConversationEvents(
           activeToken,
-          conversationId,
+          activeConversationId,
           {
             onEvent: (event) => {
-              if (event.conversationId !== conversationId) {
+              if (event.conversationId !== activeConversationId) {
                 return
               }
               if (event.type === 'ready') {

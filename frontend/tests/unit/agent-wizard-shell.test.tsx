@@ -19,7 +19,7 @@ vi.mock("@/lib/agent-wizard/api", () => ({
 const wizardApiMock = vi.mocked(wizardApi);
 
 beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 });
 
 const analysisResult: WizardAnalysisResult = {
@@ -186,7 +186,7 @@ describe("agent wizard shell", () => {
     const deferred = createDeferred<WizardAnalysisResult>();
     let capturedSignal: AbortSignal | undefined;
     wizardApiMock.analyzeWebsiteStream.mockImplementation((_url, input) => {
-      capturedSignal = input.signal;
+      capturedSignal = input?.signal;
       return deferred.promise;
     });
     mounted = renderShell();

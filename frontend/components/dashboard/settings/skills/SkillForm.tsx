@@ -57,6 +57,7 @@ const sourceTargetsToList = (capability: SkillCapabilityDescriptor | null): Docu
       lastSyncStatus: target.status ?? null,
       lastSyncedAt: null,
       documentCount: 0,
+      documentEnrichmentOverride: 'inherit',
       createdAt: '',
       updatedAt: '',
     }))

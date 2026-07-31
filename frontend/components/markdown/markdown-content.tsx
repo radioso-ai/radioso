@@ -20,7 +20,7 @@ const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 type HastElement = NonNullable<ExtraProps['node']>
 type ElementContent = HastElement['children'][number]
 
-export const isSafeHref = (href?: string) => {
+export const isSafeHref = (href?: string): href is string => {
   if (!href) {
     return false
   }

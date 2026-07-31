@@ -2,11 +2,18 @@ import { describe, expect, it } from 'vitest'
 
 import nextConfig from '../../next.config.mjs'
 
+const getHeaderRoutes = async () => {
+  if (!nextConfig.headers) {
+    throw new Error('Next.js headers configuration is missing')
+  }
+  return nextConfig.headers()
+}
+
 describe('next security headers', () => {
   it('sets a global content security policy and browser hardening headers', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
 
-    const routes = await nextConfig.headers()
+    const routes = await getHeaderRoutes()
     const globalHeaders = routes.find((route) => route.source === '/:path*')?.headers ?? []
     const headerValues = new Map(globalHeaders.map((header) => [header.key, header.value]))
 
@@ -23,7 +30,7 @@ describe('next security headers', () => {
   it('allows the public embed document to be framed by host sites', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
 
-    const routes = await nextConfig.headers()
+    const routes = await getHeaderRoutes()
     const embedHeaders = routes.find((route) => route.source === '/embed/:path*')?.headers ?? []
     const embedFrameHeaders = routes.find((route) => route.source === '/embed-frame')?.headers ?? []
     const headerValues = new Map(embedHeaders.map((header) => [header.key, header.value]))

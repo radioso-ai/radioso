@@ -527,7 +527,7 @@ test("event retrieval eval case shows dated assertions and records a run", async
   await page.getByRole("button", { name: "Run case" }).click();
   await expect.poll(() =>
     requestBodies.some((body) =>
-      Boolean(body) &&
+      body !== null &&
       typeof body === "object" &&
       "mode" in body &&
       (body as { mode?: unknown }).mode === "full_assistant",

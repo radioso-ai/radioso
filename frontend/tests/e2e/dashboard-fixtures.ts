@@ -41,7 +41,7 @@ type RoutineDraftAssistFixture = {
 export type RoutineMutationFixture = {
   method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST" | "REVISE" | "ARCHIVE" | "RESTORE";
   routineId?: string;
-  body?: unknown;
+  body?: Partial<RoutineDraftFixture>;
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
 export type McpConnectionFixture = {
@@ -465,6 +465,8 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   tags: [],
   description: null,
   metadata: {},
+  binding: null,
+  lifecycle: null,
   createdAt: nowIso,
   updatedAt: nowIso,
   ...input,
@@ -504,6 +506,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncStatus: null,
       lastSyncedAt: null,
       documentCount: 1,
+      documentEnrichmentOverride: "inherit",
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -515,6 +518,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncStatus: "completed",
       lastSyncedAt: nowIso,
       documentCount: 3,
+      documentEnrichmentOverride: "inherit",
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -2107,11 +2111,14 @@ export const installDashboardApiMocks = async (
         return;
       }
       const requestedEmbeddingModel = body.embeddingModel;
+      const supportedEmbeddingModel = ingestionSettings.supportedEmbeddingModels.find(
+        (model) => model === requestedEmbeddingModel,
+      );
       const embeddingFields =
-        requestedEmbeddingModel && requestedEmbeddingModel !== ingestionSettings.embeddingModel
+        supportedEmbeddingModel && supportedEmbeddingModel !== ingestionSettings.embeddingModel
           ? {
               embeddingModel: ingestionSettings.embeddingModel,
-              pendingEmbeddingModel: requestedEmbeddingModel,
+              pendingEmbeddingModel: supportedEmbeddingModel,
             }
           : {
               embeddingModel: requestedEmbeddingModel ?? ingestionSettings.embeddingModel,

@@ -96,11 +96,207 @@ const EvalCaseParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
+const EvalSourceMessageParamsSchema = z.object({
+  assistantMessageId: z.string().uuid(),
+});
+
+const EvalCaseSchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  name: z.string(),
+  assertions: z.array(z.unknown()),
+  status: z.enum(["pending", "passing", "failing", "error"]),
+  lastRunId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+const EvalSnapshotMessageSchema = z.object({
+  id: z.string().uuid(),
+  role: z.enum(["user", "assistant", "system"]),
+  content: z.string(),
+  createdAt: z.string().datetime(),
+  citations: z.array(z.unknown()).optional(),
+  answerSegments: z.array(z.unknown()).optional(),
+  groundingSummary: z.unknown().optional(),
+  directiveFirings: z.array(z.string()).optional(),
+});
+
+const EvalSnapshotSchema = z.object({
+  id: z.string().uuid(),
+  workspaceId: z.string().uuid(),
+  sourceConversationId: z.string().uuid(),
+  sourceMessageId: z.string().uuid().nullable(),
+  replayTarget: z.object({
+    userMessageId: z.string().uuid(),
+    assistantMessageId: z.string().uuid().nullable(),
+  }).nullable(),
+  fidelity: z.enum(["full", "messages_only"]),
+  messages: z.array(EvalSnapshotMessageSchema),
+  originalInstructionBlock: z.string().nullable(),
+  originalModelId: z.string().nullable(),
+  originalRetrievalSettings: z.unknown().nullable(),
+  originalAgent: z.unknown().nullable(),
+  originalAgentConfig: z.unknown().nullable(),
+  sourceAgentId: z.string().uuid().nullable(),
+  originalRoutineState: z.unknown().nullable(),
+  originalRetrievalResult: z.array(z.unknown()).nullable(),
+  conversationSummary: z.string().optional(),
+  capturedAt: z.string().datetime(),
+  capturedBy: z.string().uuid().nullable(),
+});
+
+const EvalMessageCaseLookupSchema = z.object({
+  assistantMessageId: z.string().uuid(),
+  case: EvalCaseSchema,
+  snapshot: EvalSnapshotSchema,
+  createdBy: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+});
+
 export const registerEvalPaths = (
   registry: OpenAPIRegistry,
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const RegisteredEvalMessageCaseLookupSchema = registry.register(
+    "EvalMessageCaseLookup",
+    EvalMessageCaseLookupSchema,
+  );
+  const RegisteredEvalMessageCaseMutationResultSchema = registry.register(
+    "EvalMessageCaseMutationResult",
+    RegisteredEvalMessageCaseLookupSchema.and(z.object({
+      created: z.boolean().describe("True only when this request created the association."),
+    })),
+  );
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/evals/cases/by-source-message/{assistantMessageId}",
+    tags: ["Evals"],
+    summary: "Get the Eval case linked to an assistant message",
+    description:
+      "Returns the linked case and its immutable snapshot in one request. The lookup is workspace-scoped and never scans the case list.",
+    operationId: "getEvalCaseBySourceMessage",
+    security: [
+      { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
+      { [security.bearerAuthScheme.name]: [] },
+    ],
+    request: {
+      params: EvalSourceMessageParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "The linked Eval case and snapshot",
+        content: {
+          "application/json": {
+            schema: RegisteredEvalMessageCaseLookupSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid assistant message id",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks workspace retrieval-query permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "No Eval case is linked to this assistant message",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/evals/cases/by-source-message/{assistantMessageId}",
+    tags: ["Evals"],
+    summary: "Get or create an Eval case from an assistant message",
+    description:
+      "Atomically captures the source turn and creates its default Eval case, or returns the existing association. Concurrent retries converge on one case.",
+    operationId: "getOrCreateEvalCaseBySourceMessage",
+    security: [
+      { [security.sessionCookieScheme.name]: [], [security.workspaceSelectionScheme.name]: [] },
+      { [security.bearerAuthScheme.name]: [] },
+    ],
+    request: {
+      params: EvalSourceMessageParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Existing linked Eval case and snapshot",
+        content: {
+          "application/json": {
+            schema: RegisteredEvalMessageCaseMutationResultSchema,
+          },
+        },
+      },
+      201: {
+        description: "New linked Eval case and immutable snapshot",
+        content: {
+          "application/json": {
+            schema: RegisteredEvalMessageCaseMutationResultSchema,
+          },
+        },
+      },
+      400: {
+        description: "Invalid id or source message is not an AI-authored assistant turn",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks workspace retrieval-query permission",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Assistant message not found in this workspace",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
   registry.registerPath({
     method: "delete",
     path: "/api/v1/evals/cases/{id}",

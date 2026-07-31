@@ -640,8 +640,40 @@ CREATE TABLE public.assistant_answer_triage (
     reason text,
     updated_by uuid,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    resolution_reason text,
+    resolution_note text,
+    closed_at timestamp with time zone,
+    CONSTRAINT assistant_answer_triage_closed_at_check CHECK ((((state = ANY (ARRAY['resolved'::text, 'dismissed'::text])) AND (closed_at IS NOT NULL)) OR ((state = ANY (ARRAY['open'::text, 'acknowledged'::text])) AND (closed_at IS NULL)))),
+    CONSTRAINT assistant_answer_triage_other_note_check CHECK (((resolution_reason <> 'other'::text) OR ((resolution_note IS NOT NULL) AND (char_length(btrim(resolution_note)) > 0)))),
     CONSTRAINT assistant_answer_triage_reason_check CHECK (((reason IS NULL) OR (char_length(reason) <= 500))),
-    CONSTRAINT assistant_answer_triage_state_check CHECK ((state = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text, 'dismissed'::text])))
+    CONSTRAINT assistant_answer_triage_resolution_note_check CHECK (((resolution_note IS NULL) OR ((resolution_reason IS NOT NULL) AND ((char_length(resolution_note) >= 1) AND (char_length(resolution_note) <= 500))))),
+    CONSTRAINT assistant_answer_triage_resolution_reason_check CHECK (((resolution_reason IS NULL) OR (resolution_reason = ANY (ARRAY['knowledge_gap'::text, 'retrieval_issue'::text, 'agent_behavior'::text, 'platform_bug'::text, 'expected_behavior'::text, 'out_of_scope'::text, 'invalid_feedback'::text, 'other'::text])))),
+    CONSTRAINT assistant_answer_triage_resolution_state_check CHECK ((((state = 'resolved'::text) AND ((resolution_reason IS NULL) OR (resolution_reason = ANY (ARRAY['knowledge_gap'::text, 'retrieval_issue'::text, 'agent_behavior'::text, 'platform_bug'::text, 'other'::text])))) OR ((state = 'dismissed'::text) AND ((resolution_reason IS NULL) OR (resolution_reason = ANY (ARRAY['expected_behavior'::text, 'out_of_scope'::text, 'invalid_feedback'::text, 'other'::text])))) OR ((state = ANY (ARRAY['open'::text, 'acknowledged'::text])) AND (resolution_reason IS NULL) AND (resolution_note IS NULL)))),
+    CONSTRAINT assistant_answer_triage_state_check CHECK ((state = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text, 'dismissed'::text]))),
+    CONSTRAINT assistant_answer_triage_version_check CHECK ((version > 0))
+);
+
+
+--
+-- Name: assistant_answer_triage_transitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.assistant_answer_triage_transitions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    assistant_message_id uuid NOT NULL,
+    prior_state text NOT NULL,
+    next_state text NOT NULL,
+    resulting_version integer NOT NULL,
+    actor_id uuid,
+    resolution_reason text,
+    linked_eval_case_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT assistant_answer_triage_transitions_next_state_check CHECK ((next_state = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text, 'dismissed'::text]))),
+    CONSTRAINT assistant_answer_triage_transitions_prior_state_check CHECK ((prior_state = ANY (ARRAY['open'::text, 'acknowledged'::text, 'resolved'::text, 'dismissed'::text]))),
+    CONSTRAINT assistant_answer_triage_transitions_reason_check CHECK (((resolution_reason IS NULL) OR (resolution_reason = ANY (ARRAY['knowledge_gap'::text, 'retrieval_issue'::text, 'agent_behavior'::text, 'platform_bug'::text, 'expected_behavior'::text, 'out_of_scope'::text, 'invalid_feedback'::text, 'other'::text])))),
+    CONSTRAINT assistant_answer_triage_transitions_version_check CHECK ((resulting_version > 0))
 );
 
 
@@ -1500,6 +1532,19 @@ CREATE TABLE public.eval_cases (
     CONSTRAINT eval_cases_assertions_is_array CHECK ((jsonb_typeof(assertions) = 'array'::text)),
     CONSTRAINT eval_cases_name_length_check CHECK (((char_length(name) >= 1) AND (char_length(name) <= 200))),
     CONSTRAINT eval_cases_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'passing'::text, 'failing'::text, 'error'::text])))
+);
+
+
+--
+-- Name: eval_message_case_associations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eval_message_case_associations (
+    workspace_id uuid NOT NULL,
+    assistant_message_id uuid NOT NULL,
+    case_id uuid NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -2553,6 +2598,22 @@ ALTER TABLE ONLY public.assistant_answer_triage
 
 
 --
+-- Name: assistant_answer_triage_transitions assistant_answer_triage_trans_workspace_id_assistant_messag_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistant_answer_triage_transitions
+    ADD CONSTRAINT assistant_answer_triage_trans_workspace_id_assistant_messag_key UNIQUE (workspace_id, assistant_message_id, resulting_version);
+
+
+--
+-- Name: assistant_answer_triage_transitions assistant_answer_triage_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistant_answer_triage_transitions
+    ADD CONSTRAINT assistant_answer_triage_transitions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: audit_events audit_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3086,6 +3147,22 @@ ALTER TABLE ONLY public.embedding_usage_items
 
 ALTER TABLE ONLY public.eval_cases
     ADD CONSTRAINT eval_cases_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_case_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_case_id_key UNIQUE (case_id);
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_pkey PRIMARY KEY (workspace_id, assistant_message_id);
 
 
 --
@@ -4333,6 +4410,27 @@ CREATE INDEX idx_assistant_answer_feedback_workspace_message ON public.assistant
 
 
 --
+-- Name: idx_assistant_answer_triage_transitions_workspace_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_assistant_answer_triage_transitions_workspace_created ON public.assistant_answer_triage_transitions USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_assistant_answer_triage_workspace_closed; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_assistant_answer_triage_workspace_closed ON public.assistant_answer_triage USING btree (workspace_id, state, closed_at DESC) WHERE (state = ANY (ARRAY['resolved'::text, 'dismissed'::text]));
+
+
+--
+-- Name: idx_assistant_answer_triage_workspace_resolution; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_assistant_answer_triage_workspace_resolution ON public.assistant_answer_triage USING btree (workspace_id, state, resolution_reason, closed_at DESC) WHERE (state = ANY (ARRAY['resolved'::text, 'dismissed'::text]));
+
+
+--
 -- Name: idx_assistant_answer_triage_workspace_state; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4571,10 +4669,24 @@ CREATE INDEX idx_eval_cases_snapshot ON public.eval_cases USING btree (workspace
 
 
 --
+-- Name: idx_eval_cases_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_eval_cases_workspace_id_unique ON public.eval_cases USING btree (workspace_id, id);
+
+
+--
 -- Name: idx_eval_cases_workspace_updated_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_eval_cases_workspace_updated_at ON public.eval_cases USING btree (workspace_id, updated_at DESC);
+
+
+--
+-- Name: idx_eval_message_case_associations_workspace_case; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_eval_message_case_associations_workspace_case ON public.eval_message_case_associations USING btree (workspace_id, case_id);
 
 
 --
@@ -4652,6 +4764,13 @@ CREATE INDEX idx_integration_oauth_connections_workspace_provider ON public.inte
 --
 
 CREATE INDEX idx_mcp_connections_agent ON public.mcp_connections USING btree (agent_id);
+
+
+--
+-- Name: idx_messages_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_messages_workspace_id_unique ON public.messages USING btree (workspace_id, id);
 
 
 --
@@ -6054,6 +6173,30 @@ ALTER TABLE ONLY public.assistant_answer_triage
 
 
 --
+-- Name: assistant_answer_triage_transitions assistant_answer_triage_transitions_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistant_answer_triage_transitions
+    ADD CONSTRAINT assistant_answer_triage_transitions_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: assistant_answer_triage_transitions assistant_answer_triage_transitions_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistant_answer_triage_transitions
+    ADD CONSTRAINT assistant_answer_triage_transitions_message_fk FOREIGN KEY (workspace_id, assistant_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: assistant_answer_triage_transitions assistant_answer_triage_transitions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.assistant_answer_triage_transitions
+    ADD CONSTRAINT assistant_answer_triage_transitions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: assistant_answer_triage assistant_answer_triage_updated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6339,6 +6482,38 @@ ALTER TABLE ONLY public.eval_cases
 
 ALTER TABLE ONLY public.eval_cases
     ADD CONSTRAINT eval_cases_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_case_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_case_fk FOREIGN KEY (workspace_id, case_id) REFERENCES public.eval_cases(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_message_fk FOREIGN KEY (workspace_id, assistant_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: eval_message_case_associations eval_message_case_associations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_message_case_associations
+    ADD CONSTRAINT eval_message_case_associations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

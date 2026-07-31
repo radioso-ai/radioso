@@ -12,6 +12,37 @@ export type QualitySkillStatus =
   | 'failed'
 export type FeedbackValue = 'up' | 'down'
 export type QualityTriageState = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+export const QUALITY_RESOLVED_REASONS = [
+  'knowledge_gap',
+  'retrieval_issue',
+  'agent_behavior',
+  'platform_bug',
+  'other',
+] as const
+export const QUALITY_NOT_ACTIONABLE_REASONS = [
+  'expected_behavior',
+  'out_of_scope',
+  'invalid_feedback',
+  'other',
+] as const
+export const QUALITY_RESOLUTION_REASONS = [
+  'knowledge_gap',
+  'retrieval_issue',
+  'agent_behavior',
+  'platform_bug',
+  'expected_behavior',
+  'out_of_scope',
+  'invalid_feedback',
+  'other',
+] as const
+export type QualityResolvedReason = (typeof QUALITY_RESOLVED_REASONS)[number]
+export type QualityNotActionableReason = (typeof QUALITY_NOT_ACTIONABLE_REASONS)[number]
+export type QualityResolutionReason = (typeof QUALITY_RESOLUTION_REASONS)[number]
+export type QualityResolutionBreakdownReason = QualityResolutionReason | 'unspecified'
+export interface QualityResolution {
+  reason: QualityResolutionReason
+  note: string | null
+}
 export const GROUNDING_VERDICTS = ['grounded', 'degraded', 'no_support'] as const
 export type GroundingVerdict = (typeof GROUNDING_VERDICTS)[number]
 export interface GroundingDiagnostic {
@@ -42,8 +73,43 @@ export type QualityStatsRange = (typeof QUALITY_STATS_RANGES)[number]
 
 export interface QualityTriageRecord {
   state: QualityTriageState
-  reason: string | null
+  version: number
+  resolution: QualityResolution | null
+  legacyReason: string | null
+  closedAt: string | null
   updatedAt: string | null
+}
+
+export const getQualityTriageConflict = (error: unknown): QualityTriageRecord | null => {
+  if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 409) {
+    return null
+  }
+  if (!('error' in error) || !error.error || typeof error.error !== 'object') {
+    return null
+  }
+  const details = 'details' in error.error ? error.error.details : null
+  if (!details || typeof details !== 'object' || !('current' in details)) {
+    return null
+  }
+  const current = details.current
+  if (
+    !current
+    || typeof current !== 'object'
+    || !('version' in current)
+    || typeof current.version !== 'number'
+    || !('state' in current)
+    || typeof current.state !== 'string'
+  ) {
+    return null
+  }
+  return current as QualityTriageRecord
+}
+
+export interface QualityVerification {
+  caseId: string
+  caseStatus: 'pending' | 'passing' | 'failing' | 'error'
+  latestRunStatus: 'pass' | 'fail' | 'error' | 'recorded' | null
+  latestRunAt: string | null
 }
 
 export interface QualityActionFilter {
@@ -79,6 +145,7 @@ export interface LowQualityTurn {
   createdAt: string
   feedback: QualityFeedbackSummary
   triage: QualityTriageRecord
+  verification: QualityVerification | null
 }
 
 export interface LowQualityTurnsPage {
@@ -126,6 +193,11 @@ export interface QualityStats {
   buckets: QualityStatsBucket[]
   /** Active-triage counts, all-time and range-independent — what the signal chips display. */
   backlog: Record<QualitySignalId, number>
+  resolutionBreakdown: Array<{
+    state: 'resolved' | 'dismissed'
+    reason: QualityResolutionBreakdownReason
+    count: number
+  }>
 }
 
 export interface GetQualityStatsOptions {
@@ -144,6 +216,7 @@ export interface ListLowQualityTurnsOptions {
   statuses?: QualitySkillStatus[]
   feedback?: FeedbackValue[]
   triageStates?: QualityTriageState[]
+  resolutionReasons?: QualityResolutionBreakdownReason[]
   sort?: 'turn_created_at' | 'negative_feedback_updated_at'
   activeNegativeFeedbackOnly?: boolean
   hasComment?: boolean
@@ -154,6 +227,8 @@ export interface ListLowQualityTurnsOptions {
   hasInvalidSources?: boolean
   from?: string
   to?: string
+  resolutionFrom?: string
+  resolutionTo?: string
   offset?: number
   limit?: number
 }
@@ -195,6 +270,9 @@ export const qualityApi = {
       statuses: options.statuses && options.statuses.length > 0 ? options.statuses.join(',') : undefined,
       feedback: options.feedback && options.feedback.length > 0 ? options.feedback.join(',') : undefined,
       triage: options.triageStates && options.triageStates.length > 0 ? options.triageStates.join(',') : undefined,
+      resolutionReason: options.resolutionReasons && options.resolutionReasons.length > 0
+        ? options.resolutionReasons.join(',')
+        : undefined,
       sort: options.sort,
       activeNegativeFeedbackOnly: options.activeNegativeFeedbackOnly === undefined
         ? undefined
@@ -204,6 +282,8 @@ export const qualityApi = {
       maxTotalLatencyMs: options.maxTotalLatencyMs === undefined ? undefined : String(options.maxTotalLatencyMs),
       from: options.from,
       to: options.to,
+      resolutionFrom: options.resolutionFrom,
+      resolutionTo: options.resolutionTo,
       offset: options.offset === undefined ? undefined : String(options.offset),
       limit: options.limit === undefined ? undefined : String(options.limit),
     }
@@ -222,7 +302,13 @@ export const qualityApi = {
 
   async setTriageState(
     assistantMessageId: string,
-    input: { state: QualityTriageState; reason?: string | null },
+    input: {
+      state: QualityTriageState
+      expectedVersion: number
+      resolution?: { reason: QualityResolutionReason; note?: string | null }
+      /** Deprecated compatibility field. Never interpreted as a structured reason. */
+      reason?: string | null
+    },
   ): Promise<QualityTriageRecord> {
     return request<QualityTriageRecord>(
       `/quality/turns/${encodeURIComponent(assistantMessageId)}/triage`,

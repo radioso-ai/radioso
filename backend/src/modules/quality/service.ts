@@ -7,13 +7,15 @@ import type {
   LowQualityTurn,
   LowQualityTurnsPage,
   QualityFeedbackValue,
+  QualityResolutionReason,
   QualitySignalId,
   QualityStats,
   QualityStatsInput,
   QualityStatsServicePort,
-  QualityTriageRecord,
   QualityTriageState,
   QualityTurnsServicePort,
+  QualityVerificationSourcePort,
+  SetTriageStateResult,
   SetTriageStateInput,
 } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
@@ -25,12 +27,14 @@ import {
 } from "./domain/qualitySignals.js";
 import {
   buildEmptyQualityStatsBuckets,
+  buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
   summarizeQualityStatsWindow,
   type QualityBacklogRow,
+  type QualityResolutionBreakdownRow,
   type QualityStatsAggregateRow,
 } from "./statsQuery.js";
 import {
@@ -40,6 +44,8 @@ import {
   bindParam,
   buildActionTuplePredicate,
   buildAnySignalPredicate,
+  buildEffectiveOpenPredicate,
+  buildEffectiveTriageStateExpression,
   buildFeedbackExistsPredicate,
   buildTurnPopulationFilters,
   type SqlQuery,
@@ -50,6 +56,8 @@ import {
   mapGroundingDiagnostic,
   type GroundingDiagnosticRow,
 } from "./groundingDiagnostic.js";
+import { validateQualityTriageUpdate } from "./domain/resolution.js";
+import { QualityTriageStore } from "./triageStore.js";
 
 type TurnRow = GroundingDiagnosticRow & {
   assistant_message_id: string;
@@ -68,7 +76,11 @@ type TurnRow = GroundingDiagnosticRow & {
   latest_down_updated_at: Date | string | null;
   created_at: Date | string;
   triage_state: string;
-  triage_reason: string | null;
+  triage_version: number | string;
+  triage_resolution_reason: string | null;
+  triage_resolution_note: string | null;
+  triage_legacy_reason: string | null;
+  triage_closed_at: Date | string | null;
   triage_updated_at: Date | string | null;
 };
 
@@ -114,6 +126,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     private readonly db: Db,
     private readonly outcomeCatalog: QualityOutcomeCatalogPort,
     private readonly clock: Clock = systemClock,
+    private readonly verificationSource?: QualityVerificationSourcePort,
   ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
@@ -132,17 +145,15 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     const statuses = input.statuses ?? [];
     const feedbackValues = input.feedbackValues ?? [];
     const triageStates = input.triageStates ?? [];
+    const resolutionReasons = [...new Set(input.resolutionReasons ?? [])];
     const sort = input.sort ?? "turn_created_at";
     const activeNegativeFeedbackOnly = input.activeNegativeFeedbackOnly ?? false;
-    const effectiveOpenExpression = activeNegativeFeedbackOnly
-      ? `tr.state IN ('resolved', 'dismissed')
-         AND feedback_activity.latest_down_updated_at > tr.updated_at`
-      : "FALSE";
-    const effectiveTriageStateExpression =
-      `CASE
-         WHEN ${effectiveOpenExpression} THEN 'open'
-         ELSE COALESCE(tr.state, 'open')
-       END`;
+    const effectiveOpenExpression = buildEffectiveOpenPredicate({
+      latestDownUpdatedAtExpression: "feedback_activity.latest_down_updated_at",
+    });
+    const effectiveTriageStateExpression = buildEffectiveTriageStateExpression({
+      latestDownUpdatedAtExpression: "feedback_activity.latest_down_updated_at",
+    });
 
     // Signals are server-resolved predicates layered on top of the explicit filters, never
     // a replacement for them: OR within the signal list, AND with everything else. The list
@@ -187,26 +198,52 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       filters.push(`${effectiveTriageStateExpression} = ANY(${bindParam(params, triageStates)}::text[])`);
     }
 
+    const hasResolutionFilter = resolutionReasons.length > 0
+      || input.resolutionFrom !== undefined
+      || input.resolutionTo !== undefined;
+    if (hasResolutionFilter) {
+      filters.push(`NOT (${effectiveOpenExpression})`);
+    }
+
+    if (resolutionReasons.length > 0) {
+      const typedReasons = resolutionReasons.filter((reason) => reason !== "unspecified");
+      const predicates: string[] = [];
+      if (typedReasons.length > 0) {
+        predicates.push(`tr.resolution_reason = ANY(${bindParam(params, typedReasons)}::text[])`);
+      }
+      if (resolutionReasons.includes("unspecified")) {
+        predicates.push(
+          `(tr.state IN ('resolved', 'dismissed') AND tr.resolution_reason IS NULL)`,
+        );
+      }
+      filters.push(`(${predicates.join(" OR ")})`);
+    }
+
     if (feedbackValues.length > 0) {
       filters.push(buildFeedbackExistsPredicate(feedbackValues, params));
     }
 
-    if (input.hasComment === true) {
-      filters.push(
-        `EXISTS (
+    if (input.hasComment !== undefined) {
+      const commentFeedbackConstraint = feedbackValues.length > 0
+        ? `\n             AND f.value = ANY(${bindParam(params, feedbackValues)}::text[])`
+        : "";
+      if (input.hasComment) {
+        filters.push(
+          `EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
-             AND f.comment IS NOT NULL
+             AND f.comment IS NOT NULL${commentFeedbackConstraint}
          )`,
-      );
-    } else if (input.hasComment === false) {
-      filters.push(
-        `NOT EXISTS (
+        );
+      } else {
+        filters.push(
+          `NOT EXISTS (
            SELECT 1 FROM assistant_answer_feedback f
            WHERE f.assistant_message_id = m.id
-             AND f.comment IS NOT NULL
+             AND f.comment IS NOT NULL${commentFeedbackConstraint}
          )`,
-      );
+        );
+      }
     }
 
     if (input.minTotalLatencyMs !== undefined) {
@@ -225,6 +262,14 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       filters.push(`m.created_at <= ${bindParam(params, input.to)}::timestamptz`);
     }
 
+    if (input.resolutionFrom) {
+      filters.push(`tr.closed_at >= ${bindParam(params, input.resolutionFrom)}::timestamptz`);
+    }
+
+    if (input.resolutionTo) {
+      filters.push(`tr.closed_at < ${bindParam(params, input.resolutionTo)}::timestamptz`);
+    }
+
     if (activeNegativeFeedbackOnly) {
       filters.push(
         `feedback_activity.latest_down_updated_at IS NOT NULL
@@ -236,7 +281,12 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
 
     // The list query always projects triage state, so it joins unconditionally
     // below. The count query only needs the join when a triage filter is set.
-    const countTriageJoin = triageStates.length > 0 || activeNegativeFeedbackOnly
+    const countUsesEffectiveTriage = triageStates.length > 0
+      || resolutionReasons.length > 0
+      || input.resolutionFrom !== undefined
+      || input.resolutionTo !== undefined
+      || activeNegativeFeedbackOnly;
+    const countTriageJoin = countUsesEffectiveTriage
       ? TRIAGE_JOIN
       : "";
     const feedbackActivityJoin =
@@ -249,7 +299,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          WHERE f.workspace_id = m.workspace_id
            AND f.assistant_message_id = m.id
        ) feedback_activity ON TRUE`;
-    const countFeedbackActivityJoin = activeNegativeFeedbackOnly
+    const countFeedbackActivityJoin = countUsesEffectiveTriage
       ? feedbackActivityJoin
       : "";
 
@@ -296,7 +346,11 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          ${RESOLVED_LATENCY_EXPRESSION} AS total_latency_ms,
          m.created_at,
          ${effectiveTriageStateExpression} AS triage_state,
-         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.reason END AS triage_reason,
+         COALESCE(tr.version, 0) AS triage_version,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.resolution_reason END AS triage_resolution_reason,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.resolution_note END AS triage_resolution_note,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.reason END AS triage_legacy_reason,
+         CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.closed_at END AS triage_closed_at,
          CASE WHEN ${effectiveOpenExpression} THEN NULL ELSE tr.updated_at END AS triage_updated_at,
          (
            SELECT um.content
@@ -323,7 +377,13 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     );
     const rows = rowsResult.rows;
 
-    const commentsByMessageId = await this.fetchComments(workspaceId, rows.map((row) => row.assistant_message_id));
+    const assistantMessageIds = rows.map((row) => row.assistant_message_id);
+    const [commentsByMessageId, verificationByMessageId] = await Promise.all([
+      this.fetchComments(workspaceId, assistantMessageIds),
+      this.verificationSource
+        ? this.verificationSource.getByAssistantMessageIds(workspaceId, assistantMessageIds)
+        : Promise.resolve(new Map()),
+    ]);
 
     const items: LowQualityTurn[] = rows.map((row) => ({
       assistantMessageId: row.assistant_message_id,
@@ -349,9 +409,18 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       },
       triage: {
         state: row.triage_state as QualityTriageState,
-        reason: row.triage_reason,
+        version: Number(row.triage_version),
+        resolution: row.triage_resolution_reason === null
+          ? null
+          : {
+              reason: row.triage_resolution_reason as QualityResolutionReason,
+              note: row.triage_resolution_note,
+            },
+        legacyReason: row.triage_legacy_reason,
+        closedAt: row.triage_closed_at === null ? null : serializeDate(row.triage_closed_at),
         updatedAt: row.triage_updated_at === null ? null : serializeDate(row.triage_updated_at),
       },
+      verification: verificationByMessageId.get(row.assistant_message_id) ?? null,
     }));
 
     const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
@@ -382,11 +451,19 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     // `backlog` stays a separate statement and is deliberately NOT made consistent with the
     // windowed numbers: it answers a different question — all-time active triage, with no
     // date bound at all — so there is no shared total for it to agree with.
-    const [dailyRows, backlogRows] = await Promise.all([
+    const [dailyRows, backlogRows, resolutionRows] = await Promise.all([
       this.runStatsQuery<QualityStatsAggregateRow>(
         buildQualityStatsDailyQuery({ ...scope, window: windows.span }),
       ),
       this.runStatsQuery<QualityBacklogRow>(buildQualityStatsBacklogQuery(scope)),
+      this.runStatsQuery<QualityResolutionBreakdownRow>(
+        buildQualityResolutionBreakdownQuery({
+          workspaceId,
+          agentId: input.agentId,
+          channel: input.channel,
+          window: windows.current,
+        }),
+      ),
     ]);
 
     const backlogRow = backlogRows[0];
@@ -406,6 +483,11 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       // days are queried only so its totals can be summed.
       buckets: mergeQualityStatsBuckets(buildEmptyQualityStatsBuckets(windows), dailyRows),
       backlog,
+      resolutionBreakdown: resolutionRows.map((row) => ({
+        state: row.state,
+        reason: row.reason as QualityStats["resolutionBreakdown"][number]["reason"],
+        count: Number(row.count),
+      })),
     };
   }
 
@@ -421,41 +503,25 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
   async setTriageState(
     workspaceId: string,
     input: SetTriageStateInput,
-  ): Promise<QualityTriageRecord | null> {
-    // Scope the upsert to assistant turns in this workspace: the SELECT yields
-    // no row (and the insert is a no-op) when the turn is missing or foreign,
-    // which we surface as a 404 at the route.
-    const result = await this.db.executeQuery<{
-      state: string;
-      reason: string | null;
-      updated_at: Date | string;
-    }>(
-      CompiledQuery.raw(
-        `INSERT INTO assistant_answer_triage (workspace_id, assistant_message_id, state, reason, updated_by, updated_at)
-       SELECT m.workspace_id, m.id, $3, $4, $5, NOW()
-       FROM messages m
-       WHERE m.id = $2 AND m.workspace_id = $1 AND m.role = 'assistant'
-       ON CONFLICT (workspace_id, assistant_message_id)
-       DO UPDATE SET
-         state = EXCLUDED.state,
-         reason = EXCLUDED.reason,
-         updated_by = EXCLUDED.updated_by,
-         updated_at = NOW()
-       RETURNING state, reason, updated_at`,
-        [workspaceId, input.assistantMessageId, input.state, input.reason ?? null, input.updatedBy ?? null],
-      ),
-    );
-
-    const row = result.rows[0];
-    if (!row) {
-      return null;
-    }
-
-    return {
-      state: row.state as QualityTriageState,
-      reason: row.reason,
-      updatedAt: serializeDate(row.updated_at),
-    };
+  ): Promise<SetTriageStateResult> {
+    const update = validateQualityTriageUpdate({
+      state: input.state,
+      expectedVersion: input.expectedVersion,
+      resolution: input.resolution,
+      legacyReason: input.legacyReason,
+    });
+    const linkedEvalCaseId = this.verificationSource
+      ? (await this.verificationSource.getByAssistantMessageIds(
+          workspaceId,
+          [input.assistantMessageId],
+        )).get(input.assistantMessageId)?.caseId ?? null
+      : null;
+    return new QualityTriageStore(this.db).transition(workspaceId, {
+      assistantMessageId: input.assistantMessageId,
+      ...update,
+      updatedBy: input.updatedBy ?? null,
+      linkedEvalCaseId,
+    });
   }
 
   private async fetchComments(

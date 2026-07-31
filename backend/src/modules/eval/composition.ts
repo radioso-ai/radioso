@@ -6,6 +6,9 @@ export type {
   EvalCaseListItem,
   EvalCaseStatus,
   EvalCaseWithRuns,
+  EvalMessageCaseLookup,
+  EvalMessageCaseMutationResult,
+  EvalMessageCaseVerification,
   EvalRun,
   EvalRunMode,
   EvalRunSummary,
@@ -35,6 +38,18 @@ export {
   EvalSnapshotService,
   type EvalSnapshotCaptureInput,
 } from "./services/evalSnapshotService.js";
+export {
+  defaultEvalMessageCaseName,
+  EvalMessageCaseService,
+  MAX_EVAL_MESSAGE_VERIFICATION_BATCH,
+  type EvalMessageCaseLoggerPort,
+  type EvalMessageCaseRepositoryPort,
+  type EvalSnapshotPreparerPort,
+  type EvalSourceMessage,
+  type FindOrCreateEvalMessageCaseInput,
+  type FindOrCreateEvalMessageCaseServiceInput,
+} from "./services/evalMessageCaseService.js";
+export { EvalMessageCaseRepository } from "./services/evalMessageCaseRepository.js";
 export {
   EvalCaseService,
   type CreateEvalCaseInput,

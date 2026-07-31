@@ -292,7 +292,37 @@ export interface WorkbenchReplayRunResponse {
   resolvedConfig?: Record<string, unknown>
 }
 
+export interface EvalMessageCaseLookup {
+  assistantMessageId: string
+  case: EvalCase
+  snapshot: EvalSnapshot
+  createdBy: string | null
+  createdAt: string
+}
+
+export interface EvalMessageCaseResult extends EvalMessageCaseLookup {
+  created: boolean
+}
+
 export const evalsApi = {
+  async getCaseBySourceMessage(assistantMessageId: string): Promise<EvalMessageCaseLookup> {
+    return request<EvalMessageCaseLookup>(
+      `/evals/cases/by-source-message/${encodeURIComponent(assistantMessageId)}`,
+      { method: 'GET' },
+      { withApiToken: true },
+    )
+  },
+
+  async getOrCreateCaseBySourceMessage(
+    assistantMessageId: string,
+  ): Promise<EvalMessageCaseResult> {
+    return request<EvalMessageCaseResult>(
+      `/evals/cases/by-source-message/${encodeURIComponent(assistantMessageId)}`,
+      { method: 'PUT' },
+      { withApiToken: true },
+    )
+  },
+
   async captureSnapshot(input: { conversationId: string; messageId?: string }): Promise<EvalSnapshot> {
     return request<EvalSnapshot>('/evals/snapshots', {
       method: 'POST',

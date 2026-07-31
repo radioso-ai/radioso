@@ -2,7 +2,9 @@ import {
   QUALITY_SIGNAL_IDS,
   QUALITY_STATS_RANGES,
   GROUNDING_VERDICTS,
+  QUALITY_RESOLUTION_REASONS,
   type GroundingVerdict,
+  type QualityResolutionBreakdownReason,
   type QualitySignalId,
   type QualityStatsRange,
 } from './api-quality'
@@ -39,6 +41,7 @@ export type QualityFeedbackFilter = 'up' | 'down'
 export type QualityLatencyFilter = 'lt_2s' | '2s_5s' | '5s_10s' | 'gte_10s'
 export type QualitySortFilter = 'turn_created_at' | 'negative_feedback_updated_at'
 export type QualityTriageFilter = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
+export type QualityResolutionReasonFilter = QualityResolutionBreakdownReason
 
 const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
   'open',
@@ -97,6 +100,9 @@ export interface DashboardRouteState {
   qualityLatency?: QualityLatencyFilter
   qualitySort?: QualitySortFilter
   qualityTriageStates?: QualityTriageFilter[]
+  qualityResolutionReasons?: QualityResolutionReasonFilter[]
+  qualityResolutionFrom?: string
+  qualityResolutionTo?: string
   qualityActiveNegativeFeedbackOnly?: boolean
   qualityHasComment?: boolean
   qualityGroundingVerdicts?: GroundingVerdict[]
@@ -142,6 +148,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityLatency',
   'qualitySort',
   'qualityTriageStates',
+  'qualityResolutionReasons',
+  'qualityResolutionFrom',
+  'qualityResolutionTo',
   'qualityActiveNegativeFeedbackOnly',
   'qualityHasComment',
   'qualityGroundingVerdicts',
@@ -283,6 +292,23 @@ const parseGroundingVerdicts = (value: string | null): GroundingVerdict[] | unde
   const parsed = value.split(',').map((entry) => entry.trim())
     .filter((entry): entry is GroundingVerdict => allowed.has(entry))
   return parsed.length > 0 ? [...new Set(parsed)] : undefined
+}
+
+const parseQualityResolutionReasons = (
+  value: string | null,
+): QualityResolutionReasonFilter[] | undefined => {
+  if (!value) return undefined
+  const allowed = new Set<string>([...QUALITY_RESOLUTION_REASONS, 'unspecified'])
+  const parsed = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry): entry is QualityResolutionReasonFilter => allowed.has(entry))
+  return parsed.length > 0 ? [...new Set(parsed)] : undefined
+}
+
+const parseIsoDateTime = (value: string | null): string | undefined => {
+  if (!value || !Number.isFinite(Date.parse(value))) return undefined
+  return value
 }
 
 const parseAgentTab = (value: string | null): AgentTab | undefined => {
@@ -469,6 +495,15 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityTriageStates && state.qualityTriageStates.length > 0) {
       normalized.qualityTriageStates = [...state.qualityTriageStates]
     }
+    if (state.qualityResolutionReasons && state.qualityResolutionReasons.length > 0) {
+      normalized.qualityResolutionReasons = [...new Set(state.qualityResolutionReasons)]
+    }
+    if (state.qualityResolutionFrom) {
+      normalized.qualityResolutionFrom = state.qualityResolutionFrom
+    }
+    if (state.qualityResolutionTo) {
+      normalized.qualityResolutionTo = state.qualityResolutionTo
+    }
     if (state.qualityActiveNegativeFeedbackOnly) {
       normalized.qualityActiveNegativeFeedbackOnly = true
     }
@@ -612,6 +647,15 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityTriageStates && normalized.qualityTriageStates.length > 0) {
       searchParams.set('triage', normalized.qualityTriageStates.join(','))
+    }
+    if (normalized.qualityResolutionReasons && normalized.qualityResolutionReasons.length > 0) {
+      searchParams.set('resolutionReason', normalized.qualityResolutionReasons.join(','))
+    }
+    if (normalized.qualityResolutionFrom) {
+      searchParams.set('resolutionFrom', normalized.qualityResolutionFrom)
+    }
+    if (normalized.qualityResolutionTo) {
+      searchParams.set('resolutionTo', normalized.qualityResolutionTo)
     }
     if (normalized.qualityActiveNegativeFeedbackOnly) {
       searchParams.set('activeNegativeFeedbackOnly', 'true')
@@ -899,6 +943,11 @@ export const parseDashboardRoute = (
       qualityLatency: parseQualityLatency(searchParams?.get('latency') ?? null),
       qualitySort: parseQualitySort(searchParams?.get('sort') ?? null),
       qualityTriageStates: parseQualityTriageStates(searchParams?.get('triage') ?? null),
+      qualityResolutionReasons: parseQualityResolutionReasons(
+        searchParams?.get('resolutionReason') ?? null,
+      ),
+      qualityResolutionFrom: parseIsoDateTime(searchParams?.get('resolutionFrom') ?? null),
+      qualityResolutionTo: parseIsoDateTime(searchParams?.get('resolutionTo') ?? null),
       qualityActiveNegativeFeedbackOnly: searchParams?.get('activeNegativeFeedbackOnly') === 'true'
         ? true
         : undefined,

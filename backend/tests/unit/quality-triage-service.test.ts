@@ -60,6 +60,40 @@ describe("QualityTurnsService triage transition", () => {
     expect(auditColumns).not.toContain("resolution_note");
   });
 
+  it("resolves the linked Eval case inside the accepted transition statement", async () => {
+    const db = new SequencedDb([[
+      {
+        state: "resolved",
+        version: 1,
+        resolution_reason: "knowledge_gap",
+        resolution_note: null,
+        legacy_reason: null,
+        closed_at: "2026-07-30T10:00:00.000Z",
+        updated_at: "2026-07-30T10:00:00.000Z",
+      },
+    ]]);
+    const service = new QualityTurnsService(
+      db as never,
+      stubOutcomeCatalog(),
+      undefined,
+      {
+        async getByAssistantMessageIds() {
+          throw new Error("transition must not resolve Eval linkage in a separate query");
+        },
+      },
+    );
+
+    await expect(service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "22222222-2222-2222-2222-222222222222",
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+    })).resolves.toMatchObject({ kind: "updated" });
+
+    expect(db.queries).toHaveLength(1);
+    expect(db.queries[0]?.sql).toContain("eval_message_case_associations");
+  });
+
   it("loads and returns the current record when the conditional write loses", async () => {
     const db = new SequencedDb([
       [],

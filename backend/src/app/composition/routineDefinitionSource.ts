@@ -41,7 +41,6 @@ const registrationFromDefinition = async (
     trigger: {
       description: definition.activation.triggerDescription,
       priority: definition.activation.priority,
-      reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
       ...(definition.activation.gateRef ? { gateRef: definition.activation.gateRef } : {}),
     },
   };

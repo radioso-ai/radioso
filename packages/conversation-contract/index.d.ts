@@ -746,6 +746,31 @@ export interface RoutineSlotSchema {
   mutable?: boolean;
 }
 
+/**
+ * Reentry policy for a completed routine instance within a conversation.
+ * - `once_per_conversation` (default): a completed instance suppresses future
+ *   activation in the same conversation.
+ * - `always`: a completed instance never suppresses; the trigger may fire again.
+ * - `semantic`: a model gate decides whether the completed instance re-opens; it
+ *   never re-enters through fresh ranked activation.
+ */
+export type RoutineReentryMode = "once_per_conversation" | "always" | "semantic";
+
+/**
+ * The author-chosen activation policy compiled onto a routine. It is the single
+ * source of truth for every consumer that decides whether a routine may start:
+ * the host registry's completed-instance suppression and the semantic reentry gate
+ * both read it here, so the two cannot drift apart.
+ */
+export interface RoutineActivation {
+  /** Natural-language description of what makes this routine the right one to start. */
+  triggerDescription: string;
+  priority: number;
+  reentryMode: RoutineReentryMode;
+  /** Optional skill/gate the host consults before offering the routine. */
+  gateRef?: string;
+}
+
 export interface Routine {
   id: string;
   rootStepId: string;
@@ -755,6 +780,11 @@ export interface Routine {
   transitions: RoutineTransition[];
   /** Optional terminal-triggered export emitted as a generic routine action. */
   completionExport?: RoutineCompletionExport;
+  /**
+   * Authored activation policy. Absent on hand-built routines, which the host
+   * treats as `once_per_conversation`.
+   */
+  activation?: RoutineActivation;
   metadata?: Record<string, unknown>;
 }
 

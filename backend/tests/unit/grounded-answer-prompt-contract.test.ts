@@ -188,6 +188,7 @@ describe("grounded answer prompt contract", () => {
     // to the conservative one so an unclassifiable decline still counts against us.
     expect(envelope).toContain("`out_of_scope`");
     expect(envelope).toContain("`no_support`");
+    expect(envelope).toContain("never put the requested fact, result, or other requested output in `answer`");
     expect(envelope).toMatch(/when unsure/i);
 
     // The focused-miss prompt now returns a JSON object, not bare text.

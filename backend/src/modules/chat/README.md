@@ -100,9 +100,15 @@ imports from `services/`.
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
   returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
-  answer or malformed result with no valid sourced assertion remains visible with a
-  computed `degraded` verdict; it is not replaced by a second generated refusal.
-  Partial answers with at least one valid assertion remain visible and degraded.
+  valid `outcome=answer` result with neither a sourced assertion nor implicit
+  evidence support is discarded and rewritten through the focused decline path.
+  A valid `no_support` or `out_of_scope` envelope supplies only the trusted decline
+  classification: its visible body is always discarded and rewritten with that
+  classification fixed, preventing answer-bearing or non-rendering decline bodies
+  from reaching visitors. If the focused composition is unusable, the turn becomes
+  `generation_unavailable`. Malformed results remain visible with a computed
+  `degraded` verdict, while partial answers with at least one valid assertion remain
+  visible and degraded.
   Raw envelope JSON is never emitted or persisted.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come

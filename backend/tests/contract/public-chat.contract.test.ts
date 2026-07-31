@@ -6,6 +6,7 @@ import type { ChatGateway } from "../../src/modules/chat/services/chatService.js
 import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
 import {
   DEGRADED_V2_VISIBLE,
+  FOCUSED_NO_SUPPORT_REPLY,
   GROUNDED_V2_VISIBLE,
   NO_SUPPORT_V2_BODY,
   degradedV2Envelope,
@@ -610,16 +611,29 @@ describe("public chat contract", () => {
   });
 
   it.each([
-    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE],
-    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE],
-    ["no-support", noSupportV2Envelope, NO_SUPPORT_V2_BODY],
-  ] as const)("streams the sanitized v2 %s fixture through public chat", async (_name, buildRaw, visibleAnswer) => {
+    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, ["stream_grounded"]],
+    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE, ["stream_grounded"]],
+    [
+      "no-support",
+      noSupportV2Envelope,
+      FOCUSED_NO_SUPPORT_REPLY,
+      ["stream_grounded", "stream_envelope_decline_body"],
+    ],
+  ] as const)("streams the sanitized v2 %s fixture through public chat", async (
+    _name,
+    buildRaw,
+    visibleAnswer,
+    expectedAttemptKeys,
+  ) => {
+    const attemptKeys: string[] = [];
     const raw = buildRaw();
     const streamingGateway: ChatGateway = {
-      async answer() {
+      async answer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
         return raw;
       },
-      async *streamAnswer() {
+      async *streamAnswer(input) {
+        attemptKeys.push(input.usageContext.attemptKey);
         for (let offset = 0; offset < raw.length; offset += 9) {
           yield raw.slice(offset, offset + 9);
         }
@@ -627,6 +641,12 @@ describe("public chat contract", () => {
     };
     const { app } = createTestApp({
       chatGateway: streamingGateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          attemptKeys.push(input.usageContext.attemptKey);
+          return { text: FOCUSED_NO_SUPPORT_REPLY, declineReason: "content_gap" };
+        },
+      },
       turnRouter: {
         async classify() {
           return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
@@ -661,9 +681,13 @@ describe("public chat contract", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toContain(JSON.stringify(visibleAnswer));
+    if (_name === "no-support") {
+      expect(response.body).not.toContain(NO_SUPPORT_V2_BODY);
+    }
     expect(response.body).not.toContain("RADIOSO_FOLLOWUPS_JSON");
     expect(response.body).not.toContain("[[");
     expect(response.body).toContain("event: done");
+    expect(attemptKeys).toEqual(expectedAttemptKeys);
   });
 
   it("supports cursor pagination for anonymous chat history lists", async () => {

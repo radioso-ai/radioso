@@ -24,10 +24,23 @@ import {
   GROUNDED_V2_VISIBLE,
   NO_SUPPORT_V2_BODY,
   degradedV2Envelope,
+  formatV2Envelope,
   groundedV2Envelope,
   noSupportV2Envelope,
   outOfScopeV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
+
+// An `outcome=answer` envelope with no inline anchors and an empty claims manifest —
+// the shape the grounded model produces when it answers a trivially-computable or
+// general-knowledge request (e.g. "sqrt(5)") from its own knowledge instead of declining.
+const unsupportedAnswerEnvelope = (body: string): string =>
+  formatV2Envelope(body, {
+    v: 2,
+    outcome: "answer",
+    claims: [],
+    suggestions: [],
+    grounding: "degraded",
+  });
 
 const context = (index: number) => ({
   documentId: `doc-${index}`,
@@ -80,6 +93,7 @@ const buildComposer = (
   let streamCalls = 0;
   let fallbackCalls = 0;
   let fallbackWorkspaceContext: unknown;
+  const fallbackRequiredDeclineReasons: Array<string | undefined> = [];
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
   const responseFormats: unknown[] = [];
@@ -108,6 +122,7 @@ const buildComposer = (
     async composeNoContext(input) {
       fallbackCalls += 1;
       fallbackWorkspaceContext = input.workspaceContext;
+      fallbackRequiredDeclineReasons.push(input.requiredDeclineReason);
       attemptKeys.push(input.usageContext.attemptKey);
       return composedDecline;
     },
@@ -120,11 +135,28 @@ const buildComposer = (
     }, { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) }),
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
     fallbackWorkspaceContext: () => fallbackWorkspaceContext,
+    fallbackRequiredDeclineReasons,
     attemptKeys,
     metricWrites,
     responseFormats: () => responseFormats,
     gateAbortObserved: () => gateAbortObserved,
   };
+};
+
+// An anchor-free answer whose prose the implicit matcher ties back to a single
+// distinctive retrieved source — the "model forgot the anchors but the content is
+// grounded" case the unsupported-answer backstop must still deliver.
+const IMPLICITLY_SUPPORTED_ANSWER = "The beginner meditation retreat runs on Saturday.";
+
+const implicitlySupportedSession = (): PreparedSession => {
+  const session = baseSession();
+  (session.retrieval as { contexts: unknown[] }).contexts = [{
+    documentId: "doc-retreat",
+    chunkId: "chunk-retreat",
+    title: "Retreat schedule",
+    content: "The beginner meditation retreat schedule runs every Saturday morning.",
+  }];
+  return session;
 };
 
 describe("retrieval answer decline classification", () => {
@@ -174,12 +206,77 @@ describe("retrieval answer decline classification", () => {
   });
 
   it("tags an out-of-scope envelope decline with the out_of_scope outcome", async () => {
-    const { composer } = buildComposer(outOfScopeV2Envelope());
+    const { composer, counts, fallbackRequiredDeclineReasons } = buildComposer(
+      outOfScopeV2Envelope(),
+      { text: "A newly composed scoped decline.", declineReason: "content_gap" },
+    );
 
     const presented = await composer.composeAnswer(baseSession(), "Capital of Mars?", undefined, undefined);
 
+    expect(presented.answer).toBe("A newly composed scoped decline.");
     expect(presented.skillOutcome).toBe("out_of_scope");
-    expect(presented.groundingSummary).toMatchObject({ verdict: "no_support", declineReason: "out_of_scope" });
+    expect(presented.groundingSummary).toBeUndefined();
+    expect(counts().fallbackCalls).toBe(1);
+    expect(fallbackRequiredDeclineReasons).toEqual(["out_of_scope"]);
+  });
+
+  it("never exposes an answer-bearing out-of-scope decline body", async () => {
+    const leakedAnswer = formatV2Envelope("The capital of France is Paris.", {
+      v: 2,
+      outcome: "out_of_scope",
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const { composer } = buildComposer(leakedAnswer, {
+      text: "That's outside what I can help with here.",
+      declineReason: "out_of_scope",
+    });
+
+    const presented = await composer.composeAnswer(baseSession(), "What is the capital of France?", undefined, undefined);
+
+    expect(presented.answer).toBe("That's outside what I can help with here.");
+    expect(presented.answer).not.toContain("Paris");
+    expect(presented.skillOutcome).toBe("out_of_scope");
+  });
+
+  it("replaces a control-character no-support body on the streaming path", async () => {
+    const invisibleDecline = formatV2Envelope("\u001f", {
+      v: 2,
+      outcome: "no_support",
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const { composer, fallbackRequiredDeclineReasons } = buildComposer(invisibleDecline, {
+      text: "I can't confirm that here, but I can help with the workshop schedule.",
+      declineReason: "out_of_scope",
+    });
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(baseSession(), "sqrt(5)", undefined, undefined),
+    );
+
+    expect(chunks).toEqual([]);
+    expect(result.finalPresentation.answer).toBe(
+      "I can't confirm that here, but I can help with the workshop schedule.",
+    );
+    expect(result.finalPresentation.answer).not.toContain("\u001f");
+    expect(result.finalPresentation.skillOutcome).toBe("no_context");
+    expect(fallbackRequiredDeclineReasons).toEqual(["content_gap"]);
+  });
+
+  it("reports generation unavailable when a classified decline cannot be recomposed", async () => {
+    const { composer } = buildComposer(outOfScopeV2Envelope(), {
+      text: getGroundedMissFallback(),
+      declineReason: "generation_unavailable",
+    });
+
+    const presented = await composer.composeAnswer(baseSession(), "Capital of Mars?", undefined, undefined);
+
+    expect(presented.answer).toBe(getGroundedMissFallback());
+    expect(presented.skillOutcome).toBe("unavailable");
+    expect(presented.skillStatus).toBe("failed");
   });
 
   it("labels the outcome counter with the decline reason", async () => {
@@ -189,7 +286,7 @@ describe("retrieval answer decline classification", () => {
 
     expect(metricWrites).toEqual([{
       name: "chat_grounding_assertion_outcomes_total",
-      labels: { protocol: "v2", verdict: "no_support", reason: "complete", stream: "false", decline: "out_of_scope" },
+      labels: { protocol: "v2", verdict: "no_support", reason: "out_of_scope_body_recomposed", stream: "false", decline: "out_of_scope" },
     }]);
   });
 
@@ -202,6 +299,87 @@ describe("retrieval answer decline classification", () => {
     const { result } = await drain(composer.streamAnswer(baseSession(), "Question?", undefined, undefined));
 
     expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+  });
+});
+
+describe("unsupported-answer backstop", () => {
+  const SQRT_ANSWER = "The numerical value of sqrt(5) is approximately 2.2360679.";
+
+  it("declines an outcome=answer reply that cites nothing and matches no source", async () => {
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(SQRT_ANSWER), {
+      text: "That's outside what I can help with, but I can help with the workshop schedule.",
+      declineReason: "out_of_scope",
+    });
+
+    const presented = await composer.composeAnswer(baseSession(), "sqrt(5)", undefined, undefined);
+
+    expect(presented.answer).toBe(
+      "That's outside what I can help with, but I can help with the workshop schedule.",
+    );
+    expect(presented.answer).not.toContain("2.2360679");
+    expect(presented.skillOutcome).toBe("out_of_scope");
+    expect(counts().fallbackCalls).toBe(1);
+  });
+
+  it("records the backstop decline on the grounding outcome counter", async () => {
+    const { composer, metricWrites } = buildComposer(unsupportedAnswerEnvelope(SQRT_ANSWER), {
+      text: "I can't help with that here.",
+      declineReason: "content_gap",
+    });
+
+    await composer.composeAnswer(baseSession(), "sqrt(5)", undefined, undefined);
+
+    expect(metricWrites).toEqual([{
+      name: "chat_grounding_assertion_outcomes_total",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "unsupported_answer",
+        stream: "false",
+        decline: "content_gap",
+      },
+    }]);
+  });
+
+  it("still delivers an answer whose prose implicitly matches a retrieved source", async () => {
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(IMPLICITLY_SUPPORTED_ANSWER));
+
+    const presented = await composer.composeAnswer(
+      implicitlySupportedSession(),
+      "When is the retreat?",
+      undefined,
+      undefined,
+    );
+
+    expect(presented.answer).toBe(IMPLICITLY_SUPPORTED_ANSWER);
+    expect(presented.skillOutcome).toBe("grounded_degraded");
+    expect(counts().fallbackCalls).toBe(0);
+  });
+
+  it("still delivers an answer that carries a sourced claim", async () => {
+    const { composer, counts } = buildComposer(groundedV2Envelope());
+
+    const presented = await composer.composeAnswer(baseSession(), "Tell me about the workshop.", undefined, undefined);
+
+    expect(presented.answer).toBe(GROUNDED_V2_VISIBLE);
+    expect(counts().fallbackCalls).toBe(0);
+  });
+
+  it("declines an unsupported answer on the streaming path without streaming it", async () => {
+    const { composer, counts } = buildComposer(unsupportedAnswerEnvelope(SQRT_ANSWER), {
+      text: "That's outside what I can help with here.",
+      declineReason: "out_of_scope",
+    });
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(baseSession(), "sqrt(5)", undefined, undefined),
+    );
+
+    expect(chunks.join("")).not.toContain("2.2360679");
+    expect(result.hasStreamedAnswer).toBe(false);
+    expect(result.finalPresentation.answer).toBe("That's outside what I can help with here.");
+    expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+    expect(counts().fallbackCalls).toBe(1);
   });
 });
 
@@ -307,9 +485,11 @@ describe("retrieval answer envelope v2", () => {
   const cases = [
     { name: "grounded", raw: groundedV2Envelope(), answer: GROUNDED_V2_VISIBLE, verdict: "grounded", outcome: "grounded", citations: 3 },
     { name: "partial", raw: degradedV2Envelope(), answer: DEGRADED_V2_VISIBLE, verdict: "degraded", outcome: "grounded_degraded", citations: 1 },
-    { name: "no support", raw: noSupportV2Envelope(), answer: NO_SUPPORT_V2_BODY, verdict: "no_support", outcome: "no_context", citations: 0 },
+    { name: "no support", raw: noSupportV2Envelope(), answer: "FOCUSED GROUNDED MISS", verdict: "no_support", outcome: "no_context", citations: 0 },
     { name: "malformed", raw: `Visible malformed answer.\n${SUGGESTIONS_SENTINEL}\n{bad`, answer: "Visible malformed answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
-    { name: "anchor free", raw: `Visible anchor-free answer.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "Visible anchor-free answer.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
+    // Body is anchor-free but its prose implicitly matches a seeded context, so it
+    // stays a delivered degraded answer rather than tripping the unsupported-answer backstop.
+    { name: "anchor free", raw: `The workshop guide covers the evidence.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({ v: 2, outcome: "answer", claims: [[1]], suggestions: [], grounding: "degraded" })}`, answer: "The workshop guide covers the evidence.", verdict: "degraded", outcome: "grounded_degraded", citations: 0 },
   ] as const;
 
   for (const testCase of cases) {
@@ -321,8 +501,11 @@ describe("retrieval answer envelope v2", () => {
       expect(presented.grounding).toBe(testCase.verdict);
       expect(presented.skillOutcome).toBe(testCase.outcome);
       expect(presented.citations ?? []).toHaveLength(testCase.citations);
-      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
-      expect(attemptKeys).toEqual(["grounded"]);
+      const declineBodyRecomposed = testCase.name === "no support";
+      expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: declineBodyRecomposed ? 1 : 0 });
+      expect(attemptKeys).toEqual(declineBodyRecomposed
+        ? ["grounded", "envelope_decline_body"]
+        : ["grounded"]);
       expect(attemptKeys).not.toContain("grounded_unsupported");
     });
 
@@ -336,8 +519,11 @@ describe("retrieval answer envelope v2", () => {
       expect(result.finalPresentation.citations ?? []).toHaveLength(testCase.citations);
       expect(chunks.join("")).not.toContain("RADIOSO_FOLLOWUPS_JSON");
       expect(chunks.join("")).not.toContain("[[");
-      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: 0 });
-      expect(attemptKeys).toEqual(["stream_grounded"]);
+      const declineBodyRecomposed = testCase.name === "no support";
+      expect(counts()).toEqual({ answerCalls: 0, streamCalls: 1, fallbackCalls: declineBodyRecomposed ? 1 : 0 });
+      expect(attemptKeys).toEqual(declineBodyRecomposed
+        ? ["stream_grounded", "stream_envelope_decline_body"]
+        : ["stream_grounded"]);
       expect(attemptKeys).not.toContain("stream_grounded_unsupported");
     });
   }
@@ -472,7 +658,10 @@ describe("retrieval answer envelope v2", () => {
   });
 
   it("records anchor_free while preserving the degraded presentation", async () => {
-    const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+    // An anchor-free answer whose prose is implicitly supported stays a delivered,
+    // degraded answer; only an entirely unsupported one is declined (see the
+    // unsupported-answer backstop suite).
+    const raw = `${IMPLICITLY_SUPPORTED_ANSWER}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
       outcome: "answer",
       claims: [],
@@ -481,9 +670,9 @@ describe("retrieval answer envelope v2", () => {
     })}`;
     const { composer, counts, metricWrites } = buildComposer(raw);
 
-    const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
+    const presented = await composer.composeAnswer(implicitlySupportedSession(), "Question?", undefined, undefined);
 
-    expect(presented.answer).toBe("Unsupported draft.");
+    expect(presented.answer).toBe(IMPLICITLY_SUPPORTED_ANSWER);
     expect(presented.skillOutcome).toBe("grounded_degraded");
     expect(presented.groundingSummary).toMatchObject({ verdict: "degraded", sourcedClaimCount: 0 });
     expect(metricWrites).toEqual([{
@@ -494,7 +683,7 @@ describe("retrieval answer envelope v2", () => {
   });
 
   it("does not replace a degraded answer with the grounded-miss static asset", async () => {
-    const raw = `Unsupported draft.\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
+    const raw = `${IMPLICITLY_SUPPORTED_ANSWER}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify({
       v: 2,
       outcome: "answer",
       claims: [],
@@ -503,9 +692,9 @@ describe("retrieval answer envelope v2", () => {
     })}`;
     const { composer, counts, attemptKeys } = buildComposer(raw, getGroundedMissFallback());
 
-    const presented = await composer.composeAnswer(baseSession(), "Question?", undefined, undefined);
+    const presented = await composer.composeAnswer(implicitlySupportedSession(), "Question?", undefined, undefined);
 
-    expect(presented.answer).toBe("Unsupported draft.");
+    expect(presented.answer).toBe(IMPLICITLY_SUPPORTED_ANSWER);
     expect(counts()).toEqual({ answerCalls: 1, streamCalls: 0, fallbackCalls: 0 });
     expect(attemptKeys).toEqual(["grounded"]);
   });

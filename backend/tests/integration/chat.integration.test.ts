@@ -17,6 +17,7 @@ import {
 } from "../../src/modules/skills/public.js";
 import {
   DEGRADED_V2_VISIBLE,
+  FOCUSED_NO_SUPPORT_REPLY,
   GROUNDED_V2_VISIBLE,
   NO_SUPPORT_V2_BODY,
   degradedV2Envelope,
@@ -139,15 +140,23 @@ const bindAlwaysDirectiveToAgentSkill = async (
 
 describe("chat integration", () => {
   it.each([
-    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, "grounded", 3],
-    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE, "grounded_degraded", 1],
-    ["no-support", noSupportV2Envelope, NO_SUPPORT_V2_BODY, "no_context", 0],
-  ] as const)("streams the v2 %s fixture through authenticated chat with one answer attempt", async (
+    ["grounded", groundedV2Envelope, GROUNDED_V2_VISIBLE, "grounded", 3, ["stream_grounded"]],
+    ["partial", degradedV2Envelope, DEGRADED_V2_VISIBLE, "grounded_degraded", 1, ["stream_grounded"]],
+    [
+      "no-support",
+      noSupportV2Envelope,
+      FOCUSED_NO_SUPPORT_REPLY,
+      "no_context",
+      0,
+      ["stream_grounded", "stream_envelope_decline_body"],
+    ],
+  ] as const)("streams the v2 %s fixture through authenticated chat with the expected answer attempts", async (
     _name,
     buildRaw,
     visibleAnswer,
     expectedOutcome,
     expectedCitationCount,
+    expectedAttemptKeys,
   ) => {
     const attemptKeys: string[] = [];
     const raw = buildRaw();
@@ -165,6 +174,12 @@ describe("chat integration", () => {
     };
     const { app } = createTestApp({
       chatGateway: gateway,
+      fallbackReplyComposer: {
+        async composeNoContext(input) {
+          attemptKeys.push(input.usageContext.attemptKey);
+          return { text: FOCUSED_NO_SUPPORT_REPLY, declineReason: "content_gap" };
+        },
+      },
       turnRouter: {
         async classify() {
           return { route: "retrieval" as const, framing: { isIdentityQuestion: false } };
@@ -204,9 +219,12 @@ describe("chat integration", () => {
     expect(done?.answer).toBe(visibleAnswer);
     expect(done?.skillOutcome).toBe(expectedOutcome);
     expect(Array.isArray(done?.citations) ? done.citations : []).toHaveLength(expectedCitationCount);
+    if (_name === "no-support") {
+      expect(response.body).not.toContain(NO_SUPPORT_V2_BODY);
+    }
     expect(response.body).not.toContain("RADIOSO_FOLLOWUPS_JSON");
     expect(response.body).not.toContain("[[");
-    expect(attemptKeys).toEqual(["stream_grounded"]);
+    expect(attemptKeys).toEqual(expectedAttemptKeys);
     expect(attemptKeys).not.toContain("stream_grounded_unsupported");
     expect(attemptKeys).not.toContain("grounded_unsupported");
   });

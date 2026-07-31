@@ -19,6 +19,8 @@ import type {
 import { CitationAnchorSanitizer } from "./citationAnchorSanitizer.js";
 import { composeGroundedAnswerSystemPrompt } from "./groundedAnswerPromptComposer.js";
 import type { ComposedDecline, FallbackReplyComposer } from "./fallbackReplyComposer.js";
+import { toCitationEvidence } from "./citationEvidence.js";
+import { isGroundedAnswerUnsupported } from "./groundedAnswerSupport.js";
 import type { TurnDeclineReason } from "./assistantTurnOutcomeTypes.js";
 import { buildPreparedTurnOutcome } from "./preparedTurnOutcome.js";
 import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retrieval.js";
@@ -69,7 +71,9 @@ export class RetrievalAnswerComposer {
     private readonly answerSideChannel?: AnswerSideChannelFactory,
   ) {}
 
-  private isEnvelopeDecline(outcome: GroundedAnswerEnvelope["outcome"]): boolean {
+  private isEnvelopeDecline(
+    outcome: GroundedAnswerEnvelope["outcome"],
+  ): outcome is "no_support" | "out_of_scope" {
     return outcome === "no_support" || outcome === "out_of_scope";
   }
 
@@ -130,6 +134,41 @@ export class RetrievalAnswerComposer {
         verdict: "no_support",
         reason: "gate_bound",
         stream: "true",
+        decline: declineReason,
+      },
+    });
+  }
+
+  /** Counter for the natural-completion backstop: an `outcome=answer` reply that
+   * carried no grounding of any kind and was turned into a decline instead of
+   * shipped. Mirrors the gate-bound counter's `no_support`/`<reason>`/decline shape. */
+  private recordUnsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "unsupported_answer",
+        stream: String(stream),
+        decline: declineReason,
+      },
+    });
+  }
+
+  /** A valid decline envelope supplies a trusted classification, not trusted copy.
+   * Record that its body was discarded and rewritten by the focused decline path. */
+  private recordEnvelopeDeclineBodyRecomposition(
+    outcome: "no_support" | "out_of_scope",
+    declineReason: TurnDeclineReason,
+    stream: boolean,
+  ): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: `${outcome}_body_recomposed`,
+        stream: String(stream),
         decline: declineReason,
       },
     });
@@ -248,15 +287,54 @@ export class RetrievalAnswerComposer {
         accountId,
         "grounded",
       );
-      answer = envelope.answer;
-      plannedSuggestions = envelope.suggestions;
-      metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
-      grounding = computeGroundingSummary({
+      const summary = computeGroundingSummary({
         body: envelope.answer,
         envelope,
         contextCount: session.retrieval.contexts.length,
       });
-      this.recordGroundingOutcome(grounding, envelope, false);
+      if (
+        summary.verdict === "no_support"
+        && this.isEnvelopeDecline(envelope.outcome)
+      ) {
+        const requiredDeclineReason = envelope.outcome === "out_of_scope"
+          ? "out_of_scope"
+          : "content_gap";
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "envelope_decline_body",
+          { requiredDeclineReason },
+        );
+        this.recordEnvelopeDeclineBodyRecomposition(envelope.outcome, decline.declineReason, false);
+        answer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+      } else if (isGroundedAnswerUnsupported({
+        outcome: envelope.outcome,
+        grounding: summary,
+        answer: envelope.answer,
+        citationEvidence: toCitationEvidence(session),
+      })) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "unsupported_answer",
+        );
+        this.recordUnsupportedAnswerDecline(decline.declineReason, false);
+        answer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+      } else {
+        this.recordGroundingOutcome(summary, envelope, false);
+        answer = envelope.answer;
+        plannedSuggestions = envelope.suggestions;
+        metadataPatch = this.sideChannel(session)?.resolve(envelope.extras);
+        grounding = summary;
+      }
     }
 
     const presentation = await this.chatAnswerPresenter.presentWithSuggestions(
@@ -284,9 +362,12 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     attemptKey: string,
-    signal?: AbortSignal,
+    options: {
+      signal?: AbortSignal;
+      requiredDeclineReason?: Exclude<TurnDeclineReason, "generation_unavailable">;
+    } = {},
   ): Promise<ComposedDecline> {
-    return this.fallbackReplyComposer.composeNoContext({
+    const decline = await this.fallbackReplyComposer.composeNoContext({
       query,
       userExpectedLocale,
       answerInstructionBlock: this.support.buildAnswerInstructionBlock(session),
@@ -298,8 +379,14 @@ export class RetrievalAnswerComposer {
       // preferences still resolve instead of falling back to process-wide env.
       workspaceContext: { workspaceId: session.agent.workspaceId },
       usageContext: this.support.buildChatUsageContext(session, accountId, attemptKey),
-      ...(signal ? { signal } : {}),
+      ...(options.requiredDeclineReason
+        ? { requiredDeclineReason: options.requiredDeclineReason }
+        : {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
+    return options.requiredDeclineReason && decline.declineReason !== "generation_unavailable"
+      ? { ...decline, declineReason: options.requiredDeclineReason }
+      : decline;
   }
 
   /**
@@ -401,7 +488,7 @@ export class RetrievalAnswerComposer {
           userExpectedLocale,
           accountId,
           "stream_grounding_gate_bound",
-          signal,
+          { signal },
         );
         if (signal?.aborted) {
           throw signal.reason ?? new Error("chat_turn_aborted");
@@ -434,12 +521,66 @@ export class RetrievalAnswerComposer {
       if (!rawAnswer.trim()) {
         throw new BlankChatAnswerError();
       }
-      grounding = computeGroundingSummary({
+      const summary = computeGroundingSummary({
         body: rawAnswer,
         envelope: finalized,
         contextCount: session.retrieval.contexts.length,
       });
-      this.recordGroundingOutcome(grounding, finalized, true);
+      // Only when nothing streamed can the answer be safely replaced by a decline;
+      // a sourced assertion (which alone opens the gate) also clears the backstop,
+      // so a bound answer here is always still fully held.
+      if (
+        !hasStreamedAnswer
+        && summary.verdict === "no_support"
+        && this.isEnvelopeDecline(finalized.outcome)
+      ) {
+        const requiredDeclineReason = finalized.outcome === "out_of_scope"
+          ? "out_of_scope"
+          : "content_gap";
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_envelope_decline_body",
+          { signal, requiredDeclineReason },
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        this.recordEnvelopeDeclineBodyRecomposition(finalized.outcome, decline.declineReason, true);
+        rawAnswer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+        plannedSuggestions = [];
+        metadataPatch = undefined;
+      } else if (!hasStreamedAnswer && isGroundedAnswerUnsupported({
+        outcome: finalized.outcome,
+        grounding: summary,
+        answer: rawAnswer,
+        citationEvidence: toCitationEvidence(session),
+      })) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_unsupported_answer",
+          { signal },
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        this.recordUnsupportedAnswerDecline(decline.declineReason, true);
+        rawAnswer = decline.text;
+        declineReason = decline.declineReason;
+        grounding = "no_support";
+        plannedSuggestions = [];
+        metadataPatch = undefined;
+      } else {
+        this.recordGroundingOutcome(summary, finalized, true);
+        grounding = summary;
+      }
     }
 
     // Present the same generated body from its computed assertion verdict. Suggestions

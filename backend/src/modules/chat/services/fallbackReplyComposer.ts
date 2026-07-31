@@ -21,6 +21,12 @@ export interface FallbackReplyInput {
   steering?: SteeringRule[];
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext: ChatGatewayUsageContext;
+  /**
+   * A classification already decided by a structurally valid grounded-answer
+   * envelope. When present, the focused composer writes copy for that reason
+   * instead of making a second, potentially conflicting scope decision.
+   */
+  requiredDeclineReason?: Exclude<TurnDeclineReason, "generation_unavailable">;
   signal?: AbortSignal;
 }
 
@@ -45,15 +51,19 @@ export class MissingFallbackReplyComposer implements FallbackReplyComposer {
 }
 
 const MAX_RESPONSE_LENGTH = CHAT_BEHAVIOR.groundedMiss.maxResponseLength;
+const DISALLOWED_CONTROL_CHARACTER = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 const normalizeWhitespace = (value: string | undefined): string =>
   (value ?? "")
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-// Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
-// before the fallback response is shown to users.
+// Keep model-authored markdown structure, but reject non-rendering control bytes and
+// strip citation artifacts or noisy spacing before the response is shown to users.
 const normalizeModelResponse = (value: string | undefined): string => {
+  if (DISALLOWED_CONTROL_CHARACTER.test(value ?? "")) {
+    return "";
+  }
   const normalized = (value ?? "")
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\r\n?/g, "\n")
@@ -91,7 +101,9 @@ const generationUnavailable = (text: string): ComposedDecline => ({
   declineReason: "generation_unavailable",
 });
 
-const DECLINE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
+const buildDeclineResponseFormat = (
+  requiredDeclineReason?: Exclude<TurnDeclineReason, "generation_unavailable">,
+): JsonSchemaResponseFormat => ({
   type: "json_schema",
   name: "grounded_miss_decline",
   strict: true,
@@ -104,10 +116,15 @@ const DECLINE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
         type: "string",
         description: "The visible decline text only. No bullets, headings, citations, or commentary.",
       },
-      declineReason: { type: "string", enum: ["content_gap", "out_of_scope"] },
+      declineReason: {
+        type: "string",
+        enum: requiredDeclineReason
+          ? [requiredDeclineReason]
+          : ["content_gap", "out_of_scope"],
+      },
     },
   },
-};
+});
 
 /**
  * Reads the strict decline object. Providers without API-level schema enforcement can
@@ -119,10 +136,15 @@ const DECLINE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
  * is a real outcome here, and showing a visitor `{"reply":"I can't help with th` is worse
  * than the canned decline the empty result falls through to.
  */
-const readComposedDecline = (raw: string | undefined): ComposedDecline => {
+const readComposedDecline = (
+  raw: string | undefined,
+  requiredDeclineReason?: Exclude<TurnDeclineReason, "generation_unavailable">,
+): ComposedDecline => {
   const trimmed = (raw ?? "").trim();
   if (!trimmed.startsWith("{")) {
-    return contentGap(trimmed);
+    return requiredDeclineReason
+      ? { text: trimmed, declineReason: requiredDeclineReason }
+      : contentGap(trimmed);
   }
   let parsed: unknown;
   try {
@@ -139,9 +161,22 @@ const readComposedDecline = (raw: string | undefined): ComposedDecline => {
   }
   return {
     text: record.reply,
-    declineReason: record.declineReason === "out_of_scope" ? "out_of_scope" : "content_gap",
+    declineReason: requiredDeclineReason
+      ?? (record.declineReason === "out_of_scope" ? "out_of_scope" : "content_gap"),
   };
 };
+
+const buildDeclineClassificationInstruction = (
+  requiredDeclineReason?: Exclude<TurnDeclineReason, "generation_unavailable">,
+): string => requiredDeclineReason
+  ? [
+      `This turn was already classified as \`${requiredDeclineReason}\` by the grounded-answer envelope.`,
+      `Return \`${requiredDeclineReason}\` exactly. Do not reclassify it.`,
+      requiredDeclineReason === "out_of_scope"
+        ? "Write a direct scope decline and redirect to the configured remit."
+        : "Write a direct in-remit content-gap decline and redirect to supported help.",
+    ].join(" ")
+  : "No earlier classification was supplied. Make the classification now using the default rule above.";
 
 const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
   appendSteeringBlock(
@@ -149,6 +184,7 @@ const buildGroundedMissSystemPrompt = (input: FallbackReplyInput): string =>
       decline_rules: loadPromptTemplate("chat/grounded-decline-rules.md"),
       locale_instruction: buildLocaleInstruction(input.userExpectedLocale),
       answer_instruction_block: buildAnswerInstructionBlock(input.answerInstructionBlock),
+      decline_classification_instruction: buildDeclineClassificationInstruction(input.requiredDeclineReason),
     }),
     input.steering,
   );
@@ -193,12 +229,12 @@ export class ModelFallbackReplyComposer implements FallbackReplyComposer {
         // Short utility decline: keep reasoning spend minimal so the token budget
         // leaves room for visible text on reasoning models.
         reasoningEffort: "minimal" as const,
-        responseFormat: DECLINE_RESPONSE_FORMAT,
+        responseFormat: buildDeclineResponseFormat(input.requiredDeclineReason),
         signal: input.signal,
       };
       const { result } = await this.completeWithRetry(request, input);
 
-      const decline = readComposedDecline(result.text);
+      const decline = readComposedDecline(result.text, input.requiredDeclineReason);
       const normalized = normalizeModelResponse(decline.text);
       if (normalized) {
         return { text: normalized, declineReason: decline.declineReason };

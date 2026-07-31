@@ -734,8 +734,8 @@ function EmbeddingModelRow({
   const [requestedModel, setRequestedModel] = useState<IngestionSettings['embeddingModel'] | null>(null)
   const [dialogError, setDialogError] = useState<string | null>(null)
 
-  const supportedEmbeddingModels = useMemo(
-    () => new Set(settings.supportedEmbeddingModels),
+  const supportedEmbeddingModels = useMemo<ReadonlySet<string>>(
+    () => new Set<string>(settings.supportedEmbeddingModels),
     [settings.supportedEmbeddingModels],
   )
   const providerOptions = useMemo(

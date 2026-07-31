@@ -55,6 +55,11 @@ export const registerQualityPaths = (
         triage: csvOrArrayString
           .describe("Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`).")
           .optional(),
+        resolutionReason: csvOrArrayString
+          .describe(
+            "Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one.",
+          )
+          .optional(),
         sort: z.enum(["turn_created_at", "negative_feedback_updated_at"])
           .describe("Sort order. Defaults to assistant-turn creation time.")
           .optional(),
@@ -65,12 +70,21 @@ export const registerQualityPaths = (
           )
           .optional(),
         hasComment: z.coerce.boolean()
-          .describe("When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned.")
+          .describe(
+            "When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. " +
+            "When feedback values are also selected, comment presence is evaluated for those values.",
+          )
           .optional(),
         agentId: z.string().uuid().optional(),
         channel: z.string().min(1).max(64).optional(),
         from: z.string().datetime().optional(),
         to: z.string().datetime().optional(),
+        resolutionFrom: z.string().datetime()
+          .describe("Terminal triage closure time, inclusive. Distinct from assistant-turn `from`.")
+          .optional(),
+        resolutionTo: z.string().datetime()
+          .describe("Terminal triage closure time, exclusive. Distinct from assistant-turn `to`.")
+          .optional(),
         minTotalLatencyMs: z.coerce.number().int().min(0).optional(),
         maxTotalLatencyMs: z.coerce.number().int().min(0).optional(),
         offset: z.coerce.number().int().min(0).optional(),
@@ -179,7 +193,9 @@ export const registerQualityPaths = (
     summary: "Set the triage state of an assistant turn",
     description:
       "Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an " +
-      "assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).",
+      "assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; " +
+      "omit it to close without classification. Admin/owner only (requires the " +
+      "`workspace.quality.manage` permission).",
     operationId: "setQualityTurnTriage",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
@@ -231,6 +247,14 @@ export const registerQualityPaths = (
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "The triage record changed after the caller loaded it; includes the current record",
+        content: {
+          "application/json": {
+            schema: schemas.QualityTriageConflictResponseSchema,
           },
         },
       },

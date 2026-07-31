@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { performance } from "node:perf_hooks";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
+import { EvalMessageCaseRepository } from "../../src/modules/eval/services/evalMessageCaseRepository.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
@@ -336,17 +338,31 @@ describeIfDatabase("quality turns integration", () => {
 
     const initial = await service.listLowQualityTurns(workspaceId, { limit: 25 });
     const openTurn = initial.items.find((item) => item.assistantMessageId === openMessageId);
-    expect(openTurn?.triage).toEqual({ state: "open", reason: null, updatedAt: null });
+    expect(openTurn?.triage).toEqual({
+      state: "open",
+      version: 0,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    });
 
     const updated = await service.setTriageState(workspaceId, {
       assistantMessageId: resolvedMessageId,
       state: "resolved",
-      reason: "Added knowledge",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: "Added knowledge" },
       updatedBy: userId,
     });
-    expect(updated?.state).toBe("resolved");
-    expect(updated?.reason).toBe("Added knowledge");
-    expect(updated?.updatedAt).toEqual(expect.any(String));
+    expect(updated).toMatchObject({
+      kind: "updated",
+      record: {
+        state: "resolved",
+        version: 1,
+        resolution: { reason: "knowledge_gap", note: "Added knowledge" },
+        updatedAt: expect.any(String),
+      },
+    });
 
     const openOnly = await service.listLowQualityTurns(workspaceId, {
       limit: 25,
@@ -785,8 +801,8 @@ describeIfDatabase("quality turns integration", () => {
     );
     await database.query(
       `INSERT INTO assistant_answer_triage
-         (workspace_id, assistant_message_id, state, updated_at)
-       VALUES ($1, $2, 'dismissed', $3)`,
+         (workspace_id, assistant_message_id, state, closed_at, updated_at)
+       VALUES ($1, $2, 'dismissed', $3, $3)`,
       [workspaceId, messageId, "2026-05-02T00:00:00.000Z"],
     );
     await database.query(
@@ -797,6 +813,37 @@ describeIfDatabase("quality turns integration", () => {
     );
 
     const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    const defaultList = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+    expect(defaultList.items.find((item) => item.assistantMessageId === messageId)?.triage).toEqual({
+      state: "open",
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    });
+
+    const defaultOpenOnly = await service.listLowQualityTurns(workspaceId, {
+      triageStates: ["open"],
+      limit: 25,
+    });
+    expect(defaultOpenOnly.items.map((item) => item.assistantMessageId)).toContain(messageId);
+    expect(defaultOpenOnly.total).toBe(1);
+
+    const defaultResolvedOnly = await service.listLowQualityTurns(workspaceId, {
+      triageStates: ["dismissed"],
+      limit: 25,
+    });
+    expect(defaultResolvedOnly.items).toHaveLength(0);
+    expect(defaultResolvedOnly.total).toBe(0);
+
+    const staleReasonOnly = await service.listLowQualityTurns(workspaceId, {
+      resolutionReasons: ["expected_behavior"],
+      limit: 25,
+    });
+    expect(staleReasonOnly.items).toHaveLength(0);
+    expect(staleReasonOnly.total).toBe(0);
+
     const reopened = await service.listLowQualityTurns(workspaceId, {
       feedbackValues: ["down"],
       sort: "negative_feedback_updated_at",
@@ -808,7 +855,10 @@ describeIfDatabase("quality turns integration", () => {
     expect(reopened.items[0]?.assistantMessageId).toBe(messageId);
     expect(reopened.items[0]?.triage).toEqual({
       state: "open",
-      reason: null,
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
       updatedAt: null,
     });
 
@@ -834,6 +884,8 @@ describeIfDatabase("quality turns integration", () => {
     await service.setTriageState(workspaceId, {
       assistantMessageId: messageId,
       state: "resolved",
+      expectedVersion: 1,
+      resolution: { reason: "knowledge_gap", note: null },
     });
     const resolved = await service.listLowQualityTurns(workspaceId, {
       feedbackValues: ["down"],
@@ -862,8 +914,9 @@ describeIfDatabase("quality turns integration", () => {
     const result = await service.setTriageState(workspaceId, {
       assistantMessageId: randomUUID(),
       state: "acknowledged",
+      expectedVersion: 0,
     });
-    expect(result).toBeNull();
+    expect(result).toEqual({ kind: "not_found" });
   });
 
   it("filters grounding diagnostics with OR verdicts, complete zero semantics, AND composition, and stable totals", async () => {
@@ -925,5 +978,96 @@ describeIfDatabase("quality turns integration", () => {
       limit: 25,
     });
     expect(incompatible.total).toBe(0);
+  });
+
+  it("loads 100 linked verification summaries in one batch within the local two-second budget", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const conversationId = randomUUID();
+    const messageIds = Array.from({ length: 100 }, () => randomUUID());
+    const snapshotIds = Array.from({ length: 100 }, () => randomUUID());
+    const caseIds = Array.from({ length: 100 }, () => randomUUID());
+
+    await database.query(
+      "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Quality performance', $2, 'hash')",
+      [accountId, `quality-performance-${accountId}@example.com`],
+    );
+    await database.query(
+      "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'Quality performance', $3)",
+      [workspaceId, accountId, `qp-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'embed')",
+      [conversationId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO messages (
+         id, conversation_id, workspace_id, role, content, source,
+         skill_name, skill_outcome, skill_status, total_latency_ms, created_at
+       )
+       SELECT
+         turn.message_id,
+         $2,
+         $3,
+         'assistant',
+         'Answer ' || turn.ordinality,
+         'ai_agent',
+         'retrieval.answer',
+         'no_context',
+         'completed',
+         10,
+         '2026-07-30T10:00:00.000Z'::timestamptz
+           + turn.ordinality * interval '1 second'
+       FROM unnest($1::uuid[]) WITH ORDINALITY AS turn(message_id, ordinality)`,
+      [messageIds, conversationId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO eval_snapshots (
+         id, workspace_id, source_conversation_id, source_message_id, fidelity, messages
+       )
+       SELECT link.snapshot_id, $3, $4, link.message_id, 'messages_only', '[]'::jsonb
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(snapshot_id, message_id)`,
+      [snapshotIds, messageIds, workspaceId, conversationId],
+    );
+    await database.query(
+      `INSERT INTO eval_cases (id, workspace_id, snapshot_id, name, status)
+       SELECT link.case_id, $3, link.snapshot_id, 'Quality case', 'pending'
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(case_id, snapshot_id)`,
+      [caseIds, snapshotIds, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO eval_message_case_associations (
+         workspace_id, assistant_message_id, case_id
+       )
+       SELECT $3, link.message_id, link.case_id
+       FROM unnest($1::uuid[], $2::uuid[]) AS link(message_id, case_id)`,
+      [messageIds, caseIds, workspaceId],
+    );
+
+    const evalRepository = new EvalMessageCaseRepository(database.kysely);
+    let verificationBatchCalls = 0;
+    const service = new QualityTurnsService(
+      database.kysely,
+      stubOutcomeCatalog(),
+      undefined,
+      {
+        getByAssistantMessageIds: async (requestedWorkspaceId, assistantMessageIds) => {
+          verificationBatchCalls += 1;
+          return evalRepository.lookupMessageCaseVerifications(
+            requestedWorkspaceId,
+            assistantMessageIds,
+          );
+        },
+      },
+    );
+
+    const startedAt = performance.now();
+    const page = await service.listLowQualityTurns(workspaceId, { limit: 100 });
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(page.items).toHaveLength(100);
+    expect(page.items.every((item) => item.verification?.caseStatus === "pending")).toBe(true);
+    expect(verificationBatchCalls).toBe(1);
+    expect(elapsedMs).toBeLessThan(2_000);
   });
 });

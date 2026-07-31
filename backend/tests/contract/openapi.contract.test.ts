@@ -21,6 +21,98 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents structured Quality closure and message-scoped Eval convenience", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+    const qualityList = paths["/api/v1/quality/turns"]?.get;
+    const qualityTriage = paths["/api/v1/quality/turns/{assistantMessageId}/triage"]?.put;
+    const evalMessagePath = paths["/api/v1/evals/cases/by-source-message/{assistantMessageId}"];
+    const qualityQueryNames = (qualityList?.parameters ?? [])
+      .filter((parameter) => "name" in parameter)
+      .map((parameter) => parameter.name);
+
+    expect(qualityQueryNames).toEqual(expect.arrayContaining([
+      "resolutionReason",
+      "resolutionFrom",
+      "resolutionTo",
+    ]));
+    expect(qualityTriage).toMatchObject({
+      operationId: "setQualityTurnTriage",
+      description: expect.stringContaining("optional structured reason"),
+      responses: {
+        "200": expect.any(Object),
+        "409": expect.any(Object),
+      },
+    });
+    expect(document.components?.schemas).toMatchObject({
+      QualityResolutionReason: expect.any(Object),
+      QualityResolution: expect.any(Object),
+      QualityResolutionInput: {
+        properties: {
+          note: expect.any(Object),
+        },
+      },
+      QualityTriageRecord: {
+        properties: {
+          resolution: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityResolution" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
+      QualityTriageConflictResponse: expect.any(Object),
+      QualityVerification: expect.any(Object),
+      LowQualityTurn: {
+        properties: {
+          verification: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityVerification" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
+      SetQualityTriageRequest: {
+        properties: {
+          resolution: {
+            anyOf: expect.arrayContaining([
+              { $ref: "#/components/schemas/QualityResolutionInput" },
+              { type: "null" },
+            ]),
+          },
+        },
+      },
+      EvalMessageCaseLookup: expect.any(Object),
+      EvalMessageCaseMutationResult: expect.any(Object),
+    });
+    expect(document.components?.schemas?.QualityTriageRecord)
+      .not.toHaveProperty("properties.resolution.allOf");
+    expect(document.components?.schemas?.LowQualityTurn)
+      .not.toHaveProperty("properties.verification.allOf");
+    expect(document.components?.schemas?.SetQualityTriageRequest)
+      .not.toHaveProperty("properties.resolution.allOf");
+    expect(document.components?.schemas?.SetQualityTriageRequest)
+      .not.toHaveProperty("required", expect.arrayContaining(["resolution"]));
+    expect(document.components?.schemas?.QualityResolutionInput)
+      .not.toHaveProperty("required", expect.arrayContaining(["note"]));
+    expect(evalMessagePath?.get).toMatchObject({
+      operationId: "getEvalCaseBySourceMessage",
+      responses: {
+        "200": expect.any(Object),
+        "404": expect.any(Object),
+      },
+    });
+    expect(evalMessagePath?.put).toMatchObject({
+      operationId: "getOrCreateEvalCaseBySourceMessage",
+      responses: {
+        "200": expect.any(Object),
+        "201": expect.any(Object),
+      },
+    });
+  });
+
   it("documents registration availability and edition-gated organization creation", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};

@@ -245,7 +245,6 @@ export function ChatWorkbench({
     if (!adoptConversationId || adoptedConversationRef.current === adoptConversationId) {
       return
     }
-    adoptedConversationRef.current = adoptConversationId
     let cancelled = false
     void chatApi
       .getHistoryConversation(adoptConversationId)
@@ -256,15 +255,11 @@ export function ChatWorkbench({
         const seeded = detail.messages
           .filter((message) => message.role === 'user' || message.role === 'assistant')
           .map(historyTurnToChatMessage)
+        adoptedConversationRef.current = adoptConversationId
         adoptConversation(adoptConversationId, seeded)
         setMode('chat')
       })
-      .catch(() => {
-        if (!cancelled) {
-          // Allow a later retry if the load failed.
-          adoptedConversationRef.current = null
-        }
-      })
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }

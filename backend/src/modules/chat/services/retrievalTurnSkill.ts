@@ -400,6 +400,7 @@ export class RetrievalAnswerComposer {
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
       });
+      const requiresIndexedSourceGate = session.pageReadOutcome?.gate.kind !== "capture";
       const gateController = new AbortController();
       const candidateStream = this.chatGateway.streamAnswer({
         query,
@@ -421,13 +422,16 @@ export class RetrievalAnswerComposer {
         if (!text) {
           continue;
         }
-        const decision = gate.push(reader.push(text));
-        if (decision.kind === "bound") {
+        const parsedText = reader.push(text);
+        const decision = requiresIndexedSourceGate
+          ? gate.push(parsedText)
+          : undefined;
+        if (decision?.kind === "bound") {
           gateBound = true;
           gateController.abort(new GroundingStreamGateBoundError());
           break;
         }
-        const cleanChunk = citationSanitizer.push(decision.kind === "release" ? decision.text : "");
+        const cleanChunk = citationSanitizer.push(decision?.kind === "release" ? decision.text : "");
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;

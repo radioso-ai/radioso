@@ -316,6 +316,29 @@ describe("unsupported-answer delivery guard", () => {
     expect(result.finalPresentation.skillOutcome).toBe("grounded_degraded");
     expect(counts().fallbackCalls).toBe(0);
   });
+
+  it("does not apply the citation gate bound to long captured page-read output", async () => {
+    const pageAnswer = "Page summary sentence. ".repeat(250);
+    const { composer, counts, gateAbortObserved } = buildComposer(
+      unsupportedAnswerEnvelope(pageAnswer),
+    );
+
+    const { chunks, result } = await drain(
+      composer.streamAnswer(
+        capturedPageReadSession(),
+        "Summarize this page in detail.",
+        undefined,
+        undefined,
+      ),
+    );
+
+    expect(chunks).toEqual([]);
+    expect(result.deliveryMode).toBe("committed");
+    expect(result.finalPresentation.answer).toBe(pageAnswer.trim());
+    expect(result.finalPresentation.skillOutcome).toBe("grounded_degraded");
+    expect(counts().fallbackCalls).toBe(0);
+    expect(gateAbortObserved()).toBe(false);
+  });
 });
 
 describe("retrieval answer envelope v2", () => {

@@ -12,17 +12,11 @@ import { decideClarification } from "@radioso/conversation-engine";
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 /**
- * A registered Routine plus declarative trigger metadata for ranked activation.
+ * Reentry policy now lives on the compiled routine (`Routine.activation`), which is
+ * the single source of truth both this registry and the reentry gate read. Re-exported
+ * here so existing importers of this module keep resolving it.
  */
-/**
- * Reentry policy for a completed routine instance within a conversation.
- * - `once_per_conversation` (default): a completed instance suppresses future
- *   activation in the same conversation.
- * - `always`: a completed instance never suppresses; the trigger may fire again.
- * - `semantic`: an LLM gate decides; not yet implemented at activation time, so it
- *   is treated as `once_per_conversation` (the safe default) until that slice lands.
- */
-export type RoutineReentryMode = "once_per_conversation" | "always" | "semantic";
+export type { RoutineReentryMode } from "@radioso/conversation-contract";
 
 export interface RoutineActivationTrigger {
   routineId: string;
@@ -44,14 +38,17 @@ export interface RoutineActivationPrefilter {
   }): Promise<readonly RoutineActivationPrefilterScore[]>;
 }
 
+/**
+ * A registered Routine plus declarative trigger metadata for ranked activation.
+ * Reentry policy is deliberately absent here: it is read off `routine.activation`, so
+ * a registration cannot contradict the routine it registers.
+ */
 export interface RoutineRegistration {
   routine: Routine;
   trigger: {
     description: string;
     priority: number;
     gateRef?: string;
-    /** Defaults to `once_per_conversation` when omitted. */
-    reentryMode?: RoutineReentryMode;
     eligible?: (input: { turn: TurnContext }) => boolean;
     explicitClaim?: (input: { turn: TurnContext }) => { variables?: Record<string, unknown> } | null;
   };
@@ -275,11 +272,13 @@ export class RoutineRegistry {
   ): Promise<PreparedRoutineCandidates> {
     // `suppressedRoutineIds` are the routines that already completed this
     // conversation. Whether a completed routine actually stays suppressed is the
-    // routine's reentry policy: `always` reopens to re-activation, every other mode
-    // (incl. the default and the not-yet-implemented `semantic`) stays suppressed.
+    // routine's authored reentry policy: `always` reopens to re-activation, every other
+    // mode stays suppressed. `semantic` re-opens the completed *instance* through the
+    // reentry gate, which runs before activation, so it never re-enters here. A routine
+    // with no authored activation defaults to `once_per_conversation`.
     const suppressed = new Set(options.suppressedRoutineIds ?? []);
     const eligibleRegistrations = this.registrations.filter((registration) =>
-      (!suppressed.has(registration.routine.id) || registration.trigger.reentryMode === "always") &&
+      (!suppressed.has(registration.routine.id) || registration.routine.activation?.reentryMode === "always") &&
       (registration.trigger.eligible?.({ turn }) ?? true)
     );
     if (eligibleRegistrations.length === 0) {

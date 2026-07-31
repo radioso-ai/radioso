@@ -1,6 +1,6 @@
 # Quality Module
 
-Quality owns the **operator's read-only view of how well the agent answers**:
+Quality owns the **operator's view of how well the agent answers**:
 which turns are worth reviewing, what state an operator has put them in, and the
 rates those turns add up to. Start here when a feature changes what counts as a
 quality problem, how a signal is counted, or what the Activity → Quality surface
@@ -13,7 +13,21 @@ For the broader repository map, see
 
 This module **reads and triages; it never influences a turn**. Nothing here
 feeds retrieval, routing, or answer composition. It owns no writes except the
-operator's triage state.
+operator's triage state and append-only transition history.
+
+Terminal triage uses structured, state-compatible reasons from
+`domain/resolution.ts`. The transition write is version-conditional: competing
+operators get the current record instead of overwriting one another. Reopening
+clears terminal reason and closure time. Legacy free-form reasons remain
+readable but are never classified into the structured reporting vocabulary.
+`triageStore.ts` owns the atomic current-row and append-only history write;
+resolution notes never enter transition history.
+
+Eval evidence crosses the module boundary through
+`QualityVerificationSourcePort`. Quality knows only the linked case id, case
+status, and latest run status/time; it does not import Eval persistence,
+snapshots, assertions, or run details. Application composition adapts Eval's
+bounded batch lookup to this port.
 
 The definition of a quality signal is a **domain concern, not a client
 concern**. `domain/qualitySignals.ts` resolves each `QualitySignalId` to a
@@ -72,11 +86,14 @@ aged out.
 
 - `domain/qualitySignals.ts`: what each signal means, and the narrow catalog port
   it needs.
+- `domain/resolution.ts`: structured terminal reason rules and update
+  normalization.
 - `turnPopulationSql.ts`: the shared turn population and the query fragments both
   readers compose.
 - `statsQuery.ts`: pure window maths, UTC day bucketing, and the aggregate query
   builders. Returns `{text, params}`; runs no I/O.
 - `service.ts`: runs the builders and maps rows to DTOs.
+- `triageStore.ts`: compare-and-set triage persistence and immutable history.
 - `routes.ts`: Zod validation and permission wiring.
 - `infra/skillCatalogOutcomeSource.ts`: adapts the skill catalog to the narrow
   outcome view. Keeps entries the capability policy marks `forbidden`, because a
@@ -87,5 +104,8 @@ aged out.
 - `cd backend && pnpm exec vitest run tests/unit/quality-signals.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/quality-stats-query.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/quality-routes.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/quality-resolution.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/quality-verification.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/quality-triage-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/quality-stats.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/quality-turns.integration.test.ts`

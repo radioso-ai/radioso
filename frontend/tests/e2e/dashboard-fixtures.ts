@@ -743,6 +743,7 @@ export const baseQualityStats = () => ({
     slow_responses: 5,
     skill_failures: 2,
   },
+  resolutionBreakdown: [],
 });
 
 export const installDashboardApiMocks = async (

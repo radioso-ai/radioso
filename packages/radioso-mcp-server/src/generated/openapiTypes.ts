@@ -2581,9 +2581,33 @@ export interface paths {
         get?: never;
         /**
          * Set the triage state of an assistant turn
-         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn. Admin/owner only (requires the `workspace.quality.manage` permission).
+         * @description Upserts the operator triage state (`open`, `acknowledged`, `resolved`, `dismissed`) for an assistant turn using optimistic concurrency. Terminal states accept an optional structured reason; omit it to close without classification. Admin/owner only (requires the `workspace.quality.manage` permission).
          */
         put: operations["setQualityTurnTriage"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the Eval case linked to an assistant message
+         * @description Returns the linked case and its immutable snapshot in one request. The lookup is workspace-scoped and never scans the case list.
+         */
+        get: operations["getEvalCaseBySourceMessage"];
+        /**
+         * Get or create an Eval case from an assistant message
+         * @description Atomically captures the source turn and creates its default Eval case, or returns the existing association. Concurrent retries converge on one case.
+         */
+        put: operations["getOrCreateEvalCaseBySourceMessage"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5732,11 +5756,45 @@ export interface components {
         QualitySkillStatus: "active" | "paused" | "awaiting_confirmation" | "awaiting_tool" | "completed" | "cancelled" | "expired" | "failed";
         /** @enum {string} */
         QualityTriageState: "open" | "acknowledged" | "resolved" | "dismissed";
+        /** @enum {string} */
+        QualityResolutionReason: "knowledge_gap" | "retrieval_issue" | "agent_behavior" | "platform_bug" | "expected_behavior" | "out_of_scope" | "invalid_feedback" | "other";
+        QualityResolution: {
+            reason: components["schemas"]["QualityResolutionReason"];
+            note: string | null;
+        };
+        QualityResolutionInput: {
+            reason: components["schemas"]["QualityResolutionReason"];
+            note?: string | null;
+        };
         QualityTriageRecord: {
             state: components["schemas"]["QualityTriageState"];
-            reason: string | null;
+            version: number;
+            resolution: components["schemas"]["QualityResolution"] | null;
+            legacyReason: string | null;
+            /** Format: date-time */
+            closedAt: string | null;
             /** Format: date-time */
             updatedAt: string | null;
+        };
+        QualityVerification: {
+            /** Format: uuid */
+            caseId: string;
+            /** @enum {string} */
+            caseStatus: "pending" | "passing" | "failing" | "error";
+            /** @enum {string|null} */
+            latestRunStatus: "pass" | "fail" | "error" | "recorded" | null;
+            /** Format: date-time */
+            latestRunAt: string | null;
+        };
+        QualityTriageConflictResponse: {
+            error: {
+                /** @enum {string} */
+                code: "QUALITY_TRIAGE_CONFLICT";
+                message: string;
+                details: {
+                    current: components["schemas"]["QualityTriageRecord"];
+                };
+            };
         };
         QualityFeedbackComment: {
             value: components["schemas"]["QualityFeedbackValue"];
@@ -5773,6 +5831,7 @@ export interface components {
             createdAt: string;
             feedback: components["schemas"]["QualityFeedbackSummary"];
             triage: components["schemas"]["QualityTriageRecord"];
+            verification: components["schemas"]["QualityVerification"] | null;
         };
         /** @enum {string} */
         QualitySignalId: "negative_feedback" | "grounding_gaps" | "slow_responses" | "skill_failures";
@@ -5828,9 +5887,23 @@ export interface components {
                 slow_responses: number;
                 skill_failures: number;
             };
+            /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
+            resolutionBreakdown: {
+                /** @enum {string} */
+                state: "resolved" | "dismissed";
+                reason: components["schemas"]["QualityResolutionReason"] | "unspecified";
+                count: number;
+            }[];
         };
         SetQualityTriageRequest: {
             state: components["schemas"]["QualityTriageState"];
+            expectedVersion: number;
+            /** @description Optional structured context for terminal states. Omit or send null to close without recording a reason. */
+            resolution?: components["schemas"]["QualityResolutionInput"] | null;
+            /**
+             * @deprecated
+             * @description Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.
+             */
             reason?: string | null;
         };
         LowQualityTurnsPage: {
@@ -6014,6 +6087,81 @@ export interface components {
         };
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
+        };
+        EvalMessageCaseLookup: {
+            /** Format: uuid */
+            assistantMessageId: string;
+            case: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workspaceId: string;
+                /** Format: uuid */
+                snapshotId: string;
+                name: string;
+                assertions: unknown[];
+                /** @enum {string} */
+                status: "pending" | "passing" | "failing" | "error";
+                /** Format: uuid */
+                lastRunId: string | null;
+                /** Format: date-time */
+                createdAt: string;
+                /** Format: date-time */
+                updatedAt: string;
+            };
+            snapshot: {
+                /** Format: uuid */
+                id: string;
+                /** Format: uuid */
+                workspaceId: string;
+                /** Format: uuid */
+                sourceConversationId: string;
+                /** Format: uuid */
+                sourceMessageId: string | null;
+                replayTarget: {
+                    /** Format: uuid */
+                    userMessageId: string;
+                    /** Format: uuid */
+                    assistantMessageId: string | null;
+                } | null;
+                /** @enum {string} */
+                fidelity: "full" | "messages_only";
+                messages: {
+                    /** Format: uuid */
+                    id: string;
+                    /** @enum {string} */
+                    role: "user" | "assistant" | "system";
+                    content: string;
+                    /** Format: date-time */
+                    createdAt: string;
+                    citations?: unknown[];
+                    answerSegments?: unknown[];
+                    groundingSummary?: unknown;
+                    directiveFirings?: string[];
+                }[];
+                originalInstructionBlock: string | null;
+                originalModelId: string | null;
+                originalRetrievalSettings?: unknown;
+                originalAgent?: unknown;
+                originalAgentConfig?: unknown;
+                /** Format: uuid */
+                sourceAgentId: string | null;
+                originalRoutineState?: unknown;
+                originalRetrievalResult: unknown[] | null;
+                conversationSummary?: string;
+                /** Format: date-time */
+                capturedAt: string;
+                /** Format: uuid */
+                capturedBy: string | null;
+            };
+            /** Format: uuid */
+            createdBy: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        EvalMessageCaseMutationResult: components["schemas"]["EvalMessageCaseLookup"] & {
+            /** @description True only when this request created the association. */
+            created: boolean;
         };
         /**
          * @description A server-sent event stream. Status payloads use the named ChatStatusEvent schema. Successful order: status(interpreting), conversation (when available), status(searching) for retrieval, status(composing), one or more chunk events, done, then optional suggestions. A cancelled event is terminal and no event follows it.
@@ -16888,16 +17036,22 @@ export interface operations {
                 feedback?: string;
                 /** @description Comma-separated `QualityTriageState` values (`open`, `acknowledged`, `resolved`, `dismissed`). */
                 triage?: string;
+                /** @description Comma-separated structured resolution reasons, plus `unspecified` for any terminal record without one. */
+                resolutionReason?: string;
                 /** @description Sort order. Defaults to assistant-turn creation time. */
                 sort?: "turn_created_at" | "negative_feedback_updated_at";
                 /** @description When true, returns thumbs-down feedback that has not been triaged since its latest creation or edit. Feedback newer than terminal triage is treated as open. */
                 activeNegativeFeedbackOnly?: boolean | null;
-                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. */
+                /** @description When true, only turns with written feedback comments are returned. When false, only turns without written feedback comments are returned. When feedback values are also selected, comment presence is evaluated for those values. */
                 hasComment?: boolean | null;
                 agentId?: string;
                 channel?: string;
                 from?: string;
                 to?: string;
+                /** @description Terminal triage closure time, inclusive. Distinct from assistant-turn `from`. */
+                resolutionFrom?: string;
+                /** @description Terminal triage closure time, exclusive. Distinct from assistant-turn `to`. */
+                resolutionTo?: string;
                 minTotalLatencyMs?: number | null;
                 maxTotalLatencyMs?: number | null;
                 offset?: number | null;
@@ -17051,6 +17205,140 @@ export interface operations {
                 };
             };
             /** @description Assistant turn not found in this workspace */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The triage record changed after the caller loaded it; includes the current record */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QualityTriageConflictResponse"];
+                };
+            };
+        };
+    };
+    getEvalCaseBySourceMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The linked Eval case and snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseLookup"];
+                };
+            };
+            /** @description Invalid assistant message id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description No Eval case is linked to this assistant message */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getOrCreateEvalCaseBySourceMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                assistantMessageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing linked Eval case and snapshot */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseMutationResult"];
+                };
+            };
+            /** @description New linked Eval case and immutable snapshot */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalMessageCaseMutationResult"];
+                };
+            };
+            /** @description Invalid id or source message is not an AI-authored assistant turn */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace retrieval-query permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Assistant message not found in this workspace */
             404: {
                 headers: {
                     [name: string]: unknown;

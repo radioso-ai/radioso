@@ -174,28 +174,14 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
     pendingDecisions: [pendingDecision],
   });
 
-  // Skill catalog with a grounding-gap outcome so the inbox pulls low-quality turns.
-  await page.route("**/backend/api/v1/skills**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        skills: [
-          {
-            name: "retrieval.answer",
-            outcomes: [{ name: "no_context", groundedAnswer: false }],
-          },
-        ],
-      }),
-    });
-  });
-
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const isWrittenFeedback =
+      new URL(route.request().url()).searchParams.get("hasComment") === "true";
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        items: [
+        items: isWrittenFeedback ? [] : [
           {
             assistantMessageId: "message-degraded-inbox",
             conversationId: "conversation-degraded-inbox",
@@ -215,24 +201,22 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
               latestDownUpdatedAt: null,
               comments: [],
             },
-            triage: { state: "open", reason: null, updatedAt: null },
+            triage: {
+              state: "open",
+              version: 0,
+              resolution: null,
+              legacyReason: null,
+              closedAt: null,
+              updatedAt: null,
+            },
+            verification: null,
           },
         ],
-        total: 1,
+        total: isWrittenFeedback ? 0 : 14,
         page: 1,
-        pageSize: 25,
+        pageSize: isWrittenFeedback ? 25 : 1,
         totalPages: 1,
       }),
-    });
-  });
-
-  // Registered after the list route so it wins (Playwright matches last-registered first)
-  // for the triage sub-path.
-  await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ state: "dismissed", reason: null, updatedAt: "2026-06-19T12:00:00.000Z" }),
     });
   });
 
@@ -255,23 +239,19 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   await expect(page.getByRole("button", { name: "A guest needs manual follow-up" })).toBeVisible();
   await expect(inbox.getByText("Awaiting a human")).toBeVisible();
 
-  // Critical types (approval, handoff) and the lower-concern quality signal are categorized.
+  // Only work requiring an immediate human action appears as an inbox row.
   await expect(inbox.getByText("Approval", { exact: true })).toBeVisible();
   await expect(inbox.getByText("Handoff", { exact: true })).toBeVisible();
-  await expect(inbox.getByText("No context", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toBeVisible();
-
-  // Critical escalations sort above the lower-concern quality signal.
-  const typeBadges = await inbox.getByText(/^(Approval|Handoff|No context)$/).allInnerTexts();
-  expect(typeBadges[typeBadges.length - 1]).toBe("No context");
+  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Quality review" })).toBeVisible();
+  await expect(page.getByText("14 answers flagged for review.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review in Quality" })).toHaveAttribute(
+    "href",
+    `/w/${workspaceKey}/quality`,
+  );
 
   await expect(page.getByText("The AI can keep handling this")).toHaveCount(0);
-
-  // Triage clears a quality row from the inbox (criticals resolve from the drawer instead).
-  const qualityRow = inbox.locator("tr", { hasText: "Do you sell gift cards?" });
-  await qualityRow.getByRole("button", { name: "Dismiss" }).click();
-  await expect(page.getByRole("button", { name: "Do you sell gift cards?" })).toHaveCount(0);
-  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Approve sending the booking update" }).click();
   await expect(page.getByRole("heading", { name: "Conversation details" })).toBeAttached();
@@ -285,7 +265,7 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
   await expect(page.getByText("Waiting for a human")).toBeVisible();
 
   await page.getByRole("button", { name: "Close details panel" }).click();
-  await page.getByRole("link", { name: "Quality" }).click();
+  await page.getByRole("link", { name: "Review in Quality" }).click();
   await expect(page).toHaveURL(`/w/${workspaceKey}/quality`);
   await expect(page.getByRole("heading", { name: "Quality review" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Quality" })).toHaveAttribute("aria-current", "page");
@@ -295,8 +275,13 @@ test("operator can use activity tabs to open a pending approval", async ({ page 
 test("operator can turn written negative feedback into a remediation task", async ({ page }) => {
   const conversationId = "conversation-negative-feedback";
   const assistantMessageId = "assistant-negative-feedback";
-  const triageRequests: Array<{ state: string }> = [];
+  const triageRequests: Array<{
+    state: string
+    expectedVersion: number
+    resolution?: { reason: string; note: string | null }
+  }> = [];
   let acknowledgementAttempts = 0;
+  let resolutionAttempts = 0;
   const feedbackTurn = {
     assistantMessageId,
     conversationId,
@@ -321,7 +306,15 @@ test("operator can turn written negative feedback into a remediation task", asyn
         updatedAt: "2026-06-19T10:05:00.000Z",
       }],
     },
-    triage: { state: "open", reason: null, updatedAt: null },
+    triage: {
+      state: "open",
+      version: 0,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: null,
+    },
+    verification: null,
   };
   const passiveTurn = {
     ...feedbackTurn,
@@ -448,41 +441,78 @@ test("operator can turn written negative feedback into a remediation task", asyn
 
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
     const url = new URL(route.request().url());
-    const isFeedback = url.searchParams.get("feedback") === "down";
-    const hasComment = url.searchParams.get("hasComment");
-    if (isFeedback && hasComment === "false") {
-      await route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({}),
-      });
-      return;
-    }
-    const items = isFeedback
-      ? hasComment === "true" ? [feedbackTurn] : []
-      : [passiveTurn];
+    const isWrittenFeedback =
+      url.searchParams.get("feedback") === "down"
+      && url.searchParams.get("hasComment") === "true";
+    const items = isWrittenFeedback ? [feedbackTurn] : [passiveTurn];
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         items,
-        total: items.length,
+        total: isWrittenFeedback ? 1 : 12,
         page: 1,
-        pageSize: 25,
+        pageSize: isWrittenFeedback ? 25 : 1,
         totalPages: 1,
       }),
     });
   });
 
   await page.route("**/backend/api/v1/quality/turns/*/triage**", async (route) => {
-    const body = route.request().postDataJSON() as { state: string };
+    const body = route.request().postDataJSON() as {
+      state: string
+      expectedVersion: number
+      resolution?: { reason: string; note: string | null }
+    };
     triageRequests.push(body);
     if (body.state === "acknowledged" && acknowledgementAttempts === 0) {
       acknowledgementAttempts += 1;
       await route.fulfill({
-        status: 500,
+        status: 409,
         contentType: "application/json",
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "open",
+                version: 3,
+                resolution: null,
+                legacyReason: null,
+                closedAt: null,
+                updatedAt: "2026-06-19T11:30:00.000Z",
+              },
+            },
+          },
+        }),
+      });
+      return;
+    }
+    if (body.state === "resolved" && resolutionAttempts === 0) {
+      resolutionAttempts += 1;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "dismissed",
+                version: 5,
+                resolution: {
+                  reason: "expected_behavior",
+                  note: "Policy already covers opened products.",
+                },
+                legacyReason: null,
+                closedAt: "2026-06-19T11:45:00.000Z",
+                updatedAt: "2026-06-19T11:45:00.000Z",
+              },
+            },
+          },
+        }),
       });
       return;
     }
@@ -491,7 +521,10 @@ test("operator can turn written negative feedback into a remediation task", asyn
       contentType: "application/json",
       body: JSON.stringify({
         state: body.state,
-        reason: null,
+        version: body.expectedVersion + 1,
+        resolution: body.resolution ?? null,
+        legacyReason: null,
+        closedAt: body.state === "resolved" ? "2026-06-19T12:00:00.000Z" : null,
         updatedAt: "2026-06-19T12:00:00.000Z",
       }),
     });
@@ -501,12 +534,10 @@ test("operator can turn written negative feedback into a remediation task", asyn
 
   const inbox = page.getByRole("table", { name: "Needs attention" });
   await expect(inbox.getByText("Negative feedback", { exact: true })).toBeVisible();
-  await expect(inbox.getByText("No context", { exact: true })).toBeVisible();
+  await expect(inbox.getByText("No context", { exact: true })).toHaveCount(0);
   await expect(page.getByText(
-    "Some quality items couldn't be refreshed. Showing the latest results that are available.",
+    "12 answers flagged for review. 1 includes written customer feedback.",
   )).toBeVisible();
-  const typeBadges = await inbox.getByText(/^(Negative feedback|No context)$/).allInnerTexts();
-  expect(typeBadges).toEqual(["Negative feedback", "No context"]);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(inbox).toBeHidden();
@@ -518,14 +549,13 @@ test("operator can turn written negative feedback into a remediation task", asyn
 
   const remediation = page.getByLabel("Negative feedback remediation");
   await expect(remediation.getByText(
-    "Could not mark this feedback as reviewed. You can still inspect it and choose a fix.",
+    "Another operator already changed this feedback to open. Their current record has been loaded.",
   )).toBeVisible();
   await expect(remediation.getByRole("link", { name: /Add knowledge/ })).toBeEnabled();
   await page.getByRole("button", { name: "Close details panel" }).click();
   const feedbackReviewButton = mobileInbox.getByRole("button", {
     name: "Review feedback: Can I return an opened item?",
   });
-  await expect(feedbackReviewButton).toBeFocused();
   await feedbackReviewButton.click();
   await expect.poll(() => acknowledgementAttempts).toBe(1);
   await expect.poll(() =>
@@ -575,10 +605,144 @@ test("operator can turn written negative feedback into a remediation task", asyn
   await expect(failedTurn).toContainText("Items can be returned within 30 days.");
 
   await remediation.getByRole("button", { name: "Mark resolved" }).click();
-  await expect.poll(() => triageRequests).toContainEqual({ state: "resolved" });
+  const resolutionDialog = page.getByRole("dialog");
+  await expect(resolutionDialog.getByRole("heading", { name: "Resolve review" })).toBeVisible();
+  await resolutionDialog.getByRole("button", { name: "Knowledge gap" }).click();
+  await expect.poll(() => triageRequests).toContainEqual({
+    state: "resolved",
+    expectedVersion: 1,
+    resolution: { reason: "knowledge_gap", note: null },
+  });
+  await expect(resolutionDialog.getByRole("heading", {
+    name: "Another operator updated this review",
+  })).toBeVisible();
+  await expect(resolutionDialog.getByText("Dismissed", { exact: true })).toBeVisible();
+  await expect(resolutionDialog.getByText("Expected behavior", { exact: true })).toBeVisible();
+  await expect(resolutionDialog.getByText(
+    "Policy already covers opened products.",
+  )).toBeVisible();
+  await expect(resolutionDialog.getByRole("button", {
+    name: "Replace current decision",
+  })).toBeDisabled();
+  await expect(resolutionDialog.getByRole("button", {
+    name: "Keep current decision",
+  })).toBeVisible();
+  await resolutionDialog.getByLabel(
+    "I reviewed the current decision and want to replace it.",
+  ).check();
+  await resolutionDialog.getByRole("button", { name: "Replace current decision" }).click();
+  await expect.poll(() => triageRequests).toContainEqual({
+    state: "resolved",
+    expectedVersion: 5,
+    resolution: { reason: "knowledge_gap", note: null },
+  });
   await expect(inbox.getByText("Negative feedback", { exact: true })).toHaveCount(0);
   await expect(page.locator("main").getByRole("status")).toContainText("Marked resolved.");
-  await expect(page.getByRole("button", { name: "Review: Do you sell gift cards?" })).toBeFocused();
+  await expect(page.getByText(
+    "11 answers flagged for review.",
+  )).toBeVisible();
+  await expect(page.locator("main").getByText("Needs attention", { exact: true })).toBeFocused();
+});
+
+test("a terminal acknowledgement conflict removes stale feedback actions", async ({ page }) => {
+  const assistantMessageId = "assistant-terminal-feedback";
+  const conversationId = "conversation-terminal-feedback";
+  const triageRequests: Array<Record<string, unknown>> = [];
+  const feedbackTurn = {
+    assistantMessageId,
+    conversationId,
+    agentId: defaultAgentId,
+    agentName: "Marta",
+    channel: "website_embed",
+    question: "Can I return an opened item?",
+    answerPreview: "Items can be returned within 30 days.",
+    skillName: "retrieval.answer",
+    skillOutcome: "grounded",
+    skillStatus: "completed",
+    totalLatencyMs: 900,
+    createdAt: "2026-06-19T10:00:00.000Z",
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: "2026-06-19T10:05:00.000Z",
+      comments: [{
+        value: "down",
+        comment: "This does not explain the opened-item exception.",
+        createdAt: "2026-06-19T10:05:00.000Z",
+        updatedAt: "2026-06-19T10:05:00.000Z",
+      }],
+    },
+    triage: {
+      state: "open",
+      version: 1,
+      resolution: null,
+      legacyReason: null,
+      closedAt: null,
+      updatedAt: nowIso,
+    },
+    verification: null,
+  };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const isWrittenFeedback =
+      new URL(route.request().url()).searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: isWrittenFeedback ? [feedbackTurn] : [],
+        total: isWrittenFeedback ? 1 : 0,
+        page: 1,
+        pageSize: isWrittenFeedback ? 25 : 1,
+        totalPages: 1,
+      }),
+    });
+  });
+  await page.route(
+    `**/backend/api/v1/quality/turns/${assistantMessageId}/triage**`,
+    async (route) => {
+      triageRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "QUALITY_TRIAGE_CONFLICT",
+            message: "Quality triage changed",
+            details: {
+              current: {
+                state: "dismissed",
+                version: 5,
+                resolution: { reason: "expected_behavior", note: null },
+                legacyReason: null,
+                closedAt: "2026-06-19T11:45:00.000Z",
+                updatedAt: "2026-06-19T11:45:00.000Z",
+              },
+            },
+          },
+        }),
+      });
+    },
+  );
+
+  await page.goto(`/w/${workspaceKey}/activity`);
+  await page.getByRole("button", {
+    name: "Review feedback: Can I return an opened item?",
+  }).click();
+
+  await expect(page.locator(
+    'button[aria-label="Review feedback: Can I return an opened item?"]',
+  )).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
+  await expect(page.locator("main").getByRole("status")).toContainText(
+    "Another operator already closed this feedback. It was removed from Needs attention.",
+  );
+  expect(triageRequests).toEqual([{
+    state: "acknowledged",
+    expectedVersion: 1,
+  }]);
 });
 
 test("operator sees the expected feedback permission boundary without losing the inbox", async ({ page }) => {
@@ -606,5 +770,5 @@ test("operator sees the expected feedback permission boundary without losing the
     "Answer feedback is available to workspace admins and owners. Approvals and handoffs are still shown.",
   )).toBeVisible();
   await expect(page.getByRole("button", { name: "Refresh" })).toBeEnabled();
-  await expect(page.getByRole("link", { name: "View quality" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review in Quality" })).toHaveCount(0);
 });

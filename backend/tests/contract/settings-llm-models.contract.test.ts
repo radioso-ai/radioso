@@ -15,8 +15,11 @@ describe("settings llm-models contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ chat: null, rewrite: null, rerank: null });
     expect(response.body.knownModelsByProvider).toMatchObject({
-      openai: expect.arrayContaining(["gpt-5-mini"]),
-      claude: expect.arrayContaining(["claude-opus-4-7", "claude-sonnet-4-6"]),
+      openai: expect.arrayContaining(["gpt-5-mini", "gpt-5.6-luna"]),
+      claude: expect.arrayContaining([
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+      ]),
       gemini: expect.arrayContaining([
         "gemini-3.5-flash",
         "gemini-3.1-flash-lite",

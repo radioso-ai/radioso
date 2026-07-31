@@ -50,4 +50,14 @@ describe("buildChatSamplingParams", () => {
 
     expect(params).toEqual({ max_completion_tokens: 512, reasoning_effort: "none" });
   });
+
+  it("normalizes minimal to none for gpt-5.6-luna", () => {
+    const params = buildChatSamplingParams("openai", {
+      temperature: 0,
+      maxOutputTokens: 512,
+      reasoningEffort: "minimal",
+    }, "gpt-5.6-luna");
+
+    expect(params).toEqual({ max_completion_tokens: 512, reasoning_effort: "none" });
+  });
 });

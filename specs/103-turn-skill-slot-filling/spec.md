@@ -2,10 +2,14 @@
 
 **Feature Branch**: `103-turn-skill-slot-filling`
 **Created**: 2026-08-02
-**Status**: Codex spec review passed on the fifth pass (2026-08-02) — **awaiting requestor
-approval** before planning. Reviews 1–3 rejected the draft; 4 rejected it on three
-spec-level gaps; 5 approved with no material new issues. All five are committed alongside
-this file.
+**Status**: **Approved** (requestor approved in session 2026-08-02, kit-only scope, after
+the Codex spec review passed on its fifth pass). Reviews 1–3 rejected the draft; 4 rejected
+it on three spec-level gaps; 5 approved with no material new issues. All five are committed
+alongside this file.
+
+Operator-facing adoption — declaring fields in the dashboard, per-field type and permitted
+values, and making a skipped skill's missing fields visible — is deliberately not in this
+slice and is tracked separately.
 **Input**: User description: "I want slot-filling to work in the conversation-kit."
 
 **Depends on**: PR #966 (`skill-auto-selection-gap`), which adds

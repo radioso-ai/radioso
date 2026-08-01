@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 export default async function OperatorOrganizationDetailPage({
   params,
 }: {
-  params: Promise<{ accountId: string }> | { accountId: string };
+  params: Promise<{ accountId: string }>;
 }) {
   const resolvedParams = await params;
   return <OrganizationDetailPage accountId={resolvedParams.accountId} />;

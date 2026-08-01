@@ -13,6 +13,7 @@ module.exports = {
           "composition\\.ts$",
           "^src/shared/infra/",
           "^src/modules/directives/(domain|public)\\.ts$",
+          "^src/modules/routines/domain\\.ts$",
           "^src/shared/domain/steeringRule\\.ts$",
           "^src/modules/skills/defaultCatalog\\.ts$",
         ],

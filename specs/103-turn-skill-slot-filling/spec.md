@@ -2,8 +2,10 @@
 
 **Feature Branch**: `103-turn-skill-slot-filling`
 **Created**: 2026-08-02
-**Status**: Draft (third draft — kit-scoped, both Codex reviews incorporated; see
-`review-codex-2026-08-02.md` and `review2-codex-2026-08-02.md`)
+**Status**: Codex spec review passed on the fifth pass (2026-08-02) — **awaiting requestor
+approval** before planning. Reviews 1–3 rejected the draft; 4 rejected it on three
+spec-level gaps; 5 approved with no material new issues. All five are committed alongside
+this file.
 **Input**: User description: "I want slot-filling to work in the conversation-kit."
 
 **Depends on**: PR #966 (`skill-auto-selection-gap`), which adds

@@ -1,6 +1,7 @@
 import type {
   ConversationDirectiveMatcher,
   ConversationModelGateway,
+  ConversationRoutineSkillDispatcher,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationTurnComposer,
@@ -8,8 +9,10 @@ import type {
   Directive,
   DirectiveMatch,
   RenderableTurn,
+  RoutineSkillResult,
   SelectionDecision,
   SkillDefinition,
+  StagedContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
 import {
@@ -17,7 +20,10 @@ import {
   CompositeDirectiveMatcher,
   ModelDirectiveMatchGateway,
   ProbabilisticDirectiveMatcher,
+  createDirectiveBoundSkillSelector,
   noopSkillEmitPort,
+  resolveSkillArguments,
+  type DirectiveBoundSkillSelectorOptions,
   type DirectiveTextGenerationClient,
   type SkillDispatchResult,
   type SkillExecutorPort,
@@ -78,27 +84,50 @@ export const createDefaultConversationDirectiveMatcher = (
   };
 };
 
-export const createDefaultConversationSkillSelector = (): ConversationSkillSelector => ({
-  async select(input): Promise<SelectionDecision> {
-    const requested = new Set(selectedSkillNamesFromMetadata(input.turn.inputEvent.metadata));
-    const selected = input.skills
-      .filter((skill) => requested.has(skill.name))
-      .map((skill) => ({
+export type DefaultConversationSkillSelectorOptions = DirectiveBoundSkillSelectorOptions;
+
+/**
+ * The kit's default terminal skill selection, two rules composed in strict precedence:
+ *
+ * 1. **Explicit caller override.** When the turn's input metadata names skills
+ *    (`skillName` / `selectedSkills`), only those are selected. A host that already
+ *    decided which skill runs stays authoritative — including over an authored binding.
+ * 2. **Authored binding.** Otherwise the decision comes from
+ *    {@link createDirectiveBoundSkillSelector}, verbatim: a matched directive whose
+ *    `binding` names a registered, usable skill claims the turn.
+ *
+ * Both rules are authored/host selection. Neither lets the model free-form pick a
+ * tool: nothing claims a turn that a caller did not name or an author did not bind.
+ */
+export const createDefaultConversationSkillSelector = (
+  options: DefaultConversationSkillSelectorOptions = {},
+): ConversationSkillSelector => {
+  const boundSelector = createDirectiveBoundSkillSelector(options);
+  return {
+    async select(input): Promise<SelectionDecision> {
+      const requested = new Set(selectedSkillNamesFromMetadata(input.turn.inputEvent.metadata));
+      if (requested.size === 0) {
+        return boundSelector.select(input);
+      }
+      const selected = input.skills
+        .filter((skill) => requested.has(skill.name))
+        .map((skill) => ({
+          skillName: skill.name,
+          reason: "selected_by_input_metadata",
+        }));
+      const considered = input.skills.map((skill) => ({
         skillName: skill.name,
-        reason: "selected_by_input_metadata",
+        selected: requested.has(skill.name),
+        reason: requested.has(skill.name) ? "requested_by_input_metadata" : "not_requested",
       }));
-    const considered = input.skills.map((skill) => ({
-      skillName: skill.name,
-      selected: requested.has(skill.name),
-      reason: requested.has(skill.name) ? "requested_by_input_metadata" : "not_requested",
-    }));
-    return {
-      selected,
-      considered,
-      reason: selected.length > 0 ? "selected_requested_skills" : "no_skill_requested",
-    };
-  },
-});
+      return {
+        selected,
+        considered,
+        reason: selected.length > 0 ? "selected_requested_skills" : "no_skill_requested",
+      };
+    },
+  };
+};
 
 export interface LocalSkillHandlerInput {
   skill: SkillDefinition;
@@ -186,6 +215,106 @@ export const createDefaultConversationSkillDispatcher = (
         startedAt: new Date().toISOString(),
         stages: [],
       },
+    };
+  },
+});
+
+const contextVariableName = (staged: StagedContext): string | null => {
+  const fromMetadata = isRecord(staged.metadata) && typeof staged.metadata.variableName === "string"
+    ? staged.metadata.variableName
+    : null;
+  const name = fromMetadata ?? (typeof staged.id === "string" ? staged.id : null);
+  return name && name.trim().length > 0 ? name : null;
+};
+
+/**
+ * The turn's context variables as a plain record, for `contextVariableRef` bindings.
+ * Deliberately generic: a staged entry either carries a `{ kind: "variable", value }`
+ * envelope or is the value itself. Hosts with product-specific context shapes resolve
+ * those themselves and pass their own record.
+ */
+const contextValuesFromStagedContext = (stagedContext: readonly StagedContext[]): Record<string, unknown> => {
+  const contextValues: Record<string, unknown> = {};
+  for (const staged of stagedContext) {
+    if (staged.kind !== "context_variable") {
+      continue;
+    }
+    const name = contextVariableName(staged);
+    if (!name) {
+      continue;
+    }
+    contextValues[name] = isRecord(staged.data) && staged.data.kind === "variable" && "value" in staged.data
+      ? staged.data.value
+      : staged.data;
+  }
+  return contextValues;
+};
+
+// A recoverable failure the runner can branch on. A routine runs on a resumable state
+// machine and this is resolved BEFORE the turn is persisted, so throwing would fail the
+// turn AND pin the routine at this step — re-throwing on every later turn, permanently
+// wedging the conversation. An unresolvable, unhandled, or failing skill is an
+// author/config error, not a programming bug, so it degrades to a `failed` result the
+// runner advances off (an outcome-guarded edge or the step's first follow-up).
+const routineSkillUnavailable = (skillName: string, reason: string): RoutineSkillResult => ({
+  status: "failed",
+  outputs: { skill: skillName, reason },
+  metadata: { skillName, reason },
+});
+
+/**
+ * Dispatches a routine `skill` step against the same local skill handlers the turn
+ * dispatcher uses: the step's `skillName` resolves to a registered {@link SkillDefinition}
+ * and its handler, authored `inputBindings` resolve to the handler's arguments, and the
+ * settled outcome is projected onto the {@link RoutineSkillResult} the runner branches on.
+ * It never throws.
+ */
+export const createDefaultRoutineSkillDispatcher = (
+  handlers: LocalSkillRegistry = new Map(),
+  skills: readonly SkillDefinition[] = [],
+): ConversationRoutineSkillDispatcher => ({
+  async dispatch({ skillName, state, turn, inputBindings }): Promise<RoutineSkillResult> {
+    const skill = skills.find((candidate) => candidate.name === skillName);
+    if (!skill) {
+      return routineSkillUnavailable(skillName, "unknown_skill");
+    }
+    const handler = handlers.get(skillName);
+    if (!handler) {
+      return routineSkillUnavailable(skillName, "local_skill_not_registered");
+    }
+
+    // An untyped step authors no bindings, so it hands the handler the routine's
+    // collected variables wholesale; a typed step gets exactly what it bound. Same
+    // split the Radioso host makes, so a routine dispatches identically either side
+    // of the kit boundary.
+    const variables = state.variables ?? {};
+    const collected = inputBindings && Object.keys(inputBindings).length > 0
+      ? resolveSkillArguments(inputBindings, variables, contextValuesFromStagedContext(turn.stagedContext))
+      : variables;
+
+    let result: SkillDispatchResult;
+    try {
+      result = await dispatchLocalSkill(handler, {
+        skill,
+        input: collected,
+        sessionId: turn.sessionId,
+        message: turn.inputEvent.content,
+      });
+    } catch {
+      return routineSkillUnavailable(skillName, "handler_error");
+    }
+
+    if (result.disposition !== "settled") {
+      // Reconciling a deferred result in a later turn is not wired for routines, so the
+      // step degrades rather than parking the routine on a result that never arrives.
+      return routineSkillUnavailable(skillName, "deferred");
+    }
+
+    return {
+      status: result.outcome.status,
+      ...(result.outcome.outputs ? { outputs: result.outcome.outputs } : {}),
+      ...(result.outcome.answer ? { answer: result.outcome.answer } : {}),
+      ...(result.outcome.metadata ? { metadata: result.outcome.metadata } : {}),
     };
   },
 });

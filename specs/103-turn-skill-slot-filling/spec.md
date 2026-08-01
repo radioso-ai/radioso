@@ -102,6 +102,36 @@ selected-skill resolver — `RoutineSlotSchema` has a different contract (`id`, 
 `ConversationModelGateway.complete` takes no abort signal. The resolver races a deadline
 and fails closed; it does not claim cancellation.
 
+**D8 — `awaitingSkillInput` is a report of this turn, not durable state.** The engine does
+not own resumption and does not persist a pending request. This dissolves the cross-turn
+conflict the third review found: a yielded routine that resumes on the next turn cannot
+"steal" an answer, because there is no engine-held claim on it. Retry is natural rather
+than orchestrated — on a later turn the directive matches again, extraction reads the
+bounded history (D4), the user's answer is in it, and the field fills.
+
+The limitation this accepts, stated plainly: if the user's answer does not itself re-match
+the directive, the skill is not retried that turn. A host wanting stronger behavior
+persists `awaitingSkillInput` and forces the skill via `selected.input` or metadata
+selection. Engine-owned resumption, and any exclusivity rule against `awaitingDecision`,
+are deliberately not designed here — inventing a second parked-state machine that must
+negotiate with routine resumption is a larger feature than slot filling.
+
+**D9 — Supported types in v1 are scalars only:** `string`, `number`, `integer`, `boolean`,
+and `date` as an unambiguous ISO-8601 calendar date (`YYYY-MM-DD`). Choice matching is
+exact against declared values after trimming. Locale-dependent date interpretation, nested
+objects, and arrays are cut — but an unambiguous date representation is not cuttable,
+because "next Friday" is exactly the conversion slot filling exists to perform.
+
+**D10 — `conversation-tools` stops populating `inputSchema` from raw transport schemas.**
+Nothing consumes it today, so dropping the passthrough is behavior-preserving and honest.
+Deliberate projection from MCP/OpenAPI JSON Schema into the normalized declaration is a
+follow-up with its own tests; a silent partial projection would be worse than none.
+
+**D11 — A `failed` resolution is not an ask.** Parse failure, deadline, or model error
+means the skill could not be run, not that information is missing. The turn dispatches
+nothing and composes an ordinary reply; the trace records the failure. Only unsatisfied
+*required fields* produce a question.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - A declared field is filled from the conversation (Priority: P1)
@@ -181,9 +211,17 @@ was never called and the reply asks for the value.
   dispatch, returning filled input, a parked needs-input decision naming the unsatisfied
   fields, or a failure. Not in the selector, which stays deterministic selection policy;
   not in the dispatcher, which would make every host own extraction.
-- **FR-004** `ProcessTurnResult` MUST expose `awaitingSkillInput` carrying the skill name
-  and outstanding fields with their descriptions and permitted values, forwarded through
-  both the non-streaming and streaming result constructors.
+- **FR-004** `ProcessTurnResult` MUST expose `awaitingSkillInput` as a list — one entry per
+  skill parked this turn, each naming the skill and its outstanding fields with description,
+  permitted values, and a reason code distinguishing "absent from the conversation" from
+  "present but rejected by validation". It is forwarded through both the non-streaming and
+  streaming result constructors. It reports this turn and is not durable state (D8); the
+  engine MUST NOT resume from it.
+- **FR-018** The declaration MUST support exactly the v1 scalar types in D9, and the
+  resolver MUST emit canonical values for each. An implementation MUST NOT accept a type it
+  cannot deterministically validate.
+- **FR-019** Bounded history for extraction MUST have an explicit configurable limit with a
+  documented default, owned by the resolver factory rather than by each host.
 
 ### Behavior
 
@@ -243,8 +281,13 @@ was never called and the reply asks for the value.
 Untyped routine-step filling as a second consumer; author-controlled sourcing
 (`source: customer | context | any`); nested objects, arrays, and locale-ambiguous date
 interpretation; automatic MCP/OpenAPI schema projection into the declaration; any backend
-adoption, persistence adapter, dashboard editor, or transport work; and cross-skill input
-dependencies within a turn (precluded by D1).
+adoption, persistence adapter, dashboard editor, or transport work; cross-skill input
+dependencies within a turn (precluded by D1); and engine-owned resumption of a parked
+request, including any exclusivity rule against `awaitingDecision` (D8).
+
+Note what is *not* cut despite being adjacent: an unambiguous date type (D9) and the
+`conversation-tools` migration (FR-002) are both required, because the first is the
+conversion slot filling exists to do and the second is a compile break this slice causes.
 
 ## Minimum that cannot be cut
 

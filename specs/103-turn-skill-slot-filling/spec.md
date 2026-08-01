@@ -89,14 +89,19 @@ mentioned earlier can still be recovered.
 extraction and is never offered to the model, but it is validated against the same
 declaration. Invalid host input parks or fails; it is not passed through.
 
-**D6 — Reuse the field normalization primitive, not the routine components.** Routine
-machinery already extracts declared slot values from a message
-(`RoutineNextStepSelector` allowlists declared keys; `slotCorrection` does deterministic
-type verification for mutable post-completion corrections). Building a second independent
-JSON parser, prompt discipline, and scalar coercer would be the real mistake. Share the
-normalization/validation primitive. Do not make a routine selector impersonate a
-selected-skill resolver — `RoutineSlotSchema` has a different contract (`id`, `key`,
-`mutable`, no choices).
+**D6 — The resolver owns its normalizer in `conversation-defaults` for this slice.** The
+earlier instruction to "share the primitive with routine slot machinery" is not buildable
+as stated: the only existing scalar verifier is `conversation-engine/src/slotCorrection.ts`,
+and the dependency direction is `conversation-defaults` → `conversation-engine` →
+`conversation-contract`. The engine cannot import a defaults-owned primitive without a
+cycle, and the existing verifier is routine-specific — no `integer`, no permitted values —
+so it could not satisfy D9 anyway.
+
+So: the resolver owns a pure normalizer in `conversation-defaults`; `slotCorrection` is not
+modified. If a shared home is later warranted it moves *down* into the engine or the
+contract, as a deliberate refactor once there are two real consumers. What still holds from
+the original intent: do not make `RoutineNextStepSelector` impersonate a selected-skill
+resolver — `RoutineSlotSchema` is a different contract (`id`, `key`, `mutable`, no choices).
 
 **D7 — "Timeout" means bounding the turn's wait, not cancelling the provider call.**
 `ConversationModelGateway.complete` takes no abort signal. The resolver races a deadline
@@ -109,18 +114,50 @@ conflict the third review found: a yielded routine that resumes on the next turn
 than orchestrated — on a later turn the directive matches again, extraction reads the
 bounded history (D4), the user's answer is in it, and the field fills.
 
-The limitation this accepts, stated plainly: if the user's answer does not itself re-match
-the directive, the skill is not retried that turn. A host wanting stronger behavior
-persists `awaitingSkillInput` and forces the skill via `selected.input` or metadata
-selection. Engine-owned resumption, and any exclusivity rule against `awaitingDecision`,
-are deliberately not designed here — inventing a second parked-state machine that must
-negotiate with routine resumption is a larger feature than slot filling.
+The limitation this accepts is sharper than "natural retry" suggests, and must not be
+oversold:
 
-**D9 — Supported types in v1 are scalars only:** `string`, `number`, `integer`, `boolean`,
-and `date` as an unambiguous ISO-8601 calendar date (`YYYY-MM-DD`). Choice matching is
-exact against declared values after trimming. Locale-dependent date interpretation, nested
-objects, and arrays are cut — but an unambiguous date representation is not cuttable,
-because "next Friday" is exactly the conversion slot filling exists to perform.
+- With an **`always`** condition the directive re-matches every turn, so the answer turn
+  reliably re-selects the skill and extraction finds the value. This is the case US2
+  scenario 4 describes.
+- With a **contextual** condition, re-matching is *not guaranteed*. The probabilistic
+  matcher runs before the resolver and is asked only whether the condition holds; a bare
+  answer like "Tuesday" may or may not read as matching "the user is asking about an
+  order". Neither the matcher contract nor its prompt promises it will.
+- If a routine claims the answer turn, normal selection does not run at all.
+
+A host that needs a guarantee persists `awaitingSkillInput` itself and forces the skill on
+the next turn via metadata selection or `selected.input`. Engine-owned resumption, and any
+exclusivity rule against `awaitingDecision`, are deliberately not designed here — inventing
+a second parked-state machine that must negotiate with routine resumption is a larger
+feature than slot filling.
+
+**D9 — Supported types in v1 are scalars only, with a deterministic normalization
+contract.** Naming the types is not enough; each needs an accepted-input rule and a single
+canonical output, or two implementations will disagree.
+
+| Type | Accepted from the model | Canonical value | Rejected |
+|---|---|---|---|
+| `string` | JSON string | trimmed; empty after trim is treated as absent | non-string |
+| `number` | JSON number, or a JSON string parseable as a finite decimal | JS number | `NaN`, `Infinity`, unparseable |
+| `integer` | as `number`, and integral | JS number | any fractional value, including `2.0` expressed as `"2.5"` |
+| `boolean` | JSON `true`/`false` only | boolean | `"yes"`, `1`, `"true"` |
+| `date` | JSON string matching `YYYY-MM-DD` | that string | any other form, including relative phrases |
+
+**Permitted values are allowed only on `string` fields in v1.** That removes the question
+of how a typed canonical value compares to a declared choice. Matching is
+case-insensitive after trimming, against the declared strings; the model is shown the exact
+values and anything else is invalid.
+
+**The relative-date problem is solved in the prompt, not the validator.** "Next Friday" →
+a calendar date needs a reference instant and a time zone, and `TurnContext` supplies
+neither. So the resolver factory takes a clock and an IANA time zone (default UTC), states
+today's date in that zone in the system prompt, and requires the model to return an
+absolute `YYYY-MM-DD`. Validation then only checks the format — it never interprets a
+relative expression, which it could not do deterministically. Without the reference date
+the `date` type would be a promise the resolver cannot keep.
+
+Locale-dependent date parsing, nested objects, and arrays stay cut.
 
 **D10 — `conversation-tools` stops populating `inputSchema` from raw transport schemas.**
 Nothing consumes it today, so dropping the passthrough is behavior-preserving and honest.
@@ -172,8 +209,11 @@ was never called and the reply asks for the value.
    presented.
 3. **Given** several missing required fields, **When** the reply asks, **Then** it asks in
    one turn, not one question per field.
-4. **Given** the user supplies the value next turn, **When** the directive matches again,
-   **Then** the handler is called with it.
+4. **Given** a skill bound to an `always`-condition directive parked for a missing value,
+   **When** the user supplies it on the next turn, **Then** the directive re-matches,
+   extraction recovers the value from history, and the handler is called with it. For a
+   *contextual* condition this is not guaranteed — a bare answer may not re-match, and a
+   host needing a guarantee forces the skill itself (D8).
 5. **Given** a parked turn, **When** the host inspects the result, **Then**
    `awaitingSkillInput` names the skill and the outstanding fields.
 6. **Given** the user's answer still fails validation, **When** the turn completes,
@@ -220,8 +260,13 @@ was never called and the reply asks for the value.
 - **FR-018** The declaration MUST support exactly the v1 scalar types in D9, and the
   resolver MUST emit canonical values for each. An implementation MUST NOT accept a type it
   cannot deterministically validate.
-- **FR-019** Bounded history for extraction MUST have an explicit configurable limit with a
-  documented default, owned by the resolver factory rather than by each host.
+- **FR-019** Bounded history for extraction MUST default to the **most recent 20 messages,
+  capped at 8000 characters total, dropping oldest-first** when either bound is exceeded.
+  Both are configurable on the resolver factory. The dual bound is deliberate: a message
+  count alone does not bound cost or the untrusted-text surface when messages are long.
+- **FR-020** The resolver factory MUST accept a clock and an IANA time zone (default UTC),
+  and the extraction prompt MUST state the current date in that zone, so a `date` field can
+  be filled from a relative expression (D9).
 
 ### Behavior
 

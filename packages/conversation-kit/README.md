@@ -108,6 +108,51 @@ const kit = createConversationKit({
 const reply = await kit.runTurn({ sessionId: "s1", message: "Where is order A-1?" });
 ```
 
+### Declared handler input
+
+Give a turn-level skill a scalar field declaration when its handler needs facts
+from the conversation. The kit extracts only those fields, validates them before
+dispatch, and gives the handler canonical values. This keeps the parsing rule in
+one multilingual model call instead of in every handler.
+
+```ts
+const kit = createConversationKit({
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  skills: [{
+    name: "book_haircut",
+    inputSchema: {
+      fields: [
+        { name: "calendar_date", type: "date", required: true },
+        {
+          name: "haircut_style",
+          type: "string",
+          required: false,
+          permittedValues: ["Short", "Long"],
+        },
+      ],
+    },
+  }],
+  localSkills: new Map([
+    ["book_haircut", async ({ input }) => {
+      // input.calendar_date is YYYY-MM-DD; haircut_style is "Short" or "Long" when present.
+      return { disposition: "settled", outcome: { status: "completed" } };
+    }],
+  ]),
+});
+```
+
+When a required field is absent or rejected, the handler is not called. The turn
+still gets a normal composed reply and its result includes `awaitingSkillInput`,
+with the skill name, outstanding field declarations, choices, and whether each
+field was absent or rejected. All selected skills wait: if one needs input, none
+of them dispatch for that turn.
+
+`awaitingSkillInput` is a report, not a saved engine state. An `always` directive
+will select the skill again on the next turn and can recover the answer from the
+conversation. A contextual directive may not match a bare reply, so a host that
+needs guaranteed retry should retain the report and force the skill on its next
+turn with selection metadata or `SelectedSkill.input`.
+
 Routines run skills too. A `skill` step names the skill, `inputBindings` builds its
 arguments from a literal, a routine variable (`variableRef`), or a turn context
 variable (`contextVariableRef`), and `outputAssignments` stores result fields back

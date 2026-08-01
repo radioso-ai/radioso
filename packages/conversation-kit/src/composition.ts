@@ -5,6 +5,7 @@ import type {
   ConversationEvent,
   ConversationInputEvent,
   ConversationModelGateway,
+  ConversationRoutineSkillDispatcher,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationStores,
@@ -28,7 +29,9 @@ import {
   createDefaultConversationDirectiveMatcher,
   createDefaultConversationSkillDispatcher,
   createDefaultConversationSkillSelector,
+  createDefaultRoutineSkillDispatcher,
   createModelBackedConversationComposer,
+  type DefaultConversationSkillSelectorOptions,
   type LocalSkillRegistry,
 } from "./defaultPorts.js";
 import {
@@ -77,9 +80,22 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
    * in the engine.
    */
   routineRegistrations?: RoutineRegistration[];
+  /**
+   * How a routine's `skill` steps run. Without one the kit dispatches them against the
+   * registered `skills` and their `localSkills` handlers, resolving each step's authored
+   * `inputBindings` into the handler's arguments. Supply your own to run routine skills
+   * through a different executor (an MCP client, a remote service) — it never replaces
+   * turn-level dispatch, which stays on `dispatcher`.
+   */
+  routineSkillDispatcher?: ConversationRoutineSkillDispatcher;
   authoringStore?: ConversationKitAuthoringStore;
   skills?: SkillDefinition[];
   localSkills?: LocalSkillRegistry;
+  /**
+   * Per-skill availability the default selector consults before letting a directive
+   * binding claim a turn. Read per turn, so a long-lived kit sees current state.
+   */
+  agentSkillStates?: DefaultConversationSkillSelectorOptions["agentSkillStates"];
   stores?: InMemoryConversationStores;
   engine?: ConversationEngine;
   directiveMatcher?: ConversationDirectiveMatcher;
@@ -134,8 +150,12 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   seedAuthoringStore(authoringStore, agent, directives, routines);
   const skills = [...(options.skills ?? [])];
   const directiveMatcher = options.directiveMatcher ?? createDefaultConversationDirectiveMatcher(modelGateway);
-  const selector = options.selector ?? createDefaultConversationSkillSelector();
+  const selector = options.selector ?? createDefaultConversationSkillSelector(
+    options.agentSkillStates ? { agentSkillStates: options.agentSkillStates } : {},
+  );
   const dispatcher = options.dispatcher ?? createDefaultConversationSkillDispatcher(options.localSkills);
+  const routineSkillDispatcher = options.routineSkillDispatcher
+    ?? createDefaultRoutineSkillDispatcher(options.localSkills ?? new Map(), skills);
   const composer = options.composer ?? createModelBackedConversationComposer(modelGateway);
   const directiveCoherence = createDirectiveCoherenceGate(options.directiveCoherence, modelGateway);
 
@@ -170,7 +190,12 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         content: input.message,
         metadata: input.metadata,
       };
-      const routineRunner = new DefaultRoutineRunner(authoringStore.listRoutines(), routineSelector, routineRenderer);
+      const routineRunner = new DefaultRoutineRunner(
+        authoringStore.listRoutines(),
+        routineSelector,
+        routineRenderer,
+        routineSkillDispatcher,
+      );
       return engine.processTurn({
         agent: turnAgent,
         sessionId: input.sessionId ?? createId("session"),

@@ -66,6 +66,71 @@ client.createDirective(agent.id, {
 });
 ```
 
+## Skills
+
+A skill is a named capability a turn can run. Register the definitions with
+`skills` and pair each name with a handler in `localSkills`; a handler receives the
+resolved arguments and returns a settled outcome.
+
+Two things pick the skill for a turn, in this order:
+
+1. **Explicit metadata.** `metadata.skillName` (or `metadata.selectedSkills`) on the
+   turn selects those skills. Your caller took the decision, so it wins.
+2. **An authored directive binding.** Otherwise a matched directive whose `binding`
+   names a registered skill claims the turn. This is the automatic path: behavior is
+   authored ("when the user asks about an order, run `order_lookup`"), never a
+   free-form model tool pick.
+
+If neither applies, no skill runs and the turn composes an ordinary reply.
+
+```ts
+import { createConversationKit } from "@radioso/conversation-kit";
+
+const kit = createConversationKit({
+  openAiApiKey: process.env.OPENAI_API_KEY,
+  skills: [{ name: "order_lookup", description: "Look up an order's status." }],
+  localSkills: new Map([
+    ["order_lookup", async ({ input }) => ({
+      disposition: "settled",
+      outcome: { status: "completed", outputs: { eta: "tomorrow", orderId: input.orderId } },
+    })],
+  ]),
+  directives: [
+    {
+      name: "order_status",
+      condition: { kind: "always" },
+      action: "Answer with the order's status.",
+      binding: { kind: "skill", skillName: "order_lookup" },
+    },
+  ],
+});
+
+const reply = await kit.runTurn({ sessionId: "s1", message: "Where is order A-1?" });
+```
+
+Routines run skills too. A `skill` step names the skill, `inputBindings` builds its
+arguments from a literal, a routine variable (`variableRef`), or a turn context
+variable (`contextVariableRef`), and `outputAssignments` stores result fields back
+into routine variables — which `{{slot.<name>}}` in a later step's instruction reads.
+The step is transit: the routine dispatches it and advances on the same turn,
+including onto a failure edge when the skill fails or is not registered.
+
+```ts
+const runLookup = {
+  id: "run_lookup",
+  kind: "skill",
+  skillName: "order_lookup",
+  inputBindings: {
+    orderId: { kind: "variableRef", ref: "orderId" },
+    channel: { kind: "literal", value: "chat" },
+  },
+  outputAssignments: { eta: "eta" },
+};
+```
+
+Pass `routineSkillDispatcher` to run routine skill steps through your own executor
+instead of the local handlers.
+
 ## Routines
 
 Routines are stateful, multi-step flows. The kit wires the routine runner and an

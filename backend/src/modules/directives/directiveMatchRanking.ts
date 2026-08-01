@@ -7,4 +7,4 @@ export {
   DEFAULT_DIRECTIVE_PRIORITY,
   directiveMatchConfidence,
   directiveMatchPriority,
-} from "@radioso/conversation-defaults";
+} from "./domain.js";

@@ -11,4 +11,4 @@ export {
   type DirectiveBindingSkipReason,
   type ResolveDirectiveBindingInput,
   type SkippedDirectiveBinding,
-} from "@radioso/conversation-defaults";
+} from "../../directives/public.js";

@@ -679,14 +679,14 @@ export function ContentPlanView({
           </span>
         ) : 'Last 30 days'
       }
-      contentClassName="flex min-h-0 flex-col p-0 md:flex-row"
+      contentClassName="flex min-h-0 flex-col p-0 xl:flex-row"
       contentScroll={false}
     >
       <div
         ref={scrollContainerRef}
         className={cn(
           'flex min-h-0 flex-1 flex-col overflow-y-auto',
-          showTwoPane ? 'hidden md:flex md:w-1/2 md:min-w-0 md:border-r md:border-border' : 'flex',
+          showTwoPane ? 'hidden xl:flex xl:w-1/2 xl:min-w-0 xl:border-r xl:border-border' : 'flex',
         )}
         aria-label="Content plan list"
       >
@@ -774,7 +774,7 @@ export function ContentPlanView({
 
       {showTwoPane ? (
         <div
-          className="flex min-h-0 w-full flex-1 flex-col md:w-1/2 md:min-w-0"
+          className="flex min-h-0 w-full flex-1 flex-col xl:w-1/2 xl:min-w-0"
           aria-label="Selected topic detail"
         >
           {detailLoadState === 'loading' ? (

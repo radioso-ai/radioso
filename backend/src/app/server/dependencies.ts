@@ -71,6 +71,7 @@ import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import {
+  RoutineInvocableSkillNamesService,
   SkillAuthoringCatalogService,
   SkillCatalogService,
   routineAuthoringBuiltInSkills,
@@ -298,6 +299,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
   });
   const agentSkillRepository = new AgentSkillRepository(infrastructure.database.kysely);
+  // The single derivation of "skill names a routine may invoke that the authoring catalog
+  // does not list". Publish validation and the runtime resolver chain previously derived
+  // this separately and had already diverged: the validation copy omitted Slack, so an
+  // enabled agent_selectable Slack skill was routable at runtime yet rejected at publish.
+  const routineInvocableSkillNames = new RoutineInvocableSkillNamesService({
+    agentSkills: agentSkillRepository,
+  });
   const agentSkillsService = new AgentSkillsService({
     repository: agentSkillRepository,
     capabilities: skillCapabilityRegistry,
@@ -704,16 +712,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contextVariableReader: contextVariableRepository,
     // Mirror the runtime routine-skill resolver's name set (enabled webhook +
     // customer-email skills) so publish validation accepts what runtime routes.
-    additionalRoutineSkillNames: async ({ workspaceId, agentId }) => {
-      const [emails, webhooks] = await Promise.all([
-        emailSkillDefinitionService.list(workspaceId, agentId),
-        webhookSkillDefinitionService.list(workspaceId, agentId),
-      ]);
-      return [
-        ...emails.filter((skill) => skill.enabled).map((skill) => skill.skillName),
-        ...webhooks.filter((skill) => skill.enabled).map((skill) => skill.skillName),
-      ];
-    },
+    additionalRoutineSkillNames: (context) => routineInvocableSkillNames.listForAgent(context),
     webhookDestinations: {
       existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
         webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),

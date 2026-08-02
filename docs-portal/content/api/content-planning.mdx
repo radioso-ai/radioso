@@ -1,0 +1,89 @@
+---
+title: "Content planning API"
+description: "Read the current workspace content plan, topic evidence, and member answers through session-authenticated endpoints."
+last_updated: 2026-08-02
+---
+
+# Content planning API
+
+Use these reads when an authenticated operator surface needs the same current content
+plan as the dashboard. All three endpoints use the active workspace session and require
+`workspace.quality.read`.
+
+Content Planning is a read surface. It does not expose report generation, refresh,
+topic editing, or publication endpoints.
+
+## Read the current plan
+
+```http
+GET /api/v1/quality/content-plan?view=opportunities&limit=25
+```
+
+The response fixes `range` to `30d` and includes the current and comparison windows,
+an `asOf` timestamp, projection freshness, report-wide counts, the canonical ranked
+topic page, emerging questions, and an opaque next cursor.
+
+Set `view=all_interests` to include mature well-covered topics. A cursor is bound to the
+workspace, view, projection generation, and ranking version; changing any of those
+inputs returns `400` rather than silently mixing pages.
+
+Grounding fields keep `notEvaluatedAnswerCount` separate from the three measured
+verdicts. `reducedOrNoSupportRate` is `null` when there is no evaluated denominator.
+
+## Read one topic
+
+```http
+GET /api/v1/quality/content-plan/topics/80715c75-b62f-4a93-bccd-d98e8f755d31
+```
+
+Topic detail includes the canonical topic identifier, action evidence, at most eight
+representative questions, at most five related documents, and affected agents and
+channels. It never returns vectors, document chunks or excerpts, prompts, completions,
+or provider response fields.
+
+A still-valid merged identifier returns `200` with `redirectedFromTopicId` and the
+surviving `canonicalTopicId`. Replace the client URL with the canonical identifier.
+Unknown, retired, expired-redirect, foreign-workspace, and unauthorized topic IDs share
+the ordinary `404` response.
+
+## Read the member answers
+
+```http
+GET /api/v1/quality/content-plan/topics/80715c75-b62f-4a93-bccd-d98e8f755d31/turns?window=current&page=1&pageSize=25
+```
+
+`window` accepts `current`, `comparison`, or `both`. The response reuses the existing
+Quality turn page, including question/answer mapping, triage, Eval verification, and
+conversation drawer identifiers. One assistant answer appears once even when a source
+message contributed overlapping semantic intents to the topic.
+
+## Partial results
+
+Provider or enrichment failure is represented inside a successful report when the core
+topic evidence remains coherent. Check the projection, label, recommendation, and
+corpus states instead of treating every non-ready enrichment as an HTTP error.
+
+## Common failure modes
+
+### A cursor returns 400
+
+Do not reuse it after switching views or workspaces. Start again without `cursor` and
+follow the newly returned `nextCursor` values.
+
+### A topic returns 404 after it used to work
+
+The topic may have retired, its merge redirect may have expired, or the active session
+may no longer have access to that workspace. These cases deliberately share one
+response to avoid disclosing topic existence.
+
+### Counts are present while recommendation prose is missing
+
+This is an expected partial state. Evidence and demand stay readable while labeling,
+corpus analysis, or brief generation retries in the background.
+
+## Read next
+
+- [Content planning for operators](/operators/content-planning)
+- [API overview](/api)
+- [Auth and sessions](/api/auth-and-sessions)
+- [API Reference](/api-reference)

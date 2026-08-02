@@ -171,6 +171,55 @@ describe("document processing enrichment split", () => {
     });
   });
 
+  it("notifies corpus observers after vector publication and before the final enrich enqueue", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const callOrder: string[] = [];
+    const ensureEnrichJob = vi.fn(async (input) => {
+      callOrder.push("enqueue");
+      return jobRepository.ensureEnrichJob(input);
+    });
+    const corpusChanges = {
+      onCorpusChanged: vi.fn(async () => {
+        callOrder.push("corpus");
+      }),
+    };
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.",
+      markdownContent: "Summer workshop introduction.",
+      status: "queued",
+    });
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService([]),
+      createAuditService(),
+      settingsReader(true),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      undefined,
+      alwaysAppliesFirstChunkDate,
+      undefined,
+      { ensureEnrichJob },
+      undefined,
+      corpusChanges,
+    );
+
+    await expect(service.process(buildVectorizeJob(document.id, document.revision)))
+      .resolves.toBe("completed");
+
+    expect(corpusChanges.onCorpusChanged).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      documentId: document.id,
+      change: "published",
+    });
+    expect(callOrder).toEqual(["corpus", "enqueue"]);
+  });
+
   it("vectorize job enqueues no enrich job when enrichment is disabled", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

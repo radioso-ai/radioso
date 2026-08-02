@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { sql, type Expression, type RawBuilder } from "kysely";
 
 import { stringifyJsonb } from "../jsonb.js";
@@ -141,3 +143,50 @@ export const anyOf = (
   values: readonly unknown[],
   pgArrayType: string,
 ): RawBuilder<boolean> => sql`${expression} = any(${sql.val(values)}::${sql.raw(pgArrayType)})`;
+
+/** Validate and serialize one dynamic-width pgvector value without exposing raw SQL to repositories. */
+export const serializePgVector = (values: readonly number[]): string => {
+  if (values.length === 0 || values.some((value) => !Number.isFinite(value))) {
+    throw new Error("A pgvector value must contain finite dimensions");
+  }
+  return `[${values.join(",")}]`;
+};
+
+/** Bound parameter cast to pgvector's dynamic-width `vector` type. */
+export const toPgVector = (values: readonly number[]): RawBuilder<string> =>
+  sql`${serializePgVector(values)}::vector`;
+
+/** pgvector cosine distance (`0` is identical, `2` is opposite). */
+export const pgVectorCosineDistance = (
+  column: Expression<unknown>,
+  values: readonly number[],
+): RawBuilder<number> => sql<number>`(${column} <=> ${toPgVector(values)})`;
+
+/** Mean of dynamic-width pgvector values, used for bounded aggregate reconciliation. */
+export const pgVectorAverage = (column: Expression<unknown>): RawBuilder<string | null> =>
+  sql<string | null>`avg(${column})`;
+
+/**
+ * Common claim validation and token construction for `FOR UPDATE SKIP LOCKED`
+ * repositories. The caller still owns the transaction and state predicates.
+ */
+export const createClaimLease = (input: {
+  now: Date;
+  leaseMs: number;
+  limit: number;
+  maxLimit: number;
+}): { token: string; expiresAt: Date } => {
+  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > input.maxLimit) {
+    throw new Error(`Claim limit must be between 1 and ${input.maxLimit}`);
+  }
+  if (!Number.isInteger(input.leaseMs) || input.leaseMs < 1) {
+    throw new Error("Claim lease must be a positive integer number of milliseconds");
+  }
+  if (!Number.isFinite(input.now.getTime())) {
+    throw new Error("Claim time must be valid");
+  }
+  return {
+    token: randomUUID(),
+    expiresAt: new Date(input.now.getTime() + input.leaseMs),
+  };
+};

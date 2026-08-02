@@ -22,6 +22,12 @@ import { AuditEventRepository } from "../../db/repositories/auditEventRepository
 import { BootstrapGreetingCacheRepository } from "../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
+import { ContentPlanObservationRepository } from "../../db/repositories/contentPlanningObservationRepository.js";
+import { ContentPlanProjectionRepository } from "../../db/repositories/contentPlanningProjectionRepository.js";
+import { ContentPlanTopicRepository } from "../../db/repositories/contentPlanningTopicRepository.js";
+import { ContentPlanEnrichmentRepository } from "../../db/repositories/contentPlanningEnrichmentRepository.js";
+import { ContentPlanEnrichmentTriggerRepository } from "../../db/repositories/contentPlanningEnrichmentTriggerRepository.js";
+import { ContentPlanningCorpusSearchRepository } from "../../db/repositories/contentPlanningCorpusSearchRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../db/repositories/embeddingProfileJobRepository.js";
 import { EmbeddingProfileCleanupRepository } from "../../db/repositories/embeddingProfileCleanupRepository.js";
@@ -44,6 +50,10 @@ import { WorkspaceTokenRepository } from "../../db/repositories/workspaceTokenRe
 import { LlmResponseLanguageDetector } from "../../shared/services/responseLanguageDetector.js";
 import { LlmHandoffWaitingMessageGenerator } from "../../shared/services/handoffWaitingMessageGenerator.js";
 import { PostgresAssistantTurnPersistence } from "../../modules/chat/infra/postgresAssistantTurnPersistence.js";
+import { ContentPlanningCommittedTurnWriter } from "../composition/adapters/contentPlanningCommittedTurnWriter.js";
+import { PostgresContentPlanHistoricalTurnSource } from "../composition/adapters/contentPlanningHistoricalTurnSource.js";
+import { PostgresContentPlanProjectionCandidateSource } from "../composition/adapters/contentPlanningProjectionCandidates.js";
+import { PostgresContentPlanProjectionDiscovery } from "../composition/adapters/contentPlanningProjectionDiscovery.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import { AccountAccessService, AccountInvitationService } from "../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../modules/accessGrants/public.js";
@@ -118,6 +128,7 @@ import {
 import {
   ChunkRepository,
   type DocumentJobDispatcherPort,
+  type DocumentCorpusChangeObserverPort,
   DocumentDeletionService,
   DocumentEnrichmentService,
   DocumentImportService,
@@ -159,6 +170,8 @@ import type {
   PinnedDocumentEmbeddingPort,
   QueryEmbeddingPort,
 } from "../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
+import type { EmbeddingGenerationGateway } from "../../modules/embeddingProfiles/contracts/embeddingGeneration.js";
+import type { EmbeddingBindingResolverPort } from "../../modules/embeddingProfiles/services/profileBoundEmbeddingPorts.js";
 import {
   EmbeddingProfileCleanupService,
   type EmbeddingProfileProjectionCleanupPort,
@@ -242,6 +255,42 @@ import { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.
 import { RadiosoCrawlerProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import { WorkspaceService, WorkspaceSummaryService } from "../../modules/workspace/public.js";
+import {
+  QualityContentPlanningEvidenceSource,
+  type QualityVerificationSourcePort,
+} from "../../modules/quality/composition.js";
+import { ContentPlanningWorker } from "../../modules/contentPlanning/worker.js";
+import type { HistoricalInteractionInterpreterPort } from "../../modules/contentPlanning/services/observationSourceResolver.js";
+import { ObservationSemanticSourceLoader } from "../../modules/contentPlanning/services/observationSourceLoader.js";
+import { ContentPlanHistoricalTurnProjectionService } from "../../modules/contentPlanning/services/historicalTurnProjectionService.js";
+import { ContentPlanProjectionBudgetService } from "../../modules/contentPlanning/services/projectionBudgetService.js";
+import { ContentPlanProjectionOrchestrator } from "../../modules/contentPlanning/services/projectionOrchestrator.js";
+import { ContentPlanningWorkerRuntime } from "../../modules/contentPlanning/services/contentPlanningWorkerRuntime.js";
+import { ContentPlanningWorkerObservability } from "../../modules/contentPlanning/services/contentPlanWorkerObservability.js";
+import { ContinuousContentPlanningProcessor } from "../../modules/contentPlanning/services/continuousContentPlanningProcessor.js";
+import {
+  ContentPlanReportEnrichmentPlanningSource,
+  ContentPlanningEnrichmentPlanningService,
+} from "../../modules/contentPlanning/services/enrichmentPlanningService.js";
+import { ContentPlanningEnrichmentScheduler } from "../../modules/contentPlanning/services/enrichmentScheduler.js";
+import { ContentPlanningEnrichmentJobRunner } from "../../modules/contentPlanning/services/enrichmentJobRunner.js";
+import { ContentPlanningEnrichmentContextService } from "../../modules/contentPlanning/services/enrichmentContextService.js";
+import { ContentPlanningCorpusEvidenceService } from "../../modules/contentPlanning/services/corpusEvidenceService.js";
+import { ContentPlanningEnrichmentProcessor } from "../../modules/contentPlanning/services/enrichmentProcessor.js";
+import {
+  ContentPlanningEnrichmentService,
+  ModelContentPlanningEnrichmentGateway,
+} from "../../modules/contentPlanning/services/topicEnrichmentService.js";
+import { PostgresContentPlanReadSource } from "../../modules/contentPlanning/infra/contentPlanReadSource.js";
+import { PostgresContentPlanEnrichmentContextSource } from "../../modules/contentPlanning/infra/postgresEnrichmentContextSource.js";
+import { PostgresContentPlanningOperationalMetricsSource } from "../../modules/contentPlanning/infra/postgresOperationalMetricsSource.js";
+import { ContentPlanningOperationalMetricsReporter } from "../../modules/contentPlanning/services/operationalMetricsReporter.js";
+import { RepositoryContentPlanningCorpusEvidenceStore } from "../../modules/contentPlanning/infra/repositoryCorpusEvidenceStore.js";
+import {
+  RepositoryContentPlanEnrichmentClaimSource,
+  RepositoryContentPlanEnrichmentPublication,
+  RepositoryContentPlanEnrichmentQueue,
+} from "../../modules/contentPlanning/infra/repositoryEnrichmentPorts.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../shared/analytics/productAnalyticsService.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
@@ -261,9 +310,11 @@ import { SkillBackedContextResolver } from "../composition/builtIn/contextResolv
 import { RepositoryAgentSkillTurnSkillProvider } from "../composition/builtIn/agentSkillTurnSkillProvider.js";
 import { createLogger, type AppLogger } from "../../shared/observability/logger.js";
 import { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
+import { traceOperation } from "../../shared/observability/tracing/operations.js";
 import { createPublishedRoutineRegistrationSource } from "../composition/routineDefinitionSource.js";
 import { ChatAnswerSupport, recordClarificationDecision } from "../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import {
   createDefaultAnalyticsSinks,
   createDefaultErrorSinks,
@@ -402,6 +453,11 @@ export const buildRepositories = (
   chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
   conversationRepository: new ConversationRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
+  contentPlanObservationRepository: new ContentPlanObservationRepository(database.kysely),
+  contentPlanProjectionRepository: new ContentPlanProjectionRepository(database.kysely),
+  contentPlanTopicRepository: new ContentPlanTopicRepository(database.kysely),
+  contentPlanEnrichmentRepository: new ContentPlanEnrichmentRepository(database.kysely),
+  contentPlanEnrichmentTriggerRepository: new ContentPlanEnrichmentTriggerRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
@@ -439,6 +495,149 @@ export const buildRepositories = (
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
   slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
 });
+
+/**
+ * Assembles content planning's bounded background graph. Construction performs no
+ * provider or projection work; only the document-worker runtime starts polling it.
+ */
+export const buildContentPlanningWorkerRuntime = (input: {
+  database: Database;
+  logger: AppLogger;
+  metricsRegistry: MetricsRegistry | null;
+  repositories: Pick<
+    ReturnType<typeof buildRepositories>,
+    | "contentPlanObservationRepository"
+    | "contentPlanProjectionRepository"
+    | "contentPlanTopicRepository"
+    | "contentPlanEnrichmentRepository"
+    | "contentPlanEnrichmentTriggerRepository"
+  >;
+  embeddingGateway: EmbeddingGenerationGateway;
+  embeddingBindings: EmbeddingBindingResolverPort;
+  historicalInterpreter: HistoricalInteractionInterpreterPort;
+  enrichmentInferencePipeline: ModelInferencePipeline;
+  qualityVerificationSource: QualityVerificationSourcePort;
+}): ContentPlanningWorkerRuntime => {
+  const historicalTurns = new PostgresContentPlanHistoricalTurnSource(input.database.kysely);
+  const semanticSources = new ObservationSemanticSourceLoader(
+    input.repositories.contentPlanObservationRepository,
+    historicalTurns,
+    input.historicalInterpreter,
+  );
+  const qualityEvidence = new QualityContentPlanningEvidenceSource(
+    input.database.kysely,
+    input.qualityVerificationSource,
+  );
+  const budget = new ContentPlanProjectionBudgetService(
+    input.repositories.contentPlanProjectionRepository,
+  );
+  const observability = new ContentPlanningWorkerObservability({
+    logger: input.logger,
+    ...(input.metricsRegistry ? { metrics: input.metricsRegistry } : {}),
+    tracer: {
+      record: (name, attributes) => {
+        void traceOperation({ name, attributes, run: () => undefined });
+      },
+    },
+  });
+  const projectionProcessor = new ContentPlanningWorker({
+    observationWork: input.repositories.contentPlanObservationRepository,
+    semanticSources,
+    embeddings: {
+      async embedForProjection(request) {
+        const binding = await input.embeddingBindings.resolveBindingForSpace({
+          workspaceId: request.workspaceId,
+          embeddingSpaceId: request.embeddingSpaceId,
+        });
+        const vectors = await input.embeddingGateway.embedTexts(request.texts, {
+          model: binding.model,
+          dimensions: binding.space.dimensions,
+          purpose: "clustering",
+          provider: binding.provider,
+          endpointScopeFingerprint: binding.endpointScopeFingerprint,
+          usageContext: {
+            workspaceId: request.workspaceId,
+            surface: "content_plan",
+            operation: "projection_embedding",
+            attemptKey: `content-plan-projection:${request.generationId}`,
+          },
+        });
+        return {
+          embeddingSpaceId: binding.space.id,
+          vectors,
+        };
+      },
+    },
+    topics: input.repositories.contentPlanTopicRepository,
+    retention: input.repositories.contentPlanObservationRepository,
+    budget,
+    observability,
+  });
+  const enrichmentRepository = input.repositories.contentPlanEnrichmentRepository;
+  const planning = new ContentPlanningEnrichmentPlanningService({
+    source: new ContentPlanReportEnrichmentPlanningSource({
+      source: new PostgresContentPlanReadSource(input.database.kysely),
+      qualityEvidence,
+    }),
+    scheduler: new ContentPlanningEnrichmentScheduler(
+      new RepositoryContentPlanEnrichmentQueue(enrichmentRepository),
+    ),
+    trigger: input.repositories.contentPlanEnrichmentTriggerRepository,
+    observability,
+  });
+  const enrichmentContext = new ContentPlanningEnrichmentContextService({
+    source: new PostgresContentPlanEnrichmentContextSource(input.database.kysely),
+    qualityEvidence,
+    samples: semanticSources,
+    corpus: new ContentPlanningCorpusEvidenceService({
+      search: new ContentPlanningCorpusSearchRepository(input.database.kysely),
+      store: new RepositoryContentPlanningCorpusEvidenceStore(enrichmentRepository),
+    }),
+  });
+  const enrichments = new ContentPlanningEnrichmentJobRunner({
+    claims: new RepositoryContentPlanEnrichmentClaimSource(enrichmentRepository),
+    processor: new ContentPlanningEnrichmentProcessor({
+      generator: new ContentPlanningEnrichmentService({
+        gateway: new ModelContentPlanningEnrichmentGateway(
+          input.enrichmentInferencePipeline,
+        ),
+      }),
+      context: enrichmentContext,
+      store: new RepositoryContentPlanEnrichmentPublication(enrichmentRepository),
+      observability,
+    }),
+    observability,
+  });
+  const processor = new ContinuousContentPlanningProcessor({
+    projection: projectionProcessor,
+    planning,
+    enrichments,
+    operationalMetrics: new ContentPlanningOperationalMetricsReporter({
+      source: new PostgresContentPlanningOperationalMetricsSource(input.database.kysely),
+      observability,
+    }),
+    logger: input.logger,
+  });
+  const orchestrator = new ContentPlanProjectionOrchestrator({
+    projections: input.repositories.contentPlanProjectionRepository,
+    population: qualityEvidence,
+    discovery: new PostgresContentPlanProjectionDiscovery(input.database.kysely),
+    historicalTurns: new ContentPlanHistoricalTurnProjectionService(
+      historicalTurns,
+      budget,
+      input.historicalInterpreter,
+      observability,
+    ),
+    budget,
+    observability,
+  });
+  return new ContentPlanningWorkerRuntime({
+    candidates: new PostgresContentPlanProjectionCandidateSource(input.database.kysely),
+    orchestrator,
+    processor,
+    logger: input.logger,
+  });
+};
 
 export const buildAccessServices = (input: {
   auditService: AuditService;
@@ -638,6 +837,7 @@ export const buildDocumentServices = (input: {
   llmRegistry: LlmProviderRegistry;
   workspaceIngestionReprocessService?: WorkspaceIngestionReprocessService;
   embeddingCoverage?: EmbeddingCoverageReconciliationPort;
+  corpusChanges?: DocumentCorpusChangeObserverPort;
   errorReporter: ErrorReporter;
   postJobMaintenance?: {
     run(input: {
@@ -690,6 +890,7 @@ export const buildDocumentServices = (input: {
     documentSourceRepository,
     repositories.documentProcessingJobRepository,
     documentJobDispatcher,
+    input.corpusChanges,
   );
   const embeddingProfileJobService = input.pinnedDocumentEmbeddings
     ? new EmbeddingProfileJobService(
@@ -711,6 +912,7 @@ export const buildDocumentServices = (input: {
     usageLimitPolicy,
     documentSourceRepository,
     input.embeddingCoverage,
+    input.corpusChanges,
   );
   const websiteCrawlJobService = new WebsiteCrawlJobService({
     repository: repositories.websiteCrawlJobRepository,
@@ -764,6 +966,7 @@ export const buildDocumentServices = (input: {
     documentStorage,
     auditService,
     composition.capabilityPolicy,
+    input.corpusChanges,
   );
   const workspaceIngestionReprocessService =
     input.workspaceIngestionReprocessService ??
@@ -1876,6 +2079,7 @@ export const buildChatServices = (input: {
       input.database.kysely,
       undefined,
       input.conversationOwnershipRepository,
+      new ContentPlanningCommittedTurnWriter(),
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,

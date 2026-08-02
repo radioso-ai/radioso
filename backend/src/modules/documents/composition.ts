@@ -7,6 +7,7 @@ export { ChunkRepository } from "./infra/chunkRepository.js";
 export { AgentConverseResourceService } from "./services/agentConverseResourceService.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
+  type DocumentCorpusChangeObserverPort,
   type DocumentJobConsumerPort,
   type DocumentJobDispatcherPort,
   type DocumentStoragePort,

@@ -45,6 +45,11 @@ import { DEFAULT_SUGGESTED_QUESTIONS_COUNT } from "../../settings/contracts/retr
 import type { TurnRouting } from "./turnRouter.js";
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import {
+  interactionWithRetrievalIntents,
+  unresolvedConversationInteraction,
+  type PreparedConversationInteraction,
+} from "./conversationInteraction.js";
 
 interface ChatAnswerAuditMetadata {
   rewriteContinuityState?: RewriteContinuityState;
@@ -64,6 +69,8 @@ export interface PreparedSession {
   userMessage: MessageRecord;
   /** What the user is effectively asking this turn; differs from the persisted user message for resolved selectors. */
   effectiveQuery: string;
+  /** Capability-neutral structured meaning retained through turn commit. */
+  interaction?: PreparedConversationInteraction;
   /** Raw host input held aside until the page-read gate admits it. */
   pageContext?: AssistantPageContext | null;
   pageReadCapability?: PageReadCapability | null;
@@ -288,6 +295,7 @@ export class ChatSessionPreparer {
       turnFraming: defaultTurnFraming(),
       userMessage,
       effectiveQuery: input.query,
+      interaction: unresolvedConversationInteraction(),
       pageContext: input.pageContext ?? null,
       pageReadCapability: input.pageReadCapability ?? null,
       priorRewriteContinuityState: rewriteContinuityState,
@@ -495,6 +503,7 @@ export class ChatSessionPreparer {
       turnRoute,
       turnFraming: framing,
       effectiveQuery: input.query,
+      interaction: interactionWithRetrievalIntents(session.interaction, retrieval.diagnostics),
       ...this.stagedSpineFor(retrieval, this.gatedPageContext(session), variables),
     };
   }

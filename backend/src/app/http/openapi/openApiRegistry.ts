@@ -12,6 +12,7 @@ import { registerDocumentRetrievalSchemas } from "./schemas/documentRetrievalSch
 import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchemas.js";
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
+import { registerContentPlanningSchemas } from "./schemas/contentPlanningSchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
 import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
 
@@ -173,6 +174,13 @@ export interface OpenApiSchemaCatalog {
   LowQualityTurnSchema: z.ZodTypeAny;
   GroundingDiagnosticSchema: z.ZodTypeAny;
   LowQualityTurnsPageSchema: z.ZodTypeAny;
+  ContentPlanProjectionSchema: z.ZodTypeAny;
+  ContentPlanSummarySchema: z.ZodTypeAny;
+  ContentPlanTopicSummarySchema: z.ZodTypeAny;
+  ContentPlanEmergingQuestionSchema: z.ZodTypeAny;
+  ContentPlanPageSchema: z.ZodTypeAny;
+  ContentPlanTopicDetailSchema: z.ZodTypeAny;
+  ContentPlanTopicParamsSchema: RouteParameterSchema;
   QualityFeedbackCommentSchema: z.ZodTypeAny;
   QualityFeedbackSummarySchema: z.ZodTypeAny;
   QualityFeedbackValueSchema: z.ZodTypeAny;
@@ -330,6 +338,7 @@ export const createOpenApiRegistry = () => {
   registerAssistantHistorySchemas(registry, schemas);
   registerConnectorSchemas(registry, schemas);
   registerQualitySchemas(registry, schemas);
+  registerContentPlanningSchemas(registry, schemas);
   registerUsageTrendSchemas(registry, schemas);
   registerContextVariableSchemas(registry, schemas);
 

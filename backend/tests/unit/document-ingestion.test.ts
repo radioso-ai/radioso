@@ -21,6 +21,59 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { createDocumentEmbeddingPort } from "../support/embeddingPorts.js";
 
 describe("document ingestion", () => {
+  it("persists corpus invalidation around source and missing-page deletions", async () => {
+    const order: string[] = [];
+    const documentRepository = {
+      deleteBySourceIdAndWorkspaceId: vi.fn(async () => {
+        order.push("source-delete");
+        return { count: 2, storageRefs: [] };
+      }),
+      deleteMissingPagesBySourceAndExternalIds: vi.fn(async () => {
+        order.push("reap");
+        return { deletedCount: 1, deletedContentBytes: 10 };
+      }),
+    };
+    const corpusChanges = {
+      onCorpusChanged: vi.fn(async () => {
+        order.push("corpus");
+      }),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository as never,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      corpusChanges,
+    );
+
+    await expect(service.deleteSourceWithDocuments({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+    })).resolves.toEqual({ deletedDocumentCount: 2 });
+    expect(order).toEqual(["corpus", "source-delete"]);
+
+    order.length = 0;
+    await expect(service.reapMissingPages({
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      keepExternalDocumentIds: ["page-1"],
+    })).resolves.toEqual({ deletedCount: 1, deletedContentBytes: 10 });
+    expect(order).toEqual(["reap", "corpus"]);
+    expect(corpusChanges.onCorpusChanged).toHaveBeenNthCalledWith(1, {
+      workspaceId: "workspace-1",
+      change: "deleted",
+    });
+    expect(corpusChanges.onCorpusChanged).toHaveBeenNthCalledWith(2, {
+      workspaceId: "workspace-1",
+      change: "deleted",
+    });
+  });
+
   it("queues new documents instead of processing them inline", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);

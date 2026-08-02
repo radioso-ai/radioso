@@ -29,6 +29,7 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+import type { DocumentCorpusChangeObserverPort } from "../contracts/corpusChangeObserver.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
 export type DocumentSourceResolverInput =
@@ -408,6 +409,7 @@ export class DocumentIngestionService {
     private readonly usageLimitPolicy: UsageLimitPolicy = new NoopUsageLimitPolicy(),
     private readonly documentSourceRepository?: DocumentSourceRepositoryPort,
     private readonly embeddingCoverage?: EmbeddingCoverageReconciliationPort,
+    private readonly corpusChanges?: DocumentCorpusChangeObserverPort,
   ) {}
 
   async ingest(input: {
@@ -884,6 +886,10 @@ export class DocumentIngestionService {
     sourceId: string;
     documentStorage?: { delete(input: { bucket: string; objectPath: string; generation: string | null }): Promise<void> };
   }): Promise<{ deletedDocumentCount: number }> {
+    await this.corpusChanges?.onCorpusChanged({
+      workspaceId: input.workspaceId,
+      change: "deleted",
+    });
     const { count: deletedDocumentCount, storageRefs } = await this.documentRepository.deleteBySourceIdAndWorkspaceId(
       input.sourceId,
       input.workspaceId,
@@ -958,7 +964,14 @@ export class DocumentIngestionService {
     sourceId: string;
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
-    return this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
+    const result = await this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
+    if (result.deletedCount > 0) {
+      await this.corpusChanges?.onCorpusChanged({
+        workspaceId: input.workspaceId,
+        change: "deleted",
+      });
+    }
+    return result;
   }
 
   private async resolveSourceForInput(

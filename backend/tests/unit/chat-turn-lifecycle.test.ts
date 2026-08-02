@@ -842,6 +842,100 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
+  it("passes neutral interaction, grounding, and reusable vectors to transactional persistence", async () => {
+    const auditService = {
+      record: vi.fn(async () => {}),
+      logRecorded: vi.fn(() => {}),
+      updateChatAnswerSuggestions: vi.fn(async () => {}),
+    } as unknown as AuditService;
+    const assistantTurnPersistence: AssistantTurnPersistencePort = {
+      completeAssistantTurn: vi.fn(async (input) => ({
+        id: input.assistantMessage.id!,
+        conversationId: input.conversationId,
+        workspaceId: input.workspaceId,
+        role: "assistant" as const,
+        content: input.assistantMessage.content,
+        createdAt: new Date(),
+      })),
+    };
+    const lifecycle = new ChatTurnLifecycle(
+      { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort,
+      { create: vi.fn() } as unknown as MessageRepositoryPort,
+      auditService,
+      undefined,
+      undefined,
+      assistantTurnPersistence,
+    );
+    const preparedSession = session();
+    preparedSession.interaction = {
+      role: "substantive_followup",
+      semanticIntents: [{ id: "primary", text: "How does document sync retry?" }],
+    };
+    preparedSession.retrieval.semanticVectors = [{
+      intentId: "primary",
+      semanticTextHash: "a".repeat(64),
+      vector: [0.1, 0.2],
+      space: {
+        id: "33333333-3333-4333-8333-333333333333",
+        dimensions: 2,
+        distanceMetric: "cosine",
+      },
+    }];
+
+    await lifecycle.completeAssistantTurn({
+      workspaceId: "workspace_1",
+      session: preparedSession,
+      presentation: {
+        ...presentation(),
+        groundingSummary: {
+          protocolVersion: 2,
+          parseStatus: "valid_v2",
+          verdict: "degraded",
+          claimCount: 2,
+          sourcedClaimCount: 1,
+          unsourcedClaimCount: 1,
+          invalidSourceCount: 0,
+          assertionMismatch: false,
+        },
+      },
+      answerStartedAt: Date.now(),
+      stream: false,
+    });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
+    expect(persisted.committedTurnObservation).toEqual({
+      workspaceId: "workspace_1",
+      conversationId: "conv_1",
+      agentId: "agent_1",
+      sourceChannel: undefined,
+      currentUserMessageId: "msg_1",
+      sourceUserMessageId: "msg_1",
+      sourceAssistantMessageId: persisted.assistantMessage.id,
+      interaction: {
+        role: "substantive_followup",
+        semanticIntents: [{ id: "primary", text: "How does document sync retry?" }],
+      },
+      semanticVectors: [{
+        intentId: "primary",
+        semanticTextHash: "a".repeat(64),
+        vector: [0.1, 0.2],
+        space: {
+          id: "33333333-3333-4333-8333-333333333333",
+          dimensions: 2,
+          distanceMetric: "cosine",
+        },
+      }],
+      grounding: {
+        verdict: "degraded",
+        claimCount: 2,
+        sourcedClaimCount: 1,
+        unsourcedClaimCount: 1,
+        invalidSourceCount: 0,
+      },
+      expiresUnresolvedSourceUserMessageId: undefined,
+    });
+  });
+
   it("records suspended routine turns separately and carries the pending decision into the transaction port", async () => {
     const records: RecordedAudit[] = [];
     const auditService = {

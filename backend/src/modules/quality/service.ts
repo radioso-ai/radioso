@@ -6,13 +6,10 @@ import type {
   ListLowQualityTurnsInput,
   LowQualityTurn,
   LowQualityTurnsPage,
-  QualityFeedbackValue,
-  QualityResolutionReason,
   QualitySignalId,
   QualityStats,
   QualityStatsInput,
   QualityStatsServicePort,
-  QualityTriageState,
   QualityTurnsServicePort,
   QualityVerificationSourcePort,
   SetTriageStateResult,
@@ -53,59 +50,17 @@ import {
 import {
   buildGroundingCountPresencePredicate,
   buildGroundingVerdictPredicate,
-  mapGroundingDiagnostic,
-  type GroundingDiagnosticRow,
 } from "./groundingDiagnostic.js";
 import { validateQualityTriageUpdate } from "./domain/resolution.js";
 import { QualityTriageStore } from "./triageStore.js";
-
-type TurnRow = GroundingDiagnosticRow & {
-  assistant_message_id: string;
-  conversation_id: string;
-  agent_id: string | null;
-  agent_name: string | null;
-  source_channel: string | null;
-  answer_content: string;
-  skill_name: string | null;
-  skill_outcome: string | null;
-  skill_status: string | null;
-  total_latency_ms: number | string | null;
-  user_question: string | null;
-  up_count: string;
-  down_count: string;
-  latest_down_updated_at: Date | string | null;
-  created_at: Date | string;
-  triage_state: string;
-  triage_version: number | string;
-  triage_resolution_reason: string | null;
-  triage_resolution_note: string | null;
-  triage_legacy_reason: string | null;
-  triage_closed_at: Date | string | null;
-  triage_updated_at: Date | string | null;
-};
-
-type CommentRow = {
-  assistant_message_id: string;
-  value: QualityFeedbackValue;
-  comment: string;
-  created_at: Date | string;
-  updated_at: Date | string;
-};
+import {
+  fetchQualityTurnComments,
+  mapQualityTurnReadRow,
+  type QualityTurnReadRow,
+} from "./turnReadModel.js";
 
 const MAX_LIMIT = 100;
-const PREVIEW_LIMIT = 240;
 const DEFAULT_LIMIT = 25;
-
-const serializeDate = (value: Date | string): string =>
-  value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-
-const buildPreview = (value: string | null): string => {
-  if (!value) {
-    return "";
-  }
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > PREVIEW_LIMIT ? `${normalized.slice(0, PREVIEW_LIMIT - 3)}...` : normalized;
-};
 
 const clampLimit = (limit: number): number => {
   if (!Number.isFinite(limit) || limit <= 0) {
@@ -326,7 +281,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       ? "feedback_activity.latest_down_updated_at DESC NULLS LAST, m.created_at DESC, m.id DESC"
       : "m.created_at DESC, m.id DESC";
 
-    const rowsResult = await this.db.executeQuery<TurnRow>(
+    const rowsResult = await this.db.executeQuery<QualityTurnReadRow>(
       CompiledQuery.raw(
         `SELECT
          m.id AS assistant_message_id,
@@ -379,47 +334,15 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
 
     const assistantMessageIds = rows.map((row) => row.assistant_message_id);
     const [commentsByMessageId, verificationByMessageId] = await Promise.all([
-      this.fetchComments(workspaceId, assistantMessageIds),
+      fetchQualityTurnComments(this.db, workspaceId, assistantMessageIds),
       this.verificationSource
         ? this.verificationSource.getByAssistantMessageIds(workspaceId, assistantMessageIds)
         : Promise.resolve(new Map()),
     ]);
 
-    const items: LowQualityTurn[] = rows.map((row) => ({
-      assistantMessageId: row.assistant_message_id,
-      conversationId: row.conversation_id,
-      agentId: row.agent_id,
-      agentName: row.agent_name,
-      channel: row.source_channel,
-      question: buildPreview(row.user_question) || null,
-      answerPreview: buildPreview(row.answer_content),
-      skillName: row.skill_name,
-      skillOutcome: row.skill_outcome,
-      skillStatus: row.skill_status,
-      totalLatencyMs: row.total_latency_ms === null ? null : Number(row.total_latency_ms),
-      grounding: mapGroundingDiagnostic(row),
-      createdAt: serializeDate(row.created_at),
-      feedback: {
-        upCount: Number(row.up_count),
-        downCount: Number(row.down_count),
-        latestDownUpdatedAt: row.latest_down_updated_at === null
-          ? null
-          : serializeDate(row.latest_down_updated_at),
-        comments: commentsByMessageId.get(row.assistant_message_id) ?? [],
-      },
-      triage: {
-        state: row.triage_state as QualityTriageState,
-        version: Number(row.triage_version),
-        resolution: row.triage_resolution_reason === null
-          ? null
-          : {
-              reason: row.triage_resolution_reason as QualityResolutionReason,
-              note: row.triage_resolution_note,
-            },
-        legacyReason: row.triage_legacy_reason,
-        closedAt: row.triage_closed_at === null ? null : serializeDate(row.triage_closed_at),
-        updatedAt: row.triage_updated_at === null ? null : serializeDate(row.triage_updated_at),
-      },
+    const items: LowQualityTurn[] = rows.map((row) => mapQualityTurnReadRow({
+      row,
+      comments: commentsByMessageId.get(row.assistant_message_id) ?? [],
       verification: verificationByMessageId.get(row.assistant_message_id) ?? null,
     }));
 
@@ -524,38 +447,4 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     });
   }
 
-  private async fetchComments(
-    workspaceId: string,
-    assistantMessageIds: string[],
-  ): Promise<Map<string, LowQualityTurn["feedback"]["comments"]>> {
-    const grouped = new Map<string, LowQualityTurn["feedback"]["comments"]>();
-    if (assistantMessageIds.length === 0) {
-      return grouped;
-    }
-
-    const result = await this.db.executeQuery<CommentRow>(
-      CompiledQuery.raw(
-        `SELECT assistant_message_id, value, comment, created_at, updated_at
-       FROM assistant_answer_feedback
-       WHERE workspace_id = $1
-         AND assistant_message_id = ANY($2::uuid[])
-         AND comment IS NOT NULL
-       ORDER BY created_at ASC, id ASC`,
-        [workspaceId, assistantMessageIds],
-      ),
-    );
-
-    for (const row of result.rows) {
-      const entries = grouped.get(row.assistant_message_id) ?? [];
-      entries.push({
-        value: row.value,
-        comment: row.comment,
-        createdAt: serializeDate(row.created_at),
-        updatedAt: serializeDate(row.updated_at),
-      });
-      grouped.set(row.assistant_message_id, entries);
-    }
-
-    return grouped;
-  }
 }

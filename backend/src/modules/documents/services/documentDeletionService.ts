@@ -3,6 +3,7 @@ import type { DocumentRecord } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 import { capabilityNames, DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import { forbidden, notFound } from "../../../shared/domain/errors.js";
+import type { DocumentCorpusChangeObserverPort } from "../contracts/corpusChangeObserver.js";
 
 export interface DocumentDeletionRepositoryPort {
   findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
@@ -15,6 +16,7 @@ export class DocumentDeletionService {
     private readonly documentStorage: DocumentStoragePort,
     private readonly auditService: AuditService,
     private readonly capabilityPolicy: CapabilityPolicy = new DefaultAllowCapabilityPolicy(),
+    private readonly corpusChanges?: DocumentCorpusChangeObserverPort,
   ) {}
 
   async delete(input: { workspaceId: string; documentId: string }): Promise<void> {
@@ -40,6 +42,15 @@ export class DocumentDeletionService {
       });
       throw notFound("Document not found");
     }
+
+    // Persist derived-view invalidation before the source row can cascade away.
+    // A false-positive invalidation after a delete race is safe and repairable;
+    // losing the only durable invalidation trigger is not.
+    await this.corpusChanges?.onCorpusChanged({
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+      change: "deleted",
+    });
 
     const deleted = await this.documentRepository.deleteByIdAndWorkspaceId(input.documentId, input.workspaceId);
 

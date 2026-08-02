@@ -20,6 +20,17 @@ services.
 
 - `dashboard-shell.tsx`: top-level dashboard layout.
 - `app-sidebar.tsx`: navigation and section switching.
+- `content-plan-view.tsx` and `content-plan/`: the Activity → Content plan
+  destination. Backend owns ordering, actions, rates, evidence bands, and
+  freshness; these components render them and hand off to Quality and
+  Knowledge. The view appends cursor pages with workspace/view request guards,
+  keeps the first-page report summary stable, and retries later-page failures
+  without hiding already loaded topics. Topic navigation restores the originating
+  row and list position across route remounts; detail keeps deterministic action
+  readiness separate from generated-brief availability. See
+  `frontend/lib/api-content-plan.ts` for the contract adapter and
+  `frontend/lib/content-plan.ts` for presentation-only formatters and page
+  merging.
 - `workbench/chat-workbench.tsx`: the operator test-chat workbench (live chat +
   copyable conversation id + selectable turn inspector + recent test sessions).
   `chat-view.tsx` is a thin alias over it; the workbench owns its own layout so it
@@ -77,5 +88,7 @@ transitions or data transforms:
 
 - `cd frontend && pnpm test -- tests/unit/chat-message-thread.test.tsx`
 - `cd frontend && pnpm test -- tests/unit/settings-tab-metadata.test.ts`
+- `cd frontend && pnpm test -- tests/unit/api-content-plan.test.ts tests/unit/dashboard-routes.test.ts`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts`
 - `cd frontend && pnpm run test:e2e -- assistant-retrieval-settings.spec.ts`
+- `cd frontend && pnpm run test:e2e -- content-plan.spec.ts nav-sidebar.spec.ts`

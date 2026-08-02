@@ -125,6 +125,46 @@ Focused checks:
 
 - `cd backend && pnpm run db:schema:check` (drift gate; runs in CI + `ci:local`, needs Docker)
 
+## Continuous Content Planning
+
+Owns the continuously maintained projection of semantic visitor interests, rolling
+demand and grounding evidence, corpus-aware remediation actions, generated navigation
+labels/briefs, and the Activity → Content plan read surface.
+
+It must not delay or change visitor answers. Chat emits a neutral committed-turn
+envelope, Retrieval exposes compatible semantic vector envelopes, and Quality exposes
+its canonical population and evidence through narrow ports. Content Planning owns the
+topic, ranking, action, retention, and enrichment policies that consume them.
+
+Public surfaces and key files:
+
+- `backend/src/modules/contentPlanning/README.md`
+- `backend/src/modules/contentPlanning/composition.ts`
+- `backend/src/modules/contentPlanning/contracts/`
+- `backend/src/modules/contentPlanning/worker.ts`
+- `backend/src/app/composition/builtIn/contentPlanningModule.ts`
+- `backend/src/app/composition/adapters/contentPlanningCommittedTurnWriter.ts`
+- `backend/src/db/repositories/contentPlanning*.ts`
+- `frontend/lib/api-content-plan.ts`
+- `frontend/components/dashboard/content-plan-view.tsx`
+
+Useful searches:
+
+- `rg "ContentPlan|content_plan" backend/src backend/tests`
+- `rg "ContentPlan|content-plan" frontend`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/content-planning-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/content-planning-*.integration.test.ts`
+- `cd frontend && pnpm test -- tests/unit/api-content-plan.test.ts tests/unit/dashboard-routes.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/content-plan.spec.ts`
+
+Related docs and specs:
+
+- [Continuous Content Planning](../content-planning.md)
+- `specs/939-continuous-content-planning/`
+
 ## Customer Email
 
 Owns workspace customer email connections backed by authorized OAuth

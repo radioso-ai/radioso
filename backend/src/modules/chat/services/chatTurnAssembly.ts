@@ -88,6 +88,7 @@ import { APPROVAL_REQUEST_ACTION_TYPE } from "./actions/approvalRequestActionHan
 import type { ChatTurnPlanHandle } from "./turnPlanCoordinator.js";
 import { pageReadRoutineCandidates } from "./pageRead/pageReadRoutineCandidates.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import { interactionFromTurnInterpretation } from "./conversationInteraction.js";
 
 const CLARIFICATION_TURN_SKILL = "clarification.answer";
 
@@ -738,10 +739,12 @@ export class ChatTurnAssembly {
           route: interpreted.route,
           framing: interpreted.framing,
         };
+        const interaction = interactionFromTurnInterpretation(interpreted);
         input.sessionRef.current = {
           ...input.sessionRef.current,
           turnRoute: routing.route,
           turnFraming: routing.framing,
+          interaction,
         };
         if (routing.route === CHAT_TURN_ROUTE.DIRECT) {
           input.sessionRef.current = this.withResponseLanguage(
@@ -763,6 +766,7 @@ export class ChatTurnAssembly {
         };
         return {
           route: routing.route,
+          interactionRole: interaction.role,
           framing: routing.framing,
           metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
         };
@@ -882,9 +886,25 @@ export class ChatTurnAssembly {
         pageReadCapability: input.session.pageReadCapability,
       })
       : await this.routeTurn(input.request, input.session));
-    const resolved = input.resolvedRetrievalSense
+    const resolvedCandidate = input.resolvedRetrievalSense
       ? { ...interpreted, route: CHAT_TURN_ROUTE.RETRIEVAL }
       : interpreted;
+    const interaction = interactionFromTurnInterpretation({
+      interactionRole: "interactionRole" in resolvedCandidate
+        ? resolvedCandidate.interactionRole
+        : undefined,
+      rewriteProposal: "rewriteProposal" in resolvedCandidate
+        ? resolvedCandidate.rewriteProposal as StructuredRewriteResult | undefined
+        : undefined,
+    });
+    // Both the engine path and the older retrieval-sense-compatible path call
+    // this method. Mutating this per-turn carrier keeps one neutral interaction
+    // value on the PreparedSession until the lifecycle commits the answer.
+    input.session.interaction = interaction;
+    const resolved: ConversationTurnInterpretationResult & { source?: "planned" } = {
+      ...resolvedCandidate,
+      interactionRole: interaction.role,
+    };
     freezePageReadOutcome(input.session, {
       // routeTurn's TurnRouting fallback carries no pageRead classification.
       planner: ("pageRead" in resolved
@@ -909,6 +929,7 @@ export class ChatTurnAssembly {
     return {
       source: "planned",
       route,
+      interactionRole: outcome.plan.interactionRole,
       framing: outcome.plan.framing,
       ...(outcome.plan.pageRead ? { pageRead: outcome.plan.pageRead } : {}),
       ...(route === CHAT_TURN_ROUTE.RETRIEVAL && outcome.plan.rewriteProposal

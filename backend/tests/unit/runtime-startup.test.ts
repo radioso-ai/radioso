@@ -139,6 +139,10 @@ const createDependencies = () =>
       start: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
     },
+    contentPlanningWorkerRuntime: {
+      start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
     websiteCrawlWorker: {
       start: vi.fn().mockResolvedValue(undefined),
       stop: vi.fn().mockResolvedValue(undefined),
@@ -236,6 +240,7 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.contentPlanningWorkerRuntime.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
@@ -244,6 +249,7 @@ describe("runtime startup", () => {
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
     expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.contentPlanningWorkerRuntime.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
   });

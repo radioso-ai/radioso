@@ -18,6 +18,7 @@ import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
 import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import type { RerankGateway } from "./rerankService.js";
+import type { SemanticVectorEnvelope } from "../domain/semanticVectorEnvelope.js";
 import { buildAgenticActivityTrace } from "./agenticActivityTraceBuilder.js";
 import {
   InMemoryChunkRegistry,
@@ -88,6 +89,8 @@ export interface AgenticRetrievalSearchStats {
 
 export interface AgenticRetrievalRunResult {
   readonly selectedChunks: ReadonlyArray<RegisteredChunk>;
+  /** Built-in runs always set this; optional for legacy runner adapters. */
+  readonly semanticVectors?: ReadonlyArray<SemanticVectorEnvelope>;
   readonly rationale: string | null;
   readonly trace: ActivityTrace;
   readonly terminatedReason: TerminatedReason;
@@ -100,6 +103,7 @@ export class AgenticRetrievalRunner {
 
   async run(input: AgenticRetrievalRunInput): Promise<AgenticRetrievalRunResult> {
     const registry = new InMemoryChunkRegistry();
+    const semanticVectorsByHash = new Map<string, SemanticVectorEnvelope>();
     let finalized: FinalizedSelection | null = null;
     const metadataFilter = normalizeVectorMetadataFilter(input.metadataFilter);
 
@@ -118,6 +122,11 @@ export class AgenticRetrievalRunner {
         snippetChars: input.snippetChars,
         callerMetadataFilter: metadataFilter,
         usageContext: input.usageContext,
+        onSemanticVector: (envelope) => {
+          if (!semanticVectorsByHash.has(envelope.semanticTextHash)) {
+            semanticVectorsByHash.set(envelope.semanticTextHash, envelope);
+          }
+        },
       }) as AgentTool,
       createLexicalSearchTool({
         workspaceId: input.workspaceId,
@@ -177,6 +186,7 @@ export class AgenticRetrievalRunner {
 
     return {
       selectedChunks: capabilityResult.selection,
+      semanticVectors: [...semanticVectorsByHash.values()],
       rationale: capabilityResult.finalization?.rationale ?? null,
       trace: capabilityResult.trace,
       terminatedReason: capabilityResult.terminatedReason,

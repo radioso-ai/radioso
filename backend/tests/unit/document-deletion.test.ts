@@ -128,6 +128,12 @@ describe("document deletion", () => {
         },
       },
       auditService,
+      undefined,
+      {
+        async onCorpusChanged(input) {
+          callOrder.push(`corpus:${input.change}`);
+        },
+      },
     );
 
     await service.delete({
@@ -135,7 +141,7 @@ describe("document deletion", () => {
       documentId: "doc-1",
     });
 
-    expect(callOrder).toEqual(["db", "storage"]);
+    expect(callOrder).toEqual(["corpus:deleted", "db", "storage"]);
     expect(deletedObjects).toEqual(["objects/doc-1"]);
   });
 

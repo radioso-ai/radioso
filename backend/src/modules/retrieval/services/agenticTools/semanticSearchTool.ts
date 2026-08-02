@@ -11,6 +11,10 @@ import type { RetrievalSourceFilter } from "../../domain/retrievalSourceFilter.j
 import { mergeVectorMetadataFilters, type VectorMetadataFilter } from "../../domain/vectorFilter.js";
 import type { ChunkCandidateHydratorPort } from "../../infra/chunkCandidateHydrator.js";
 import { fromRetrievedChunk, type ChunkRegistry } from "./chunkRegistry.js";
+import {
+  createSemanticVectorEnvelope,
+  type SemanticVectorEnvelope,
+} from "../../domain/semanticVectorEnvelope.js";
 
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
@@ -27,6 +31,7 @@ export interface SemanticSearchToolDeps {
   readonly snippetChars?: number;
   readonly clock?: Clock;
   readonly usageContext?: Omit<ModelCallUsageContext, "operation">;
+  readonly onSemanticVector?: (envelope: SemanticVectorEnvelope) => void;
   /**
    * The caller-supplied metadata filter from the retrieval request. Always
    * applied — the model cannot widen this constraint. If the model also
@@ -118,6 +123,12 @@ export const createSemanticSearchTool = (
     });
     const registered = chunks.map((chunk) => fromRetrievedChunk(chunk, deps.snippetChars));
     deps.registry.record(registered);
+    deps.onSemanticVector?.(createSemanticVectorEnvelope({
+      intentId: ctx.callId,
+      semanticText: input.query,
+      vector: queryEmbedding,
+      space: embeddingResult.space,
+    }));
     return {
       results: registered.map((chunk) => ({
         chunkId: chunk.chunkId,

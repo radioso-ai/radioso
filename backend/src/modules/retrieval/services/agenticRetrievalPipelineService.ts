@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
+
 import type {
   FinalPromptContext,
   RetrievalExecutionDiagnostics,
   RetrievalSource,
 } from "../domain/retrievalPipelineTypes.js";
-import type { AgenticRetrievalRunner } from "./agenticRetrievalRunner.js";
+import type { AgenticRetrievalRunResult, AgenticRetrievalRunner } from "./agenticRetrievalRunner.js";
 import type { RegisteredChunk } from "./agenticTools/index.js";
 import type { PromptBuilder } from "./promptBuilder.js";
 import type {
@@ -113,7 +115,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       normalizedCandidateCount: searchStats.mergedCandidateCount,
       finalContextCount: contexts.length,
       retrievalSkipped: false,
-      parsedQuery: input.interpretation.result.originalPreparedQuery,
+      parsedQuery: input.interpretation.result.activeParsedQuery,
       candidateFallbackApplied: false,
       fallbackApplied: runResult.terminatedReason !== "completed",
       rewriteEligible: rewrittenQuery.retrievalEligible,
@@ -121,6 +123,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       materialDisagreement: false,
       continuityDecision: input.interpretation.result.continuityDecision,
       rewriteProposal: rewrittenQuery.structuredResult,
+      retrievalSubqueries: input.interpretation.result.activeRetrievalSubqueries,
       responseLanguagePolicy: rewrittenQuery.responseLanguagePolicy,
       rejectionReason: rewrittenQuery.rejectionReason,
       fallbackReason: rewrittenQuery.fallbackReason,
@@ -129,6 +132,7 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
 
     return {
       rewrittenQuery: agentQuery,
+      semanticVectors: reconcileSemanticVectors(input, runResult.semanticVectors ?? []),
       contexts,
       systemPrompt: promptResult.systemPrompt,
       prompt: promptResult.prompt,
@@ -147,6 +151,44 @@ const pickAgentQuery = (input: RetrievalPipelineInterpretationResult): string =>
     return rewritten.semanticQuery;
   }
   return input.request.query;
+};
+
+const semanticTextHash = (text: string): string =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+
+/**
+ * Agentic search may issue exploratory rewrites and identifies tool vectors by
+ * opaque call ID. Content Planning may reuse only a vector that exactly matches
+ * a canonical intent Retrieval prepared for this turn, so relabel exact hashes
+ * at this adapter boundary and discard exploratory searches.
+ */
+const reconcileSemanticVectors = (
+  input: RetrievalPipelineInterpretationResult,
+  vectors: NonNullable<AgenticRetrievalRunResult["semanticVectors"]>,
+) => {
+  const interpretation = input.interpretation.result;
+  const canonicalIntents = interpretation.activeRetrievalSubqueries.length > 0
+    ? interpretation.activeRetrievalSubqueries
+    : [{ id: "primary", semanticQuery: interpretation.activeParsedQuery.semanticQuery }];
+  const canonicalIntentByHash = new Map<string, string>();
+  for (const intent of canonicalIntents) {
+    if (intent.semanticQuery.length > 0) {
+      const hash = semanticTextHash(intent.semanticQuery);
+      if (!canonicalIntentByHash.has(hash)) {
+        canonicalIntentByHash.set(hash, intent.id);
+      }
+    }
+  }
+
+  const matchedIntentIds = new Set<string>();
+  return vectors.flatMap((vector) => {
+    const intentId = canonicalIntentByHash.get(vector.semanticTextHash);
+    if (!intentId || matchedIntentIds.has(intentId)) {
+      return [];
+    }
+    matchedIntentIds.add(intentId);
+    return [{ ...vector, intentId }];
+  });
 };
 
 const toFinalPromptContext = (chunk: RegisteredChunk, index: number): FinalPromptContext => {

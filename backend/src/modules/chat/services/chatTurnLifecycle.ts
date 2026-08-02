@@ -54,12 +54,21 @@ import type { CapturedClarificationTransition } from "./clarification/deferredCl
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
   PageReadGateOutcome,
 } from "./pageRead/pageReadDecision.js";
 import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
+import {
+  resolveConversationInteraction,
+  resolveInteractionSourceUserMessageId,
+  unresolvedConversationInteraction,
+  type PreparedConversationInteraction,
+} from "./conversationInteraction.js";
+import type { SemanticVectorEnvelope } from "../../retrieval/public.js";
+import { normalizeConversationInteractionMetadata } from "../../../shared/domain/conversationInteractionMetadata.js";
 
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
@@ -193,9 +202,95 @@ export interface AssistantTurnPersistencePort {
     ownershipHandoff?: OwnershipHandoffInput | null;
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
+    committedTurnObservation?: CommittedAssistantTurnObservation;
     transaction?: Db;
   }): Promise<MessageRecord>;
 }
+
+/**
+ * Capability-neutral facts available only when an automated assistant turn commits.
+ * Semantic text is ephemeral input for hashing/source validation and is never a trace
+ * or message-metadata field.
+ */
+export interface CommittedAssistantTurnObservation {
+  workspaceId: string;
+  conversationId: string;
+  agentId: string;
+  sourceChannel?: string;
+  currentUserMessageId: string;
+  sourceUserMessageId: string;
+  sourceAssistantMessageId: string;
+  interaction: PreparedConversationInteraction;
+  semanticVectors: SemanticVectorEnvelope[];
+  grounding: GroundingDiagnosticSnapshot | null;
+  expiresUnresolvedSourceUserMessageId?: string;
+}
+
+/** Runs inside the assistant-turn transaction; implementations must not call providers. */
+export interface CommittedAssistantTurnObservationWriter {
+  write(input: CommittedAssistantTurnObservation, transaction: Db): Promise<void>;
+}
+
+const buildCommittedTurnObservation = (input: {
+  workspaceId: string;
+  session: PreparedSession;
+  assistantMessageId: string;
+  grounding: GroundingDiagnosticSnapshot | undefined;
+  routineStateTransition?: CapturedRoutineTransition | null;
+  pendingDecisionTransition?: PendingDecisionCreateInput | null;
+  clarificationTransition?: CapturedClarificationTransition | null;
+}): CommittedAssistantTurnObservation => {
+  const clarificationTransition = input.clarificationTransition;
+  const clarificationOutcome = clarificationTransition?.kind === "clear"
+    ? clarificationTransition.outcome === "resolved" || clarificationTransition.outcome === undefined
+      ? "value" as const
+      : clarificationTransition.outcome
+    : undefined;
+  const priorUnresolvedSourceUserMessageId = clarificationTransition?.kind === "clear"
+    ? resolveInteractionSourceUserMessageId({
+        currentUserMessageId: input.session.userMessage.id,
+        history: input.session.history,
+        useEarlierUserMessage: true,
+      })
+    : undefined;
+  const inferred = clarificationTransition?.kind === "save"
+    ? { role: "unresolved" as const, semanticIntents: [] }
+    : input.session.interaction ?? unresolvedConversationInteraction();
+  const resolved = resolveConversationInteraction({
+    inferred,
+    currentUserMessageId: input.session.userMessage.id,
+    history: input.session.history,
+    lifecycle: {
+      clarificationOutcome,
+      routineTurn: input.routineStateTransition != null,
+      pendingDecisionTurn: input.pendingDecisionTransition != null,
+    },
+    priorUnresolvedSourceUserMessageId,
+  });
+  const interaction = normalizeConversationInteractionMetadata(resolved.interaction);
+  const semanticIntents = interaction.semanticIntents;
+  const retainedIntentIds = new Set(semanticIntents.map((intent) => intent.id));
+
+  return {
+    workspaceId: input.workspaceId,
+    conversationId: input.session.conversation.id,
+    agentId: input.session.agent.id,
+    sourceChannel: input.session.conversation.sourceChannel ?? undefined,
+    currentUserMessageId: input.session.userMessage.id,
+    sourceUserMessageId: resolved.sourceUserMessageId,
+    sourceAssistantMessageId: input.assistantMessageId,
+    interaction,
+    semanticVectors: (input.session.retrieval.semanticVectors ?? [])
+      .filter((vector) => retainedIntentIds.has(vector.intentId))
+      .map((vector) => ({
+        ...vector,
+        vector: [...vector.vector],
+        space: { ...vector.space },
+      })),
+    grounding: input.grounding ?? null,
+    expiresUnresolvedSourceUserMessageId: resolved.expiresUnresolvedSourceUserMessageId,
+  };
+};
 
 export interface PendingDecisionWriterPort {
   create(input: PendingDecisionCreateInput): Promise<unknown>;
@@ -610,6 +705,15 @@ export class ChatTurnLifecycle {
       conversationId: input.session.conversation.id,
     });
     if (this.assistantTurnPersistence) {
+      const committedTurnObservation = buildCommittedTurnObservation({
+        workspaceId: input.workspaceId,
+        session: input.session,
+        assistantMessageId: presentation.assistantMessage.id!,
+        grounding: presentation.assistantMessage.grounding,
+        routineStateTransition: input.routineStateTransition,
+        pendingDecisionTransition: input.pendingDecisionTransition,
+        clarificationTransition: input.clarificationTransition,
+      });
       assistantMessage = await this.assistantTurnPersistence.completeAssistantTurn({
         workspaceId: input.workspaceId,
         accountId: input.accountId,
@@ -623,6 +727,7 @@ export class ChatTurnLifecycle {
         ownershipHandoff: input.ownershipHandoff,
         ownershipAuditEvent,
         additionalAuditEvent: input.additionalAuditEvent,
+        committedTurnObservation,
         transaction: input.transaction,
       });
       this.auditService.logRecorded?.(auditEvent);

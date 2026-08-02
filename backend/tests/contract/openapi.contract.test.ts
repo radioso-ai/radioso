@@ -21,6 +21,35 @@ interface RoutineValidationResultOpenApiSchema {
 }
 
 describe("openapi contract", () => {
+  it("documents the content planning list, detail, and member-turn contract", () => {
+    const document = createOpenApiDocument();
+    const paths = document.paths ?? {};
+
+    expect(paths["/api/v1/quality/content-plan"]?.get).toMatchObject({
+      operationId: "listContentPlan",
+      security: [{ bearerAuth: [] }],
+      responses: {
+        "200": expect.any(Object),
+        "400": expect.any(Object),
+        "403": expect.any(Object),
+      },
+    });
+    expect(paths["/api/v1/quality/content-plan/topics/{topicId}"]?.get).toMatchObject({
+      operationId: "getContentPlanTopic",
+      responses: { "200": expect.any(Object), "404": expect.any(Object) },
+    });
+    expect(paths["/api/v1/quality/content-plan/topics/{topicId}/turns"]?.get).toMatchObject({
+      operationId: "listContentPlanTopicTurns",
+      responses: { "200": expect.any(Object), "404": expect.any(Object) },
+    });
+    expect(document.components?.schemas).toMatchObject({
+      ContentPlanPage: expect.any(Object),
+      ContentPlanTopicDetail: expect.any(Object),
+      ContentPlanProjection: expect.any(Object),
+      ContentPlanTopicSummary: expect.any(Object),
+    });
+  });
+
   it("documents structured Quality closure and message-scoped Eval convenience", () => {
     const document = createOpenApiDocument();
     const paths = document.paths ?? {};

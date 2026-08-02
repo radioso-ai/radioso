@@ -72,7 +72,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
             <SidebarMenu>
               {navItems.map((item) => {
                 const isActive = item.id === 'activity'
-                  ? currentView === 'activity' || currentView === 'quality'
+                  ? currentView === 'activity' || currentView === 'quality' || currentView === 'content-plan'
                   : currentView === item.id
                 const showBadge = item.id === 'activity' && inboxCount > 0
                 // In the Agents section the row IS the agent picker (rendered inline by

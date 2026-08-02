@@ -295,6 +295,40 @@ $$;
 
 
 --
+-- Name: enforce_content_plan_topic_document_limit(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.enforce_content_plan_topic_document_limit() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  related_document_count INTEGER;
+BEGIN
+  -- Lock the owning topic so concurrent insertions cannot both pass the five-row cap.
+  PERFORM 1
+  FROM content_plan_topics
+  WHERE workspace_id = NEW.workspace_id
+    AND generation_id = NEW.generation_id
+    AND id = NEW.topic_id
+  FOR UPDATE;
+
+  SELECT count(*)
+  INTO related_document_count
+  FROM content_plan_topic_documents
+  WHERE workspace_id = NEW.workspace_id
+    AND generation_id = NEW.generation_id
+    AND topic_id = NEW.topic_id;
+
+  IF related_document_count >= 5 THEN
+    RAISE EXCEPTION 'content planning topics retain at most five related documents'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: enforce_published_routine_completion_export_destination(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -333,6 +367,36 @@ BEGIN
             CONSTRAINT = 'routine_completion_export_destination_ref_published_fk';
   END IF;
 
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: reject_content_plan_generation_identity_mutation(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.reject_content_plan_generation_identity_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF (
+    NEW.workspace_id,
+    NEW.embedding_space_id,
+    NEW.kind,
+    NEW.policy_version,
+    NEW.horizon_from,
+    NEW.horizon_to
+  ) IS DISTINCT FROM (
+    OLD.workspace_id,
+    OLD.embedding_space_id,
+    OLD.kind,
+    OLD.policy_version,
+    OLD.horizon_from,
+    OLD.horizon_to
+  ) THEN
+    RAISE EXCEPTION 'content planning generation identity is immutable';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -391,6 +455,98 @@ BEGIN
     chunk_metadata_iso_date(NEW.metadata ->> 'dateTo'),
     chunk_metadata_iso_date(NEW.metadata ->> 'dateFrom')
   );
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: stale_content_plan_enrichment_on_topic_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.stale_content_plan_enrichment_on_topic_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.revision IS DISTINCT FROM OLD.revision THEN
+    UPDATE content_plan_topic_enrichments
+    SET
+      -- Every aggregate revision fences stale in-flight output. Only a scheduler-owned
+      -- material dirty-time change makes the last coherent published evidence stale.
+      state = CASE
+        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND state = 'ready'
+          THEN 'stale'
+        ELSE state
+      END,
+      corpus_state = CASE
+        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND corpus_state = 'ready'
+          THEN 'stale'
+        ELSE corpus_state
+      END,
+      claim_token = NULL,
+      claim_expires_at = NULL,
+      updated_at = NOW()
+    WHERE workspace_id = NEW.workspace_id
+      AND generation_id = NEW.generation_id
+      AND topic_id = NEW.id
+      AND source_topic_revision <> NEW.revision;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_content_plan_enrichment_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_content_plan_enrichment_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  current_revision INTEGER;
+BEGIN
+  IF NEW.state <> 'ready' THEN
+    RETURN NEW;
+  END IF;
+
+  SELECT revision
+  INTO current_revision
+  FROM content_plan_topics
+  WHERE workspace_id = NEW.workspace_id
+    AND generation_id = NEW.generation_id
+    AND id = NEW.topic_id;
+
+  IF current_revision IS NULL OR current_revision <> NEW.source_topic_revision THEN
+    RAISE EXCEPTION 'stale content planning enrichment revision'
+      USING ERRCODE = '23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: validate_content_plan_topic_document_revision(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.validate_content_plan_topic_document_revision() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  current_revision INTEGER;
+BEGIN
+  SELECT revision
+  INTO current_revision
+  FROM content_plan_topics
+  WHERE workspace_id = NEW.workspace_id
+    AND generation_id = NEW.generation_id
+    AND id = NEW.topic_id;
+
+  IF current_revision IS NULL OR current_revision <> NEW.source_topic_revision THEN
+    RAISE EXCEPTION 'stale content planning topic-document revision'
+      USING ERRCODE = '23514';
+  END IF;
   RETURN NEW;
 END;
 $$;
@@ -1235,6 +1391,301 @@ CREATE TABLE public.connector_whatsapp_message_log (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT connector_whatsapp_message_log_direction_check CHECK (((direction)::text = ANY ((ARRAY['inbound'::character varying, 'outbound'::character varying])::text[]))),
     CONSTRAINT connector_whatsapp_message_log_status_check CHECK (((status)::text = ANY ((ARRAY['received'::character varying, 'processing'::character varying, 'replied'::character varying, 'failed'::character varying, 'retryable_failed'::character varying, 'skipped'::character varying])::text[])))
+);
+
+
+--
+-- Name: content_plan_observation_vectors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_observation_vectors (
+    workspace_id uuid NOT NULL,
+    observation_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    dimensions integer,
+    embedding public.vector,
+    vector_source text,
+    state text DEFAULT 'pending_embedding'::text NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    claim_token uuid,
+    claimed_at timestamp with time zone,
+    claim_expires_at timestamp with time zone,
+    failure_stage text,
+    failure_reason text,
+    completed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_observation_vectors_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT content_plan_observation_vectors_check CHECK ((((embedding IS NULL) AND (dimensions IS NULL) AND (vector_source IS NULL)) OR ((embedding IS NOT NULL) AND ((dimensions >= 1) AND (dimensions <= 16000)) AND (vector_source IS NOT NULL) AND (public.vector_dims(embedding) = dimensions)))),
+    CONSTRAINT content_plan_observation_vectors_check1 CHECK (((state <> 'pending_embedding'::text) OR (embedding IS NULL))),
+    CONSTRAINT content_plan_observation_vectors_check2 CHECK (((state <> ALL (ARRAY['ready'::text, 'assigned'::text])) OR (embedding IS NOT NULL))),
+    CONSTRAINT content_plan_observation_vectors_check3 CHECK ((((claim_token IS NULL) AND (claimed_at IS NULL) AND (claim_expires_at IS NULL) AND (state <> 'processing'::text)) OR ((claim_token IS NOT NULL) AND (claimed_at IS NOT NULL) AND (claim_expires_at IS NOT NULL) AND (state = 'processing'::text) AND (claim_expires_at > claimed_at)))),
+    CONSTRAINT content_plan_observation_vectors_check4 CHECK ((((failure_stage IS NULL) AND (failure_reason IS NULL) AND (state <> ALL (ARRAY['retryable'::text, 'failed'::text]))) OR ((failure_stage IS NOT NULL) AND (failure_reason IS NOT NULL) AND (state = ANY (ARRAY['retryable'::text, 'failed'::text]))))),
+    CONSTRAINT content_plan_observation_vectors_check5 CHECK ((((state = 'assigned'::text) AND (completed_at IS NOT NULL)) OR ((state <> 'assigned'::text) AND (completed_at IS NULL)))),
+    CONSTRAINT content_plan_observation_vectors_failure_reason_check CHECK (((failure_reason IS NULL) OR (failure_reason ~ '^[a-z][a-z0-9_]{0,63}$'::text))),
+    CONSTRAINT content_plan_observation_vectors_failure_stage_check CHECK (((failure_stage IS NULL) OR (failure_stage ~ '^[a-z][a-z0-9_]{0,63}$'::text))),
+    CONSTRAINT content_plan_observation_vectors_state_check CHECK ((state = ANY (ARRAY['pending_embedding'::text, 'ready'::text, 'processing'::text, 'assigned'::text, 'retryable'::text, 'failed'::text]))),
+    CONSTRAINT content_plan_observation_vectors_vector_source_check CHECK (((vector_source IS NULL) OR (vector_source = ANY (ARRAY['reused'::text, 'fallback'::text]))))
+);
+
+
+--
+-- Name: content_plan_observations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_observations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    source_user_message_id uuid NOT NULL,
+    source_assistant_message_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    semantic_intent_id text NOT NULL,
+    semantic_text_hash text,
+    interaction_role text NOT NULL,
+    grounding_verdict text,
+    grounding_claim_count integer,
+    grounding_sourced_claim_count integer,
+    grounding_unsourced_claim_count integer,
+    grounding_invalid_source_count integer,
+    resolution_deadline timestamp with time zone,
+    observation_state text NOT NULL,
+    excluded_reason text,
+    observed_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_observations_check CHECK (((observation_state <> 'ready'::text) OR (semantic_text_hash IS NOT NULL))),
+    CONSTRAINT content_plan_observations_check1 CHECK ((source_user_message_id <> source_assistant_message_id)),
+    CONSTRAINT content_plan_observations_check2 CHECK ((((grounding_verdict IS NULL) AND (grounding_claim_count IS NULL) AND (grounding_sourced_claim_count IS NULL) AND (grounding_unsourced_claim_count IS NULL) AND (grounding_invalid_source_count IS NULL)) OR ((grounding_verdict IS NOT NULL) AND (grounding_claim_count IS NOT NULL) AND (grounding_sourced_claim_count IS NOT NULL) AND (grounding_unsourced_claim_count IS NOT NULL) AND (grounding_invalid_source_count IS NOT NULL)))),
+    CONSTRAINT content_plan_observations_check3 CHECK (((grounding_claim_count IS NULL) OR ((grounding_claim_count >= 0) AND (grounding_sourced_claim_count >= 0) AND (grounding_unsourced_claim_count >= 0) AND (grounding_invalid_source_count >= 0) AND ((grounding_sourced_claim_count + grounding_unsourced_claim_count) = grounding_claim_count)))),
+    CONSTRAINT content_plan_observations_check4 CHECK ((((observation_state = 'pending_context'::text) AND (resolution_deadline IS NOT NULL)) OR ((observation_state <> 'pending_context'::text) AND (resolution_deadline IS NULL)))),
+    CONSTRAINT content_plan_observations_check5 CHECK ((((observation_state = 'excluded'::text) AND (excluded_reason IS NOT NULL)) OR ((observation_state <> 'excluded'::text) AND (excluded_reason IS NULL)))),
+    CONSTRAINT content_plan_observations_excluded_reason_check CHECK (((excluded_reason IS NULL) OR (excluded_reason ~ '^[a-z][a-z0-9_]{0,63}$'::text))),
+    CONSTRAINT content_plan_observations_grounding_verdict_check CHECK (((grounding_verdict IS NULL) OR (grounding_verdict = ANY (ARRAY['grounded'::text, 'degraded'::text, 'no_support'::text])))),
+    CONSTRAINT content_plan_observations_interaction_role_check CHECK ((interaction_role = ANY (ARRAY['substantive_new'::text, 'substantive_followup'::text, 'clarification_value'::text, 'control'::text, 'social'::text, 'unresolved'::text]))),
+    CONSTRAINT content_plan_observations_observation_state_check CHECK ((observation_state = ANY (ARRAY['pending_context'::text, 'ready'::text, 'excluded'::text, 'deleted'::text]))),
+    CONSTRAINT content_plan_observations_semantic_intent_id_check CHECK ((((char_length(semantic_intent_id) >= 1) AND (char_length(semantic_intent_id) <= 128)) AND (semantic_intent_id ~ '^[A-Za-z0-9_.:-]+$'::text))),
+    CONSTRAINT content_plan_observations_semantic_text_hash_check CHECK (((semantic_text_hash IS NULL) OR (semantic_text_hash ~ '^[0-9a-f]{64}$'::text)))
+);
+
+
+--
+-- Name: content_plan_projection_generations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_projection_generations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    kind text NOT NULL,
+    state text NOT NULL,
+    policy_version integer NOT NULL,
+    horizon_from timestamp with time zone NOT NULL,
+    horizon_to timestamp with time zone NOT NULL,
+    coherent_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_projection_generations_check CHECK ((horizon_from < horizon_to)),
+    CONSTRAINT content_plan_projection_generations_check1 CHECK ((((state = ANY (ARRAY['coherent'::text, 'superseded'::text])) AND (coherent_at IS NOT NULL)) OR ((state = ANY (ARRAY['building'::text, 'failed'::text])) AND (coherent_at IS NULL)))),
+    CONSTRAINT content_plan_projection_generations_kind_check CHECK ((kind = ANY (ARRAY['bootstrap'::text, 'active'::text, 'reprojection'::text]))),
+    CONSTRAINT content_plan_projection_generations_policy_version_check CHECK ((policy_version > 0)),
+    CONSTRAINT content_plan_projection_generations_state_check CHECK ((state = ANY (ARRAY['building'::text, 'coherent'::text, 'superseded'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: content_plan_projection_states; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_projection_states (
+    workspace_id uuid NOT NULL,
+    coherent_generation_id uuid,
+    target_generation_id uuid,
+    projection_state text NOT NULL,
+    reason text,
+    discovery_created_at timestamp with time zone,
+    discovery_message_id uuid,
+    processed_through timestamp with time zone,
+    bootstrap_processed bigint,
+    bootstrap_total bigint,
+    budget_version integer NOT NULL,
+    budget_window_started_at timestamp with time zone NOT NULL,
+    embedding_requests_used integer DEFAULT 0 NOT NULL,
+    estimated_spend_micros bigint DEFAULT 0 NOT NULL,
+    lease_token uuid,
+    lease_expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_projection_states_budget_version_check CHECK ((budget_version > 0)),
+    CONSTRAINT content_plan_projection_states_check CHECK (((coherent_generation_id IS NULL) OR (target_generation_id IS NULL) OR (coherent_generation_id <> target_generation_id))),
+    CONSTRAINT content_plan_projection_states_check1 CHECK ((((discovery_created_at IS NULL) AND (discovery_message_id IS NULL)) OR ((discovery_created_at IS NOT NULL) AND (discovery_message_id IS NOT NULL)))),
+    CONSTRAINT content_plan_projection_states_check2 CHECK ((((bootstrap_processed IS NULL) AND (bootstrap_total IS NULL)) OR ((bootstrap_processed IS NOT NULL) AND (bootstrap_total IS NOT NULL) AND (bootstrap_processed >= 0) AND (bootstrap_total >= 0) AND (bootstrap_processed <= bootstrap_total)))),
+    CONSTRAINT content_plan_projection_states_check3 CHECK ((((lease_token IS NULL) AND (lease_expires_at IS NULL)) OR ((lease_token IS NOT NULL) AND (lease_expires_at IS NOT NULL)))),
+    CONSTRAINT content_plan_projection_states_embedding_requests_used_check CHECK ((embedding_requests_used >= 0)),
+    CONSTRAINT content_plan_projection_states_estimated_spend_micros_check CHECK ((estimated_spend_micros >= 0)),
+    CONSTRAINT content_plan_projection_states_projection_state_check CHECK ((projection_state = ANY (ARRAY['bootstrapping'::text, 'ready'::text, 'updating'::text, 'delayed'::text, 'reprojecting'::text, 'degraded'::text, 'budget_paused'::text]))),
+    CONSTRAINT content_plan_projection_states_reason_check CHECK (((reason IS NULL) OR (reason ~ '^[a-z][a-z0-9_]{0,63}$'::text)))
+);
+
+
+--
+-- Name: content_plan_topic_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_topic_documents (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    document_id uuid NOT NULL,
+    source_topic_revision integer NOT NULL,
+    similarity real NOT NULL,
+    existed_before_gap boolean DEFAULT false NOT NULL,
+    retrieved_by_gap_answers boolean DEFAULT false NOT NULL,
+    cited_by_gap_answers boolean DEFAULT false NOT NULL,
+    changed_after_gap boolean DEFAULT false NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_topic_documents_similarity_check CHECK (((similarity >= (0)::double precision) AND (similarity <= (1)::double precision))),
+    CONSTRAINT content_plan_topic_documents_source_topic_revision_check CHECK ((source_topic_revision > 0))
+);
+
+
+--
+-- Name: content_plan_topic_enrichments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_topic_enrichments (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    source_topic_revision integer NOT NULL,
+    source_member_count integer DEFAULT 0 NOT NULL,
+    source_grounded_count integer DEFAULT 0 NOT NULL,
+    source_degraded_count integer DEFAULT 0 NOT NULL,
+    source_no_support_count integer DEFAULT 0 NOT NULL,
+    source_not_evaluated_count integer DEFAULT 0 NOT NULL,
+    source_credible_opportunity boolean DEFAULT false NOT NULL,
+    source_evidence_strength text DEFAULT 'none'::text NOT NULL,
+    source_corpus_evidence_fingerprint text,
+    published_source_member_count integer,
+    published_source_grounded_count integer,
+    published_source_degraded_count integer,
+    published_source_no_support_count integer,
+    published_source_not_evaluated_count integer,
+    published_source_credible_opportunity boolean,
+    published_source_evidence_strength text,
+    published_source_corpus_evidence_fingerprint text,
+    analysis_mode text DEFAULT 'label_and_brief'::text NOT NULL,
+    publish_state text DEFAULT 'ready'::text NOT NULL,
+    state text DEFAULT 'pending'::text NOT NULL,
+    label text,
+    description text,
+    suggested_title text,
+    rationale text,
+    questions_to_answer jsonb,
+    suggested_shape text,
+    evidence_statement text,
+    action text,
+    action_rule_version integer NOT NULL,
+    corpus_state text DEFAULT 'pending'::text NOT NULL,
+    corpus_checked_at timestamp with time zone,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    claim_token uuid,
+    claim_expires_at timestamp with time zone,
+    failure_stage text,
+    failure_reason text,
+    enriched_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_topic_enrichmen_published_source_corpus_evid_check CHECK (((published_source_corpus_evidence_fingerprint IS NULL) OR (published_source_corpus_evidence_fingerprint ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_degraded_co_check CHECK ((published_source_degraded_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_evidence_st_check CHECK (((published_source_evidence_strength IS NULL) OR (published_source_evidence_strength = ANY (ARRAY['none'::text, 'low'::text, 'medium'::text, 'high'::text])))),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_grounded_co_check CHECK ((published_source_grounded_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_member_coun_check CHECK ((published_source_member_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_no_support__check CHECK ((published_source_no_support_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichmen_published_source_not_evaluat_check CHECK ((published_source_not_evaluated_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichmen_source_corpus_evidence_finge_check CHECK (((source_corpus_evidence_fingerprint IS NULL) OR (source_corpus_evidence_fingerprint ~ '^[0-9a-f]{64}$'::text))),
+    CONSTRAINT content_plan_topic_enrichments_action_check CHECK (((action IS NULL) OR (action = ANY (ARRAY['add_content'::text, 'review_existing_content'::text, 'investigate_retrieval'::text, 'monitor'::text])))),
+    CONSTRAINT content_plan_topic_enrichments_action_rule_version_check CHECK ((action_rule_version > 0)),
+    CONSTRAINT content_plan_topic_enrichments_analysis_mode_check CHECK ((analysis_mode = ANY (ARRAY['label_and_brief'::text, 'label_only'::text]))),
+    CONSTRAINT content_plan_topic_enrichments_attempt_count_check CHECK ((attempt_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_check CHECK ((((claim_token IS NULL) AND (claim_expires_at IS NULL)) OR ((claim_token IS NOT NULL) AND (claim_expires_at IS NOT NULL)))),
+    CONSTRAINT content_plan_topic_enrichments_check1 CHECK (((((source_grounded_count + source_degraded_count) + source_no_support_count) + source_not_evaluated_count) = source_member_count)),
+    CONSTRAINT content_plan_topic_enrichments_check2 CHECK ((((published_source_member_count IS NULL) AND (published_source_grounded_count IS NULL) AND (published_source_degraded_count IS NULL) AND (published_source_no_support_count IS NULL) AND (published_source_not_evaluated_count IS NULL) AND (published_source_credible_opportunity IS NULL) AND (published_source_evidence_strength IS NULL)) OR ((published_source_member_count IS NOT NULL) AND (published_source_grounded_count IS NOT NULL) AND (published_source_degraded_count IS NOT NULL) AND (published_source_no_support_count IS NOT NULL) AND (published_source_not_evaluated_count IS NOT NULL) AND (published_source_credible_opportunity IS NOT NULL) AND (published_source_evidence_strength IS NOT NULL) AND ((((published_source_grounded_count + published_source_degraded_count) + published_source_no_support_count) + published_source_not_evaluated_count) = published_source_member_count)))),
+    CONSTRAINT content_plan_topic_enrichments_check3 CHECK ((((failure_stage IS NULL) AND (failure_reason IS NULL)) OR ((failure_stage IS NOT NULL) AND (failure_reason IS NOT NULL)))),
+    CONSTRAINT content_plan_topic_enrichments_check4 CHECK (((state <> 'ready'::text) OR ((label IS NOT NULL) AND (description IS NOT NULL) AND (enriched_at IS NOT NULL)))),
+    CONSTRAINT content_plan_topic_enrichments_check5 CHECK (((action <> ALL (ARRAY['add_content'::text, 'review_existing_content'::text, 'investigate_retrieval'::text])) OR (corpus_state = 'ready'::text))),
+    CONSTRAINT content_plan_topic_enrichments_check6 CHECK (((corpus_state <> 'unavailable'::text) OR (action IS NULL))),
+    CONSTRAINT content_plan_topic_enrichments_corpus_state_check CHECK ((corpus_state = ANY (ARRAY['pending'::text, 'ready'::text, 'unavailable'::text, 'stale'::text]))),
+    CONSTRAINT content_plan_topic_enrichments_description_check CHECK (((description IS NULL) OR ((char_length(description) >= 1) AND (char_length(description) <= 500)))),
+    CONSTRAINT content_plan_topic_enrichments_evidence_statement_check CHECK (((evidence_statement IS NULL) OR ((char_length(evidence_statement) >= 1) AND (char_length(evidence_statement) <= 500)))),
+    CONSTRAINT content_plan_topic_enrichments_failure_reason_check CHECK (((failure_reason IS NULL) OR (failure_reason ~ '^[a-z][a-z0-9_]{0,63}$'::text))),
+    CONSTRAINT content_plan_topic_enrichments_failure_stage_check CHECK (((failure_stage IS NULL) OR (failure_stage ~ '^[a-z][a-z0-9_]{0,63}$'::text))),
+    CONSTRAINT content_plan_topic_enrichments_label_check CHECK (((label IS NULL) OR ((char_length(label) >= 1) AND (char_length(label) <= 120)))),
+    CONSTRAINT content_plan_topic_enrichments_publish_state_check CHECK ((publish_state = ANY (ARRAY['ready'::text, 'outside_analysis_cap'::text]))),
+    CONSTRAINT content_plan_topic_enrichments_questions_to_answer_check CHECK (((questions_to_answer IS NULL) OR ((jsonb_typeof(questions_to_answer) = 'array'::text) AND ((jsonb_array_length(questions_to_answer) >= 3) AND (jsonb_array_length(questions_to_answer) <= 7))))),
+    CONSTRAINT content_plan_topic_enrichments_rationale_check CHECK (((rationale IS NULL) OR ((char_length(rationale) >= 1) AND (char_length(rationale) <= 1000)))),
+    CONSTRAINT content_plan_topic_enrichments_source_degraded_count_check CHECK ((source_degraded_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_source_evidence_strength_check CHECK ((source_evidence_strength = ANY (ARRAY['none'::text, 'low'::text, 'medium'::text, 'high'::text]))),
+    CONSTRAINT content_plan_topic_enrichments_source_grounded_count_check CHECK ((source_grounded_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_source_member_count_check CHECK ((source_member_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_source_no_support_count_check CHECK ((source_no_support_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_source_not_evaluated_count_check CHECK ((source_not_evaluated_count >= 0)),
+    CONSTRAINT content_plan_topic_enrichments_source_topic_revision_check CHECK ((source_topic_revision > 0)),
+    CONSTRAINT content_plan_topic_enrichments_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'ready'::text, 'stale'::text, 'unavailable'::text, 'outside_analysis_cap'::text]))),
+    CONSTRAINT content_plan_topic_enrichments_suggested_shape_check CHECK (((suggested_shape IS NULL) OR (suggested_shape = ANY (ARRAY['guide'::text, 'faq'::text, 'reference'::text, 'policy'::text, 'troubleshooting'::text])))),
+    CONSTRAINT content_plan_topic_enrichments_suggested_title_check CHECK (((suggested_title IS NULL) OR ((char_length(suggested_title) >= 1) AND (char_length(suggested_title) <= 200))))
+);
+
+
+--
+-- Name: content_plan_topic_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_topic_memberships (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    observation_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    assignment_version integer NOT NULL,
+    similarity real NOT NULL,
+    cohesion real NOT NULL,
+    assigned_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_topic_memberships_assignment_version_check CHECK ((assignment_version > 0)),
+    CONSTRAINT content_plan_topic_memberships_cohesion_check CHECK (((cohesion >= (0)::double precision) AND (cohesion <= (1)::double precision))),
+    CONSTRAINT content_plan_topic_memberships_similarity_check CHECK (((similarity >= (0)::double precision) AND (similarity <= (1)::double precision)))
+);
+
+
+--
+-- Name: content_plan_topics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_topics (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    lifecycle text NOT NULL,
+    centroid public.vector NOT NULL,
+    dimensions integer NOT NULL,
+    centroid_weight integer NOT NULL,
+    representative_observation_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    revision integer DEFAULT 1 NOT NULL,
+    merged_into_topic_id uuid,
+    redirect_expires_at timestamp with time zone,
+    enrichment_dirty_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_topics_centroid_weight_check CHECK ((centroid_weight >= 0)),
+    CONSTRAINT content_plan_topics_check CHECK ((public.vector_dims(centroid) = dimensions)),
+    CONSTRAINT content_plan_topics_check1 CHECK ((((lifecycle = 'merged'::text) AND (merged_into_topic_id IS NOT NULL) AND (merged_into_topic_id <> id) AND (redirect_expires_at IS NOT NULL)) OR ((lifecycle <> 'merged'::text) AND (merged_into_topic_id IS NULL) AND (redirect_expires_at IS NULL)))),
+    CONSTRAINT content_plan_topics_check2 CHECK (((lifecycle <> 'retired'::text) OR ((centroid_weight = 0) AND (cardinality(representative_observation_ids) = 0)))),
+    CONSTRAINT content_plan_topics_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT content_plan_topics_lifecycle_check CHECK ((lifecycle = ANY (ARRAY['provisional'::text, 'mature'::text, 'merged'::text, 'retired'::text]))),
+    CONSTRAINT content_plan_topics_representative_observation_ids_check CHECK ((((cardinality(representative_observation_ids) >= 0) AND (cardinality(representative_observation_ids) <= 8)) AND (array_position(representative_observation_ids, NULL::uuid) IS NULL))),
+    CONSTRAINT content_plan_topics_revision_check CHECK ((revision > 0))
 );
 
 
@@ -2998,6 +3449,102 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: content_plan_observation_vectors content_plan_observation_vectors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observation_vectors
+    ADD CONSTRAINT content_plan_observation_vectors_pkey PRIMARY KEY (workspace_id, observation_id, generation_id);
+
+
+--
+-- Name: content_plan_observations content_plan_observations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: content_plan_observations content_plan_observations_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: content_plan_observations content_plan_observations_workspace_id_source_user_message__key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_workspace_id_source_user_message__key UNIQUE (workspace_id, source_user_message_id, semantic_intent_id);
+
+
+--
+-- Name: content_plan_projection_generations content_plan_projection_gener_workspace_id_id_embedding_spa_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_generations
+    ADD CONSTRAINT content_plan_projection_gener_workspace_id_id_embedding_spa_key UNIQUE (workspace_id, id, embedding_space_id);
+
+
+--
+-- Name: content_plan_projection_generations content_plan_projection_generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_generations
+    ADD CONSTRAINT content_plan_projection_generations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: content_plan_projection_generations content_plan_projection_generations_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_generations
+    ADD CONSTRAINT content_plan_projection_generations_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: content_plan_projection_states content_plan_projection_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_states
+    ADD CONSTRAINT content_plan_projection_states_pkey PRIMARY KEY (workspace_id);
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_documents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_documents
+    ADD CONSTRAINT content_plan_topic_documents_pkey PRIMARY KEY (workspace_id, generation_id, topic_id, document_id);
+
+
+--
+-- Name: content_plan_topic_enrichments content_plan_topic_enrichments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_enrichments
+    ADD CONSTRAINT content_plan_topic_enrichments_pkey PRIMARY KEY (workspace_id, generation_id, topic_id);
+
+
+--
+-- Name: content_plan_topic_memberships content_plan_topic_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_memberships
+    ADD CONSTRAINT content_plan_topic_memberships_pkey PRIMARY KEY (workspace_id, generation_id, observation_id);
+
+
+--
+-- Name: content_plan_topics content_plan_topics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topics
+    ADD CONSTRAINT content_plan_topics_pkey PRIMARY KEY (workspace_id, generation_id, id);
+
+
+--
 -- Name: context_identity_nonces context_identity_nonces_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4487,6 +5034,125 @@ CREATE INDEX idx_connector_whatsapp_message_log_workspace_wa_created ON public.c
 
 
 --
+-- Name: idx_content_plan_enrichments_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_enrichments_claim ON public.content_plan_topic_enrichments USING btree (available_at, workspace_id, generation_id, topic_id) WHERE (state = ANY (ARRAY['pending'::text, 'stale'::text]));
+
+
+--
+-- Name: idx_content_plan_enrichments_workspace_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_enrichments_workspace_due ON public.content_plan_topic_enrichments USING btree (workspace_id, available_at, generation_id, topic_id) WHERE (state = ANY (ARRAY['pending'::text, 'stale'::text]));
+
+
+--
+-- Name: idx_content_plan_generations_one_building; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_content_plan_generations_one_building ON public.content_plan_projection_generations USING btree (workspace_id) WHERE (state = 'building'::text);
+
+
+--
+-- Name: idx_content_plan_generations_one_coherent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_content_plan_generations_one_coherent ON public.content_plan_projection_generations USING btree (workspace_id) WHERE (state = 'coherent'::text);
+
+
+--
+-- Name: idx_content_plan_generations_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_generations_space ON public.content_plan_projection_generations USING btree (workspace_id, embedding_space_id, state);
+
+
+--
+-- Name: idx_content_plan_memberships_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_memberships_topic ON public.content_plan_topic_memberships USING btree (workspace_id, generation_id, topic_id, observation_id);
+
+
+--
+-- Name: idx_content_plan_observations_pending_context; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_observations_pending_context ON public.content_plan_observations USING btree (workspace_id, resolution_deadline, id) WHERE (observation_state = 'pending_context'::text);
+
+
+--
+-- Name: idx_content_plan_observations_workspace_time; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_observations_workspace_time ON public.content_plan_observations USING btree (workspace_id, observed_at DESC, id DESC);
+
+
+--
+-- Name: idx_content_plan_projection_states_work; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_projection_states_work ON public.content_plan_projection_states USING btree (projection_state, updated_at) WHERE (projection_state <> 'ready'::text);
+
+
+--
+-- Name: idx_content_plan_topic_documents_document; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_topic_documents_document ON public.content_plan_topic_documents USING btree (workspace_id, document_id, generation_id, topic_id);
+
+
+--
+-- Name: idx_content_plan_topics_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_topics_active ON public.content_plan_topics USING btree (workspace_id, generation_id, lifecycle, id) WHERE (lifecycle = ANY (ARRAY['provisional'::text, 'mature'::text]));
+
+
+--
+-- Name: idx_content_plan_topics_enrichment_dirty; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_topics_enrichment_dirty ON public.content_plan_topics USING btree (enrichment_dirty_at, workspace_id, generation_id, id) WHERE ((enrichment_dirty_at IS NOT NULL) AND (lifecycle = 'mature'::text));
+
+
+--
+-- Name: idx_content_plan_topics_workspace_dirty; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_topics_workspace_dirty ON public.content_plan_topics USING btree (workspace_id, generation_id, enrichment_dirty_at, id) WHERE ((enrichment_dirty_at IS NOT NULL) AND (lifecycle = 'mature'::text));
+
+
+--
+-- Name: idx_content_plan_vectors_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_vectors_claim ON public.content_plan_observation_vectors USING btree (state, available_at, workspace_id, generation_id, observation_id) WHERE (state = ANY (ARRAY['pending_embedding'::text, 'ready'::text, 'retryable'::text]));
+
+
+--
+-- Name: idx_content_plan_vectors_generation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_vectors_generation ON public.content_plan_observation_vectors USING btree (workspace_id, generation_id, state);
+
+
+--
+-- Name: idx_content_plan_vectors_workspace_due; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_vectors_workspace_due ON public.content_plan_observation_vectors USING btree (workspace_id, available_at, generation_id, observation_id) WHERE (state = ANY (ARRAY['pending_embedding'::text, 'ready'::text, 'retryable'::text]));
+
+
+--
+-- Name: idx_content_plan_vectors_workspace_expired; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_vectors_workspace_expired ON public.content_plan_observation_vectors USING btree (workspace_id, claim_expires_at, generation_id, observation_id) WHERE (state = 'processing'::text);
+
+
+--
 -- Name: idx_context_identity_nonces_workspace_expires; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4526,6 +5192,13 @@ CREATE INDEX idx_conversations_workspace_created_at ON public.conversations USIN
 --
 
 CREATE INDEX idx_conversations_workspace_id ON public.conversations USING btree (workspace_id);
+
+
+--
+-- Name: idx_conversations_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_conversations_workspace_id_unique ON public.conversations USING btree (workspace_id, id);
 
 
 --
@@ -4589,6 +5262,13 @@ CREATE UNIQUE INDEX idx_documents_workspace_external_document_id_unique ON publi
 --
 
 CREATE INDEX idx_documents_workspace_id ON public.documents USING btree (workspace_id);
+
+
+--
+-- Name: idx_documents_workspace_id_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX idx_documents_workspace_id_unique ON public.documents USING btree (workspace_id, id);
 
 
 --
@@ -5957,6 +6637,41 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 
 
 --
+-- Name: content_plan_topic_enrichments content_plan_enrichment_revision_fence; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_enrichment_revision_fence BEFORE INSERT OR UPDATE ON public.content_plan_topic_enrichments FOR EACH ROW EXECUTE FUNCTION public.validate_content_plan_enrichment_revision();
+
+
+--
+-- Name: content_plan_projection_generations content_plan_generation_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_generation_identity_immutable BEFORE UPDATE ON public.content_plan_projection_generations FOR EACH ROW EXECUTE FUNCTION public.reject_content_plan_generation_identity_mutation();
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_document_limit; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_topic_document_limit BEFORE INSERT ON public.content_plan_topic_documents FOR EACH ROW EXECUTE FUNCTION public.enforce_content_plan_topic_document_limit();
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_document_revision_fence; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_topic_document_revision_fence BEFORE INSERT OR UPDATE ON public.content_plan_topic_documents FOR EACH ROW EXECUTE FUNCTION public.validate_content_plan_topic_document_revision();
+
+
+--
+-- Name: content_plan_topics content_plan_topic_revision_stales_enrichment; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_topic_revision_stales_enrichment AFTER UPDATE OF revision ON public.content_plan_topics FOR EACH ROW EXECUTE FUNCTION public.stale_content_plan_enrichment_on_topic_revision();
+
+
+--
 -- Name: embedding_spaces embedding_spaces_identity_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6314,6 +7029,190 @@ ALTER TABLE ONLY public.connector_whatsapp_contacts
 
 ALTER TABLE ONLY public.connector_whatsapp_message_log
     ADD CONSTRAINT connector_whatsapp_message_log_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_enrichments content_plan_enrichments_topic_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_enrichments
+    ADD CONSTRAINT content_plan_enrichments_topic_fk FOREIGN KEY (workspace_id, generation_id, topic_id) REFERENCES public.content_plan_topics(workspace_id, generation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_memberships content_plan_memberships_topic_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_memberships
+    ADD CONSTRAINT content_plan_memberships_topic_fk FOREIGN KEY (workspace_id, generation_id, topic_id) REFERENCES public.content_plan_topics(workspace_id, generation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_memberships content_plan_memberships_vector_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_memberships
+    ADD CONSTRAINT content_plan_memberships_vector_fk FOREIGN KEY (workspace_id, observation_id, generation_id) REFERENCES public.content_plan_observation_vectors(workspace_id, observation_id, generation_id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observation_vectors content_plan_observation_vectors_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observation_vectors
+    ADD CONSTRAINT content_plan_observation_vectors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observations content_plan_observations_assistant_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_assistant_message_fk FOREIGN KEY (workspace_id, source_assistant_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observations content_plan_observations_conversation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_conversation_fk FOREIGN KEY (workspace_id, conversation_id) REFERENCES public.conversations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observations content_plan_observations_user_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_user_message_fk FOREIGN KEY (workspace_id, source_user_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observations content_plan_observations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observations
+    ADD CONSTRAINT content_plan_observations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_generations content_plan_projection_generations_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_generations
+    ADD CONSTRAINT content_plan_projection_generations_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: content_plan_projection_generations content_plan_projection_generations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_generations
+    ADD CONSTRAINT content_plan_projection_generations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_states content_plan_projection_states_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_states
+    ADD CONSTRAINT content_plan_projection_states_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_states content_plan_state_coherent_generation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_states
+    ADD CONSTRAINT content_plan_state_coherent_generation_fk FOREIGN KEY (workspace_id, coherent_generation_id) REFERENCES public.content_plan_projection_generations(workspace_id, id) DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: content_plan_projection_states content_plan_state_target_generation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_states
+    ADD CONSTRAINT content_plan_state_target_generation_fk FOREIGN KEY (workspace_id, target_generation_id) REFERENCES public.content_plan_projection_generations(workspace_id, id) DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_documents_document_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_documents
+    ADD CONSTRAINT content_plan_topic_documents_document_fk FOREIGN KEY (workspace_id, document_id) REFERENCES public.documents(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_documents_topic_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_documents
+    ADD CONSTRAINT content_plan_topic_documents_topic_fk FOREIGN KEY (workspace_id, generation_id, topic_id) REFERENCES public.content_plan_topics(workspace_id, generation_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_documents content_plan_topic_documents_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_documents
+    ADD CONSTRAINT content_plan_topic_documents_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_enrichments content_plan_topic_enrichments_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_enrichments
+    ADD CONSTRAINT content_plan_topic_enrichments_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topic_memberships content_plan_topic_memberships_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topic_memberships
+    ADD CONSTRAINT content_plan_topic_memberships_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topics content_plan_topics_generation_space_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topics
+    ADD CONSTRAINT content_plan_topics_generation_space_fk FOREIGN KEY (workspace_id, generation_id, embedding_space_id) REFERENCES public.content_plan_projection_generations(workspace_id, id, embedding_space_id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_topics content_plan_topics_merge_target_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topics
+    ADD CONSTRAINT content_plan_topics_merge_target_fk FOREIGN KEY (workspace_id, generation_id, merged_into_topic_id) REFERENCES public.content_plan_topics(workspace_id, generation_id, id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: content_plan_topics content_plan_topics_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_topics
+    ADD CONSTRAINT content_plan_topics_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observation_vectors content_plan_vectors_generation_space_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observation_vectors
+    ADD CONSTRAINT content_plan_vectors_generation_space_fk FOREIGN KEY (workspace_id, generation_id, embedding_space_id) REFERENCES public.content_plan_projection_generations(workspace_id, id, embedding_space_id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_observation_vectors content_plan_vectors_observation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_observation_vectors
+    ADD CONSTRAINT content_plan_vectors_observation_fk FOREIGN KEY (workspace_id, observation_id) REFERENCES public.content_plan_observations(workspace_id, id) ON DELETE CASCADE;
 
 
 --

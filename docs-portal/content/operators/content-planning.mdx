@@ -1,0 +1,120 @@
+---
+title: "Content planning"
+description: "Use recent visitor questions and grounding evidence to choose the next content improvement."
+last_updated: 2026-08-02
+---
+
+import { Callout } from 'nextra/components'
+
+# Content planning
+
+Open **Activity → Content plan** when you want to decide what knowledge work to do
+next. The page combines the last 30 days of visitor questions with grounding and corpus
+evidence, then keeps that view updated as conversations are committed.
+
+There is no report to generate. New eligible turns join the durable projection in the
+background, and the header tells you how current the visible evidence is.
+
+## Start with Recommended next
+
+When the evidence supports an action, **Recommended next** shows one topic rather than
+a wall of equally weighted cards. It explains why the topic ranks first, shows the
+measured answer evidence, and gives you the relevant next step.
+
+The action has a specific meaning:
+
+- **Add content** — no sufficiently related document was found.
+- **Investigate retrieval** — relevant knowledge existed, but affected answers usually
+  failed to retrieve or cite it.
+- **Review existing content** — related knowledge was retrieved but insufficient, or a
+  relevant document changed after the gap appeared.
+- **Monitor** — visitors are interested, but the evidence does not justify remediation.
+
+If the corpus check cannot run, Radioso leaves the action unavailable. It does not turn
+missing evidence into an “Add content” recommendation.
+
+## Read demand and grounding separately
+
+The summary separates visitor demand from answer quality. **Visitor questions** and
+**Topics** describe interest. **Opportunities** counts mature topics with active
+reduced/no-support evidence from at least two conversations.
+
+Grounding uses three measured verdicts: grounded, reduced support, and no support.
+Answers without a verdict appear separately as **not evaluated**, because missing
+measurement is not a fourth failure category. For small samples the page emphasizes raw
+counts instead of making a percentage look conclusive.
+
+Switch from **Content opportunities** to **All interests** to include well-covered
+topics. Questions that have not yet formed a mature topic stay in the quieter
+**Emerging questions** section.
+
+## Inspect the evidence
+
+Select a topic to keep the ranked list in view on desktop and open its full detail on a
+narrow screen. The URL is shareable. Topic detail puts the decision and its evidence
+before generated prose, then shows:
+
+- questions the content should answer
+- representative visitor questions
+- possibly related documents and what affected answers retrieved or cited
+- affected agents and channels
+
+Use **View answers** to open the existing Quality queue filtered to this topic. Use a
+related document to inspect the existing source in Knowledge. **Write document** opens
+the ordinary inline document flow with only a suggested title and question outline;
+you still review and write every factual claim.
+
+<Callout type="warning" emoji="i">
+  Generated labels and briefs organize the evidence. They do not control ranking, and
+  they are not factual source material. Verify facts against your approved documents
+  before publishing anything.
+</Callout>
+
+## Understand freshness
+
+The `as of` timestamp identifies the coherent report snapshot. When background work is
+still running, a quiet status strip separates pending embeddings, topic assignments,
+and enrichments. During bootstrap, delay, or embedding-space reprojection, the last
+coherent evidence remains visible when available.
+
+Provider trouble can leave a label or brief pending, stale, or unavailable without
+hiding the topic's demand and grounding counts.
+
+## What does not become a topic
+
+Content Planning observes semantic information needs, not every message. Greetings,
+button-like choices, “yes,” “go ahead,” and routine field values do not become topics by
+themselves. Contextual follow-ups and clarification replies are tied back to the
+question they complete. An unresolved fragment expires rather than becoming a
+misleading cluster.
+
+Source wording remains on the original conversation message. Privacy deletion removes
+that wording, its vectors, and its topic memberships and causes affected aggregate
+evidence to be recalculated.
+
+## Common failure modes
+
+### The page has questions but no grounding rate
+
+Those answers have not produced a grounding verdict. Demand is still real, but the
+page marks the grounding state as unmeasured instead of treating it as healthy or
+failed.
+
+### A topic has no recommendation
+
+The topic may have too little active evidence, corpus analysis may still be running,
+or the corpus check may be unavailable. Open the topic to see the explicit evidence and
+enrichment state.
+
+### A shared topic link changes after opening
+
+Closely related topics can merge. Radioso resolves a still-valid old identifier to the
+surviving topic and replaces the URL. Expired or inaccessible identifiers return the
+same not-found view.
+
+## Read next
+
+- [Evals](/guides/evals)
+- [Document upload](/guides/document-upload)
+- [Documents and search API](/api/documents-and-search)
+- [Content planning API](/api/content-planning)

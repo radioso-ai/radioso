@@ -5,11 +5,12 @@ import {
 } from '@/lib/dashboard-routes'
 
 /**
- * Builds hrefs for the Activity surfaces (Needs attention / All activity / Quality),
- * which now live as nested items in the sidebar rather than in-page tabs. Quality is a
- * separate section; the other two are activity tabs.
+ * Builds hrefs for the Activity surfaces (Needs attention / All activity /
+ * Content plan / Quality), which live as nested items in the sidebar rather than
+ * in-page tabs. Quality and Content plan are separate sections; the other two
+ * are activity tabs.
  */
-export type ActivitySurfaceTab = ActivityTab | 'quality'
+export type ActivitySurfaceTab = ActivityTab | 'quality' | 'content-plan'
 
 export function buildActivityTabHref(
   accountId: string,
@@ -23,16 +24,30 @@ export function buildActivityTabHref(
   }
 
   if (targetTab === activeTab) {
+    if (targetTab === 'quality' || targetTab === 'content-plan') {
+      return buildDashboardHref(accountId, {
+        ...routeState,
+        section: targetTab,
+        activityTab: undefined,
+      })
+    }
     return buildDashboardHref(accountId, {
       ...routeState,
-      section: targetTab === 'quality' ? 'quality' : 'activity',
-      activityTab: targetTab === 'quality' ? undefined : targetTab,
+      section: 'activity',
+      activityTab: targetTab,
     })
   }
 
   if (targetTab === 'quality') {
     return buildDashboardHref(accountId, {
       section: 'quality',
+      ...workspaceState,
+    })
+  }
+
+  if (targetTab === 'content-plan') {
+    return buildDashboardHref(accountId, {
+      section: 'content-plan',
       ...workspaceState,
     })
   }

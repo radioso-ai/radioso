@@ -386,6 +386,7 @@ const summarizeInterpretationMetadata = (
 
 const summarizeInterpretation = (interpretation: ConversationTurnInterpretation): Record<string, unknown> => ({
   route: interpretation.route,
+  ...(interpretation.interactionRole ? { interactionRole: interpretation.interactionRole } : {}),
   framing: summarizeFraming(interpretation.framing),
   metadata: summarizeInterpretationMetadata(interpretation.metadata),
 });

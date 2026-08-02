@@ -2591,6 +2591,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/content-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the continuously maintained content plan
+         * @description Returns a frozen 30-day demand and grounding view, ranked content opportunities, emerging questions, and honest projection freshness for the active workspace.
+         */
+        get: operations["listContentPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/content-plan/topics/{topicId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get content plan topic evidence
+         * @description Returns the canonical mature topic, decision evidence, representative source questions, related documents, and affected surfaces. A live merged ID resolves to its canonical topic.
+         */
+        get: operations["getContentPlanTopic"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/content-plan/topics/{topicId}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Quality turns belonging to a content plan topic
+         * @description Returns the existing Quality turn DTO for deduplicated topic members in the requested current, comparison, or combined window. A live merged ID resolves to its canonical topic.
+         */
+        get: operations["listContentPlanTopicTurns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -5912,6 +5972,390 @@ export interface components {
             page: number;
             pageSize: number;
             totalPages: number;
+        };
+        ContentPlanProjection: {
+            /** @enum {string} */
+            state: "bootstrapping" | "ready" | "updating" | "delayed" | "reprojecting" | "degraded" | "budget_paused";
+            processedThrough: string | null;
+            processingLagSeconds: number | null;
+            pendingEmbeddingCount: number;
+            pendingAssignmentCount: number;
+            pendingEnrichmentTopicCount: number;
+            processedCount: number | null;
+            totalCount: number | null;
+            embeddingSpaceFingerprint: string | null;
+            reason: string | null;
+        };
+        ContentPlanSummary: {
+            questionCount: number;
+            conversationCount: number;
+            matureTopicCount: number;
+            emergingQuestionCount: number;
+            opportunityCount: number;
+            grounding: {
+                evaluatedAnswerCount: number;
+                groundedAnswerCount: number;
+                degradedAnswerCount: number;
+                noSupportAnswerCount: number;
+                notEvaluatedAnswerCount: number;
+                reducedOrNoSupportRate: number | null;
+                /** @enum {string} */
+                headlineState: "measured" | "insufficient_measured_turns" | "unmeasured";
+            };
+        };
+        ContentPlanTopicSummary: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            lifecycle: "mature";
+            label: string | null;
+            description: string | null;
+            /** @enum {string} */
+            labelState: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+            demand: {
+                currentQuestionCount: number;
+                comparisonQuestionCount: number;
+                currentConversationCount: number;
+                comparisonConversationCount: number;
+                currentShare: number | null;
+                absoluteChange: number;
+                /** @enum {string} */
+                trend: "new" | "rising" | "steady" | "falling" | "insufficient_data";
+            };
+            grounding: {
+                groundedAnswerCount: number;
+                degradedAnswerCount: number;
+                noSupportAnswerCount: number;
+                notEvaluatedAnswerCount: number;
+                evaluatedAnswerCount: number;
+                reducedOrNoSupportRate: number | null;
+                /** @enum {string} */
+                headlineState: "measured" | "insufficient_measured_turns" | "unmeasured";
+            };
+            evidence: {
+                /** @enum {string} */
+                strength: "none" | "low" | "medium" | "high";
+                evaluatedConversationCount: number;
+                activeGapConversationCount: number;
+            };
+            opportunity: {
+                credible: boolean;
+                priorityReasons: ("active_no_support" | "active_degraded" | "high_demand" | "new_demand" | "rising_demand")[];
+            };
+            recommendation: {
+                action: ("add_content" | "review_existing_content" | "investigate_retrieval" | "monitor") | null;
+                /** @enum {string} */
+                state: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+                rationale: string | null;
+                suggestedTitle: string | null;
+                questionsToAnswer: string[];
+                suggestedShape: ("guide" | "faq" | "reference" | "policy" | "troubleshooting") | null;
+                evidenceStatement: string | null;
+                /** @enum {boolean} */
+                factsMustBeVerified: true;
+            };
+            corpusEvidence: {
+                /** @enum {string} */
+                state: "pending" | "ready" | "unavailable" | "stale";
+                relatedDocumentCount: number;
+                /** @enum {number} */
+                actionRuleVersion: 1;
+            };
+            affected: {
+                agentCount: number;
+                channelCount: number;
+            };
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ContentPlanEmergingQuestion: {
+            /** Format: uuid */
+            observationId: string;
+            question: string | null;
+            sourceAvailable: boolean;
+            conversationId: string | null;
+            assistantMessageId: string | null;
+            questionCount: number;
+            conversationCount: number;
+            /** Format: date-time */
+            observedAt: string;
+            /** @enum {string} */
+            state: "emerging" | "awaiting_context" | "awaiting_embedding";
+        };
+        ContentPlanPage: {
+            /** @enum {string} */
+            range: "30d";
+            window: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            comparisonWindow: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            /** Format: date-time */
+            asOf: string;
+            projection: {
+                /** @enum {string} */
+                state: "bootstrapping" | "ready" | "updating" | "delayed" | "reprojecting" | "degraded" | "budget_paused";
+                processedThrough: string | null;
+                processingLagSeconds: number | null;
+                pendingEmbeddingCount: number;
+                pendingAssignmentCount: number;
+                pendingEnrichmentTopicCount: number;
+                processedCount: number | null;
+                totalCount: number | null;
+                embeddingSpaceFingerprint: string | null;
+                reason: string | null;
+            };
+            summary: {
+                questionCount: number;
+                conversationCount: number;
+                matureTopicCount: number;
+                emergingQuestionCount: number;
+                opportunityCount: number;
+                grounding: {
+                    evaluatedAnswerCount: number;
+                    groundedAnswerCount: number;
+                    degradedAnswerCount: number;
+                    noSupportAnswerCount: number;
+                    notEvaluatedAnswerCount: number;
+                    reducedOrNoSupportRate: number | null;
+                    /** @enum {string} */
+                    headlineState: "measured" | "insufficient_measured_turns" | "unmeasured";
+                };
+            };
+            /** @enum {number} */
+            rankingVersion: 1;
+            recommendedTopicId: string | null;
+            items: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                lifecycle: "mature";
+                label: string | null;
+                description: string | null;
+                /** @enum {string} */
+                labelState: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+                demand: {
+                    currentQuestionCount: number;
+                    comparisonQuestionCount: number;
+                    currentConversationCount: number;
+                    comparisonConversationCount: number;
+                    currentShare: number | null;
+                    absoluteChange: number;
+                    /** @enum {string} */
+                    trend: "new" | "rising" | "steady" | "falling" | "insufficient_data";
+                };
+                grounding: {
+                    groundedAnswerCount: number;
+                    degradedAnswerCount: number;
+                    noSupportAnswerCount: number;
+                    notEvaluatedAnswerCount: number;
+                    evaluatedAnswerCount: number;
+                    reducedOrNoSupportRate: number | null;
+                    /** @enum {string} */
+                    headlineState: "measured" | "insufficient_measured_turns" | "unmeasured";
+                };
+                evidence: {
+                    /** @enum {string} */
+                    strength: "none" | "low" | "medium" | "high";
+                    evaluatedConversationCount: number;
+                    activeGapConversationCount: number;
+                };
+                opportunity: {
+                    credible: boolean;
+                    priorityReasons: ("active_no_support" | "active_degraded" | "high_demand" | "new_demand" | "rising_demand")[];
+                };
+                recommendation: {
+                    action: ("add_content" | "review_existing_content" | "investigate_retrieval" | "monitor") | null;
+                    /** @enum {string} */
+                    state: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+                    rationale: string | null;
+                    suggestedTitle: string | null;
+                    questionsToAnswer: string[];
+                    suggestedShape: ("guide" | "faq" | "reference" | "policy" | "troubleshooting") | null;
+                    evidenceStatement: string | null;
+                    /** @enum {boolean} */
+                    factsMustBeVerified: true;
+                };
+                corpusEvidence: {
+                    /** @enum {string} */
+                    state: "pending" | "ready" | "unavailable" | "stale";
+                    relatedDocumentCount: number;
+                    /** @enum {number} */
+                    actionRuleVersion: 1;
+                };
+                affected: {
+                    agentCount: number;
+                    channelCount: number;
+                };
+                /** Format: date-time */
+                updatedAt: string;
+            }[];
+            emerging: {
+                /** Format: uuid */
+                observationId: string;
+                question: string | null;
+                sourceAvailable: boolean;
+                conversationId: string | null;
+                assistantMessageId: string | null;
+                questionCount: number;
+                conversationCount: number;
+                /** Format: date-time */
+                observedAt: string;
+                /** @enum {string} */
+                state: "emerging" | "awaiting_context" | "awaiting_embedding";
+            }[];
+            nextCursor: string | null;
+        };
+        ContentPlanTopicDetail: {
+            /** Format: date-time */
+            asOf: string;
+            window: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            comparisonWindow: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+            };
+            projection: {
+                /** @enum {string} */
+                state: "bootstrapping" | "ready" | "updating" | "delayed" | "reprojecting" | "degraded" | "budget_paused";
+                processedThrough: string | null;
+                processingLagSeconds: number | null;
+                pendingEmbeddingCount: number;
+                pendingAssignmentCount: number;
+                pendingEnrichmentTopicCount: number;
+                processedCount: number | null;
+                totalCount: number | null;
+                embeddingSpaceFingerprint: string | null;
+                reason: string | null;
+            };
+            /** Format: uuid */
+            canonicalTopicId: string;
+            redirectedFromTopicId: string | null;
+            topic: {
+                /** Format: uuid */
+                id: string;
+                /** @enum {string} */
+                lifecycle: "mature";
+                label: string | null;
+                description: string | null;
+                /** @enum {string} */
+                labelState: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+                demand: {
+                    currentQuestionCount: number;
+                    comparisonQuestionCount: number;
+                    currentConversationCount: number;
+                    comparisonConversationCount: number;
+                    currentShare: number | null;
+                    absoluteChange: number;
+                    /** @enum {string} */
+                    trend: "new" | "rising" | "steady" | "falling" | "insufficient_data";
+                };
+                grounding: {
+                    groundedAnswerCount: number;
+                    degradedAnswerCount: number;
+                    noSupportAnswerCount: number;
+                    notEvaluatedAnswerCount: number;
+                    evaluatedAnswerCount: number;
+                    reducedOrNoSupportRate: number | null;
+                    /** @enum {string} */
+                    headlineState: "measured" | "insufficient_measured_turns" | "unmeasured";
+                };
+                evidence: {
+                    /** @enum {string} */
+                    strength: "none" | "low" | "medium" | "high";
+                    evaluatedConversationCount: number;
+                    activeGapConversationCount: number;
+                };
+                opportunity: {
+                    credible: boolean;
+                    priorityReasons: ("active_no_support" | "active_degraded" | "high_demand" | "new_demand" | "rising_demand")[];
+                };
+                recommendation: {
+                    action: ("add_content" | "review_existing_content" | "investigate_retrieval" | "monitor") | null;
+                    /** @enum {string} */
+                    state: "pending" | "ready" | "stale" | "unavailable" | "outside_analysis_cap";
+                    rationale: string | null;
+                    suggestedTitle: string | null;
+                    questionsToAnswer: string[];
+                    suggestedShape: ("guide" | "faq" | "reference" | "policy" | "troubleshooting") | null;
+                    evidenceStatement: string | null;
+                    /** @enum {boolean} */
+                    factsMustBeVerified: true;
+                };
+                corpusEvidence: {
+                    /** @enum {string} */
+                    state: "pending" | "ready" | "unavailable" | "stale";
+                    relatedDocumentCount: number;
+                    /** @enum {number} */
+                    actionRuleVersion: 1;
+                };
+                affected: {
+                    agentCount: number;
+                    channelCount: number;
+                };
+                /** Format: date-time */
+                updatedAt: string;
+            };
+            decision: {
+                action: ("add_content" | "review_existing_content" | "investigate_retrieval" | "monitor") | null;
+                /** @enum {string} */
+                actionState: "ready" | "unavailable" | "pending" | "stale";
+                reasons: string[];
+            };
+            representativeQuestions: {
+                /** Format: uuid */
+                observationId: string;
+                question: string | null;
+                sourceAvailable: boolean;
+                conversationId: string | null;
+                userMessageId: string | null;
+                assistantMessageId: string | null;
+                /** Format: date-time */
+                observedAt: string;
+                /** @enum {string} */
+                groundingVerdict: "grounded" | "degraded" | "no_support" | "not_evaluated";
+            }[];
+            relatedDocuments: {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                /** Format: date-time */
+                updatedAt: string;
+                possibleRelevance: number;
+                evidence: {
+                    existedBeforeGap: boolean;
+                    retrievedByGapAnswers: boolean;
+                    citedByGapAnswers: boolean;
+                    changedAfterGap: boolean;
+                };
+            }[];
+            affectedAgents: {
+                /** Format: uuid */
+                id: string;
+                name: string | null;
+                questionCount: number;
+            }[];
+            affectedChannels: {
+                channel: string | null;
+                questionCount: number;
+            }[];
+        };
+        ContentPlanTopicParams: {
+            /** Format: uuid */
+            topicId: string;
         };
         /** @enum {string} */
         UsageTrendGranularity: "day" | "week" | "month";
@@ -17220,6 +17664,177 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QualityTriageConflictResponse"];
+                };
+            };
+        };
+    };
+    listContentPlan: {
+        parameters: {
+            query?: {
+                view?: "opportunities" | "all_interests";
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Content plan page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentPlanPage"];
+                };
+            };
+            /** @description Invalid query, topic identifier, or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContentPlanTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Content plan topic detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentPlanTopicDetail"];
+                };
+            };
+            /** @description Invalid query, topic identifier, or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Topic is unknown, foreign, retired, or no longer has a valid redirect */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listContentPlanTopicTurns: {
+        parameters: {
+            query?: {
+                window?: "current" | "comparison" | "both";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path: {
+                topicId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Page of topic member turns */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LowQualityTurnsPage"];
+                };
+            };
+            /** @description Invalid query, topic identifier, or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks the workspace.quality.read permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Topic is unknown, foreign, retired, or no longer has a valid redirect */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

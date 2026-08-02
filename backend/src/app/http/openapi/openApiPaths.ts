@@ -28,6 +28,7 @@ import { registerConversationOwnershipPaths } from "./paths/conversationOwnershi
 import { registerDecisionPaths } from "./paths/decisionPaths.js";
 import { registerConnectorsPaths } from "./paths/connectorsPaths.js";
 import { registerQualityPaths } from "./paths/qualityPaths.js";
+import { registerContentPlanningPaths } from "./paths/contentPlanningPaths.js";
 import { registerEvalPaths } from "./paths/evalPaths.js";
 import { registerMcpConversePaths } from "./paths/mcpConversePaths.js";
 import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
@@ -64,6 +65,7 @@ export const registerOpenApiPaths = (
   registerDecisionPaths(registry, schemas, security);
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);
+  registerContentPlanningPaths(registry, schemas, security);
   registerEvalPaths(registry, schemas, security);
   registerMcpConversePaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);

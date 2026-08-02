@@ -324,6 +324,173 @@ export interface ConnectorWhatsappMessageLog {
   workspace_id: string;
 }
 
+export interface ContentPlanObservations {
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  excluded_reason: string | null;
+  grounding_claim_count: number | null;
+  grounding_invalid_source_count: number | null;
+  grounding_sourced_claim_count: number | null;
+  grounding_unsourced_claim_count: number | null;
+  grounding_verdict: string | null;
+  id: string;
+  interaction_role: string;
+  observation_state: string;
+  observed_at: Timestamp;
+  resolution_deadline: Timestamp | null;
+  semantic_intent_id: string;
+  semantic_text_hash: string | null;
+  source_assistant_message_id: string;
+  source_user_message_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanObservationVectors {
+  attempt_count: Generated<number>;
+  available_at: Generated<Timestamp>;
+  claim_expires_at: Timestamp | null;
+  claim_token: string | null;
+  claimed_at: Timestamp | null;
+  completed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  dimensions: number | null;
+  embedding: string | null;
+  embedding_space_id: string;
+  failure_reason: string | null;
+  failure_stage: string | null;
+  generation_id: string;
+  observation_id: string;
+  state: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  vector_source: string | null;
+  workspace_id: string;
+}
+
+export interface ContentPlanProjectionGenerations {
+  coherent_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  embedding_space_id: string;
+  horizon_from: Timestamp;
+  horizon_to: Timestamp;
+  id: string;
+  kind: string;
+  policy_version: number;
+  state: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanProjectionStates {
+  bootstrap_processed: Int8 | null;
+  bootstrap_total: Int8 | null;
+  budget_version: number;
+  budget_window_started_at: Timestamp;
+  coherent_generation_id: string | null;
+  created_at: Generated<Timestamp>;
+  discovery_created_at: Timestamp | null;
+  discovery_message_id: string | null;
+  embedding_requests_used: Generated<number>;
+  estimated_spend_micros: Generated<Int8>;
+  lease_expires_at: Timestamp | null;
+  lease_token: string | null;
+  processed_through: Timestamp | null;
+  projection_state: string;
+  reason: string | null;
+  target_generation_id: string | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanTopicDocuments {
+  changed_after_gap: Generated<boolean>;
+  cited_by_gap_answers: Generated<boolean>;
+  created_at: Generated<Timestamp>;
+  document_id: string;
+  existed_before_gap: Generated<boolean>;
+  generation_id: string;
+  retrieved_by_gap_answers: Generated<boolean>;
+  similarity: number;
+  source_topic_revision: number;
+  topic_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanTopicEnrichments {
+  action: string | null;
+  action_rule_version: number;
+  analysis_mode: Generated<string>;
+  attempt_count: Generated<number>;
+  available_at: Generated<Timestamp>;
+  claim_expires_at: Timestamp | null;
+  claim_token: string | null;
+  corpus_checked_at: Timestamp | null;
+  corpus_state: Generated<string>;
+  description: string | null;
+  enriched_at: Timestamp | null;
+  evidence_statement: string | null;
+  failure_reason: string | null;
+  failure_stage: string | null;
+  generation_id: string;
+  label: string | null;
+  publish_state: Generated<string>;
+  published_source_corpus_evidence_fingerprint: string | null;
+  published_source_credible_opportunity: boolean | null;
+  published_source_degraded_count: number | null;
+  published_source_evidence_strength: string | null;
+  published_source_grounded_count: number | null;
+  published_source_member_count: number | null;
+  published_source_no_support_count: number | null;
+  published_source_not_evaluated_count: number | null;
+  questions_to_answer: Json | null;
+  rationale: string | null;
+  source_corpus_evidence_fingerprint: string | null;
+  source_credible_opportunity: Generated<boolean>;
+  source_degraded_count: Generated<number>;
+  source_evidence_strength: Generated<string>;
+  source_grounded_count: Generated<number>;
+  source_member_count: Generated<number>;
+  source_no_support_count: Generated<number>;
+  source_not_evaluated_count: Generated<number>;
+  source_topic_revision: number;
+  state: Generated<string>;
+  suggested_shape: string | null;
+  suggested_title: string | null;
+  topic_id: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanTopicMemberships {
+  assigned_at: Generated<Timestamp>;
+  assignment_version: number;
+  cohesion: number;
+  generation_id: string;
+  observation_id: string;
+  similarity: number;
+  topic_id: string;
+  workspace_id: string;
+}
+
+export interface ContentPlanTopics {
+  centroid: string;
+  centroid_weight: number;
+  created_at: Generated<Timestamp>;
+  dimensions: number;
+  embedding_space_id: string;
+  enrichment_dirty_at: Timestamp | null;
+  generation_id: string;
+  id: string;
+  lifecycle: string;
+  merged_into_topic_id: string | null;
+  redirect_expires_at: Timestamp | null;
+  representative_observation_ids: Generated<string[]>;
+  revision: Generated<number>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface ContextIdentityNonces {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp;
@@ -1090,6 +1257,14 @@ export interface DB {
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
+  content_plan_observation_vectors: ContentPlanObservationVectors;
+  content_plan_observations: ContentPlanObservations;
+  content_plan_projection_generations: ContentPlanProjectionGenerations;
+  content_plan_projection_states: ContentPlanProjectionStates;
+  content_plan_topic_documents: ContentPlanTopicDocuments;
+  content_plan_topic_enrichments: ContentPlanTopicEnrichments;
+  content_plan_topic_memberships: ContentPlanTopicMemberships;
+  content_plan_topics: ContentPlanTopics;
   context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;

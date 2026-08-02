@@ -486,6 +486,7 @@ export const planAwareTurnInterpreter = (deps: {
     }
     const interpretation: ConversationTurnInterpretation = {
       route: outcome.plan.route,
+      interactionRole: outcome.plan.interactionRole,
       framing: outcome.plan.framing,
       metadata: {
         source: "planned",

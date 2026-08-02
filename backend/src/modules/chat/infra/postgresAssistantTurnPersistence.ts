@@ -11,6 +11,7 @@ import { toJsonb, toSanitizedJsonb } from "../../../shared/infra/kysely/sqlHelpe
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
   actionIdempotencyKey,
+  type CommittedAssistantTurnObservationWriter,
   type AssistantTurnPersistencePort,
 } from "../services/chatTurnLifecycle.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
@@ -230,11 +231,70 @@ const insertAuditEvent = async (
   `.execute(db);
 };
 
+const persistConversationInteraction = async (
+  db: Db,
+  input: NonNullable<CompleteAssistantTurnInput["committedTurnObservation"]>,
+): Promise<void> => {
+  const canonicalInteraction = {
+    version: 1,
+    role: input.interaction.role,
+    semanticIntents: input.interaction.semanticIntents.map((intent) => ({
+      id: intent.id,
+      text: intent.text,
+    })),
+  };
+  const persistInteraction = async (messageId: string, value: unknown): Promise<void> => {
+    await sql`
+      UPDATE messages
+         SET metadata_json = jsonb_set(
+           COALESCE(metadata_json, '{}'::jsonb),
+           '{conversationInteraction}',
+           ${toSanitizedJsonb(value)},
+           true
+         )
+       WHERE workspace_id = ${input.workspaceId}
+         AND conversation_id = ${input.conversationId}
+         AND id = ${messageId}
+         AND role = 'user'
+    `.execute(db);
+  };
+
+  if (
+    input.sourceUserMessageId !== input.currentUserMessageId
+    && input.interaction.role === "clarification_value"
+  ) {
+    await persistInteraction(input.currentUserMessageId, {
+      version: 1,
+      role: "clarification_value",
+      sourceUserMessageId: input.sourceUserMessageId,
+    });
+    await sql`
+      UPDATE messages
+         SET metadata_json = jsonb_set(
+           COALESCE(metadata_json, '{}'::jsonb),
+           '{conversationInteractionResolution}',
+           ${toSanitizedJsonb({
+             ...canonicalInteraction,
+             valueUserMessageId: input.currentUserMessageId,
+           })},
+           true
+         )
+       WHERE workspace_id = ${input.workspaceId}
+         AND conversation_id = ${input.conversationId}
+         AND id = ${input.sourceUserMessageId}
+         AND role = 'user'
+    `.execute(db);
+    return;
+  }
+  await persistInteraction(input.currentUserMessageId, canonicalInteraction);
+};
+
 export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
   constructor(
     private readonly db: Db,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
     private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(db),
+    private readonly committedTurnObservationWriter?: CommittedAssistantTurnObservationWriter,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
@@ -290,6 +350,11 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       const message = result.rows[0];
       if (!message) {
         throw new Error("Expected inserted assistant message");
+      }
+
+      if (input.committedTurnObservation) {
+        await persistConversationInteraction(db, input.committedTurnObservation);
+        await this.committedTurnObservationWriter?.write(input.committedTurnObservation, db);
       }
 
       await sql`

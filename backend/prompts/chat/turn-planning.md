@@ -23,6 +23,16 @@ Short acknowledgements or confirmations require the immediately preceding assist
 If the user accepts or chooses a concrete option proposed by the assistant, route retrieval and let retrieval resolve the query from that offered material.
 Do not rely on English keyword matching. Apply these routing rules across languages using meaning and context.
 
+Interaction Role Rules
+Classify the latest user turn independently of route using exactly one interactionRole:
+- substantive_new: a new information need or requested action that stands on its own.
+- substantive_followup: a substantive information need or requested action whose subject or meaning depends on conversation context. Its retrieval rewrite must still be self-contained.
+- clarification_value: the latest message only supplies a value requested by a pending clarification; it does not introduce another information need.
+- control: the latest message only confirms, cancels, selects, advances, or supplies a value to an existing action, menu, decision, or routine.
+- social: the latest message is only conversational, including a greeting, thanks, acknowledgement, farewell, or assistant-identity exchange, with no substantive information need.
+- unresolved: available context is insufficient to tell whether the latest message contains a substantive information need or what that need is.
+A short reply can be substantive_followup when it asks for more information. A choice or acceptance that only controls an offered action is control even when routing must execute that action. Apply these meanings across languages; never infer the role with keyword matching.
+
 Retrieval Rewrite Rules
 If route is direct, set rewrite to null.
 If route is retrieval, provide rewrite fields exactly as instructed below.

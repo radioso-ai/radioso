@@ -642,4 +642,171 @@ describe('dashboard route state', () => {
       workspacePublicRouteKey: 'ws-key',
     })).toBe('/w/ws-key/eval/case-xyz')
   })
+
+  it('builds the default content plan opportunities route', () => {
+    expect(buildDashboardHref('account-1', {
+      section: 'content-plan',
+      workspacePublicRouteKey: 'ws-key',
+    })).toBe('/w/ws-key/content-plan')
+
+    // The default view is normalised out of the URL.
+    expect(buildDashboardHref('account-1', {
+      section: 'content-plan',
+      workspacePublicRouteKey: 'ws-key',
+      contentPlanView: 'opportunities',
+    })).toBe('/w/ws-key/content-plan')
+
+    expect(buildDashboardHref('account-1', {
+      section: 'content-plan',
+      workspacePublicRouteKey: 'ws-key',
+      contentPlanView: 'all_interests',
+    })).toBe('/w/ws-key/content-plan?view=all_interests')
+  })
+
+  it('builds and parses a content plan topic deep link', () => {
+    const topicId = '88888888-8888-4888-8888-888888888888'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'content-plan',
+      workspacePublicRouteKey: 'ws-key',
+      contentPlanTopicId: topicId,
+    })).toBe(`/w/ws-key/content-plan/topics/${topicId}`)
+
+    expect(buildDashboardHref('account-1', {
+      section: 'content-plan',
+      workspacePublicRouteKey: 'ws-key',
+      contentPlanTopicId: topicId,
+      contentPlanView: 'all_interests',
+    })).toBe(`/w/ws-key/content-plan/topics/${topicId}?view=all_interests`)
+
+    expect(parseDashboardRoute(['content-plan'], new URLSearchParams())).toEqual({
+      section: 'content-plan',
+    })
+
+    expect(parseDashboardRoute(
+      ['content-plan'],
+      new URLSearchParams({ view: 'all_interests' }),
+    )).toEqual({
+      section: 'content-plan',
+      contentPlanView: 'all_interests',
+    })
+
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics', topicId],
+      new URLSearchParams({ view: 'all_interests' }),
+    )).toEqual({
+      section: 'content-plan',
+      contentPlanTopicId: topicId,
+      contentPlanView: 'all_interests',
+    })
+  })
+
+  it('drops non-UUID topic segments and unknown views on parse', () => {
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics', 'not-a-uuid'],
+      new URLSearchParams(),
+    )).toBeNull()
+
+    expect(parseDashboardRoute(
+      ['content-plan'],
+      new URLSearchParams({ view: 'made-up' }),
+    )).toEqual({ section: 'content-plan' })
+
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics'],
+      new URLSearchParams(),
+    )).toBeNull()
+
+    // Extra segments after the topic id are not part of the contract.
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics', '88888888-8888-4888-8888-888888888888', 'extra'],
+      new URLSearchParams(),
+    )).toBeNull()
+  })
+
+  it('parses the merged replacement identifier hint from the URL', () => {
+    const oldId = '99999999-9999-4999-8999-999999999999'
+    const newId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics', oldId],
+      new URLSearchParams({ mergedInto: newId }),
+    )).toEqual({
+      section: 'content-plan',
+      contentPlanTopicId: oldId,
+      contentPlanMergedIntoTopicId: newId,
+    })
+
+    expect(parseDashboardRoute(
+      ['content-plan', 'topics', oldId],
+      new URLSearchParams({ mergedInto: 'bogus' }),
+    )).toEqual({
+      section: 'content-plan',
+      contentPlanTopicId: oldId,
+    })
+  })
+
+  it('carries the topic handoff parameters for Quality and Knowledge', () => {
+    const topicId = '88888888-8888-4888-8888-888888888888'
+    const docId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+
+    expect(buildDashboardHref('account-1', {
+      section: 'quality',
+      workspacePublicRouteKey: 'ws-key',
+      contentPlanTopicId: topicId,
+    })).toBe(`/w/ws-key/quality?contentPlanTopic=${topicId}`)
+
+    expect(parseDashboardRoute(['quality'], new URLSearchParams({
+      contentPlanTopic: topicId,
+    }))).toEqual({
+      section: 'quality',
+      contentPlanTopicId: topicId,
+    })
+
+    expect(buildDashboardHref('account-1', {
+      section: 'knowledge',
+      workspacePublicRouteKey: 'ws-key',
+      knowledgeTab: 'documents',
+      documentId: docId,
+      knowledgeFromContentPlanTopicId: topicId,
+    })).toBe(`/w/ws-key/knowledge/documents/${docId}?fromContentPlan=${topicId}`)
+
+    expect(parseDashboardRoute(
+      ['knowledge', 'documents', docId],
+      new URLSearchParams({ fromContentPlan: topicId }),
+    )).toEqual({
+      section: 'knowledge',
+      documentId: docId,
+      knowledgeFromContentPlanTopicId: topicId,
+    })
+
+    expect(buildDashboardHref('account-1', {
+      section: 'knowledge',
+      workspacePublicRouteKey: 'ws-key',
+      knowledgeTab: 'documents',
+      knowledgeDraftFromContentPlanTopicId: topicId,
+    })).toBe(`/w/ws-key/knowledge?draftFromContentPlan=${topicId}`)
+
+    expect(parseDashboardRoute(
+      ['knowledge'],
+      new URLSearchParams({ draftFromContentPlan: topicId }),
+    )).toEqual({
+      section: 'knowledge',
+      knowledgeDraftFromContentPlanTopicId: topicId,
+    })
+  })
+
+  it('retargets a content plan route to another workspace without carrying topic scope', () => {
+    expect(retargetDashboardRouteToWorkspace({
+      section: 'content-plan',
+      workspaceId: 'workspace-1',
+      workspacePublicRouteKey: 'workspace-one-abc123',
+      contentPlanTopicId: '88888888-8888-4888-8888-888888888888',
+      contentPlanView: 'all_interests',
+    }, 'workspace-2', 'workspace-two-abc123')).toEqual({
+      section: 'content-plan',
+      workspaceId: 'workspace-2',
+      workspacePublicRouteKey: 'workspace-two-abc123',
+    })
+  })
 })

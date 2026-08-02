@@ -80,6 +80,7 @@ describe("ConversationTurnInterpreter", () => {
       pageReadCapability,
     })).resolves.toEqual({
       route: "retrieval",
+      interactionRole: "unresolved",
       framing: { isIdentityQuestion: false },
     });
   });
@@ -93,7 +94,8 @@ describe("ConversationTurnInterpreter", () => {
       workspaceId: "workspace-1",
     })).resolves.toEqual({
       route: "retrieval",
-      framing: { isIdentityQuestion: false },
+      interactionRole: "unresolved",
+      framing: { intentTopic: undefined, isIdentityQuestion: false },
     });
   });
 
@@ -124,6 +126,7 @@ describe("ConversationTurnInterpreter", () => {
 
     expect(result).toEqual({
       route: "direct",
+      interactionRole: "unresolved",
       framing: {
         intentTopic: "assistant role",
         isIdentityQuestion: true,

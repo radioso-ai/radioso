@@ -14,6 +14,7 @@ import { NeedsAttentionView } from './needs-attention-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { QualityView } from './quality-view'
+import { ContentPlanView } from './content-plan-view'
 import { EvalView } from './eval-view'
 import { FirstRunExperience } from './first-run-experience'
 import {
@@ -163,9 +164,10 @@ export function DashboardShell({
     <KnowledgeSubNav accountId={accountId} routeState={routeState} />
   ) : area === 'settings' ? (
     <SettingsSubNav accountId={accountId} routeState={routeState} />
-  ) : currentView === 'activity' || currentView === 'quality' ? (
-    // Activity/Quality have no content "area", but their views (Needs attention / All
-    // activity / Quality) are now sidebar items nested under the Activity rail row.
+  ) : currentView === 'activity' || currentView === 'quality' || currentView === 'content-plan' ? (
+    // Activity/Quality/Content plan have no content "area", but their views
+    // (Needs attention / All activity / Content plan / Quality) are sidebar items
+    // nested under the Activity rail row.
     <ActivitySubNav accountId={accountId} routeState={routeState} />
   ) : null
 
@@ -210,6 +212,8 @@ export function DashboardShell({
             )
           ) : currentView === 'quality' ? (
             <QualityView accountId={accountId} routeState={routeState} />
+          ) : currentView === 'content-plan' ? (
+            <ContentPlanView accountId={accountId} routeState={routeState} />
           ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
           ) : null}

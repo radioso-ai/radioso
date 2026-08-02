@@ -210,6 +210,7 @@ import {
   SkillCatalogService,
   retrievalAnswerSkillDefinition,
   routineDispatchableBuiltInSkills,
+  type RoutineInvocableSkillNames,
 } from "../../modules/skills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../modules/retrieval/public.js";
 import { RetrieveRoutineSkillResolver } from "../../modules/retrieval/public.js";
@@ -1123,6 +1124,7 @@ export const buildChatServices = (input: {
   emailSkillActivityRepository: EmailSkillActivityRepository;
   webhookSkillDefinitionRepository: WebhookSkillDefinitionRepository;
   slackSkillDefinitionRepository: SlackSkillDefinitionRepository;
+  routineInvocableSkillNames: RoutineInvocableSkillNames;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   publicConversationEventBus: PublicConversationEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
@@ -1598,11 +1600,15 @@ export const buildChatServices = (input: {
         invocationMode: string;
         config?: Record<string, unknown>;
       }> = [];
+      // Keep runtime routing and publish validation on one source of truth. These names
+      // are all derived from the same `agent_skills` spine, so loading them together also
+      // avoids three independently drifting filters over that table.
       try {
         if (workspaceId && agentId) {
-          emailSkillNames = (await input.emailSkillDefinitionRepository.listByAgent(workspaceId, agentId))
-            .filter((skill) => skill.enabled)
-            .map((skill) => skill.skillName);
+          const byKind = await input.routineInvocableSkillNames.listByKindForAgent({ workspaceId, agentId });
+          emailSkillNames = [...byKind.customer_email];
+          webhookSkillNames = [...byKind.webhook];
+          slackSkillNames = [...byKind.slack];
         }
       } catch (error) {
         input.logger.warn(
@@ -1610,37 +1616,7 @@ export const buildChatServices = (input: {
             agentId,
             err: error instanceof Error ? error.message : String(error),
           },
-          "Customer email skill definitions failed to load for routine routing; continuing without email skills",
-        );
-      }
-      try {
-        if (workspaceId && agentId) {
-          webhookSkillNames = (await input.webhookSkillDefinitionRepository.listByAgent(workspaceId, agentId))
-            .filter((skill) => skill.enabled)
-            .map((skill) => skill.skillName);
-        }
-      } catch (error) {
-        input.logger.warn(
-          {
-            agentId,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Webhook skill definitions failed to load for routine routing; continuing without webhook skills",
-        );
-      }
-      try {
-        if (workspaceId && agentId) {
-          slackSkillNames = (await input.slackSkillDefinitionRepository.listByAgent(workspaceId, agentId))
-            .filter((skill) => skill.enabled)
-            .map((skill) => skill.skillName);
-        }
-      } catch (error) {
-        input.logger.warn(
-          {
-            agentId,
-            err: error instanceof Error ? error.message : String(error),
-          },
-          "Slack skill definitions failed to load for routine routing; continuing without Slack skills",
+          "Routine-invocable skill names failed to load for routine routing; continuing without webhook, customer email, and Slack skills",
         );
       }
       try {

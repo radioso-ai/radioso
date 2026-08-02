@@ -1,0 +1,20 @@
+name: Deploy Live (US Legacy)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-cloud-run.yml
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      github_environment: live
+      artifact_repository: radioso-live
+      backend_service: radioso-live-backend
+      crawler_worker_service: radioso-live-crawler-worker
+      frontend_service: radioso-live-frontend
+      worker_service: radioso-live-worker
+      require_main_branch: true
+      radioso_edition: enterprise

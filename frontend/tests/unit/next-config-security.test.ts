@@ -9,6 +9,13 @@ const getHeaderRoutes = async () => {
   return nextConfig.headers()
 }
 
+const getRewriteRoutes = async () => {
+  if (!nextConfig.rewrites) {
+    throw new Error('Next.js rewrites configuration is missing')
+  }
+  return nextConfig.rewrites()
+}
+
 describe('next security headers', () => {
   it('sets a global content security policy and browser hardening headers', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
@@ -54,5 +61,15 @@ describe('next security headers', () => {
     expect(frameHeaderValues.get('X-Content-Type-Options')).toBe('nosniff')
     expect(frameHeaderValues.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
     expect(frameHeaderValues.get('Permissions-Policy')).toContain('camera=()')
+  })
+
+  it('proxies the legacy widget hostname to the primary EU frontend', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/:path*',
+      has: [{ type: 'host', value: 'platform.radioso.dev' }],
+      destination: 'https://app.radioso.ai/:path*',
+    })
   })
 })

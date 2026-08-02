@@ -145,6 +145,15 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "platform.radioso.dev" }],
+        destination: "https://app.radioso.ai/:path*",
+      },
+    ];
+  },
   async headers() {
     return [
       {

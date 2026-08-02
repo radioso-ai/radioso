@@ -736,6 +736,15 @@ export function ContentPlanView({
                   matureTopicCount={page.summary.matureTopicCount}
                 />
 
+                <FilteredMatureTopicsNotice
+                  view={view}
+                  hiddenTopicCount={Math.max(
+                    0,
+                    page.summary.matureTopicCount - page.summary.opportunityCount,
+                  )}
+                  allInterestsHref={buildViewHref('all_interests')}
+                />
+
                 <section
                   aria-labelledby="content-plan-topic-list-heading"
                   className="space-y-2"
@@ -955,6 +964,34 @@ function ViewLink({
       <span>{label}</span>
       <span className="tabular-nums text-foreground">{count}</span>
     </Link>
+  )
+}
+
+function FilteredMatureTopicsNotice({
+  view,
+  hiddenTopicCount,
+  allInterestsHref,
+}: {
+  view: ContentPlanViewName
+  hiddenTopicCount: number
+  allInterestsHref: string
+}) {
+  if (view !== 'opportunities' || hiddenTopicCount === 0) {
+    return null
+  }
+
+  return (
+    <aside className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+      <p className="font-medium text-foreground">
+        {hiddenTopicCount} mature {hiddenTopicCount === 1 ? 'topic is' : 'topics are'} in All interests
+      </p>
+      <p className="mt-1 text-muted-foreground">
+        Topics leave Emerging evidence when they mature. These do not yet have enough active reduced- or no-support evidence to rank as content opportunities.
+      </p>
+      <Button asChild variant="link" size="sm" className="mt-1 h-auto p-0">
+        <Link href={allInterestsHref}>View all interests</Link>
+      </Button>
+    </aside>
   )
 }
 

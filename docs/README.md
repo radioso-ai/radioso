@@ -1,7 +1,7 @@
 ---
 title: "Docs"
 description: "Guide to documentation sources for operators, SDK users, and contributors with links to key starting points and architecture materials."
-last_updated: 2026-06-18
+last_updated: 2026-08-02
 ---
 
 # Docs
@@ -26,6 +26,7 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Webhook Skills](./webhook-skills.md) - configure agents to call your webhooks as skills
 - [Slack Post Skills](./slack-skills.md) - configure agents to post to Slack as a skill
 - [Customer Email Skills](./customer-email-skills.md) - workspace outbound email connections and email skills
+- [External Skills via MCP](./external-skills.md) - connect an MCP server and turn its published tools into agent skills
 - [Radioso Skills RFC](./radioso-skills-rfc.md) - vocabulary and direction behind the implemented read-only skills catalog
 - [MCP Client Setup](./mcp-client-setup.md) - current MCP client connection patterns and constraints
 

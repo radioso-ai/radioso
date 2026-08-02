@@ -5,6 +5,26 @@ conversation engine, default in-memory stores, default directive matching,
 portable authoring stores, and a model gateway. It does not import the Radioso
 backend, Postgres, Express, retrieval, auth, or billing code.
 
+## Model provider
+
+The kit needs a model, not a particular vendor. Pass `modelGateway` and it is used as
+given — no API key is read and nothing vendor-specific runs:
+
+```ts
+const kit = createConversationKit({
+  modelGateway: {
+    async complete({ systemPrompt, messages, metadata }) {
+      // Call whatever you run: another provider's SDK, a gateway, a local model.
+      return { text: await yourModel(systemPrompt, messages), metadata };
+    },
+  },
+});
+```
+
+`openAiApiKey` is the shortcut for getting started, not a requirement — supplying it builds
+an OpenAI gateway for you. The examples below use it because it is the shortest thing to
+write; substitute `modelGateway` anywhere you see it.
+
 ## Hello World
 
 ```ts

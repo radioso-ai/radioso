@@ -1,3 +1,10 @@
+/**
+ * The kit's runtime-agnostic core. It reaches no `node:*` builtin and no provider SDK,
+ * so it runs anywhere ES modules do. The HTTP host lives at
+ * `@radioso/conversation-kit/server`, the filesystem authoring store at
+ * `@radioso/conversation-kit/node`, and the OpenAI gateway at
+ * `@radioso/conversation-kit/openai`.
+ */
 export {
   createConversationKit,
   type ConversationKit,
@@ -42,24 +49,14 @@ export {
   type SendMessageInput,
 } from "./sdk.js";
 export {
-  FileConversationKitAuthoringStore,
   TransientConversationKitAuthoringStore,
   type ConversationKitAuthoringStore,
-  type FileConversationKitAuthoringStoreOptions,
   type UpdateConversationKitAgentInput,
   type UpdateConversationKitDirectiveInput,
   type UpdateConversationKitRoutineInput,
 } from "./authoringStore.js";
 export {
-  createConversationKitServer,
-  type ConversationKitListenAddress,
-  type ConversationKitServer,
-  type CreateConversationKitServerOptions,
-  type ListenOptions,
-} from "./server.js";
-export {
   createConversationKitModelGateway,
-  DEFAULT_OPENAI_MODEL,
   type ConversationKitModelGatewayOptions,
 } from "./modelGateway.js";
 export {

@@ -5,34 +5,66 @@ conversation engine, default in-memory stores, default directive matching,
 portable authoring stores, and a model gateway. It does not import the Radioso
 backend, Postgres, Express, retrieval, auth, or billing code.
 
+## Entry points
+
+The root entry reaches no `node:*` builtin and no provider SDK, so it runs on any
+runtime with ES modules — Node, Deno, Cloudflare Workers, the browser. Everything
+that needs more than that sits behind its own subpath, and you pay for it only when
+you import it.
+
+| Import | What it gives you |
+|---|---|
+| `@radioso/conversation-kit` | The kit, the SDK client, authoring types, and the default ports. |
+| `@radioso/conversation-kit/openai` | `createOpenAIModelGateway`, built on `@radioso/conversation-nlp`. |
+| `@radioso/conversation-kit/server` | `createConversationKitServer`, the HTTP host, on `node:http`. |
+| `@radioso/conversation-kit/node` | `FileConversationKitAuthoringStore`, which keeps authoring in a file. |
+
+`@radioso/conversation-nlp` is an optional peer dependency: bring your own gateway
+and the OpenAI SDK never enters your dependency tree. `tests/entryPoints.test.ts`
+asserts what each entry point is allowed to load, so widening one is a deliberate
+edit rather than an accident.
+
 ## Model provider
 
 The kit needs a model, not a particular vendor. Pass `modelGateway` and it is used as
 given — no API key is read and nothing vendor-specific runs:
 
 ```ts
-const kit = createConversationKit({
-  modelGateway: {
-    async complete({ systemPrompt, messages, metadata }) {
-      // Call whatever you run: another provider's SDK, a gateway, a local model.
-      return { text: await yourModel(systemPrompt, messages), metadata };
-    },
+import { createConversationKit } from "@radioso/conversation-kit";
+
+const modelGateway = {
+  async complete({ systemPrompt, messages, metadata }) {
+    // Call whatever you run: another provider's SDK, a gateway, a local model.
+    return { text: await yourModel(systemPrompt, messages), metadata };
   },
+};
+
+const kit = createConversationKit({ modelGateway });
+```
+
+For OpenAI, install `@radioso/conversation-nlp` and take the ready-made gateway:
+
+```ts
+import { createOpenAIModelGateway } from "@radioso/conversation-kit/openai";
+
+const modelGateway = createOpenAIModelGateway({
+  apiKey: process.env.OPENAI_API_KEY!,
+  model: "gpt-5.2",
 });
 ```
 
-`openAiApiKey` is the shortcut for getting started, not a requirement — supplying it builds
-an OpenAI gateway for you. The examples below use it because it is the shortest thing to
-write; substitute `modelGateway` anywhere you see it.
+`model` is optional and falls back to `DEFAULT_OPENAI_MODEL`, exported from the same
+subpath. Either way you end up with a plain gateway value, so it composes with
+`createConversationKit`, `createConversationKitClient`, and
+`createConversationKitServer` alike. The examples below take `modelGateway` from
+here.
 
 ## Hello World
 
 ```ts
 import { createConversationKitClient } from "@radioso/conversation-kit";
 
-const client = createConversationKitClient({
-  openAiApiKey: process.env.OPENAI_API_KEY,
-});
+const client = createConversationKitClient({ modelGateway });
 
 const agent = client.createAgent({
   name: "Hello World",
@@ -57,22 +89,18 @@ console.log(reply.answer);
 ## Authoring Persistence
 
 The SDK uses a transient authoring store by default. Pass the file-backed adapter
-to keep agents, directives, and routines across process restarts.
+to keep agents, directives, and routines across process restarts. It lives on the
+`/node` subpath because it is the one piece of the kit that needs a filesystem.
 
 ```ts
-import {
-  FileConversationKitAuthoringStore,
-  createConversationKitClient,
-} from "@radioso/conversation-kit";
+import { createConversationKitClient } from "@radioso/conversation-kit";
+import { FileConversationKitAuthoringStore } from "@radioso/conversation-kit/node";
 
 const authoringStore = new FileConversationKitAuthoringStore({
   path: "./conversation-authoring.json",
 });
 
-const client = createConversationKitClient({
-  authoringStore,
-  openAiApiKey: process.env.OPENAI_API_KEY,
-});
+const client = createConversationKitClient({ authoringStore, modelGateway });
 
 const agent = client.getAgent("agent_support") ?? client.createAgent({
   id: "agent_support",
@@ -85,6 +113,9 @@ client.createDirective(agent.id, {
   action: "Use a calm support tone.",
 });
 ```
+
+Any object satisfying `ConversationKitAuthoringStore` works here, so a host that
+already has a database points the kit at that instead.
 
 ## Skills
 
@@ -107,7 +138,7 @@ If neither applies, no skill runs and the turn composes an ordinary reply.
 import { createConversationKit } from "@radioso/conversation-kit";
 
 const kit = createConversationKit({
-  openAiApiKey: process.env.OPENAI_API_KEY,
+  modelGateway,
   skills: [{ name: "order_lookup", description: "Look up an order's status." }],
   localSkills: new Map([
     ["order_lookup", async ({ input }) => ({
@@ -137,7 +168,7 @@ one multilingual model call instead of in every handler.
 
 ```ts
 const kit = createConversationKit({
-  openAiApiKey: process.env.OPENAI_API_KEY,
+  modelGateway,
   skills: [{
     name: "book_haircut",
     inputSchema: {
@@ -229,12 +260,25 @@ const signup: RoutineRegistration = {
 };
 
 const kit = createConversationKit({
-  openAiApiKey: process.env.OPENAI_API_KEY,
+  modelGateway,
   routineRegistrations: [signup],
 });
 ```
 
 ## Local Server
+
+`createConversationKitServer` puts the same kit behind HTTP. It comes from the
+`/server` subpath, which is where `node:http` enters the picture:
+
+```ts
+import { createConversationKitServer } from "@radioso/conversation-kit/server";
+
+const server = createConversationKitServer({ kit });
+const { url } = await server.listen({ host: "127.0.0.1", port: 8787 });
+```
+
+The bundled CLI does exactly that and builds the OpenAI gateway from the
+environment, so it needs `@radioso/conversation-nlp` installed:
 
 ```bash
 OPENAI_API_KEY=sk-... pnpm --filter @radioso/conversation-kit exec radioso-conversation-kit serve

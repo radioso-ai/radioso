@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
 
-import { createConversationKit, createConversationKitServer } from "../src/index.js";
+import { createConversationKit } from "../src/index.js";
+import { createConversationKitServer } from "../src/server.js";
 
 describe("conversation kit HTTP server", () => {
   const servers: Array<{ close: () => Promise<void> }> = [];

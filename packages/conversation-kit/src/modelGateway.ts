@@ -1,25 +1,19 @@
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
-import { OpenAIConversationModelGateway } from "@radioso/conversation-nlp";
-
-export const DEFAULT_OPENAI_MODEL = "gpt-5.2";
 
 export interface ConversationKitModelGatewayOptions {
   modelGateway?: ConversationModelGateway;
-  openAiApiKey?: string;
-  openAiModel?: string;
 }
 
+/**
+ * The kit needs a model, never a particular vendor: the host supplies the gateway.
+ * Vendor factories live behind their own entry point (`@radioso/conversation-kit/openai`)
+ * so composing a kit never loads a provider SDK.
+ */
 export const createConversationKitModelGateway = (
   options: ConversationKitModelGatewayOptions,
 ): ConversationModelGateway => {
-  if (options.modelGateway) {
-    return options.modelGateway;
-  }
-  if (!options.openAiApiKey) {
+  if (!options.modelGateway) {
     throw new Error("conversation_kit_model_gateway_required");
   }
-  return new OpenAIConversationModelGateway({
-    apiKey: options.openAiApiKey,
-    model: options.openAiModel ?? DEFAULT_OPENAI_MODEL,
-  });
+  return options.modelGateway;
 };

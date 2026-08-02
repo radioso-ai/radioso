@@ -16,9 +16,17 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./openai": {
+      "types": "./dist/openai.d.ts",
+      "import": "./dist/openai.js"
+    },
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "scripts": {
@@ -31,10 +39,18 @@
   "dependencies": {
     "@radioso/conversation-contract": "workspace:*",
     "@radioso/conversation-defaults": "workspace:*",
-    "@radioso/conversation-engine": "workspace:*",
+    "@radioso/conversation-engine": "workspace:*"
+  },
+  "peerDependencies": {
     "@radioso/conversation-nlp": "workspace:*"
   },
+  "peerDependenciesMeta": {
+    "@radioso/conversation-nlp": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@radioso/conversation-nlp": "workspace:*",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.8"

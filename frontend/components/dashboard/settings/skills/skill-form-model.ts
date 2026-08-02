@@ -35,6 +35,7 @@ export type DerivedSkillField = ToolInputField
 export type SkillSettingDraftValue = string | number | boolean | string[] | AgentSourceScope | RetrievalMetadataRule[] | undefined
 
 const DEFAULT_OUTCOMES = ['completed', 'failed']
+const WEBHOOK_PAYLOAD_KEYS = ['boundPayload', 'exposedPayload'] as const
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -114,6 +115,9 @@ export const createInitialSkillDraft = (
 
   const fields = capability ? deriveSkillFields(capability) : []
   const targetId = existingSkill?.target.id ?? capability?.targets[0]?.id ?? ''
+  const additionalConfig = existingSkill
+    ? buildAdditionalConfig(existingSkill.config, capability, fields)
+    : {}
 
   return {
     capabilityId: capability?.id ?? '',
@@ -128,7 +132,7 @@ export const createInitialSkillDraft = (
     inputDrafts: createInputDrafts(fields, existingSkill?.config),
     settingDrafts: createSettingDrafts(capability?.settingsFields ?? [], existingSkill?.config),
     selectedOutcomes: readOutcomeList(existingSkill?.config, capability?.outcomeVocabulary ?? DEFAULT_OUTCOMES),
-    extraConfigJson: existingSkill ? JSON.stringify(stripDerivedConfig(existingSkill.config, capability?.settingsFields ?? []), null, 2) : '{}',
+    extraConfigJson: JSON.stringify(additionalConfig, null, 2),
   }
 }
 
@@ -161,6 +165,7 @@ export const buildAgentSkillInput = (
 ): AgentSkillCreateInput => {
   const extraConfig = parseExtraConfig(draft.extraConfigJson)
   const inputConfig = buildInputConfig(capability, draft, fields)
+  const mergedInputConfig = mergeInputConfig(capability, extraConfig, inputConfig, fields)
   const settingsConfig = buildSettingsConfig(capability.settingsFields, draft.settingDrafts)
   const outcomes = buildOutcomeConfig(capability, draft.selectedOutcomes)
 
@@ -173,8 +178,7 @@ export const buildAgentSkillInput = (
     },
     config: {
       ...defaultConfigForTargetKind(capability),
-      ...extraConfig,
-      ...inputConfig,
+      ...mergedInputConfig,
       ...settingsConfig,
       ...outcomes,
     },
@@ -328,6 +332,35 @@ const stripDerivedConfig = (
   return stripped
 }
 
+const buildAdditionalConfig = (
+  config: Record<string, unknown>,
+  capability: SkillCapabilityDescriptor | undefined,
+  fields: readonly DerivedSkillField[],
+): Record<string, unknown> => {
+  const stripped = stripDerivedConfig(config, capability?.settingsFields ?? [])
+  if (!capability || !usesWebhookPayloadShape(capability)) {
+    return stripped
+  }
+
+  const representedFields = new Set(fields.map((field) => field.name))
+  let additionalConfig = stripped
+  for (const key of WEBHOOK_PAYLOAD_KEYS) {
+    const payload = config[key]
+    if (payload !== undefined && !isRecord(payload)) {
+      additionalConfig = { ...additionalConfig, [key]: payload }
+      continue
+    }
+    if (!isRecord(payload)) {
+      continue
+    }
+    const unrepresentedPayload = omitRecordKeys(payload, representedFields)
+    if (Object.keys(unrepresentedPayload).length > 0) {
+      additionalConfig = { ...additionalConfig, [key]: unrepresentedPayload }
+    }
+  }
+  return additionalConfig
+}
+
 const parseExtraConfig = (value: string): Record<string, unknown> => {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -399,6 +432,41 @@ const buildInputConfig = (
     exposedInputs: exposed,
   }
 }
+
+const mergeInputConfig = (
+  capability: SkillCapabilityDescriptor,
+  additionalConfig: Record<string, unknown>,
+  inputConfig: Record<string, unknown>,
+  fields: readonly DerivedSkillField[],
+): Record<string, unknown> => {
+  if (!usesWebhookPayloadShape(capability)) {
+    return { ...additionalConfig, ...inputConfig }
+  }
+
+  const representedFields = new Set(fields.map((field) => field.name))
+  let mergedConfig = { ...additionalConfig, ...inputConfig }
+  for (const key of WEBHOOK_PAYLOAD_KEYS) {
+    const additionalPayload = additionalConfig[key]
+    if (additionalPayload !== undefined && !isRecord(additionalPayload)) {
+      // Preserve malformed raw input verbatim so backend validation rejects it;
+      // normalizing it with derived form values would hide invalid stored state.
+      mergedConfig = { ...mergedConfig, [key]: additionalPayload }
+      continue
+    }
+    const derivedPayload = inputConfig[key]
+    mergedConfig = {
+      ...mergedConfig,
+      [key]: {
+        ...omitRecordKeys(isRecord(additionalPayload) ? additionalPayload : {}, representedFields),
+        ...(isRecord(derivedPayload) ? derivedPayload : {}),
+      },
+    }
+  }
+  return mergedConfig
+}
+
+const usesWebhookPayloadShape = (capability: SkillCapabilityDescriptor): boolean =>
+  capability.targetKind === 'webhook_destination' && capability.inputSchema.source !== 'discovered'
 
 const buildOutcomeConfig = (
   capability: SkillCapabilityDescriptor,
@@ -556,6 +624,12 @@ const omitPath = (
   }
   return { ...record, [head]: nextChild }
 }
+
+const omitRecordKeys = (
+  record: Record<string, unknown>,
+  keys: ReadonlySet<string>,
+): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(record).filter(([key]) => !keys.has(key)))
 
 const defaultConfigForTargetKind = (capability: SkillCapabilityDescriptor): Record<string, unknown> => {
   if (capability.targetKind === 'notify_delivery') {

@@ -892,4 +892,69 @@ describeIfDatabase("content-planning projection orchestration", () => {
       state: "superseded",
     });
   });
+
+  it("promotes a generation when every observation is assigned or terminally failed", async () => {
+    const fixture = await createWorkspace("terminal-vector");
+    const turn = await createTurn(fixture, "2026-07-01T00:00:00.000Z", "terminal-vector");
+    const generation = await createGeneration({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      kind: "bootstrap",
+      state: "building",
+    });
+    const observationId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_observations (
+         id, workspace_id, source_user_message_id, source_assistant_message_id,
+         conversation_id, semantic_intent_id, semantic_text_hash, interaction_role,
+         observation_state, observed_at
+       ) VALUES ($1, $2, $3, $4, $5, 'terminal-vector', $6, 'substantive_new', 'ready', $7)`,
+      [
+        observationId,
+        fixture.workspaceId,
+        turn.userMessageId,
+        turn.assistantMessageId,
+        turn.conversationId,
+        "b".repeat(64),
+        "2026-07-01T00:00:00.000Z",
+      ],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_observation_vectors (
+         workspace_id, observation_id, generation_id, embedding_space_id,
+         state, failure_stage, failure_reason
+       ) VALUES ($1, $2, $3, $4, 'failed', 'embedding', 'semantic_intent_ambiguous')`,
+      [fixture.workspaceId, observationId, generation.id, fixture.embeddingSpaceId],
+    );
+    await projections.upsertProjectionState({
+      workspaceId: fixture.workspaceId,
+      coherentGenerationId: null,
+      targetGenerationId: generation.id,
+      projectionState: "bootstrapping",
+      reason: null,
+      processedThrough: null,
+      bootstrapProcessed: "1",
+      bootstrapTotal: "1",
+      budgetVersion: 1,
+      budgetWindowStartedAt: new Date("2026-08-02T00:00:00.000Z"),
+    });
+    const lease = await projections.claimProjectionLease({
+      workspaceId: fixture.workspaceId,
+      now: new Date("2026-08-02T00:00:00.000Z"),
+      leaseMs: 30_000,
+    });
+
+    await expect(projections.promoteGeneration({
+      workspaceId: fixture.workspaceId,
+      targetGenerationId: generation.id,
+      expectedCoherentGenerationId: null,
+      leaseToken: lease!.leaseToken!,
+      coherentAt: new Date("2026-08-02T00:00:01.000Z"),
+      processedThrough: new Date("2026-08-02T00:00:00.000Z"),
+    })).resolves.toMatchObject({
+      coherentGenerationId: generation.id,
+      targetGenerationId: null,
+      projectionState: "ready",
+    });
+  });
 });

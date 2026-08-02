@@ -837,6 +837,25 @@ test.describe("Content plan", () => {
     await expect.poll(() => list.evaluate((element) => element.scrollTop)).toBe(storedScrollTop);
   });
 
+  test("tablet detail uses one readable pane with a back path", async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+
+    const detail = page.getByLabel("Selected topic detail");
+    await expect(page.getByLabel("Content plan list")).toBeHidden();
+    await expect(detail).toBeVisible();
+    await expect(detail.getByRole("link", { name: "Back to Content plan" })).toBeVisible();
+    await expect(detail.getByText("Topic detail", { exact: true })).toBeHidden();
+    await expect(detail.getByRole("button", { name: "Write document" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "View answers in Quality" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
+      .toBe(true);
+  });
+
   test("keeps primary detail actions inside a 200%-equivalent CSS viewport", async ({ page }) => {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setDeviceMetricsOverride", {

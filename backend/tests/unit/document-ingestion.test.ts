@@ -55,7 +55,7 @@ describe("document ingestion", () => {
       workspaceId: "workspace-1",
       sourceId: "source-1",
     })).resolves.toEqual({ deletedDocumentCount: 2 });
-    expect(order).toEqual(["corpus", "source-delete"]);
+    expect(order).toEqual(["source-delete", "corpus"]);
 
     order.length = 0;
     await expect(service.reapMissingPages({
@@ -63,7 +63,7 @@ describe("document ingestion", () => {
       sourceId: "source-1",
       keepExternalDocumentIds: ["page-1"],
     })).resolves.toEqual({ deletedCount: 1, deletedContentBytes: 10 });
-    expect(order).toEqual(["reap", "corpus"]);
+    expect(order).toEqual(["corpus", "reap"]);
     expect(corpusChanges.onCorpusChanged).toHaveBeenNthCalledWith(1, {
       workspaceId: "workspace-1",
       change: "deleted",
@@ -72,6 +72,52 @@ describe("document ingestion", () => {
       workspaceId: "workspace-1",
       change: "deleted",
     });
+  });
+
+  it("does not reap missing pages until the durable corpus marker succeeds, and retries safely", async () => {
+    const order: string[] = [];
+    const documentRepository = {
+      deleteMissingPagesBySourceAndExternalIds: vi.fn(async () => {
+        order.push("reap");
+        return { deletedCount: 2, deletedContentBytes: 20 };
+      }),
+    };
+    const corpusChanges = {
+      onCorpusChanged: vi.fn()
+        .mockImplementationOnce(async () => {
+          order.push("corpus-failed");
+          throw new Error("marker unavailable");
+        })
+        .mockImplementationOnce(async () => {
+          order.push("corpus-persisted");
+        }),
+    };
+    const service = new DocumentIngestionService(
+      documentRepository as never,
+      createAuditService(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      corpusChanges,
+    );
+    const input = {
+      workspaceId: "workspace-1",
+      sourceId: "source-1",
+      keepExternalDocumentIds: ["page-1"],
+    };
+
+    await expect(service.reapMissingPages(input)).rejects.toThrow("marker unavailable");
+    expect(documentRepository.deleteMissingPagesBySourceAndExternalIds).not.toHaveBeenCalled();
+
+    await expect(service.reapMissingPages(input)).resolves.toEqual({
+      deletedCount: 2,
+      deletedContentBytes: 20,
+    });
+    expect(order).toEqual(["corpus-failed", "corpus-persisted", "reap"]);
   });
 
   it("queues new documents instead of processing them inline", async () => {

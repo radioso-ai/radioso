@@ -47,49 +47,6 @@ implements ContentPlanCorpusInvalidationRepositoryPort {
       .execute();
   }
 
-  async invalidateDeletedDocument(input: {
-    workspaceId: string;
-    documentId: string;
-    dirtyAt: Date;
-  }): Promise<number> {
-    assertValidTime(input.dirtyAt);
-    return this.db.transaction().execute(async (trx) => {
-      const linked = await trx
-        .selectFrom("content_plan_topic_documents")
-        .select(["generation_id", "topic_id"])
-        .distinct()
-        .where("workspace_id", "=", input.workspaceId)
-        .where("document_id", "=", input.documentId)
-        .orderBy("generation_id", "asc")
-        .orderBy("topic_id", "asc")
-        .execute();
-      let invalidated = 0;
-      for (const topic of linked) {
-        const updated = await trx
-          .updateTable("content_plan_topics")
-          .set((eb) => ({
-            revision: eb("revision", "+", 1),
-            enrichment_dirty_at: input.dirtyAt,
-            updated_at: currentTimestamp(),
-          }))
-          .where("workspace_id", "=", input.workspaceId)
-          .where("generation_id", "=", topic.generation_id)
-          .where("id", "=", topic.topic_id)
-          .executeTakeFirst();
-        if (Number(updated.numUpdatedRows) !== 1) continue;
-        invalidated += 1;
-        await staleEnrichment(trx, input.workspaceId, topic.generation_id, topic.topic_id);
-        await trx
-          .deleteFrom("content_plan_topic_documents")
-          .where("workspace_id", "=", input.workspaceId)
-          .where("generation_id", "=", topic.generation_id)
-          .where("topic_id", "=", topic.topic_id)
-          .execute();
-      }
-      return invalidated;
-    });
-  }
-
   async drainWorkspace(input: {
     workspaceId: string;
     limit: number;
@@ -158,6 +115,12 @@ implements ContentPlanCorpusInvalidationRepositoryPort {
         if (Number(updated.numUpdatedRows) !== 1) continue;
         invalidatedCount += 1;
         await staleEnrichment(trx, input.workspaceId, topic.generation_id, topic.id);
+        await trx
+          .deleteFrom("content_plan_topic_documents")
+          .where("workspace_id", "=", input.workspaceId)
+          .where("generation_id", "=", topic.generation_id)
+          .where("topic_id", "=", topic.id)
+          .execute();
       }
 
       const pending = rows.length > input.limit;

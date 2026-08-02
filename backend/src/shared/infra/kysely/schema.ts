@@ -402,6 +402,7 @@ export interface ContentPlanProjectionPopulationSnapshots {
   assistant_message_id: string;
   created_at: Timestamp;
   generation_id: string;
+  source_user_message_id: string;
   workspace_id: string;
 }
 
@@ -498,7 +499,7 @@ export interface ContentPlanTopicMemberships {
 }
 
 export interface ContentPlanTopics {
-  centroid: string;
+  centroid: string | null;
   centroid_weight: number;
   created_at: Generated<Timestamp>;
   dimensions: number;

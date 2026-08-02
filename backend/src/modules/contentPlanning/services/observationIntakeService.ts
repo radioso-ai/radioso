@@ -24,7 +24,7 @@ type WritableGenerationPort = Pick<
   "resolveWritableGeneration"
 > & Partial<Pick<
   ContentPlanProjectionRepositoryPort,
-  "ensureTargetGenerationForIntake"
+  "ensureTargetGenerationForIntake" | "markProjectionWorkPending"
 >>;
 
 export interface ObservationIntakeSummary {
@@ -178,11 +178,15 @@ export class ObservationIntakeService {
     if (isOperatorTestSourceChannel(input.sourceChannel)) {
       return emptySummary("skipped");
     }
+    const now = this.clock();
+    if (!Number.isFinite(now.getTime())) {
+      throw new Error("Content planning intake clock returned an invalid time");
+    }
 
     const summary = emptySummary("processed");
-    await this.excludeSupersededPendingContext(input, summary);
+    await this.excludeSupersededPendingContext(input, summary, now);
 
-    const resolutionDeadline = new Date(this.clock().getTime() + this.pendingContextTtlMs);
+    const resolutionDeadline = new Date(now.getTime() + this.pendingContextTtlMs);
     const decision = decideObservationEligibility({
       interaction: input.interaction,
       sourceUserMessageId: input.sourceUserMessageId,
@@ -202,6 +206,7 @@ export class ObservationIntakeService {
         workspaceId: input.workspaceId,
         conversationId: input.conversationId,
         sourceUserMessageId: decision.sourceUserMessageId,
+        asOf: now,
       });
       if (pending) {
         const excluded = await this.observations.excludePendingContext({
@@ -240,7 +245,7 @@ export class ObservationIntakeService {
       workspaceId: input.workspaceId,
     });
     if (!generation && this.generations.ensureTargetGenerationForIntake) {
-      const horizonTo = this.clock();
+      const horizonTo = new Date(now);
       generation = await this.generations.ensureTargetGenerationForIntake({
         workspaceId: input.workspaceId,
         preferredEmbeddingSpaceId: reusableVectorSpaceFor({
@@ -272,7 +277,13 @@ export class ObservationIntakeService {
     })) satisfies ContentPlanTurnContribution[];
 
     if (decision.kind === "finalize_pending") {
-      await this.finalizePendingContext(input, "clarification_value", durableContributions, summary);
+      await this.finalizePendingContext(
+        input,
+        "clarification_value",
+        durableContributions,
+        summary,
+        now,
+      );
       return summary;
     }
 
@@ -285,12 +296,14 @@ export class ObservationIntakeService {
       contributions: durableContributions,
     });
     addRegistrationResult(summary, result);
+    await this.markProjectionWorkPending(generation.id, result);
     return summary;
   }
 
   private async excludeSupersededPendingContext(
     input: ObservationTurnIntakeInput,
     summary: ObservationIntakeSummary,
+    asOf: Date,
   ): Promise<void> {
     const currentRoleResolvesPending =
       input.interaction.role !== "unresolved" &&
@@ -304,6 +317,7 @@ export class ObservationIntakeService {
       ...(input.expiresUnresolvedSourceUserMessageId
         ? { sourceUserMessageId: input.expiresUnresolvedSourceUserMessageId }
         : {}),
+      asOf,
     });
     if (!pending) {
       return;
@@ -322,29 +336,35 @@ export class ObservationIntakeService {
     interactionRole: "clarification_value",
     contributions: Array<Extract<ContentPlanTurnContribution, { observationState: "ready" }>>,
     summary: ObservationIntakeSummary,
+    resolvedAt: Date,
   ): Promise<void> {
     const pending = await this.observations.findPendingContext({
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       sourceUserMessageId: input.sourceUserMessageId,
+      asOf: resolvedAt,
     });
     const first = contributions[0];
-    let remaining = contributions;
-    if (pending && first) {
-      const finalized = await this.observations.finalizePendingContext({
-        workspaceId: input.workspaceId,
-        observationId: pending.id,
-        sourceAssistantMessageId: input.sourceAssistantMessageId,
-        semanticIntentId: first.semanticIntentId,
-        semanticTextHash: first.semanticTextHash,
-        interactionRole,
-        vectorWork: first.vectorWork,
-      });
-      if (finalized) {
-        summary.finalizedCount += 1;
-        remaining = contributions.slice(1);
-      }
-    }
+    if (!pending || !first) return;
+    const finalized = await this.observations.finalizePendingContext({
+      workspaceId: input.workspaceId,
+      observationId: pending.id,
+      sourceAssistantMessageId: input.sourceAssistantMessageId,
+      semanticIntentId: first.semanticIntentId,
+      semanticTextHash: first.semanticTextHash,
+      interactionRole,
+      vectorWork: first.vectorWork,
+      resolvedAt,
+    });
+    if (!finalized) return;
+    summary.finalizedCount += 1;
+    await this.markProjectionWorkPending(generationId(first), {
+      observations: [finalized],
+      acceptedCount: 1,
+      duplicateCount: 0,
+      truncatedCount: 0,
+    });
+    const remaining = contributions.slice(1);
     if (remaining.length === 0) {
       return;
     }
@@ -357,5 +377,27 @@ export class ObservationIntakeService {
       contributions: remaining,
     });
     addRegistrationResult(summary, result);
+    await this.markProjectionWorkPending(generationId(remaining[0]!), result);
+  }
+
+  private async markProjectionWorkPending(
+    generationIdValue: string,
+    result: ContentPlanTurnRegistrationResult,
+  ): Promise<void> {
+    if (result.acceptedCount === 0 || !this.generations.markProjectionWorkPending) return;
+    const observedAt = result.observations
+      .filter((observation) => observation.observationState === "ready")
+      .reduce<Date | null>((latest, observation) =>
+        latest === null || observation.observedAt > latest ? observation.observedAt : latest, null);
+    if (!observedAt) return;
+    await this.generations.markProjectionWorkPending({
+      workspaceId: result.observations[0]!.workspaceId,
+      generationId: generationIdValue,
+      observedAt,
+    });
   }
 }
+
+const generationId = (
+  contribution: Extract<ContentPlanTurnContribution, { observationState: "ready" }>,
+): string => contribution.vectorWork.generationId;

@@ -9,7 +9,7 @@ import {
 } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-const migrationFile = "134_content_planning.sql";
+const migrationFile = "136_content_planning.sql";
 
 const canReach = async (url?: string): Promise<boolean> => {
   if (!url) return false;
@@ -41,8 +41,8 @@ interface WorkspaceFixture {
   embeddingSpaceId: string;
 }
 
-describeIfDatabase("content-planning persistence migration (134)", () => {
-  const databaseName = `mig134_${randomUUID().replaceAll("-", "")}`;
+describeIfDatabase("content-planning persistence migration (136)", () => {
+  const databaseName = `mig136_${randomUUID().replaceAll("-", "")}`;
   let admin: Database | undefined;
   let database: Database | undefined;
 
@@ -426,7 +426,7 @@ describeIfDatabase("content-planning persistence migration (134)", () => {
          dimensions, centroid_weight, representative_observation_ids, revision,
          merged_into_topic_id, redirect_expires_at
        ) VALUES (
-         $1, $2, $3, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1,
+         $1, $2, $3, $4, 'merged', NULL, 3, 0, '{}'::uuid[], 1,
          $5, NOW() + INTERVAL '91 days'
        )`,
       [fixture.workspaceId, generationId, mergedTopicId, fixture.embeddingSpaceId, survivorTopicId],
@@ -438,7 +438,7 @@ describeIfDatabase("content-planning persistence migration (134)", () => {
            dimensions, centroid_weight, representative_observation_ids, revision,
            merged_into_topic_id, redirect_expires_at
          ) VALUES (
-           $1, $2, $3, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1,
+           $1, $2, $3, $4, 'merged', NULL, 3, 0, '{}'::uuid[], 1,
            $5, NOW() + INTERVAL '91 days'
          )`,
         [fixture.workspaceId, generationId, randomUUID(), fixture.embeddingSpaceId, foreign.workspaceId],

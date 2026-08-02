@@ -21,7 +21,7 @@ flows.
 
 **Language/Version**: TypeScript 5.7/5.9 on Node.js 24; React 19 / Next.js 16
 **Primary Dependencies**: Express, Zod, Kysely, PostgreSQL `pgvector`, OpenAI/provider adapters, Radix UI, Lucide
-**Storage**: PostgreSQL 16; migration `134_content_planning.sql` with source observations, per-space vectors, projection generations, frozen replay populations, topics, memberships, enrichments, topic-document evidence, and bounded corpus/enrichment repair cursors
+**Storage**: PostgreSQL 16; concurrent prerequisite indexes in migrations 134–135 and `136_content_planning.sql` with source observations, per-space vectors, projection generations, frozen replay populations, topics, memberships, enrichments, topic-document evidence, and bounded corpus/enrichment repair cursors
 **Testing**: Vitest, Supertest, real-Postgres integration tests, deterministic multilingual clustering fixture, Playwright
 **Target Platform**: Self-hosted Linux API/document worker and modern desktop/mobile browsers
 **Project Type**: pnpm web monorepo with backend, dashboard, reusable conversation packages, SDK, MCP generated types, and docs portal
@@ -115,7 +115,9 @@ backend/
 │   ├── modules/chat/                       # neutral role + committed-turn envelope
 │   ├── modules/retrieval/                  # consumer-neutral semantic vector envelopes
 │   ├── modules/quality/contentPlanningEvidence.ts
-│   ├── db/migrations/134_content_planning.sql
+│   ├── db/migrations/134_content_planning_conversation_index.sql
+│   ├── db/migrations/135_content_planning_document_index.sql
+│   ├── db/migrations/136_content_planning.sql
 │   ├── db/repositories/contentPlanning*.ts
 │   ├── app/composition/builtIn/contentPlanningModule.ts
 │   ├── app/http/openapi/{schemas,paths}/contentPlanning*.ts

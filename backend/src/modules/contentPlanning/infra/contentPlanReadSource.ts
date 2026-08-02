@@ -226,7 +226,7 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
            WHERE pending_vector.workspace_id = ps.workspace_id
              AND pending_vector.generation_id = COALESCE(ps.target_generation_id, ps.coherent_generation_id)
              AND pending_vector.embedding IS NULL
-             AND pending_vector.state IN ('pending_embedding', 'retryable')
+             AND pending_vector.state IN ('pending_embedding', 'processing', 'retryable')
          ), 0) AS pending_embedding_count,
          COALESCE((
            SELECT COUNT(*)

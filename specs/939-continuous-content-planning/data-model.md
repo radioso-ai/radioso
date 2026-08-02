@@ -80,7 +80,12 @@ Normal committed-turn intake continues into the writable target generation.
 
 At most one coherent and one building generation exist per workspace. Promotion sets
 the target generation coherent, updates the workspace pointer, and supersedes the old
-generation atomically.
+generation atomically. In that transaction, a membership-overlap graph compares the
+two generations without comparing their incompatible vectors. Mutual one-to-one
+mature-topic components carry the old public ID. Many-old-to-one-new components retain
+the new target survivor and receive old-ID redirect aliases; split/ambiguous components
+retain their new IDs. Live prior aliases are flattened to the new canonical topic while
+preserving their existing expiry.
 
 ## Content planning observation
 
@@ -165,7 +170,7 @@ Partial claim indexes cover pending/retryable rows ordered by `available_at`.
 | id | UUID | Stable public ID; preserved when a topic maps across generations |
 | embedding_space_id | UUID | Same as generation |
 | lifecycle | text | `provisional`, `mature`, `merged`, `retired` |
-| centroid | vector | Incremental normalized centroid |
+| centroid | vector nullable | Incremental normalized centroid for active topics; null for merged aliases and zero-member retired topics |
 | dimensions | integer | Space/vector guard |
 | centroid_weight | integer | Number of live contributing observations |
 | representative_observation_ids | UUID[] | Bounded IDs only; no text |
@@ -372,9 +377,11 @@ generation:
    cascade or a bounded reconciliation scan detects centroid-weight drift; affected
    topics receive a revision bump, centroid rebuild, representative-ID replenishment,
    and enrichment clearing.
-3. Empty provisional topics retire; empty mature topics retire from active reads and
-   preserve only the minimum redirect identity needed by retention policy.
+3. Empty provisional or mature topics retire from active reads and immediately clear
+   their centroid, representative IDs, generated prose, and related-document evidence.
 4. Source text is fetched just-in-time for detail/enrichment and is omitted immediately
    after source deletion.
-5. The worker prunes superseded generation data and expired observations after the
-   60-day reporting/repair horizon, while merged redirect identity remains 90 days.
+5. Maintenance prunes failed generation data after the 60-day reporting/repair horizon
+   and superseded generation data after 90 days. Deleting a generation cascades its
+   vectors and generated prose; coherent and target generations are excluded explicitly,
+   and the longer superseded horizon preserves required redirect identity.

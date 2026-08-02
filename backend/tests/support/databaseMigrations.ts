@@ -2,6 +2,7 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { parseMigrationScript } from "../../src/db/runMigrations.js";
 import type { Database } from "../../src/shared/infra/database.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,13 +61,17 @@ export const runTestMigrationsBefore = async (
       break;
     }
     const migrationSql = await readFile(path.join(testMigrationsPath, migrationFile), "utf8");
-    await database.execute(migrationSql);
+    for (const statement of parseMigrationScript(migrationSql).statements) {
+      await database.execute(statement);
+    }
   }
 };
 
 export const applyTestMigration = async (database: Database, file: string): Promise<void> => {
   const migrationSql = await readFile(path.join(testMigrationsPath, file), "utf8");
-  await database.execute(migrationSql);
+  for (const statement of parseMigrationScript(migrationSql).statements) {
+    await database.execute(statement);
+  }
 };
 
 const runAllTestMigrationsOnce = async (database: Database): Promise<void> => {
@@ -96,7 +101,9 @@ const runAllTestMigrationsOnce = async (database: Database): Promise<void> => {
         continue;
       }
       const migrationSql = await readFile(path.join(testMigrationsPath, migrationFile), "utf8");
-      await client.query(migrationSql);
+      for (const statement of parseMigrationScript(migrationSql).statements) {
+        await client.query(statement);
+      }
       await client.query("INSERT INTO _test_applied_migrations (file) VALUES ($1)", [migrationFile]);
     }
   } finally {

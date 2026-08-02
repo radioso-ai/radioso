@@ -47,6 +47,8 @@ implements ContentPlanEnrichmentTopicContextSourcePort {
       .where("workspace_id", "=", claim.workspaceId)
       .where("generation_id", "=", claim.generationId)
       .where("id", "=", claim.topicId)
+      .where("lifecycle", "=", "mature")
+      .where("centroid", "is not", null)
       .executeTakeFirst();
     if (!topic) return null;
 

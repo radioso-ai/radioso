@@ -8,8 +8,10 @@ import { ContentPlanEnrichmentTriggerRepository } from "../../src/db/repositorie
 import { ContentPlanObservationRepository } from "../../src/db/repositories/contentPlanningObservationRepository.js";
 import { ContentPlanProjectionRepository } from "../../src/db/repositories/contentPlanningProjectionRepository.js";
 import { ContentPlanTopicRepository } from "../../src/db/repositories/contentPlanningTopicRepository.js";
+import { PostgresContentPlanReadSource } from "../../src/modules/contentPlanning/infra/contentPlanReadSource.js";
 import { RepositoryContentPlanEnrichmentQueue } from "../../src/modules/contentPlanning/infra/repositoryEnrichmentPorts.js";
 import { ContentPlanningEnrichmentScheduler } from "../../src/modules/contentPlanning/services/enrichmentScheduler.js";
+import { ObservationIntakeService } from "../../src/modules/contentPlanning/services/observationIntakeService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
@@ -362,6 +364,308 @@ describeIfDatabase("content-planning Kysely repositories", () => {
     await expect(projections.findGeneration(target.id, fixture.workspaceId)).resolves.toMatchObject({
       state: "coherent",
     });
+  });
+
+  it("keeps post-promotion freshness truthful through live intake, assignment, delay, and terminal failure", async () => {
+    const fixture = await createFixture("live-freshness");
+    const baseline = new Date("2026-08-02T12:00:00.000Z");
+    const firstObservedAt = new Date("2026-08-02T12:00:30.000Z");
+    const target = await projections.createGeneration({
+      id: randomUUID(),
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      kind: "bootstrap",
+      state: "building",
+      policyVersion: 1,
+      horizonFrom: new Date("2026-06-03T12:00:00.000Z"),
+      horizonTo: baseline,
+      coherentAt: null,
+    });
+    await projections.upsertProjectionState({
+      workspaceId: fixture.workspaceId,
+      coherentGenerationId: null,
+      targetGenerationId: target.id,
+      projectionState: "bootstrapping",
+      reason: null,
+      processedThrough: null,
+      bootstrapProcessed: "0",
+      bootstrapTotal: "0",
+      budgetVersion: 1,
+      budgetWindowStartedAt: new Date("2026-08-02T00:00:00.000Z"),
+    });
+    const lease = await projections.claimProjectionLease({
+      workspaceId: fixture.workspaceId,
+      now: baseline,
+      leaseMs: 30_000,
+    });
+    await expect(projections.promoteGeneration({
+      workspaceId: fixture.workspaceId,
+      targetGenerationId: target.id,
+      expectedCoherentGenerationId: null,
+      leaseToken: lease!.leaseToken!,
+      coherentAt: baseline,
+      processedThrough: baseline,
+    })).resolves.toMatchObject({ projectionState: "ready" });
+
+    await database.execute(
+      "UPDATE messages SET created_at = $1 WHERE workspace_id = $2 AND id = $3",
+      [firstObservedAt, fixture.workspaceId, fixture.assistantMessageId],
+    );
+    const firstText = "Where are deployment controls?";
+    const intake = new ObservationIntakeService(observations, projections, {
+      clock: () => firstObservedAt,
+    });
+    await expect(intake.registerCommittedTurn({
+      workspaceId: fixture.workspaceId,
+      conversationId: fixture.conversationId,
+      sourceUserMessageId: fixture.userMessageId,
+      sourceAssistantMessageId: fixture.assistantMessageId,
+      interaction: {
+        role: "substantive_new",
+        semanticIntents: [{ id: "freshness-reused", text: firstText }],
+      },
+      semanticVectors: [{
+        intentId: "freshness-reused",
+        semanticTextHash: createHash("sha256").update(firstText).digest("hex"),
+        vector: [1, 0, 0],
+        space: { id: fixture.embeddingSpaceId, dimensions: 3, distanceMetric: "cosine" },
+      }],
+    })).resolves.toMatchObject({ acceptedCount: 1 });
+    await database.execute(
+      `UPDATE content_plan_observation_vectors
+       SET available_at = $1
+       WHERE workspace_id = $2 AND generation_id = $3`,
+      [firstObservedAt, fixture.workspaceId, target.id],
+    );
+    await expect(projections.findProjectionState(fixture.workspaceId)).resolves.toMatchObject({
+      projectionState: "updating",
+      reason: "projection_work_pending",
+      processedThrough: baseline,
+    });
+
+    const [assignmentClaim] = await observations.claimVectorBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      limit: 1,
+      now: new Date("2026-08-02T12:00:31.000Z"),
+      leaseMs: 30_000,
+    });
+    await expect(projections.refreshProjectionFreshness({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      now: new Date("2026-08-02T12:00:31.000Z"),
+      delayedAfterMs: 120_000,
+      scanLimit: 100,
+    })).resolves.toMatchObject({ projectionState: "updating", processedThrough: baseline });
+    await topics.createTopicAndAssign({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      observationId: assignmentClaim!.observationId,
+      claimToken: assignmentClaim!.claimToken!,
+      topic: {
+        id: randomUUID(),
+        embeddingSpaceId: fixture.embeddingSpaceId,
+        lifecycle: "provisional",
+        centroid: [1, 0, 0],
+        dimensions: 3,
+        centroidWeight: 1,
+        representativeObservationIds: [assignmentClaim!.observationId],
+        revision: 1,
+        enrichmentDirtyAt: null,
+      },
+      assignmentVersion: 1,
+      similarity: 1,
+      cohesion: 1,
+      assignedAt: new Date("2026-08-02T12:00:32.000Z"),
+    });
+    await expect(projections.refreshProjectionFreshness({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      now: new Date("2026-08-02T12:00:32.000Z"),
+      delayedAfterMs: 120_000,
+      scanLimit: 100,
+    })).resolves.toMatchObject({
+      projectionState: "ready",
+      reason: null,
+      processedThrough: firstObservedAt,
+    });
+
+    const secondUserMessageId = randomUUID();
+    const secondAssistantMessageId = randomUUID();
+    const secondObservedAt = new Date("2026-08-02T12:01:00.000Z");
+    await database.execute(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+       VALUES
+         ($1, $3, $4, 'user', 'How do I configure an old deployment?', $5),
+         ($2, $3, $4, 'assistant', 'Configuration answer', $5)`,
+      [
+        secondUserMessageId,
+        secondAssistantMessageId,
+        fixture.conversationId,
+        fixture.workspaceId,
+        secondObservedAt,
+      ],
+    );
+    const delayedIntake = new ObservationIntakeService(observations, projections, {
+      clock: () => secondObservedAt,
+    });
+    await delayedIntake.registerCommittedTurn({
+      workspaceId: fixture.workspaceId,
+      conversationId: fixture.conversationId,
+      sourceUserMessageId: secondUserMessageId,
+      sourceAssistantMessageId: secondAssistantMessageId,
+      interaction: {
+        role: "substantive_new",
+        semanticIntents: [{ id: "freshness-fallback", text: "old deployment configuration" }],
+      },
+      semanticVectors: [],
+    });
+    await database.execute(
+      `UPDATE content_plan_observation_vectors
+       SET available_at = $1
+       WHERE workspace_id = $2 AND generation_id = $3 AND state = 'pending_embedding'`,
+      [secondObservedAt, fixture.workspaceId, target.id],
+    );
+    const [embeddingClaim] = await observations.claimVectorBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      limit: 1,
+      now: new Date("2026-08-02T12:04:00.000Z"),
+      leaseMs: 30_000,
+    });
+    expect(embeddingClaim).toMatchObject({ state: "processing", embedding: null });
+    const readProjection = await new PostgresContentPlanReadSource(database.kysely)
+      .getProjection(fixture.workspaceId);
+    expect(readProjection).toMatchObject({ pendingEmbeddingCount: 1 });
+    await expect(projections.refreshProjectionFreshness({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      now: new Date("2026-08-02T12:04:00.000Z"),
+      delayedAfterMs: 120_000,
+      scanLimit: 100,
+    })).resolves.toMatchObject({
+      projectionState: "delayed",
+      reason: "projection_backlog_delayed",
+      processedThrough: firstObservedAt,
+    });
+    await observations.failVectorClaim({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      observationId: embeddingClaim!.observationId,
+      claimToken: embeddingClaim!.claimToken!,
+      terminal: true,
+      failureStage: "embedding",
+      failureReason: "embedding_provider_failed",
+      availableAt: new Date("2026-08-02T12:04:01.000Z"),
+    });
+    await expect(projections.refreshProjectionFreshness({
+      workspaceId: fixture.workspaceId,
+      generationId: target.id,
+      now: new Date("2026-08-02T12:04:01.000Z"),
+      delayedAfterMs: 120_000,
+      scanLimit: 100,
+    })).resolves.toMatchObject({
+      projectionState: "degraded",
+      reason: "projection_terminal_failure",
+      processedThrough: firstObservedAt,
+    });
+  });
+
+  it("expires pending context in bounded batches and lets exactly one finalize-or-expire CAS win", async () => {
+    const fixture = await createFixture("pending-expiry");
+    const generation = await createGeneration(fixture, "coherent");
+    const firstDeadline = new Date("2026-08-02T12:00:00.000Z");
+    const secondDeadline = new Date("2026-08-02T12:01:00.000Z");
+    const first = await observations.registerTurn({
+      workspaceId: fixture.workspaceId,
+      conversationId: fixture.conversationId,
+      sourceUserMessageId: fixture.userMessageId,
+      sourceAssistantMessageId: fixture.assistantMessageId,
+      interactionRole: "unresolved",
+      contributions: [{
+        semanticIntentId: "unresolved",
+        semanticTextHash: null,
+        observationState: "pending_context",
+        resolutionDeadline: firstDeadline,
+      }],
+    });
+    const secondUserMessageId = randomUUID();
+    const secondAssistantMessageId = randomUUID();
+    const resolutionAssistantMessageId = randomUUID();
+    await database.execute(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content)
+       VALUES
+         ($1, $4, $5, 'user', 'What about that?'),
+         ($2, $4, $5, 'assistant', 'Which part?'),
+         ($3, $4, $5, 'assistant', 'Resolved answer')`,
+      [
+        secondUserMessageId,
+        secondAssistantMessageId,
+        resolutionAssistantMessageId,
+        fixture.conversationId,
+        fixture.workspaceId,
+      ],
+    );
+    const second = await observations.registerTurn({
+      workspaceId: fixture.workspaceId,
+      conversationId: fixture.conversationId,
+      sourceUserMessageId: secondUserMessageId,
+      sourceAssistantMessageId: secondAssistantMessageId,
+      interactionRole: "unresolved",
+      contributions: [{
+        semanticIntentId: "unresolved",
+        semanticTextHash: null,
+        observationState: "pending_context",
+        resolutionDeadline: secondDeadline,
+      }],
+    });
+
+    await expect(observations.expirePendingContexts({
+      workspaceId: fixture.workspaceId,
+      now: secondDeadline,
+      limit: 1,
+    })).resolves.toBe(1);
+    await expect(database.queryOne<{ pending_count: string; excluded_reason: string | null }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE observation_state = 'pending_context')::text AS pending_count,
+         MAX(excluded_reason) FILTER (WHERE id = $2) AS excluded_reason
+       FROM content_plan_observations
+       WHERE workspace_id = $1`,
+      [fixture.workspaceId, first.observations[0]!.id],
+    )).resolves.toEqual({
+      pending_count: "1",
+      excluded_reason: "context_resolution_expired",
+    });
+
+    const finalizeInput = {
+      workspaceId: fixture.workspaceId,
+      observationId: second.observations[0]!.id,
+      sourceAssistantMessageId: resolutionAssistantMessageId,
+      semanticIntentId: "resolved",
+      semanticTextHash: "e".repeat(64),
+      interactionRole: "clarification_value" as const,
+      vectorWork: {
+        generationId: generation.id,
+        embeddingSpaceId: fixture.embeddingSpaceId,
+        dimensions: 3,
+        embedding: [1, 0, 0],
+        vectorSource: "reused" as const,
+      },
+      resolvedAt: new Date(secondDeadline.getTime() - 1),
+    };
+    const [expiredCount, finalized] = await Promise.all([
+      observations.expirePendingContexts({
+        workspaceId: fixture.workspaceId,
+        now: secondDeadline,
+        limit: 1,
+      }),
+      observations.finalizePendingContext(finalizeInput),
+    ]);
+    expect(Number(expiredCount === 1) + Number(finalized !== null)).toBe(1);
+    await expect(observations.finalizePendingContext({
+      ...finalizeInput,
+      resolvedAt: new Date(secondDeadline.getTime() + 1),
+    })).resolves.toBeNull();
   });
 
   it("assigns a claimed vector atomically, searches compatible centroids, and resolves bounded redirects", async () => {
@@ -1079,11 +1383,14 @@ describeIfDatabase("content-planning Kysely repositories", () => {
     });
     expect(replaced).toEqual({ applied: true, storedCount: 5, truncatedCount: 1 });
 
-    await corpusInvalidations.invalidateDeletedDocument({
+    await database.execute(
+      "DELETE FROM documents WHERE workspace_id = $1 AND id = $2",
+      [fixture.workspaceId, documentIds[0]!],
+    );
+    await expect(corpusInvalidations.drainWorkspace({
       workspaceId: fixture.workspaceId,
-      documentId: documentIds[0]!,
-      dirtyAt: new Date("2026-08-02T12:00:05.000Z"),
-    });
+      limit: 5,
+    })).resolves.toMatchObject({ invalidatedCount: 1, pending: false });
     const [topic, enrichment, links] = await Promise.all([
       database.queryOne<{ revision: number }>(
         "SELECT revision FROM content_plan_topics WHERE workspace_id = $1 AND generation_id = $2 AND id = $3",
@@ -1401,6 +1708,120 @@ describeIfDatabase("content-planning Kysely repositories", () => {
       failureStage: null,
       failureReason: null,
     });
+  });
+
+  it("does not reclaim a terminally failed refresh while preserving the prior publication", async () => {
+    const fixture = await createFixture("enrichment-terminal-refresh");
+    const generation = await createGeneration(fixture, "coherent");
+    const topicId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision
+       ) VALUES ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 2, '{}'::uuid[], 1)`,
+      [fixture.workspaceId, generation.id, topicId, fixture.embeddingSpaceId],
+    );
+    const originalAt = new Date("2026-08-02T12:00:00.000Z");
+    const schedule = {
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      sourceTopicRevision: 1,
+      sourceEvidence: enrichmentEvidence,
+      sourceEvidenceStrength: "low" as const,
+      sourceCorpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+      analysisMode: "label_and_brief" as const,
+      publishState: "ready" as const,
+      actionRuleVersion: 1,
+      availableAt: originalAt,
+    };
+    await enrichments.queueEnrichment(schedule);
+    const [initialClaim] = await enrichments.claimEnrichmentBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      limit: 1,
+      now: originalAt,
+      leaseMs: 60_000,
+    });
+    await expect(enrichments.publishEnrichment({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      sourceTopicRevision: 1,
+      sourceEvidence: enrichmentEvidence,
+      sourceCorpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+      claimToken: initialClaim!.claimToken!,
+      publishState: "ready",
+      label: "Deployment controls",
+      description: "Questions about deployment configuration.",
+      suggestedTitle: "Deployment controls guide",
+      rationale: "Repeated deployment questions need a clear reference.",
+      questionsToAnswer: ["Where are controls?", "Who can edit?", "When do changes apply?"],
+      suggestedShape: "guide",
+      evidenceStatement: "Based on two conversations.",
+      action: "monitor",
+      actionRuleVersion: 1,
+      corpusState: "ready",
+      corpusCheckedAt: originalAt,
+      enrichedAt: originalAt,
+    })).resolves.toBe(true);
+    await topics.invalidateTopic({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      expectedRevision: 1,
+      dirtyAt: new Date("2026-08-02T12:01:00.000Z"),
+    });
+    const refreshAt = new Date("2026-08-02T12:02:00.000Z");
+    const refreshSchedule = {
+      ...schedule,
+      sourceTopicRevision: 2,
+      sourceEvidence: updatedEnrichmentEvidence,
+      sourceEvidenceStrength: "medium" as const,
+      sourceCorpusEvidenceFingerprint: updatedEnrichmentCorpusFingerprint,
+      availableAt: refreshAt,
+    };
+    await enrichments.queueEnrichment(refreshSchedule);
+    const [refreshClaim] = await enrichments.claimEnrichmentBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      limit: 1,
+      now: refreshAt,
+      leaseMs: 60_000,
+    });
+    await expect(enrichments.failEnrichmentClaim({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      sourceTopicRevision: 2,
+      claimToken: refreshClaim!.claimToken!,
+      terminal: true,
+      failureStage: "brief_generation",
+      failureReason: "provider_error",
+      availableAt: new Date("2026-08-02T12:03:00.000Z"),
+    })).resolves.toBe(true);
+
+    const terminal = await enrichments.queueEnrichment({
+      ...refreshSchedule,
+      availableAt: new Date("2026-08-02T13:00:00.000Z"),
+    });
+    expect(terminal).toMatchObject({
+      state: "stale",
+      attemptCount: 1,
+      label: "Deployment controls",
+      suggestedTitle: "Deployment controls guide",
+      failureStage: "brief_generation",
+      failureReason: "provider_error",
+      publishedSourceEvidence: enrichmentEvidence,
+      publishedSourceCorpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+    });
+    await expect(enrichments.claimEnrichmentBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      limit: 1,
+      now: new Date("2026-08-03T12:00:00.000Z"),
+      leaseMs: 60_000,
+    })).resolves.toEqual([]);
   });
 
   it("keeps the first bounded debounce deadline while continuous revisions replace unpublished work", async () => {

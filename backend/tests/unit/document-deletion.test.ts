@@ -141,7 +141,7 @@ describe("document deletion", () => {
       documentId: "doc-1",
     });
 
-    expect(callOrder).toEqual(["corpus:deleted", "db", "storage"]);
+    expect(callOrder).toEqual(["db", "corpus:deleted", "storage"]);
     expect(deletedObjects).toEqual(["objects/doc-1"]);
   });
 

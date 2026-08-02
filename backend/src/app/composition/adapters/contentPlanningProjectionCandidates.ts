@@ -40,7 +40,9 @@ implements ContentPlanningProjectionCandidateSourcePort {
         OR (
           projection_state.projection_state <> 'budget_paused'
           AND (
-            projection_state.projection_state <> 'ready'
+            projection_state.projection_state IN (
+              'bootstrapping', 'updating', 'delayed', 'reprojecting'
+            )
             OR NOT EXISTS (
               SELECT 1
               FROM content_plan_projection_generations AS coherent_generation

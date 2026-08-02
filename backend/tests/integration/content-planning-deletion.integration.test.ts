@@ -26,6 +26,12 @@ const canReach = async (url?: string): Promise<boolean> => {
 
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
+const isolatedUrl = (base: string, name: string): string => {
+  const url = new URL(base);
+  url.pathname = `/${name}`;
+  return url.toString();
+};
+
 interface DeletionFixture {
   accountId: string;
   workspaceId: string;
@@ -41,12 +47,13 @@ interface TurnFixture {
 }
 
 describeIfDatabase("content-planning deletion and retention", () => {
+  const databaseName = `content_plan_deletion_${randomUUID().replaceAll("-", "")}`;
+  let admin: Database;
   let database: Database;
   let observations: ContentPlanObservationRepository;
   let topics: ContentPlanTopicRepository;
   let enrichments: ContentPlanEnrichmentRepository;
   let corpusInvalidations: ContentPlanCorpusInvalidationRepository;
-  const accountIds: string[] = [];
 
   const createFixture = async (suffix: string): Promise<DeletionFixture> => {
     const fixture = {
@@ -56,7 +63,6 @@ describeIfDatabase("content-planning deletion and retention", () => {
       embeddingSpaceId: randomUUID(),
       generationId: randomUUID(),
     };
-    accountIds.push(fixture.accountId);
     await database.execute(
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, 'hash')",
       [fixture.accountId, `Deletion ${suffix}`, `content-plan-delete-${suffix}-${fixture.accountId}@example.com`],
@@ -205,7 +211,9 @@ describeIfDatabase("content-planning deletion and retention", () => {
   };
 
   beforeAll(async () => {
-    database = new Database(integrationDatabaseUrl!);
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${databaseName}"`);
+    database = new Database(isolatedUrl(integrationDatabaseUrl!, databaseName));
     await runAllTestMigrations(database);
     observations = new ContentPlanObservationRepository(database.kysely);
     topics = new ContentPlanTopicRepository(database.kysely);
@@ -214,10 +222,11 @@ describeIfDatabase("content-planning deletion and retention", () => {
   });
 
   afterAll(async () => {
-    if (accountIds.length > 0) {
-      await database.execute("DELETE FROM accounts WHERE id = ANY($1::uuid[])", [accountIds]);
-    }
-    await database.close();
+    await database?.close().catch(() => undefined);
+    await admin
+      ?.execute(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`)
+      .catch(() => undefined);
+    await admin?.close().catch(() => undefined);
   });
 
   it("removes source text, vectors, and membership immediately, then clears and recomputes affected topic evidence", async () => {
@@ -292,18 +301,18 @@ describeIfDatabase("content-planning deletion and retention", () => {
       workspaceId: fixture.workspaceId,
       generationId: fixture.generationId,
       topicId,
-      expectedRevision: 1,
+      expectedRevision: 2,
       topic: {
         lifecycle: "mature",
         centroid: evidence!.liveCentroid!,
         dimensions: 3,
         centroidWeight: evidence!.liveObservationCount,
         representativeObservationIds: evidence!.representativeObservationIds,
-        revision: 2,
+        revision: 3,
         enrichmentDirtyAt: new Date("2026-08-02T00:00:00Z"),
       },
     })).resolves.toMatchObject({
-      revision: 2,
+      revision: 3,
       centroid: [0, 1, 0],
       centroidWeight: 1,
       representativeObservationIds: [survivingTurn.observationId],
@@ -351,14 +360,14 @@ describeIfDatabase("content-planning deletion and retention", () => {
       workspaceId: fixture.workspaceId,
       generationId: fixture.generationId,
       topicId,
-      expectedRevision: 1,
+      expectedRevision: 2,
       topic: {
         lifecycle: "retired",
-        centroid: [1, 0, 0],
+        centroid: null,
         dimensions: 3,
         centroidWeight: 0,
         representativeObservationIds: [],
-        revision: 2,
+        revision: 3,
         enrichmentDirtyAt: null,
       },
     })).resolves.toMatchObject({ lifecycle: "retired", centroidWeight: 0, representativeObservationIds: [] });
@@ -408,17 +417,20 @@ describeIfDatabase("content-planning deletion and retention", () => {
     );
     await addReadyEnrichment(fixture, survivorTopicId, 2);
     await database.execute(
+      `UPDATE content_plan_topic_enrichments
+       SET source_credible_opportunity = TRUE
+       WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
+      [fixture.workspaceId, fixture.generationId, survivorTopicId],
+    );
+    await database.execute(
       `INSERT INTO content_plan_topic_documents (
          workspace_id, generation_id, topic_id, document_id, source_topic_revision, similarity
        ) VALUES ($1, $2, $3, $4, 2, 0.9)`,
       [fixture.workspaceId, fixture.generationId, survivorTopicId, documentId],
     );
-    await expect(corpusInvalidations.invalidateDeletedDocument({
-      workspaceId: fixture.workspaceId,
-      documentId,
-      dirtyAt: new Date("2026-03-31T00:00:00Z"),
-    })).resolves.toBe(1);
     await database.execute("DELETE FROM documents WHERE workspace_id = $1 AND id = $2", [fixture.workspaceId, documentId]);
+    await expect(corpusInvalidations.drainWorkspace({ workspaceId: fixture.workspaceId, limit: 10 }))
+      .resolves.toMatchObject({ invalidatedCount: 1, pending: false });
     await expect(database.queryOne<{ state: string; corpus_state: string }>(
       `SELECT state, corpus_state FROM content_plan_topic_enrichments
        WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,

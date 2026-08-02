@@ -373,6 +373,87 @@ $$;
 
 
 --
+-- Name: fence_content_plan_topics_before_observation_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.fence_content_plan_topics_before_observation_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE content_plan_topics topic
+  SET
+    revision = topic.revision + 1,
+    enrichment_dirty_at = statement_timestamp(),
+    updated_at = statement_timestamp()
+  FROM content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND topic.workspace_id = membership.workspace_id
+    AND topic.generation_id = membership.generation_id
+    AND topic.id = membership.topic_id;
+
+  DELETE FROM content_plan_topic_documents document
+  USING content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND document.workspace_id = membership.workspace_id
+    AND document.generation_id = membership.generation_id
+    AND document.topic_id = membership.topic_id;
+
+  DELETE FROM content_plan_topic_enrichments enrichment
+  USING content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND enrichment.workspace_id = membership.workspace_id
+    AND enrichment.generation_id = membership.generation_id
+    AND enrichment.topic_id = membership.topic_id;
+
+  RETURN OLD;
+END;
+$$;
+
+
+--
+-- Name: mark_content_plan_corpus_after_document_delete(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.mark_content_plan_corpus_after_document_delete() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  INSERT INTO content_plan_corpus_invalidations (
+    workspace_id,
+    revision,
+    dirty_at,
+    after_generation_id,
+    after_topic_id,
+    updated_at
+  )
+  SELECT DISTINCT
+    deleted.workspace_id,
+    1,
+    statement_timestamp(),
+    NULL::uuid,
+    NULL::uuid,
+    statement_timestamp()
+  FROM deleted_content_plan_documents deleted
+  JOIN workspaces workspace ON workspace.id = deleted.workspace_id
+  ON CONFLICT (workspace_id) DO UPDATE
+  SET
+    revision = content_plan_corpus_invalidations.revision + 1,
+    dirty_at = GREATEST(
+      content_plan_corpus_invalidations.dirty_at,
+      EXCLUDED.dirty_at
+    ),
+    after_generation_id = NULL,
+    after_topic_id = NULL,
+    updated_at = statement_timestamp();
+  RETURN NULL;
+END;
+$$;
+
+
+--
 -- Name: reject_content_plan_generation_identity_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1520,6 +1601,7 @@ CREATE TABLE public.content_plan_projection_generations (
 CREATE TABLE public.content_plan_projection_population_snapshots (
     workspace_id uuid NOT NULL,
     generation_id uuid NOT NULL,
+    source_user_message_id uuid NOT NULL,
     assistant_message_id uuid NOT NULL,
     created_at timestamp with time zone NOT NULL
 );
@@ -1699,7 +1781,7 @@ CREATE TABLE public.content_plan_topics (
     id uuid NOT NULL,
     embedding_space_id uuid NOT NULL,
     lifecycle text NOT NULL,
-    centroid public.vector NOT NULL,
+    centroid public.vector,
     dimensions integer NOT NULL,
     centroid_weight integer NOT NULL,
     representative_observation_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
@@ -1710,9 +1792,10 @@ CREATE TABLE public.content_plan_topics (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT content_plan_topics_centroid_weight_check CHECK ((centroid_weight >= 0)),
-    CONSTRAINT content_plan_topics_check CHECK ((public.vector_dims(centroid) = dimensions)),
-    CONSTRAINT content_plan_topics_check1 CHECK ((((lifecycle = 'merged'::text) AND (merged_into_topic_id IS NOT NULL) AND (merged_into_topic_id <> id) AND (redirect_expires_at IS NOT NULL)) OR ((lifecycle <> 'merged'::text) AND (merged_into_topic_id IS NULL) AND (redirect_expires_at IS NULL)))),
-    CONSTRAINT content_plan_topics_check2 CHECK (((lifecycle <> 'retired'::text) OR ((centroid_weight = 0) AND (cardinality(representative_observation_ids) = 0)))),
+    CONSTRAINT content_plan_topics_check CHECK (((centroid IS NULL) OR (public.vector_dims(centroid) = dimensions))),
+    CONSTRAINT content_plan_topics_check1 CHECK ((((lifecycle = ANY (ARRAY['provisional'::text, 'mature'::text])) AND (centroid IS NOT NULL)) OR ((lifecycle = ANY (ARRAY['merged'::text, 'retired'::text])) AND (centroid IS NULL)))),
+    CONSTRAINT content_plan_topics_check2 CHECK ((((lifecycle = 'merged'::text) AND (merged_into_topic_id IS NOT NULL) AND (merged_into_topic_id <> id) AND (redirect_expires_at IS NOT NULL)) OR ((lifecycle <> 'merged'::text) AND (merged_into_topic_id IS NULL) AND (redirect_expires_at IS NULL)))),
+    CONSTRAINT content_plan_topics_check3 CHECK (((lifecycle <> 'retired'::text) OR ((centroid_weight = 0) AND (cardinality(representative_observation_ids) = 0)))),
     CONSTRAINT content_plan_topics_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
     CONSTRAINT content_plan_topics_lifecycle_check CHECK ((lifecycle = ANY (ARRAY['provisional'::text, 'mature'::text, 'merged'::text, 'retired'::text]))),
     CONSTRAINT content_plan_topics_representative_observation_ids_check CHECK ((((cardinality(representative_observation_ids) >= 0) AND (cardinality(representative_observation_ids) <= 8)) AND (array_position(representative_observation_ids, NULL::uuid) IS NULL))),
@@ -5117,6 +5200,13 @@ CREATE UNIQUE INDEX idx_content_plan_generations_one_coherent ON public.content_
 
 
 --
+-- Name: idx_content_plan_generations_retention; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_generations_retention ON public.content_plan_projection_generations USING btree (workspace_id, state, updated_at, id) WHERE (state = ANY (ARRAY['superseded'::text, 'failed'::text]));
+
+
+--
 -- Name: idx_content_plan_generations_space; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6699,6 +6789,13 @@ ALTER INDEX public.idx_chunks_workspace_id ATTACH PARTITION public.chunks_p9_wor
 
 
 --
+-- Name: documents content_plan_document_delete_marks_corpus; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_document_delete_marks_corpus AFTER DELETE ON public.documents REFERENCING OLD TABLE AS deleted_content_plan_documents FOR EACH STATEMENT EXECUTE FUNCTION public.mark_content_plan_corpus_after_document_delete();
+
+
+--
 -- Name: content_plan_topic_enrichments content_plan_enrichment_revision_fence; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -6710,6 +6807,13 @@ CREATE TRIGGER content_plan_enrichment_revision_fence BEFORE INSERT OR UPDATE ON
 --
 
 CREATE TRIGGER content_plan_generation_identity_immutable BEFORE UPDATE ON public.content_plan_projection_generations FOR EACH ROW EXECUTE FUNCTION public.reject_content_plan_generation_identity_mutation();
+
+
+--
+-- Name: content_plan_observations content_plan_observation_delete_fences_topics; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER content_plan_observation_delete_fences_topics BEFORE DELETE ON public.content_plan_observations FOR EACH ROW EXECUTE FUNCTION public.fence_content_plan_topics_before_observation_delete();
 
 
 --
@@ -7195,6 +7299,14 @@ ALTER TABLE ONLY public.content_plan_projection_population_snapshots
 
 ALTER TABLE ONLY public.content_plan_projection_population_snapshots
     ADD CONSTRAINT content_plan_population_snapshot_message_fk FOREIGN KEY (workspace_id, assistant_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_population_snapshots content_plan_population_snapshot_user_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_population_snapshots
+    ADD CONSTRAINT content_plan_population_snapshot_user_message_fk FOREIGN KEY (workspace_id, source_user_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
 
 
 --

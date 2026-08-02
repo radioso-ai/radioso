@@ -29,7 +29,14 @@ Bootstrap and reprojection capture Quality's eligible turn IDs into an immutable
 generation-owned population snapshot before paging begins. Deleting source messages
 cascades snapshot rows and the worker reconciles the remaining total; turns committed
 after capture enter the target generation through normal live intake instead of changing
-the historical cursor.
+the historical cursor. Promotion derives topic identity only from shared memberships:
+one-to-one clusters carry their prior public ID, merges create current-generation
+redirect aliases, and ambiguous splits keep new IDs. No cross-space vectors are compared.
+
+Maintenance removes failed generations after the 60-day reporting/repair horizon and
+superseded generations after the 90-day redirect horizon, in bounded batches with safe
+observability. Coherent and building target generations are never eligible. Empty
+retired topics clear centroids, representative IDs, generated prose, and document links.
 
 Document publication advances one coalesced workspace marker. The worker fans credible
 topic invalidation out in bounded batches; single-document deletion targets only topics

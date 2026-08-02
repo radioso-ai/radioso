@@ -29,7 +29,7 @@ interface TopicRow {
   id: string;
   embedding_space_id: string;
   lifecycle: string;
-  centroid: string;
+  centroid: string | null;
   dimensions: number;
   centroid_weight: number;
   representative_observation_ids: string[];
@@ -99,7 +99,7 @@ const mapTopic = (row: TopicRow): ContentPlanTopicRecord => ({
   id: row.id,
   embeddingSpaceId: row.embedding_space_id,
   lifecycle: row.lifecycle as ContentPlanTopicRecord["lifecycle"],
-  centroid: parsePgVector(row.centroid),
+  centroid: row.centroid === null ? null : parsePgVector(row.centroid),
   dimensions: row.dimensions,
   centroidWeight: row.centroid_weight,
   representativeObservationIds: row.representative_observation_ids,
@@ -136,7 +136,15 @@ const validateAggregateUpdate = (
   expectedRevision: number,
   requireRevisionBump: boolean,
 ): void => {
-  if (topic.centroid.length !== topic.dimensions) {
+  if (topic.lifecycle === "retired") {
+    if (
+      topic.centroid !== null
+      || topic.centroidWeight !== 0
+      || topic.representativeObservationIds.length !== 0
+    ) {
+      throw new Error("Retired content planning topics cannot retain customer-derived aggregate evidence");
+    }
+  } else if (topic.centroid === null || topic.centroid.length !== topic.dimensions) {
     throw new Error("Content planning topic dimensions do not match its centroid");
   }
   if (new Set(topic.representativeObservationIds).size !== topic.representativeObservationIds.length
@@ -151,11 +159,12 @@ const validateAggregateUpdate = (
       ? "Content planning topic revision must advance by one"
       : "Content planning topic revision must be current or advance by one");
   }
-  if (topic.lifecycle === "retired"
-    && (topic.centroidWeight !== 0 || topic.representativeObservationIds.length !== 0)) {
-    throw new Error("Retired content planning topics cannot retain live aggregate evidence");
-  }
 };
+
+const storedAggregateCentroid = (
+  topic: ContentPlanTopicAggregateUpdate,
+): ReturnType<typeof toPgVector> | null =>
+  topic.centroid === null ? null : toPgVector(topic.centroid);
 
 export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPort {
   constructor(private readonly db: Db) {}
@@ -187,10 +196,17 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
       .orderBy("id", "asc")
       .limit(input.limit)
       .execute();
-    return rows.map((row) => ({
-      ...mapTopic(row as TopicRow),
-      cosineSimilarity: 1 - Number(row.cosine_distance),
-    }));
+    return rows.map((row) => {
+      const topic = mapTopic(row as TopicRow);
+      if (topic.centroid === null) {
+        throw new Error("Active content planning topic is missing its centroid");
+      }
+      return {
+        ...topic,
+        centroid: topic.centroid,
+        cosineSimilarity: 1 - Number(row.cosine_distance),
+      };
+    });
   }
 
   async loadAssignmentEvidence(input: {
@@ -452,7 +468,7 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
           id: input.topic.id,
           embedding_space_id: input.topic.embeddingSpaceId,
           lifecycle: input.topic.lifecycle,
-          centroid: toPgVector(input.topic.centroid),
+          centroid: storedAggregateCentroid(input.topic),
           dimensions: input.topic.dimensions,
           centroid_weight: input.topic.centroidWeight,
           representative_observation_ids: [...new Set(input.topic.representativeObservationIds)],
@@ -563,7 +579,7 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
         .updateTable("content_plan_topics")
         .set({
           lifecycle: input.topic.lifecycle,
-          centroid: toPgVector(input.topic.centroid),
+          centroid: storedAggregateCentroid(input.topic),
           dimensions: input.topic.dimensions,
           centroid_weight: input.topic.centroidWeight,
           representative_observation_ids: [...input.topic.representativeObservationIds],
@@ -633,7 +649,7 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
         .updateTable("content_plan_topics")
         .set({
           lifecycle: input.topic.lifecycle,
-          centroid: toPgVector(input.topic.centroid),
+          centroid: storedAggregateCentroid(input.topic),
           dimensions: input.topic.dimensions,
           centroid_weight: input.topic.centroidWeight,
           representative_observation_ids: [...input.topic.representativeObservationIds],
@@ -715,7 +731,7 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
         .updateTable("content_plan_topics")
         .set({
           lifecycle: input.survivor.lifecycle,
-          centroid: toPgVector(input.survivor.centroid),
+          centroid: storedAggregateCentroid(input.survivor),
           dimensions: input.survivor.dimensions,
           centroid_weight: input.survivor.centroidWeight,
           representative_observation_ids: [...input.survivor.representativeObservationIds],
@@ -734,6 +750,9 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
         .updateTable("content_plan_topics")
         .set({
           lifecycle: "merged",
+          centroid: null,
+          centroid_weight: 0,
+          representative_observation_ids: [],
           revision: input.sourceExpectedRevision + 1,
           merged_into_topic_id: input.survivorTopicId,
           redirect_expires_at: input.redirectExpiresAt,

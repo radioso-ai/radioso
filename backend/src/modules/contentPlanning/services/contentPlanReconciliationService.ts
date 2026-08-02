@@ -191,7 +191,7 @@ const toAggregate = (
   if (evidence.liveObservationCount === 0) {
     return {
       lifecycle: "retired" as const,
-      centroid: topic.centroid,
+      centroid: null,
       dimensions: topic.dimensions,
       centroidWeight: 0,
       representativeObservationIds: [],

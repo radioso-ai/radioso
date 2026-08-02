@@ -5,6 +5,7 @@ export type ContentPlanWorkerStage =
   | "assignment"
   | "reconciliation"
   | "retention"
+  | "generation_retention"
   | "discovery"
   | "bootstrap"
   | "reprojection"
@@ -56,6 +57,7 @@ export type ContentPlanWorkerFailureReason =
   | "reconciliation_conflict"
   | "reconciliation_repository_failed"
   | "retention_repository_failed"
+  | "generation_retention_repository_failed"
   | "projection_tick_failed"
   | "historical_interpretation_failed"
   | "enrichment_schedule_failed"
@@ -418,6 +420,7 @@ const workerStages = [
   "assignment",
   "reconciliation",
   "retention",
+  "generation_retention",
   "discovery",
   "bootstrap",
   "reprojection",
@@ -471,6 +474,7 @@ const workerFailureReasons = [
   "reconciliation_conflict",
   "reconciliation_repository_failed",
   "retention_repository_failed",
+  "generation_retention_repository_failed",
   "projection_tick_failed",
   "historical_interpretation_failed",
   "enrichment_schedule_failed",

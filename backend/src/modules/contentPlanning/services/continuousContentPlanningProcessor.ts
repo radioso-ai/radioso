@@ -1,4 +1,5 @@
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { ContentPlanProjectionRepositoryPort } from "../contracts/persistence.js";
 import type { ContentPlanningProjectionProcessorPort } from "./contentPlanningWorkerRuntime.js";
 import type { ContentPlanningEnrichmentJobRunner } from "./enrichmentJobRunner.js";
 import type { ContentPlanningEnrichmentPlanningService } from "./enrichmentPlanningService.js";
@@ -8,11 +9,14 @@ type ProjectionProcessor = ContentPlanningProjectionProcessorPort;
 type PlanningService = Pick<ContentPlanningEnrichmentPlanningService, "runOnce">;
 type EnrichmentRunner = Pick<ContentPlanningEnrichmentJobRunner, "runOnce">;
 type OperationalMetricsReporter = Pick<ContentPlanningOperationalMetricsReporter, "capture">;
+type ProjectionFreshness = Pick<ContentPlanProjectionRepositoryPort, "refreshProjectionFreshness">;
 
 export interface ContinuousContentPlanningProcessorOptions {
   clock?: () => Date;
   repairIntervalMs?: number;
   retentionIntervalMs?: number;
+  freshnessDelayedAfterMs?: number;
+  freshnessScanLimit?: number;
 }
 
 const DEFAULT_MAINTENANCE_INTERVAL_MS = 5 * 60_000;
@@ -25,12 +29,15 @@ export class ContinuousContentPlanningProcessor implements ContentPlanningProjec
   private readonly clock: () => Date;
   private readonly repairIntervalMs: number;
   private readonly retentionIntervalMs: number;
+  private readonly freshnessDelayedAfterMs: number;
+  private readonly freshnessScanLimit: number;
   private readonly lastRepairAttemptByProjection = new Map<string, number>();
   private readonly lastRetentionAttemptByWorkspace = new Map<string, number>();
 
   constructor(
     private readonly dependencies: {
       projection: ProjectionProcessor;
+      freshness?: ProjectionFreshness;
       planning: PlanningService;
       enrichments: EnrichmentRunner;
       operationalMetrics?: OperationalMetricsReporter;
@@ -41,8 +48,13 @@ export class ContinuousContentPlanningProcessor implements ContentPlanningProjec
     this.clock = options.clock ?? (() => new Date());
     this.repairIntervalMs = options.repairIntervalMs ?? DEFAULT_MAINTENANCE_INTERVAL_MS;
     this.retentionIntervalMs = options.retentionIntervalMs ?? DEFAULT_MAINTENANCE_INTERVAL_MS;
+    this.freshnessDelayedAfterMs = options.freshnessDelayedAfterMs ?? 2 * 60_000;
+    this.freshnessScanLimit = options.freshnessScanLimit ?? 100;
     if (!Number.isSafeInteger(this.repairIntervalMs) || this.repairIntervalMs < 1
-      || !Number.isSafeInteger(this.retentionIntervalMs) || this.retentionIntervalMs < 1) {
+      || !Number.isSafeInteger(this.retentionIntervalMs) || this.retentionIntervalMs < 1
+      || !Number.isSafeInteger(this.freshnessDelayedAfterMs) || this.freshnessDelayedAfterMs < 1
+      || !Number.isSafeInteger(this.freshnessScanLimit) || this.freshnessScanLimit < 1
+      || this.freshnessScanLimit > 500) {
       throw new Error("Content planning maintenance intervals are invalid");
     }
   }
@@ -52,7 +64,30 @@ export class ContinuousContentPlanningProcessor implements ContentPlanningProjec
     generationId?: string;
     maintenance?: boolean;
   }): Promise<unknown> {
-    const projection = await this.dependencies.projection.runOnce(input);
+    let projection: unknown;
+    try {
+      projection = await this.dependencies.projection.runOnce(input);
+    } finally {
+      if (input.workspaceId && input.generationId && this.dependencies.freshness) {
+        await this.dependencies.freshness.refreshProjectionFreshness({
+          workspaceId: input.workspaceId,
+          generationId: input.generationId,
+          now: this.clock(),
+          delayedAfterMs: this.freshnessDelayedAfterMs,
+          scanLimit: this.freshnessScanLimit,
+        }).catch(() => {
+          this.dependencies.logger.warn(
+            {
+              event: "content_planning_projection_freshness_failed",
+              workspaceId: input.workspaceId,
+              generationId: input.generationId,
+              reason: "freshness_refresh_failed",
+            },
+            "Content planning projection freshness refresh failed",
+          );
+        });
+      }
+    }
     if (!input.workspaceId || !input.generationId) return projection;
 
     try {

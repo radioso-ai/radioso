@@ -43,15 +43,6 @@ export class DocumentDeletionService {
       throw notFound("Document not found");
     }
 
-    // Persist derived-view invalidation before the source row can cascade away.
-    // A false-positive invalidation after a delete race is safe and repairable;
-    // losing the only durable invalidation trigger is not.
-    await this.corpusChanges?.onCorpusChanged({
-      workspaceId: input.workspaceId,
-      documentId: input.documentId,
-      change: "deleted",
-    });
-
     const deleted = await this.documentRepository.deleteByIdAndWorkspaceId(input.documentId, input.workspaceId);
 
     if (!deleted) {
@@ -66,6 +57,14 @@ export class DocumentDeletionService {
       });
       throw notFound("Document not found");
     }
+
+    // The repository delete commits the database-owned post-delete corpus fence.
+    // Notify secondary observers only after the source row and its FK cascades are gone.
+    await this.corpusChanges?.onCorpusChanged({
+      workspaceId: input.workspaceId,
+      documentId: input.documentId,
+      change: "deleted",
+    });
 
     let sourceCleanupFailed = false;
     let sourceCleanupReason: string | undefined;

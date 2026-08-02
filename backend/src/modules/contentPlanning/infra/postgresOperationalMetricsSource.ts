@@ -61,7 +61,7 @@ implements ContentPlanningOperationalMetricsSourcePort {
            WHERE vector.workspace_id = $1
              AND vector.generation_id = $2
              AND vector.embedding IS NULL
-             AND vector.state IN ('pending_embedding', 'retryable')
+             AND vector.state IN ('pending_embedding', 'processing', 'retryable')
          ), 0) AS pending_embedding_count,
          COALESCE((
            SELECT COUNT(*)

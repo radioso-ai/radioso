@@ -886,14 +886,16 @@ export class DocumentIngestionService {
     sourceId: string;
     documentStorage?: { delete(input: { bucket: string; objectPath: string; generation: string | null }): Promise<void> };
   }): Promise<{ deletedDocumentCount: number }> {
-    await this.corpusChanges?.onCorpusChanged({
-      workspaceId: input.workspaceId,
-      change: "deleted",
-    });
     const { count: deletedDocumentCount, storageRefs } = await this.documentRepository.deleteBySourceIdAndWorkspaceId(
       input.sourceId,
       input.workspaceId,
     );
+    if (deletedDocumentCount > 0) {
+      await this.corpusChanges?.onCorpusChanged({
+        workspaceId: input.workspaceId,
+        change: "deleted",
+      });
+    }
     if (input.documentStorage && storageRefs.length > 0) {
       await Promise.allSettled(
         storageRefs.map((ref) => input.documentStorage!.delete(ref)),
@@ -964,13 +966,13 @@ export class DocumentIngestionService {
     sourceId: string;
     keepExternalDocumentIds: string[];
   }): Promise<{ deletedCount: number; deletedContentBytes: number }> {
+    // Persist before reaping: a notification failure leaves the source rows intact,
+    // while a later delete failure leaves only a harmless, retryable false positive.
+    await this.corpusChanges?.onCorpusChanged({
+      workspaceId: input.workspaceId,
+      change: "deleted",
+    });
     const result = await this.documentRepository.deleteMissingPagesBySourceAndExternalIds(input);
-    if (result.deletedCount > 0) {
-      await this.corpusChanges?.onCorpusChanged({
-        workspaceId: input.workspaceId,
-        change: "deleted",
-      });
-    }
     return result;
   }
 

@@ -25,7 +25,10 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import {
+  InMemoryPublicConversationEventBus,
+  ModelTurnInterpretationGateway,
+} from "../../modules/chat/composition.js";
 import { RoutineDefinitionService, RoutineDraftAssistService, RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
@@ -36,6 +39,7 @@ import {
   buildAuthService,
   buildChatServices,
   buildConnectorRegistry,
+  buildContentPlanningWorkerRuntime,
   buildDocumentServices,
   buildEmailVerificationService,
   buildInfrastructure,
@@ -116,6 +120,9 @@ import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSki
 import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
 import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
+import { ContentPlanningHistoricalInteractionInterpreter } from "../composition/adapters/contentPlanningHistoricalInteractionInterpreter.js";
+import { ContentPlanningDocumentCorpusObserver } from "../composition/adapters/contentPlanningDocumentCorpusObserver.js";
+import { EvalQualityVerificationSource } from "../composition/adapters/evalQualityVerificationSource.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -160,6 +167,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
+  const evalMessageCaseRepository = new EvalMessageCaseRepository(
+    infrastructure.database.kysely,
+  );
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
@@ -424,13 +434,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       );
     },
   );
+  const embeddingGateway = llmRegistry.createEmbeddingGateway(
+    infrastructure.usageEventRecorder,
+  );
+  const embeddingBindings = new WorkspaceEmbeddingBindingResolver({
+    profiles: repositories.embeddingProfileRepository,
+    settings: settings.ingestionSettingsService,
+    identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
+  });
   const embeddingPorts = new ProfileBoundEmbeddingPorts(
-    llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder),
-    new WorkspaceEmbeddingBindingResolver({
-      profiles: repositories.embeddingProfileRepository,
-      settings: settings.ingestionSettingsService,
-      identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
-    }),
+    embeddingGateway,
+    embeddingBindings,
   );
   const chunkHydrator = new PostgresChunkCandidateHydrator(
     infrastructure.database.kysely,
@@ -460,6 +474,28 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     credentials: workspaceProviderCredentialsService,
   });
   llmRegistry.setResolver(llmCapabilityResolver);
+  const contentPlanningInferencePipeline = llmRegistry.createRewriteInferencePipeline(
+    infrastructure.usageEventRecorder,
+  );
+  const contentPlanningWorkerRuntime = buildContentPlanningWorkerRuntime({
+    database: infrastructure.database,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    repositories,
+    embeddingGateway,
+    embeddingBindings,
+    historicalInterpreter: new ContentPlanningHistoricalInteractionInterpreter(
+      new ModelTurnInterpretationGateway(contentPlanningInferencePipeline),
+    ),
+    enrichmentInferencePipeline: contentPlanningInferencePipeline,
+    qualityVerificationSource: new EvalQualityVerificationSource({
+      lookupVerifications: (workspaceId, assistantMessageIds) =>
+        evalMessageCaseRepository.lookupMessageCaseVerifications(
+          workspaceId,
+          assistantMessageIds,
+        ),
+    }),
+  });
   const documents = buildDocumentServices({
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
@@ -481,6 +517,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     llmRegistry,
     workspaceIngestionReprocessService,
     embeddingCoverage,
+    corpusChanges: new ContentPlanningDocumentCorpusObserver(
+      repositories.contentPlanEnrichmentTriggerRepository,
+    ),
     errorReporter: infrastructure.errorReportingService,
     embeddingProfileTerminalFailures: embeddingProfileJobFailures,
     embeddingProfileProjectionCleanup: {
@@ -775,9 +814,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     new ConversationSummaryRepository(infrastructure.database.kysely),
   );
   const evalCaseService = new EvalCaseService(evalRepository);
-  const evalMessageCaseRepository = new EvalMessageCaseRepository(
-    infrastructure.database.kysely,
-  );
   const evalMessageCaseService = new EvalMessageCaseService(
     evalMessageCaseRepository,
     evalSnapshotService,
@@ -835,6 +871,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     vectorIndexReconciler,
+    contentPlanningWorkerRuntime,
     authService,
     accessGrantService: access.accessGrantService,
     passwordResetService,

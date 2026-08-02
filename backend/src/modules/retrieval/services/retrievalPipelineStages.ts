@@ -20,6 +20,7 @@ import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/que
 import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
+import type { SemanticVectorEnvelope } from "../domain/semanticVectorEnvelope.js";
 
 export interface RetrievalPipelineRequest {
   workspaceId: string;
@@ -94,6 +95,8 @@ export type SemanticRetrievalFailureReason =
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
   activeEmbedding: number[];
   activeEmbeddingDurationMs: number;
+  /** Built-in retrieval stages always set this; optional for legacy stage fixtures/adapters. */
+  semanticVectors?: SemanticVectorEnvelope[];
   originalContexts: RetrievedChunk[];
   rewrittenContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];

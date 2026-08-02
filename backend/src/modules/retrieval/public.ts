@@ -11,6 +11,7 @@ import type {
   StructuredRewriteResult,
 } from "./domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceScope } from "./domain/retrievalSourceFilter.js";
+import type { SemanticVectorEnvelope } from "./domain/semanticVectorEnvelope.js";
 
 export {
   chunkingStrategyIds,
@@ -61,6 +62,7 @@ export type {
   RetrievalSourceFilter,
   RetrievalSourceScope,
 } from "./domain/retrievalSourceFilter.js";
+export type { SemanticVectorEnvelope } from "./domain/semanticVectorEnvelope.js";
 export type {
   VectorChunkFilter,
   VectorMetadataFilter,
@@ -239,6 +241,8 @@ export interface RetrievalPipelineRequest {
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
+  /** Built-in pipelines always set this; optional for legacy structural adapters. */
+  semanticVectors?: SemanticVectorEnvelope[];
   contexts: FinalPromptContext[];
   systemPrompt: string;
   prompt: string;

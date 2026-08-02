@@ -1654,6 +1654,10 @@ export const createTestDependencies = (overrides: {
       logger,
       registry: createApplicationExtensionRegistry(),
     }),
+    contentPlanningWorkerRuntime: {
+      start: () => undefined,
+      stop: async () => undefined,
+    },
     auditService,
     mailService: createMailService({ MAIL_DRIVER: "noop" }),
     accountAccessService,

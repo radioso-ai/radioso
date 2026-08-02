@@ -14,6 +14,7 @@ import { QueryRewriteService } from "./queryRewriteService.js";
 import { RerankService } from "./rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./retrievalExecutionTelemetryService.js";
 import type { RetrievalExecutionDiagnostics } from "../domain/retrievalPipelineTypes.js";
+import type { SemanticVectorEnvelope } from "../domain/semanticVectorEnvelope.js";
 import { resolveRetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievalDefaultsProvider } from "../domain/retrievalDefaultsProvider.js";
 import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
@@ -67,6 +68,8 @@ const traceActiveSpan = <T>(
 
 export interface RetrievalPipelineResult {
   rewrittenQuery: string;
+  /** Built-in pipelines always set this; optional for legacy structural adapters. */
+  semanticVectors?: SemanticVectorEnvelope[];
   contexts: import("../domain/retrievalPipelineTypes.js").FinalPromptContext[];
   systemPrompt: string;
   prompt: string;
@@ -291,6 +294,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
 
       return {
         rewrittenQuery: prompt.result.activeQuery,
+        semanticVectors: prompt.result.semanticVectors ?? [],
         contexts: prompt.result.contexts,
         systemPrompt: prompt.result.systemPrompt,
         prompt: prompt.result.prompt,
@@ -357,6 +361,7 @@ export class RetrievalPipelineService implements RetrievalPipelinePort {
 
         return {
           rewrittenQuery: input.request.query,
+          semanticVectors: [],
           contexts: [],
           systemPrompt: "",
           prompt: "",

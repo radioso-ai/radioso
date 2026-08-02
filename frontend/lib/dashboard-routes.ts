@@ -8,8 +8,17 @@ import {
   type QualitySignalId,
   type QualityStatsRange,
 } from './api-quality'
+import { CONTENT_PLAN_VIEWS, type ContentPlanView } from './api-content-plan'
 
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
+export type DashboardSection =
+  | 'agents'
+  | 'knowledge'
+  | 'activity'
+  | 'quality'
+  | 'content-plan'
+  | 'eval'
+  | 'settings'
+  | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
@@ -114,6 +123,24 @@ export interface DashboardRouteState {
    * instead, so "show me everything" stays reachable and shareable.
    */
   qualityShowAll?: boolean
+  /**
+   * Set when the operator arrives at Quality from a Content plan topic. The
+   * queue is server-filtered by topic membership and a Return-to-topic affordance
+   * is offered.
+   */
+  contentPlanTopicId?: string
+  /** Content plan view segment: default `opportunities`, `all_interests` on request. */
+  contentPlanView?: ContentPlanView
+  /**
+   * Merged-topic replacement carried through the URL on merge redirects. After
+   * a successful detail fetch the app replaces the URL with `contentPlanTopicId`
+   * only; this survives an in-flight redirect signal.
+   */
+  contentPlanMergedIntoTopicId?: string
+  /** Knowledge came from a Content plan topic's "Review document" handoff. */
+  knowledgeFromContentPlanTopicId?: string
+  /** Knowledge came from a Content plan topic's question-only "Write document" prefill. */
+  knowledgeDraftFromContentPlanTopicId?: string
   evalCaseId?: string
   anchor?: string
 }
@@ -157,6 +184,11 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'qualityHasUnsourcedClaims',
   'qualityHasInvalidSources',
   'qualityShowAll',
+  'contentPlanTopicId',
+  'contentPlanView',
+  'contentPlanMergedIntoTopicId',
+  'knowledgeFromContentPlanTopicId',
+  'knowledgeDraftFromContentPlanTopicId',
   'evalCaseId',
   'anchor',
 ]
@@ -354,6 +386,22 @@ const parseAccountTab = (value: string | null): AccountTab | undefined => {
   return undefined
 }
 
+const parseContentPlanView = (value: string | null): ContentPlanView | undefined => {
+  if (!value) {
+    return undefined
+  }
+  return (CONTENT_PLAN_VIEWS as readonly string[]).includes(value)
+    ? (value as ContentPlanView)
+    : undefined
+}
+
+const parseUuidQuery = (value: string | null): string | undefined => {
+  if (!value) {
+    return undefined
+  }
+  return UUID_PATTERN.test(value) ? value : undefined
+}
+
 const parseAnchor = (value: string | null): string | undefined => {
   if (!value) {
     return undefined
@@ -424,8 +472,29 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.documentSourceFilter && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
       normalized.documentSourceFilter = state.documentSourceFilter
     }
+    if (state.knowledgeFromContentPlanTopicId
+      && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents'
+      && state.documentId) {
+      normalized.knowledgeFromContentPlanTopicId = state.knowledgeFromContentPlanTopicId
+    }
+    if (state.knowledgeDraftFromContentPlanTopicId) {
+      normalized.knowledgeDraftFromContentPlanTopicId = state.knowledgeDraftFromContentPlanTopicId
+    }
     if (state.anchor) {
       normalized.anchor = state.anchor
+    }
+    return normalized
+  }
+
+  if (state.section === 'content-plan') {
+    if (state.contentPlanView && state.contentPlanView !== 'opportunities') {
+      normalized.contentPlanView = state.contentPlanView
+    }
+    if (state.contentPlanTopicId) {
+      normalized.contentPlanTopicId = state.contentPlanTopicId
+    }
+    if (state.contentPlanTopicId && state.contentPlanMergedIntoTopicId) {
+      normalized.contentPlanMergedIntoTopicId = state.contentPlanMergedIntoTopicId
     }
     return normalized
   }
@@ -522,6 +591,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.qualityShowAll) {
       normalized.qualityShowAll = true
     }
+    if (state.contentPlanTopicId) {
+      normalized.contentPlanTopicId = state.contentPlanTopicId
+    }
     return normalized
   }
 
@@ -581,8 +653,23 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.documentSourceFilter) {
       searchParams.set('source', normalized.documentSourceFilter)
     }
+    if (normalized.knowledgeFromContentPlanTopicId) {
+      searchParams.set('fromContentPlan', normalized.knowledgeFromContentPlanTopicId)
+    }
+    if (normalized.knowledgeDraftFromContentPlanTopicId) {
+      searchParams.set('draftFromContentPlan', normalized.knowledgeDraftFromContentPlanTopicId)
+    }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
+    }
+  }
+
+  if (normalized.section === 'content-plan') {
+    if (normalized.contentPlanView) {
+      searchParams.set('view', normalized.contentPlanView)
+    }
+    if (normalized.contentPlanMergedIntoTopicId) {
+      searchParams.set('mergedInto', normalized.contentPlanMergedIntoTopicId)
     }
   }
 
@@ -675,6 +762,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     if (normalized.qualityShowAll) {
       searchParams.set('all', 'true')
     }
+    if (normalized.contentPlanTopicId) {
+      searchParams.set('contentPlanTopic', normalized.contentPlanTopicId)
+    }
   }
 
   const query = searchParams.toString()
@@ -700,6 +790,12 @@ export const buildLegacyDashboardHref = (
     pathname = normalized.documentId
       ? `${basePath}/knowledge/documents/${normalized.documentId}`
       : `${basePath}/knowledge`
+  }
+
+  if (normalized.section === 'content-plan') {
+    pathname = normalized.contentPlanTopicId
+      ? `${basePath}/content-plan/topics/${normalized.contentPlanTopicId}`
+      : `${basePath}/content-plan`
   }
 
   return `${pathname}${buildQueryString(normalized)}`
@@ -729,6 +825,12 @@ export const buildDashboardHref = (
     pathname = normalized.documentId
       ? `${basePath}/knowledge/documents/${normalized.documentId}`
       : `${basePath}/knowledge`
+  }
+
+  if (normalized.section === 'content-plan') {
+    pathname = normalized.contentPlanTopicId
+      ? `${basePath}/content-plan/topics/${normalized.contentPlanTopicId}`
+      : `${basePath}/content-plan`
   }
 
   if (normalized.section === 'eval') {
@@ -875,7 +977,39 @@ export const parseDashboardRoute = (
       ...(thirdSegment ? { documentId: thirdSegment } : {}),
       documentsPage: parsePositiveInt(searchParams?.get('page') ?? null),
       ...(searchParams?.get('source') ? { documentSourceFilter: searchParams.get('source') ?? undefined } : {}),
+      ...(parseUuidQuery(searchParams?.get('fromContentPlan') ?? null)
+        ? { knowledgeFromContentPlanTopicId: parseUuidQuery(searchParams?.get('fromContentPlan') ?? null) }
+        : {}),
+      ...(parseUuidQuery(searchParams?.get('draftFromContentPlan') ?? null)
+        ? {
+            knowledgeDraftFromContentPlanTopicId:
+              parseUuidQuery(searchParams?.get('draftFromContentPlan') ?? null),
+          }
+        : {}),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
+    })
+  }
+
+  if (sectionCandidate === 'content-plan') {
+    if (rest.length > 0 || fourthSegment) {
+      return null
+    }
+    if (secondSegment) {
+      if (secondSegment !== 'topics' || !thirdSegment) {
+        return null
+      }
+      if (!UUID_PATTERN.test(thirdSegment)) {
+        return null
+      }
+    }
+    return normalizeState({
+      section: 'content-plan',
+      workspaceId,
+      ...(thirdSegment ? { contentPlanTopicId: thirdSegment } : {}),
+      contentPlanView: parseContentPlanView(searchParams?.get('view') ?? null),
+      ...(thirdSegment && parseUuidQuery(searchParams?.get('mergedInto') ?? null)
+        ? { contentPlanMergedIntoTopicId: parseUuidQuery(searchParams?.get('mergedInto') ?? null) }
+        : {}),
     })
   }
 
@@ -956,6 +1090,9 @@ export const parseDashboardRoute = (
       qualityHasUnsourcedClaims: searchParams?.get('hasUnsourcedClaims') === 'true' ? true : undefined,
       qualityHasInvalidSources: searchParams?.get('hasInvalidSources') === 'true' ? true : undefined,
       qualityShowAll: searchParams?.get('all') === 'true' ? true : undefined,
+      ...(parseUuidQuery(searchParams?.get('contentPlanTopic') ?? null)
+        ? { contentPlanTopicId: parseUuidQuery(searchParams?.get('contentPlanTopic') ?? null) }
+        : {}),
     })
   }
 
@@ -1030,6 +1167,13 @@ export const retargetDashboardRouteToWorkspace = (
     return normalizeState({
       section: 'account',
       accountTab: state.accountTab,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'content-plan') {
+    return normalizeState({
+      section: 'content-plan',
       ...workspaceState,
     })
   }

@@ -39,6 +39,7 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   await sidebar.getByRole("link", { name: "Activity" }).click();
   await expect(sidebar.getByRole("link", { name: "Needs attention" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "All activity" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Content plan" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Quality" })).toBeVisible();
 });
 

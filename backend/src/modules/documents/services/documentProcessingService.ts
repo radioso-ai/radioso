@@ -39,6 +39,7 @@ import type {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
+import type { DocumentCorpusChangeObserverPort } from "../contracts/corpusChangeObserver.js";
 
 export interface IngestionSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
@@ -164,6 +165,7 @@ export class DocumentProcessingService {
     private readonly documentSourceRepository?: Pick<DocumentSourceRepositoryPort, "findByIdAndWorkspaceId">,
     private readonly jobRepository?: EnrichJobEnqueuePort,
     private readonly jobDispatcher: DocumentJobDispatcherPort = new NoopDocumentJobDispatcher(),
+    private readonly corpusChanges?: DocumentCorpusChangeObserverPort,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -354,6 +356,12 @@ export class DocumentProcessingService {
         const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
         return currentDocument ? "stale" : "deleted";
       }
+
+      await this.corpusChanges?.onCorpusChanged({
+        workspaceId: job.workspaceId,
+        documentId: documentWithContent.id,
+        change: "published",
+      });
 
       // The document is now queryable. Decide whether metadata extraction should
       // follow; the enrich job itself is enqueued last (see below).

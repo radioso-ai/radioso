@@ -1,6 +1,11 @@
 import type { DocumentSourceResolverInput } from "../services/documentIngestionService.js";
 
 export type {
+  DocumentCorpusChange,
+  DocumentCorpusChangeObserverPort,
+} from "./corpusChangeObserver.js";
+
+export type {
   ChunkDetail,
   ChunkMetadataRevisionPatch,
   ChunkRecord,

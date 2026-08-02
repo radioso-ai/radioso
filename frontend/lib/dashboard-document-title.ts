@@ -14,6 +14,7 @@ const SECTION_TITLES: Record<DashboardSection, string> = {
   knowledge: 'Knowledge Base',
   activity: 'Activity',
   quality: 'Quality',
+  'content-plan': 'Content plan',
   eval: 'Eval',
   settings: 'Settings',
   account: 'Account',

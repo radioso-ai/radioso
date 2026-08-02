@@ -43,6 +43,8 @@ import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { contentPlanApi } from '@/lib/api-content-plan'
+import { buildDraftDocumentContent } from '@/lib/content-plan'
 
 const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
@@ -67,6 +69,13 @@ interface DocumentsViewProps {
   // "Add" menu, which routes here so the canonical add flows are reused).
   autoOpenAdd?: AddDocumentAction | null
   onAutoOpenAddHandled?: () => void
+  /**
+   * When set, prefill the create-document dialog with the topic's suggested title
+   * and question-only outline. No visitor question text or fabricated fact is
+   * placed in the editor — only the server-owned brief.
+   */
+  autoDraftFromContentPlanTopicId?: string | null
+  onAutoDraftFromContentPlanHandled?: () => void
 }
 
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
@@ -90,6 +99,8 @@ export function DocumentsView({
   navigation,
   autoOpenAdd = null,
   onAutoOpenAddHandled,
+  autoDraftFromContentPlanTopicId = null,
+  onAutoDraftFromContentPlanHandled,
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
@@ -505,6 +516,60 @@ export function DocumentsView({
     }
     onAutoOpenAddHandled?.()
   }, [autoOpenAdd, websiteCrawlerEnabled, handleAddSelect, onAutoOpenAddHandled])
+
+  // Prefill the create-document dialog from a Content plan topic. We fetch the
+  // topic through the authorized detail endpoint so no visitor question text
+  // reaches the URL; the prefill body contains only the suggested title and
+  // question outline (no factual claim).
+  useEffect(() => {
+    if (!autoDraftFromContentPlanTopicId) {
+      return
+    }
+    const topicId = autoDraftFromContentPlanTopicId
+    let cancelled = false
+
+    const prefillFromTopic = async () => {
+      try {
+        const detail = await contentPlanApi.getTopic(topicId)
+        if (cancelled) {
+          return
+        }
+        if (detail) {
+          const suggestedTitle = detail.topic.recommendation.suggestedTitle
+            ?? detail.topic.label
+            ?? 'New document'
+          resetCreateDialog()
+          setFormValues({
+            title: suggestedTitle,
+            content: buildDraftDocumentContent(detail.topic.recommendation.questionsToAnswer),
+            metadata: '',
+            sourceId: MANUALLY_ADDED_SOURCE_ID,
+          })
+          setIsCreateDialogOpen(true)
+        } else {
+          openCreateDialog()
+        }
+      } catch {
+        if (!cancelled) {
+          openCreateDialog()
+        }
+      } finally {
+        if (!cancelled) {
+          onAutoDraftFromContentPlanHandled?.()
+        }
+      }
+    }
+
+    void prefillFromTopic()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    autoDraftFromContentPlanTopicId,
+    resetCreateDialog,
+    onAutoDraftFromContentPlanHandled,
+    openCreateDialog,
+  ])
 
   const openDocumentPage = useCallback(async (documentId: string) => {
     justClosedDocumentIdRef.current = null

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 
 import { AgenticRetrievalPipelineService } from "../../src/modules/retrieval/services/agenticRetrievalPipelineService.js";
 import type { AgenticRetrievalRunResult, AgenticRetrievalRunner } from "../../src/modules/retrieval/services/agenticRetrievalRunner.js";
@@ -28,6 +29,8 @@ const buildInterpretation = (
   overrides: {
     semanticQuery?: string;
     retrievalEligible?: boolean;
+    activeParsedSemanticQuery?: string;
+    activeRetrievalSubqueries?: RetrievalPipelineInterpretationResult["interpretation"]["result"]["activeRetrievalSubqueries"];
   } = {},
 ): RetrievalPipelineInterpretationResult => ({
   request,
@@ -61,9 +64,13 @@ const buildInterpretation = (
         confidence: 0.9,
       },
       activeQuery: overrides.semanticQuery ?? request.query,
-      activeParsedQuery: { semanticQuery: request.query, lexicalQuery: request.query, constraints: [] },
+      activeParsedQuery: {
+        semanticQuery: overrides.activeParsedSemanticQuery ?? overrides.semanticQuery ?? request.query,
+        lexicalQuery: request.query,
+        constraints: [],
+      },
       activeSemanticQuery: overrides.semanticQuery ?? request.query,
-      activeRetrievalSubqueries: [],
+      activeRetrievalSubqueries: overrides.activeRetrievalSubqueries ?? [],
       triggerAnalysis: {
         status: "skipped_not_configured",
         consideredRules: [],
@@ -122,6 +129,26 @@ const defaultSearchStats: AgenticRetrievalRunResult["searchStats"] = {
   mergedCandidateCount: 0,
   rerankInvoked: false,
 };
+
+const semanticHash = (text: string): string =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+
+const semanticVector = (input: {
+  intentId: string;
+  text: string;
+  vector: number[];
+}) => ({
+  intentId: input.intentId,
+  semanticTextHash: semanticHash(input.text),
+  vector: input.vector,
+  space: {
+    id: "space-1",
+    provider: "openai",
+    model: "text-embedding-3-small",
+    dimensions: input.vector.length,
+    distanceMetric: "cosine" as const,
+  },
+});
 
 const stubRunner = (
   runResult: Omit<AgenticRetrievalRunResult, "searchStats"> & {
@@ -280,6 +307,100 @@ describe("AgenticRetrievalPipelineService", () => {
     await service.run(buildRequest({ query: "gandhi" }));
 
     expect(observedQuery).toBe("Mahatma Gandhi biography");
+  });
+
+  it("reports the active contextual intent and only reuses an exact agentic search vector", async () => {
+    const semanticQuery = "Enterprise plan pricing";
+    const runner = stubRunner({
+      selectedChunks: [stubChunk("c1")],
+      semanticVectors: [
+        semanticVector({ intentId: "call-17", text: semanticQuery, vector: [0.1, 0.2] }),
+        semanticVector({ intentId: "call-18", text: "invented agent search rewrite", vector: [0.3, 0.4] }),
+      ],
+      rationale: null,
+      trace: emptyTrace(),
+      terminatedReason: "completed",
+      stepsTaken: 2,
+    });
+    const state: StubDeterministicState = {
+      interpretCalls: 0,
+      runWithoutRetrievalCalls: 0,
+      lastRunWithoutRetrievalInput: null,
+    };
+    const service = new AgenticRetrievalPipelineService({
+      deterministic: stubDeterministic(state),
+      runner,
+      promptBuilder: new PromptBuilder(),
+      systemPrompt: "sp",
+    });
+    const request = buildRequest({ query: "what does that cost?" });
+
+    const result = await service.runInterpreted(buildInterpretation(request, {
+      semanticQuery,
+      activeParsedSemanticQuery: semanticQuery,
+      activeRetrievalSubqueries: [{
+        id: "primary",
+        label: semanticQuery,
+        semanticQuery,
+        lexicalQuery: "enterprise plan pricing",
+      }],
+    }));
+
+    expect(result.diagnostics.parsedQuery?.semanticQuery).toBe(semanticQuery);
+    expect(result.diagnostics.retrievalSubqueries).toEqual([
+      expect.objectContaining({ id: "primary", semanticQuery }),
+    ]);
+    expect(result.semanticVectors).toEqual([
+      expect.objectContaining({
+        intentId: "primary",
+        semanticTextHash: semanticHash(semanticQuery),
+        vector: [0.1, 0.2],
+      }),
+    ]);
+  });
+
+  it("maps exact agentic vectors onto the first canonical slot for each distinct subquery", async () => {
+    const first = "SSO setup requirements";
+    const second = "SCIM provisioning requirements";
+    const subqueries = [
+      { id: "subquery_1", label: "SSO", semanticQuery: first, lexicalQuery: "SSO setup" },
+      { id: "subquery_2", label: "Duplicate", semanticQuery: first, lexicalQuery: "SSO docs" },
+      { id: "subquery_3", label: "SCIM", semanticQuery: second, lexicalQuery: "SCIM" },
+    ];
+    const runner = stubRunner({
+      selectedChunks: [],
+      semanticVectors: [
+        semanticVector({ intentId: "call-a", text: second, vector: [0.5, 0.6] }),
+        semanticVector({ intentId: "call-b", text: first, vector: [0.1, 0.2] }),
+      ],
+      rationale: null,
+      trace: emptyTrace(),
+      terminatedReason: "completed",
+      stepsTaken: 2,
+    });
+    const state: StubDeterministicState = {
+      interpretCalls: 0,
+      runWithoutRetrievalCalls: 0,
+      lastRunWithoutRetrievalInput: null,
+    };
+    const service = new AgenticRetrievalPipelineService({
+      deterministic: stubDeterministic(state),
+      runner,
+      promptBuilder: new PromptBuilder(),
+      systemPrompt: "sp",
+    });
+
+    const result = await service.runInterpreted(buildInterpretation(buildRequest(), {
+      semanticQuery: first,
+      activeParsedSemanticQuery: first,
+      activeRetrievalSubqueries: subqueries,
+    }));
+
+    expect(result.diagnostics.retrievalSubqueries).toEqual(subqueries);
+    expect(result.semanticVectors?.map((vector) => vector.intentId)).toEqual([
+      "subquery_3",
+      "subquery_1",
+    ]);
   });
 
   it("uses PromptBuilder to construct systemPrompt and prompt from agent chunks", async () => {

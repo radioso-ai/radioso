@@ -1,5 +1,6 @@
 const meta = {
   deployment: 'Deployment',
+  'content-planning': 'Content planning',
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
   'human-takeover': 'Human takeover',

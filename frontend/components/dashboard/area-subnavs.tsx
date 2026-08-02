@@ -4,6 +4,7 @@ import {
   ArrowDownToLine,
   Boxes,
   Building2,
+  ClipboardList,
   FileText,
   FolderOpen,
   Inbox,
@@ -31,7 +32,13 @@ function useWorkspaceRouteParts() {
 
 export function ActivitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
   const activeTab: ActivitySurfaceTab =
-    routeState.section === 'quality' ? 'quality' : routeState.activityTab === 'all' ? 'all' : 'needs-attention'
+    routeState.section === 'quality'
+      ? 'quality'
+      : routeState.section === 'content-plan'
+        ? 'content-plan'
+        : routeState.activityTab === 'all'
+          ? 'all'
+          : 'needs-attention'
   const href = (target: ActivitySurfaceTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
 
   const groups: SubNavGroup[] = [
@@ -39,6 +46,7 @@ export function ActivitySubNav({ accountId, routeState }: { accountId: string; r
       items: [
         { id: 'needs-attention', label: 'Needs attention', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
         { id: 'all', label: 'All activity', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
+        { id: 'content-plan', label: 'Content plan', icon: ClipboardList, href: href('content-plan'), active: activeTab === 'content-plan' },
         { id: 'quality', label: 'Quality', icon: MessageSquareWarning, href: href('quality'), active: activeTab === 'quality' },
       ],
     },

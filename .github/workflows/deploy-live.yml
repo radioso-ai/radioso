@@ -1,4 +1,4 @@
-name: Deploy Live
+name: Deploy Live (EU)
 
 on:
   workflow_dispatch:
@@ -10,11 +10,11 @@ jobs:
       contents: read
       id-token: write
     with:
-      github_environment: live
-      artifact_repository: radioso-live
-      backend_service: radioso-live-backend
-      crawler_worker_service: radioso-live-crawler-worker
-      frontend_service: radioso-live-frontend
-      worker_service: radioso-live-worker
+      github_environment: live-eu
+      artifact_repository: radioso-live-eu
+      backend_service: radioso-live-eu-backend
+      crawler_worker_service: radioso-live-eu-crawler-worker
+      frontend_service: radioso-live-eu-frontend
+      worker_service: radioso-live-eu-worker
       require_main_branch: true
       radioso_edition: enterprise

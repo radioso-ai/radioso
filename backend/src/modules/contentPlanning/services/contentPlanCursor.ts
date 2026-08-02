@@ -12,6 +12,7 @@ const contentPlanCursorPayloadSchema = z.object({
   asOf: z.string().datetime({ offset: true }),
   view: contentPlanViewSchema,
   rankingVersion: z.literal(1),
+  snapshotFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
   order: z.object({
     activeNoSupportConversationCount: z.number().int().min(0),
     activeDegradedConversationCount: z.number().int().min(0),
@@ -27,6 +28,17 @@ export class ContentPlanCursorError extends AppError {
   constructor() {
     super(400, "bad_request", "Invalid content plan cursor");
     this.name = "ContentPlanCursorError";
+  }
+}
+
+export class ContentPlanCursorStaleError extends AppError {
+  constructor() {
+    super(
+      409,
+      "content_plan_cursor_stale",
+      "Content plan changed while paging; restart from the first page.",
+    );
+    this.name = "ContentPlanCursorStaleError";
   }
 }
 

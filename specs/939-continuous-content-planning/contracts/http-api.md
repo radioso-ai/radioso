@@ -1,8 +1,9 @@
 # HTTP Contract: Continuous Content Planning
 
-All endpoints are session-authenticated, scoped to the active workspace, and require
-`workspace.quality.read`. Unknown, foreign-workspace, retired, and unauthorized topic
-IDs use the same `404` response. Reads do not create audit events.
+All endpoints accept the existing dashboard session or workspace bearer-token flow,
+are scoped to the resolved workspace, and require `workspace.quality.read`. Unknown,
+foreign-workspace, retired, and unauthorized topic IDs use the same `404` response.
+Reads do not create audit events.
 
 ## Shared enums
 
@@ -260,6 +261,7 @@ The opaque list cursor signs/encodes:
   asOf: string
   view: ContentPlanView
   rankingVersion: 1
+  snapshotFingerprint: string
   order: {
     activeNoSupportConversationCount: number
     activeDegradedConversationCount: number
@@ -271,8 +273,10 @@ The opaque list cursor signs/encodes:
 ```
 
 The server rejects malformed, foreign-workspace, wrong-view, expired-generation, or
-unsupported-version cursors as `400`. Generated label/recommendation changes are not
-part of ordering and do not invalidate a cursor.
+unsupported-version cursors as `400`. The fingerprint covers the full presented list
+snapshot, including Quality evidence and generated presentation fields. If that
+snapshot changes between pages, the server returns `409 content_plan_cursor_stale`;
+clients discard the cursor chain and restart from the first page.
 
 ## Error shapes
 
@@ -282,6 +286,7 @@ Existing error envelopes are reused:
 - `401` unauthenticated;
 - `403` missing `workspace.quality.read`;
 - `404` unknown/foreign/retired/expired redirect topic;
+- `409` ranked snapshot changed while paging; restart without a cursor;
 - `500` unexpected read failure.
 
 Provider/enrichment failure is represented in the successful read model and is not an

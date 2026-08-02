@@ -183,6 +183,7 @@ export function TopicDetailPane({
               <DecisionActions
                 action={decision.action}
                 actionState={decision.actionState}
+                briefReady={copyBriefAvailable}
                 onWriteDocument={onWriteDocument}
                 websiteCrawlerEnabled={websiteCrawlerEnabled}
                 onAddDocument={onAddDocument}
@@ -402,6 +403,7 @@ function MetricBlock({ term, value, sub }: { term: string; value: string; sub: s
 function DecisionActions({
   action,
   actionState,
+  briefReady,
   onWriteDocument,
   websiteCrawlerEnabled,
   onAddDocument,
@@ -410,6 +412,7 @@ function DecisionActions({
 }: {
   action: ContentPlanTopicDetail['decision']['action']
   actionState: ContentPlanTopicDetail['decision']['actionState']
+  briefReady: boolean
   onWriteDocument: () => void
   websiteCrawlerEnabled: boolean
   onAddDocument: (action: AddDocumentAction) => void
@@ -422,10 +425,12 @@ function DecisionActions({
   if (action === 'add_content') {
     return (
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" onClick={onWriteDocument}>
-          <Sparkles className="h-3.5 w-3.5" aria-hidden />
-          Write document
-        </Button>
+        {briefReady ? (
+          <Button type="button" size="sm" onClick={onWriteDocument}>
+            <Sparkles className="h-3.5 w-3.5" aria-hidden />
+            Write document
+          </Button>
+        ) : null}
         <AddDocumentMenu
           websiteCrawlerEnabled={websiteCrawlerEnabled}
           onSelect={onAddDocument}

@@ -24,6 +24,7 @@ interface RecommendedNextCardProps {
     onClick: () => void
     kind: 'primary' | 'outline'
     disabled?: boolean
+    opensTopicDetail?: boolean
   }
   onOpenTopic: () => void
 }
@@ -133,10 +134,12 @@ export function RecommendedNextCard({
         >
           {primaryAction.label}
         </Button>
-        <Button type="button" onClick={onOpenTopic} variant="ghost" size="sm">
-          View topic detail
-          <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
-        </Button>
+        {!primaryAction.opensTopicDetail ? (
+          <Button type="button" onClick={onOpenTopic} variant="ghost" size="sm">
+            View topic detail
+            <ArrowRight className="ml-1 h-3.5 w-3.5" aria-hidden />
+          </Button>
+        ) : null}
       </div>
 
       <p className="mt-3 text-xs text-muted-foreground">

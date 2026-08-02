@@ -719,6 +719,51 @@ test.describe("Content plan", () => {
     await expect(paginationError).toHaveCount(0);
   });
 
+  test("restarts from the first page when the ranked cursor snapshot becomes stale", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    let firstPageRequests = 0;
+    let snapshotStale = false;
+    await page.route("**/backend/api/v1/quality/content-plan**", async (route) => {
+      const url = new URL(route.request().url());
+      if (!url.pathname.endsWith("/quality/content-plan")) {
+        await route.continue();
+        return;
+      }
+      if (url.searchParams.get("cursor") === "cursor-2") {
+        snapshotStale = true;
+        await route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            error: {
+              code: "content_plan_cursor_stale",
+              message: "Content plan changed while paging; restart from the first page.",
+            },
+          }),
+        });
+        return;
+      }
+      firstPageRequests += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(!snapshotStale
+          ? opportunitiesPage({ items: [topicA()], nextCursor: "cursor-2" })
+          : opportunitiesPage({ items: [topicB()], recommendedTopicId: TOPIC_B_ID, nextCursor: null })),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await page.getByRole("button", { name: "Load more topics" }).click();
+
+    await expect(page.locator("[data-content-plan-topic-row]", { hasText: "Password reset" }))
+      .toBeVisible();
+    await expect(page.locator("[data-content-plan-topic-row]", { hasText: "Refund policy" }))
+      .toHaveCount(0);
+    expect(firstPageRequests).toBeGreaterThanOrEqual(2);
+  });
+
   test("ignores a delayed cursor response after switching topic views", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
@@ -1647,13 +1692,15 @@ test.describe("Content plan", () => {
     await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
     const recommendedCard = page.locator('section[aria-labelledby="content-plan-recommended-next"]');
     await expect(recommendedCard).toContainText("Brief unavailable");
-    await expect(recommendedCard.getByRole("button", { name: "Write document" })).toBeVisible();
+    await expect(recommendedCard.getByRole("button", { name: "Write document" })).toHaveCount(0);
+    await expect(recommendedCard.getByRole("button", { name: "View topic detail" })).toBeVisible();
     await expect(page.locator("[data-content-plan-topic-row]").first()).toContainText("Brief unavailable");
 
     const detail = page.getByLabel("Selected topic detail");
     await expect(detail.getByText("Add content — action ready")).toBeVisible();
     await expect(detail.getByText("Brief unavailable.")).toBeVisible();
-    await expect(detail.getByRole("button", { name: "Write document" })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Write document" })).toHaveCount(0);
+    await expect(detail.getByRole("button", { name: "Add", exact: true })).toBeVisible();
     await expect(detail.getByRole("button", { name: "Copy brief" })).toHaveCount(0);
     await expect(detail.getByRole("heading", { name: "Questions the content should answer" }))
       .toHaveCount(0);

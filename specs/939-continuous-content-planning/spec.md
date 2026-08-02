@@ -416,13 +416,20 @@ change, deleted evidence, and a fully caught-up healthy state.
   embeddings; the UI MUST distinguish bootstrap progress from a complete report.
 - **FR-022**: A change to the active embedding space MUST start bounded reprojection,
   MUST NOT compare incompatible vectors, and MUST retain the last coherent projection
-  until the replacement reaches a safe handoff state.
+  until the replacement reaches a safe handoff state. Before promotion, target topics
+  MUST be matched to the prior coherent generation only through shared observation
+  memberships. An unambiguous one-to-one match carries the prior public ID; a
+  many-to-one merge keeps its new survivor and creates in-target redirects for the old
+  IDs; a split or otherwise ambiguous match keeps new IDs without guessing.
 - **FR-076**: A provisional topic with no live observations after window expiry,
   retention, or privacy deletion MUST retire and stop appearing in reads. Its former
-  identifier MUST use the same not-found behavior as an unknown topic.
+  identifier MUST use the same not-found behavior as an unknown topic, and the retired
+  row MUST NOT retain a centroid, representative IDs, generated prose, or related
+  document evidence.
 - **FR-077**: A merged topic redirect MUST resolve transitively to the current
   surviving topic with cycle protection. Redirect state MUST be retained for at least
-  90 days so links created during the current and comparison windows remain useful.
+  90 days so links created during the current and comparison windows remain useful,
+  including after an embedding-space promotion.
 - **FR-078**: Historical bootstrap and embedding-space reprojection MUST use versioned
   per-workspace request-rate and spend budgets. Exhausting a budget MUST pause safely,
   expose processed/total progress and a typed `budget_paused` state, and resume later
@@ -638,8 +645,9 @@ change, deleted evidence, and a fully caught-up healthy state.
 
 ### API Direction
 
-The first release adds three session-authenticated, workspace-scoped reads protected
-by `workspace.quality.read`. The Content Planning module owns their services even
+The first release adds three workspace-scoped reads using the existing dashboard
+session or workspace bearer-token flow, protected by `workspace.quality.read`. The
+Content Planning module owns their services even
 though they share the existing `/quality` authorization namespace:
 
 ```text

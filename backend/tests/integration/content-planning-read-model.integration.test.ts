@@ -45,6 +45,7 @@ interface Fixture {
   expiredMergedTopicId: string;
   retiredTopicId: string;
   opportunityAssistantMessageIds: string[];
+  healthyAssistantMessageId: string;
 }
 
 class CountingDb {
@@ -201,7 +202,7 @@ describeIfDatabase("Content Planning read model", () => {
     );
   });
 
-  it("freezes asOf and ordering in the signed cursor while ignoring enrichment-only changes", async () => {
+  it("freezes asOf and ordering in the signed cursor while ignoring changes after the frozen window", async () => {
     const { service } = createService();
     const delayedConversationId = randomUUID();
     const delayedUserMessageId = randomUUID();
@@ -272,12 +273,6 @@ describeIfDatabase("Content Planning read model", () => {
       [fixture.workspaceId, fixture.generationId, delayedTopicId, new Date(AS_OF.getTime() + 1_000)],
     );
 
-    await database.query(
-      `UPDATE content_plan_topic_enrichments
-       SET label = 'Enterprise access updated', updated_at = NOW()
-       WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
-      [fixture.workspaceId, fixture.generationId, fixture.opportunityTopicId],
-    );
     await database.execute(
       `INSERT INTO content_plan_topic_memberships (
          workspace_id, generation_id, observation_id, topic_id,
@@ -309,6 +304,45 @@ describeIfDatabase("Content Planning read model", () => {
       cursor: first.nextCursor!,
       limit: 1,
     })).rejects.toThrow(/content plan cursor/i);
+  });
+
+  it("invalidates a page cursor when Quality evidence changes the ranked snapshot", async () => {
+    const { service } = createService();
+    const first = await service.list(fixture.workspaceId, {
+      view: "all_interests",
+      limit: 1,
+    });
+    expect(first.nextCursor).not.toBeNull();
+
+    try {
+      await database.execute(
+        `UPDATE messages
+         SET grounding_verdict = 'no_support',
+             grounding_claim_count = 1,
+             grounding_sourced_claim_count = 0,
+             grounding_unsourced_claim_count = 1,
+             grounding_invalid_source_count = 0
+         WHERE workspace_id = $1 AND id = $2`,
+        [fixture.workspaceId, fixture.healthyAssistantMessageId],
+      );
+
+      await expect(service.list(fixture.workspaceId, {
+        view: "all_interests",
+        cursor: first.nextCursor!,
+        limit: 1,
+      })).rejects.toThrow(/changed while paging/i);
+    } finally {
+      await database.execute(
+        `UPDATE messages
+         SET grounding_verdict = 'grounded',
+             grounding_claim_count = 1,
+             grounding_sourced_claim_count = 1,
+             grounding_unsourced_claim_count = 0,
+             grounding_invalid_source_count = 0
+         WHERE workspace_id = $1 AND id = $2`,
+        [fixture.workspaceId, fixture.healthyAssistantMessageId],
+      );
+    }
   });
 
   it("resolves live merged IDs canonically and keeps foreign, retired, and expired IDs indistinguishable", async () => {
@@ -803,5 +837,6 @@ const seedFixture = async (database: Database): Promise<Fixture> => {
     expiredMergedTopicId,
     retiredTopicId,
     opportunityAssistantMessageIds: [turns.gapOne!.assistantId, turns.gapTwo!.assistantId],
+    healthyAssistantMessageId: turns.healthy!.assistantId,
   };
 };

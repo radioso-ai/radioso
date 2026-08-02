@@ -301,8 +301,14 @@ test("activity drawer continues a conversation in test chat", async ({ page }) =
   };
 
   await seedDashboardStorage(page);
-  const platformSettings = basePlatformSettings();
-  platformSettings.assistant.assistantBootstrapActive = false;
+  const baseSettings = basePlatformSettings();
+  const platformSettings = {
+    ...baseSettings,
+    assistant: {
+      ...baseSettings.assistant,
+      assistantBootstrapActive: false,
+    },
+  };
   await installDashboardApiMocks(page, {
     platformSettings,
     historyList,

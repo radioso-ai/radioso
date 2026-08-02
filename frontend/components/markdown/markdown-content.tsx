@@ -20,7 +20,7 @@ const SAFE_LINK_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
 type HastElement = NonNullable<ExtraProps['node']>
 type ElementContent = HastElement['children'][number]
 
-export const isSafeHref = (href?: string) => {
+export const isSafeHref = (href?: string): href is string => {
   if (!href) {
     return false
   }
@@ -36,6 +36,13 @@ export const isSafeHref = (href?: string) => {
     return false
   }
 }
+
+// Answers often carry several links in one paragraph, so a full-strength rule
+// under each one stripes the text. A hairline at 30% of the link colour keeps
+// the underline as a non-colour affordance (WCAG 1.4.1) without the weight, and
+// hover restores it to full strength.
+export const MESSAGE_LINK_CLASS =
+  'text-[var(--message-link-fg,var(--color-primary))] underline decoration-current/30 decoration-1 underline-offset-2 transition-colors hover:text-[var(--message-link-hover-fg,var(--color-primary))] hover:decoration-current'
 
 const SAFE_IMAGE_PROTOCOLS = new Set(['http:', 'https:'])
 
@@ -177,10 +184,7 @@ const MarkdownLink = ({
       onClick={() => {
         onLinkClick?.(outboundHref)
       }}
-      className={cn(
-        'text-[var(--message-link-fg,var(--color-primary))] underline underline-offset-4 hover:text-[var(--message-link-hover-fg,var(--color-primary))]',
-        className,
-      )}
+      className={cn(MESSAGE_LINK_CLASS, className)}
     >
       {children}
     </a>

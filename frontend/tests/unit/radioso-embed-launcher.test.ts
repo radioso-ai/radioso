@@ -168,7 +168,7 @@ describe('radioso embed launcher', () => {
       getItem: vi.fn(() => null),
       setItem: vi.fn(),
     }
-    const fetch = vi.fn(async () => ({
+    const fetch = vi.fn<(input: unknown, init?: RequestInit) => Promise<unknown>>(async () => ({
       ok: true,
       json: async () => ({
         launcherLabel: 'Server label',

@@ -1,22 +1,5 @@
-import type { RoutineInputBinding } from "./domain.js";
-
-export const resolveSkillArguments = (
-  inputBindings: Record<string, RoutineInputBinding> | undefined,
-  variables: Record<string, unknown>,
-  contextValues: Record<string, unknown> = {},
-): Record<string, unknown> => {
-  const collected: Record<string, unknown> = {};
-  for (const [inputKey, binding] of Object.entries(inputBindings ?? {})) {
-    if (binding.kind === "literal") {
-      collected[inputKey] = binding.value;
-      continue;
-    }
-    const value = binding.kind === "variableRef"
-      ? variables[binding.ref]
-      : contextValues[binding.contextVariable];
-    if (value !== undefined) {
-      collected[inputKey] = value;
-    }
-  }
-  return collected;
-};
+// Routine skill argument resolution is generic (literal / routine variable / turn
+// context variable) and is owned by the shared conversation defaults package, so the
+// backend and standalone kit hosts resolve authored bindings identically. This module
+// stays as the routines-module entry point backend callers already import.
+export { resolveSkillArguments } from "./domain.js";

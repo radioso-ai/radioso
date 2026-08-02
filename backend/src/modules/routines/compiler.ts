@@ -229,19 +229,19 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
           },
         }
       : {}),
+    activation: {
+      triggerDescription: definition.activation.triggerDescription,
+      ...(definition.activation.gateRef ? { gateRef: definition.activation.gateRef } : {}),
+      priority: definition.activation.priority,
+      // Default keeps definitions authored before reentry modes existed suppressing
+      // on completion (the historical, safe behaviour).
+      reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
+    },
     metadata: {
       definitionId: definition.id,
       agentId: definition.agentId,
       name: definition.name,
       version: definition.version,
-      activation: {
-        triggerDescription: definition.activation.triggerDescription,
-        gateRef: definition.activation.gateRef,
-        priority: definition.activation.priority,
-        // Default keeps definitions authored before reentry modes existed suppressing
-        // on completion (the historical, safe behaviour).
-        reentryMode: definition.activation.reentryMode ?? "once_per_conversation",
-      },
       slotSchema: slots,
     },
   };

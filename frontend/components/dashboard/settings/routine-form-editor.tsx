@@ -39,6 +39,12 @@ import {
   createTerminalForm,
   createTransitionForm,
   diagnosticsForTarget,
+  draftApprovalOptionTransitionId,
+  draftNodeIds,
+  draftSlotKey,
+  draftStepId,
+  draftTerminalId,
+  draftTransitionId,
   type RoutineFormState,
   type RoutineStepForm,
 } from '@/lib/routine-form'
@@ -171,7 +177,11 @@ function ApprovalStepOptions({
             Add choice
           </Button>
         </div>
-        {step.options.map((option, optionIndex) => (
+        {step.options.map((option, optionIndex) => {
+          // The option's branch is a synthesized transition, so its diagnostics arrive
+          // under that edge's location; render them on the row that authors the branch.
+          const optionTransitionId = draftApprovalOptionTransitionId(step, stepIndex, option)
+          return (
           <div key={`${step.stableStepId}-option-${optionIndex}`} className="grid gap-2 rounded-md border border-border p-2 sm:grid-cols-[1fr_140px_150px_auto]">
             <Input
               aria-label={`Step ${stepIndex + 1} option ${optionIndex + 1} label`}
@@ -217,12 +227,20 @@ function ApprovalStepOptions({
               onChange={(event) => updateOption(optionIndex, { description: event.target.value })}
               className="sm:col-span-4"
             />
+            {optionTransitionId ? (
+              <div className="sm:col-span-4">
+                <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, {
+                  scope: 'transition',
+                  id: optionTransitionId,
+                })} />
+              </div>
+            ) : null}
           </div>
-        ))}
+          )
+        })}
         {step.options.length < 2 ? (
           <p className="text-xs text-muted-foreground">Add at least two choices the person can pick from.</p>
         ) : null}
-        <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: step.stableStepId })} />
       </div>
 
       <div className="space-y-1">
@@ -263,6 +281,9 @@ export function RoutineFormEditor({
   onChange: (updater: (current: RoutineFormState) => RoutineFormState) => void
 }) {
   const instructionRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  // Diagnostics name draft ids, and a step id may itself contain dots, so resolving a
+  // `step:<id>.inputBindings.<key>` location back to its step needs the declared ids.
+  const nodeIds = useMemo(() => draftNodeIds(form), [form])
   const completionExportPayloadPreview = useMemo(
     () => buildCompletionExportPayloadPreview(form),
     [form],
@@ -352,7 +373,7 @@ export function RoutineFormEditor({
               </Button>
             </div>
             <div className="sm:col-span-4">
-              <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'slot', id: slot.key })} />
+              <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'slot', id: draftSlotKey(slot, index) })} />
             </div>
           </div>
         ))}
@@ -465,7 +486,7 @@ export function RoutineFormEditor({
                 rows={3}
               />
             </div>
-            <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: step.stableStepId })} />
+            <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: draftStepId(step, stepIndex) }, nodeIds)} />
 
             {step.kind === 'approval' ? (
               <ApprovalStepOptions
@@ -586,7 +607,7 @@ export function RoutineFormEditor({
                   <div className="sm:col-span-4">
                     <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, {
                       scope: 'transition',
-                      id: `${transition.fromStep}->${transition.toRef}`,
+                      id: draftTransitionId(step, transition),
                     })} />
                   </div>
                 </div>
@@ -637,7 +658,9 @@ export function RoutineFormEditor({
               <Trash2 className="h-4 w-4" />
             </Button>
             <div className="sm:col-span-4">
-              <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'terminal', id: terminal.stableStepId })} />
+              {/* Terminals share the step id namespace in the producer grammar, so their
+                  diagnostics arrive as `step:<terminalId>`. */}
+              <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, { scope: 'step', id: draftTerminalId(terminal, index) }, nodeIds)} />
             </div>
           </div>
         ))}
@@ -719,8 +742,8 @@ export function RoutineFormEditor({
                 </div>
               </div>
               <RoutineDiagnosticList diagnostics={diagnosticsForTarget(diagnostics, {
-                scope: 'routine',
-                id: 'completionExport.destinationRef',
+                scope: 'completionExport',
+                id: 'destinationRef',
               })} />
             </div>
             <div className="space-y-2">

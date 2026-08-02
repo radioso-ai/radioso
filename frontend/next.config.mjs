@@ -138,15 +138,21 @@ const nextConfig = {
       devBuildContext.worktree,
     NEXT_PUBLIC_MCP_URL: resolvePublicMcpUrl(),
   },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   experimental: {
     externalDir: true,
   },
   allowedDevOrigins: ["127.0.0.1"],
   images: {
     unoptimized: true,
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "platform.radioso.dev" }],
+        destination: "https://app.radioso.ai/:path*",
+      },
+    ];
   },
   async headers() {
     return [

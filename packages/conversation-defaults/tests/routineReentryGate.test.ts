@@ -1,14 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationModelGateway, Routine, RoutineState, TurnContext } from "@radioso/conversation-contract";
+import type {
+  ConversationModelGateway,
+  Routine,
+  RoutineReentryMode,
+  RoutineState,
+  TurnContext,
+} from "@radioso/conversation-contract";
 import { RoutineReentryGate } from "../src/index.js";
 
-const routine = (reentryMode: string): Routine => ({
+const routine = (reentryMode: RoutineReentryMode): Routine => ({
   id: "routine_qualify",
   rootStepId: "ask",
   steps: [],
   transitions: [],
-  metadata: { activation: { reentryMode, triggerDescription: "Qualify a prospect." } },
+  activation: { reentryMode, triggerDescription: "Qualify a prospect.", priority: 0 },
 });
 
 const completedState: RoutineState = {
@@ -33,7 +39,7 @@ const gateway = (text: string): ConversationModelGateway => ({ complete: vi.fn(a
 describe("RoutineReentryGate", () => {
   it("suppresses without a model call when the routine is not in semantic mode", async () => {
     const gw = gateway("{}");
-    for (const mode of ["once_per_conversation", "always"]) {
+    for (const mode of ["once_per_conversation", "always"] as const) {
       const decision = await new RoutineReentryGate([routine(mode)], gw).decide({ turn, completedState });
       expect(decision).toEqual({ kind: "suppress" });
     }

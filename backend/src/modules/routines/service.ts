@@ -4,8 +4,7 @@ import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { AuditEventInput, AuditPort } from "../audit/contracts/index.js";
-import type { AgentContextVariableEnablement } from "../context-variables/public.js";
-import { BUILT_IN_CONTEXT_VARIABLES } from "../context-variables/public.js";
+import { resolveAvailableContextVariables, type AgentContextVariableEnablement } from "../context-variables/public.js";
 import type { SkillAuthoringCatalog } from "../skills/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -424,17 +423,7 @@ export class RoutineDefinitionService {
         ...additionalNames,
       ]),
       skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
-      availableContextVariables: new Map([
-        ...BUILT_IN_CONTEXT_VARIABLES.map((variable) => [variable.name, { valueType: variable.valueType }] as const),
-        ...contextVariables
-          .filter((enablement): enablement is AgentContextVariableEnablement & { variable: NonNullable<AgentContextVariableEnablement["variable"]> } =>
-            enablement.enabled && enablement.variable !== undefined
-          )
-          .map((enablement) => [
-            enablement.variable.name,
-            { valueType: enablement.variable.valueType },
-          ] as const),
-      ]),
+      availableContextVariables: resolveAvailableContextVariables(contextVariables),
     });
   }
 

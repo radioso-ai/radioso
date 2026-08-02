@@ -1,5 +1,7 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
 import { STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
+import { findMarkdownSplitBoundaries } from "../../../shared/text/markdownSplitBoundary.js";
+import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type {
   AnswerSegment,
   ChatCitation,
@@ -7,6 +9,8 @@ import type {
   NormalizedPresentedAnswer,
   PresentedAnswer,
 } from "../contracts/answerTypes.js";
+
+export type AnswerPresentationMetrics = Pick<MetricsRegistry, "incrementCounter">;
 
 export const remapAnswerSegmentsToCitationEvidence = (
   answerSegments: AnswerSegment[],
@@ -85,6 +89,8 @@ const addMissingPunctuationAfterTerminalMarkdownLinks = (text: string): string =
 };
 
 export class AnswerPresentationService {
+  constructor(private readonly metrics?: AnswerPresentationMetrics | null) {}
+
   normalize(input: {
     answer: string;
     citations: CitationEvidence[];
@@ -176,10 +182,56 @@ export class AnswerPresentationService {
       return resolvedIndices;
     };
 
-    for (const anchorGroup of anchorGroups) {
-      currentText += stripResidualCitationSyntax(answer.slice(lastIndex, anchorGroup.start));
+    // Each segment is rendered through its own markdown pass downstream, so a boundary that
+    // falls inside a markdown construct would break the render on both sides. The anchor
+    // spans themselves are declared non-content so `[[1]]` is never read as a link label.
+    const splitBoundaries = anchorGroups.length > 0
+      ? findMarkdownSplitBoundaries(
+        answer,
+        anchorGroups.map((group) => ({ start: group.start, end: group.end })),
+      )
+      : undefined;
 
-      const citationIndices = resolveCitationIndices(anchorGroup.resultNumbers);
+    for (let groupIndex = 0; groupIndex < anchorGroups.length; groupIndex += 1) {
+      const anchorGroup = anchorGroups[groupIndex]!;
+      const { offset: splitOffset, relocatedPast } =
+        splitBoundaries?.resolve(anchorGroup.start) ?? { offset: anchorGroup.start };
+
+      // An indivisible construct can hold more than one anchor. Those claims cannot get
+      // their own boundaries, so they share this segment and its citation marker.
+      const absorbedGroups = [anchorGroup];
+      while (
+        groupIndex + 1 < anchorGroups.length &&
+        anchorGroups[groupIndex + 1]!.start < splitOffset
+      ) {
+        groupIndex += 1;
+        absorbedGroups.push(anchorGroups[groupIndex]!);
+      }
+
+      const lastAbsorbedGroup = absorbedGroups.at(-1)!;
+      const remainderStart = Math.max(splitOffset, lastAbsorbedGroup.end);
+
+      // Text between the anchors and the safe boundary belongs to the claim being closed,
+      // so it joins this segment rather than opening the next one.
+      let anchoredSpan = answer.slice(lastIndex, anchorGroup.start);
+      for (const [position, group] of absorbedGroups.entries()) {
+        const nextStart = absorbedGroups[position + 1]?.start ?? remainderStart;
+        anchoredSpan += answer.slice(group.end, Math.max(group.end, nextStart));
+      }
+      currentText += stripResidualCitationSyntax(anchoredSpan);
+
+      if (relocatedPast) {
+        this.metrics?.incrementCounter("chat_citation_anchor_split_relocations_total", {
+          help:
+            "Citation anchor boundaries moved because the model placed the anchor inside a markdown construct.",
+          labels: { construct: relocatedPast },
+        });
+      }
+
+      const citationIndices = resolveCitationIndices(
+        absorbedGroups.flatMap((group) => group.resultNumbers),
+      );
+      const explicitlyUnsourced = absorbedGroups.every((group) => group.explicitlyUnsourced);
       const match = currentText.match(/^(.*?)(\s*)$/s);
       const coreText = match?.[1] ?? currentText;
       let trailingWhitespace = match?.[2] ?? "";
@@ -190,11 +242,11 @@ export class AnswerPresentationService {
       // the anchor spans a line break and the text after it opens with sentence
       // punctuation, drop the break so the punctuation rejoins the claim. Scoped to the
       // anchor seam — newlines elsewhere in the answer are never touched.
-      if (/\n/.test(trailingWhitespace) && STRANDABLE_PUNCTUATION.test(answer.slice(anchorGroup.end))) {
+      if (/\n/.test(trailingWhitespace) && STRANDABLE_PUNCTUATION.test(answer.slice(remainderStart))) {
         trailingWhitespace = "";
       }
 
-      if (anchorGroup.explicitlyUnsourced && coreText.length > 0) {
+      if (explicitlyUnsourced && coreText.length > 0) {
         pushSegment(coreText);
         currentText = trailingWhitespace;
       } else if (citationIndices.length > 0 && coreText.length > 0) {
@@ -204,7 +256,7 @@ export class AnswerPresentationService {
         currentText = `${coreText}${trailingWhitespace}`;
       }
 
-      lastIndex = anchorGroup.end;
+      lastIndex = remainderStart;
     }
 
     currentText += stripResidualCitationSyntax(answer.slice(lastIndex));

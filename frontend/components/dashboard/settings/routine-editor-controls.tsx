@@ -15,8 +15,10 @@ export function RoutineDiagnosticList({ diagnostics }: { diagnostics: RoutineVal
   if (diagnostics.length === 0) return null
   return (
     <div className="space-y-1" role="status">
-      {diagnostics.map((diagnostic) => (
-        <p key={`${diagnostic.location}-${diagnostic.code}`} className="text-xs text-destructive">
+      {/* One location+code pair can legitimately repeat (e.g. two unreachable options on
+          one approval step), so the index keeps the keys unique. */}
+      {diagnostics.map((diagnostic, index) => (
+        <p key={`${diagnostic.location}-${diagnostic.code}-${index}`} className="text-xs text-destructive">
           {diagnostic.message}
         </p>
       ))}

@@ -194,6 +194,20 @@ export interface DirectiveCoherenceChecker {
   check(input: DirectiveCoherenceCheckInput): Promise<DirectiveCoherenceVerdict>;
 }
 
+export type DirectiveCoherenceMode = "enforce";
+
+export interface DirectiveCoherenceGateOptions {
+  enabled?: boolean;
+  mode?: DirectiveCoherenceMode;
+  checker?: DirectiveCoherenceChecker;
+  promptTemplate?: string;
+}
+
+export interface DirectiveCoherenceGate {
+  mode: DirectiveCoherenceMode;
+  checker: DirectiveCoherenceChecker;
+}
+
 export interface DirectiveCatalogRegistryPort {
   list(): Directive[];
 }

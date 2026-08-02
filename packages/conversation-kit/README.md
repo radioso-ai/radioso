@@ -221,6 +221,12 @@ explicit signal, an LLM intent check, etc.; activation logic lives in your code,
 not the engine). Once a routine is active the engine resumes it across turns until
 it reaches a terminal step.
 
+`routineStore`, `routineSelector`, `routineRenderer`, and `routineRunner` are all
+replaceable ports. The default store is in memory, so a host that runs across
+processes supplies a durable `routineStore` to preserve active state; that store
+also owns routine expiry and TTL. The selector and renderer feed the default runner.
+When you supply `routineRunner`, it owns its routine list instead.
+
 ```ts
 import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";
 

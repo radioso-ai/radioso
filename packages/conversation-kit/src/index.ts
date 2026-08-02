@@ -41,14 +41,16 @@ export {
   DirectiveCoherenceError,
   ModelDirectiveCoherenceChecker,
   type CreateDirectiveCoherenceCheckerOptions,
-  type DirectiveCoherenceCheckInput,
-  type DirectiveCoherenceChecker,
-  type DirectiveCoherenceConflict,
-  type DirectiveCoherenceGate,
-  type DirectiveCoherenceGateOptions,
-  type DirectiveCoherenceMode,
-  type DirectiveCoherenceVerdict,
 } from "@radioso/conversation-defaults";
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceMode,
+  DirectiveCoherenceVerdict,
+} from "@radioso/conversation-contract";
 export {
   createDefaultConversationDirectiveMatcher,
   createDefaultConversationSkillDispatcher,

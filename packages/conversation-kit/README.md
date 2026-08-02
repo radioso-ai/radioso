@@ -227,6 +227,10 @@ processes supplies a durable `routineStore` to preserve active state; that store
 also owns routine expiry and TTL. The selector and renderer feed the default runner.
 When you supply `routineRunner`, it owns its routine list instead.
 
+The kit also accepts optional engine capability ports for steering, turn interpretation,
+retrieval work, routine reentry and slot correction, and clarification. A host enables
+one by supplying its implementation; leaving it out keeps that capability off.
+
 ```ts
 import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";
 

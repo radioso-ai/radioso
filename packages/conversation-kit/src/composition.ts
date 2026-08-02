@@ -1,14 +1,20 @@
 import type {
   ConversationAgentConfig,
+  ConversationClarificationStore,
+  ConversationClarifier,
   ConversationDirectiveMatcher,
   ConversationEngine,
   ConversationEvent,
   ConversationInputEvent,
   ConversationModelGateway,
+  ConversationRetrievalWorkPort,
+  ConversationRoutineReentryGate,
   ConversationRoutineNextStepSelector,
   ConversationRoutineRunner,
+  ConversationRoutineSlotCorrection,
   ConversationRoutineStepRenderer,
   ConversationRoutineStore,
+  ConversationTurnInterpreter,
   ConversationRoutineSkillDispatcher,
   ConversationSkillInputResolver,
   ConversationSkillDispatcher,
@@ -21,6 +27,7 @@ import type {
   ProcessTurnResult,
   Routine,
   SkillDefinition,
+  SteeringResolver,
 } from "@radioso/conversation-contract";
 import {
   createConversationSkillInputResolver,
@@ -113,6 +120,17 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
    * supplied runner is built once, owns its routine list, and is not rebuilt.
    */
   routineRunner?: ConversationRoutineRunner;
+  /**
+   * Optional engine capabilities the host opts into by supplying an implementation.
+   * Omitting any capability leaves it off.
+   */
+  steeringResolver?: SteeringResolver;
+  turnInterpreter?: ConversationTurnInterpreter;
+  retrievalWork?: ConversationRetrievalWorkPort;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
   authoringStore?: ConversationKitAuthoringStore;
   skills?: SkillDefinition[];
   localSkills?: LocalSkillRegistry;
@@ -241,6 +259,13 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         routineStore,
         routineRunner,
         ...(routineActivator ? { routineActivator } : {}),
+        ...(options.steeringResolver ? { steeringResolver: options.steeringResolver } : {}),
+        ...(options.turnInterpreter ? { turnInterpreter: options.turnInterpreter } : {}),
+        ...(options.retrievalWork ? { retrievalWork: options.retrievalWork } : {}),
+        ...(options.routineReentryGate ? { routineReentryGate: options.routineReentryGate } : {}),
+        ...(options.routineSlotCorrection ? { routineSlotCorrection: options.routineSlotCorrection } : {}),
+        ...(options.clarifier ? { clarifier: options.clarifier } : {}),
+        ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
       });
     },
     listEvents(sessionId) {

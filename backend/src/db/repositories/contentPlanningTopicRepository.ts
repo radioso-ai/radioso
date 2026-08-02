@@ -1,3 +1,5 @@
+import { CompiledQuery } from "kysely";
+
 import type {
   ContentPlanNearestTopic,
   ContentPlanNewTopicInput,
@@ -9,7 +11,10 @@ import type {
   ContentPlanTopicRedirectResult,
   ContentPlanTopicRepositoryPort,
 } from "../../modules/contentPlanning/contracts/persistence.js";
-import { MAX_CONTENT_PLAN_REDIRECT_HOPS } from "../../modules/contentPlanning/contracts/persistence.js";
+import {
+  MAX_CONTENT_PLAN_REDIRECT_HOPS,
+  MAX_CONTENT_PLAN_SOURCE_HYDRATION,
+} from "../../modules/contentPlanning/contracts/persistence.js";
 import {
   currentTimestamp,
   pgVectorAverage,
@@ -297,7 +302,7 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
     if (topicIds.length === 0) return [];
     const topics = await this.db
       .selectFrom("content_plan_topics")
-      .select(["id", "representative_observation_ids"])
+      .select("id")
       .where("workspace_id", "=", input.workspaceId)
       .where("generation_id", "=", input.generationId)
       .where("id", "in", topicIds)
@@ -305,22 +310,57 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
       .execute();
     const foundTopicIds = topics.map((topic) => topic.id);
     if (foundTopicIds.length === 0) return [];
-    const representativeIds = [...new Set(topics.flatMap((topic) => topic.representative_observation_ids))];
-    const representativeRows = representativeIds.length === 0
-      ? []
-      : await this.db
-          .selectFrom("content_plan_topic_memberships as membership")
-          .innerJoin("content_plan_observation_vectors as vector", (join) => join
-            .onRef("vector.workspace_id", "=", "membership.workspace_id")
-            .onRef("vector.generation_id", "=", "membership.generation_id")
-            .onRef("vector.observation_id", "=", "membership.observation_id"))
-          .select(["membership.topic_id", "membership.observation_id", "vector.embedding"])
-          .where("membership.workspace_id", "=", input.workspaceId)
-          .where("membership.generation_id", "=", input.generationId)
-          .where("membership.topic_id", "in", foundTopicIds)
-          .where("membership.observation_id", "in", representativeIds)
-          .where("vector.embedding", "is not", null)
-          .execute();
+    const representativeRows = (await this.db.executeQuery<{
+      topic_id: string;
+      observation_id: string;
+      embedding: string;
+    }>(CompiledQuery.raw(
+      `SELECT topic_id, observation_id, embedding
+       FROM (
+         SELECT
+           membership.topic_id,
+           membership.observation_id,
+           vector.embedding,
+           ROW_NUMBER() OVER (
+             PARTITION BY membership.topic_id
+             ORDER BY
+               CASE
+                 WHEN membership.observation_id = ANY(topic.representative_observation_ids)
+                   THEN 0
+                 ELSE 1
+               END,
+               CASE
+                 WHEN membership.observation_id = ANY(topic.representative_observation_ids)
+                   THEN array_position(topic.representative_observation_ids, membership.observation_id)
+                 ELSE NULL
+               END,
+               membership.cohesion DESC,
+               membership.assigned_at ASC,
+               membership.observation_id ASC
+           ) AS representative_rank
+         FROM content_plan_topic_memberships membership
+         JOIN content_plan_observation_vectors vector
+           ON vector.workspace_id = membership.workspace_id
+          AND vector.generation_id = membership.generation_id
+          AND vector.observation_id = membership.observation_id
+         JOIN content_plan_topics topic
+           ON topic.workspace_id = membership.workspace_id
+          AND topic.generation_id = membership.generation_id
+          AND topic.id = membership.topic_id
+         WHERE membership.workspace_id = $1
+           AND membership.generation_id = $2
+           AND membership.topic_id = ANY($3::uuid[])
+           AND vector.embedding IS NOT NULL
+       ) ranked
+       WHERE representative_rank <= $4
+       ORDER BY topic_id, representative_rank`,
+      [
+        input.workspaceId,
+        input.generationId,
+        foundTopicIds,
+        MAX_CONTENT_PLAN_SOURCE_HYDRATION,
+      ],
+    ))).rows;
     const aggregateRows = await this.db
       .selectFrom("content_plan_topic_memberships as membership")
       .innerJoin("content_plan_observation_vectors as vector", (join) => join
@@ -361,10 +401,10 @@ export class ContentPlanTopicRepository implements ContentPlanTopicRepositoryPor
         liveCentroid: aggregate?.live_centroid ? parsePgVector(aggregate.live_centroid) : null,
         liveObservationCount: Number(aggregate?.live_observation_count ?? 0),
         liveConversationCount: Number(aggregate?.live_conversation_count ?? 0),
-        representativeVectors: topic.representative_observation_ids.flatMap((observationId) => {
-          const embedding = vectors.get(observationId);
-          return embedding ? [{ observationId, embedding }] : [];
-        }),
+        representativeVectors: [...vectors].map(([observationId, embedding]) => ({
+          observationId,
+          embedding,
+        })),
       }];
     });
   }

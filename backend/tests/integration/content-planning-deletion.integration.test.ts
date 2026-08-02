@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ContentPlanEnrichmentRepository } from "../../src/db/repositories/contentPlanningEnrichmentRepository.js";
+import { ContentPlanCorpusInvalidationRepository } from "../../src/db/repositories/contentPlanningCorpusInvalidationRepository.js";
 import { ContentPlanObservationRepository } from "../../src/db/repositories/contentPlanningObservationRepository.js";
 import { ContentPlanTopicRepository } from "../../src/db/repositories/contentPlanningTopicRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -44,6 +45,7 @@ describeIfDatabase("content-planning deletion and retention", () => {
   let observations: ContentPlanObservationRepository;
   let topics: ContentPlanTopicRepository;
   let enrichments: ContentPlanEnrichmentRepository;
+  let corpusInvalidations: ContentPlanCorpusInvalidationRepository;
   const accountIds: string[] = [];
 
   const createFixture = async (suffix: string): Promise<DeletionFixture> => {
@@ -208,6 +210,7 @@ describeIfDatabase("content-planning deletion and retention", () => {
     observations = new ContentPlanObservationRepository(database.kysely);
     topics = new ContentPlanTopicRepository(database.kysely);
     enrichments = new ContentPlanEnrichmentRepository(database.kysely);
+    corpusInvalidations = new ContentPlanCorpusInvalidationRepository(database.kysely);
   });
 
   afterAll(async () => {
@@ -410,11 +413,11 @@ describeIfDatabase("content-planning deletion and retention", () => {
        ) VALUES ($1, $2, $3, $4, 2, 0.9)`,
       [fixture.workspaceId, fixture.generationId, survivorTopicId, documentId],
     );
-    await expect(enrichments.invalidateDocumentEvidence({
+    await expect(corpusInvalidations.invalidateDeletedDocument({
       workspaceId: fixture.workspaceId,
       documentId,
       dirtyAt: new Date("2026-03-31T00:00:00Z"),
-    })).resolves.toEqual([survivorTopicId]);
+    })).resolves.toBe(1);
     await database.execute("DELETE FROM documents WHERE workspace_id = $1 AND id = $2", [fixture.workspaceId, documentId]);
     await expect(database.queryOne<{ state: string; corpus_state: string }>(
       `SELECT state, corpus_state FROM content_plan_topic_enrichments

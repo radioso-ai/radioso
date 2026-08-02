@@ -132,6 +132,46 @@ CREATE INDEX idx_content_plan_projection_states_work
   ON content_plan_projection_states (projection_state, updated_at)
   WHERE projection_state <> 'ready';
 
+-- Historical bootstrap/reprojection scans read an immutable generation-owned
+-- membership snapshot. Source wording remains message-owned and cascades out
+-- when a source turn is deleted.
+CREATE TABLE content_plan_projection_population_snapshots (
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  generation_id UUID NOT NULL,
+  assistant_message_id UUID NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (workspace_id, generation_id, assistant_message_id),
+  CONSTRAINT content_plan_population_snapshot_generation_fk
+    FOREIGN KEY (workspace_id, generation_id)
+    REFERENCES content_plan_projection_generations(workspace_id, id)
+    ON DELETE CASCADE,
+  CONSTRAINT content_plan_population_snapshot_message_fk
+    FOREIGN KEY (workspace_id, assistant_message_id)
+    REFERENCES messages(workspace_id, id)
+    ON DELETE CASCADE
+);
+
+CREATE INDEX idx_content_plan_population_snapshot_page
+  ON content_plan_projection_population_snapshots (
+    workspace_id, generation_id, created_at, assistant_message_id
+  );
+
+-- Document publication only advances this workspace marker. The worker fans
+-- credible topics out in bounded batches, and a newer publication resets the
+-- cursor under this row's lock so no topic can be skipped.
+CREATE TABLE content_plan_corpus_invalidations (
+  workspace_id UUID PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  revision BIGINT NOT NULL DEFAULT 1 CHECK (revision > 0),
+  dirty_at TIMESTAMPTZ NOT NULL,
+  after_generation_id UUID,
+  after_topic_id UUID,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (
+    (after_generation_id IS NULL AND after_topic_id IS NULL)
+    OR (after_generation_id IS NOT NULL AND after_topic_id IS NOT NULL)
+  )
+);
+
 CREATE TABLE content_plan_observations (
   id UUID PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -540,7 +580,7 @@ AS $$
 DECLARE
   current_revision INTEGER;
 BEGIN
-  IF NEW.state <> 'ready' THEN
+  IF NEW.state NOT IN ('ready', 'outside_analysis_cap') THEN
     RETURN NEW;
   END IF;
 
@@ -572,25 +612,14 @@ BEGIN
   IF NEW.revision IS DISTINCT FROM OLD.revision THEN
     UPDATE content_plan_topic_enrichments
     SET
-      -- Every aggregate revision fences stale in-flight output. Only a scheduler-owned
-      -- material dirty-time change makes the last coherent published evidence stale.
-      state = CASE
-        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND state = 'ready'
-          THEN 'stale'
-        ELSE state
-      END,
-      corpus_state = CASE
-        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND corpus_state = 'ready'
-          THEN 'stale'
-        ELSE corpus_state
-      END,
       claim_token = NULL,
       claim_expires_at = NULL,
       updated_at = NOW()
     WHERE workspace_id = NEW.workspace_id
       AND generation_id = NEW.generation_id
       AND topic_id = NEW.id
-      AND source_topic_revision <> NEW.revision;
+      AND source_topic_revision <> NEW.revision
+      AND claim_token IS NOT NULL;
   END IF;
   RETURN NEW;
 END;
@@ -600,6 +629,19 @@ CREATE TRIGGER content_plan_topic_revision_stales_enrichment
 AFTER UPDATE OF revision ON content_plan_topics
 FOR EACH ROW
 EXECUTE FUNCTION stale_content_plan_enrichment_on_topic_revision();
+
+CREATE TABLE content_plan_enrichment_repair_cursors (
+  workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  generation_id UUID NOT NULL,
+  after_topic_id UUID,
+  version INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (workspace_id, generation_id),
+  CONSTRAINT content_plan_enrichment_repair_generation_fk
+    FOREIGN KEY (workspace_id, generation_id)
+    REFERENCES content_plan_projection_generations(workspace_id, id)
+    ON DELETE CASCADE
+);
 
 CREATE TABLE content_plan_topic_documents (
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

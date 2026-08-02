@@ -48,19 +48,15 @@ describe("ContentPlanProjectionOrchestrator observability", () => {
       findProjectionState: vi.fn(async () => state),
       findGeneration: vi.fn(async () => target),
       claimProjectionLease: vi.fn(async () => ({ ...state, leaseToken: "lease_1" })),
-      initializeTargetProgress: vi.fn(async () => ({
-        ...state,
-        bootstrapProcessed: "0",
-        bootstrapTotal: "7",
-      })),
     };
     const orchestrator = new ContentPlanProjectionOrchestrator({
       projections: projections as never,
-      population: {
-        countPopulation: vi.fn(async () => 7),
-        listPopulationPage: vi.fn(),
+      discovery: {
+        capturePopulationSnapshot: vi.fn(async () => ({ total: 7 })),
+        listPopulationSnapshotPage: vi.fn(),
+        reconcilePopulationSnapshotProgress: vi.fn(),
+        commitPage: vi.fn(),
       },
-      discovery: { commitPage: vi.fn() },
       historicalTurns: { preparePage: vi.fn() },
       budget: { reserve: vi.fn(), refresh: vi.fn(async () => ({ kind: "granted" as const })) },
       observability: { record },
@@ -94,8 +90,12 @@ describe("ContentPlanProjectionOrchestrator observability", () => {
       projections: {
         findProjectionState: vi.fn(async () => { throw new Error("private visitor question"); }),
       } as never,
-      population: { countPopulation: vi.fn(), listPopulationPage: vi.fn() },
-      discovery: { commitPage: vi.fn() },
+      discovery: {
+        capturePopulationSnapshot: vi.fn(),
+        listPopulationSnapshotPage: vi.fn(),
+        reconcilePopulationSnapshotProgress: vi.fn(),
+        commitPage: vi.fn(),
+      },
       historicalTurns: { preparePage: vi.fn() },
       budget: { reserve: vi.fn() } as never,
       observability: { record },

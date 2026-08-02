@@ -117,6 +117,11 @@ implements ContentPlanningProjectionCandidateSourcePort {
               OR enrichment_work.claim_expires_at <= ${input.now}
             )
         )
+        OR EXISTS (
+          SELECT 1
+          FROM content_plan_corpus_invalidations AS corpus_invalidation
+          WHERE corpus_invalidation.workspace_id = workspace.id
+        )
       `);
     if (input.afterWorkspaceId) {
       query = query.where("workspace.id", ">", input.afterWorkspaceId);

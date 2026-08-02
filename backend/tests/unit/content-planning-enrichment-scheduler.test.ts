@@ -33,6 +33,7 @@ const topic = (
     corpusEvidenceFingerprint: "corpus_v2",
   },
   lastEnriched: {
+    sourceTopicRevision: 3,
     ...{
       memberCount: 4,
       groundedCount: 1,
@@ -82,7 +83,10 @@ describe("Content Planning enrichment scheduling", () => {
 
   it("debounces every material label job and caps generated briefs to the top ten credible topics", async () => {
     const queue = vi.fn(async () => true);
-    const scheduler = new ContentPlanningEnrichmentScheduler({ queue });
+    const scheduler = new ContentPlanningEnrichmentScheduler({
+      queue,
+      rebasePublished: vi.fn(async () => true),
+    });
     const now = new Date("2026-08-02T12:00:00.000Z");
     const topics = [
       ...Array.from({ length: 12 }, (_, index) => topic(index + 1)),
@@ -121,7 +125,10 @@ describe("Content Planning enrichment scheduling", () => {
 
   it("schedules both sides of a top-ten rank transition without an evidence change", async () => {
     const queue = vi.fn(async () => true);
-    const scheduler = new ContentPlanningEnrichmentScheduler({ queue });
+    const scheduler = new ContentPlanningEnrichmentScheduler({
+      queue,
+      rebasePublished: vi.fn(async () => true),
+    });
     const unchangedInCap = Array.from({ length: 9 }, (_, index) => topic(index + 1, {
       lastEnriched: publishedSnapshot(index + 1, "label_and_brief", "ready"),
     }));
@@ -154,7 +161,10 @@ describe("Content Planning enrichment scheduling", () => {
 
   it("schedules removal of a generated brief when an opportunity ceases to be credible", async () => {
     const queue = vi.fn(async () => true);
-    const scheduler = new ContentPlanningEnrichmentScheduler({ queue });
+    const scheduler = new ContentPlanningEnrichmentScheduler({
+      queue,
+      rebasePublished: vi.fn(async () => true),
+    });
     const candidate = topic(1, {
       current: { ...topic(1).current, credibleOpportunity: false },
       lastEnriched: publishedSnapshot(1, "label_and_brief", "ready"),
@@ -175,9 +185,43 @@ describe("Content Planning enrichment scheduling", () => {
     expect(queue).toHaveBeenCalledOnce();
   });
 
+  it("rebases a published enrichment to a non-material topic revision without provider work", async () => {
+    const queue = vi.fn(async () => true);
+    const rebasePublished = vi.fn(async () => true);
+    const scheduler = new ContentPlanningEnrichmentScheduler({ queue, rebasePublished });
+    const candidate = topic(1, {
+      topicRevision: 4,
+      current: { ...topic(1).current, memberCount: 5 },
+      lastEnriched: {
+        ...publishedSnapshot(1, "label_and_brief", "ready"),
+        sourceTopicRevision: 3,
+        memberCount: 4,
+      },
+    });
+
+    const result = await scheduler.schedule({
+      topics: [candidate],
+      now: new Date("2026-08-02T12:00:00.000Z"),
+    });
+
+    expect(result).toMatchObject({ queuedCount: 0, rebasedCount: 1, failedCount: 0 });
+    expect(queue).not.toHaveBeenCalled();
+    expect(rebasePublished).toHaveBeenCalledWith(expect.objectContaining({
+      topicId: "topic_01",
+      sourceTopicRevision: 4,
+      sourceEvidence: expect.objectContaining({ memberCount: 5 }),
+      evidenceStrength: "medium",
+      analysisMode: "label_and_brief",
+      recommendationState: "ready",
+    }));
+  });
+
   it("continues a batch when a newer revision rejects one queue request", async () => {
     const queue = vi.fn(async (input: { topicId: string }) => input.topicId !== "topic_02");
-    const scheduler = new ContentPlanningEnrichmentScheduler({ queue });
+    const scheduler = new ContentPlanningEnrichmentScheduler({
+      queue,
+      rebasePublished: vi.fn(async () => true),
+    });
 
     const result = await scheduler.schedule({
       topics: [topic(1), topic(2), topic(3)],
@@ -435,6 +479,7 @@ const publishedSnapshot = (
   analysisMode: "label_and_brief" | "label_only",
   recommendationState: "ready" | "outside_analysis_cap",
 ): NonNullable<ContentPlanEnrichmentSchedulingTopic["lastEnriched"]> => ({
+  sourceTopicRevision: 3,
   ...topic(index).current,
   analysisMode,
   recommendationState,

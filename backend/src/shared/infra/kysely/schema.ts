@@ -324,6 +324,23 @@ export interface ConnectorWhatsappMessageLog {
   workspace_id: string;
 }
 
+export interface ContentPlanCorpusInvalidations {
+  after_generation_id: string | null;
+  after_topic_id: string | null;
+  dirty_at: Timestamp;
+  revision: Generated<Int8>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanEnrichmentRepairCursors {
+  after_topic_id: string | null;
+  generation_id: string;
+  updated_at: Generated<Timestamp>;
+  version: Generated<number>;
+  workspace_id: string;
+}
+
 export interface ContentPlanObservations {
   conversation_id: string;
   created_at: Generated<Timestamp>;
@@ -378,6 +395,13 @@ export interface ContentPlanProjectionGenerations {
   policy_version: number;
   state: string;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface ContentPlanProjectionPopulationSnapshots {
+  assistant_message_id: string;
+  created_at: Timestamp;
+  generation_id: string;
   workspace_id: string;
 }
 
@@ -1257,9 +1281,12 @@ export interface DB {
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
+  content_plan_corpus_invalidations: ContentPlanCorpusInvalidations;
+  content_plan_enrichment_repair_cursors: ContentPlanEnrichmentRepairCursors;
   content_plan_observation_vectors: ContentPlanObservationVectors;
   content_plan_observations: ContentPlanObservations;
   content_plan_projection_generations: ContentPlanProjectionGenerations;
+  content_plan_projection_population_snapshots: ContentPlanProjectionPopulationSnapshots;
   content_plan_projection_states: ContentPlanProjectionStates;
   content_plan_topic_documents: ContentPlanTopicDocuments;
   content_plan_topic_enrichments: ContentPlanTopicEnrichments;

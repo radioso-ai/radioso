@@ -1,5 +1,9 @@
 import { CompiledQuery } from "kysely";
 
+import {
+  bindQualityContentPlanningSqlParam as bindParam,
+  buildQualityContentPlanningPopulationSql,
+} from "../../quality/public.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   ContentPlanCorpusState,
@@ -110,12 +114,14 @@ export interface ContentPlanReadSourcePort {
     generationId: string,
     topicId: string,
   ): Promise<ContentPlanTopicRedirectNode[]>;
-  listTopicAssistantMessageIds(
+  pageTopicAssistantMessageIds(
     workspaceId: string,
     generationId: string,
     topicId: string,
     window: ContentPlanWindow,
-  ): Promise<string[]>;
+    page: number,
+    pageSize: number,
+  ): Promise<{ assistantMessageIds: string[]; total: number }>;
 }
 
 type ProjectionRow = {
@@ -197,7 +203,8 @@ type RedirectRow = {
 };
 
 type AssistantMessageRow = {
-  source_assistant_message_id: string;
+  assistant_message_id: string | null;
+  total: number | string;
 };
 
 export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort {
@@ -242,6 +249,7 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
              AND (
                pending_enrichment.topic_id IS NULL
                OR pending_enrichment.state IN ('pending', 'stale')
+               OR pending_enrichment.source_topic_revision <> pending_topic.revision
              )
          ), 0) AS pending_enrichment_topic_count
        FROM content_plan_projection_states ps
@@ -311,8 +319,9 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
           AND enrichment.topic_id = topic.id
          WHERE topic.workspace_id = $1
            AND topic.generation_id = $2
+           AND topic.created_at < $3::timestamptz
          ORDER BY topic.id ASC`,
-        [workspaceId, generationId],
+        [workspaceId, generationId, window.to],
       )),
       this.db.executeQuery<ObservationRow>(CompiledQuery.raw(
         `SELECT
@@ -341,6 +350,7 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
            ON membership.workspace_id = observation.workspace_id
           AND membership.generation_id = $2
           AND membership.observation_id = observation.id
+          AND membership.assigned_at < $4::timestamptz
          LEFT JOIN content_plan_topics topic
            ON topic.workspace_id = membership.workspace_id
           AND topic.generation_id = membership.generation_id
@@ -440,29 +450,67 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
     }));
   }
 
-  async listTopicAssistantMessageIds(
+  async pageTopicAssistantMessageIds(
     workspaceId: string,
     generationId: string,
     topicId: string,
     window: ContentPlanWindow,
-  ): Promise<string[]> {
+    page: number,
+    pageSize: number,
+  ): Promise<{ assistantMessageIds: string[]; total: number }> {
+    if (!Number.isSafeInteger(page) || page < 1) {
+      throw new RangeError("Content planning member page must be a positive integer");
+    }
+    if (!Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new RangeError("Content planning member page size must be between 1 and 100");
+    }
+    const params: unknown[] = [];
+    const population = buildQualityContentPlanningPopulationSql({ workspaceId }, params);
+    const generationParam = bindParam(params, generationId);
+    const topicParam = bindParam(params, topicId);
+    const fromParam = bindParam(params, window.from);
+    const toParam = bindParam(params, window.to);
+    const limitParam = bindParam(params, pageSize);
+    const offsetParam = bindParam(params, (page - 1) * pageSize);
     const result = await this.db.executeQuery<AssistantMessageRow>(CompiledQuery.raw(
-      `SELECT observation.source_assistant_message_id
-       FROM content_plan_topic_memberships membership
-       JOIN content_plan_observations observation
-         ON observation.workspace_id = membership.workspace_id
-        AND observation.id = membership.observation_id
-       WHERE membership.workspace_id = $1
-         AND membership.generation_id = $2
-         AND membership.topic_id = $3
-         AND observation.observation_state = 'ready'
-         AND observation.observed_at >= $4::timestamptz
-         AND observation.observed_at < $5::timestamptz
-       GROUP BY observation.source_assistant_message_id
-       ORDER BY MAX(observation.observed_at) DESC, observation.source_assistant_message_id DESC`,
-      [workspaceId, generationId, topicId, window.from, window.to],
+      `WITH eligible_member_turns AS (
+         SELECT
+           m.id AS assistant_message_id,
+           MAX(observation.observed_at) AS observed_at
+         ${population.source}
+         JOIN content_plan_observations observation
+           ON observation.workspace_id = m.workspace_id
+          AND observation.source_assistant_message_id = m.id
+         JOIN content_plan_topic_memberships membership
+           ON membership.workspace_id = observation.workspace_id
+          AND membership.observation_id = observation.id
+         WHERE ${population.filters.join("\n           AND ")}
+           AND membership.generation_id = ${generationParam}::uuid
+           AND membership.topic_id = ${topicParam}::uuid
+           AND membership.assigned_at < ${toParam}::timestamptz
+           AND observation.observation_state = 'ready'
+           AND observation.observed_at >= ${fromParam}::timestamptz
+           AND observation.observed_at < ${toParam}::timestamptz
+         GROUP BY m.id
+       ), totals AS (
+         SELECT COUNT(*) AS total FROM eligible_member_turns
+       )
+       SELECT page.assistant_message_id, totals.total
+       FROM totals
+       LEFT JOIN LATERAL (
+         SELECT assistant_message_id
+         FROM eligible_member_turns
+         ORDER BY observed_at DESC, assistant_message_id DESC
+         LIMIT ${limitParam}
+         OFFSET ${offsetParam}
+       ) page ON TRUE`,
+      params,
     ));
-    return result.rows.map((row) => row.source_assistant_message_id);
+    return {
+      assistantMessageIds: result.rows.flatMap((row) =>
+        row.assistant_message_id === null ? [] : [row.assistant_message_id]),
+      total: Number(result.rows[0]?.total ?? 0),
+    };
   }
 }
 

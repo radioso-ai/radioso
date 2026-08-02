@@ -8,6 +8,7 @@ import {
   ExternalLink,
   MessageSquareText,
   Sparkles,
+  X,
 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
@@ -124,9 +125,31 @@ export function TopicDetailPane({
               Topic detail
             </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            As of {formatAsOfTimestamp(detail.asOf)}
-          </p>
+          <div className="flex items-center gap-1">
+            <p className="text-xs text-muted-foreground">
+              As of {formatAsOfTimestamp(detail.asOf)}
+            </p>
+            {isNarrow && (backHref || onBack) ? (
+              backHref ? (
+                <Button asChild variant="ghost" size="icon" className="hidden h-8 w-8 xl:inline-flex">
+                  <Link href={backHref} aria-label="Close topic detail">
+                    <X className="h-4 w-4" aria-hidden />
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="hidden h-8 w-8 xl:inline-flex"
+                  aria-label="Close topic detail"
+                  onClick={onBack}
+                >
+                  <X className="h-4 w-4" aria-hidden />
+                </Button>
+              )
+            ) : null}
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0">

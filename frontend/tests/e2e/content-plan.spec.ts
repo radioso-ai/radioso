@@ -574,6 +574,23 @@ test.describe("Content plan", () => {
       .toBeGreaterThanOrEqual(2);
   });
 
+  test("desktop topic detail has an explicit close action", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await page.locator("[data-content-plan-topic-row]", { hasText: "Refund policy" }).click();
+    await expect(page.getByLabel("Selected topic detail")).toBeVisible();
+
+    await page.getByRole("link", { name: "Close topic detail" }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/content-plan$`));
+    await expect(page.getByLabel("Selected topic detail")).toHaveCount(0);
+    await expect(page.getByLabel("Content plan list")).toBeVisible();
+  });
+
   test("falls back to the first topic row when the saved return topic is filtered out", async ({ page }) => {
     let topicBFilteredOut = false;
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1524,6 +1541,64 @@ test.describe("Content plan", () => {
     await emerging.getByRole("button", { name: "Open source conversation" }).click();
     await expect(page.getByRole("dialog").locator(`[data-message-id="${ASSISTANT_MESSAGE_ID}"]`))
       .toBeVisible();
+  });
+
+  test("explains where a topic went when it matures outside the opportunities filter", async ({ page }) => {
+    let matured = false;
+    const monitoredTopic = {
+      ...topicB(),
+      id: TOPIC_MERGED_OLD_ID,
+      label: "Ram Dass identity and background",
+      demand: {
+        ...topicB().demand,
+        currentQuestionCount: 2,
+        currentConversationCount: 2,
+      },
+      grounding: grounded({ grounded: 1, degraded: 1, no_support: 0, not_evaluated: 0 }),
+    };
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: (view) => {
+        if (!matured) {
+          return opportunitiesPage({
+            items: [],
+            recommendedTopicId: null,
+            emerging: [{ ...emergingItem(), question: "Who is Ram Dass?" }],
+            summary: {
+              ...buildBasePage().summary,
+              questionCount: 1,
+              matureTopicCount: 0,
+              emergingQuestionCount: 1,
+              opportunityCount: 0,
+            },
+          });
+        }
+        return opportunitiesPage({
+          items: view === "all_interests" ? [monitoredTopic] : [],
+          recommendedTopicId: null,
+          emerging: [],
+          summary: {
+            ...buildBasePage().summary,
+            questionCount: 2,
+            matureTopicCount: 1,
+            emergingQuestionCount: 0,
+            opportunityCount: 0,
+          },
+        });
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await expect(page.getByText("Who is Ram Dass?")).toBeVisible();
+
+    matured = true;
+    await page.reload();
+
+    await expect(page.getByText("1 mature topic is in All interests")).toBeVisible();
+    await expect(page.getByText("Who is Ram Dass?")).toHaveCount(0);
+    await page.getByRole("link", { name: "View all interests" }).click();
+    await expect(page.getByText("Ram Dass identity and background")).toBeVisible();
   });
 
   test("keyboard-only navigation moves through topic rows and activates the detail", async ({ page }) => {

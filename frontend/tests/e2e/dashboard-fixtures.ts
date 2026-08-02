@@ -54,6 +54,11 @@ export type McpConnectionFixture = {
   createdAt: string;
   updatedAt: string;
 };
+export type DiscoveredMcpToolFixture = {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
+};
 export type McpConverseGrantFixture = {
   id: string;
   label: string | null;
@@ -793,6 +798,7 @@ export const installDashboardApiMocks = async (
     usageTrends?: unknown;
     qualityStats?: unknown;
     mcpConnections?: McpConnectionFixture[];
+    mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
     mcpConverseGrants?: McpConverseGrantFixture[];
     mcpConverseGrantRequests?: Array<{ method: "GET" | "POST" | "DELETE"; path: string; body?: unknown }>;
@@ -898,6 +904,7 @@ export const installDashboardApiMocks = async (
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
+  const mcpDiscoveredTools = options.mcpDiscoveredTools ?? [];
   const mcpConnectionRequests = options.mcpConnectionRequests;
   let nextMcpConnectionIndex = mcpConnections.length + 1;
   let mcpConverseGrants = options.mcpConverseGrants ?? [];
@@ -2238,6 +2245,12 @@ export const installDashboardApiMocks = async (
       };
       mcpConnections.unshift(connection);
       await json(route, connection, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-connections\/[^/]+\/discover$/.test(path)) {
+      mcpConnectionRequests?.push(`POST ${path}`);
+      await json(route, { tools: mcpDiscoveredTools });
       return;
     }
 

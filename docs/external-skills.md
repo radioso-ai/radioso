@@ -1,7 +1,7 @@
 ---
 title: "External Skills via MCP"
 description: "Configuration of external MCP server connections and unified named skill definitions for agent routines with encrypted credential storage."
-last_updated: 2026-06-23
+last_updated: 2026-08-02
 ---
 
 # External Skills via MCP
@@ -78,14 +78,15 @@ exists:
 
 1. Pick the **MCP tool** tile.
 2. Pick the connected MCP server as the target.
-3. Enter the tool name. When discovery is available, inputs come from the tool's
-   own schema.
+3. Choose one of the tools published by that server. Radioso discovers the list
+   from the selected connection and turns the chosen tool's input schema into
+   routine inputs.
 4. Give the skill a name. The name is a lower-case identifier (for example
    `handoff_slack`) and must be unique within the agent.
 
-Required tool inputs are exposed to the routine by default. Open **Advanced** to
-bind fixed values, include optional inputs, change invocation behavior, or edit
-declared outcomes.
+Required tool inputs are exposed to the routine by default. Open **Routine
+integration** to bind fixed values, include optional inputs, or edit declared
+outcomes. Use **Advanced** to change invocation behavior.
 
 The skill is validated against the tool before it is saved: the tool must still
 exist, and the tool's required inputs must each be bound or exposed.

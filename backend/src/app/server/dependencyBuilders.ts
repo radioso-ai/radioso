@@ -1177,7 +1177,7 @@ export const buildChatServices = (input: {
     input.logger,
     input.metricsRegistry,
   );
-  const answerPresentationService = new AnswerPresentationService();
+  const answerPresentationService = new AnswerPresentationService(input.metricsRegistry);
   const answerPresentation = {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
     present: answerPresentationService.present.bind(answerPresentationService),
@@ -1922,6 +1922,7 @@ export const buildChatServices = (input: {
     usageLimitPolicy: input.usageLimitPolicy,
     auditService: input.auditService,
     directiveSteering,
+    metrics: input.metricsRegistry,
   });
   const workbenchReplayRunner = new WorkbenchReplayRunner({
     retrievalTurn,

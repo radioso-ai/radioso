@@ -12,6 +12,21 @@ const textContent = (html: string) =>
     .replace(/&#x27;/g, "'")
     .replace(/&quot;/g, '"')
 
+// The citation cluster must render inside the block it annotates. If it escapes,
+// it lands right after that block's closing tag and drops onto its own line.
+const ESCAPED_CITATION_CLUSTER = /<\/(?:p|ul|ol)>\s*<span class="whitespace-nowrap">/
+
+// The visible block structure a reader perceives — one entry per rendered paragraph.
+const paragraphTexts = (html: string) =>
+  [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map(([, inner]) =>
+    inner.replace(/<[^>]+>/g, '').replace(/⁠/g, '').replace(/\s+/g, ' ').trim(),
+  )
+
+const listItemTexts = (html: string) =>
+  [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map(([, inner]) =>
+    inner.replace(/<[^>]+>/g, '').replace(/⁠/g, '').replace(/\s+/g, ' ').trim(),
+  )
+
 describe('AssistantMessageContent', () => {
   it('keeps citation markers attached to markdown-rendered segments', async () => {
     const html = renderToStaticMarkup(
@@ -149,8 +164,8 @@ describe('AssistantMessageContent', () => {
     expect(html).toContain('<p')
     expect(html).toContain('href="https://example.com"')
     expect(html).toContain('Second paragraph')
-    expect(html).toMatch(/Second paragraph[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/p>/)
-    expect(html).not.toContain('</p><button')
+    expect(html).toMatch(/Second paragraph[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/span><\/p>/)
+    expect(html).not.toMatch(ESCAPED_CITATION_CLUSTER)
   })
 
   it('keeps citation markers inside the final list item of cited block segments', async () => {
@@ -174,8 +189,8 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
-    expect(html).not.toContain('</ul><button')
+    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/span><\/li>\s*<\/ul>/)
+    expect(html).not.toMatch(ESCAPED_CITATION_CLUSTER)
   })
 
   it('keeps citation markers inside cited list-item segments with trailing whitespace', async () => {
@@ -199,8 +214,8 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toMatch(/lack\.[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
-    expect(html).not.toContain('</ul><button')
+    expect(html).toMatch(/lack\.[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/span><\/li>\s*<\/ul>/)
+    expect(html).not.toMatch(ESCAPED_CITATION_CLUSTER)
   })
 
   it('renders every marker from routine-retrieval segments split across bullets and links', async () => {
@@ -268,8 +283,8 @@ describe('AssistantMessageContent', () => {
       />,
     )
 
-    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/li>\s*<\/ul>/)
-    expect(html).not.toContain('</ul><button')
+    expect(html).toMatch(/Advanced techniques[\s\S]*data-citation-index="1"[\s\S]*<\/button><\/span><\/li>\s*<\/ul>/)
+    expect(html).not.toMatch(ESCAPED_CITATION_CLUSTER)
   })
 
   it('renders a collapsed Sources disclosure with the unique source count', async () => {
@@ -389,6 +404,246 @@ describe('AssistantMessageContent', () => {
     // The leading "." on the second segment should not render as <p>.</p>
     expect(html).not.toMatch(/<p[^>]*>\s*\.\s*<\/p>/)
     expect(html).toContain('Her story')
+  })
+
+  it('binds the markers and their sentence punctuation into one unbreakable cluster', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+        ]}
+        answerSegments={[
+          { text: 'the Italian version is [Calendario corsi](https://example.com)', citationIndices: [0, 1] },
+          { text: '. We also have the broader calendar' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // Both markers and the period share one nowrap span, so none of them can wrap
+    // away from "corsi" and open the next line on their own.
+    const cluster = html.match(/<span class="whitespace-nowrap">[\s\S]*?<\/span>(?!<\/button>)/)?.[0] ?? ''
+    expect(cluster).toContain('data-citation-index="1"')
+    expect(cluster).toContain('data-citation-index="2"')
+    expect(cluster.endsWith('.</span>')).toBe(true)
+    // U+2060 WORD JOINER glues the cluster to the preceding word.
+    expect(cluster).toMatch(/^<span class="whitespace-nowrap">⁠/)
+    // The separator space stays outside the span so the next word can still wrap.
+    expect(html).toContain('.</span> ')
+    expect(cluster).not.toMatch(/\s<\/span>$/)
+  })
+
+  // Radioso answers in any language, so the clause terminator that follows a marker
+  // is not always a Latin full stop. Whatever the script, it belongs on the marker's
+  // line — never opening the next block.
+  it.each([
+    ['Latin', 'The calendar is here', '.', ' We also run retreats.'],
+    ['Chinese', '课程日历在这里', '。', '我们还举办静修。'],
+    ['Japanese', 'コース日程はこちら', '。', 'リトリートもあります。'],
+    ['Arabic', 'تقويم الدورات هنا', '؟', ' لدينا أيضا خلوات.'],
+    ['Devanagari', 'पाठ्यक्रम कैलेंडर यहाँ है', '।', ' हम रिट्रीट भी चलाते हैं।'],
+    ['Ethiopic', 'የኮርስ የቀን መቁጠሪያ እዚህ አለ', '።', ' ሪትሪትም እናደርጋለን።'],
+  ])('keeps the %s clause terminator on the marker line', async (_script, prose, terminator, tail) => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: prose, citationIndices: [0] },
+          { text: terminator + tail },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain(`${terminator}</span>`)
+    expect(html).not.toMatch(new RegExp(`<p[^>]*>\\s*\\${terminator}`))
+  })
+
+  // A mid-sentence anchor leaves the rest of the sentence in its own segment. That
+  // remainder continues the same line, so it must not open a block of its own.
+  it('keeps the uncited remainder of a sentence on the cited line', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: '\n\nWe also have the broader [Events Calendar](https://example.com)', citationIndices: [0] },
+          { text: ' for Europe.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(paragraphTexts(html)).toEqual(['We also have the broader Events Calendar1 for Europe.'])
+  })
+
+  it('pulls a cited segment’s leading run back onto the previous line', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+        ]}
+        answerSegments={[
+          { text: 'コース日程は **重要なお知らせ**', citationIndices: [0] },
+          { text: ' です。\n\n詳しくは [イベント日程](https://example.com)', citationIndices: [1] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    // "です。" closes the first sentence, so it stays with marker 1; the paragraph
+    // break still starts a genuine second block.
+    expect(paragraphTexts(html)).toEqual(['詳しくは イベント日程2'])
+    expect(html).toContain('です。')
+    expect(html.indexOf('です。')).toBeLessThan(html.indexOf('詳しくは'))
+  })
+
+  it('leaves a remainder that opens a new paragraph as its own block', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: '\n\nThe calendar is published', citationIndices: [0] },
+          { text: ' each spring.\n\nBooking is open.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(paragraphTexts(html)).toEqual([
+      'The calendar is published1 each spring.',
+      'Booking is open.',
+    ])
+  })
+
+  // Absorbed text renders as raw characters after the marker, so anything markdown
+  // would style must stay in its own segment and keep its own markdown pass.
+  it('does not absorb a remainder containing inline markdown', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: '\n\nThe calendar is published', citationIndices: [0] },
+          { text: ' every **spring**.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('<strong')
+    expect(html).not.toContain('**spring**')
+  })
+
+  // Absorbed runs render as raw characters, so anything remark-gfm would have turned
+  // into a link has to stay in its own segment and keep its markdown pass.
+  it('does not absorb a remainder containing a bare URL', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'See details', citationIndices: [0] },
+          { text: ' at https://example.com for dates.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('href="https://example.com"')
+  })
+
+  it('does not absorb a remainder containing a bare email address', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'Ask the office', citationIndices: [0] },
+          { text: ' at info@example.com for dates.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('href="mailto:info@example.com"')
+  })
+
+  it('does not absorb a remainder containing a character reference', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: 'The course runs', citationIndices: [0] },
+          { text: ' for R&amp;D teams.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('R&amp;D teams.')
+    expect(html).not.toContain('&amp;amp;')
+  })
+
+  // An ordered-list segment renders through a dedicated branch. Anything redistribution
+  // moved onto it must reach that branch too, or the prose is silently deleted.
+  it('keeps a continuation absorbed onto an ordered-list item', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: '1. Event runs from 9', citationIndices: [0] },
+          { text: ' to 5.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(listItemTexts(html)).toEqual(['Event runs from 91 to 5.'])
+  })
+
+  it('keeps punctuation absorbed onto an ordered-list item', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' }]}
+        answerSegments={[
+          { text: '1. Event runs all day', citationIndices: [0] },
+          { text: '.' },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(listItemTexts(html)).toEqual(['Event runs all day1.'])
+  })
+
+  it('never absorbs a cited inline continuation, which would drop its marker', async () => {
+    const html = renderToStaticMarkup(
+      <AssistantMessageContent
+        content="unused"
+        citations={[
+          { documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source 1' },
+          { documentId: 'doc-2', chunkId: 'chunk-2', title: 'Source 2' },
+        ]}
+        answerSegments={[
+          { text: 'The calendar is published', citationIndices: [0] },
+          { text: ' and the Italian one too', citationIndices: [1] },
+        ]}
+        onOpenDocument={async () => 'opened'}
+      />,
+    )
+
+    expect(html).toContain('data-citation-index="1"')
+    expect(html).toContain('data-citation-index="2"')
   })
 
   it('absorbs a punctuation+paragraph-break segment between cited segments', async () => {

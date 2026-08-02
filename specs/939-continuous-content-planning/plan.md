@@ -21,7 +21,7 @@ flows.
 
 **Language/Version**: TypeScript 5.7/5.9 on Node.js 24; React 19 / Next.js 16
 **Primary Dependencies**: Express, Zod, Kysely, PostgreSQL `pgvector`, OpenAI/provider adapters, Radix UI, Lucide
-**Storage**: PostgreSQL 16; migration `134_content_planning.sql` with source observations, per-space vectors, projection generations, topics, memberships, enrichments, and topic-document evidence
+**Storage**: PostgreSQL 16; migration `134_content_planning.sql` with source observations, per-space vectors, projection generations, frozen replay populations, topics, memberships, enrichments, topic-document evidence, and bounded corpus/enrichment repair cursors
 **Testing**: Vitest, Supertest, real-Postgres integration tests, deterministic multilingual clustering fixture, Playwright
 **Target Platform**: Self-hosted Linux API/document worker and modern desktop/mobile browsers
 **Project Type**: pnpm web monorepo with backend, dashboard, reusable conversation packages, SDK, MCP generated types, and docs portal
@@ -160,11 +160,16 @@ contracts/packages, feature artifacts, generated API outputs, and integration.
 - **Persistence/Integration Layer**: Kysely repositories own observations, per-space
   vectors, projection state, topics/memberships, revision-fenced enrichments, and
   topic-document links. pgvector/claim SQL lives in typed Kysely helpers. Provider
-  adapters expose clustering embeddings and validated structured generation. Source
-  message text is loaded only through authorized/bounded source reads.
+  adapters expose clustering embeddings and validated structured generation. Frozen
+  generation-owned population rows make bootstrap/reprojection coherent while source
+  deletion still cascades immediately. Workspace corpus markers and generation repair
+  cursors turn fan-out/repair into resumable bounded work. Source message text is loaded
+  only through authorized/bounded source reads.
 - **Quality Port**: Quality exposes a read-only content-planning evidence source using
   its canonical population, effective triage, grounding mapper, and Eval verification.
-  Existing list/stats/triage services do not become projection writers.
+  The canonical population query is shared through Quality's narrow public seam;
+  Content Planning neither duplicates its rules nor reads Quality internals. Existing
+  list/stats/triage services do not become projection writers.
 - **Chat Port**: Chat defines a neutral transactional committed-turn observation
   writer. `PostgresAssistantTurnPersistence` invokes it idempotently within the
   existing assistant message/audit transaction. It writes only intake/vector state;

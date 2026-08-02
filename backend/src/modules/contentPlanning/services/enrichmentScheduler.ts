@@ -30,6 +30,7 @@ export interface ContentPlanEnrichmentEvidenceSnapshot {
 
 export interface ContentPlanPublishedEnrichmentSnapshot
 extends ContentPlanEnrichmentEvidenceSnapshot {
+  sourceTopicRevision: number;
   analysisMode: ContentPlanEnrichmentAnalysisMode;
   recommendationState: Extract<ContentPlanEnrichmentState, "ready" | "outside_analysis_cap">;
 }
@@ -70,6 +71,7 @@ export interface ContentPlanScheduledEnrichmentJob {
 
 export interface ContentPlanEnrichmentQueuePort {
   queue(input: ContentPlanScheduledEnrichmentJob): Promise<boolean>;
+  rebasePublished(input: Omit<ContentPlanScheduledEnrichmentJob, "availableAt">): Promise<boolean>;
 }
 
 export const isContentPlanEnrichmentMaterialChange = (
@@ -101,6 +103,7 @@ export class ContentPlanningEnrichmentScheduler {
     now: Date;
   }): Promise<{
     queuedCount: number;
+    rebasedCount: number;
     staleCount: number;
     failedCount: number;
     jobs: ContentPlanScheduledEnrichmentJob[];
@@ -119,6 +122,7 @@ export class ContentPlanningEnrichmentScheduler {
 
     const jobs: ContentPlanScheduledEnrichmentJob[] = [];
     let queuedCount = 0;
+    let rebasedCount = 0;
     let staleCount = 0;
     let failedCount = 0;
     for (const candidate of input.topics) {
@@ -133,7 +137,28 @@ export class ContentPlanningEnrichmentScheduler {
         && candidate.lastEnriched !== null
         && (candidate.lastEnriched.analysisMode !== analysisMode
           || candidate.lastEnriched.recommendationState !== recommendationState);
-      if (!isContentPlanEnrichmentMaterialChange(candidate) && !publishedModeChanged) continue;
+      if (!isContentPlanEnrichmentMaterialChange(candidate) && !publishedModeChanged) {
+        if (candidate.lastEnriched?.sourceTopicRevision !== candidate.topicRevision) {
+          try {
+            const rebased = await this.queue.rebasePublished({
+              workspaceId: candidate.workspaceId,
+              generationId: candidate.generationId,
+              topicId: candidate.topicId,
+              sourceTopicRevision: candidate.topicRevision,
+              analysisMode,
+              recommendationState,
+              sourceEvidence: toSourceEvidence(candidate.current),
+              evidenceStrength: candidate.current.groundingBand,
+              sourceCorpusEvidenceFingerprint: candidate.current.corpusEvidenceFingerprint,
+            });
+            if (rebased) rebasedCount += 1;
+            else staleCount += 1;
+          } catch {
+            failedCount += 1;
+          }
+        }
+        continue;
+      }
       const job: ContentPlanScheduledEnrichmentJob = {
         workspaceId: candidate.workspaceId,
         generationId: candidate.generationId,
@@ -144,14 +169,7 @@ export class ContentPlanningEnrichmentScheduler {
         ),
         analysisMode,
         recommendationState,
-        sourceEvidence: {
-          memberCount: candidate.current.memberCount,
-          groundedCount: candidate.current.groundedCount,
-          degradedCount: candidate.current.degradedCount,
-          noSupportCount: candidate.current.noSupportCount,
-          notEvaluatedCount: candidate.current.notEvaluatedCount,
-          credibleOpportunity: candidate.current.credibleOpportunity,
-        },
+        sourceEvidence: toSourceEvidence(candidate.current),
         evidenceStrength: candidate.current.groundingBand,
         sourceCorpusEvidenceFingerprint: candidate.current.corpusEvidenceFingerprint,
       };
@@ -166,9 +184,20 @@ export class ContentPlanningEnrichmentScheduler {
         failedCount += 1;
       }
     }
-    return { queuedCount, staleCount, failedCount, jobs };
+    return { queuedCount, rebasedCount, staleCount, failedCount, jobs };
   }
 }
+
+const toSourceEvidence = (
+  snapshot: ContentPlanEnrichmentEvidenceSnapshot,
+): ContentPlanEnrichmentSourceEvidence => ({
+  memberCount: snapshot.memberCount,
+  groundedCount: snapshot.groundedCount,
+  degradedCount: snapshot.degradedCount,
+  noSupportCount: snapshot.noSupportCount,
+  notEvaluatedCount: snapshot.notEvaluatedCount,
+  credibleOpportunity: snapshot.credibleOpportunity,
+});
 
 export const resolveContentPlanEnrichmentRetry = (input: {
   attemptCount: number;

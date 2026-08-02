@@ -22,6 +22,23 @@ export class RepositoryContentPlanEnrichmentQueue implements ContentPlanEnrichme
     });
     return queued !== null;
   }
+
+  async rebasePublished(
+    input: Parameters<ContentPlanEnrichmentQueuePort["rebasePublished"]>[0],
+  ): Promise<boolean> {
+    const rebased = await this.repository.rebasePublishedEnrichment({
+      workspaceId: input.workspaceId,
+      generationId: input.generationId,
+      topicId: input.topicId,
+      sourceTopicRevision: input.sourceTopicRevision,
+      sourceEvidence: input.sourceEvidence,
+      sourceEvidenceStrength: input.evidenceStrength,
+      sourceCorpusEvidenceFingerprint: input.sourceCorpusEvidenceFingerprint,
+      analysisMode: input.analysisMode,
+      publishState: input.recommendationState,
+    });
+    return rebased !== null;
+  }
 }
 
 export class RepositoryContentPlanEnrichmentClaimSource

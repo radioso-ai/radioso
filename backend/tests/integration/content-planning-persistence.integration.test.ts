@@ -200,9 +200,12 @@ describeIfDatabase("content-planning persistence migration (134)", () => {
        ORDER BY table_name`,
     );
     expect(tables.map(({ table_name }) => table_name)).toEqual([
+      "content_plan_corpus_invalidations",
+      "content_plan_enrichment_repair_cursors",
       "content_plan_observation_vectors",
       "content_plan_observations",
       "content_plan_projection_generations",
+      "content_plan_projection_population_snapshots",
       "content_plan_projection_states",
       "content_plan_topic_documents",
       "content_plan_topic_enrichments",
@@ -469,13 +472,21 @@ describeIfDatabase("content-planning persistence migration (134)", () => {
        WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
       [fixture.workspaceId, generationId, survivorTopicId],
     );
-    const [staleEnrichment] = await db().query<{ state: string; corpus_state: string }>(
-      `SELECT state, corpus_state
+    const [publishedEnrichment] = await db().query<{
+      source_topic_revision: number;
+      state: string;
+      corpus_state: string;
+    }>(
+      `SELECT source_topic_revision, state, corpus_state
        FROM content_plan_topic_enrichments
        WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
       [fixture.workspaceId, generationId, survivorTopicId],
     );
-    expect(staleEnrichment).toEqual({ state: "stale", corpus_state: "stale" });
+    expect(publishedEnrichment).toEqual({
+      source_topic_revision: 1,
+      state: "ready",
+      corpus_state: "ready",
+    });
 
     await db().execute(
       `INSERT INTO content_plan_topic_documents (

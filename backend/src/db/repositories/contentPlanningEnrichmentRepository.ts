@@ -298,6 +298,66 @@ export class ContentPlanEnrichmentRepository implements ContentPlanEnrichmentRep
     });
   }
 
+  async rebasePublishedEnrichment(
+    input: Parameters<ContentPlanEnrichmentRepositoryPort["rebasePublishedEnrichment"]>[0],
+  ): Promise<ContentPlanTopicEnrichmentRecord | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const topic = await trx
+        .selectFrom("content_plan_topics")
+        .select(["revision", "lifecycle"])
+        .where("workspace_id", "=", input.workspaceId)
+        .where("generation_id", "=", input.generationId)
+        .where("id", "=", input.topicId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!topic || topic.lifecycle !== "mature" || topic.revision !== input.sourceTopicRevision) {
+        return null;
+      }
+      const existing = await trx
+        .selectFrom("content_plan_topic_enrichments")
+        .select(enrichmentColumns)
+        .where("workspace_id", "=", input.workspaceId)
+        .where("generation_id", "=", input.generationId)
+        .where("topic_id", "=", input.topicId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (
+        !existing
+        || existing.published_source_member_count === null
+        || existing.enriched_at === null
+      ) return null;
+
+      const row = await trx
+        .updateTable("content_plan_topic_enrichments")
+        .set({
+          source_topic_revision: input.sourceTopicRevision,
+          source_member_count: input.sourceEvidence.memberCount,
+          source_grounded_count: input.sourceEvidence.groundedCount,
+          source_degraded_count: input.sourceEvidence.degradedCount,
+          source_no_support_count: input.sourceEvidence.noSupportCount,
+          source_not_evaluated_count: input.sourceEvidence.notEvaluatedCount,
+          source_credible_opportunity: input.sourceEvidence.credibleOpportunity,
+          source_evidence_strength: input.sourceEvidenceStrength,
+          source_corpus_evidence_fingerprint: input.sourceCorpusEvidenceFingerprint,
+          analysis_mode: input.analysisMode,
+          publish_state: input.publishState,
+          state: input.publishState,
+          attempt_count: 0,
+          claim_token: null,
+          claim_expires_at: null,
+          failure_stage: null,
+          failure_reason: null,
+          updated_at: currentTimestamp(),
+        })
+        .where("workspace_id", "=", input.workspaceId)
+        .where("generation_id", "=", input.generationId)
+        .where("topic_id", "=", input.topicId)
+        .returning(enrichmentColumns)
+        .executeTakeFirstOrThrow();
+      return mapEnrichment(row as EnrichmentRow);
+    });
+  }
+
   async claimEnrichmentBatch(input: {
     workspaceId?: string;
     generationId?: string;
@@ -315,7 +375,16 @@ export class ContentPlanEnrichmentRepository implements ContentPlanEnrichmentRep
         .where((eb) => eb.or([
           eb("claim_token", "is", null),
           eb("claim_expires_at", "<=", input.now),
-        ]));
+        ]))
+        .where((eb) => eb.exists(
+          eb.selectFrom("content_plan_topics")
+            .select("id")
+            .whereRef("content_plan_topics.workspace_id", "=", "content_plan_topic_enrichments.workspace_id")
+            .whereRef("content_plan_topics.generation_id", "=", "content_plan_topic_enrichments.generation_id")
+            .whereRef("content_plan_topics.id", "=", "content_plan_topic_enrichments.topic_id")
+            .whereRef("content_plan_topics.revision", "=", "content_plan_topic_enrichments.source_topic_revision")
+            .where("content_plan_topics.lifecycle", "=", "mature"),
+        ));
       if (input.workspaceId) query = query.where("workspace_id", "=", input.workspaceId);
       if (input.generationId) query = query.where("generation_id", "=", input.generationId);
       const selected = await query
@@ -601,42 +670,4 @@ export class ContentPlanEnrichmentRepository implements ContentPlanEnrichmentRep
     });
   }
 
-  async invalidateDocumentEvidence(input: {
-    workspaceId: string;
-    documentId: string;
-    dirtyAt: Date;
-  }): Promise<string[]> {
-    return this.db.transaction().execute(async (trx) => {
-      const linked = await trx
-        .selectFrom("content_plan_topic_documents")
-        .select(["generation_id", "topic_id"])
-        .distinct()
-        .where("workspace_id", "=", input.workspaceId)
-        .where("document_id", "=", input.documentId)
-        .orderBy("generation_id", "asc")
-        .orderBy("topic_id", "asc")
-        .execute();
-      if (linked.length === 0) return [];
-      for (const topic of linked) {
-        await trx
-          .updateTable("content_plan_topics")
-          .set((eb) => ({
-            revision: eb("revision", "+", 1),
-            enrichment_dirty_at: input.dirtyAt,
-            updated_at: currentTimestamp(),
-          }))
-          .where("workspace_id", "=", input.workspaceId)
-          .where("generation_id", "=", topic.generation_id)
-          .where("id", "=", topic.topic_id)
-          .executeTakeFirst();
-        await trx
-          .deleteFrom("content_plan_topic_documents")
-          .where("workspace_id", "=", input.workspaceId)
-          .where("generation_id", "=", topic.generation_id)
-          .where("topic_id", "=", topic.topic_id)
-          .execute();
-      }
-      return [...new Set(linked.map((topic) => topic.topic_id))];
-    });
-  }
 }

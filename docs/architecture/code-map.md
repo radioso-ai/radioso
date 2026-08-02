@@ -142,11 +142,21 @@ Public surfaces and key files:
 - `backend/src/modules/contentPlanning/composition.ts`
 - `backend/src/modules/contentPlanning/contracts/`
 - `backend/src/modules/contentPlanning/worker.ts`
+- `backend/src/modules/contentPlanning/infra/postgresEnrichmentPlanningDataSource.ts`
+- `backend/src/modules/contentPlanning/services/enrichmentPlanningAccumulator.ts`
+- `backend/src/modules/contentPlanning/services/corpusInvalidation.ts`
 - `backend/src/app/composition/builtIn/contentPlanningModule.ts`
 - `backend/src/app/composition/adapters/contentPlanningCommittedTurnWriter.ts`
 - `backend/src/db/repositories/contentPlanning*.ts`
+- `backend/src/modules/quality/public.ts` — narrow canonical-population query seam
 - `frontend/lib/api-content-plan.ts`
 - `frontend/components/dashboard/content-plan-view.tsx`
+
+Bootstrap/reprojection reads a generation-owned frozen population snapshot. Corpus
+publication records one workspace marker and lets the worker invalidate credible topics
+in bounded locked pages. Enrichment scheduling similarly combines a bounded hot set
+with a durable repair cursor and keyset-pages source evidence; no report-wide hydration
+or synchronous topic fan-out occurs on chat/document request paths.
 
 Useful searches:
 

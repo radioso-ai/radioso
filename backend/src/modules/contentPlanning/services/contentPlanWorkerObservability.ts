@@ -9,6 +9,7 @@ export type ContentPlanWorkerStage =
   | "bootstrap"
   | "reprojection"
   | "projection_snapshot"
+  | "corpus_invalidation"
   | "enrichment_schedule"
   | "enrichment";
 
@@ -64,7 +65,8 @@ export type ContentPlanWorkerFailureReason =
   | "enrichment_provider_error"
   | "enrichment_invalid_output"
   | "enrichment_repository_failed"
-  | "operational_snapshot_failed";
+  | "operational_snapshot_failed"
+  | "corpus_invalidation_failed";
 
 export type ContentPlanWorkerProjectionState =
   | "bootstrapping"
@@ -420,6 +422,7 @@ const workerStages = [
   "bootstrap",
   "reprojection",
   "projection_snapshot",
+  "corpus_invalidation",
   "enrichment_schedule",
   "enrichment",
 ] as const satisfies readonly ContentPlanWorkerStage[];
@@ -478,6 +481,7 @@ const workerFailureReasons = [
   "enrichment_invalid_output",
   "enrichment_repository_failed",
   "operational_snapshot_failed",
+  "corpus_invalidation_failed",
 ] as const satisfies readonly ContentPlanWorkerFailureReason[];
 
 const vectorSources = ["reused", "fallback"] as const;

@@ -18,6 +18,7 @@ on:
         options:
           - staging
           - live
+          - live-eu
 
 jobs:
   terraform:
@@ -108,7 +109,7 @@ jobs:
             echo "TF_VAR_mail_from_name=${MAIL_FROM_NAME}" >> "$GITHUB_ENV"
           fi
 
-          if [ "${{ inputs.environment }}" = "staging" ] || [ "${{ inputs.environment }}" = "live" ]; then
+          if [ "${{ inputs.environment }}" = "staging" ] || [ "${{ inputs.environment }}" = "live" ] || [ "${{ inputs.environment }}" = "live-eu" ]; then
             if [ -n "${ERROR_SINKS}" ]; then
               echo "TF_VAR_error_sinks=${ERROR_SINKS}" >> "$GITHUB_ENV"
             fi

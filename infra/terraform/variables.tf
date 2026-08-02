@@ -8,9 +8,15 @@ variable "environment" {
   type        = string
 
   validation {
-    condition     = contains(["staging", "live"], var.environment)
-    error_message = "environment must be either staging or live."
+    condition     = contains(["staging", "live", "live-eu"], var.environment)
+    error_message = "environment must be staging, live, or live-eu."
   }
+}
+
+variable "manage_project_services" {
+  description = "Whether this stack owns the project-wide Google API enablement resources. Disable for additional regional stacks in a project whose primary Terraform state already manages APIs."
+  type        = bool
+  default     = true
 }
 
 variable "region" {
@@ -45,6 +51,12 @@ variable "frontend_image" {
 
 variable "deploy_services" {
   description = "Whether to create the backend and frontend Cloud Run services. Set false on the first apply to create shared infrastructure before images exist."
+  type        = bool
+  default     = true
+}
+
+variable "backend_public_invocation_enabled" {
+  description = "Whether to grant unauthenticated Cloud Run invocation on the backend service."
   type        = bool
   default     = true
 }
@@ -106,6 +118,17 @@ variable "db_deletion_protection" {
   description = "Enable deletion protection on Cloud SQL instance (disable for dev/staging)"
   type        = bool
   default     = false
+}
+
+variable "secret_replication_locations" {
+  description = "Locations used for Secret Manager user-managed replication. Leave empty for automatic replication."
+  type        = set(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for location in var.secret_replication_locations : length(trimspace(location)) > 0])
+    error_message = "secret_replication_locations cannot contain empty location names."
+  }
 }
 
 # --- Cloud Run scaling ---
@@ -431,6 +454,20 @@ variable "radioso_mcp_base_url_override" {
   description = "Optional public backend base URL used by the hosted MCP runtime when it calls Radioso APIs. Defaults to connector_public_base_url when set."
   type        = string
   default     = null
+}
+
+variable "frontend_backend_internal_url_override" {
+  description = "Optional backend URL used by the frontend server-side proxy. Defaults to the backend service in this stack."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.frontend_backend_internal_url_override == null ||
+      can(regex("^https://", var.frontend_backend_internal_url_override))
+    )
+    error_message = "frontend_backend_internal_url_override must be an HTTPS URL when set."
+  }
 }
 
 variable "app_base_url_override" {

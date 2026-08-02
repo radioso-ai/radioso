@@ -568,6 +568,62 @@ describe("runtime configuration", () => {
     expect(liveEnvVariables).not.toContain('default     = "0 3 * * *"');
     expect(stagingEnvVariables).toMatch(/default\s+= "staging"/);
     expect(liveEnvVariables).toMatch(/default\s+= "live"/);
+    expect(liveEnvVariables).toMatch(/variable "region" \{[\s\S]*?default\s+= "us-central1"\n\}/);
+  });
+
+  it("defines an isolated EU live environment without taking ownership of shared project services", async () => {
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const terraformApis = await readFile(new URL("../../../infra/terraform/apis.tf", import.meta.url), "utf8");
+    const terraformSecrets = await readFile(new URL("../../../infra/terraform/secrets.tf", import.meta.url), "utf8");
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+    const deployLive = await readFile(new URL("../../../.github/workflows/deploy-live.yml", import.meta.url), "utf8");
+    const deployLiveUs = await readFile(new URL("../../../.github/workflows/deploy-live-us.yml", import.meta.url), "utf8");
+    const liveEuEnv = await readFile(new URL("../../../infra/terraform/environments/live-eu/main.tf", import.meta.url), "utf8");
+    const liveEuEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live-eu/variables.tf", import.meta.url), "utf8");
+    const liveEuBackend = await readFile(new URL("../../../infra/terraform/environments/live-eu/backend.hcl", import.meta.url), "utf8");
+
+    expect(terraformVariables).toContain('contains(["staging", "live", "live-eu"], var.environment)');
+    expect(terraformVariables).toContain('variable "manage_project_services"');
+    expect(terraformVariables).toContain('variable "secret_replication_locations"');
+    expect(terraformApis).toContain("var.manage_project_services ? toset(local.required_apis) : toset([])");
+    expect(terraformSecrets).toContain('for_each = length(var.secret_replication_locations) == 0 ? [true] : []');
+    expect(terraformSecrets).toContain("for_each = var.secret_replication_locations");
+
+    expect(liveEuEnv).toContain("manage_project_services = false");
+    expect(liveEuEnv).toMatch(/secret_replication_locations\s+= \[var\.region\]/);
+    expect(liveEuEnv).toMatch(/github_actions_workload_identity_pool_id\s+= "github-actions-live-eu"/);
+    expect(liveEuEnv).toMatch(/worker_task_queue_name\s+= "radioso-\$\{var\.environment\}-document-processing"/);
+    expect(liveEuEnvVariables).toMatch(/default\s+= "live-eu"/);
+    expect(liveEuEnvVariables).toMatch(/default\s+= "europe-west1"/);
+    expect(liveEuBackend).toContain('bucket = "radioso-494120-terraform-state-eu"');
+    expect(liveEuBackend).toContain('prefix = "radioso/live-eu"');
+
+    expect(terraformWorkflow).toContain("          - live-eu");
+    expect(deployLive).toContain("github_environment: live-eu");
+    expect(deployLive).toContain("artifact_repository: radioso-live-eu");
+    expect(deployLive).toContain("backend_service: radioso-live-eu-backend");
+    expect(deployLiveUs).toContain("github_environment: live");
+    expect(deployLiveUs).toContain("backend_service: radioso-live-backend");
+  });
+
+  it("keeps the retained US live data plane independent from EU", async () => {
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const terraformCompute = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const liveEnv = await readFile(new URL("../../../infra/terraform/environments/live/main.tf", import.meta.url), "utf8");
+    const liveEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live/variables.tf", import.meta.url), "utf8");
+
+    expect(terraformVariables).toContain('variable "frontend_backend_internal_url_override"');
+    expect(terraformCompute).toContain("coalesce(var.frontend_backend_internal_url_override, google_cloud_run_v2_service.backend[0].uri)");
+    expect(terraformVariables).toContain('variable "backend_public_invocation_enabled"');
+    expect(terraformCompute).toContain("var.deploy_services && var.backend_public_invocation_enabled ? 1 : 0");
+    expect(liveEnv).toContain("frontend_backend_internal_url_override = var.frontend_backend_internal_url_override");
+    expect(liveEnv).toContain("backend_public_invocation_enabled = var.backend_public_invocation_enabled");
+    expect(liveEnvVariables).toMatch(
+      /variable "frontend_backend_internal_url_override" \{[\s\S]*?default\s+= null\n\}/,
+    );
+    expect(liveEnvVariables).toMatch(
+      /variable "backend_public_invocation_enabled" \{[\s\S]*?default\s+= true\n\}/,
+    );
   });
 
   it("defaults worker entrypoints to the worker observability service name", async () => {

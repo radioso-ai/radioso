@@ -23,7 +23,7 @@ export function SummaryTiles({ summary }: SummaryTilesProps) {
 
   return (
     <ul
-      className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid grid-cols-2 gap-3 xl:grid-cols-4"
       aria-label="Content plan summary"
     >
       <Tile

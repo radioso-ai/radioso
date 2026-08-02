@@ -254,6 +254,12 @@ export function ContentPlanView({
         if (cancelled || listWorkspaceKeyRef.current !== workspaceKey || listRequestIdRef.current !== requestId) {
           return
         }
+        if (getApiErrorStatus(caught) === 409) {
+          window.sessionStorage.removeItem(contentPlanListReturnKey(listResourceKey))
+          setListResource((current) => current?.key === listResourceKey ? null : current)
+          setListRetryKey((key) => key + 1)
+          return
+        }
         setListResource({
           key: listResourceKey,
           state: 'error',
@@ -342,6 +348,12 @@ export function ContentPlanView({
         || listRequestIdRef.current !== listRequestId
         || paginationRequestIdRef.current !== paginationRequestId
       ) {
+        return
+      }
+      if (getApiErrorStatus(caught) === 409) {
+        window.sessionStorage.removeItem(contentPlanListReturnKey(listResourceKey))
+        setListResource((current) => current?.key === listResourceKey ? null : current)
+        setListRetryKey((key) => key + 1)
         return
       }
       setListResource((current) => {
@@ -1015,10 +1027,24 @@ function deriveRecommendedPrimaryAction(
     onInvestigateRetrieval: () => void
     onReviewDocument: () => void
   },
-): { label: string; onClick: () => void; kind: 'primary' | 'outline'; disabled?: boolean } {
+): {
+  label: string
+  onClick: () => void
+  kind: 'primary' | 'outline'
+  disabled?: boolean
+  opensTopicDetail?: boolean
+} {
   const rec = topic.recommendation
   switch (rec.action) {
     case 'add_content':
+      if (!hasCopyableContentPlanBrief(rec)) {
+        return {
+          label: 'View topic detail',
+          onClick: handlers.onReviewDocument,
+          kind: 'outline',
+          opensTopicDetail: true,
+        }
+      }
       return { label: 'Write document', onClick: handlers.onWriteDocument, kind: 'primary' }
     case 'review_existing_content':
       return { label: 'Open related documents', onClick: handlers.onReviewDocument, kind: 'primary' }
@@ -1026,7 +1052,12 @@ function deriveRecommendedPrimaryAction(
       return { label: 'Investigate retrieval', onClick: handlers.onInvestigateRetrieval, kind: 'primary' }
     case 'monitor':
     case null:
-      return { label: 'View topic detail', onClick: handlers.onReviewDocument, kind: 'outline' }
+      return {
+        label: 'View topic detail',
+        onClick: handlers.onReviewDocument,
+        kind: 'outline',
+        opensTopicDetail: true,
+      }
   }
 }
 

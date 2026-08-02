@@ -101,7 +101,7 @@ export function TopicDetailPane({
         <div className="flex items-center justify-between gap-3">
           <div>
             {isNarrow && (backHref || onBack) ? (
-              <div className="md:hidden">
+              <div className="xl:hidden">
                 {backHref ? (
                   <Button asChild variant="ghost" size="sm">
                     <Link href={backHref}>
@@ -119,7 +119,7 @@ export function TopicDetailPane({
             ) : null}
             <p className={cn(
               'text-xs uppercase tracking-normal text-muted-foreground',
-              isNarrow && 'hidden md:block',
+              isNarrow && 'hidden xl:block',
             )}>
               Topic detail
             </p>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 
@@ -518,6 +518,255 @@ describe("answer presentation service", () => {
         sourceUrl: "https://example.com/overview",
       },
     ]);
+  });
+
+  // The frontend renders every answer segment through its own independent markdown pass, so
+  // a segment boundary that lands inside a markdown construct leaves both halves rendering
+  // as literal text. The citation marker moves to the closing delimiter instead.
+  describe("markdown-safe citation anchor boundaries", () => {
+    const oneCitation = [
+      {
+        documentId: "doc-1",
+        chunkId: "chunk-1",
+        title: "Kriya Yoga",
+        content: "Kriya is a sacred technique.",
+      },
+    ];
+
+    it("attaches the citation after a strong span instead of splitting it", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Kriya is **a sacred [[1]] technique** taught in Assisi.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "Kriya is **a sacred  technique**", citationIndices: [0] },
+        { text: " taught in Assisi." },
+      ]);
+      expect(result.answer).toBe("Kriya is **a sacred  technique** taught in Assisi.");
+    });
+
+    it("attaches the citation after an emphasis span opened with a single marker", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Kriya is *a sacred [[1]] technique* taught in Assisi.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments?.[0]).toEqual({
+        text: "Kriya is *a sacred  technique*",
+        citationIndices: [0],
+      });
+    });
+
+    it("attaches the citation after a markdown link instead of splitting the label", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "See [the courses [[1]] calendar](https://x.test/c) for dates.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "See [the courses  calendar](https://x.test/c)", citationIndices: [0] },
+        { text: " for dates." },
+      ]);
+    });
+
+    it("keeps an entire table block in one segment", () => {
+      const service = new AnswerPresentationService();
+
+      const answer = [
+        "Upcoming courses:",
+        "",
+        "| Course | Date |",
+        "| --- | --- |",
+        "| Kriya [[1]] | May |",
+        "| Yoga | June |",
+        "",
+        "Book early.",
+      ].join("\n");
+
+      const result = service.present({ answer, citations: oneCitation });
+
+      expect(result.answerSegments).toEqual([
+        {
+          text: [
+            "Upcoming courses:",
+            "",
+            "| Course | Date |",
+            "| --- | --- |",
+            "| Kriya  | May |",
+            "| Yoga | June |",
+          ].join("\n"),
+          citationIndices: [0],
+        },
+        { text: "\n\nBook early." },
+      ]);
+    });
+
+    it("keeps a fenced code block in one segment", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Setup:\n\n```bash\npnpm install [[1]]\npnpm build\n```\n\nDone.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "Setup:\n\n```bash\npnpm install\npnpm build\n```", citationIndices: [0] },
+        { text: "\n\nDone." },
+      ]);
+    });
+
+    it("keeps an inline code span in one segment", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Run `pnpm [[1]] build` to compile.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments?.[0]).toEqual({
+        text: "Run `pnpm  build`",
+        citationIndices: [0],
+      });
+    });
+
+    it("merges anchors that fall inside the same construct into one citation boundary", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Read **the [[1]] sacred [[2]] technique** now.",
+        citations: [
+          {
+            documentId: "doc-1",
+            chunkId: "chunk-1",
+            title: "Kriya Yoga",
+            content: "The sacred technique.",
+          },
+          {
+            documentId: "doc-2",
+            chunkId: "chunk-2",
+            title: "Practice",
+            content: "How it is taught.",
+          },
+        ],
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "Read **the  sacred  technique**", citationIndices: [0, 1] },
+        { text: " now." },
+      ]);
+      expect(result.citations).toEqual([
+        { documentId: "doc-1", chunkId: "chunk-1", title: "Kriya Yoga" },
+        { documentId: "doc-2", chunkId: "chunk-2", title: "Practice" },
+      ]);
+    });
+
+    it("keeps an explicitly unsourced anchor inside a construct unsourced", () => {
+      const service = new AnswerPresentationService();
+
+      const normalized = service.normalize({
+        answer: "Kriya is **not [[?]] documented** here.",
+        citations: oneCitation,
+      });
+
+      expect(normalized.citationEvidence).toEqual([]);
+      expect(normalized.answerSegments).toEqual([
+        { text: "Kriya is **not  documented**" },
+        { text: " here." },
+      ]);
+    });
+
+    it("leaves an anchor that already sits outside any construct where it is", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Kriya is **a sacred technique**[[1]] taught in Assisi.",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "Kriya is **a sacred technique**", citationIndices: [0] },
+        { text: " taught in Assisi." },
+      ]);
+    });
+
+    it("does not relocate a split for asterisks that are not emphasis", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer: "Compute 2 * 3 * 4 for the total[[1]].",
+        citations: oneCitation,
+      });
+
+      expect(result.answerSegments).toEqual([
+        { text: "Compute 2 * 3 * 4 for the total", citationIndices: [0] },
+        { text: "." },
+      ]);
+    });
+
+    it("counts a relocated boundary by construct without recording answer content", () => {
+      const incrementCounter = vi.fn();
+      const service = new AnswerPresentationService({ incrementCounter });
+
+      service.present({
+        answer: "See [the courses [[1]] calendar](https://x.test/c) for dates.",
+        citations: oneCitation,
+      });
+
+      expect(incrementCounter).toHaveBeenCalledTimes(1);
+      const [name, options] = incrementCounter.mock.calls[0] ?? [];
+      expect(name).toBe("chat_citation_anchor_split_relocations_total");
+      expect(options?.labels).toEqual({ construct: "link" });
+      // The label set is a fixed construct enum; nothing derived from the answer may leak in.
+      expect(JSON.stringify(options)).not.toContain("courses");
+    });
+
+    it("does not count anything when every anchor already sits on a safe boundary", () => {
+      const incrementCounter = vi.fn();
+      const service = new AnswerPresentationService({ incrementCounter });
+
+      service.present({
+        answer: "Kriya is a sacred technique[[1]].",
+        citations: oneCitation,
+      });
+
+      expect(incrementCounter).not.toHaveBeenCalled();
+    });
+
+    it("presents identically when no metrics sink is wired", () => {
+      const withMetrics = new AnswerPresentationService({ incrementCounter: vi.fn() });
+      const withoutMetrics = new AnswerPresentationService();
+      const input = {
+        answer: "Kriya is **a sacred [[1]] technique** taught in Assisi.",
+        citations: oneCitation,
+      };
+
+      expect(withoutMetrics.present(input)).toEqual(withMetrics.present(input));
+    });
+
+    it("still reflows a detached anchor when the answer also contains a construct", () => {
+      const service = new AnswerPresentationService();
+
+      const result = service.present({
+        answer:
+          "It is a **sacred science** that releases karma\n\n[[1]].\n\nAnanda Europe teaches Kriya.",
+        citations: oneCitation,
+      });
+
+      expect(result.answer).toBe(
+        "It is a **sacred science** that releases karma.\n\nAnanda Europe teaches Kriya.",
+      );
+      expect(result.answerSegments).toEqual([
+        { text: "It is a **sacred science** that releases karma", citationIndices: [0] },
+        { text: ".\n\nAnanda Europe teaches Kriya." },
+      ]);
+    });
   });
 
   it("present() omits sourceUrl when the evidence has none", () => {

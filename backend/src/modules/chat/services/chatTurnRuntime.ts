@@ -55,6 +55,7 @@ export const buildChatTurnRuntime = (
     new AssistantSuggestionExpansionService(),
     deps.chatActionSuggestionService,
     deps.skillOutcomeCapabilities,
+    deps.metrics,
   );
   const turnSkills: TurnSkill[] = [
     createRetrievalTurnSkill(

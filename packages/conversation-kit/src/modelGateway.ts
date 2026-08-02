@@ -5,7 +5,8 @@ export interface ConversationKitModelGatewayOptions {
 }
 
 /**
- * The kit needs a model, never a particular vendor: the host supplies the gateway.
+ * Resolves the host-supplied gateway the kit talks to. Vendor choice belongs to the
+ * host, so a gateway is the one thing every kit needs handed to it.
  */
 export const createConversationKitModelGateway = (
   options: ConversationKitModelGatewayOptions,

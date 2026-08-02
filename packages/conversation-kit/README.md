@@ -1,17 +1,16 @@
 # @radioso/conversation-kit
 
 Composable wiring for the standalone conversation packages. You bring a
-`modelGateway`, then use the kit to assemble the conversation engine, default
-in-memory stores, default directive matching, and portable authoring stores. It
-does not import the Radioso backend, Postgres, Express, retrieval, auth, or
-billing code.
+`modelGateway`; the kit assembles the conversation engine, in-memory stores,
+directive matching, and portable authoring stores into a running conversation.
+A model is the only thing it needs from you — there is no database, web
+framework, or account system to stand up first.
 
 ## Entry points
 
-The root entry reaches no `node:*` builtin and no provider SDK, so it runs on any
-runtime with ES modules — Node, Deno, Cloudflare Workers, the browser. Everything
-that needs more than that sits behind its own subpath, and you pay for it only when
-you import it.
+The root entry runs anywhere ES modules do: Node, Deno, Cloudflare Workers, the
+browser. Anything that wants a filesystem or an HTTP server lives behind its own
+subpath, so you import it when your host has one.
 
 | Import | What it gives you |
 |---|---|
@@ -19,13 +18,13 @@ you import it.
 | `@radioso/conversation-kit/server` | `createConversationKitServer`, the HTTP host, on `node:http`. |
 | `@radioso/conversation-kit/node` | `FileConversationKitAuthoringStore`, which keeps authoring in a file. |
 
-`tests/entryPoints.test.ts` asserts what each entry point is allowed to load, so
-widening one is a deliberate edit rather than an accident.
+`tests/entryPoints.test.ts` holds each entry point to a declared budget of what it
+may load, so widening one is an explicit edit.
 
 ## Model provider
 
-The kit needs a model, not a particular vendor. Pass `modelGateway` and it is used as
-given — no API key is read and nothing vendor-specific runs:
+The kit reaches your model through a single `complete` method, so any provider SDK,
+gateway, or local model works. Pass `modelGateway` and the kit uses it as given:
 
 ```ts
 import { createConversationKit } from "@radioso/conversation-kit";
@@ -227,9 +226,9 @@ processes supplies a durable `routineStore` to preserve active state; that store
 also owns routine expiry and TTL. The selector and renderer feed the default runner.
 When you supply `routineRunner`, it owns its routine list instead.
 
-The kit also accepts optional engine capability ports for steering, turn interpretation,
-retrieval work, routine reentry and slot correction, and clarification. A host enables
-one by supplying its implementation; leaving it out keeps that capability off.
+The kit also accepts engine capability ports for steering, turn interpretation,
+retrieval work, routine reentry and slot correction, and clarification. Supply the
+implementation for one and the engine runs that capability on every turn.
 
 ```ts
 import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";

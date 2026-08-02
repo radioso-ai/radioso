@@ -1,8 +1,7 @@
 /**
- * The kit's runtime-agnostic core. It reaches no `node:*` builtin and no provider SDK,
- * so it runs anywhere ES modules do. The HTTP host lives at
- * `@radioso/conversation-kit/server`, the filesystem authoring store at
- * `@radioso/conversation-kit/node`.
+ * The kit's runtime-agnostic core, which runs anywhere ES modules do. The HTTP host
+ * lives at `@radioso/conversation-kit/server` and the filesystem authoring store at
+ * `@radioso/conversation-kit/node`, so each stays with the runtime that provides it.
  */
 export {
   createConversationKit,

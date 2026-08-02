@@ -1,6 +1,6 @@
 /**
- * The kit's Node-only surface. Everything here needs a filesystem, so it is kept out of
- * the root entry point to leave that entry runnable on runtimes without one.
+ * The kit's Node surface: everything here wants a filesystem, so it lives on the
+ * subpath a host imports once it has one.
  */
 export {
   FileConversationKitAuthoringStore,

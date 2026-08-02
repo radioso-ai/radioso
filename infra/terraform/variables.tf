@@ -494,7 +494,7 @@ variable "public_chat_base_url_override" {
 }
 
 variable "worker_tasks_service_url_override" {
-  description = "Optional override for the document worker Cloud Run public URL. Set this after the first deploy so retry dispatches target the worker run.app URL. The crawler worker URL is discovered automatically and needs no override."
+  description = "Override for the document worker HTTPS endpoint used by Cloud Tasks. Supply a pre-routed stable endpoint during bootstrap; established workflows can use the discovered worker run.app URL. The crawler worker URL is discovered automatically and needs no override."
   type        = string
   default     = null
 }

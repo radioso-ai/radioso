@@ -27,6 +27,10 @@ on:
         description: Existing frontend image to use when the target Cloud Run services do not exist yet.
         required: false
         type: string
+      initial_worker_tasks_service_url:
+        description: Stable HTTPS worker service URL to use when the target Cloud Run services do not exist yet.
+        required: false
+        type: string
 
 jobs:
   terraform:
@@ -157,6 +161,7 @@ jobs:
           ENVIRONMENT_NAME: ${{ inputs.environment }}
           INITIAL_BACKEND_IMAGE: ${{ inputs.initial_backend_image }}
           INITIAL_FRONTEND_IMAGE: ${{ inputs.initial_frontend_image }}
+          INITIAL_WORKER_TASKS_SERVICE_URL: ${{ inputs.initial_worker_tasks_service_url }}
         run: |
           SERVICE_PREFIX="radioso-${ENVIRONMENT_NAME}"
 
@@ -164,15 +169,20 @@ jobs:
           FRONTEND_URL=""
           WORKER_URL=""
 
-          if [ -n "${INITIAL_BACKEND_IMAGE}" ] || [ -n "${INITIAL_FRONTEND_IMAGE}" ]; then
-            if [ -z "${INITIAL_BACKEND_IMAGE}" ] || [ -z "${INITIAL_FRONTEND_IMAGE}" ]; then
-              echo "Both initial_backend_image and initial_frontend_image are required for a bootstrap run." >&2
+          if [ -n "${INITIAL_BACKEND_IMAGE}" ] || [ -n "${INITIAL_FRONTEND_IMAGE}" ] || [ -n "${INITIAL_WORKER_TASKS_SERVICE_URL}" ]; then
+            if [ -z "${INITIAL_BACKEND_IMAGE}" ] || [ -z "${INITIAL_FRONTEND_IMAGE}" ] || [ -z "${INITIAL_WORKER_TASKS_SERVICE_URL}" ]; then
+              echo "initial_backend_image, initial_frontend_image, and initial_worker_tasks_service_url are all required for a bootstrap run." >&2
+              exit 1
+            fi
+            if [[ ! "${INITIAL_WORKER_TASKS_SERVICE_URL}" =~ ^https://[^/[:space:]]+/?$ ]]; then
+              echo "initial_worker_tasks_service_url must be a stable HTTPS endpoint for the worker service." >&2
               exit 1
             fi
 
             BACKEND_IMAGE="${INITIAL_BACKEND_IMAGE}"
             FRONTEND_IMAGE="${INITIAL_FRONTEND_IMAGE}"
-            echo "Using supplied initial images; service URL overrides will be discovered on the next Terraform run."
+            WORKER_URL="${INITIAL_WORKER_TASKS_SERVICE_URL%/}"
+            echo "Using supplied initial images and worker service URL; remaining service URL overrides will be discovered on the next Terraform run."
           else
             if ! BACKEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-backend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')" ||
               ! FRONTEND_IMAGE="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(spec.template.spec.containers[0].image)')" ||
@@ -180,9 +190,14 @@ jobs:
               ! FRONTEND_URL="$(gcloud run services describe "${SERVICE_PREFIX}-frontend" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')" ||
               ! WORKER_URL="$(gcloud run services describe "${SERVICE_PREFIX}-worker" --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}" --format='value(status.url)')"
             then
-              echo "Cloud Run services for ${ENVIRONMENT_NAME} are incomplete; supply both initial image inputs for the first Terraform run." >&2
+              echo "Cloud Run services for ${ENVIRONMENT_NAME} are incomplete; supply all three initial bootstrap inputs for the first Terraform run." >&2
               exit 1
             fi
+          fi
+
+          if [ -z "${WORKER_URL}" ]; then
+            echo "Worker service URL could not be resolved; refusing to use Terraform's placeholder URL." >&2
+            exit 1
           fi
 
           APP_BASE_URL_OVERRIDE="${APP_BASE_URL:-$FRONTEND_URL}"
@@ -206,9 +221,7 @@ jobs:
           if [ -n "${CONNECTOR_PUBLIC_BASE_URL:-}" ]; then
             echo "TF_VAR_connector_public_base_url=${CONNECTOR_PUBLIC_BASE_URL}" >> "$GITHUB_ENV"
           fi
-          if [ -n "${WORKER_URL}" ]; then
-            echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
-          fi
+          echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
 
       - name: Terraform init
         run: terraform -chdir="infra/terraform/environments/${{ inputs.environment }}" init -reconfigure -backend-config=backend.hcl

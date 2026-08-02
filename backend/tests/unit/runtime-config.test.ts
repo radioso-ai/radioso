@@ -601,19 +601,32 @@ describe("runtime configuration", () => {
     expect(terraformWorkflow).toContain("          - live-eu");
     expect(terraformWorkflow).toContain("      initial_backend_image:");
     expect(terraformWorkflow).toContain("      initial_frontend_image:");
+    expect(terraformWorkflow).toContain("      initial_worker_tasks_service_url:");
     expect(terraformWorkflow).toContain("INITIAL_BACKEND_IMAGE: ${{ inputs.initial_backend_image }}");
     expect(terraformWorkflow).toContain("INITIAL_FRONTEND_IMAGE: ${{ inputs.initial_frontend_image }}");
     expect(terraformWorkflow).toContain(
-      "Both initial_backend_image and initial_frontend_image are required for a bootstrap run.",
+      "INITIAL_WORKER_TASKS_SERVICE_URL: ${{ inputs.initial_worker_tasks_service_url }}",
+    );
+    expect(terraformWorkflow).toContain(
+      "initial_backend_image, initial_frontend_image, and initial_worker_tasks_service_url are all required for a bootstrap run.",
+    );
+    expect(terraformWorkflow).toContain(
+      "initial_worker_tasks_service_url must be a stable HTTPS endpoint for the worker service.",
     );
     expect(terraformWorkflow).toContain(
       "APP_BASE_URL must be configured when bootstrapping an environment without an existing frontend service.",
     );
     expect(terraformWorkflow).toMatch(
-      /if \[ -n "\$\{INITIAL_BACKEND_IMAGE\}" \] \|\| \[ -n "\$\{INITIAL_FRONTEND_IMAGE\}" \]; then[\s\S]*?BACKEND_IMAGE="\$\{INITIAL_BACKEND_IMAGE\}"[\s\S]*?FRONTEND_IMAGE="\$\{INITIAL_FRONTEND_IMAGE\}"[\s\S]*?else[\s\S]*?gcloud run services describe/,
+      /if \[ -n "\$\{INITIAL_BACKEND_IMAGE\}" \] \|\| \[ -n "\$\{INITIAL_FRONTEND_IMAGE\}" \] \|\| \[ -n "\$\{INITIAL_WORKER_TASKS_SERVICE_URL\}" \]; then[\s\S]*?BACKEND_IMAGE="\$\{INITIAL_BACKEND_IMAGE\}"[\s\S]*?FRONTEND_IMAGE="\$\{INITIAL_FRONTEND_IMAGE\}"[\s\S]*?WORKER_URL="\$\{INITIAL_WORKER_TASKS_SERVICE_URL%\/\}"[\s\S]*?else[\s\S]*?gcloud run services describe/,
     );
     expect(terraformWorkflow).toContain('if [ -n "${BACKEND_URL}" ]; then');
-    expect(terraformWorkflow).toContain('if [ -n "${WORKER_URL}" ]; then');
+    expect(terraformWorkflow).toContain(
+      "Worker service URL could not be resolved; refusing to use Terraform's placeholder URL.",
+    );
+    expect(terraformWorkflow).toContain(
+      'echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"',
+    );
+    expect(terraformWorkflow).not.toContain('if [ -n "${WORKER_URL}" ]; then');
     expect(deployLive).toContain("github_environment: live-eu");
     expect(deployLive).toContain("artifact_repository: radioso-live-eu");
     expect(deployLive).toContain("backend_service: radioso-live-eu-backend");

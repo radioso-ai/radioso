@@ -341,6 +341,7 @@ export function SkillList({ agentId }: { agentId: string }) {
         onSelect={selectCapability}
       />
       <SkillForm
+        agentId={agentId}
         open={formOpen}
         capabilities={capabilities}
         skills={skills}

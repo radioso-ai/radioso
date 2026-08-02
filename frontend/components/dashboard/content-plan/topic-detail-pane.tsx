@@ -13,7 +13,12 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import {
+  AddDocumentMenu,
+  type AddDocumentAction,
+} from '@/components/dashboard/documents/add-document-menu'
 import type {
+  ContentPlanProjection,
   ContentPlanRepresentativeGroundingVerdict,
   ContentPlanTopicDetail,
 } from '@/lib/api-content-plan'
@@ -24,6 +29,8 @@ import {
   formatWindowRange,
   headlineStateAnnotation,
   priorityReasonLabel,
+  projectionStateExplanation,
+  projectionStateLabel,
   recommendationActionExplanation,
   recommendationActionLabel,
   hasCopyableContentPlanBrief,
@@ -38,6 +45,8 @@ interface TopicDetailPaneProps {
   onOpenConversation: (input: { conversationId: string; assistantMessageId: string | null }) => void
   onViewAnswers: () => void
   onWriteDocument: () => void
+  websiteCrawlerEnabled: boolean
+  onAddDocument: (action: AddDocumentAction) => void
   onReviewDocument: (documentId: string) => void
   onInvestigateRetrieval: () => void
   copyStatus?: 'idle' | 'copied' | 'error'
@@ -66,6 +75,8 @@ export function TopicDetailPane({
   onOpenConversation,
   onViewAnswers,
   onWriteDocument,
+  websiteCrawlerEnabled,
+  onAddDocument,
   onReviewDocument,
   onInvestigateRetrieval,
   copyStatus = 'idle',
@@ -173,6 +184,8 @@ export function TopicDetailPane({
                 action={decision.action}
                 actionState={decision.actionState}
                 onWriteDocument={onWriteDocument}
+                websiteCrawlerEnabled={websiteCrawlerEnabled}
+                onAddDocument={onAddDocument}
                 onInvestigateRetrieval={onInvestigateRetrieval}
                 onReviewFirstDocument={
                   detail.relatedDocuments.length > 0
@@ -211,6 +224,7 @@ export function TopicDetailPane({
             >
               Evidence and freshness
             </h3>
+            <DetailProjectionFreshness projection={detail.projection} />
             <dl className="grid gap-3 sm:grid-cols-3">
               <MetricBlock
                 term="Demand"
@@ -244,6 +258,8 @@ export function TopicDetailPane({
           </section>
 
           <Separator />
+
+          <ContentBrief topic={topic} />
 
           {topic.recommendation.questionsToAnswer.length > 0 ? (
             <section aria-labelledby="content-plan-topic-questions">
@@ -289,6 +305,75 @@ export function TopicDetailPane({
   )
 }
 
+function DetailProjectionFreshness({ projection }: { projection: ContentPlanProjection }) {
+  const pendingCount = projection.pendingEmbeddingCount
+    + projection.pendingAssignmentCount
+    + projection.pendingEnrichmentTopicCount
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-3 text-sm" role="status">
+      <p className="font-medium text-foreground">
+        {projectionStateLabel(projection.state)}
+        {' · '}
+        {projection.processedThrough
+          ? `processed through ${formatAsOfTimestamp(projection.processedThrough)}`
+          : 'no processed-through time yet'}
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {projectionStateExplanation(projection.state)}
+      </p>
+      {(pendingCount > 0 || (projection.processedCount !== null && projection.totalCount !== null)) ? (
+        <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          {projection.pendingEmbeddingCount > 0 ? (
+            <li>{projection.pendingEmbeddingCount} awaiting embedding</li>
+          ) : null}
+          {projection.pendingAssignmentCount > 0 ? (
+            <li>{projection.pendingAssignmentCount} awaiting topic assignment</li>
+          ) : null}
+          {projection.pendingEnrichmentTopicCount > 0 ? (
+            <li>{projection.pendingEnrichmentTopicCount} topics enriching</li>
+          ) : null}
+          {projection.processedCount !== null && projection.totalCount !== null ? (
+            <li>{projection.processedCount} / {projection.totalCount} processed</li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
+function ContentBrief({ topic }: { topic: ContentPlanTopicDetail['topic'] }) {
+  const recommendation = topic.recommendation
+  const available = hasCopyableContentPlanBrief(recommendation)
+  return (
+    <section aria-labelledby="content-plan-topic-brief">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3
+          id="content-plan-topic-brief"
+          className="text-xs font-medium uppercase tracking-normal text-muted-foreground"
+        >
+          Content brief
+        </h3>
+        <Badge variant="outline" className="border-border">
+          {enrichmentStateLabel(recommendation.state)}
+        </Badge>
+      </div>
+      {available ? (
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          <MetricBlock term="Suggested title" value={recommendation.suggestedTitle!} sub="Working title; review before publishing." />
+          <MetricBlock term="Suggested shape" value={recommendation.suggestedShape!} sub="A format suggestion, not a publishing action." />
+          <MetricBlock term="Why now" value={recommendation.rationale!} sub="Generated from the evidence shown above." />
+          <MetricBlock term="Evidence statement" value={recommendation.evidenceStatement!} sub="Verify against the measured counts above." />
+        </dl>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">
+          The generated brief is {enrichmentStateLabel(recommendation.state).toLowerCase()}.
+          Demand and grounding evidence remain available above.
+        </p>
+      )}
+    </section>
+  )
+}
+
 function decisionActionStateLabel(
   state: ContentPlanTopicDetail['decision']['actionState'],
 ): string {
@@ -318,12 +403,16 @@ function DecisionActions({
   action,
   actionState,
   onWriteDocument,
+  websiteCrawlerEnabled,
+  onAddDocument,
   onInvestigateRetrieval,
   onReviewFirstDocument,
 }: {
   action: ContentPlanTopicDetail['decision']['action']
   actionState: ContentPlanTopicDetail['decision']['actionState']
   onWriteDocument: () => void
+  websiteCrawlerEnabled: boolean
+  onAddDocument: (action: AddDocumentAction) => void
   onInvestigateRetrieval: () => void
   onReviewFirstDocument?: () => void
 }) {
@@ -332,10 +421,17 @@ function DecisionActions({
   }
   if (action === 'add_content') {
     return (
-      <Button type="button" size="sm" onClick={onWriteDocument}>
-        <Sparkles className="h-3.5 w-3.5" aria-hidden />
-        Write document
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="button" size="sm" onClick={onWriteDocument}>
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+          Write document
+        </Button>
+        <AddDocumentMenu
+          websiteCrawlerEnabled={websiteCrawlerEnabled}
+          onSelect={onAddDocument}
+          compact
+        />
+      </div>
     )
   }
   if (action === 'review_existing_content' && onReviewFirstDocument) {
@@ -392,7 +488,7 @@ function RepresentativeQuestions({
                 {VERDICT_LABEL[item.groundingVerdict]}
               </Badge>
             </div>
-            {item.conversationId ? (
+            {item.sourceAvailable && item.conversationId && item.assistantMessageId ? (
               <div className="mt-2">
                 <Button
                   type="button"

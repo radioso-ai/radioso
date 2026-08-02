@@ -5,6 +5,7 @@ import type {
   ContentPlanTopicSummary,
 } from '@/lib/api-content-plan'
 import {
+  assessContentPlanDraftEligibility,
   hasCopyableContentPlanBrief,
   mergeContentPlanPage,
 } from '@/lib/content-plan'
@@ -55,6 +56,54 @@ describe('content plan pagination', () => {
       suggestedShape: 'guide',
       evidenceStatement: 'Three measured conversations show the gap.',
     })).toBe(true)
+    expect(hasCopyableContentPlanBrief({
+      ...recommendation,
+      state: 'pending',
+      action: 'add_content',
+      rationale: 'Visitors repeatedly ask about this gap.',
+      suggestedTitle: 'A useful guide',
+      questionsToAnswer: ['What should visitors know?'],
+      suggestedShape: 'guide',
+      evidenceStatement: 'Three measured conversations show the gap.',
+    })).toBe(false)
+  })
+
+  it('fresh-gates topic-driven drafts on the server decision and complete brief', () => {
+    const completeRecommendation = {
+      ...topic('topic-a', 'Topic A').recommendation,
+      state: 'ready' as const,
+      action: 'add_content' as const,
+      rationale: 'Visitors repeatedly ask about this gap.',
+      suggestedTitle: 'A useful guide',
+      questionsToAnswer: ['What should visitors know?'],
+      suggestedShape: 'guide' as const,
+      evidenceStatement: 'Three measured conversations show the gap.',
+    }
+
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'add_content', actionState: 'ready' },
+      recommendation: completeRecommendation,
+    })).toEqual({ kind: 'ready' })
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'review_existing_content', actionState: 'ready' },
+      recommendation: completeRecommendation,
+    })).toMatchObject({ kind: 'changed' })
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'add_content', actionState: 'stale' },
+      recommendation: completeRecommendation,
+    })).toMatchObject({ kind: 'unavailable' })
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'add_content', actionState: 'ready' },
+      recommendation: { ...completeRecommendation, action: 'monitor' },
+    })).toMatchObject({ kind: 'changed' })
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'add_content', actionState: 'ready' },
+      recommendation: { ...completeRecommendation, state: 'pending' },
+    })).toMatchObject({ kind: 'unavailable' })
+    expect(assessContentPlanDraftEligibility({
+      decision: { action: 'add_content', actionState: 'ready' },
+      recommendation: { ...completeRecommendation, questionsToAnswer: [] },
+    })).toMatchObject({ kind: 'unavailable' })
   })
 })
 

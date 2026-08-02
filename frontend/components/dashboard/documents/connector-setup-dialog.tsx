@@ -220,10 +220,12 @@ export function ConnectorSetupDialog({
   open,
   connectorId,
   onOpenChange,
+  context,
 }: {
   open: boolean
   connectorId: string
   onOpenChange: (open: boolean) => void
+  context?: ReactNode
 }) {
   const [detail, setDetail] = useState<ConnectorDetail | null>(null)
   const [values, setValues] = useState<FieldValueMap>({})
@@ -565,6 +567,8 @@ export function ConnectorSetupDialog({
             {detail?.description ?? 'Configure how this connector ingests content into your knowledge base.'}
           </DialogDescription>
         </DialogHeader>
+
+        {context ? <div className="px-6 pt-4">{context}</div> : null}
 
         {isLoading ? (
           <div className="flex h-48 items-center justify-center">

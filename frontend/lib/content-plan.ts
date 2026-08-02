@@ -14,12 +14,59 @@ import type {
 export const hasCopyableContentPlanBrief = (
   recommendation: ContentPlanRecommendation,
 ): boolean => Boolean(
-  recommendation.rationale
+  recommendation.state === 'ready'
+  && recommendation.rationale
   && recommendation.suggestedTitle
   && recommendation.questionsToAnswer.length > 0
   && recommendation.suggestedShape
   && recommendation.evidenceStatement,
 )
+
+export type ContentPlanDraftEligibility =
+  | { kind: 'ready' }
+  | { kind: 'changed'; message: string }
+  | { kind: 'unavailable'; message: string }
+
+/**
+ * Fresh-gate a Content plan write handoff using only server-owned decision and
+ * enrichment state. A stale URL must never manufacture an ordinary blank draft.
+ */
+export const assessContentPlanDraftEligibility = (input: {
+  decision: {
+    action: ContentPlanRecommendationAction | null
+    actionState: 'ready' | 'unavailable' | 'pending' | 'stale'
+  }
+  recommendation: ContentPlanRecommendation
+}): ContentPlanDraftEligibility => {
+  if (
+    input.decision.action !== 'add_content'
+    || input.recommendation.action !== 'add_content'
+  ) {
+    return {
+      kind: 'changed',
+      message: 'This topic no longer recommends adding content. Review its current evidence before drafting.',
+    }
+  }
+  if (input.decision.actionState !== 'ready') {
+    return {
+      kind: 'unavailable',
+      message: 'The add-content decision is not ready. Return to the topic and wait for current evidence.',
+    }
+  }
+  if (input.recommendation.state !== 'ready') {
+    return {
+      kind: 'unavailable',
+      message: 'The content brief is still being refreshed. No draft was opened.',
+    }
+  }
+  if (!hasCopyableContentPlanBrief(input.recommendation)) {
+    return {
+      kind: 'unavailable',
+      message: 'The question-only content brief is not available. No draft was opened.',
+    }
+  }
+  return { kind: 'ready' }
+}
 
 /**
  * Append a cursor page without replacing the report snapshot established by

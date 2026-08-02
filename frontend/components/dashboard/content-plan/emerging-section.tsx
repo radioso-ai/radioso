@@ -1,12 +1,14 @@
 'use client'
 
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, MessageSquareText } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { ContentPlanEmergingQuestion } from '@/lib/api-content-plan'
 
 interface EmergingSectionProps {
   items: readonly ContentPlanEmergingQuestion[]
+  onOpenConversation: (input: { conversationId: string; assistantMessageId: string }) => void
 }
 
 const stateLabel: Record<ContentPlanEmergingQuestion['state'], string> = {
@@ -20,7 +22,7 @@ const stateLabel: Record<ContentPlanEmergingQuestion['state'], string> = {
  * label, action, or brief is shown; the display uses the observation identity
  * and a typed state so nothing looks like a finished recommendation.
  */
-export function EmergingSection({ items }: EmergingSectionProps) {
+export function EmergingSection({ items, onOpenConversation }: EmergingSectionProps) {
   if (items.length === 0) {
     return null
   }
@@ -56,6 +58,21 @@ export function EmergingSection({ items }: EmergingSectionProps) {
                 {item.conversationCount} conversation{item.conversationCount === 1 ? '' : 's'}
               </span>
             </p>
+            {item.sourceAvailable && item.conversationId && item.assistantMessageId ? (
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="mt-2 h-auto p-0"
+                onClick={() => onOpenConversation({
+                  conversationId: item.conversationId!,
+                  assistantMessageId: item.assistantMessageId!,
+                })}
+              >
+                <MessageSquareText className="mr-1 h-3.5 w-3.5" aria-hidden />
+                Open source conversation
+              </Button>
+            ) : null}
           </li>
         ))}
       </ul>

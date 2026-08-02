@@ -160,6 +160,24 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('preserves Content plan return context while a new document draft is open', () => {
+    const topicId = 'a1111111-1111-4111-8111-111111111111'
+    const href = buildDashboardHref('account-1', {
+      section: 'knowledge',
+      workspacePublicRouteKey: 'support-abc123',
+      knowledgeTab: 'documents',
+      knowledgeFromContentPlanTopicId: topicId,
+    })
+
+    expect(href).toBe(`/w/support-abc123/knowledge?fromContentPlan=${topicId}`)
+    expect(parseDashboardRoute(['knowledge'], new URLSearchParams({
+      fromContentPlan: topicId,
+    }))).toEqual({
+      section: 'knowledge',
+      knowledgeFromContentPlanTopicId: topicId,
+    })
+  })
+
   it('drops invalid section-specific parameters during parsing', () => {
     const params = new URLSearchParams({
       workspace: 'workspace-3',
@@ -794,6 +812,36 @@ describe('dashboard route state', () => {
       section: 'knowledge',
       knowledgeDraftFromContentPlanTopicId: topicId,
     })
+
+    expect(buildDashboardHref('account-1', {
+      section: 'knowledge',
+      workspacePublicRouteKey: 'ws-key',
+      knowledgeTab: 'documents',
+      knowledgeFromContentPlanTopicId: topicId,
+      knowledgeAddAction: 'import',
+    })).toBe(`/w/ws-key/knowledge?fromContentPlan=${topicId}&add=import`)
+
+    expect(parseDashboardRoute(
+      ['knowledge'],
+      new URLSearchParams({ fromContentPlan: topicId, add: 'import' }),
+    )).toEqual({
+      section: 'knowledge',
+      knowledgeFromContentPlanTopicId: topicId,
+      knowledgeAddAction: 'import',
+    })
+
+    expect(parseDashboardRoute(
+      ['knowledge'],
+      new URLSearchParams({ fromContentPlan: topicId, add: 'invalid' }),
+    )).toEqual({
+      section: 'knowledge',
+      knowledgeFromContentPlanTopicId: topicId,
+    })
+
+    expect(parseDashboardRoute(
+      ['knowledge'],
+      new URLSearchParams({ add: 'import' }),
+    )).toEqual({ section: 'knowledge' })
   })
 
   it('retargets a content plan route to another workspace without carrying topic scope', () => {

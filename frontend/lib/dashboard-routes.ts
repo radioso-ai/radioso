@@ -21,6 +21,7 @@ export type DashboardSection =
   | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
+export type KnowledgeAddAction = 'crawl' | 'import' | 'create' | 'wordpress'
 export type ActivityTab = 'needs-attention' | 'all'
 export type SettingsTab = 'workspace' | 'providers'
 export type AccountTab = 'members' | 'usage'
@@ -141,6 +142,8 @@ export interface DashboardRouteState {
   knowledgeFromContentPlanTopicId?: string
   /** Knowledge came from a Content plan topic's question-only "Write document" prefill. */
   knowledgeDraftFromContentPlanTopicId?: string
+  /** Opens the selected Knowledge add flow while retaining a Content plan return path. */
+  knowledgeAddAction?: KnowledgeAddAction
   evalCaseId?: string
   anchor?: string
 }
@@ -189,6 +192,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'contentPlanMergedIntoTopicId',
   'knowledgeFromContentPlanTopicId',
   'knowledgeDraftFromContentPlanTopicId',
+  'knowledgeAddAction',
   'evalCaseId',
   'anchor',
 ]
@@ -222,6 +226,14 @@ const parseHistoryFilter = (value: string | null): HistoryFilter | undefined => 
 
 const parseActivityTab = (value: string | null): ActivityTab | undefined => {
   if (value === 'needs-attention' || value === 'all') {
+    return value
+  }
+
+  return undefined
+}
+
+const parseKnowledgeAddAction = (value: string | null): KnowledgeAddAction | undefined => {
+  if (value === 'crawl' || value === 'import' || value === 'create' || value === 'wordpress') {
     return value
   }
 
@@ -473,12 +485,19 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
       normalized.documentSourceFilter = state.documentSourceFilter
     }
     if (state.knowledgeFromContentPlanTopicId
-      && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents'
-      && state.documentId) {
+      && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents') {
       normalized.knowledgeFromContentPlanTopicId = state.knowledgeFromContentPlanTopicId
     }
     if (state.knowledgeDraftFromContentPlanTopicId) {
       normalized.knowledgeDraftFromContentPlanTopicId = state.knowledgeDraftFromContentPlanTopicId
+    }
+    if (
+      state.knowledgeAddAction
+      && normalized.knowledgeFromContentPlanTopicId
+      && !normalized.knowledgeDraftFromContentPlanTopicId
+      && (state.knowledgeTab ?? DEFAULT_KNOWLEDGE_TAB) === 'documents'
+    ) {
+      normalized.knowledgeAddAction = state.knowledgeAddAction
     }
     if (state.anchor) {
       normalized.anchor = state.anchor
@@ -658,6 +677,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.knowledgeDraftFromContentPlanTopicId) {
       searchParams.set('draftFromContentPlan', normalized.knowledgeDraftFromContentPlanTopicId)
+    }
+    if (normalized.knowledgeAddAction) {
+      searchParams.set('add', normalized.knowledgeAddAction)
     }
     if (normalized.anchor) {
       searchParams.set('anchor', normalized.anchor)
@@ -986,6 +1008,7 @@ export const parseDashboardRoute = (
               parseUuidQuery(searchParams?.get('draftFromContentPlan') ?? null),
           }
         : {}),
+      knowledgeAddAction: parseKnowledgeAddAction(searchParams?.get('add') ?? null),
       anchor: parseAnchor(searchParams?.get('anchor') ?? null),
     })
   }

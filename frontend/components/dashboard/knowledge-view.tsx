@@ -41,6 +41,21 @@ export function KnowledgeView({
     message?: string | null
   }>({ state: 'idle' })
 
+  const handleAutoOpenAddHandled = useCallback(() => {
+    if (!routeState.knowledgeAddAction) {
+      setPendingAddAction(null)
+      return
+    }
+
+    setPendingAddAction(null)
+    router.replace(
+      buildDashboardHref(accountId, {
+        ...routeState,
+        knowledgeAddAction: undefined,
+      }),
+    )
+  }, [accountId, routeState, router])
+
   const handleAddSelect = useCallback((action: AddDocumentAction) => {
     setPendingAddAction(action)
     router.push(
@@ -125,8 +140,8 @@ export function KnowledgeView({
           selectedDocumentId={selectedDocumentId}
           onSelectedDocumentChange={onSelectedDocumentChange}
           onboarding={onboarding}
-          autoOpenAdd={pendingAddAction}
-          onAutoOpenAddHandled={() => setPendingAddAction(null)}
+          autoOpenAdd={routeState.knowledgeAddAction ?? pendingAddAction}
+          onAutoOpenAddHandled={handleAutoOpenAddHandled}
           autoDraftFromContentPlanTopicId={routeState.knowledgeDraftFromContentPlanTopicId ?? null}
           onAutoDraftFromContentPlanHandled={() => {
             const topicId = routeState.knowledgeDraftFromContentPlanTopicId
@@ -139,6 +154,7 @@ export function KnowledgeView({
               }),
             )
           }}
+          contentPlanReturnHref={returnToContentPlanHref}
         />
       </>
     )

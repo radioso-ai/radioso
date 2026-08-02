@@ -65,6 +65,7 @@ describe("default application composition", () => {
       "radioso-mcp-converse",
       "radioso-usage-reporting",
       "radioso-quality",
+      "radioso-content-planning",
       "radioso-contact-routine",
       "radioso-webhook-send",
       "radioso-oss-organization-creation",
@@ -80,6 +81,11 @@ describe("default application composition", () => {
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/answer-feedback");
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/account");
     expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/quality");
+    expect(composition.routeMounts.map((mount) => mount.path)).toContain("/api/v1/quality/content-plan");
+    const contentPlanningModule = composition.modules.find(({ id }) => id === "radioso-content-planning");
+    expect(contentPlanningModule).toBeDefined();
+    expect(contentPlanningModule?.initialize).toBeUndefined();
+    expect(contentPlanningModule?.shutdown).toBeUndefined();
     expect(composition.answerFeedbackHistoryProviderRegistration).toBeTypeOf("function");
     expect(composition.agentSurfaceExtensions.map((extension) => extension.key)).toEqual(["websiteEmbed"]);
     expect(composition.websiteEmbedIntegration).toBeDefined();
@@ -206,6 +212,7 @@ describe("default application composition", () => {
       "radioso-mcp-converse",
       "radioso-usage-reporting",
       "radioso-quality",
+      "radioso-content-planning",
       "radioso-contact-routine",
       "radioso-webhook-send",
       "radioso-oss-organization-creation",

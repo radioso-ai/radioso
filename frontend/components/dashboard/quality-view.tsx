@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ChevronDown,
@@ -67,6 +68,7 @@ import {
   type SkillOwner,
   type SkillOutcomeDefinition,
 } from '@/lib/api'
+import { contentPlanApi } from '@/lib/api-content-plan'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
   buildDashboardHref,
@@ -440,6 +442,36 @@ const QUALITY_SIGNALS: ReadonlyArray<QualitySignalDefinition> = QUALITY_SIGNAL_I
 }))
 
 /**
+ * Banner shown when the operator arrives at Quality from a Content plan topic.
+ * The queue is filtered to the topic's current-window members through the
+ * content-plan member-turn endpoint; this affordance keeps a valid return path.
+ */
+function ContentPlanReturnBanner({
+  topicId,
+  contentPlanHref,
+}: {
+  topicId: string
+  contentPlanHref: string
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-foreground"
+      data-content-plan-return
+      data-content-plan-topic-id={topicId}
+    >
+      <p className="min-w-0">
+        Filtered to a Content plan topic&apos;s current-window answers.
+      </p>
+      <Button asChild variant="outline" size="sm">
+        <Link href={contentPlanHref}>Return to Content plan topic</Link>
+      </Button>
+    </div>
+  )
+}
+
+/**
  * Count-forward filter preset for the queue. The count is the all-time active
  * backlog, so it never disagrees with what clicking the chip shows.
  */
@@ -639,6 +671,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const activeSignal: QualitySignalId | null = routeState.qualitySignal ?? null
   // Opting out of the queue's default scope: every answer, any triage state.
   const showAll = routeState.qualityShowAll ?? false
+  // Content plan handoff: when set, the queue is scoped to a topic's membership
+  // via the content-plan member-turn endpoint, and a return affordance is shown.
+  const contentPlanTopicId = routeState.contentPlanTopicId ?? null
 
   const [items, setItems] = useState<LowQualityTurn[]>([])
   const [total, setTotal] = useState(0)
@@ -1147,30 +1182,47 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         }
         setIsFetching(true)
         setError(null)
-        const page = await qualityApi.listTurns({
-          signal: queueScope.signals,
-          actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
-          statuses: statusesList,
-          feedback: feedbackList,
-          triageStates: queueScope.triageStates,
-          resolutionReasons: resolutionReasons.length > 0
-            ? (resolutionReasons as QualityResolutionBreakdownReason[])
-            : undefined,
-          resolutionFrom,
-          resolutionTo,
-          sort: sort === 'turn_created_at' ? undefined : sort,
-          activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
-          hasComment: hasComment || undefined,
-          groundingVerdict: groundingVerdicts.length > 0 ? groundingVerdicts : undefined,
-          hasUnsourcedClaims: hasUnsourcedClaims || undefined,
-          hasInvalidSources: hasInvalidSources || undefined,
-          minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
-          maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
-          limit: PAGE_SIZE,
-          offset: (currentPage - 1) * PAGE_SIZE,
-        })
+        // Content plan handoff bypasses the queue-signal query and reads the
+        // topic's members through its own authorized endpoint; the response
+        // shape is the shared LowQualityTurnsPage, so the rest of the queue
+        // renders unchanged.
+        const page = contentPlanTopicId
+          ? await contentPlanApi.listTopicTurns(contentPlanTopicId, {
+              window: 'current',
+              page: currentPage,
+              pageSize: PAGE_SIZE,
+            })
+          : await qualityApi.listTurns({
+              signal: queueScope.signals,
+              actions: actionTuples && actionTuples.length > 0 ? actionTuples : undefined,
+              statuses: statusesList,
+              feedback: feedbackList,
+              triageStates: queueScope.triageStates,
+              resolutionReasons: resolutionReasons.length > 0
+                ? (resolutionReasons as QualityResolutionBreakdownReason[])
+                : undefined,
+              resolutionFrom,
+              resolutionTo,
+              sort: sort === 'turn_created_at' ? undefined : sort,
+              activeNegativeFeedbackOnly: activeNegativeFeedbackOnly || undefined,
+              hasComment: hasComment || undefined,
+              groundingVerdict: groundingVerdicts.length > 0 ? groundingVerdicts : undefined,
+              hasUnsourcedClaims: hasUnsourcedClaims || undefined,
+              hasInvalidSources: hasInvalidSources || undefined,
+              minTotalLatencyMs: latencyBucket?.minTotalLatencyMs,
+              maxTotalLatencyMs: latencyBucket?.maxTotalLatencyMs,
+              limit: PAGE_SIZE,
+              offset: (currentPage - 1) * PAGE_SIZE,
+            })
 
         if (cancelled) {
+          return
+        }
+        if (page === null) {
+          setItems([])
+          setTotal(0)
+          setTotalPages(0)
+          setError('This Content plan topic is no longer available.')
           return
         }
         setItems(page.items)
@@ -1216,6 +1268,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     activeNegativeFeedbackOnly,
     turnsRefreshKey,
     queueScope,
+    contentPlanTopicId,
   ])
 
   const openConversation = (turn: LowQualityTurn) =>
@@ -1516,6 +1569,17 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       description="Triage the answers that need attention — negative feedback, grounding gaps, and slow responses — then open the conversation to act."
       titleAccessory={<MessageSquareWarning className="h-4 w-4 text-muted-foreground" />}
     >
+      {contentPlanTopicId ? (
+        <ContentPlanReturnBanner
+          topicId={contentPlanTopicId}
+          contentPlanHref={buildDashboardHref(accountId, {
+            section: 'content-plan',
+            workspaceId: routeState.workspaceId,
+            workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+            contentPlanTopicId,
+          })}
+        />
+      ) : null}
       {error ? (
         <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
           {error}

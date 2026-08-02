@@ -1,4 +1,14 @@
 export { QualityTurnsService } from "./service.js";
+export { QualityContentPlanningEvidenceSource } from "./contentPlanningEvidence.js";
+export type {
+  QualityContentPlanningEvidenceSourcePort,
+  QualityContentPlanningPopulationCursor,
+  QualityContentPlanningPopulationPage,
+  QualityContentPlanningPopulationTurn,
+  QualityContentPlanningRemediationInactivityReason,
+  QualityContentPlanningTurnEvidence,
+  QualityContentPlanningWindow,
+} from "./contracts/contentPlanningEvidence.js";
 export { SkillCatalogOutcomeSource } from "./infra/skillCatalogOutcomeSource.js";
 export {
   createQualityRoutes,

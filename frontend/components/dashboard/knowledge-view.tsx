@@ -1,7 +1,9 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { ArrowLeft } from 'lucide-react'
 
 import { AddDocumentMenu, type AddDocumentAction } from '@/components/dashboard/documents/add-document-menu'
 import { DocumentsView } from '@/components/dashboard/documents-view'
@@ -9,6 +11,7 @@ import { DocumentSourcesView } from '@/components/dashboard/document-sources-vie
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { SaveStateIndicator } from '@/components/dashboard/shared/save-state-indicator'
 import { IngestionSettingsPanel } from '@/components/dashboard/settings/ingestion-settings-panel'
+import { Button } from '@/components/ui/button'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 
@@ -88,16 +91,56 @@ export function KnowledgeView({
   }
 
   if (activeTab === 'documents') {
+    const contentPlanTopicId =
+      routeState.knowledgeFromContentPlanTopicId ?? routeState.knowledgeDraftFromContentPlanTopicId
+    const returnToContentPlanHref = contentPlanTopicId
+      ? buildDashboardHref(accountId, {
+          section: 'content-plan',
+          workspaceId: routeState.workspaceId,
+          workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+          contentPlanTopicId,
+        })
+      : null
+
     return (
-      <DocumentsView
-        routeState={routeState}
-        accountId={accountId}
-        selectedDocumentId={selectedDocumentId}
-        onSelectedDocumentChange={onSelectedDocumentChange}
-        onboarding={onboarding}
-        autoOpenAdd={pendingAddAction}
-        onAutoOpenAddHandled={() => setPendingAddAction(null)}
-      />
+      <>
+        {returnToContentPlanHref ? (
+          <div className="border-b border-border bg-primary/5 px-6 py-2 text-sm text-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span>
+                Opened from a Content plan topic.
+              </span>
+              <Button asChild variant="ghost" size="sm">
+                <Link href={returnToContentPlanHref}>
+                  <ArrowLeft className="mr-1 h-4 w-4" aria-hidden />
+                  Return to Content plan topic
+                </Link>
+              </Button>
+            </div>
+          </div>
+        ) : null}
+        <DocumentsView
+          routeState={routeState}
+          accountId={accountId}
+          selectedDocumentId={selectedDocumentId}
+          onSelectedDocumentChange={onSelectedDocumentChange}
+          onboarding={onboarding}
+          autoOpenAdd={pendingAddAction}
+          onAutoOpenAddHandled={() => setPendingAddAction(null)}
+          autoDraftFromContentPlanTopicId={routeState.knowledgeDraftFromContentPlanTopicId ?? null}
+          onAutoDraftFromContentPlanHandled={() => {
+            const topicId = routeState.knowledgeDraftFromContentPlanTopicId
+            if (!topicId) return
+            router.replace(
+              buildDashboardHref(accountId, {
+                ...routeState,
+                knowledgeDraftFromContentPlanTopicId: undefined,
+                knowledgeFromContentPlanTopicId: topicId,
+              }),
+            )
+          }}
+        />
+      </>
     )
   }
 

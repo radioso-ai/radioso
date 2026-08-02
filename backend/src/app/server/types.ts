@@ -94,6 +94,7 @@ import type {
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { OperatorReplyService } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
+import type { ContentPlanningWorkerRuntime } from "../../modules/contentPlanning/services/contentPlanningWorkerRuntime.js";
 
 export interface AppDependencies {
   env: Env;
@@ -111,6 +112,7 @@ export interface AppDependencies {
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;
   vectorIndexReconciler?: Pick<VectorIndexReconciler, "start" | "stop" | "runUntilIdle">;
+  contentPlanningWorkerRuntime: Pick<ContentPlanningWorkerRuntime, "start" | "stop">;
   authService: AuthService;
   accessGrantService: AccessGrantService;
   passwordResetService: PasswordResetService;

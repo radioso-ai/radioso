@@ -1,4 +1,5 @@
 import type {
+  ConversationInteractionRole,
   ConversationTurnInterpretation,
   ConversationTurnInterpreter,
 } from "@radioso/conversation-contract";
@@ -25,6 +26,7 @@ import {
 } from "./pageRead/pageReadDecision.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouterGatewayResult, type TurnRouting } from "./turnRouter.js";
+import { parseConversationInteractionRole } from "./conversationInteraction.js";
 
 export interface ConversationTurnInterpreterInput {
   query: string;
@@ -43,6 +45,8 @@ export interface ConversationTurnInterpreterInput {
 }
 
 export interface ConversationTurnInterpretationResult extends TurnRouting {
+  /** Live fused/staged interpreters always populate this; optional keeps host adapters compatible. */
+  interactionRole?: ConversationInteractionRole;
   rewriteProposal?: StructuredRewriteResult;
   pageRead?: PageReadDecision;
 }
@@ -105,6 +109,7 @@ export interface TurnInterpretationGatewayInput {
 }
 
 export interface TurnInterpretationGatewayResult extends TurnRouterGatewayResult {
+  interactionRole?: ConversationInteractionRole;
   rewrite?: StructuredRewriteResult | null;
   pageRead?: PageReadDecision;
 }
@@ -169,6 +174,7 @@ export const parseTurnInterpretation = (
   const rewriteRaw = parsed.rewrite;
   return {
     route: typeof parsed.route === "string" ? parsed.route : undefined,
+    interactionRole: parseConversationInteractionRole(parsed.interactionRole),
     isIdentityQuestion: typeof parsed.isIdentityQuestion === "boolean" ? parsed.isIdentityQuestion : false,
     intentTopic: typeof parsed.intentTopic === "string" ? parsed.intentTopic : null,
     inScopeRequest: typeof parsed.inScopeRequest === "string" ? parsed.inScopeRequest : null,
@@ -237,12 +243,14 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
       const routing = normalizeTurnRouting(result);
       return {
         ...routing,
+        interactionRole: parseConversationInteractionRole(result.interactionRole),
         ...(routing.route === "retrieval" && result.rewrite ? { rewriteProposal: result.rewrite } : {}),
         ...(result.pageRead ? { pageRead: result.pageRead } : {}),
       };
     } catch {
       return {
         route: "retrieval",
+        interactionRole: "unresolved",
         framing: { isIdentityQuestion: false },
       };
     }
@@ -254,6 +262,7 @@ export class LlmConversationTurnInterpreter implements ChatConversationTurnInter
         const result = await this.interpretChatTurn(input);
         return {
           route: result.route,
+          interactionRole: result.interactionRole,
           framing: result.framing,
           metadata: result.rewriteProposal ? { rewriteProposal: result.rewriteProposal } : undefined,
         };

@@ -11,6 +11,7 @@ import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
+import { createSemanticVectorEnvelope } from "../domain/semanticVectorEnvelope.js";
 import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
@@ -39,6 +40,12 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     // semantic contexts below and contribute lexical-only.
     const uniqueSemanticQueries = [...new Set(semanticQueries)].slice(0, RETRIEVAL_BEHAVIOR.maxSemanticBranches);
     const searchedSemanticQueries = new Set(uniqueSemanticQueries);
+    const intentIdBySemanticQuery = new Map<string, string>();
+    for (const subquery of input.activeRetrievalSubqueries) {
+      if (!intentIdBySemanticQuery.has(subquery.semanticQuery)) {
+        intentIdBySemanticQuery.set(subquery.semanticQuery, subquery.id);
+      }
+    }
     const lexicalSearchBySubquery = new Map(
       input.activeRetrievalSubqueries.map((subquery) => [
         subquery.id,
@@ -76,7 +83,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     const semanticSearchByQuery = new Map(
       uniqueSemanticQueries.map((query) => [
         query,
-        embeddingResult
+        embeddingResult && (embeddingBySemanticQuery.get(query)?.length ?? 0) > 0
           ? this.searchWithFallback({
               workspaceId: input.request.workspaceId,
               space: embeddingResult.space,
@@ -97,6 +104,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         // not raise vectorFallbackApplied for the turn.
         const semanticSearched =
           embeddingResult !== null
+          && (embeddingBySemanticQuery.get(subquery.semanticQuery)?.length ?? 0) > 0
           && searchedSemanticQueries.has(subquery.semanticQuery);
         const semanticSearchForBranch = semanticSearched
           ? semanticSearchByQuery.get(subquery.semanticQuery)
@@ -123,6 +131,23 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         };
       }),
     );
+
+    const semanticVectors = embeddingResult
+      ? (await Promise.all(uniqueSemanticQueries.map(async (semanticText) => {
+          const vector = embeddingBySemanticQuery.get(semanticText) ?? [];
+          const search = await semanticSearchByQuery.get(semanticText);
+          const intentId = intentIdBySemanticQuery.get(semanticText);
+          if (!intentId || vector.length === 0 || !search || search.fallbackApplied) {
+            return null;
+          }
+          return createSemanticVectorEnvelope({
+            intentId,
+            semanticText,
+            vector,
+            space: embeddingResult.space,
+          });
+        }))).filter((envelope) => envelope !== null)
+      : [];
 
     const originalContexts = input.rewrittenQuery.retrievalEligible
       ? []
@@ -157,6 +182,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       ...input,
       activeEmbedding: embeddingBySemanticQuery.get(input.activeRetrievalSubqueries[0]?.semanticQuery ?? "") ?? [],
       activeEmbeddingDurationMs,
+      semanticVectors,
       originalContexts,
       rewrittenContexts,
       lexicalContexts,

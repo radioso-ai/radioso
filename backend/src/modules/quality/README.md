@@ -69,6 +69,14 @@ is the failure this module exists to prevent. Both exclusions are NULL-safe;
 that is load-bearing, since `NOT IN` yields NULL rather than TRUE for a NULL
 column and would silently drop real turns.
 
+Content Planning reads the same population and Quality-owned evidence through
+`QualityContentPlanningEvidenceSourcePort`. Its bootstrap cursor freezes the
+requested time window and pages by `(created_at, message_id)`. Population and
+evidence batches expose identifiers, grounding snapshots, effective triage,
+verification, and structured remediation inactivity reasons, but no message or
+resolution-note content. Only the separately bounded member-page mapper exposes
+the existing `LowQualityTurn` previews for an authorized report drill-down.
+
 Rates are reported with the population they are measured over, and report `null`
 rather than a number when that population is empty. Backlog counts are all-time
 and ignore the health window, so an untriaged turn never disappears because it
@@ -76,9 +84,9 @@ aged out.
 
 ## Public Surfaces
 
-- `composition.ts`: the service, the route factory, the signal domain helpers,
-  and the DTOs. Application composition wires the skill catalog in through
-  `infra/skillCatalogOutcomeSource.ts`.
+- `composition.ts`: the services, the route factory, the Content Planning
+  evidence source, signal domain helpers, and DTOs. Application composition
+  wires the skill catalog in through `infra/skillCatalogOutcomeSource.ts`.
 - `contracts/index.ts`: the two ports (`QualityTurnsServicePort`,
   `QualityStatsServicePort`) and every response shape.
 
@@ -90,6 +98,10 @@ aged out.
   normalization.
 - `turnPopulationSql.ts`: the shared turn population and the query fragments both
   readers compose.
+- `contentPlanningEvidence.ts`: the read-only population/evidence port and the
+  bounded mapper used by Content Planning.
+- `turnReadModel.ts`: shared mapping for the existing `LowQualityTurn` read
+  representation.
 - `statsQuery.ts`: pure window maths, UTC day bucketing, and the aggregate query
   builders. Returns `{text, params}`; runs no I/O.
 - `service.ts`: runs the builders and maps rows to DTOs.
@@ -107,5 +119,7 @@ aged out.
 - `cd backend && pnpm exec vitest run tests/unit/quality-resolution.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/quality-verification.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/quality-triage-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/quality-content-planning-evidence.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/quality-stats.integration.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/quality-turns.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/content-planning-quality-evidence.integration.test.ts`

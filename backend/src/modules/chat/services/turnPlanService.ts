@@ -1,4 +1,8 @@
-import type { ConversationTurnRoute, DirectiveClassification } from "@radioso/conversation-contract";
+import type {
+  ConversationInteractionRole,
+  ConversationTurnRoute,
+  DirectiveClassification,
+} from "@radioso/conversation-contract";
 import type { RankedRoutineMatch, RoutineCandidateSummary } from "@radioso/conversation-defaults";
 import { z } from "zod";
 
@@ -22,6 +26,10 @@ import {
 } from "./pageRead/pageReadDecision.js";
 import { renderConversationSummarySection } from "./summary/conversationSummarySection.js";
 import { normalizeTurnRouting, type TurnRouting } from "./turnRouter.js";
+import {
+  CONVERSATION_INTERACTION_ROLES,
+  parseConversationInteractionRole,
+} from "./conversationInteraction.js";
 
 /**
  * The fused turn plan. It carries, from a single classification call, everything
@@ -33,6 +41,8 @@ import { normalizeTurnRouting, type TurnRouting } from "./turnRouter.js";
  */
 export interface TurnPlan {
   route: ConversationTurnRoute;
+  /** Always populated by parseTurnPlan; optional for older in-process adapters. */
+  interactionRole?: ConversationInteractionRole;
   /** Same framing shape the turn interpreter produces (identity/scope/topic). */
   framing: TurnRouting["framing"];
   /** Structured retrieval rewrite, present only for retrieval-routed turns. */
@@ -150,7 +160,7 @@ const turnPlanOutputShapeBlock = (input: {
     "When a route is direct, rewrite is null. When a route is retrieval, rewrite is the object shown below.\n" +
     "When routineRankings is present, variables is an array of field/value pairs; use an empty array when the latest user message supplies no variables.\n" +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","interactionRole":"substantive_new|substantive_followup|clarification_value|control|social|unresolved","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /** Canonical prompt renderer shared by execution and the eligibility budget. */
@@ -269,6 +279,10 @@ const variablePairSchema = z.object({
 // absent array as an empty one and re-applies the directive-completeness check.
 const rawTurnPlanSchema = z.object({
   route: z.enum(ROUTE_VALUES),
+  // Provider strict mode constrains this field to the enum. Keeping the local
+  // decoder tolerant lets non-schema providers degrade only this signal to
+  // `unresolved` instead of discarding otherwise valid turn planning.
+  interactionRole: z.unknown().optional(),
   isIdentityQuestion: z.boolean(),
   intentTopic: z.string().nullable(),
   inScopeRequest: z.string().nullable(),
@@ -367,6 +381,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
 }): JsonSchemaResponseFormat => {
   const properties: Record<string, unknown> = {
     route: { type: "string", enum: [...ROUTE_VALUES] },
+    interactionRole: { type: "string", enum: [...CONVERSATION_INTERACTION_ROLES] },
     isIdentityQuestion: { type: "boolean" },
     intentTopic: nullableStringJsonSchema,
     inScopeRequest: nullableStringJsonSchema,
@@ -376,6 +391,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
   };
   const required = [
     "route",
+    "interactionRole",
     "isIdentityQuestion",
     "intentTopic",
     "inScopeRequest",
@@ -552,6 +568,7 @@ export const parseTurnPlan = (
 
   return {
     route: routing.route,
+    interactionRole: parseConversationInteractionRole(parsed.interactionRole),
     framing: routing.framing,
     ...(rewriteProposal ? { rewriteProposal } : {}),
     ...(responseLanguage ? { responseLanguage } : {}),

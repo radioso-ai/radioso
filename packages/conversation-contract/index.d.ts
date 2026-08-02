@@ -6,6 +6,19 @@
 
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
+/**
+ * Capability-neutral meaning of the latest visitor turn. Hosts may use this
+ * structured signal for downstream projections, but the conversation engine
+ * treats it as opaque turn metadata and never infers it from message text.
+ */
+export type ConversationInteractionRole =
+  | "substantive_new"
+  | "substantive_followup"
+  | "clarification_value"
+  | "control"
+  | "social"
+  | "unresolved";
+
 export type MessageSource =
   | "customer"
   | "ai_agent"
@@ -558,6 +571,8 @@ export type ConversationTurnRoute = "retrieval" | "direct";
 
 export interface ConversationTurnInterpretation {
   route: ConversationTurnRoute;
+  /** Enum-only interaction meaning; absent keeps older host implementations compatible. */
+  interactionRole?: ConversationInteractionRole;
   framing?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }

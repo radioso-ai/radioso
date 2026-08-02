@@ -6,6 +6,7 @@ import type {
   ConversationInputEvent,
   ConversationModelGateway,
   ConversationRoutineSkillDispatcher,
+  ConversationSkillInputResolver,
   ConversationSkillDispatcher,
   ConversationSkillSelector,
   ConversationStores,
@@ -23,6 +24,7 @@ import {
   RoutineStepRenderer,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
+import * as conversationDefaults from "@radioso/conversation-defaults";
 import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import {
@@ -54,6 +56,13 @@ export interface RunConversationTurnInput {
   skills?: SkillDefinition[];
   metadata?: Record<string, unknown>;
 }
+
+const createSkillInputResolver = (modelGateway: ConversationModelGateway): ConversationSkillInputResolver => {
+  const factory = (conversationDefaults as typeof conversationDefaults & {
+    createConversationSkillInputResolver: (options: { modelGateway: ConversationModelGateway }) => ConversationSkillInputResolver;
+  }).createConversationSkillInputResolver;
+  return factory({ modelGateway });
+};
 
 export interface ConversationKit {
   readonly agent: ConversationAgentConfig;
@@ -100,6 +109,8 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
   engine?: ConversationEngine;
   directiveMatcher?: ConversationDirectiveMatcher;
   selector?: ConversationSkillSelector;
+  /** Override the default model-backed declared-skill input resolver. */
+  skillInputResolver?: ConversationSkillInputResolver;
   dispatcher?: ConversationSkillDispatcher;
   composer?: ConversationTurnComposer;
   directiveCoherence?: DirectiveCoherenceGateOptions;
@@ -157,6 +168,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const routineSkillDispatcher = options.routineSkillDispatcher
     ?? createDefaultRoutineSkillDispatcher(options.localSkills ?? new Map(), skills);
   const composer = options.composer ?? createModelBackedConversationComposer(modelGateway);
+  const skillInputResolver = options.skillInputResolver ?? createSkillInputResolver(modelGateway);
   const directiveCoherence = createDirectiveCoherenceGate(options.directiveCoherence, modelGateway);
 
   // Routines become runnable, not just authorable: the runner resumes an active routine
@@ -207,6 +219,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         dispatcher,
         directiveMatcher,
         selector,
+        skillInputResolver,
         composer,
         routineStore,
         routineRunner,

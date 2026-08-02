@@ -427,6 +427,22 @@ test.describe("Content plan", () => {
     await expect(firstTopicRow).toContainText("Refund policy");
   });
 
+  test("mobile summary keeps the recommended decision in the initial viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+
+    const recommendedLabel = page.getByText("Recommended next", { exact: true });
+    await expect(recommendedLabel).toBeVisible();
+    expect(await recommendedLabel.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.top >= 0 && rect.bottom <= window.innerHeight;
+    })).toBe(true);
+  });
+
   test("labels review-existing as a related-document handoff and opens the topic evidence", async ({ page }) => {
     const reviewTopic = {
       ...topicA(),

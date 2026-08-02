@@ -1060,7 +1060,7 @@ function ListLoadingSkeleton() {
   return (
     <div className="space-y-4" role="status" aria-live="polite" aria-label="Loading Content plan">
       <Skeleton className="h-24 w-full" />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Skeleton className="h-24" />
         <Skeleton className="h-24" />
         <Skeleton className="h-24" />

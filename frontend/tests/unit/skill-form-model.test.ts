@@ -43,6 +43,25 @@ const baseSkill = (input: Partial<AgentSkill> = {}): AgentSkill => ({
   ...input,
 })
 
+const webhookCapability = (): SkillCapabilityDescriptor => baseCapability({
+  id: 'webhook_call',
+  storedKind: 'webhook',
+  targetKind: 'webhook_destination',
+  inputSchema: { source: 'static', schema: { fields: ['payload'], required: ['payload'] } },
+  settingsFields: [],
+  outcomeVocabulary: ['completed', 'failed'],
+  executorAdapter: 'webhook',
+  targets: [{ id: 'destination-1', label: 'Calendar webhook', status: 'active' }],
+})
+
+const webhookSkill = (config: Record<string, unknown>): AgentSkill => baseSkill({
+  name: 'record_calendar_preference',
+  capability: 'webhook_call',
+  storedKind: 'webhook',
+  target: { kind: 'webhook_destination', id: 'destination-1' },
+  config,
+})
+
 describe('skill form model', () => {
   it('derives static descriptor fields without capability branching', () => {
     expect(deriveSkillFields(baseCapability())).toEqual([
@@ -287,6 +306,165 @@ describe('skill form model', () => {
 
     expect(draft.settingDrafts.mode).toBe('send')
     expect(draft.extraConfigJson).toBe(JSON.stringify({ customProviderOption: 'preserve' }, null, 2))
+  })
+
+  it('round-trips API-authored webhook payload entries that have no form row', () => {
+    const capability = webhookCapability()
+    const boundPayload = {
+      calendar_context: {
+        timezone: 'Europe/Tallinn',
+        durationOptions: [30, 60],
+        allowWaitlist: false,
+        fallback: null,
+      },
+    }
+    const exposedPayload = {
+      calendar_date: {
+        description: 'The date the customer wants',
+        slotBinding: 'requested_date',
+        required: true,
+      },
+      haircut_style: {
+        description: 'The requested haircut style',
+        required: false,
+      },
+      notes: {},
+    }
+    const draft = createInitialSkillDraft([capability], webhookSkill({
+      boundPayload,
+      exposedPayload,
+      providerOption: 'preserve',
+    }))
+
+    expect(JSON.parse(draft.extraConfigJson)).toEqual({
+      boundPayload,
+      exposedPayload,
+      providerOption: 'preserve',
+    })
+
+    draft.enabled = false
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toEqual({
+      boundPayload,
+      exposedPayload: {
+        ...exposedPayload,
+        payload: {
+          description: 'Payload',
+          slotBinding: 'payload',
+          required: true,
+        },
+      },
+      providerOption: 'preserve',
+    })
+  })
+
+  it('persists intentional Additional settings edits to unrendered webhook payload entries', () => {
+    const capability = webhookCapability()
+    const draft = createInitialSkillDraft([capability], webhookSkill({
+      boundPayload: {
+        calendar_context: { timezone: 'UTC', durationOptions: [30] },
+      },
+      exposedPayload: {
+        calendar_date: { description: 'Original date', required: true },
+        haircut_style: { description: 'Keep this sibling', required: false },
+      },
+    }))
+    const additionalSettings = JSON.parse(draft.extraConfigJson) as {
+      boundPayload: Record<string, unknown>
+      exposedPayload: Record<string, unknown>
+    }
+    additionalSettings.boundPayload.calendar_context = {
+      timezone: 'Europe/Tallinn',
+      durationOptions: [30, 60],
+    }
+    additionalSettings.boundPayload.calendar_date = 'overlap remains for server validation'
+    additionalSettings.exposedPayload.calendar_date = {
+      description: 'Edited date',
+      slotBinding: 'requested_date',
+      required: true,
+    }
+    draft.extraConfigJson = JSON.stringify(additionalSettings)
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toMatchObject({
+      boundPayload: {
+        calendar_context: { timezone: 'Europe/Tallinn', durationOptions: [30, 60] },
+        calendar_date: 'overlap remains for server validation',
+      },
+      exposedPayload: {
+        calendar_date: {
+          description: 'Edited date',
+          slotBinding: 'requested_date',
+          required: true,
+        },
+        haircut_style: { description: 'Keep this sibling', required: false },
+      },
+    })
+  })
+
+  it('keeps malformed webhook payload maps visible for existing validation', () => {
+    const capability = webhookCapability()
+    const draft = createInitialSkillDraft([capability], webhookSkill({
+      boundPayload: null,
+      exposedPayload: ['invalid exposed payload'],
+    }))
+
+    expect(JSON.parse(draft.extraConfigJson)).toEqual({
+      boundPayload: null,
+      exposedPayload: ['invalid exposed payload'],
+    })
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toEqual({
+      boundPayload: null,
+      exposedPayload: ['invalid exposed payload'],
+    })
+  })
+
+  it('makes rendered webhook fields authoritative without replacing hidden siblings', () => {
+    const capability = webhookCapability()
+    const draft = createInitialSkillDraft([capability], webhookSkill({
+      boundPayload: { hidden_bound: { nested: true } },
+      exposedPayload: {
+        hidden_exposed: { description: 'Keep me', required: false },
+        payload: { description: 'Current rendered value', required: true },
+      },
+    }))
+    expect(JSON.parse(draft.extraConfigJson)).toEqual({
+      boundPayload: { hidden_bound: { nested: true } },
+      exposedPayload: { hidden_exposed: { description: 'Keep me', required: false } },
+    })
+    draft.extraConfigJson = JSON.stringify({
+      boundPayload: {
+        hidden_bound: { nested: true },
+        payload: 'stale bound value',
+      },
+      exposedPayload: {
+        hidden_exposed: { description: 'Keep me', required: false },
+        payload: { description: 'Stale exposed value', required: true },
+      },
+    })
+    draft.inputDrafts.payload = {
+      mode: 'bind',
+      boundValue: 'fresh bound value',
+      description: '',
+      slotBinding: 'payload',
+    }
+
+    expect(buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config).toEqual({
+      boundPayload: {
+        hidden_bound: { nested: true },
+        payload: 'fresh bound value',
+      },
+      exposedPayload: {
+        hidden_exposed: { description: 'Keep me', required: false },
+      },
+    })
+
+    draft.inputDrafts.payload.mode = 'ignore'
+    const ignoredConfig = buildAgentSkillInput(capability, draft, deriveSkillFields(capability)).config
+
+    expect(ignoredConfig.boundPayload).toEqual({ hidden_bound: { nested: true } })
+    expect(ignoredConfig.exposedPayload).toEqual({
+      hidden_exposed: { description: 'Keep me', required: false },
+    })
   })
 
   it('uses discovered schemas for MCP-style inputs and declared outcomes', () => {

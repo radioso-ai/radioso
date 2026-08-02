@@ -14,6 +14,8 @@ export const CONTENT_PLAN_WORKER_POLICY_V1 = Object.freeze({
   representativeObservationLimit: 8,
   retentionBatchSize: MAX_CONTENT_PLAN_CLAIM_BATCH,
   retentionDays: 60,
+  failedGenerationRetentionDays: 60,
+  supersededGenerationRetentionDays: 90,
   retryBaseDelayMs: 5_000,
   retryMaxDelayMs: 5 * 60_000,
 });
@@ -28,6 +30,8 @@ export interface ContentPlanWorkerOptions {
   representativeObservationLimit: number;
   retentionBatchSize: number;
   retentionDays: number;
+  failedGenerationRetentionDays: number;
+  supersededGenerationRetentionDays: number;
   retryBaseDelayMs: number;
   retryMaxDelayMs: number;
 }
@@ -51,6 +55,12 @@ export const resolveContentPlanWorkerOptions = (
       ?? CONTENT_PLAN_WORKER_POLICY_V1.representativeObservationLimit,
     retentionBatchSize: input.retentionBatchSize ?? CONTENT_PLAN_WORKER_POLICY_V1.retentionBatchSize,
     retentionDays: input.retentionDays ?? CONTENT_PLAN_WORKER_POLICY_V1.retentionDays,
+    failedGenerationRetentionDays:
+      input.failedGenerationRetentionDays
+      ?? CONTENT_PLAN_WORKER_POLICY_V1.failedGenerationRetentionDays,
+    supersededGenerationRetentionDays:
+      input.supersededGenerationRetentionDays
+      ?? CONTENT_PLAN_WORKER_POLICY_V1.supersededGenerationRetentionDays,
     retryBaseDelayMs: input.retryBaseDelayMs ?? CONTENT_PLAN_WORKER_POLICY_V1.retryBaseDelayMs,
     retryMaxDelayMs: input.retryMaxDelayMs ?? CONTENT_PLAN_WORKER_POLICY_V1.retryMaxDelayMs,
   };
@@ -74,6 +84,18 @@ export const resolveContentPlanWorkerOptions = (
   assertIntegerInRange("representativeObservationLimit", options.representativeObservationLimit, 1, 8);
   assertIntegerInRange("retentionBatchSize", options.retentionBatchSize, 1, MAX_CONTENT_PLAN_CLAIM_BATCH);
   assertIntegerInRange("retentionDays", options.retentionDays, 1, 365);
+  assertIntegerInRange(
+    "failedGenerationRetentionDays",
+    options.failedGenerationRetentionDays,
+    options.retentionDays,
+    365,
+  );
+  assertIntegerInRange(
+    "supersededGenerationRetentionDays",
+    options.supersededGenerationRetentionDays,
+    90,
+    365,
+  );
   assertIntegerInRange("retryBaseDelayMs", options.retryBaseDelayMs, 1, 24 * 60 * 60_000);
   assertIntegerInRange(
     "retryMaxDelayMs",

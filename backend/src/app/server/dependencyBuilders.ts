@@ -575,6 +575,7 @@ export const buildContentPlanningWorkerRuntime = (input: {
     },
     topics: input.repositories.contentPlanTopicRepository,
     retention: input.repositories.contentPlanObservationRepository,
+    generationRetention: input.repositories.contentPlanProjectionRepository,
     budget,
     observability,
   });
@@ -615,6 +616,7 @@ export const buildContentPlanningWorkerRuntime = (input: {
   });
   const processor = new ContinuousContentPlanningProcessor({
     projection: projectionProcessor,
+    freshness: input.repositories.contentPlanProjectionRepository,
     planning,
     enrichments,
     operationalMetrics: new ContentPlanningOperationalMetricsReporter({

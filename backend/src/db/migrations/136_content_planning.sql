@@ -2,13 +2,6 @@
 -- message-owned: projection storage keeps source IDs, non-reversible hashes, vectors,
 -- scalar answer evidence, and bounded generated operator prose only.
 
--- Composite keys let every tenant-owned foreign key prove workspace ownership.
-CREATE UNIQUE INDEX idx_conversations_workspace_id_unique
-  ON conversations (workspace_id, id);
-
-CREATE UNIQUE INDEX idx_documents_workspace_id_unique
-  ON documents (workspace_id, id);
-
 CREATE TABLE content_plan_projection_generations (
   id UUID PRIMARY KEY,
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -40,6 +33,10 @@ CREATE UNIQUE INDEX idx_content_plan_generations_one_building
 
 CREATE INDEX idx_content_plan_generations_space
   ON content_plan_projection_generations (workspace_id, embedding_space_id, state);
+
+CREATE INDEX idx_content_plan_generations_retention
+  ON content_plan_projection_generations (workspace_id, state, updated_at, id)
+  WHERE state IN ('superseded', 'failed');
 
 CREATE OR REPLACE FUNCTION reject_content_plan_generation_identity_mutation()
 RETURNS TRIGGER
@@ -138,6 +135,7 @@ CREATE INDEX idx_content_plan_projection_states_work
 CREATE TABLE content_plan_projection_population_snapshots (
   workspace_id UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   generation_id UUID NOT NULL,
+  source_user_message_id UUID NOT NULL,
   assistant_message_id UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (workspace_id, generation_id, assistant_message_id),
@@ -147,6 +145,10 @@ CREATE TABLE content_plan_projection_population_snapshots (
     ON DELETE CASCADE,
   CONSTRAINT content_plan_population_snapshot_message_fk
     FOREIGN KEY (workspace_id, assistant_message_id)
+    REFERENCES messages(workspace_id, id)
+    ON DELETE CASCADE,
+  CONSTRAINT content_plan_population_snapshot_user_message_fk
+    FOREIGN KEY (workspace_id, source_user_message_id)
     REFERENCES messages(workspace_id, id)
     ON DELETE CASCADE
 );
@@ -171,6 +173,51 @@ CREATE TABLE content_plan_corpus_invalidations (
     OR (after_generation_id IS NOT NULL AND after_topic_id IS NOT NULL)
   )
 );
+
+-- Every document deletion path, including bulk source cleanup and crawler reaping,
+-- leaves one durable workspace fence in the same transaction. The transition table
+-- runs after the delete statement's row cascades, while DISTINCT coalesces bulk work.
+CREATE OR REPLACE FUNCTION mark_content_plan_corpus_after_document_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO content_plan_corpus_invalidations (
+    workspace_id,
+    revision,
+    dirty_at,
+    after_generation_id,
+    after_topic_id,
+    updated_at
+  )
+  SELECT DISTINCT
+    deleted.workspace_id,
+    1,
+    statement_timestamp(),
+    NULL::uuid,
+    NULL::uuid,
+    statement_timestamp()
+  FROM deleted_content_plan_documents deleted
+  JOIN workspaces workspace ON workspace.id = deleted.workspace_id
+  ON CONFLICT (workspace_id) DO UPDATE
+  SET
+    revision = content_plan_corpus_invalidations.revision + 1,
+    dirty_at = GREATEST(
+      content_plan_corpus_invalidations.dirty_at,
+      EXCLUDED.dirty_at
+    ),
+    after_generation_id = NULL,
+    after_topic_id = NULL,
+    updated_at = statement_timestamp();
+  RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER content_plan_document_delete_marks_corpus
+AFTER DELETE ON documents
+REFERENCING OLD TABLE AS deleted_content_plan_documents
+FOR EACH STATEMENT
+EXECUTE FUNCTION mark_content_plan_corpus_after_document_delete();
 
 CREATE TABLE content_plan_observations (
   id UUID PRIMARY KEY,
@@ -365,7 +412,7 @@ CREATE TABLE content_plan_topics (
   embedding_space_id UUID NOT NULL,
   lifecycle TEXT NOT NULL
     CHECK (lifecycle IN ('provisional', 'mature', 'merged', 'retired')),
-  centroid VECTOR NOT NULL,
+  centroid VECTOR,
   dimensions INTEGER NOT NULL CHECK (dimensions BETWEEN 1 AND 16000),
   centroid_weight INTEGER NOT NULL CHECK (centroid_weight >= 0),
   representative_observation_ids UUID[] NOT NULL DEFAULT '{}'::uuid[],
@@ -380,7 +427,11 @@ CREATE TABLE content_plan_topics (
     FOREIGN KEY (workspace_id, generation_id, embedding_space_id)
     REFERENCES content_plan_projection_generations(workspace_id, id, embedding_space_id)
     ON DELETE CASCADE,
-  CHECK (vector_dims(centroid) = dimensions),
+  CHECK (centroid IS NULL OR vector_dims(centroid) = dimensions),
+  CHECK (
+    (lifecycle IN ('provisional', 'mature') AND centroid IS NOT NULL)
+    OR (lifecycle IN ('merged', 'retired') AND centroid IS NULL)
+  ),
   CHECK (
     cardinality(representative_observation_ids) BETWEEN 0 AND 8
     AND array_position(representative_observation_ids, NULL) IS NULL
@@ -731,3 +782,49 @@ CREATE TRIGGER content_plan_topic_document_limit
 BEFORE INSERT ON content_plan_topic_documents
 FOR EACH ROW
 EXECUTE FUNCTION enforce_content_plan_topic_document_limit();
+
+-- Source and retention deletion reach observations through different entry points,
+-- but every path crosses this row boundary before memberships cascade. Fence each
+-- affected topic and remove source-derived prose/document evidence in that same
+-- transaction, so an old provider claim can never become the committed final state.
+CREATE OR REPLACE FUNCTION fence_content_plan_topics_before_observation_delete()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  UPDATE content_plan_topics topic
+  SET
+    revision = topic.revision + 1,
+    enrichment_dirty_at = statement_timestamp(),
+    updated_at = statement_timestamp()
+  FROM content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND topic.workspace_id = membership.workspace_id
+    AND topic.generation_id = membership.generation_id
+    AND topic.id = membership.topic_id;
+
+  DELETE FROM content_plan_topic_documents document
+  USING content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND document.workspace_id = membership.workspace_id
+    AND document.generation_id = membership.generation_id
+    AND document.topic_id = membership.topic_id;
+
+  DELETE FROM content_plan_topic_enrichments enrichment
+  USING content_plan_topic_memberships membership
+  WHERE membership.workspace_id = OLD.workspace_id
+    AND membership.observation_id = OLD.id
+    AND enrichment.workspace_id = membership.workspace_id
+    AND enrichment.generation_id = membership.generation_id
+    AND enrichment.topic_id = membership.topic_id;
+
+  RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER content_plan_observation_delete_fences_topics
+BEFORE DELETE ON content_plan_observations
+FOR EACH ROW
+EXECUTE FUNCTION fence_content_plan_topics_before_observation_delete();

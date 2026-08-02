@@ -46,6 +46,38 @@ interface ProjectionStateRow {
   updated_at: Date;
 }
 
+interface FreshnessObservationRow {
+  id: string;
+  observation_state: "pending_context" | "ready";
+  observed_at: Date;
+  vector_state: string | null;
+}
+
+interface IdentityTopicRow {
+  id: string;
+  generation_id: string;
+  embedding_space_id: string;
+  lifecycle: string;
+  centroid: string | null;
+  dimensions: number;
+  centroid_weight: number;
+  representative_observation_ids: string[];
+  revision: number;
+  merged_into_topic_id: string | null;
+  redirect_expires_at: Date | null;
+  enrichment_dirty_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface IdentityOverlapRow {
+  old_topic_id: string;
+  target_topic_id: string;
+}
+
+const REDIRECT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
+const MAX_IDENTITY_REDIRECT_HOPS = 8;
+
 const generationColumns = [
   "id",
   "workspace_id",
@@ -100,7 +132,7 @@ const mapProjectionState = (row: ProjectionStateRow): ContentPlanProjectionState
   coherentGenerationId: row.coherent_generation_id,
   targetGenerationId: row.target_generation_id,
   projectionState: row.projection_state as ContentPlanProjectionStateRecord["projectionState"],
-  reason: row.reason,
+  reason: row.reason as ContentPlanProjectionStateRecord["reason"],
   discoveryCreatedAt: row.discovery_created_at ? new Date(row.discovery_created_at) : null,
   discoveryMessageId: row.discovery_message_id,
   processedThrough: row.processed_through ? new Date(row.processed_through) : null,
@@ -403,6 +435,161 @@ export class ContentPlanProjectionRepository implements ContentPlanProjectionRep
     return row ? mapProjectionState(row as ProjectionStateRow) : null;
   }
 
+  async markProjectionWorkPending(input: {
+    workspaceId: string;
+    generationId: string;
+    observedAt: Date;
+  }): Promise<boolean> {
+    if (!Number.isFinite(input.observedAt.getTime())) {
+      throw new Error("Content planning projection observation time must be valid");
+    }
+    const beforeObservedAt = new Date(input.observedAt.getTime() - 1);
+    const result = await this.db
+      .updateTable("content_plan_projection_states")
+      .set({
+        projection_state: "updating",
+        reason: "projection_work_pending",
+        processed_through: sql<Date | null>`CASE
+          WHEN processed_through >= ${input.observedAt} THEN ${beforeObservedAt}
+          ELSE processed_through
+        END`,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", input.workspaceId)
+      .where("coherent_generation_id", "=", input.generationId)
+      .where("target_generation_id", "is", null)
+      .where("projection_state", "=", "ready")
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) === 1;
+  }
+
+  async refreshProjectionFreshness(input: {
+    workspaceId: string;
+    generationId: string;
+    now: Date;
+    delayedAfterMs: number;
+    scanLimit: number;
+  }): Promise<ContentPlanProjectionStateRecord | null> {
+    if (
+      !Number.isFinite(input.now.getTime())
+      || !Number.isSafeInteger(input.delayedAfterMs)
+      || input.delayedAfterMs < 1
+      || !Number.isSafeInteger(input.scanLimit)
+      || input.scanLimit < 1
+      || input.scanLimit > 500
+    ) {
+      throw new Error("Content planning projection freshness input is invalid");
+    }
+    return this.db.transaction().execute(async (trx) => {
+      const stateRow = await trx
+        .selectFrom("content_plan_projection_states")
+        .select(projectionStateColumns)
+        .where("workspace_id", "=", input.workspaceId)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!stateRow) return null;
+      const state = mapProjectionState(stateRow as ProjectionStateRow);
+      if (
+        state.coherentGenerationId !== input.generationId
+        || state.targetGenerationId !== null
+      ) return state;
+
+      let progressQuery = trx
+        .selectFrom("content_plan_observations as observation")
+        .leftJoin("content_plan_observation_vectors as vector", (join) => join
+          .onRef("vector.workspace_id", "=", "observation.workspace_id")
+          .onRef("vector.observation_id", "=", "observation.id")
+          .on("vector.generation_id", "=", input.generationId))
+        .select([
+          "observation.id",
+          "observation.observation_state",
+          "observation.observed_at",
+          "vector.state as vector_state",
+        ])
+        .where("observation.workspace_id", "=", input.workspaceId)
+        .where("observation.observation_state", "in", ["pending_context", "ready"]);
+      if (state.processedThrough) {
+        progressQuery = progressQuery.where("observation.observed_at", ">", state.processedThrough);
+      }
+      const progressRows = await progressQuery
+        .orderBy("observation.observed_at", "asc")
+        .orderBy("observation.id", "asc")
+        .limit(input.scanLimit + 1)
+        .execute() as FreshnessObservationRow[];
+      const page = progressRows.slice(0, input.scanLimit);
+      let processedThrough = state.processedThrough;
+      for (let index = 0; index < page.length; index += 1) {
+        const row = page[index]!;
+        if (row.observation_state !== "ready" || row.vector_state !== "assigned") break;
+        const next = progressRows[index + 1];
+        if (!next || new Date(next.observed_at).getTime() > new Date(row.observed_at).getTime()) {
+          processedThrough = new Date(row.observed_at);
+        }
+      }
+
+      const [terminalVector, pendingVector, pendingContext] = await Promise.all([
+        trx
+          .selectFrom("content_plan_observation_vectors")
+          .select("observation_id")
+          .where("workspace_id", "=", input.workspaceId)
+          .where("generation_id", "=", input.generationId)
+          .where("state", "=", "failed")
+          .limit(1)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("content_plan_observation_vectors")
+          .select("observation_id")
+          .where("workspace_id", "=", input.workspaceId)
+          .where("generation_id", "=", input.generationId)
+          .where("state", "in", ["pending_embedding", "ready", "processing", "retryable"])
+          .limit(1)
+          .executeTakeFirst(),
+        trx
+          .selectFrom("content_plan_observations")
+          .select("id")
+          .where("workspace_id", "=", input.workspaceId)
+          .where("observation_state", "=", "pending_context")
+          .limit(1)
+          .executeTakeFirst(),
+      ]);
+      const missingVectorInPage = page.some((row) =>
+        row.observation_state === "ready" && row.vector_state === null);
+      const hasPendingWork = pendingVector !== undefined
+        || pendingContext !== undefined
+        || missingVectorInPage
+        || progressRows.length > input.scanLimit;
+      const lagMs = processedThrough === null
+        ? 0
+        : Math.max(0, input.now.getTime() - processedThrough.getTime());
+      const projectionState = terminalVector
+        ? "degraded" as const
+        : hasPendingWork
+          ? lagMs >= input.delayedAfterMs ? "delayed" as const : "updating" as const
+          : "ready" as const;
+      const reason = projectionState === "degraded"
+        ? "projection_terminal_failure" as const
+        : projectionState === "delayed"
+          ? "projection_backlog_delayed" as const
+          : projectionState === "updating"
+            ? "projection_work_pending" as const
+            : null;
+      const updated = await trx
+        .updateTable("content_plan_projection_states")
+        .set({
+          projection_state: projectionState,
+          reason,
+          processed_through: processedThrough,
+          updated_at: input.now,
+        })
+        .where("workspace_id", "=", input.workspaceId)
+        .where("coherent_generation_id", "=", input.generationId)
+        .where("target_generation_id", "is", null)
+        .returning(projectionStateColumns)
+        .executeTakeFirst();
+      return updated ? mapProjectionState(updated as ProjectionStateRow) : null;
+    });
+  }
+
   async resolveWritableGeneration(input: {
     workspaceId: string;
     embeddingSpaceId?: string;
@@ -689,6 +876,12 @@ export class ContentPlanProjectionRepository implements ContentPlanProjectionRep
       }
 
       if (input.expectedCoherentGenerationId) {
+        await reconcileTargetTopicIdentity(trx, {
+          workspaceId: input.workspaceId,
+          coherentGenerationId: input.expectedCoherentGenerationId,
+          targetGenerationId: input.targetGenerationId,
+          promotedAt: input.coherentAt,
+        });
         const superseded = await trx
           .updateTable("content_plan_projection_generations")
           .set({ state: "superseded", updated_at: currentTimestamp() })
@@ -730,4 +923,358 @@ export class ContentPlanProjectionRepository implements ContentPlanProjectionRep
       return promoted ? mapProjectionState(promoted as ProjectionStateRow) : null;
     });
   }
+
+  async pruneExpiredGenerations(input: {
+    workspaceId: string;
+    failedBefore: Date;
+    supersededBefore: Date;
+    limit: number;
+  }): Promise<{ failedCount: number; supersededCount: number }> {
+    if (
+      !Number.isFinite(input.failedBefore.getTime())
+      || !Number.isFinite(input.supersededBefore.getTime())
+      || !Number.isSafeInteger(input.limit)
+      || input.limit < 1
+      || input.limit > 100
+    ) {
+      throw new Error("Invalid content planning generation retention request");
+    }
+    return this.db.transaction().execute(async (trx) => {
+      const selected = await trx
+        .selectFrom("content_plan_projection_generations as generation")
+        .select(["generation.id", "generation.state"])
+        .where("generation.workspace_id", "=", input.workspaceId)
+        .where((eb) => eb.or([
+          eb.and([
+            eb("generation.state", "=", "failed"),
+            eb("generation.updated_at", "<", input.failedBefore),
+          ]),
+          eb.and([
+            eb("generation.state", "=", "superseded"),
+            eb("generation.updated_at", "<", input.supersededBefore),
+          ]),
+        ]))
+        .where((eb) => eb.not(eb.exists(
+          eb.selectFrom("content_plan_projection_states as projection_state")
+            .select("projection_state.workspace_id")
+            .whereRef("projection_state.workspace_id", "=", "generation.workspace_id")
+            .where((stateExpression) => stateExpression.or([
+              stateExpression("projection_state.coherent_generation_id", "=", eb.ref("generation.id")),
+              stateExpression("projection_state.target_generation_id", "=", eb.ref("generation.id")),
+            ])),
+        )))
+        .orderBy("generation.updated_at", "asc")
+        .orderBy("generation.id", "asc")
+        .forUpdate()
+        .skipLocked()
+        .limit(input.limit)
+        .execute();
+      if (selected.length === 0) return { failedCount: 0, supersededCount: 0 };
+      const selectedIds = selected.map((generation) => generation.id);
+      const deleted = await trx
+        .deleteFrom("content_plan_projection_generations")
+        .where("workspace_id", "=", input.workspaceId)
+        .where("id", "in", selectedIds)
+        .where("state", "in", ["failed", "superseded"])
+        .returning("state")
+        .execute();
+      return {
+        failedCount: deleted.filter((generation) => generation.state === "failed").length,
+        supersededCount: deleted.filter((generation) => generation.state === "superseded").length,
+      };
+    });
+  }
 }
+
+const identityTopicColumns = [
+  "id",
+  "generation_id",
+  "embedding_space_id",
+  "lifecycle",
+  "centroid",
+  "dimensions",
+  "centroid_weight",
+  "representative_observation_ids",
+  "revision",
+  "merged_into_topic_id",
+  "redirect_expires_at",
+  "enrichment_dirty_at",
+  "created_at",
+  "updated_at",
+] as const;
+
+const reconcileTargetTopicIdentity = async (trx: Db, input: {
+  workspaceId: string;
+  coherentGenerationId: string;
+  targetGenerationId: string;
+  promotedAt: Date;
+}): Promise<void> => {
+  const lockedTopics = await trx
+    .selectFrom("content_plan_topics")
+    .select(identityTopicColumns)
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "in", [input.coherentGenerationId, input.targetGenerationId])
+    .orderBy("generation_id", "asc")
+    .orderBy("id", "asc")
+    .forUpdate()
+    .execute() as IdentityTopicRow[];
+  const oldTopics = lockedTopics.filter((topic) => topic.generation_id === input.coherentGenerationId);
+  const targetTopics = lockedTopics.filter((topic) => topic.generation_id === input.targetGenerationId);
+  const targetIds = new Set(targetTopics.map((topic) => topic.id));
+  const overlaps = await trx
+    .selectFrom("content_plan_topic_memberships as old_membership")
+    .innerJoin("content_plan_topics as old_topic", (join) => join
+      .onRef("old_topic.workspace_id", "=", "old_membership.workspace_id")
+      .onRef("old_topic.generation_id", "=", "old_membership.generation_id")
+      .onRef("old_topic.id", "=", "old_membership.topic_id"))
+    .innerJoin("content_plan_topic_memberships as target_membership", (join) => join
+      .onRef("target_membership.workspace_id", "=", "old_membership.workspace_id")
+      .onRef("target_membership.observation_id", "=", "old_membership.observation_id"))
+    .innerJoin("content_plan_topics as target_topic", (join) => join
+      .onRef("target_topic.workspace_id", "=", "target_membership.workspace_id")
+      .onRef("target_topic.generation_id", "=", "target_membership.generation_id")
+      .onRef("target_topic.id", "=", "target_membership.topic_id"))
+    .select([
+      "old_topic.id as old_topic_id",
+      "target_topic.id as target_topic_id",
+    ])
+    .distinct()
+    .where("old_membership.workspace_id", "=", input.workspaceId)
+    .where("old_membership.generation_id", "=", input.coherentGenerationId)
+    .where("target_membership.generation_id", "=", input.targetGenerationId)
+    .where("old_topic.lifecycle", "=", "mature")
+    .where("target_topic.lifecycle", "=", "mature")
+    .execute() as IdentityOverlapRow[];
+  if (overlaps.length === 0) return;
+
+  const oldToTarget = groupIdentityEdges(overlaps, "old_topic_id", "target_topic_id");
+  const targetToOld = groupIdentityEdges(overlaps, "target_topic_id", "old_topic_id");
+  const stableTargetToOld = new Map<string, string>();
+  const oldToCanonicalTarget = new Map<string, string>();
+  for (const [targetTopicId, oldTopicIds] of targetToOld) {
+    if (oldTopicIds.size !== 1) continue;
+    const oldTopicId = [...oldTopicIds][0]!;
+    if (oldToTarget.get(oldTopicId)?.size !== 1) continue;
+    if (targetTopicId !== oldTopicId && targetIds.has(oldTopicId)) continue;
+    stableTargetToOld.set(targetTopicId, oldTopicId);
+    oldToCanonicalTarget.set(oldTopicId, oldTopicId);
+  }
+  for (const [targetTopicId, oldTopicIds] of targetToOld) {
+    if (oldTopicIds.size < 2) continue;
+    for (const oldTopicId of oldTopicIds) {
+      if (oldToTarget.get(oldTopicId)?.size === 1) {
+        oldToCanonicalTarget.set(oldTopicId, targetTopicId);
+      }
+    }
+  }
+
+  for (const [targetTopicId, oldTopicId] of [...stableTargetToOld].sort(([left], [right]) =>
+    left.localeCompare(right))) {
+    if (targetTopicId === oldTopicId) continue;
+    const target = targetTopics.find((topic) => topic.id === targetTopicId);
+    if (!target || target.lifecycle !== "mature" || target.centroid === null) continue;
+    await renameTargetTopic(trx, {
+      workspaceId: input.workspaceId,
+      generationId: input.targetGenerationId,
+      target,
+      publicTopicId: oldTopicId,
+    });
+  }
+
+  for (const [oldTopicId, targetTopicId] of oldToCanonicalTarget) {
+    oldToCanonicalTarget.set(oldTopicId, stableTargetToOld.get(targetTopicId) ?? targetTopicId);
+  }
+  const aliasCandidates = new Map<string, { canonicalTopicId: string; expiresAt: Date }>();
+  const reprojectionRedirectExpiresAt = new Date(input.promotedAt.getTime() + REDIRECT_RETENTION_MS);
+  for (const [oldTopicId, canonicalTopicId] of oldToCanonicalTarget) {
+    if (oldTopicId === canonicalTopicId) continue;
+    aliasCandidates.set(oldTopicId, {
+      canonicalTopicId,
+      expiresAt: reprojectionRedirectExpiresAt,
+    });
+  }
+
+  const oldById = new Map(oldTopics.map((topic) => [topic.id, topic]));
+  for (const alias of oldTopics.filter((topic) => topic.lifecycle === "merged")) {
+    if (!alias.redirect_expires_at || alias.redirect_expires_at <= input.promotedAt) continue;
+    const oldCanonicalTopicId = resolveOldCanonicalTopic(alias.id, oldById, input.promotedAt);
+    if (!oldCanonicalTopicId) continue;
+    const canonicalTopicId = oldToCanonicalTarget.get(oldCanonicalTopicId);
+    if (!canonicalTopicId || alias.id === canonicalTopicId) continue;
+    aliasCandidates.set(alias.id, {
+      canonicalTopicId,
+      expiresAt: alias.redirect_expires_at,
+    });
+  }
+
+  const currentTargetTopics = await trx
+    .selectFrom("content_plan_topics")
+    .select(identityTopicColumns)
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.targetGenerationId)
+    .execute() as IdentityTopicRow[];
+  const currentById = new Map(currentTargetTopics.map((topic) => [topic.id, topic]));
+  let insertedAliasCount = 0;
+  for (const [aliasTopicId, alias] of [...aliasCandidates].sort(([left], [right]) =>
+    left.localeCompare(right))) {
+    if (currentById.has(aliasTopicId) || aliasTopicId === alias.canonicalTopicId) continue;
+    const canonical = currentById.get(alias.canonicalTopicId);
+    if (!canonical || canonical.lifecycle !== "mature" || canonical.centroid === null) continue;
+    await trx
+      .insertInto("content_plan_topics")
+      .values({
+        workspace_id: input.workspaceId,
+        generation_id: input.targetGenerationId,
+        id: aliasTopicId,
+        embedding_space_id: canonical.embedding_space_id,
+        lifecycle: "merged",
+        centroid: null,
+        dimensions: canonical.dimensions,
+        centroid_weight: 0,
+        representative_observation_ids: [],
+        revision: 1,
+        merged_into_topic_id: alias.canonicalTopicId,
+        redirect_expires_at: alias.expiresAt,
+        enrichment_dirty_at: null,
+        created_at: input.promotedAt,
+        updated_at: input.promotedAt,
+      })
+      .execute();
+    currentById.set(aliasTopicId, {
+      ...canonical,
+      id: aliasTopicId,
+      lifecycle: "merged",
+      centroid: null,
+      centroid_weight: 0,
+      representative_observation_ids: [],
+      revision: 1,
+      merged_into_topic_id: alias.canonicalTopicId,
+      redirect_expires_at: alias.expiresAt,
+      enrichment_dirty_at: null,
+      created_at: input.promotedAt,
+      updated_at: input.promotedAt,
+    });
+    insertedAliasCount += 1;
+  }
+
+  if (stableTargetToOld.size > 0 || insertedAliasCount > 0) {
+    await trx
+      .deleteFrom("content_plan_enrichment_repair_cursors")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("generation_id", "=", input.targetGenerationId)
+      .execute();
+    await trx
+      .updateTable("content_plan_corpus_invalidations")
+      .set({
+        after_generation_id: null,
+        after_topic_id: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("workspace_id", "=", input.workspaceId)
+      .execute();
+  }
+};
+
+const groupIdentityEdges = <
+  Source extends keyof IdentityOverlapRow,
+  Target extends keyof IdentityOverlapRow,
+>(
+  overlaps: readonly IdentityOverlapRow[],
+  source: Source,
+  target: Target,
+): Map<string, Set<string>> => {
+  const grouped = new Map<string, Set<string>>();
+  for (const overlap of overlaps) {
+    const sourceId = overlap[source];
+    const values = grouped.get(sourceId) ?? new Set<string>();
+    values.add(overlap[target]);
+    grouped.set(sourceId, values);
+  }
+  return grouped;
+};
+
+const renameTargetTopic = async (trx: Db, input: {
+  workspaceId: string;
+  generationId: string;
+  target: IdentityTopicRow;
+  publicTopicId: string;
+}): Promise<void> => {
+  await trx
+    .insertInto("content_plan_topics")
+    .values({
+      workspace_id: input.workspaceId,
+      generation_id: input.generationId,
+      id: input.publicTopicId,
+      embedding_space_id: input.target.embedding_space_id,
+      lifecycle: input.target.lifecycle,
+      centroid: input.target.centroid,
+      dimensions: input.target.dimensions,
+      centroid_weight: input.target.centroid_weight,
+      representative_observation_ids: input.target.representative_observation_ids,
+      revision: input.target.revision,
+      merged_into_topic_id: input.target.merged_into_topic_id,
+      redirect_expires_at: input.target.redirect_expires_at,
+      enrichment_dirty_at: input.target.enrichment_dirty_at,
+      created_at: input.target.created_at,
+      updated_at: input.target.updated_at,
+    })
+    .execute();
+  await trx
+    .updateTable("content_plan_topic_memberships")
+    .set({ topic_id: input.publicTopicId })
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.generationId)
+    .where("topic_id", "=", input.target.id)
+    .execute();
+  await trx
+    .updateTable("content_plan_topics")
+    .set({ merged_into_topic_id: input.publicTopicId })
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.generationId)
+    .where("merged_into_topic_id", "=", input.target.id)
+    .execute();
+  await trx
+    .updateTable("content_plan_topic_enrichments")
+    .set({ topic_id: input.publicTopicId })
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.generationId)
+    .where("topic_id", "=", input.target.id)
+    .execute();
+  await trx
+    .updateTable("content_plan_topic_documents")
+    .set({ topic_id: input.publicTopicId })
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.generationId)
+    .where("topic_id", "=", input.target.id)
+    .execute();
+  await trx
+    .deleteFrom("content_plan_topics")
+    .where("workspace_id", "=", input.workspaceId)
+    .where("generation_id", "=", input.generationId)
+    .where("id", "=", input.target.id)
+    .execute();
+};
+
+const resolveOldCanonicalTopic = (
+  startTopicId: string,
+  topics: ReadonlyMap<string, IdentityTopicRow>,
+  asOf: Date,
+): string | null => {
+  const visited = new Set<string>();
+  let currentTopicId = startTopicId;
+  for (let hops = 0; hops <= MAX_IDENTITY_REDIRECT_HOPS; hops += 1) {
+    if (visited.has(currentTopicId)) return null;
+    visited.add(currentTopicId);
+    const topic = topics.get(currentTopicId);
+    if (!topic) return null;
+    if (topic.lifecycle === "mature") return topic.id;
+    if (
+      topic.lifecycle !== "merged"
+      || !topic.merged_into_topic_id
+      || !topic.redirect_expires_at
+      || topic.redirect_expires_at <= asOf
+    ) return null;
+    currentTopicId = topic.merged_into_topic_id;
+  }
+  return null;
+};

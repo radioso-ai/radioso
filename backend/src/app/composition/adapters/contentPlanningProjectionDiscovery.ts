@@ -15,7 +15,7 @@ const MAX_SNAPSHOT_PAGE_SIZE = 500;
 
 type SnapshotPageRow = {
   assistant_message_id: string;
-  user_message_id: string | null;
+  user_message_id: string;
   conversation_id: string;
   agent_id: string | null;
   source_channel: string | null;
@@ -66,10 +66,26 @@ implements ContentPlanProjectionDiscoveryPort {
       const generationParam = bindParam(params, input.generationId);
       await trx.executeQuery(CompiledQuery.raw(
         `INSERT INTO content_plan_projection_population_snapshots (
-           workspace_id, generation_id, assistant_message_id, created_at
+           workspace_id, generation_id, source_user_message_id,
+           assistant_message_id, created_at
          )
-         SELECT m.workspace_id, ${generationParam}::uuid, m.id, m.created_at
+         SELECT
+           m.workspace_id,
+           ${generationParam}::uuid,
+           source_user.id,
+           m.id,
+           m.created_at
          ${population.source}
+         JOIN LATERAL (
+           SELECT candidate.id
+           FROM messages candidate
+           WHERE candidate.workspace_id = m.workspace_id
+             AND candidate.conversation_id = m.conversation_id
+             AND candidate.role = 'user'
+             AND candidate.created_at <= m.created_at
+           ORDER BY candidate.created_at DESC, candidate.id DESC
+           LIMIT 1
+         ) source_user ON TRUE
          WHERE ${population.filters.join("\n           AND ")}
          ON CONFLICT (workspace_id, generation_id, assistant_message_id) DO NOTHING`,
         params,
@@ -120,6 +136,9 @@ implements ContentPlanProjectionDiscoveryPort {
       .innerJoin("messages as assistant", (join) => join
         .onRef("assistant.workspace_id", "=", "snapshot.workspace_id")
         .onRef("assistant.id", "=", "snapshot.assistant_message_id"))
+      .innerJoin("messages as source_user", (join) => join
+        .onRef("source_user.workspace_id", "=", "snapshot.workspace_id")
+        .onRef("source_user.id", "=", "snapshot.source_user_message_id"))
       .innerJoin("conversations as conversation", (join) => join
         .onRef("conversation.workspace_id", "=", "assistant.workspace_id")
         .onRef("conversation.id", "=", "assistant.conversation_id"))
@@ -129,18 +148,8 @@ implements ContentPlanProjectionDiscoveryPort {
         "conversation.agent_id",
         "conversation.source_channel",
         "snapshot.created_at",
+        "source_user.id as user_message_id",
       ])
-      .select((eb) => eb
-        .selectFrom("messages as source_user")
-        .select("source_user.id")
-        .whereRef("source_user.workspace_id", "=", "assistant.workspace_id")
-        .whereRef("source_user.conversation_id", "=", "assistant.conversation_id")
-        .where("source_user.role", "=", "user")
-        .whereRef("source_user.created_at", "<=", "snapshot.created_at")
-        .orderBy("source_user.created_at", "desc")
-        .orderBy("source_user.id", "desc")
-        .limit(1)
-        .as("user_message_id"))
       .where("snapshot.workspace_id", "=", input.workspaceId)
       .where("snapshot.generation_id", "=", input.generationId);
     if (input.cursor) {

@@ -22019,6 +22019,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The ranked snapshot changed while paging; restart without a cursor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/quality/content-plan/topics/{topicId}:
     get:
       tags:

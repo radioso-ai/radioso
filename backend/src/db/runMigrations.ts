@@ -6,6 +6,8 @@ import type { AppLogger } from "../shared/observability/logger.js";
 const migrationsDirectory = new URL("./migrations/", import.meta.url);
 const migrationTableName = "schema_migrations";
 const qualifiedMigrationTableName = `public.${migrationTableName}`;
+const nonTransactionalDirective = "-- radioso:migration-transaction: off";
+const statementBreakPattern = /^\s*-- radioso:migration-statement-break\s*$/gm;
 
 export interface MigrationTimeoutOptions {
   lockTimeoutMs?: number;
@@ -89,6 +91,28 @@ const disableMigrationBodyTimeouts = async (
   await client.query("SET LOCAL statement_timeout = 0");
 };
 
+export interface ParsedMigrationScript {
+  transactional: boolean;
+  statements: string[];
+}
+
+export const parseMigrationScript = (migrationSql: string): ParsedMigrationScript => {
+  const trimmed = migrationSql.trim();
+  const firstMeaningfulLine = trimmed.split(/\r?\n/, 1)[0]?.trim();
+  if (firstMeaningfulLine !== nonTransactionalDirective) {
+    return { transactional: true, statements: [trimmed] };
+  }
+
+  const statements = trimmed
+    .split(statementBreakPattern)
+    .map((statement) => statement.trim())
+    .filter((statement) => statement.length > 0);
+  if (statements.length === 0) {
+    throw new Error("Non-transactional migration must contain at least one statement");
+  }
+  return { transactional: false, statements };
+};
+
 export const runMigrations = async (
   connectionString: string,
   logger: AppLogger,
@@ -115,13 +139,27 @@ export const runMigrations = async (
       }
 
       const migrationSql = await readFile(new URL(migrationFile, migrationsDirectory), "utf8");
-      await database.withTransaction(async (client) => {
-        await disableMigrationBodyTimeouts(client);
-        // Migration filenames are recorded only after the SQL transaction succeeds.
-        // IF NOT EXISTS in migration SQL is for drift tolerance, not normal re-runs.
-        await client.query(migrationSql);
-        await client.query(`INSERT INTO ${qualifiedMigrationTableName} (filename) VALUES ($1)`, [migrationFile]);
-      });
+      const script = parseMigrationScript(migrationSql);
+      if (script.transactional) {
+        await database.withTransaction(async (client) => {
+          await disableMigrationBodyTimeouts(client);
+          // Migration filenames are recorded only after the SQL transaction succeeds.
+          // IF NOT EXISTS in migration SQL is for drift tolerance, not normal re-runs.
+          await client.query(script.statements[0]!);
+          await client.query(`INSERT INTO ${qualifiedMigrationTableName} (filename) VALUES ($1)`, [migrationFile]);
+        });
+      } else {
+        // PostgreSQL requires CREATE/DROP INDEX CONCURRENTLY to run as individual
+        // autocommit statements. Pool-level migration timeouts remain active so a
+        // busy database fails startup cleanly and can retry the restart-safe script.
+        for (const statement of script.statements) {
+          await database.pool.query(statement);
+        }
+        await database.pool.query(
+          `INSERT INTO ${qualifiedMigrationTableName} (filename) VALUES ($1)`,
+          [migrationFile],
+        );
+      }
       logger.info({ migrationFile }, "database migration applied");
     }
   } finally {

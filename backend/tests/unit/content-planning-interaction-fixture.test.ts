@@ -264,6 +264,7 @@ describe("ObservationIntakeService fixture boundary", () => {
           sourceAssistantMessageId: "00000000-0000-4000-8000-000000000714",
           semanticIntentId: fixture.expected.semanticIntentIds[0],
           interactionRole: "clarification_value",
+          resolvedAt: new Date("2026-08-01T12:00:00.000Z"),
         });
       } else {
         expect(registerTurn).toHaveBeenCalledOnce();
@@ -334,6 +335,44 @@ describe("ObservationIntakeService fixture boundary", () => {
     });
     expect(summary.excludedCount).toBe(1);
     expect(summary.acceptedCount).toBe(1);
+  });
+
+  it("does not recreate an expired pending interest when deadline-fenced finalization loses", async () => {
+    const pending = pendingObservation("00000000-0000-4000-8000-000000000725");
+    const registerTurn = vi.fn<ContentPlanObservationIntakePort["registerTurn"]>();
+    const finalizePendingContext = vi.fn<
+      ContentPlanObservationIntakePort["finalizePendingContext"]
+    >(async () => null);
+    const now = new Date("2026-08-02T12:00:00.000Z");
+    const service = new ObservationIntakeService(
+      {
+        registerTurn,
+        findPendingContext: async () => pending,
+        finalizePendingContext,
+        excludePendingContext: async () => null,
+      },
+      { resolveWritableGeneration: async () => writableGeneration },
+      { clock: () => now },
+    );
+
+    const summary = await service.registerCommittedTurn({
+      workspaceId: pending.workspaceId,
+      conversationId: pending.conversationId,
+      sourceUserMessageId: pending.sourceUserMessageId,
+      sourceAssistantMessageId: "00000000-0000-4000-8000-000000000726",
+      interaction: {
+        role: "clarification_value",
+        semanticIntents: [{ id: "resolved", text: "resolved contextual interest" }],
+      },
+      semanticVectors: [],
+    });
+
+    expect(finalizePendingContext).toHaveBeenCalledWith(expect.objectContaining({
+      observationId: pending.id,
+      resolvedAt: now,
+    }));
+    expect(registerTurn).not.toHaveBeenCalled();
+    expect(summary).toMatchObject({ acceptedCount: 0, finalizedCount: 0 });
   });
 
   it("reuses only an exact hash-and-space vector and leaves other intents for fallback embedding", async () => {

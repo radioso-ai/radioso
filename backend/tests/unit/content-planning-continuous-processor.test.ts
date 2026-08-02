@@ -22,8 +22,10 @@ describe("ContinuousContentPlanningProcessor", () => {
     };
     const warn = vi.fn();
     const operationalMetrics = { capture: vi.fn(async () => undefined) };
+    const freshness = { refreshProjectionFreshness: vi.fn(async () => null) };
     const processor = new ContinuousContentPlanningProcessor({
       projection,
+      freshness,
       planning,
       enrichments,
       operationalMetrics,
@@ -38,6 +40,13 @@ describe("ContinuousContentPlanningProcessor", () => {
       forceRepair: false,
     });
     expect(enrichments.runOnce).toHaveBeenCalledOnce();
+    expect(freshness.refreshProjectionFreshness).toHaveBeenCalledWith({
+      workspaceId: "workspace_1",
+      generationId: "generation_1",
+      now: expect.any(Date),
+      delayedAfterMs: 120_000,
+      scanLimit: 100,
+    });
     expect(operationalMetrics.capture).toHaveBeenCalledWith({
       workspaceId: "workspace_1",
       generationId: "generation_1",
@@ -49,6 +58,27 @@ describe("ContinuousContentPlanningProcessor", () => {
       reason: "schedule_failed",
     }, "Content planning enrichment scheduling failed");
     expect(JSON.stringify(warn.mock.calls)).not.toContain("corpus unavailable");
+  });
+
+  it("refreshes durable freshness even when a projection tick throws", async () => {
+    const projection = {
+      runOnce: vi.fn(async () => { throw new Error("projection failed"); }),
+      runRetentionOnce: vi.fn(),
+    };
+    const freshness = { refreshProjectionFreshness: vi.fn(async () => null) };
+    const processor = new ContinuousContentPlanningProcessor({
+      projection,
+      freshness,
+      planning: { runOnce: vi.fn() },
+      enrichments: { runOnce: vi.fn() },
+      logger: { warn: vi.fn() },
+    }, { clock: () => new Date("2026-08-02T12:00:00.000Z") });
+
+    await expect(processor.runOnce({
+      workspaceId: "workspace_1",
+      generationId: "generation_1",
+    })).rejects.toThrow("projection failed");
+    expect(freshness.refreshProjectionFreshness).toHaveBeenCalledOnce();
   });
 
   it("keeps per-message projection current while cadencing full repair and retention work", async () => {

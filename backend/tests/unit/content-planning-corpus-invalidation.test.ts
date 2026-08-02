@@ -6,10 +6,9 @@ import { ContentPlanCorpusInvalidationFanout } from "../../src/modules/contentPl
 const DIRTY_AT = new Date("2026-08-02T12:00:00.000Z");
 
 describe("content planning corpus invalidation", () => {
-  it("uses a constant-time workspace marker for publication and linked evidence for document deletion", async () => {
+  it("uses the same constant-time workspace marker for publication and deletion", async () => {
     const invalidations = {
       markWorkspaceDirty: vi.fn(async () => undefined),
-      invalidateDeletedDocument: vi.fn(async () => 2),
     };
     const observer = new ContentPlanningDocumentCorpusObserver(invalidations, () => DIRTY_AT);
 
@@ -27,19 +26,13 @@ describe("content planning corpus invalidation", () => {
     });
     await observer.onCorpusChanged({ workspaceId: "workspace_1", change: "deleted" });
 
-    expect(invalidations.markWorkspaceDirty).toHaveBeenCalledTimes(21);
+    expect(invalidations.markWorkspaceDirty).toHaveBeenCalledTimes(22);
     expect(invalidations.markWorkspaceDirty).toHaveBeenNthCalledWith(1, {
       workspaceId: "workspace_1",
       dirtyAt: DIRTY_AT,
     });
-    expect(invalidations.markWorkspaceDirty).toHaveBeenNthCalledWith(21, {
+    expect(invalidations.markWorkspaceDirty).toHaveBeenNthCalledWith(22, {
       workspaceId: "workspace_1",
-      dirtyAt: DIRTY_AT,
-    });
-    expect(invalidations.invalidateDeletedDocument).toHaveBeenCalledOnce();
-    expect(invalidations.invalidateDeletedDocument).toHaveBeenCalledWith({
-      workspaceId: "workspace_1",
-      documentId: "document_deleted",
       dirtyAt: DIRTY_AT,
     });
   });

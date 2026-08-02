@@ -8,17 +8,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "radioso-conversation-kit": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./openai": {
-      "types": "./dist/openai.d.ts",
-      "import": "./dist/openai.js"
     },
     "./server": {
       "types": "./dist/server.d.ts",
@@ -30,7 +23,7 @@
     }
   },
   "scripts": {
-    "prebuild": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm --dir ../conversation-nlp run build",
+    "prebuild": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build",
     "build": "tsc -p tsconfig.json",
     "pretest": "pnpm run build",
     "test": "vitest run",
@@ -41,16 +34,7 @@
     "@radioso/conversation-defaults": "workspace:*",
     "@radioso/conversation-engine": "workspace:*"
   },
-  "peerDependencies": {
-    "@radioso/conversation-nlp": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@radioso/conversation-nlp": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@radioso/conversation-nlp": "workspace:*",
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2",
     "vitest": "^4.1.8"

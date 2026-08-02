@@ -2,8 +2,7 @@
  * The kit's runtime-agnostic core. It reaches no `node:*` builtin and no provider SDK,
  * so it runs anywhere ES modules do. The HTTP host lives at
  * `@radioso/conversation-kit/server`, the filesystem authoring store at
- * `@radioso/conversation-kit/node`, and the OpenAI gateway at
- * `@radioso/conversation-kit/openai`.
+ * `@radioso/conversation-kit/node`.
  */
 export {
   createConversationKit,

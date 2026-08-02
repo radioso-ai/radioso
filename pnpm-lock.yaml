@@ -625,34 +625,6 @@ importers:
         specifier: workspace:*
         version: link:../conversation-engine
     devDependencies:
-      '@radioso/conversation-nlp':
-        specifier: workspace:*
-        version: link:../conversation-nlp
-      '@types/node':
-        specifier: ^24.3.0
-        version: 24.12.4
-      typescript:
-        specifier: ^5.9.2
-        version: 5.9.3
-      vitest:
-        specifier: ^4.1.8
-        version: 4.1.8(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(jsdom@26.1.0)(vite@7.3.3(@types/node@24.12.4)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.1)(yaml@2.9.0))
-
-  packages/conversation-nlp:
-    dependencies:
-      '@radioso/conversation-contract':
-        specifier: workspace:*
-        version: link:../conversation-contract
-      openai:
-        specifier: ^5.20.0
-        version: 5.23.2(ws@8.20.1)(zod@3.25.76)
-    devDependencies:
-      '@radioso/conversation-defaults':
-        specifier: workspace:*
-        version: link:../conversation-defaults
-      '@radioso/conversation-engine':
-        specifier: workspace:*
-        version: link:../conversation-engine
       '@types/node':
         specifier: ^24.3.0
         version: 24.12.4

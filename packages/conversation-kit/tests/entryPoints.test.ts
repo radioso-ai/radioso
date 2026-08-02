@@ -21,7 +21,6 @@ const CORE = ["@radioso/conversation-defaults", "@radioso/conversation-engine"];
 
 const ALLOWED_EXTERNALS: Record<string, readonly string[]> = {
   ".": CORE,
-  "./openai": ["@radioso/conversation-nlp", "openai"],
   "./server": [...CORE, "node:events", "node:http"],
   "./node": ["node:fs", "node:path"],
 };

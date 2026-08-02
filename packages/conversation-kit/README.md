@@ -1,9 +1,10 @@
 # @radioso/conversation-kit
 
-Thin runnable wiring for the standalone conversation packages. It assembles the
-conversation engine, default in-memory stores, default directive matching,
-portable authoring stores, and a model gateway. It does not import the Radioso
-backend, Postgres, Express, retrieval, auth, or billing code.
+Composable wiring for the standalone conversation packages. You bring a
+`modelGateway`, then use the kit to assemble the conversation engine, default
+in-memory stores, default directive matching, and portable authoring stores. It
+does not import the Radioso backend, Postgres, Express, retrieval, auth, or
+billing code.
 
 ## Entry points
 
@@ -15,14 +16,11 @@ you import it.
 | Import | What it gives you |
 |---|---|
 | `@radioso/conversation-kit` | The kit, the SDK client, authoring types, and the default ports. |
-| `@radioso/conversation-kit/openai` | `createOpenAIModelGateway`, built on `@radioso/conversation-nlp`. |
 | `@radioso/conversation-kit/server` | `createConversationKitServer`, the HTTP host, on `node:http`. |
 | `@radioso/conversation-kit/node` | `FileConversationKitAuthoringStore`, which keeps authoring in a file. |
 
-`@radioso/conversation-nlp` is an optional peer dependency: bring your own gateway
-and the OpenAI SDK never enters your dependency tree. `tests/entryPoints.test.ts`
-asserts what each entry point is allowed to load, so widening one is a deliberate
-edit rather than an accident.
+`tests/entryPoints.test.ts` asserts what each entry point is allowed to load, so
+widening one is a deliberate edit rather than an accident.
 
 ## Model provider
 
@@ -42,22 +40,9 @@ const modelGateway = {
 const kit = createConversationKit({ modelGateway });
 ```
 
-For OpenAI, install `@radioso/conversation-nlp` and take the ready-made gateway:
-
-```ts
-import { createOpenAIModelGateway } from "@radioso/conversation-kit/openai";
-
-const modelGateway = createOpenAIModelGateway({
-  apiKey: process.env.OPENAI_API_KEY!,
-  model: "gpt-5.2",
-});
-```
-
-`model` is optional and falls back to `DEFAULT_OPENAI_MODEL`, exported from the same
-subpath. Either way you end up with a plain gateway value, so it composes with
-`createConversationKit`, `createConversationKitClient`, and
-`createConversationKitServer` alike. The examples below take `modelGateway` from
-here.
+The same plain gateway value composes with `createConversationKit`,
+`createConversationKitClient`, and `createConversationKitServer` alike. The
+examples below take `modelGateway` from here.
 
 ## Hello World
 
@@ -271,13 +256,6 @@ import { createConversationKitServer } from "@radioso/conversation-kit/server";
 
 const server = createConversationKitServer({ kit });
 const { url } = await server.listen({ host: "127.0.0.1", port: 8787 });
-```
-
-The bundled CLI does exactly that and builds the OpenAI gateway from the
-environment, so it needs `@radioso/conversation-nlp` installed:
-
-```bash
-OPENAI_API_KEY=sk-... pnpm --filter @radioso/conversation-kit exec radioso-conversation-kit serve
 ```
 
 Then send a turn:

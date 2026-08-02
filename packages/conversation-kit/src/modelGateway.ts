@@ -6,8 +6,6 @@ export interface ConversationKitModelGatewayOptions {
 
 /**
  * The kit needs a model, never a particular vendor: the host supplies the gateway.
- * Vendor factories live behind their own entry point (`@radioso/conversation-kit/openai`)
- * so composing a kit never loads a provider SDK.
  */
 export const createConversationKitModelGateway = (
   options: ConversationKitModelGatewayOptions,

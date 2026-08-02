@@ -1559,7 +1559,52 @@ test.describe("Content plan", () => {
     });
 
     await page.goto(`/w/${workspaceKey}/content-plan`);
-    await expect(page.getByText("No eligible visitor traffic yet")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "No eligible visitor questions in this period" })).toBeVisible();
+    await expect(page.getByText(/Short replies such as “yes,”/)).toBeVisible();
+    await expect(page.getByRole("link", { name: "View conversations" })).toBeVisible();
+    await expect(page.getByLabel("Content plan summary")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Topic view" })).toHaveCount(0);
+    await expect(page.getByText("Recommended next", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Ranked opportunities" })).toHaveCount(0);
+  });
+
+  test("collapses an unpublished bootstrap projection into one honest preparation state", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => ({
+        ...opportunitiesPage(),
+        recommendedTopicId: null,
+        items: [],
+        emerging: [],
+        projection: {
+          ...readyProjection(),
+          state: "bootstrapping" as const,
+          processingLagSeconds: null,
+          pendingEnrichmentTopicCount: 3,
+          processedCount: 100,
+          totalCount: 100,
+        },
+        summary: {
+          questionCount: 0,
+          conversationCount: 0,
+          matureTopicCount: 0,
+          emergingQuestionCount: 0,
+          opportunityCount: 0,
+          grounding: grounded({ grounded: 0, degraded: 0, no_support: 0, not_evaluated: 0 }),
+        },
+      }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await expect(page.getByRole("heading", { name: "Turning recent visitor questions into topics" })).toBeVisible();
+    await expect(page.getByText("100 of 100 eligible messages analyzed")).toBeVisible();
+    await expect(page.getByText("3 topics being prepared")).toBeVisible();
+    await expect(page.getByText("Processing status unknown")).toHaveCount(0);
+    await expect(page.getByLabel("Content plan summary")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Topic view" })).toHaveCount(0);
+    await expect(page.getByText("Recommended next", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("No eligible traffic yet", { exact: true })).toHaveCount(0);
   });
 
   test("communicates bootstrap, reprojection, delayed, budget-paused, and degraded states in text", async ({ page }) => {
@@ -1570,8 +1615,8 @@ test.describe("Content plan", () => {
     }> = [
       {
         state: "bootstrapping",
-        label: "Bootstrapping",
-        explanation: "Building the first coherent view",
+        label: "Preparing your content plan",
+        explanation: "Creating the first report",
       },
       {
         state: "reprojecting",

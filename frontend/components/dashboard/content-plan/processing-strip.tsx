@@ -64,7 +64,8 @@ export function ProcessingStrip({ projection }: ProcessingStripProps) {
             ) : null}
             {projection.pendingEnrichmentTopicCount > 0 ? (
               <li>
-                <span className="font-medium text-foreground tabular-nums">{projection.pendingEnrichmentTopicCount}</span> topics enriching
+                <span className="font-medium text-foreground tabular-nums">{projection.pendingEnrichmentTopicCount}</span>{' '}
+                {projection.pendingEnrichmentTopicCount === 1 ? 'topic' : 'topics'} enriching
               </li>
             ) : null}
             {projection.processedCount !== null && projection.totalCount !== null ? (

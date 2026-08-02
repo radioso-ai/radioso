@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Clock3, MessageSquareText } from 'lucide-react'
 
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import type { SelectedHistoryItem } from '@/components/dashboard/history/history-list'
@@ -670,6 +670,13 @@ export function ContentPlanView({
   }, [page, primaryRecommendedTopicId])
 
   const showTwoPane = Boolean(activeTopic || detailLoadState === 'loading' || detailLoadState === 'not_found' || detailLoadState === 'error')
+  const listPresentation = page ? deriveListPresentation(page) : 'report'
+  const allActivityHref = buildDashboardHref(accountId, {
+    section: 'activity',
+    workspaceId: routeState.workspaceId,
+    workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+    activityTab: 'all',
+  })
 
   return (
     <DashboardPage
@@ -704,67 +711,73 @@ export function ContentPlanView({
       >
         <div className="space-y-5 p-6">
           {listLoadState === 'ready' && page ? (
-            <>
-              <ProcessingStrip projection={page.projection} />
-              <SummaryTiles summary={page.summary} />
+            listPresentation === 'preparing' ? (
+              <PreparingContentPlanState page={page} />
+            ) : listPresentation === 'empty' ? (
+              <NoEligibleTrafficState activityHref={allActivityHref} />
+            ) : (
+              <>
+                <ProcessingStrip projection={page.projection} />
+                <SummaryTiles summary={page.summary} />
 
-              <RecommendedSlot
-                view={view}
-                page={page}
-                recommendedTopic={recommendedTopic}
-                onOpenTopic={(topicId) => selectTopic(topicId)}
-                onWriteDocument={(topicId) => openWriteDocument(topicId)}
-                onInvestigateRetrieval={(topicId) => openQualityForTopic(topicId)}
-              />
+                <RecommendedSlot
+                  view={view}
+                  page={page}
+                  recommendedTopic={recommendedTopic}
+                  onOpenTopic={(topicId) => selectTopic(topicId)}
+                  onWriteDocument={(topicId) => openWriteDocument(topicId)}
+                  onInvestigateRetrieval={(topicId) => openQualityForTopic(topicId)}
+                />
 
-              <ViewSwitcher
-                view={view}
-                buildViewHref={buildViewHref}
-                opportunityCount={page.summary.opportunityCount}
-                matureTopicCount={page.summary.matureTopicCount}
-              />
+                <ViewSwitcher
+                  view={view}
+                  buildViewHref={buildViewHref}
+                  opportunityCount={page.summary.opportunityCount}
+                  matureTopicCount={page.summary.matureTopicCount}
+                />
 
-              <section
-                aria-labelledby="content-plan-topic-list-heading"
-                className="space-y-2"
-              >
-                <h2
-                  id="content-plan-topic-list-heading"
-                  ref={listHeadingRef}
-                  tabIndex={-1}
-                  className="text-xs font-medium uppercase tracking-normal text-muted-foreground focus-visible:outline-none"
+                <section
+                  aria-labelledby="content-plan-topic-list-heading"
+                  className="space-y-2"
                 >
-                  {view === 'opportunities' ? 'Ranked opportunities' : 'All interests'}
-                </h2>
-                {page.items.length > 0 ? (
-                  <>
-                    {page.items.map((topic) => (
-                      <TopicRow
-                        key={topic.id}
-                        topic={topic}
-                        selected={topic.id === selectedTopicId}
-                        isRecommended={view === 'opportunities' && topic.id === primaryRecommendedTopicId}
-                        onSelect={selectTopic}
-                        registerRef={registerRowRef(topic.id)}
+                  <h2
+                    id="content-plan-topic-list-heading"
+                    ref={listHeadingRef}
+                    tabIndex={-1}
+                    className="text-xs font-medium uppercase tracking-normal text-muted-foreground focus-visible:outline-none"
+                  >
+                    {view === 'opportunities' ? 'Ranked opportunities' : 'All interests'}
+                  </h2>
+                  {page.items.length > 0 ? (
+                    <>
+                      {page.items.map((topic) => (
+                        <TopicRow
+                          key={topic.id}
+                          topic={topic}
+                          selected={topic.id === selectedTopicId}
+                          isRecommended={view === 'opportunities' && topic.id === primaryRecommendedTopicId}
+                          onSelect={selectTopic}
+                          registerRef={registerRowRef(topic.id)}
+                        />
+                      ))}
+                      <TopicPaginationControls
+                        hasMore={page.nextCursor !== null}
+                        state={paginationState}
+                        error={paginationError}
+                        onLoadMore={() => void loadMoreTopics()}
                       />
-                    ))}
-                    <TopicPaginationControls
-                      hasMore={page.nextCursor !== null}
-                      state={paginationState}
-                      error={paginationError}
-                      onLoadMore={() => void loadMoreTopics()}
-                    />
-                  </>
-                ) : (
-                  <ListEmptyState view={view} page={page} />
-                )}
-              </section>
+                    </>
+                  ) : (
+                    <ListEmptyState view={view} />
+                  )}
+                </section>
 
-              <EmergingSection
-                items={page.emerging}
-                onOpenConversation={openConversation}
-              />
-            </>
+                <EmergingSection
+                  items={page.emerging}
+                  onOpenConversation={openConversation}
+                />
+              </>
+            )
           ) : listLoadState === 'loading' ? (
             <ListLoadingSkeleton />
           ) : (
@@ -945,6 +958,96 @@ function ViewLink({
   )
 }
 
+type ContentPlanListPresentation = 'preparing' | 'empty' | 'report'
+
+function deriveListPresentation(page: ContentPlanPage): ContentPlanListPresentation {
+  const { projection, summary } = page
+  const hasInitialWork =
+    (projection.processedCount ?? 0) > 0
+    || (projection.totalCount ?? 0) > 0
+    || projection.pendingEmbeddingCount > 0
+    || projection.pendingAssignmentCount > 0
+    || projection.pendingEnrichmentTopicCount > 0
+
+  if (summary.questionCount === 0 && projection.state === 'bootstrapping' && hasInitialWork) {
+    return 'preparing'
+  }
+  if (summary.questionCount === 0) {
+    return 'empty'
+  }
+  return 'report'
+}
+
+function PreparingContentPlanState({ page }: { page: ContentPlanPage }) {
+  const { projection } = page
+  const hasProcessedProgress =
+    projection.processedCount !== null
+    && projection.totalCount !== null
+    && projection.totalCount > 0
+  const enrichingTopicCount = projection.pendingEnrichmentTopicCount
+
+  return (
+    <section
+      aria-labelledby="content-plan-preparing-heading"
+      className="max-w-3xl rounded-lg border border-border bg-card/50 p-6 sm:p-8"
+      role="status"
+      aria-live="polite"
+    >
+      <Clock3 className="h-5 w-5 text-muted-foreground" aria-hidden />
+      <p className="mt-5 text-xs font-medium uppercase tracking-normal text-muted-foreground">
+        Preparing your content plan
+      </p>
+      <h2 id="content-plan-preparing-heading" className="mt-1 text-xl font-semibold text-foreground">
+        Turning recent visitor questions into topics
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Radioso is finishing topic names and recommendations for your first report. It will appear here as soon as the analysis is ready.
+      </p>
+      {hasProcessedProgress || enrichingTopicCount > 0 ? (
+        <ul className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+          {hasProcessedProgress ? (
+            <li>
+              <span className="font-medium tabular-nums text-foreground">
+                {projection.processedCount} of {projection.totalCount}
+              </span>{' '}
+              eligible messages analyzed
+            </li>
+          ) : null}
+          {enrichingTopicCount > 0 ? (
+            <li>
+              <span className="font-medium tabular-nums text-foreground">{enrichingTopicCount}</span>{' '}
+              {enrichingTopicCount === 1 ? 'topic' : 'topics'} being prepared
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </section>
+  )
+}
+
+function NoEligibleTrafficState({ activityHref }: { activityHref: string }) {
+  return (
+    <section
+      aria-labelledby="content-plan-no-traffic-heading"
+      className="max-w-3xl rounded-lg border border-border bg-card/50 p-6 sm:p-8"
+    >
+      <MessageSquareText className="h-5 w-5 text-muted-foreground" aria-hidden />
+      <p className="mt-5 text-xs font-medium uppercase tracking-normal text-muted-foreground">
+        Content plan
+      </p>
+      <h2 id="content-plan-no-traffic-heading" className="mt-1 text-xl font-semibold text-foreground">
+        No eligible visitor questions in this period
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+        Content plan starts when visitors ask substantive questions. Short replies such as “yes,” “no,” or “go ahead,” and assistant-led follow-ups are excluded.
+      </p>
+      <Button asChild variant="outline" size="sm" className="mt-5">
+        <Link href={activityHref}>View conversations</Link>
+      </Button>
+    </section>
+  )
+}
+
 function RecommendedSlot({
   view,
   page,
@@ -980,17 +1083,13 @@ function RecommendedSlot({
 
   // Server said there is no credible top card. Explain honestly.
   const { summary, projection } = page
-  const hasNoTraffic = summary.questionCount === 0
   const rate = formatRatePercent(summary.grounding.reducedOrNoSupportRate)
   const hasUnmeasured = summary.grounding.headlineState === 'unmeasured'
 
   let headline = 'No recommendation right now'
   let body = 'When credible reduced- or no-support evidence appears, a recommended next action will show here.'
 
-  if (hasNoTraffic) {
-    headline = 'No eligible visitor traffic yet'
-    body = 'Content plan will start once visitors send eligible questions. It never presents an empty period as healthy coverage.'
-  } else if (projection.state === 'bootstrapping') {
+  if (projection.state === 'bootstrapping') {
     headline = 'Building the first view'
     body = 'Bootstrapping the last 60 days of eligible traffic. Recommendations will appear when topics mature.'
   } else if (projection.state === 'reprojecting') {
@@ -1061,18 +1160,13 @@ function deriveRecommendedPrimaryAction(
   }
 }
 
-function ListEmptyState({ view, page }: { view: ContentPlanViewName; page: ContentPlanPage }) {
-  const noTraffic = page.summary.questionCount === 0
+function ListEmptyState({ view }: { view: ContentPlanViewName }) {
   if (view === 'opportunities') {
     return (
       <div className="rounded-md border border-dashed border-border p-6 text-sm">
-        <p className="font-medium text-foreground">
-          {noTraffic ? 'No eligible traffic yet' : 'No credible opportunities right now'}
-        </p>
+        <p className="font-medium text-foreground">No credible opportunities right now</p>
         <p className="mt-1 text-muted-foreground">
-          {noTraffic
-            ? 'Content plan will populate once eligible visitor questions arrive.'
-            : 'Switch to All interests to see well-covered topics that would not appear as a content gap.'}
+          Switch to All interests to see well-covered topics that would not appear as a content gap.
         </p>
       </div>
     )

@@ -102,7 +102,7 @@ export const mergeContentPlanPage = (
 export const projectionStateLabel = (state: ContentPlanProjectionState): string => {
   switch (state) {
     case 'bootstrapping':
-      return 'Bootstrapping'
+      return 'Preparing your content plan'
     case 'ready':
       return 'Up to date'
     case 'updating':
@@ -121,7 +121,7 @@ export const projectionStateLabel = (state: ContentPlanProjectionState): string 
 export const projectionStateExplanation = (state: ContentPlanProjectionState): string => {
   switch (state) {
     case 'bootstrapping':
-      return 'Building the first coherent view from the last 60 days of eligible traffic.'
+      return 'Creating the first report from the last 60 days of eligible traffic.'
     case 'ready':
       return 'All eligible turns are reflected in the current view.'
     case 'updating':
@@ -292,7 +292,7 @@ const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, { numeric: 
 /** Rounded lag summary: "2 minutes ago". Returns "just now" for < 60s. */
 export const formatProcessingLag = (lagSeconds: number | null): string => {
   if (lagSeconds === null || !Number.isFinite(lagSeconds) || lagSeconds < 0) {
-    return 'Processing status unknown'
+    return 'Freshness unavailable'
   }
   if (lagSeconds < 60) {
     return 'Updated just now'

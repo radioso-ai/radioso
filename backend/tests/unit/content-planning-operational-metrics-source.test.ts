@@ -44,5 +44,10 @@ describe("PostgresContentPlanningOperationalMetricsSource", () => {
       workspaceId: "workspace_1",
       generationId: "generation_1",
     }))).not.toContain("question");
+    expect(executeQuery).toHaveBeenCalledWith(expect.objectContaining({
+      sql: expect.stringContaining(
+        "enrichment.topic_id IS NULL\n                 AND topic.enrichment_dirty_at IS NOT NULL",
+      ),
+    }));
   });
 });

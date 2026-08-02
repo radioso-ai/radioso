@@ -849,13 +849,14 @@ export class ContentPlanProjectionRepository implements ContentPlanProjectionRep
       }
       const consistency = await sql<{
         expected_count: string;
-        assigned_count: string;
+        settled_count: string;
       }>`
         SELECT
           COUNT(*)::text AS expected_count,
           COUNT(*) FILTER (
-            WHERE v.state = 'assigned' AND membership.observation_id IS NOT NULL
-          )::text AS assigned_count
+            WHERE (v.state = 'assigned' AND membership.observation_id IS NOT NULL)
+               OR v.state = 'failed'
+          )::text AS settled_count
         FROM content_plan_observations observation
         LEFT JOIN content_plan_observation_vectors v
           ON v.workspace_id = observation.workspace_id
@@ -871,7 +872,7 @@ export class ContentPlanProjectionRepository implements ContentPlanProjectionRep
           AND observation.observed_at < ${target.horizon_to}
       `.execute(trx);
       const summary = consistency.rows[0];
-      if (!summary || BigInt(summary.expected_count) !== BigInt(summary.assigned_count)) {
+      if (!summary || BigInt(summary.expected_count) !== BigInt(summary.settled_count)) {
         return null;
       }
 

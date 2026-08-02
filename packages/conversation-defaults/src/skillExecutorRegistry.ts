@@ -1,62 +1,20 @@
-import type { SkillDefinition } from "@radioso/conversation-contract";
+import type {
+  SkillDeferralTicket,
+  SkillDispatchResult,
+  SkillEmitPort,
+  SkillExecutorPort,
+  SkillInvocation,
+} from "@radioso/conversation-contract";
 
-import type { SkillExecution, SkillOutcome } from "./skillTypes.js";
+import type { SkillExecution } from "./skillTypes.js";
 
-/**
- * Narrow, per-turn channel handed to a skill executor so it can append
- * *structured* interim events to the live session while it works (e.g. an
- * order-lookup-in-progress status before the final result lands).
- *
- * It deliberately exposes no raw user-facing message channel. Assistant copy is
- * owned by the LLM / canned-rendering path in the turn loop, not authored in
- * skill code — Radioso is multilingual, and hard-coded conversational copy would
- * bypass localization and prompt-owned wording. Executors signal progress with
- * structured status/custom events; the loop decides whether and how to render
- * them to the user.
- *
- * Scoped to the current turn — it does not expose the session store. Wiring a
- * real emitter is owned by the chat turn loop; call sites without a live session
- * pass {@link noopSkillEmitPort}.
- */
-export interface SkillEmitPort {
-  emitStatus(status: string, data?: Record<string, unknown>): Promise<void>;
-  emitCustom(data: Record<string, unknown>): Promise<void>;
-}
-
-/** Everything a skill executor needs for a single dispatch. */
-export interface SkillInvocation {
-  skill: SkillDefinition;
-  collected: Record<string, unknown>;
-  context?: Record<string, unknown>;
-  /** Interim-event channel for the current turn. */
-  emit: SkillEmitPort;
-  /** Cancels in-flight work when the turn is abandoned (new input, shutdown). */
-  signal?: AbortSignal;
-}
-
-/**
- * A reference to a result that will arrive later as a session event. No v1
- * executor returns this; it exists so the async weave — dispatch a skill, keep
- * talking, reconcile the result in a later turn — is expressible without a
- * breaking change to this port. The engine that resolves a ticket is out of scope.
- */
-export interface SkillDeferralTicket {
-  ticketId: string;
-}
-
-/**
- * The result of dispatching a skill: either the outcome is available now
- * (`settled`) or it will arrive later as a session event (`deferred`). Modeling
- * dispatch as inbox/event-shaped rather than pure call-return is what keeps
- * deferred results from being foreclosed by the port's type.
- */
-export type SkillDispatchResult =
-  | { disposition: "settled"; outcome: SkillOutcome }
-  | { disposition: "deferred"; ticket: SkillDeferralTicket };
-
-export interface SkillExecutorPort {
-  dispatch(invocation: SkillInvocation): Promise<SkillDispatchResult>;
-}
+export type {
+  SkillDeferralTicket,
+  SkillDispatchResult,
+  SkillEmitPort,
+  SkillExecutorPort,
+  SkillInvocation,
+};
 
 /** Emit port for call sites that have no live session to append events to. */
 export const noopSkillEmitPort: SkillEmitPort = {

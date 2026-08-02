@@ -9,23 +9,33 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { KnowledgeAddAction } from '@/lib/dashboard-routes'
 
-export type AddDocumentAction = 'crawl' | 'import' | 'create' | 'wordpress'
+export type AddDocumentAction = KnowledgeAddAction
 
 interface AddDocumentMenuProps {
   // Website crawling is gated per workspace; when disabled, the "Crawl website"
   // entry is hidden while the other add flows stay available.
   websiteCrawlerEnabled: boolean
   onSelect: (action: AddDocumentAction) => void
+  compact?: boolean
 }
 
 // Shared "Add" affordance used by both the Documents tab header and the Sources
 // tab header so the two surfaces present an identical dropdown of add flows.
-export function AddDocumentMenu({ websiteCrawlerEnabled, onSelect }: AddDocumentMenuProps) {
+export function AddDocumentMenu({
+  websiteCrawlerEnabled,
+  onSelect,
+  compact = false,
+}: AddDocumentMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" className="h-10 px-3.5">
+        <Button
+          size="sm"
+          variant={compact ? 'outline' : 'default'}
+          className={compact ? undefined : 'h-10 px-3.5'}
+        >
           <Plus className="mr-2 h-4 w-4" />
           Add
           <ChevronDown className="ml-1.5 h-3.5 w-3.5 opacity-60" />

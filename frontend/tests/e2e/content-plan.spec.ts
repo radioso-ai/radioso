@@ -183,7 +183,7 @@ const buildBasePage = () => ({
     grounding: grounded({ grounded: 8, degraded: 5, no_support: 6, not_evaluated: 5 }),
   },
   rankingVersion: 1 as const,
-  recommendedTopicId: TOPIC_A_ID,
+  recommendedTopicId: TOPIC_A_ID as string | null,
   items: [topicA(), topicB()],
   emerging: [emergingItem()],
   nextCursor: null as string | null,
@@ -407,15 +407,75 @@ test.describe("Content plan", () => {
 
     await page.goto(`/w/${workspaceKey}/content-plan`);
 
+    await expect(page.getByText("Jul 3, 2026 – Aug 2, 2026", { exact: false })).toBeVisible();
+    await expect(page.getByText("Jun 3, 2026 – Jul 3, 2026", { exact: false })).toBeVisible();
+
     const recommendedCard = page.locator('section[aria-labelledby="content-plan-recommended-next"]');
     await expect(recommendedCard).toBeVisible();
     await expect(recommendedCard).toContainText("Refund policy");
     await expect(recommendedCard).toContainText("Write document");
     await expect(recommendedCard).toContainText("Are annual plans refundable within 14 days?");
+    const topicViewNav = page.getByRole("navigation", { name: "Topic view" });
+    await expect(topicViewNav.getByRole("link", { name: /Content opportunities/ }))
+      .toHaveAttribute("aria-current", "page");
+    await expect(topicViewNav.getByRole("link", { name: /All interests/ })).not
+      .toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("tab")).toHaveCount(0);
     // The top-of-list row is flagged as Recommended.
     const firstTopicRow = page.locator('[data-content-plan-topic-row]').first();
     await expect(firstTopicRow).toContainText("Recommended");
     await expect(firstTopicRow).toContainText("Refund policy");
+  });
+
+  test("labels review-existing as a related-document handoff and opens the topic evidence", async ({ page }) => {
+    const reviewTopic = {
+      ...topicA(),
+      recommendation: {
+        ...topicA().recommendation,
+        action: "review_existing_content" as const,
+        suggestedTitle: null,
+        questionsToAnswer: [],
+        suggestedShape: null,
+      },
+      corpusEvidence: { state: "ready" as const, relatedDocumentCount: 1, actionRuleVersion: 1 as const },
+    };
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => opportunitiesPage({ items: [reviewTopic], recommendedTopicId: TOPIC_A_ID }),
+      detail: () => ({
+        ...topicDetail(),
+        topic: reviewTopic,
+        decision: {
+          action: "review_existing_content" as const,
+          actionState: "ready" as const,
+          reasons: ["A possibly relevant document exists."],
+        },
+        relatedDocuments: [relatedDocument()],
+      }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    const recommendedCard = page.locator('section[aria-labelledby="content-plan-recommended-next"]');
+    await expect(recommendedCard.getByRole("button", { name: "Open related documents" })).toBeVisible();
+    await expect(recommendedCard.getByRole("button", { name: "Review document" })).toHaveCount(0);
+    await recommendedCard.getByRole("button", { name: "Open related documents" }).click();
+    await expect(page).toHaveURL(new RegExp(`/content-plan/topics/${TOPIC_A_ID}$`));
+    await expect(page.getByRole("heading", { name: "Related documents (1)" })).toBeVisible();
+  });
+
+  test("uses an explicit awaiting-label fallback for an unenriched mature topic", async ({ page }) => {
+    const unlabeled = { ...topicA(), label: null, labelState: "pending" as const };
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => opportunitiesPage({ items: [unlabeled], recommendedTopicId: TOPIC_A_ID }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await expect(page.locator('section[aria-labelledby="content-plan-recommended-next"]'))
+      .toContainText("Awaiting label");
+    await expect(page.locator("[data-content-plan-topic-row]").first()).toContainText("Awaiting label");
   });
 
   test("loads later cursor pages without replacing or duplicating the first-page report", async ({ page }) => {
@@ -459,6 +519,143 @@ test.describe("Content plan", () => {
     expect(requests).toContain(
       `GET /backend/api/v1/quality/content-plan?view=opportunities&cursor=cursor-2`,
     );
+  });
+
+  test("restores a selected later-page topic after a detail-route remount and browser Back", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    const requests: string[] = [];
+    await installContentPlanRoutes(page, {
+      requestLog: requests,
+      list: (_view, url) => url.searchParams.get("cursor") === "cursor-2"
+        ? opportunitiesPage({ items: [topicB()], emerging: [], nextCursor: null })
+        : opportunitiesPage({ items: [topicA()], nextCursor: "cursor-2" }),
+      detail: (topicId) => topicId === TOPIC_B_ID
+        ? {
+            ...topicDetail(),
+            canonicalTopicId: TOPIC_B_ID,
+            topic: topicB(),
+            decision: { action: "monitor" as const, actionState: "ready" as const, reasons: [] },
+            representativeQuestions: [],
+          }
+        : topicDetail(),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await page.getByRole("button", { name: "Load more topics" }).click();
+    const laterTopic = page.locator("[data-content-plan-topic-row]", { hasText: "Password reset" });
+    await laterTopic.click();
+    await expect(page).toHaveURL(new RegExp(`/content-plan/topics/${TOPIC_B_ID}$`));
+
+    await page.reload();
+    await expect(page.getByLabel("Selected topic detail").getByRole("heading", { name: "Password reset" }))
+      .toBeVisible();
+    await page.goBack();
+
+    await expect(page.locator("[data-content-plan-topic-row]")).toHaveCount(2);
+    await expect(laterTopic).toBeFocused();
+    await expect.poll(() => requests.filter((entry) => entry.includes("cursor=cursor-2")).length)
+      .toBeGreaterThanOrEqual(2);
+  });
+
+  test("falls back to the first topic row when the saved return topic is filtered out", async ({ page }) => {
+    let topicBFilteredOut = false;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => opportunitiesPage({
+        items: topicBFilteredOut ? [topicA()] : [topicA(), topicB()],
+      }),
+      detail: (topicId) => topicId === TOPIC_B_ID
+        ? {
+            ...topicDetail(),
+            canonicalTopicId: TOPIC_B_ID,
+            topic: topicB(),
+            decision: { action: "monitor" as const, actionState: "ready" as const, reasons: [] },
+            representativeQuestions: [],
+          }
+        : topicDetail(),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    const topicBRow = page.locator("[data-content-plan-topic-row]", { hasText: "Password reset" });
+    await topicBRow.click();
+    await expect(page).toHaveURL(new RegExp(`/content-plan/topics/${TOPIC_B_ID}$`));
+    topicBFilteredOut = true;
+    await page.reload();
+    const detail = page.getByLabel("Selected topic detail");
+    await expect(detail.getByRole("heading", { name: "Password reset" })).toBeVisible();
+    await detail.getByRole("link", { name: "Back to Content plan" }).click();
+
+    const firstRow = page.locator("[data-content-plan-topic-row]", { hasText: "Refund policy" });
+    await expect(firstRow).toBeFocused();
+    await expect(topicBRow).toHaveCount(0);
+  });
+
+  test("focuses the topic-list heading when no return row remains", async ({ page }) => {
+    let listIsEmpty = false;
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => listIsEmpty
+        ? opportunitiesPage({ items: [], recommendedTopicId: null })
+        : opportunitiesPage({ items: [topicA()] }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await page.locator("[data-content-plan-topic-row]").first().click();
+    await expect(page).toHaveURL(new RegExp(`/content-plan/topics/${TOPIC_A_ID}$`));
+    listIsEmpty = true;
+    await page.reload();
+    const detail = page.getByLabel("Selected topic detail");
+    await expect(detail.getByRole("heading", { name: "Refund policy" })).toBeVisible();
+    await detail.getByRole("link", { name: "Back to Content plan" }).click();
+
+    await expect(page.getByRole("heading", { name: "Ranked opportunities" })).toBeFocused();
+    await expect(page.locator("[data-content-plan-topic-row]")).toHaveCount(0);
+  });
+
+  test("retargets saved return focus to the canonical topic after a merge redirect", async ({ page }) => {
+    let canonicalListReady = false;
+    await page.setViewportSize({ width: 390, height: 844 });
+    const oldTopic = { ...topicA(), id: TOPIC_MERGED_OLD_ID, label: "Refund policy (old)" };
+    const canonicalTopic = { ...topicA(), id: TOPIC_MERGED_NEW_ID, label: "Refund policy (merged)" };
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      list: () => opportunitiesPage({
+        items: canonicalListReady
+          ? [topicB(), canonicalTopic]
+          : [topicB(), oldTopic],
+        recommendedTopicId: canonicalListReady ? TOPIC_MERGED_NEW_ID : TOPIC_MERGED_OLD_ID,
+      }),
+      detail: (topicId) => {
+        if (topicId === TOPIC_MERGED_OLD_ID) {
+          canonicalListReady = true;
+        }
+        return topicId === TOPIC_MERGED_OLD_ID || topicId === TOPIC_MERGED_NEW_ID
+          ? {
+              ...mergedTopicDetail(),
+              topic: canonicalTopic,
+            }
+          : topicDetail();
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    await page.locator("[data-content-plan-topic-row]", { hasText: "Refund policy (old)" }).click();
+    await expect(page).toHaveURL(new RegExp(`/content-plan/topics/${TOPIC_MERGED_NEW_ID}$`));
+    await page.reload();
+    const detail = page.getByLabel("Selected topic detail");
+    await expect(detail.getByRole("heading", { name: "Refund policy \(merged\)" })).toBeVisible();
+    await detail.getByRole("link", { name: "Back to Content plan" }).click();
+
+    const canonicalRow = page.locator("[data-content-plan-topic-row]", { hasText: "Refund policy (merged)" });
+    await expect(canonicalRow).toBeFocused();
+    await expect(page.locator("[data-content-plan-topic-row]", { hasText: "Password reset" }))
+      .not.toBeFocused();
   });
 
   test("keeps loaded topics visible and offers a retry when a cursor page fails", async ({ page }) => {
@@ -545,7 +742,7 @@ test.describe("Content plan", () => {
     await page.goto(`/w/${workspaceKey}/content-plan`);
     await page.getByRole("button", { name: "Load more topics" }).click();
     await expect(page.getByRole("button", { name: "Loading more topics…" })).toBeDisabled();
-    await page.getByRole("tab", { name: /All interests/ }).click();
+    await page.getByRole("link", { name: /All interests/ }).click();
 
     await expect(page.getByRole("heading", { name: "Password reset" })).toBeVisible();
     await page.waitForTimeout(300);
@@ -567,7 +764,22 @@ test.describe("Content plan", () => {
     await expect(detail.getByText("Topic detail", { exact: true })).toBeVisible();
     await expect(detail.getByRole("link", { name: "Back to Content plan" })).toBeHidden();
     await expect(detail.getByRole("heading", { name: "Refund policy" })).toBeVisible();
+    await expect(detail.getByRole("heading", { name: "Content brief" })).toBeVisible();
+    await expect(detail.getByText("Refund eligibility for annual plans", { exact: true })).toBeVisible();
+    await expect(detail.getByText("policy", { exact: true })).toBeVisible();
+    await expect(detail.getByText("Repeated refund-eligibility questions with no supporting document.", { exact: true }))
+      .toBeVisible();
+    await expect(detail.getByLabel("Content brief").getByText(
+      "5 no-support and 3 degraded answers across 9 conversations.",
+      { exact: true },
+    ))
+      .toBeVisible();
     await expect(detail.getByRole("heading", { name: "Questions the content should answer" })).toBeVisible();
+    const evidenceTop = await detail.getByRole("heading", { name: "Evidence and freshness" })
+      .evaluate((element) => element.getBoundingClientRect().top);
+    const briefTop = await detail.getByRole("heading", { name: "Content brief" })
+      .evaluate((element) => element.getBoundingClientRect().top);
+    expect(briefTop).toBeGreaterThan(evidenceTop);
   });
 
   test("narrow detail keeps actions reachable, announces Copy brief, and restores list focus", async ({ page }) => {
@@ -688,7 +900,11 @@ test.describe("Content plan", () => {
     });
 
     await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
-    await page.getByRole("button", { name: "Open source conversation" }).click();
+    await page
+      .getByLabel("Selected topic detail")
+      .locator('section[aria-labelledby="content-plan-topic-representative"]')
+      .getByRole("button", { name: "Open source conversation" })
+      .click();
     const drawer = page.getByRole("dialog");
     await expect(drawer.getByText("Can I get a refund for my annual plan after 30 days?")).toBeVisible();
     await expect(drawer.locator(`[data-message-id="${ASSISTANT_MESSAGE_ID}"]`)).toContainText(
@@ -709,6 +925,25 @@ test.describe("Content plan", () => {
     );
     await expect(page.getByLabel("Selected topic detail").getByRole("heading", { name: "Refund policy" }))
       .toBeVisible();
+  });
+
+  test("does not link a representative source that was removed", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      detail: () => ({
+        ...topicDetail(),
+        representativeQuestions: topicDetail().representativeQuestions.map((question) => ({
+          ...question,
+          sourceAvailable: false,
+        })),
+      }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    const detail = page.getByLabel("Selected topic detail");
+    await expect(detail.getByText("This message was removed from the workspace.")).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Open source conversation" })).toHaveCount(0);
   });
 
   test("Grounding composition shows the three measured verdicts and keeps not_evaluated separate", async ({ page }) => {
@@ -758,6 +993,59 @@ test.describe("Content plan", () => {
     await expect(page.getByText("This topic isn't available anymore")).toBeVisible();
   });
 
+  test("distinguishes a forbidden initial report and focuses its retryable alert", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await page.route("**/backend/api/v1/quality/content-plan**", async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "FORBIDDEN", message: "forbidden" } }),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan`);
+    const heading = page.getByRole("heading", { name: "You do not have permission to view Content plan" });
+    await expect(heading).toBeVisible();
+    await expect(heading).toBeFocused();
+    await expect(heading.locator("xpath=ancestor::*[@role='alert']")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Could not load Content plan" })).toHaveCount(0);
+  });
+
+  test("retries a transient detail error and restores the topic", async ({ page }) => {
+    let allowDetailSuccess = false;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await page.route("**/backend/api/v1/quality/content-plan**", async (route) => {
+      const url = new URL(route.request().url());
+      if (/\/quality\/content-plan\/topics\/[0-9a-f-]{36}$/.test(url.pathname)) {
+        if (!allowDetailSuccess) {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ error: { code: "INTERNAL", message: "temporary detail failure" } }),
+          });
+        } else {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(topicDetail()) });
+        }
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opportunitiesPage()) });
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    const heading = page.getByRole("heading", { name: "Could not load this topic" });
+    await expect(heading).toBeVisible();
+    await expect(heading).toBeFocused();
+    await expect(heading.locator("xpath=ancestor::*[@role='alert']")).toBeVisible();
+    await expect(page.getByText("temporary detail failure")).toBeVisible();
+    allowDetailSuccess = true;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByLabel("Selected topic detail").getByRole("heading", { name: "Refund policy" }))
+      .toBeVisible();
+  });
+
   test("Write document opens Knowledge with the topic-driven title and question outline prefilled", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
@@ -777,6 +1065,134 @@ test.describe("Content plan", () => {
     const contentField = page.getByLabel("Content");
     await expect(contentField).toContainText("Questions to answer");
     await expect(contentField).toContainText("Are annual plans refundable within 14 days?");
+    await expect(page).toHaveURL(
+      new RegExp(`/w/${workspaceKey}/knowledge\\?fromContentPlan=${TOPIC_A_ID}$`),
+    );
+    await expect(page.getByRole("link", { name: "Return to Content plan topic" })).toBeVisible();
+  });
+
+  test("offers alternate Knowledge add flows while retaining the topic return context", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    const detail = page.getByLabel("Selected topic detail");
+    await detail.getByRole("button", { name: "Add", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Import file" }).click();
+
+    await expect(page.getByRole("dialog", { name: "Import Document" })).toBeVisible();
+    await expect(page).toHaveURL(
+      new RegExp(`/w/${workspaceKey}/knowledge\\?fromContentPlan=${TOPIC_A_ID}$`),
+    );
+    await expect(page.getByRole("link", { name: "Return to Content plan topic" })).toBeVisible();
+  });
+
+  test("does not open a draft when the topic disappeared before Knowledge verifies it", async ({ page }) => {
+    let detailRequests = 0;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      detail: () => {
+        detailRequests += 1;
+        return detailRequests === 1 ? topicDetail() : null;
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    await page.getByRole("button", { name: "Write document" }).first().click();
+
+    await expect(page.getByRole("heading", { name: "This Content plan topic is no longer available" }))
+      .toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toHaveCount(0);
+  });
+
+  test("does not open a draft when the recommendation changed before Knowledge verifies it", async ({ page }) => {
+    let detailRequests = 0;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      detail: () => {
+        detailRequests += 1;
+        if (detailRequests === 1) return topicDetail();
+        return {
+          ...topicDetail(),
+          topic: { ...topicA(), recommendation: topicB().recommendation },
+          decision: { action: "monitor" as const, actionState: "ready" as const, reasons: [] },
+        };
+      },
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    await page.getByRole("button", { name: "Write document" }).first().click();
+
+    await expect(page.getByRole("heading", { name: "The recommendation changed" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toHaveCount(0);
+  });
+
+  test("keeps a permission failure bounded instead of opening a blank draft", async ({ page }) => {
+    let detailRequests = 0;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await page.route("**/backend/api/v1/quality/content-plan**", async (route) => {
+      const url = new URL(route.request().url());
+      const isDetail = /\/quality\/content-plan\/topics\/[0-9a-f-]{36}$/.test(url.pathname);
+      if (isDetail) {
+        detailRequests += 1;
+        if (detailRequests === 1) {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(topicDetail()) });
+        } else {
+          await route.fulfill({
+            status: 403,
+            contentType: "application/json",
+            body: JSON.stringify({ error: { code: "FORBIDDEN", message: "forbidden" } }),
+          });
+        }
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opportunitiesPage()) });
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    await page.getByRole("button", { name: "Write document" }).first().click();
+
+    await expect(page.getByRole("heading", { name: "You do not have permission to use this content brief" }))
+      .toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toHaveCount(0);
+  });
+
+  test("retries a transient draft verification failure and only then opens the fresh brief", async ({ page }) => {
+    let allowDraftSuccess = false;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await page.route("**/backend/api/v1/quality/content-plan**", async (route) => {
+      const url = new URL(route.request().url());
+      const isDetail = /\/quality\/content-plan\/topics\/[0-9a-f-]{36}$/.test(url.pathname);
+      if (isDetail) {
+        if (page.url().includes(`/${workspaceKey}/knowledge`) && !allowDraftSuccess) {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/json",
+            body: JSON.stringify({ error: { code: "INTERNAL", message: "temporary failure" } }),
+          });
+        } else {
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(topicDetail()) });
+        }
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(opportunitiesPage()) });
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    await page.getByRole("button", { name: "Write document" }).first().click();
+
+    await expect(page.getByRole("heading", { name: "Could not verify the current recommendation" }))
+      .toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toHaveCount(0);
+    allowDraftSuccess = true;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("dialog", { name: "Add Document" })).toBeVisible();
+    await expect(page.getByLabel("Title")).toHaveValue("Refund eligibility for annual plans");
   });
 
   test("View answers in Quality is topic-scoped and offers a return path", async ({ page }) => {
@@ -796,6 +1212,23 @@ test.describe("Content plan", () => {
       page.locator('[data-content-plan-return]').getByRole("link", { name: /Return to Content plan topic/ }),
     ).toBeVisible();
 
+    await page.goto(
+      `/w/${workspaceKey}/quality?contentPlanTopic=${TOPIC_A_ID}&range=7d&signal=grounding_gaps&feedback=down&triage=resolved&all=true`,
+    );
+    await expect(page).toHaveURL(new RegExp(`contentPlanTopic=${TOPIC_A_ID}`));
+    await expect(page).not.toHaveURL(/range=|signal=|feedback=|triage=|all=/);
+    await expect(page.getByRole("heading", { name: "Topic answers · current 30-day window" }))
+      .toBeVisible();
+    await expect(page.getByText("Only answers assigned to this topic in the Content plan current window.", { exact: false }))
+      .toBeVisible();
+    await expect(page.getByRole("table", { name: "Current-window topic answers" })).toBeVisible();
+    await expect(page.getByText("Queue · all time", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Filter", exact: true })).toHaveCount(0);
+    await expect(page.getByText("All answers", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Triage state: Open. Change state." }))
+      .toBeVisible();
+    await expect(page.getByRole("button", { name: "Add to Eval" })).toBeVisible();
+
     // The queue fetched from the content-plan member-turn endpoint, not the generic Quality endpoint.
     await expect
       .poll(() =>
@@ -804,6 +1237,156 @@ test.describe("Content plan", () => {
         ),
       )
       .toBe(true);
+  });
+
+  test("same-shell generic-to-topic navigation suppresses generic rows while topic answers are delayed", async ({ page }) => {
+    const genericQuestion = "Generic backlog question";
+    const topicQuestion = "Topic A current-window question";
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+    await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            ...topicDetail().representativeQuestions[0],
+            assistantMessageId: ASSISTANT_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            agentId: null,
+            agentName: "Concierge",
+            channel: null,
+            question: genericQuestion,
+            answerPreview: "A generic answer.",
+            skillName: "retrieval.answer",
+            skillOutcome: "no_support",
+            skillStatus: "completed",
+            totalLatencyMs: 1200,
+            grounding: null,
+            createdAt: nowIso,
+            feedback: { upCount: 0, downCount: 0, comments: [] },
+            triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+            verification: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 25,
+          totalPages: 1,
+        }),
+      });
+    });
+    await page.route("**/backend/api/v1/quality/content-plan/topics/*/turns**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            assistantMessageId: ASSISTANT_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            agentId: null,
+            agentName: "Concierge",
+            channel: null,
+            question: topicQuestion,
+            answerPreview: "A topic-scoped answer.",
+            skillName: "retrieval.answer",
+            skillOutcome: "no_support",
+            skillStatus: "completed",
+            totalLatencyMs: 1200,
+            grounding: null,
+            createdAt: nowIso,
+            feedback: { upCount: 0, downCount: 0, comments: [] },
+            triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+            verification: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 25,
+          totalPages: 1,
+        }),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?all=true`);
+    await expect(page.getByRole("button", { name: genericQuestion })).toBeVisible();
+    await page.evaluate((href) => window.history.pushState(null, "", href),
+      `/w/${workspaceKey}/quality?contentPlanTopic=${TOPIC_A_ID}`);
+
+    await expect(page.locator('[data-content-plan-return]')).toHaveAttribute(
+      "data-content-plan-topic-id",
+      TOPIC_A_ID,
+    );
+    await expect(page.getByRole("button", { name: genericQuestion })).toHaveCount(0);
+    await expect(page.getByRole("table", { name: "Current-window topic answers" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: topicQuestion })).toBeVisible();
+  });
+
+  test("same-shell topic changes suppress prior rows and expose a retry when the new scope fails", async ({ page }) => {
+    const topicAQuestion = "Topic A answer that must disappear";
+    const topicBQuestion = "Topic B answer after retry";
+    let topicBReady = false;
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page);
+    await page.route("**/backend/api/v1/quality/content-plan/topics/*/turns**", async (route) => {
+      const topicId = new URL(route.request().url()).pathname.split("/").at(-2);
+      if (topicId === TOPIC_B_ID && !topicBReady) {
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: JSON.stringify({ error: { code: "UNAVAILABLE", message: "topic projection unavailable" } }),
+        });
+        return;
+      }
+      const question = topicId === TOPIC_B_ID ? topicBQuestion : topicAQuestion;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [{
+            assistantMessageId: topicId === TOPIC_B_ID ? "11111111-aaaa-4111-8111-111111111111" : ASSISTANT_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            agentId: null,
+            agentName: "Concierge",
+            channel: null,
+            question,
+            answerPreview: "A topic-scoped answer.",
+            skillName: "retrieval.answer",
+            skillOutcome: "no_support",
+            skillStatus: "completed",
+            totalLatencyMs: 1200,
+            grounding: null,
+            createdAt: nowIso,
+            feedback: { upCount: 0, downCount: 0, comments: [] },
+            triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+            verification: null,
+          }],
+          total: 1,
+          page: 1,
+          pageSize: 25,
+          totalPages: 1,
+        }),
+      });
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?contentPlanTopic=${TOPIC_A_ID}`);
+    await expect(page.getByRole("button", { name: topicAQuestion })).toBeVisible();
+    await page.evaluate((href) => window.history.pushState(null, "", href),
+      `/w/${workspaceKey}/quality?contentPlanTopic=${TOPIC_B_ID}`);
+
+    await expect(page.locator('[data-content-plan-return]')).toHaveAttribute(
+      "data-content-plan-topic-id",
+      TOPIC_B_ID,
+    );
+    await expect(page.getByRole("button", { name: topicAQuestion })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Could not load this topic’s answers" })).toBeVisible();
+    await expect(page.getByText("topic projection unavailable")).toBeVisible();
+    topicBReady = true;
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("button", { name: topicBQuestion })).toBeVisible();
+    await expect(page.getByRole("button", { name: topicAQuestion })).toHaveCount(0);
   });
 
   test("stale workspace responses do not leak topics from a previously active workspace", async ({ page }) => {
@@ -847,14 +1430,20 @@ test.describe("Content plan", () => {
     await expect(page.getByText("Stale-workspace topic")).toHaveCount(0);
   });
 
-  test("emerging questions render as a quieter section with no recommendation", async ({ page }) => {
+  test("emerging questions stay quiet but can open their source conversation", async ({ page }) => {
     await seedDashboardStorage(page);
-    await installDashboardApiMocks(page);
+    await installDashboardApiMocks(page, {
+      conversationDetails: { [CONVERSATION_ID]: sourceConversation() },
+    });
     await installContentPlanRoutes(page);
 
     await page.goto(`/w/${workspaceKey}/content-plan`);
     await expect(page.getByRole("heading", { name: "Emerging evidence" })).toBeVisible();
     await expect(page.getByText("Do you offer education discounts?")).toBeVisible();
+    const emerging = page.locator('section[aria-labelledby="content-plan-emerging"]');
+    await emerging.getByRole("button", { name: "Open source conversation" }).click();
+    await expect(page.getByRole("dialog").locator(`[data-message-id="${ASSISTANT_MESSAGE_ID}"]`))
+      .toBeVisible();
   });
 
   test("keyboard-only navigation moves through topic rows and activates the detail", async ({ page }) => {
@@ -956,6 +1545,35 @@ test.describe("Content plan", () => {
       await expect(status).toContainText(scenario.explanation);
       await expect(status).toContainText("12 / 40 processed");
     }
+  });
+
+  test("shows projection freshness and pending work inside a narrow deep-linked detail", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+    await installContentPlanRoutes(page, {
+      detail: () => ({
+        ...topicDetail(),
+        projection: {
+          ...readyProjection(),
+          state: "delayed" as const,
+          pendingEmbeddingCount: 2,
+          pendingAssignmentCount: 3,
+          pendingEnrichmentTopicCount: 1,
+          processedCount: 12,
+          totalCount: 40,
+        },
+      }),
+    });
+
+    await page.goto(`/w/${workspaceKey}/content-plan/topics/${TOPIC_A_ID}`);
+    const detail = page.getByLabel("Selected topic detail");
+    const freshness = detail.locator('[role="status"]', { hasText: "Delayed" });
+    await expect(freshness).toContainText("processed through");
+    await expect(freshness).toContainText("2 awaiting embedding");
+    await expect(freshness).toContainText("3 awaiting topic assignment");
+    await expect(freshness).toContainText("1 topics enriching");
+    await expect(freshness).toContainText("12 / 40 processed");
   });
 
   test("keeps a ready deterministic action while an unavailable generated brief stays explicit and uncopyable", async ({ page }) => {

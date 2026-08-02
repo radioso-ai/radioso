@@ -41,7 +41,7 @@ export function RecommendedNextCard({
 }: RecommendedNextCardProps) {
   const rec = topic.recommendation
   const action: ContentPlanRecommendationAction | null = rec.action
-  const label = topic.label ?? 'Emerging topic (label pending)'
+  const label = topic.label ?? 'Awaiting label'
 
   return (
     <section

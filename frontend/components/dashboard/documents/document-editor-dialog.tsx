@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { MarkdownContent } from '@/components/markdown/markdown-content'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -34,6 +34,7 @@ export function DocumentEditorDialog({
   onChange,
   onMetadataChange,
   onSubmit,
+  context,
 }: {
   open: boolean
   mode: EditorMode
@@ -50,6 +51,7 @@ export function DocumentEditorDialog({
   onChange: (field: keyof DocumentEditorValues, value: string) => void
   onMetadataChange: (value: string) => void
   onSubmit: (event: FormEvent) => void
+  context?: ReactNode
 }) {
   const isReadOnly = mode === 'view'
 
@@ -68,6 +70,7 @@ export function DocumentEditorDialog({
                 : 'Add a new document to your knowledge base for retrieval.'}
           </DialogDescription>
         </DialogHeader>
+        {context}
         {isLoading ? (
           <div className="flex flex-1 min-h-[240px] items-center justify-center">
             <LogoSpinner imageClassName="h-7 w-7" />

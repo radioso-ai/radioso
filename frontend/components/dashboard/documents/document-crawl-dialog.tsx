@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,6 +28,7 @@ export function DocumentCrawlDialog({
   onIncludeUrlPatternsChange,
   onExcludeUrlPatternsChange,
   onPreserveContentLinksChange,
+  context,
 }: {
   open: boolean
   url: string
@@ -45,6 +46,7 @@ export function DocumentCrawlDialog({
   onIncludeUrlPatternsChange: (value: string) => void
   onExcludeUrlPatternsChange: (value: string) => void
   onPreserveContentLinksChange: (value: boolean) => void
+  context?: ReactNode
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const trimmedUrl = url.trim()
@@ -57,6 +59,7 @@ export function DocumentCrawlDialog({
             Fetch pages from a public website and add them to your knowledge base.
           </DialogDescription>
         </DialogHeader>
+        {context}
         <form onSubmit={onSubmit} className="mt-4 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="crawlUrl">Website URL</Label>

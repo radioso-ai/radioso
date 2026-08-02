@@ -1,6 +1,6 @@
 'use client'
 
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,7 @@ export function DocumentImportDialog({
   onTitleChange,
   onFileChange,
   hasFile,
+  context,
 }: {
   open: boolean
   importTitle: string
@@ -37,6 +38,7 @@ export function DocumentImportDialog({
   onTitleChange: (value: string) => void
   onFileChange: (file: File | null) => void
   hasFile: boolean
+  context?: ReactNode
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -47,6 +49,7 @@ export function DocumentImportDialog({
             Upload a PDF, Markdown, TXT, DOCX, or XLSX file to add it to your knowledge base.
           </DialogDescription>
         </DialogHeader>
+        {context}
         <form onSubmit={onSubmit} className="mt-4 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="importFile">File</Label>

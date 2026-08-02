@@ -1,7 +1,8 @@
 'use client'
 
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
+import Link from 'next/link'
+import { ArrowLeft, SlidersHorizontal } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { AddDocumentMenu, type AddDocumentAction } from '@/components/dashboard/documents/add-document-menu'
@@ -38,13 +39,16 @@ import {
   type WebsiteCrawlJobSummary,
   documentsApi,
 } from '@/lib/api'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
 import { contentPlanApi } from '@/lib/api-content-plan'
-import { buildDraftDocumentContent } from '@/lib/content-plan'
+import {
+  assessContentPlanDraftEligibility,
+  buildDraftDocumentContent,
+} from '@/lib/content-plan'
 
 const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
@@ -76,6 +80,14 @@ interface DocumentsViewProps {
    */
   autoDraftFromContentPlanTopicId?: string | null
   onAutoDraftFromContentPlanHandled?: () => void
+  /** Shown inside open add dialogs so their modal surface does not hide the return context. */
+  contentPlanReturnHref?: string | null
+}
+
+interface ContentPlanDraftNotice {
+  kind: 'changed' | 'unavailable' | 'permission' | 'error'
+  title: string
+  message: string
 }
 
 const parseMetadata = (raw: string): Record<string, string | number | boolean | null> | null => {
@@ -101,6 +113,7 @@ export function DocumentsView({
   onAutoOpenAddHandled,
   autoDraftFromContentPlanTopicId = null,
   onAutoDraftFromContentPlanHandled,
+  contentPlanReturnHref = null,
 }: DocumentsViewProps) {
   const router = useRouter()
   const justClosedDocumentIdRef = useRef<string | null>(null)
@@ -146,6 +159,8 @@ export function DocumentsView({
   const [availableSources, setAvailableSources] = useState<DocumentSourceListItem[]>([])
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false)
   const [activeConnectorId, setActiveConnectorId] = useState<string | null>(null)
+  const [contentPlanDraftNotice, setContentPlanDraftNotice] = useState<ContentPlanDraftNotice | null>(null)
+  const [contentPlanDraftRetryKey, setContentPlanDraftRetryKey] = useState(0)
 
   const sourceFilterId = routeState.documentSourceFilter ?? null
   const documentFilters = useMemo<ReadonlyArray<FilterDefinition>>(
@@ -534,28 +549,52 @@ export function DocumentsView({
         if (cancelled) {
           return
         }
-        if (detail) {
-          const suggestedTitle = detail.topic.recommendation.suggestedTitle
-            ?? detail.topic.label
-            ?? 'New document'
-          resetCreateDialog()
-          setFormValues({
-            title: suggestedTitle,
-            content: buildDraftDocumentContent(detail.topic.recommendation.questionsToAnswer),
-            metadata: '',
-            sourceId: MANUALLY_ADDED_SOURCE_ID,
+        if (!detail) {
+          setContentPlanDraftNotice({
+            kind: 'changed',
+            title: 'This Content plan topic is no longer available',
+            message: 'No draft was opened. Return to Content plan and choose a current topic.',
           })
-          setIsCreateDialogOpen(true)
-        } else {
-          openCreateDialog()
+          return
         }
-      } catch {
-        if (!cancelled) {
-          openCreateDialog()
+        const eligibility = assessContentPlanDraftEligibility({
+          decision: detail.decision,
+          recommendation: detail.topic.recommendation,
+        })
+        if (eligibility.kind !== 'ready') {
+          setContentPlanDraftNotice({
+            kind: eligibility.kind,
+            title: eligibility.kind === 'changed'
+              ? 'The recommendation changed'
+              : 'The content brief is unavailable',
+            message: eligibility.message,
+          })
+          return
         }
-      } finally {
+        resetCreateDialog()
+        setFormValues({
+          title: detail.topic.recommendation.suggestedTitle!,
+          content: buildDraftDocumentContent(detail.topic.recommendation.questionsToAnswer),
+          metadata: '',
+          sourceId: MANUALLY_ADDED_SOURCE_ID,
+        })
+        setContentPlanDraftNotice(null)
+        setIsCreateDialogOpen(true)
+        onAutoDraftFromContentPlanHandled?.()
+      } catch (caught) {
         if (!cancelled) {
-          onAutoDraftFromContentPlanHandled?.()
+          const status = getApiErrorStatus(caught)
+          setContentPlanDraftNotice(status === 403
+            ? {
+                kind: 'permission',
+                title: 'You do not have permission to use this content brief',
+                message: 'No draft was opened. Ask a workspace administrator for access.',
+              }
+            : {
+                kind: 'error',
+                title: 'Could not verify the current recommendation',
+                message: getApiErrorMessage(caught, 'No draft was opened. Try again.'),
+              })
         }
       }
     }
@@ -566,9 +605,9 @@ export function DocumentsView({
     }
   }, [
     autoDraftFromContentPlanTopicId,
+    contentPlanDraftRetryKey,
     resetCreateDialog,
     onAutoDraftFromContentPlanHandled,
-    openCreateDialog,
   ])
 
   const openDocumentPage = useCallback(async (documentId: string) => {
@@ -995,6 +1034,18 @@ export function DocumentsView({
     return documents.find((document) => document.id === editingDocumentId) ?? null
   }, [activeDocument, documents, editingDocumentId])
 
+  const contentPlanDialogContext = contentPlanReturnHref ? (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm">
+      <span className="text-foreground">Opened from a Content plan topic.</span>
+      <Button asChild variant="ghost" size="sm">
+        <Link href={contentPlanReturnHref}>
+          <ArrowLeft className="mr-1 h-4 w-4" aria-hidden />
+          Return to Content plan topic
+        </Link>
+      </Button>
+    </div>
+  ) : null
+
   const goToPreviousPage = () => {
     setDocumentsPage(Math.max(1, currentPage - 1))
   }
@@ -1030,6 +1081,7 @@ export function DocumentsView({
           setSaveError(null)
         }}
         onSubmit={handleSubmit}
+        context={contentPlanDialogContext}
       />
 
       <DocumentImportDialog
@@ -1051,7 +1103,34 @@ export function DocumentsView({
           setImportFile(file)
           setImportError(null)
         }}
+        context={contentPlanDialogContext}
       />
+
+      {contentPlanDraftNotice ? (
+        <aside
+          className="mx-6 mt-4 shrink-0 rounded-lg border border-border bg-muted/30 p-4"
+          role="alert"
+          aria-live="assertive"
+        >
+          <h2 className="text-sm font-medium text-foreground">
+            {contentPlanDraftNotice.title}
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {contentPlanDraftNotice.message}
+          </p>
+          {contentPlanDraftNotice.kind === 'error' ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => setContentPlanDraftRetryKey((key) => key + 1)}
+            >
+              Try again
+            </Button>
+          ) : null}
+        </aside>
+      ) : null}
 
       {websiteCrawlerEnabled ? (
         <DocumentCrawlDialog
@@ -1086,6 +1165,7 @@ export function DocumentsView({
             setCrawlPreserveContentLinks(value)
             setCrawlError(null)
           }}
+          context={contentPlanDialogContext}
         />
       ) : null}
 
@@ -1116,6 +1196,7 @@ export function DocumentsView({
         <ConnectorSetupDialog
           open
           connectorId={activeConnectorId}
+          context={contentPlanDialogContext}
           onOpenChange={(next) => {
             if (!next) {
               setActiveConnectorId(null)

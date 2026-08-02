@@ -48,6 +48,10 @@ export const registerContentPlanningPaths = (
         content: { "application/json": { schema: schemas.ContentPlanPageSchema } },
       },
       ...commonErrors,
+      409: {
+        description: "The ranked snapshot changed while paging; restart without a cursor",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
     },
   });
 

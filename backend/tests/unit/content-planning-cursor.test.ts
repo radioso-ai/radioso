@@ -12,6 +12,7 @@ const payload: ContentPlanCursorPayload = {
   asOf: "2026-08-02T12:00:00.000Z",
   view: "opportunities",
   rankingVersion: 1,
+  snapshotFingerprint: "a".repeat(64),
   order: {
     activeNoSupportConversationCount: 4,
     activeDegradedConversationCount: 3,

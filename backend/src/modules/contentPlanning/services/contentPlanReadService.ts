@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { LowQualityTurnsPage } from "../../quality/contracts/index.js";
 import type {
   QualityContentPlanningEvidenceSourcePort,
@@ -22,6 +24,7 @@ import type {
 import {
   ContentPlanCursorCodec,
   ContentPlanCursorError,
+  ContentPlanCursorStaleError,
   type ContentPlanCursorPayload,
 } from "./contentPlanCursor.js";
 import {
@@ -68,6 +71,10 @@ export class ContentPlanReadService implements ContentPlanReadServicePort {
       data.observations.map((observation) => observation.sourceAssistantMessageId),
     );
     const report = presentContentPlanReport({ asOf, projection, data, evidenceByAssistantMessageId: evidence });
+    const snapshotFingerprint = fingerprintReport(report);
+    if (cursor && cursor.snapshotFingerprint !== snapshotFingerprint) {
+      throw new ContentPlanCursorStaleError();
+    }
     const visible = report.topics
       .filter((topic) => query.view === "all_interests" || topic.summary.opportunity.credible)
       .filter((topic) => !cursor || isAfterCursor(topic, cursor));
@@ -95,6 +102,7 @@ export class ContentPlanReadService implements ContentPlanReadServicePort {
             asOf: windows.asOf,
             view: query.view,
             topic: last,
+            snapshotFingerprint,
           }))
         : null,
     };
@@ -284,6 +292,7 @@ const toCursor = (input: {
   asOf: string;
   view: ContentPlanView;
   topic: PresentedContentPlanTopic;
+  snapshotFingerprint: string;
 }): ContentPlanCursorPayload => ({
   version: 1,
   workspaceId: input.workspaceId,
@@ -291,6 +300,7 @@ const toCursor = (input: {
   asOf: input.asOf,
   view: input.view,
   rankingVersion: 1,
+  snapshotFingerprint: input.snapshotFingerprint,
   order: {
     activeNoSupportConversationCount: input.topic.activeNoSupportConversationCount,
     activeDegradedConversationCount: input.topic.activeDegradedConversationCount,
@@ -299,6 +309,16 @@ const toCursor = (input: {
     topicId: input.topic.summary.id,
   },
 });
+
+const fingerprintReport = (
+  report: ReturnType<typeof presentContentPlanReport>,
+): string => createHash("sha256")
+  .update(JSON.stringify({
+    summary: report.summary,
+    topics: report.topics.map(({ summary }) => summary),
+    emerging: report.emerging,
+  }), "utf8")
+  .digest("hex");
 
 const isAfterCursor = (
   topic: PresentedContentPlanTopic,

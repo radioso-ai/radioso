@@ -69,10 +69,17 @@ These were contested in review and are settled. Each is a constraint on the plan
 currently feeds each skill the previous skill's staged context and outcome guidance. A
 resolver called inside that loop would let skill B's extraction see skill A's output — but
 A would already have side-effected before B could park. Both guarantees cannot hold.
-Side-effect safety wins: build a resolution plan for every selected skill from the single
-immutable pre-dispatch turn snapshot, and dispatch only if every plan item is ready.
+Side-effect safety wins: build a resolution plan for every selected skill from the
+pre-dispatch turn state, and dispatch only if every plan item is ready.
 **Consequence, stated plainly:** same-turn skill outputs are not available to slot filling.
 A flow where A's result is B's argument belongs in a routine or a later turn.
+
+The guarantee is stated precisely because "one immutable snapshot" would overclaim: each
+resolver call receives its **own copy** of the pre-dispatch turn, so neither a previous
+skill's dispatch output nor a previous resolver's mutation of what it was handed can reach
+the next resolver. Element objects inside those copies are still shared with the dispatch
+path, so this bounds container mutation rather than deep-freezing state the rest of the
+turn also reads.
 
 **D2 — The parked turn is its own result shape.** Add `awaitingSkillInput` to
 `ProcessTurnResult`, threaded through the prepared-run type and both result constructors.
@@ -280,8 +287,9 @@ was never called and the reply asks for the value.
   validation, and the ready/needs-input/failed decision — MUST live in
   `conversation-defaults` and work with no backend present.
 - **FR-006** Resolution for all selected skills MUST complete before any is dispatched,
-  from one immutable pre-dispatch turn snapshot. If any resolves to needs-input or failed,
-  none dispatch (D1).
+  each from its own copy of the pre-dispatch turn, so that no resolver observes another
+  skill's dispatch output or another resolver's mutations. If any resolves to needs-input
+  or failed, none dispatch (D1).
 - **FR-007** Extraction MUST be skipped when the selected skill declares no fields, or
   when host-supplied input already satisfies every declared field.
 - **FR-008** Host-supplied values MUST take precedence, MUST NOT be shown to the model, and

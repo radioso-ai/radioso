@@ -96,7 +96,13 @@ describe("DefaultConversationEngine", () => {
     const seenTurns: unknown[] = [];
     const resolver: ConversationSkillInputResolver = {
       resolve: vi.fn(async ({ selected, turn }) => {
-        seenTurns.push(turn);
+        // Record what this call RECEIVED before mutating, so the assertion measures what
+        // the next resolver was handed rather than this one's own scribbles.
+        seenTurns.push({ turn, staged: [...turn.stagedContext], history: [...turn.history] });
+        // A careless or hostile host resolver mutating what it was handed must not change
+        // what the next resolver sees.
+        turn.stagedContext.push({ kind: `mutated_by_${selected.skillName}`, data: {} });
+        turn.history.push({ role: "user", content: `mutated_by_${selected.skillName}` });
         return { kind: "ready", input: { id: selected.skillName }, fields: [{ name: "id", provenance: "model", status: "ready" }] };
       }),
     };
@@ -123,8 +129,14 @@ describe("DefaultConversationEngine", () => {
     await new DefaultConversationEngine().processTurn(input);
 
     expect(resolver.resolve).toHaveBeenCalledTimes(2);
-    expect(seenTurns[0]).toBe(seenTurns[1]);
-    expect((seenTurns[0] as { stagedContext: unknown[] }).stagedContext).toEqual([]);
+    const [first, second] = seenTurns as Array<{ turn: unknown; staged: unknown[]; history: unknown[] }>;
+    // Independent snapshots, not one shared object.
+    expect(first!.turn).not.toBe(second!.turn);
+    // The second resolver saw neither the first skill's dispatch output (nothing has
+    // dispatched yet) nor the first resolver's mutations.
+    expect(second!.staged).toEqual([]);
+    expect(second!.history).toEqual(first!.history);
+    expect(second!.history).not.toContainEqual({ role: "user", content: "mutated_by_first" });
     expect((dispatchTurns[1] as { stagedContext: unknown[] }).stagedContext).toEqual([
       expect.objectContaining({ kind: "first" }),
     ]);

@@ -602,11 +602,17 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
     }));
 
-    const preDispatchTurn: TurnContext = {
+    // Every resolver call gets its own copy of the pre-dispatch turn. Sharing one object
+    // would let a host resolver mutate what it was handed and change what the next
+    // resolver sees, which is precisely the cross-skill coupling D1 exists to prevent.
+    // Element objects are still shared with the dispatch path, so this bounds container
+    // mutation rather than deep-freezing state the rest of the turn also reads.
+    const preDispatchSnapshot = (): TurnContext => ({
       ...selectedTurn,
+      history: [...selectedTurn.history],
       stagedContext: [...selectedTurn.stagedContext],
       steering: [...selectedTurn.steering],
-    };
+    });
     const resolvedSelections: Array<{ skill: SkillDefinition; selected: SelectedSkill; resolution?: ConversationSkillInputResolution }> = [];
     const awaitingSkillInput: AwaitingSkillInput[] = [];
     const preflightOutcomes: TurnOutcome[] = [];
@@ -642,7 +648,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         continue;
       }
       const resolution = input.skillInputResolver
-        ? await input.skillInputResolver.resolve({ skill, selected, turn: preDispatchTurn })
+        ? await input.skillInputResolver.resolve({ skill, selected, turn: preDispatchSnapshot() })
         : { kind: "failed", code: "skill_input_resolver_unavailable", fields: [] } as ConversationSkillInputResolution;
       stages.push(skillInputResolutionStage({
         skillName: selected.skillName,

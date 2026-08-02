@@ -105,6 +105,39 @@ describe("createConversationSkillInputResolver", () => {
     expect(model.complete).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["a string", "calendar_date=2026-08-07"],
+    ["null", null],
+    ["an array", ["2026-08-07"]],
+  ])("fails closed when host input is %s rather than letting extraction replace it", async (_label, hostInput) => {
+    const model = gateway(JSON.stringify({ calendar_date: "2026-08-07", haircut_style: "Short" }));
+    const resolver = createConversationSkillInputResolver({ modelGateway: model });
+
+    await expect(resolver.resolve({
+      skill,
+      selected: { skillName: skill.name, input: hostInput },
+      turn: turn(),
+    })).resolves.toMatchObject({ kind: "failed", code: "invalid_host_input" });
+    expect(model.complete).not.toHaveBeenCalled();
+  });
+
+  it("ignores a model response that arrives after the deadline", async () => {
+    let settle: ((value: { text: string }) => void) | undefined;
+    const model: ConversationModelGateway = {
+      complete: vi.fn(() => new Promise<{ text: string }>((resolve) => { settle = resolve; })),
+    };
+    const resolver = createConversationSkillInputResolver({ modelGateway: model, deadlineMs: 5 });
+
+    const resolution = await resolver.resolve({ skill, selected: { skillName: skill.name }, turn: turn() });
+    expect(resolution).toMatchObject({ kind: "failed", code: "deadline_exceeded" });
+
+    // The provider answering late must not retroactively supply values for a turn that
+    // already gave up: the resolution is settled and nothing may be dispatched from it.
+    settle?.({ text: JSON.stringify({ calendar_date: "2026-08-07" }) });
+    await Promise.resolve();
+    expect(resolution).toMatchObject({ kind: "failed", code: "deadline_exceeded" });
+  });
+
   it("drops invalid optional scalar values without blocking ready required input", async () => {
     const typed: SkillDefinition = {
       name: "typed",

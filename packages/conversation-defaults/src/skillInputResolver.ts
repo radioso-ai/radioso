@@ -142,6 +142,14 @@ export const createConversationSkillInputResolver = (
   return {
     async resolve({ skill, selected, turn }: { skill: SkillDefinition; selected: SelectedSkill; turn: TurnContext }): Promise<ConversationSkillInputResolution> {
       const fields = skill.inputSchema?.fields ?? [];
+      // `SelectedSkill.input` is `unknown`, so a host can hand us a string, null, or an
+      // array. Treating that as "no host input" would silently discard what the host
+      // supplied and let extraction fill the fields instead — the exact substitution D5
+      // forbids. A malformed payload is a host contract error, not a missing value, so it
+      // fails closed rather than parking for fields nobody can answer.
+      if (selected.input !== undefined && !isRecord(selected.input)) {
+        return { kind: "failed", code: "invalid_host_input", fields: [] };
+      }
       const hostInput = isRecord(selected.input) ? selected.input : {};
       const input: Record<string, SkillInputValue> = {};
       const outcomes: SkillInputFieldOutcome[] = [];

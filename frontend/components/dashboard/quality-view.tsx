@@ -471,6 +471,32 @@ function ContentPlanReturnBanner({
   )
 }
 
+function QualityTurnsLoadFailure({
+  topicScoped,
+  message,
+  onRetry,
+}: {
+  topicScoped: boolean
+  message: string
+  onRetry: () => void
+}) {
+  return (
+    <div
+      className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm"
+      role="alert"
+      aria-live="assertive"
+    >
+      <h3 className="font-medium text-destructive">
+        {topicScoped ? 'Could not load this topic’s answers' : 'Could not load assistant answers'}
+      </h3>
+      <p className="mt-1 text-destructive">{message}</p>
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  )
+}
+
 /**
  * Count-forward filter preset for the queue. The count is the all-time active
  * backlog, so it never disagrees with what clicking the chip shows.
@@ -678,7 +704,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [items, setItems] = useState<LowQualityTurn[]>([])
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+  const [loadedTurnsScopeKey, setLoadedTurnsScopeKey] = useState<string | null>(null)
+  const [turnsLoadFailure, setTurnsLoadFailure] = useState<{
+    scopeKey: string
+    message: string
+    preserveRows: boolean
+  } | null>(null)
   const [isFetching, setIsFetching] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [creatingEvalMessageId, setCreatingEvalMessageId] = useState<string | null>(null)
@@ -703,6 +734,9 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
   const [countsRefreshKey, setCountsRefreshKey] = useState(0)
   // Bumped after a triage change so server-filtered rows/totals stay current.
   const [turnsRefreshKey, setTurnsRefreshKey] = useState(0)
+  const [turnsRetryKey, setTurnsRetryKey] = useState(0)
+  const turnsRequestIdRef = useRef(0)
+  const loadedTurnsScopeKeyRef = useRef<string | null>(null)
   const drawerSelectedItem: SelectedHistoryItem = openedConversation
     ? { kind: 'chat', id: openedConversation.conversationId }
     : null
@@ -735,6 +769,52 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     signal: activeSignal,
     triageStates,
   }), [activeSignal, showAll, triageStates])
+  const turnsScopeKey = useMemo(() => contentPlanTopicId
+    ? JSON.stringify(['topic', contentPlanTopicId, 'current', currentPage, PAGE_SIZE])
+    : JSON.stringify([
+        'generic',
+        currentPage,
+        PAGE_SIZE,
+        queueScope.signals ?? null,
+        queueScope.triageStates ?? null,
+        actionsKey,
+        statusesKey,
+        feedbackKey,
+        resolutionReasonsKey,
+        resolutionFrom ?? null,
+        resolutionTo ?? null,
+        sort,
+        activeNegativeFeedbackOnly,
+        hasComment,
+        groundingVerdictsKey,
+        hasUnsourcedClaims,
+        hasInvalidSources,
+        latency ?? null,
+      ]), [
+    actionsKey,
+    activeNegativeFeedbackOnly,
+    contentPlanTopicId,
+    currentPage,
+    feedbackKey,
+    groundingVerdictsKey,
+    hasComment,
+    hasInvalidSources,
+    hasUnsourcedClaims,
+    latency,
+    queueScope,
+    resolutionFrom,
+    resolutionReasonsKey,
+    resolutionTo,
+    sort,
+    statusesKey,
+  ])
+  const turnsScopeLoaded = loadedTurnsScopeKey === turnsScopeKey
+  const visibleItems = turnsScopeLoaded ? items : []
+  const visibleTotal = turnsScopeLoaded ? total : 0
+  const visibleTotalPages = turnsScopeLoaded ? totalPages : 0
+  const currentTurnsFailure = turnsLoadFailure?.scopeKey === turnsScopeKey
+    ? turnsLoadFailure
+    : null
 
   useEffect(() => {
     let cancelled = false
@@ -1021,6 +1101,49 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     [accountId, activeWorkspaceId, router, routeState],
   )
 
+  const hasUnsupportedTopicQueueState = contentPlanTopicId !== null && Boolean(
+    (routeState.qualityRange && routeState.qualityRange !== DEFAULT_QUALITY_RANGE)
+    || routeState.qualitySignal
+    || routeState.qualityShowAll
+    || routeState.qualityActions?.length
+    || routeState.qualityStatuses?.length
+    || routeState.qualityFeedback?.length
+    || routeState.qualityLatency
+    || routeState.qualitySort
+    || routeState.qualityTriageStates?.length
+    || routeState.qualityResolutionReasons?.length
+    || routeState.qualityResolutionFrom
+    || routeState.qualityResolutionTo
+    || routeState.qualityActiveNegativeFeedbackOnly
+    || routeState.qualityHasComment
+    || routeState.qualityGroundingVerdicts?.length
+    || routeState.qualityHasUnsourcedClaims
+    || routeState.qualityHasInvalidSources,
+  )
+
+  useEffect(() => {
+    if (!contentPlanTopicId || !hasUnsupportedTopicQueueState) {
+      return
+    }
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      ...CLEARED_QUALITY_QUEUE_ROUTE_STATE,
+      section: 'quality',
+      workspaceId: activeWorkspaceId ?? routeState.workspaceId,
+      contentPlanTopicId,
+      qualityRange: undefined,
+      qualityPage: currentPage > 1 ? currentPage : undefined,
+    }))
+  }, [
+    accountId,
+    activeWorkspaceId,
+    contentPlanTopicId,
+    currentPage,
+    hasUnsupportedTopicQueueState,
+    routeState,
+    router,
+  ])
+
   const buildRoutineHref = useCallback(
     (agentId: string, routineId: string) =>
       buildDashboardHref(accountId, {
@@ -1165,6 +1288,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
 
   useEffect(() => {
     let cancelled = false
+    const requestId = turnsRequestIdRef.current + 1
+    turnsRequestIdRef.current = requestId
+    const hadCurrentRows = loadedTurnsScopeKeyRef.current === turnsScopeKey
+    const requestIsCurrent = () => (
+      !cancelled && turnsRequestIdRef.current === requestId
+    )
 
     const actionTuples = actionsKey
       ? actionsKey
@@ -1177,11 +1306,12 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     const latencyBucket = latency ? LATENCY_BUCKETS[latency] : undefined
     const loadTurns = async () => {
       try {
-        if (cancelled) {
+        if (!requestIsCurrent()) {
           return
         }
         setIsFetching(true)
         setError(null)
+        setTurnsLoadFailure((current) => current?.scopeKey === turnsScopeKey ? null : current)
         // Content plan handoff bypasses the queue-signal query and reads the
         // topic's members through its own authorized endpoint; the response
         // shape is the shared LowQualityTurnsPage, so the rest of the queue
@@ -1215,28 +1345,48 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               offset: (currentPage - 1) * PAGE_SIZE,
             })
 
-        if (cancelled) {
+        if (!requestIsCurrent()) {
           return
         }
         if (page === null) {
           setItems([])
           setTotal(0)
           setTotalPages(0)
-          setError('This Content plan topic is no longer available.')
+          loadedTurnsScopeKeyRef.current = turnsScopeKey
+          setLoadedTurnsScopeKey(turnsScopeKey)
+          setTurnsLoadFailure({
+            scopeKey: turnsScopeKey,
+            message: 'This Content plan topic is no longer available.',
+            preserveRows: false,
+          })
           return
         }
         setItems(page.items)
         setTotal(page.total)
         setTotalPages(page.totalPages)
+        loadedTurnsScopeKeyRef.current = turnsScopeKey
+        setLoadedTurnsScopeKey(turnsScopeKey)
+        setTurnsLoadFailure(null)
       } catch (caught) {
-        if (cancelled) {
+        if (!requestIsCurrent()) {
           return
         }
-        setError(getApiErrorMessage(caught, 'Failed to load assistant answers'))
+        const preserveRows = contentPlanTopicId === null && hadCurrentRows
+        if (!preserveRows) {
+          setItems([])
+          setTotal(0)
+          setTotalPages(0)
+          loadedTurnsScopeKeyRef.current = turnsScopeKey
+          setLoadedTurnsScopeKey(turnsScopeKey)
+        }
+        setTurnsLoadFailure({
+          scopeKey: turnsScopeKey,
+          message: getApiErrorMessage(caught, 'Failed to load assistant answers'),
+          preserveRows,
+        })
       } finally {
-        if (!cancelled) {
+        if (requestIsCurrent()) {
           setIsFetching(false)
-          setHasLoadedOnce(true)
         }
       }
     }
@@ -1267,9 +1417,20 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     sort,
     activeNegativeFeedbackOnly,
     turnsRefreshKey,
+    turnsRetryKey,
+    turnsScopeKey,
     queueScope,
     contentPlanTopicId,
   ])
+
+  const retryTurns = useCallback(() => {
+    if (!currentTurnsFailure?.preserveRows) {
+      loadedTurnsScopeKeyRef.current = null
+      setLoadedTurnsScopeKey(null)
+    }
+    setTurnsLoadFailure(null)
+    setTurnsRetryKey((key) => key + 1)
+  }, [currentTurnsFailure])
 
   const openConversation = (turn: LowQualityTurn) =>
     setOpenedConversation({
@@ -1510,11 +1671,11 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       summary={formatPageSummary({
         currentPage,
         pageSize: PAGE_SIZE,
-        pageItemCount: items.length,
-        totalItems: total,
+        pageItemCount: visibleItems.length,
+        totalItems: visibleTotal,
       })}
       currentPage={currentPage}
-      totalPages={totalPages}
+      totalPages={visibleTotalPages}
       previousHref={buildDashboardHref(accountId, {
         ...routeState,
         section: 'quality',
@@ -1523,10 +1684,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
       nextHref={buildDashboardHref(accountId, {
         ...routeState,
         section: 'quality',
-        qualityPage: Math.min(totalPages, currentPage + 1),
+        qualityPage: Math.min(visibleTotalPages, currentPage + 1),
       })}
       onPrevious={() => setPage(Math.max(1, currentPage - 1))}
-      onNext={() => setPage(Math.min(totalPages, currentPage + 1))}
+      onNext={() => setPage(Math.min(visibleTotalPages, currentPage + 1))}
     />
   )
 
@@ -1547,7 +1708,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     </Button>
   )
 
-  const hasQueueFilter =
+  const hasQueueFilter = !contentPlanTopicId && (
     activeSignal !== null
     || statuses.length > 0
     || actions.length > 0
@@ -1561,6 +1722,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
     || hasUnsourcedClaims
     || hasInvalidSources
     || Boolean(latency)
+  )
 
   return (
     <>
@@ -1586,16 +1748,18 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : null}
 
-      <div className="mb-8">
-        <QualityHealthRow
-          stats={stats}
-          range={range}
-          onRangeChange={applyRange}
-          isRefreshing={isStatsFetching}
-          error={statsError}
-        />
-        <ResolutionBreakdown stats={stats} onSelect={applyResolutionBreakdown} />
-      </div>
+      {!contentPlanTopicId ? (
+        <div className="mb-8">
+          <QualityHealthRow
+            stats={stats}
+            range={range}
+            onRangeChange={applyRange}
+            isRefreshing={isStatsFetching}
+            error={statsError}
+          />
+          <ResolutionBreakdown stats={stats} onSelect={applyResolutionBreakdown} />
+        </div>
+      ) : null}
 
       <section aria-labelledby="quality-queue-heading" className="space-y-4">
         <div>
@@ -1605,16 +1769,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
             tabIndex={-1}
             className="text-sm font-medium text-foreground"
           >
-            Queue · all time
+            {contentPlanTopicId ? 'Topic answers · current 30-day window' : 'Queue · all time'}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {showAll
+            {contentPlanTopicId
+              ? 'Only answers assigned to this topic in the Content plan current window. Triage and Eval actions remain available.'
+              : showAll
               ? 'Every assistant answer, with no date bound — including the ones carrying no signal and the ones already triaged.'
               : 'Answers carrying a signal and still awaiting triage, with no date bound — an older answer never quietly ages out.'}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {!contentPlanTopicId ? (
+          <div className="flex flex-wrap items-center gap-2">
           <QualitySignalChips
             counts={stats?.backlog ?? null}
             activeSignal={activeSignal}
@@ -1646,16 +1813,25 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               <CircleX className="h-3 w-3" aria-hidden />
             </button>
           ))}
-          {filterButton}
-        </div>
+            {filterButton}
+          </div>
+        ) : null}
 
-      {!hasLoadedOnce ? (
+      {!turnsScopeLoaded ? (
         <div className="flex min-h-48 items-center justify-center">
           <LogoSpinner imageClassName="h-7 w-7" />
         </div>
-      ) : items.length === 0 ? (
+      ) : currentTurnsFailure && !currentTurnsFailure.preserveRows ? (
+        <QualityTurnsLoadFailure
+          topicScoped={contentPlanTopicId !== null}
+          message={currentTurnsFailure.message}
+          onRetry={retryTurns}
+        />
+      ) : visibleItems.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-6 text-sm text-muted-foreground">
-          {hasQueueFilter
+          {contentPlanTopicId
+            ? 'No answers are assigned to this topic in the current Content plan window.'
+            : hasQueueFilter
             ? 'No assistant turns match these filters. Try clearing one of them.'
             : showAll
               ? 'No assistant turns are available yet. Turns will show up here as your assistant handles traffic.'
@@ -1663,9 +1839,19 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
         </div>
       ) : (
         <DashboardPaginatedContent className="space-y-4" isRefreshing={isFetching}>
+          {currentTurnsFailure?.preserveRows ? (
+            <QualityTurnsLoadFailure
+              topicScoped={false}
+              message={currentTurnsFailure.message}
+              onRetry={retryTurns}
+            />
+          ) : null}
           {renderPagination()}
 
-          <DashboardTable aria-label="Assistant answers to review" minWidth="min-w-[936px]">
+          <DashboardTable
+            aria-label={contentPlanTopicId ? 'Current-window topic answers' : 'Assistant answers to review'}
+            minWidth="min-w-[936px]"
+          >
             <DashboardTableHead>
               <DashboardTableHeader className="w-32">Agent</DashboardTableHeader>
               <DashboardTableHeader>Question &amp; answer</DashboardTableHeader>
@@ -1677,7 +1863,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
               <DashboardTableHeader className="w-40">Triage</DashboardTableHeader>
             </DashboardTableHead>
             <DashboardTableBody>
-              {items.map((turn) => {
+              {visibleItems.map((turn) => {
                 const actionKey = turn.skillName && turn.skillOutcome
                   ? encodeAction(turn.skillName, turn.skillOutcome)
                   : null

@@ -22,6 +22,7 @@ import {
   buildDashboardHref,
   DEFAULT_QUALITY_RANGE,
   type DashboardRouteState,
+  type KnowledgeAddAction,
 } from '@/lib/dashboard-routes'
 import {
   formatAsOfTimestamp,
@@ -31,7 +32,7 @@ import {
   mergeContentPlanPage,
   recommendationActionLabel,
 } from '@/lib/content-plan'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { useWorkspace } from '@/lib/workspace-context'
 import { cn } from '@/lib/utils'
 
@@ -45,6 +46,7 @@ import { TopicDetailPane } from './content-plan/topic-detail-pane'
 interface ContentPlanViewProps {
   accountId: string
   routeState: DashboardRouteState
+  websiteCrawlerEnabled: boolean
 }
 
 type ListLoadState = 'loading' | 'ready' | 'error'
@@ -57,8 +59,11 @@ interface ListResource {
   state: Exclude<ListLoadState, 'loading'>
   page: ContentPlanPage | null
   error: string | null
+  errorKind: 'permission' | 'request' | null
   paginationState: PaginationLoadState
   paginationError: string | null
+  loadedCursors: string[]
+  loadedForListRoute: boolean
 }
 
 interface DetailResource {
@@ -66,11 +71,13 @@ interface DetailResource {
   state: Exclude<DetailLoadState, 'idle' | 'loading'>
   detail: ContentPlanTopicDetail | null
   error: string | null
+  errorKind: 'permission' | 'request' | null
 }
 
 interface ContentPlanListReturnState {
   topicId: string
   scrollTop: number
+  cursorChain: string[]
 }
 
 const contentPlanListReturnKey = (resourceKey: string): string =>
@@ -107,13 +114,26 @@ const readContentPlanListReturnState = (
     ) {
       return null
     }
-    return { topicId: value.topicId, scrollTop: Math.max(0, value.scrollTop) }
+    const cursorChain = 'cursorChain' in value && Array.isArray(value.cursorChain)
+      ? value.cursorChain
+          .filter((cursor): cursor is string => typeof cursor === 'string' && cursor.length <= 2048)
+          .slice(0, 20)
+      : []
+    return {
+      topicId: value.topicId,
+      scrollTop: Math.max(0, value.scrollTop),
+      cursorChain,
+    }
   } catch {
     return null
   }
 }
 
-export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps) {
+export function ContentPlanView({
+  accountId,
+  routeState,
+  websiteCrawlerEnabled,
+}: ContentPlanViewProps) {
   const router = useRouter()
   const { activeWorkspaceId } = useWorkspace()
   const view: ContentPlanViewName = routeState.contentPlanView ?? 'opportunities'
@@ -127,6 +147,8 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
   const [listResource, setListResource] = useState<ListResource | null>(null)
   const [detailResource, setDetailResource] = useState<DetailResource | null>(null)
   const [copyResult, setCopyResult] = useState<{ topicId: string; status: Exclude<CopyStatus, 'idle'> } | null>(null)
+  const [listRetryKey, setListRetryKey] = useState(0)
+  const [detailRetryKey, setDetailRetryKey] = useState(0)
   const [openedConversation, setOpenedConversation] = useState<{
     conversationId: string
     assistantMessageId: string | null
@@ -137,24 +159,31 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
   const detailRequestIdRef = useRef(0)
   const listWorkspaceKeyRef = useRef<string | null>(null)
   const detailWorkspaceKeyRef = useRef<string | null>(null)
+  const selectedTopicIdRef = useRef(selectedTopicId)
+  selectedTopicIdRef.current = selectedTopicId
   const rowRefs = useRef(new Map<string, HTMLButtonElement>())
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  const listHeadingRef = useRef<HTMLHeadingElement | null>(null)
 
-  const page = listResourceKey !== null && listResource?.key === listResourceKey
+  const listResourceMatchesRoute = listResourceKey !== null
+    && listResource?.key === listResourceKey
+    && (selectedTopicId !== null || listResource.loadedForListRoute)
+  const page = listResourceMatchesRoute
     ? listResource.page
     : null
-  const listLoadState: ListLoadState = listResourceKey !== null
-    && listResource?.key === listResourceKey
+  const listLoadState: ListLoadState = listResourceMatchesRoute
     ? listResource.state
     : 'loading'
-  const listError = listResourceKey !== null && listResource?.key === listResourceKey
+  const listError = listResourceMatchesRoute
     ? listResource.error
     : null
-  const paginationState: PaginationLoadState = listResourceKey !== null
-    && listResource?.key === listResourceKey
+  const listErrorKind = listResourceMatchesRoute
+    ? listResource.errorKind
+    : null
+  const paginationState: PaginationLoadState = listResourceMatchesRoute
     ? listResource.paginationState
     : 'idle'
-  const paginationError = listResourceKey !== null && listResource?.key === listResourceKey
+  const paginationError = listResourceMatchesRoute
     ? listResource.paginationError
     : null
   const detail = detailResourceKey !== null && detailResource?.key === detailResourceKey
@@ -167,6 +196,9 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
       : 'loading'
   const detailError = detailResourceKey !== null && detailResource?.key === detailResourceKey
     ? detailResource.error
+    : null
+  const detailErrorKind = detailResourceKey !== null && detailResource?.key === detailResourceKey
+    ? detailResource.errorKind
     : null
   const copyStatus: CopyStatus = detail && copyResult?.topicId === detail.canonicalTopicId
     ? copyResult.status
@@ -184,20 +216,39 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
     paginationRequestIdRef.current += 1
 
     let cancelled = false
+    const loadForListRoute = selectedTopicIdRef.current === null
 
     const load = async () => {
       try {
-        const result = await contentPlanApi.list({ view })
+        let result = await contentPlanApi.list({ view })
         if (cancelled || listWorkspaceKeyRef.current !== workspaceKey || listRequestIdRef.current !== requestId) {
           return
+        }
+        const replayedCursors: string[] = []
+        const returnState = loadForListRoute
+          ? readContentPlanListReturnState(listResourceKey)
+          : null
+        for (const cursor of returnState?.cursorChain ?? []) {
+          if (result.nextCursor !== cursor) {
+            break
+          }
+          const nextPage = await contentPlanApi.list({ view, cursor })
+          if (cancelled || listWorkspaceKeyRef.current !== workspaceKey || listRequestIdRef.current !== requestId) {
+            return
+          }
+          result = mergeContentPlanPage(result, nextPage)
+          replayedCursors.push(cursor)
         }
         setListResource({
           key: listResourceKey,
           state: 'ready',
           page: result,
           error: null,
+          errorKind: null,
           paginationState: 'idle',
           paginationError: null,
+          loadedCursors: replayedCursors,
+          loadedForListRoute: loadForListRoute,
         })
       } catch (caught) {
         if (cancelled || listWorkspaceKeyRef.current !== workspaceKey || listRequestIdRef.current !== requestId) {
@@ -208,8 +259,11 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
           state: 'error',
           page: null,
           error: getApiErrorMessage(caught, 'Could not load the Content plan.'),
+          errorKind: getApiErrorStatus(caught) === 403 ? 'permission' : 'request',
           paginationState: 'idle',
           paginationError: null,
+          loadedCursors: [],
+          loadedForListRoute: loadForListRoute,
         })
       }
     }
@@ -218,7 +272,21 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
     return () => {
       cancelled = true
     }
-  }, [listResourceKey, view, workspaceKey])
+  }, [listResourceKey, listRetryKey, view, workspaceKey])
+
+  // A hard reload on a topic route intentionally loads only the first list page in
+  // the background. If browser Back then returns to the list without remounting,
+  // trigger one list-route load so the persisted cursor chain can be replayed.
+  useEffect(() => {
+    if (
+      selectedTopicId === null
+      && listResourceKey !== null
+      && listResource?.key === listResourceKey
+      && !listResource.loadedForListRoute
+    ) {
+      setListRetryKey((key) => key + 1)
+    }
+  }, [listResource, listResourceKey, selectedTopicId])
 
   const loadMoreTopics = useCallback(async () => {
     const cursor = page?.nextCursor
@@ -265,6 +333,7 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
           page: mergeContentPlanPage(current.page, result),
           paginationState: 'idle',
           paginationError: null,
+          loadedCursors: [...current.loadedCursors, cursor],
         }
       })
     } catch (caught) {
@@ -308,12 +377,33 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
           return
         }
         if (result === null) {
-          setDetailResource({ key: detailResourceKey, state: 'not_found', detail: null, error: null })
+          setDetailResource({
+            key: detailResourceKey,
+            state: 'not_found',
+            detail: null,
+            error: null,
+            errorKind: null,
+          })
           return
         }
-        setDetailResource({ key: detailResourceKey, state: 'ready', detail: result, error: null })
+        setDetailResource({
+          key: detailResourceKey,
+          state: 'ready',
+          detail: result,
+          error: null,
+          errorKind: null,
+        })
         // Redirect canonical topic URL after a merge.
         if (result.canonicalTopicId && result.canonicalTopicId !== selectedTopicId) {
+          if (listResourceKey) {
+            const returnState = readContentPlanListReturnState(listResourceKey)
+            if (returnState?.topicId === selectedTopicId) {
+              writeContentPlanListReturnState(listResourceKey, {
+                ...returnState,
+                topicId: result.canonicalTopicId,
+              })
+            }
+          }
           router.replace(
             buildDashboardHref(accountId, {
               ...routeState,
@@ -332,6 +422,7 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
           state: 'error',
           detail: null,
           error: getApiErrorMessage(caught, 'Could not load this topic.'),
+          errorKind: getApiErrorStatus(caught) === 403 ? 'permission' : 'request',
         })
       }
     }
@@ -340,7 +431,7 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
     return () => {
       cancelled = true
     }
-  }, [accountId, detailResourceKey, routeState, router, selectedTopicId, workspaceKey])
+  }, [accountId, detailResourceKey, detailRetryKey, listResourceKey, routeState, router, selectedTopicId, workspaceKey])
 
   // Route segments can remount this view, so preserve list position in this tab
   // before opening detail and restore it only for the exact workspace/view key.
@@ -354,16 +445,28 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
     }
     window.sessionStorage.removeItem(contentPlanListReturnKey(listResourceKey))
     const focusFrame = window.requestAnimationFrame(() => {
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = returnState.scrollTop
+      const preferredRow = rowRefs.current.get(returnState.topicId) ?? null
+      if (preferredRow) {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = returnState.scrollTop
+        }
+        preferredRow.focus({ preventScroll: true })
+        return
       }
-      rowRefs.current.get(returnState.topicId)?.focus({ preventScroll: true })
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0
+      }
+      const firstTopicId = page?.items[0]?.id ?? null
+      const fallbackTarget = firstTopicId
+        ? rowRefs.current.get(firstTopicId) ?? listHeadingRef.current
+        : listHeadingRef.current
+      fallbackTarget?.focus({ preventScroll: true })
     })
 
     return () => {
       window.cancelAnimationFrame(focusFrame)
     }
-  }, [listLoadState, listResourceKey, selectedTopicId])
+  }, [listLoadState, listResourceKey, page, selectedTopicId])
 
   const buildTopicHref = useCallback(
     (topicId: string) =>
@@ -407,11 +510,14 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
         writeContentPlanListReturnState(listResourceKey, {
           topicId,
           scrollTop: scrollContainerRef.current?.scrollTop ?? 0,
+          cursorChain: listResourceMatchesRoute
+            ? listResource?.loadedCursors ?? []
+            : [],
         })
       }
       router.push(buildTopicHref(topicId))
     },
-    [buildTopicHref, listResourceKey, router],
+    [buildTopicHref, listResource, listResourceKey, listResourceMatchesRoute, router],
   )
 
   const registerRowRef = useCallback((topicId: string) => (node: HTMLButtonElement | null) => {
@@ -471,6 +577,22 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
           workspacePublicRouteKey: routeState.workspacePublicRouteKey,
           knowledgeTab: 'documents',
           knowledgeDraftFromContentPlanTopicId: topicId,
+        }),
+      )
+    },
+    [accountId, routeState, router],
+  )
+
+  const openAddDocument = useCallback(
+    (action: KnowledgeAddAction, topicId: string) => {
+      router.push(
+        buildDashboardHref(accountId, {
+          section: 'knowledge',
+          workspaceId: routeState.workspaceId,
+          workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+          knowledgeTab: 'documents',
+          knowledgeFromContentPlanTopicId: topicId,
+          knowledgeAddAction: action,
         }),
       )
     },
@@ -543,8 +665,12 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
       description={
         page ? (
           <span>
-            Last 30 days · <span className="text-muted-foreground">
+            Last 30 days · current <span className="text-muted-foreground">
               {formatWindowRange(page.window.from, page.window.to)}
+            </span>{' '}
+            · compared with{' '}
+            <span className="text-muted-foreground">
+              {formatWindowRange(page.comparisonWindow.from, page.comparisonWindow.to)}
             </span>{' '}
             · as of{' '}
             <span title={page.asOf} className="text-muted-foreground">
@@ -586,9 +712,20 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
                 matureTopicCount={page.summary.matureTopicCount}
               />
 
-              {page.items.length > 0 ? (
-                <>
-                  <section aria-label={view === 'opportunities' ? 'Ranked opportunities' : 'All interests'} className="space-y-2">
+              <section
+                aria-labelledby="content-plan-topic-list-heading"
+                className="space-y-2"
+              >
+                <h2
+                  id="content-plan-topic-list-heading"
+                  ref={listHeadingRef}
+                  tabIndex={-1}
+                  className="text-xs font-medium uppercase tracking-normal text-muted-foreground focus-visible:outline-none"
+                >
+                  {view === 'opportunities' ? 'Ranked opportunities' : 'All interests'}
+                </h2>
+                {page.items.length > 0 ? (
+                  <>
                     {page.items.map((topic) => (
                       <TopicRow
                         key={topic.id}
@@ -599,26 +736,38 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
                         registerRef={registerRowRef(topic.id)}
                       />
                     ))}
-                  </section>
-                  <TopicPaginationControls
-                    hasMore={page.nextCursor !== null}
-                    state={paginationState}
-                    error={paginationError}
-                    onLoadMore={() => void loadMoreTopics()}
-                  />
-                </>
-              ) : (
-                <ListEmptyState view={view} page={page} />
-              )}
+                    <TopicPaginationControls
+                      hasMore={page.nextCursor !== null}
+                      state={paginationState}
+                      error={paginationError}
+                      onLoadMore={() => void loadMoreTopics()}
+                    />
+                  </>
+                ) : (
+                  <ListEmptyState view={view} page={page} />
+                )}
+              </section>
 
-              <EmergingSection items={page.emerging} />
+              <EmergingSection
+                items={page.emerging}
+                onOpenConversation={openConversation}
+              />
             </>
           ) : listLoadState === 'loading' ? (
             <ListLoadingSkeleton />
           ) : (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-              {listError ?? 'Could not load the Content plan.'}
-            </div>
+            <ContentPlanLoadFailure
+              title={listErrorKind === 'permission'
+                ? 'You do not have permission to view Content plan'
+                : 'Could not load Content plan'}
+              description={listErrorKind === 'permission'
+                ? 'Ask a workspace administrator for Content plan access.'
+                : listError ?? 'Could not load the Content plan.'}
+              onRetry={() => {
+                setListResource((current) => current?.key === listResourceKey ? null : current)
+                setListRetryKey((key) => key + 1)
+              }}
+            />
           )}
         </div>
       </div>
@@ -640,6 +789,8 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
               onOpenConversation={openConversation}
               onViewAnswers={() => openQualityForTopic(detail.canonicalTopicId)}
               onWriteDocument={() => openWriteDocument(detail.canonicalTopicId)}
+              websiteCrawlerEnabled={websiteCrawlerEnabled}
+              onAddDocument={(action) => openAddDocument(action, detail.canonicalTopicId)}
               onReviewDocument={(documentId) => openReviewDocument(documentId, detail.canonicalTopicId)}
               onInvestigateRetrieval={() => openQualityForTopic(detail.canonicalTopicId)}
               onCopyBrief={() => void copyBriefForActiveTopic()}
@@ -654,9 +805,17 @@ export function ContentPlanView({ accountId, routeState }: ContentPlanViewProps)
             />
           ) : (
             <TopicUnavailable
-              title="Could not load this topic"
-              description={detailError ?? 'Try selecting another topic from the list.'}
+              title={detailErrorKind === 'permission'
+                ? 'You do not have permission to view this topic'
+                : 'Could not load this topic'}
+              description={detailErrorKind === 'permission'
+                ? 'Ask a workspace administrator for Content plan access.'
+                : detailError ?? 'Try selecting another topic from the list.'}
               backHref={listHrefWithoutTopic}
+              onRetry={() => {
+                setDetailResource((current) => current?.key === detailResourceKey ? null : current)
+                setDetailRetryKey((key) => key + 1)
+              }}
             />
           )}
         </div>
@@ -728,7 +887,7 @@ function ViewSwitcher({
   matureTopicCount: number
 }) {
   return (
-    <div className="flex items-center gap-2" role="tablist" aria-label="Topic view">
+    <nav className="flex items-center gap-2" aria-label="Topic view">
       <ViewLink
         active={view === 'opportunities'}
         href={buildViewHref('opportunities')}
@@ -741,7 +900,7 @@ function ViewSwitcher({
         label="All interests"
         count={matureTopicCount}
       />
-    </div>
+    </nav>
   )
 }
 
@@ -759,8 +918,7 @@ function ViewLink({
   return (
     <Link
       href={href}
-      role="tab"
-      aria-selected={active}
+      aria-current={active ? 'page' : undefined}
       className={cn(
         'inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
@@ -863,7 +1021,7 @@ function deriveRecommendedPrimaryAction(
     case 'add_content':
       return { label: 'Write document', onClick: handlers.onWriteDocument, kind: 'primary' }
     case 'review_existing_content':
-      return { label: 'Review document', onClick: handlers.onReviewDocument, kind: 'primary' }
+      return { label: 'Open related documents', onClick: handlers.onReviewDocument, kind: 'primary' }
     case 'investigate_retrieval':
       return { label: 'Investigate retrieval', onClick: handlers.onInvestigateRetrieval, kind: 'primary' }
     case 'monitor':
@@ -915,17 +1073,53 @@ function ListLoadingSkeleton() {
   )
 }
 
+function ContentPlanLoadFailure({
+  title,
+  description,
+  onRetry,
+}: {
+  title: string
+  description: string
+  onRetry: () => void
+}) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
+  return (
+    <section
+      className="rounded-md border border-destructive/40 bg-destructive/10 p-4"
+      role="alert"
+      aria-live="assertive"
+    >
+      <h2 ref={headingRef} tabIndex={-1} className="text-sm font-medium text-destructive focus:outline-none">
+        {title}
+      </h2>
+      <p className="mt-1 text-sm text-destructive">{description}</p>
+      <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+        Try again
+      </Button>
+    </section>
+  )
+}
+
 function TopicUnavailable({
   title,
   description,
   backHref,
+  onRetry,
 }: {
   title: string
   description: string
   backHref: string
+  onRetry?: () => void
 }) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null)
+  useEffect(() => {
+    headingRef.current?.focus()
+  }, [])
   return (
-    <div className="flex flex-1 flex-col items-start gap-3 p-6">
+    <div className="flex flex-1 flex-col items-start gap-3 p-6" role="alert" aria-live="assertive">
       <Button asChild variant="ghost" size="sm">
         <Link href={backHref}>
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden />
@@ -933,8 +1127,15 @@ function TopicUnavailable({
         </Link>
       </Button>
       <div className="rounded-md border border-border p-6">
-        <p className="text-sm font-medium text-foreground">{title}</p>
+        <h2 ref={headingRef} tabIndex={-1} className="text-sm font-medium text-foreground focus:outline-none">
+          {title}
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        {onRetry ? (
+          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : null}
       </div>
     </div>
   )

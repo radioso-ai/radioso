@@ -213,7 +213,11 @@ export function DashboardShell({
           ) : currentView === 'quality' ? (
             <QualityView accountId={accountId} routeState={routeState} />
           ) : currentView === 'content-plan' ? (
-            <ContentPlanView accountId={accountId} routeState={routeState} />
+            <ContentPlanView
+              accountId={accountId}
+              routeState={routeState}
+              websiteCrawlerEnabled={onboarding.websiteCrawlerEnabled}
+            />
           ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
           ) : null}

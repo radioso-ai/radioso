@@ -41,7 +41,7 @@ type RoutineDraftAssistFixture = {
 export type RoutineMutationFixture = {
   method: "POST" | "PATCH" | "DELETE" | "VALIDATE" | "PUBLISH" | "ASSIST" | "REVISE" | "ARCHIVE" | "RESTORE";
   routineId?: string;
-  body?: unknown;
+  body?: Partial<RoutineDraftFixture>;
 };
 type WebhookDestinationFixture = ApiSchemas["WebhookDestination"];
 export type McpConnectionFixture = {
@@ -53,6 +53,11 @@ export type McpConnectionFixture = {
   hasCredential: boolean;
   createdAt: string;
   updatedAt: string;
+};
+export type DiscoveredMcpToolFixture = {
+  name: string;
+  description?: string;
+  inputSchema?: unknown;
 };
 export type McpConverseGrantFixture = {
   id: string;
@@ -465,6 +470,8 @@ const buildDirective = (input: Partial<AuthoredDirectiveFixture> & Pick<Authored
   tags: [],
   description: null,
   metadata: {},
+  binding: null,
+  lifecycle: null,
   createdAt: nowIso,
   updatedAt: nowIso,
   ...input,
@@ -504,6 +511,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncStatus: null,
       lastSyncedAt: null,
       documentCount: 1,
+      documentEnrichmentOverride: "inherit",
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -515,6 +523,7 @@ export const baseDocumentSources = (): ApiSchemas["DocumentSourceListResponse"] 
       lastSyncStatus: "completed",
       lastSyncedAt: nowIso,
       documentCount: 3,
+      documentEnrichmentOverride: "inherit",
       createdAt: nowIso,
       updatedAt: nowIso,
     },
@@ -789,6 +798,7 @@ export const installDashboardApiMocks = async (
     usageTrends?: unknown;
     qualityStats?: unknown;
     mcpConnections?: McpConnectionFixture[];
+    mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
     mcpConnectionRequests?: string[];
     mcpConverseGrants?: McpConverseGrantFixture[];
     mcpConverseGrantRequests?: Array<{ method: "GET" | "POST" | "DELETE"; path: string; body?: unknown }>;
@@ -894,6 +904,7 @@ export const installDashboardApiMocks = async (
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
   const mcpConnections = options.mcpConnections ?? [];
+  const mcpDiscoveredTools = options.mcpDiscoveredTools ?? [];
   const mcpConnectionRequests = options.mcpConnectionRequests;
   let nextMcpConnectionIndex = mcpConnections.length + 1;
   let mcpConverseGrants = options.mcpConverseGrants ?? [];
@@ -2107,11 +2118,14 @@ export const installDashboardApiMocks = async (
         return;
       }
       const requestedEmbeddingModel = body.embeddingModel;
+      const supportedEmbeddingModel = ingestionSettings.supportedEmbeddingModels.find(
+        (model) => model === requestedEmbeddingModel,
+      );
       const embeddingFields =
-        requestedEmbeddingModel && requestedEmbeddingModel !== ingestionSettings.embeddingModel
+        supportedEmbeddingModel && supportedEmbeddingModel !== ingestionSettings.embeddingModel
           ? {
               embeddingModel: ingestionSettings.embeddingModel,
-              pendingEmbeddingModel: requestedEmbeddingModel,
+              pendingEmbeddingModel: supportedEmbeddingModel,
             }
           : {
               embeddingModel: requestedEmbeddingModel ?? ingestionSettings.embeddingModel,
@@ -2231,6 +2245,12 @@ export const installDashboardApiMocks = async (
       };
       mcpConnections.unshift(connection);
       await json(route, connection, 201);
+      return;
+    }
+
+    if (request.method() === "POST" && /\/agents\/[^/]+\/mcp-connections\/[^/]+\/discover$/.test(path)) {
+      mcpConnectionRequests?.push(`POST ${path}`);
+      await json(route, { tools: mcpDiscoveredTools });
       return;
     }
 

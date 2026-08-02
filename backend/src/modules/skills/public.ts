@@ -76,6 +76,14 @@ export {
   type RoutineSkillCategory,
 } from "./routineAuthoringPolicy.js";
 export {
+  RoutineInvocableSkillNamesService,
+  routineNameDispatchedSkillKinds,
+  type RoutineInvocableSkillNames,
+  type RoutineInvocableSkillNamesByKind,
+  type RoutineInvocableSkillNamesContext,
+  type RoutineNameDispatchedSkillKind,
+} from "./routineInvocableSkillNames.js";
+export {
   SkillCatalogRegistry,
   SkillExecutorRegistry,
   SkillRunResolver,

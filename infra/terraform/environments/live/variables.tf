@@ -13,11 +13,17 @@ variable "environment" {
 variable "region" {
   description = "GCP region for the live deployment."
   type        = string
-  default     = "us-west4"
+  default     = "us-central1"
 }
 
 variable "deploy_services" {
   description = "Whether to create the Cloud Run services after shared infrastructure exists."
+  type        = bool
+  default     = true
+}
+
+variable "backend_public_invocation_enabled" {
+  description = "Whether the independent US backend accepts unauthenticated requests through api-us.radioso.ai."
   type        = bool
   default     = true
 }
@@ -283,6 +289,12 @@ variable "radioso_mcp_enabled" {
 
 variable "radioso_mcp_base_url_override" {
   description = "Optional backend base URL used by the hosted MCP runtime."
+  type        = string
+  default     = null
+}
+
+variable "frontend_backend_internal_url_override" {
+  description = "Optional backend URL override for the US frontend. Null uses the backend from the same US stack."
   type        = string
   default     = null
 }

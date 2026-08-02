@@ -81,36 +81,10 @@ export type RoutineStepMetadata = {
   outputAssignments?: Record<string, string>
   mode?: 'typed' | 'untyped'
 } & Record<string, unknown>
-export type RoutineValidationCode =
-  | 'unreachable_step'
-  | 'missing_terminal'
-  | 'dangling_action_reference'
-  | 'dangling_step_reference'
-  | 'unbounded_back_edge'
-  | 'missing_action_follow_up'
-  | 'declared_unused_slot'
-  | 'referenced_undeclared_slot'
-  | 'unregistered_action_type'
-  | 'unknown_skill'
-  | 'action_capability_denied'
-  | 'invalid_webhook_destination_ref'
-  | 'unknown_webhook_destination'
-  | 'attempt_limit_without_fallback'
-  | 'outcome_guard_on_non_tool_step'
-  | 'structured_guard_missing_parameter'
-  | 'field_guard_unknown_reference'
-  | 'field_guard_incompatible_type'
-  | 'completion_export_missing_destination'
-  | 'approval_step_llm_edge'
-  | 'approval_step_no_decision_edge'
-  | 'approval_step_unknown_option'
-  | 'approval_step_unreachable_option'
-  | 'unsatisfiable_required_input'
-  | 'input_type_mismatch'
-  | 'unknown_input_binding'
-  | 'unknown_variable_ref'
-  | 'variable_name_collision'
-  | 'node_id_collision'
+// Derived from the wire contract rather than restated, so a new backend validation code
+// cannot go missing here. The hand-written union had already drifted, dropping
+// unknown_context_variable.
+export type RoutineValidationCode = ApiSchemas['RoutineValidationResult']['diagnostics'][number]['code']
 
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode
@@ -234,15 +208,7 @@ export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 export type DocumentSourceListItem = ApiSchemas['DocumentSourceListItem']
 export type DocumentSourceListResponse = ApiSchemas['DocumentSourceListResponse']
 export type DocumentSourceCrawlSettings = ApiSchemas['DocumentSourceCrawlSettings']
-export type SourceReprocessResponse = 'SourceReprocessResponse' extends keyof ApiSchemas
-  ? ApiSchemas['SourceReprocessResponse']
-  : {
-      sourceId: string
-      workspaceId: string
-      queuedDocumentCount: number
-      skippedDocumentCount: number
-      status: 'queued' | 'noop'
-    }
+export type SourceReprocessResponse = ApiSchemas['SourceReprocessResponse']
 export type DocumentSummary = ApiSchemas['DocumentSummary']
 export type DocumentDetails = ApiSchemas['DocumentDetails']
 export type DocumentRetrievalUpdateRequest = ApiSchemas['DocumentRetrievalUpdateRequest']

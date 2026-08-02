@@ -8,6 +8,8 @@ export type {
   PageContextFragment,
   VariableContextFragment,
 } from "./contextBlockRenderer.js";
+export { resolveAvailableContextVariables } from "./availableContextVariables.js";
+export type { AvailableContextVariable } from "./availableContextVariables.js";
 export { boundContextVariableFragments } from "./contextVariablesBound.js";
 export type {
   ContextVariableBoundClamp,

@@ -4,6 +4,7 @@ import type {
   ConversationModelGateway,
   ClarificationPolicy,
   Routine,
+  RoutineReentryMode,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { RoutineRegistry, type RoutineRegistration } from "../src/index.js";
@@ -33,16 +34,26 @@ const routine = (id: string, name?: string): Routine => ({
 
 const registration = (
   id: string,
-  trigger: Partial<RoutineRegistration["trigger"]> = {},
+  trigger: Partial<RoutineRegistration["trigger"]> & { reentryMode?: RoutineReentryMode } = {},
   name?: string,
-): RoutineRegistration => ({
-  routine: routine(id, name),
-  trigger: {
-    description: `User wants ${id}`,
-    priority: 0,
-    ...trigger,
-  },
-});
+): RoutineRegistration => {
+  // Reentry policy is authored on the routine, not on the registration; the builder
+  // still accepts it inline so each test reads as one routine's declared behavior.
+  const { reentryMode, ...triggerOverrides } = trigger;
+  return {
+    routine: {
+      ...routine(id, name),
+      ...(reentryMode
+        ? { activation: { reentryMode, triggerDescription: `User wants ${id}`, priority: 0 } }
+        : {}),
+    },
+    trigger: {
+      description: `User wants ${id}`,
+      priority: 0,
+      ...triggerOverrides,
+    },
+  };
+};
 
 const gateway = (text: string): ConversationModelGateway => ({
   complete: vi.fn(async () => ({ text })),

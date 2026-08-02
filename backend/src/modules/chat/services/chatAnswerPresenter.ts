@@ -1,5 +1,8 @@
 import { resolveContextSourceUrl } from "../../retrieval/public.js";
-import { AnswerPresentationService } from "./answerPresentationService.js";
+import {
+  AnswerPresentationService,
+  type AnswerPresentationMetrics,
+} from "./answerPresentationService.js";
 import type { AnswerSegment, ChatCitation, CitationEvidence } from "../contracts/answerTypes.js";
 import {
   ASSISTANT_TURN_OUTCOME,
@@ -189,7 +192,7 @@ const withLegacyAnswerOutcome = <T extends Omit<ChatPresentedAnswer, "answerOutc
 });
 
 export class ChatAnswerPresenter {
-  private readonly answerPresentationService = new AnswerPresentationService();
+  private readonly answerPresentationService: AnswerPresentationService;
 
   constructor(
     private readonly assistantSuggestionExpansionService: AssistantSuggestionExpansionService,
@@ -197,7 +200,10 @@ export class ChatAnswerPresenter {
     private readonly skillOutcomeCapabilities: SkillOutcomeCapabilityProvider = {
       supportsGroundedAnswer: () => false,
     },
-  ) {}
+    metrics?: AnswerPresentationMetrics | null,
+  ) {
+    this.answerPresentationService = new AnswerPresentationService(metrics);
+  }
 
   presentNonRetrievalAnswer(
     answer: string,

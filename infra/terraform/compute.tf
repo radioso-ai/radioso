@@ -456,7 +456,7 @@ resource "google_cloud_run_v2_service" "backend" {
 
 # Public access for backend (needed for webhook connectors)
 resource "google_cloud_run_v2_service_iam_member" "backend_public" {
-  count    = var.deploy_services ? 1 : 0
+  count    = var.deploy_services && var.backend_public_invocation_enabled ? 1 : 0
   name     = google_cloud_run_v2_service.backend[0].name
   location = var.region
   role     = "roles/run.invoker"
@@ -487,7 +487,7 @@ resource "google_cloud_run_v2_service" "frontend" {
 
       env {
         name  = "BACKEND_INTERNAL_URL"
-        value = google_cloud_run_v2_service.backend[0].uri
+        value = coalesce(var.frontend_backend_internal_url_override, google_cloud_run_v2_service.backend[0].uri)
       }
       env {
         name  = "RADIOSO_EDITION"

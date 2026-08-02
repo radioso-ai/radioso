@@ -37,6 +37,7 @@ describe("tool skill bridge", () => {
         conversationTool: { toolName: "lookup", source: "test" },
       },
     })]);
+    expect(skills[0]).not.toHaveProperty("inputSchema");
   });
 
   it("dispatches a fake tool into a valid TurnOutcome", async () => {

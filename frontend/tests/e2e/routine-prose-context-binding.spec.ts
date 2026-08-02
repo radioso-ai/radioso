@@ -19,6 +19,16 @@ type SavedRoutineBody = {
   }>;
 };
 
+const contextBoundStepMetadata = {
+  // Titled steps retain their stable ids across a prose round trip.
+  outlineLabel: "Lookup locale",
+  inputBindings: {
+    locale: { kind: "contextVariableRef" as const, contextVariable: "page_locale" },
+  },
+  outputAssignments: {},
+  mode: "typed" as const,
+} satisfies NonNullable<RoutineFixture["steps"][number]["metadata"]> & { outlineLabel: string };
+
 const contextBoundRoutine: RoutineFixture = {
   id: "55555555-5555-4555-9555-000000000701",
   lineageId: "77777777-7777-4777-8777-000000000701",
@@ -38,16 +48,7 @@ const contextBoundRoutine: RoutineFixture = {
     toolRef: "web.lookup_locale",
     actionType: null,
     ordinal: 0,
-    metadata: {
-      // Titled step: only a heading pins the stable id across a prose round-trip,
-      // so the save-payload assertion below can key on stableStepId.
-      outlineLabel: "Lookup locale",
-      inputBindings: {
-        locale: { kind: "contextVariableRef", contextVariable: "page_locale" },
-      },
-      outputAssignments: {},
-      mode: "typed",
-    },
+    metadata: contextBoundStepMetadata,
   }],
   transitions: [{
     fromStep: "lookup_locale",

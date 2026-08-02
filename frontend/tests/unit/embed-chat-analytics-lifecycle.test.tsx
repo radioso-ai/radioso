@@ -46,7 +46,7 @@ vi.mock('@/lib/api', () => ({
 const publicChatApiMock = vi.mocked(publicChatApi)
 
 beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 const baseConversationList = {
@@ -65,6 +65,9 @@ const baseConversationList = {
   intakeActions: [],
   assistantBootstrapActive: false,
   conversations: [],
+  total: 0,
+  nextCursor: null,
+  hasMore: false,
 }
 
 const flush = () => new Promise((resolve) => window.setTimeout(resolve, 0))
@@ -180,11 +183,11 @@ describe('embedded chat analytics lifecycle', () => {
         conversationId: 'conversation-1',
         answer: 'Answer text',
         citations: [{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source' }],
-        suggestions: [{ text: 'Follow up?' }],
+      suggestions: [{ text: 'Follow up?', kind: 'follow_up' }],
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -230,8 +233,8 @@ describe('embedded chat analytics lifecycle', () => {
         suggestions: [],
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
     publicChatApiMock.getConversationDetail.mockResolvedValue({
@@ -240,6 +243,7 @@ describe('embedded chat analytics lifecycle', () => {
       agentId: null,
       sourceChannel: 'website_embed',
       sourceOrigin: 'https://site.example',
+      channelContext: null,
       createdAt: '2026-05-27T10:00:00.000Z',
       updatedAt: '2026-05-27T10:00:00.000Z',
       messageCount: 2,
@@ -255,10 +259,11 @@ describe('embedded chat analytics lifecycle', () => {
         {
           id: 'assistant-recovered',
           role: 'assistant',
+          source: 'ai_agent',
           content: 'Recovered answer.',
           createdAt: '2026-05-27T10:00:00.000Z',
           citations: [{ documentId: 'doc-1', chunkId: 'chunk-1', title: 'Source' }],
-          suggestions: [{ text: 'Recovered follow up?' }],
+          suggestions: [{ text: 'Recovered follow up?', kind: 'follow_up' }],
         },
       ],
     })
@@ -299,8 +304,8 @@ describe('embedded chat analytics lifecycle', () => {
         suggestions: [],
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
     publicChatApiMock.getConversationDetail.mockResolvedValue({
@@ -309,6 +314,7 @@ describe('embedded chat analytics lifecycle', () => {
       agentId: null,
       sourceChannel: 'website_embed',
       sourceOrigin: 'https://site.example',
+      channelContext: null,
       createdAt: '2026-05-27T10:00:00.000Z',
       updatedAt: '2026-05-27T10:00:00.000Z',
       messageCount: 1,

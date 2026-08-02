@@ -36,6 +36,7 @@ Rules that hold in every register:
 - **Hype words.** simply, easily, seamless, powerful, robust, cutting-edge. If something is genuinely easy, show the two-line example and let it speak.
 - **Time-relative claims.** "now ships", "new", "recently added". Docs outlive the moment they were written.
 - **Futures and migrations.** "reserved for a future router", "planned for a later release", "not available yet", "legacy", "deprecated", "during cutover". Describe what exists right now, in present tense. A plain limit statement is fine ("The SDK does not cover browser sign-in"); a promise or hint that it will change is not. Roadmap talk lives in issues and specs, not user docs.
+- **Definition by negation.** Describing the thing by what it lacks, avoids, or no longer does: "it does not import Postgres, Express, or auth", "no API key is read", "reaches no `node:*` builtin", "widening one is deliberate rather than an accident". This is a changelog wearing a doc's clothes — it is written from the author's memory of the previous state, and a reader who never saw that state gets nothing from it. Say what the reader gets instead: "a model is the only thing it needs from you", "any provider SDK, gateway, or local model works". **The test:** if the sentence only makes sense as a contrast with a previous version or a rejected alternative, cut it. Two things this does *not* ban — a limit the reader will actually hit ("The SDK does not cover browser sign-in"), and a genuine either/or the reader chooses between ("pass `routineSkillDispatcher` to run steps through your own executor instead of the local handlers"). Rewriting a fix as a feature is the whole job: the change removed an OpenAI dependency, but the doc says the kit works with any model.
 - **Copy-paste boilerplate.** The same hedge sentence pasted into three files is a machine-tell. If two route families exist, document both as present facts with the actual endpoints.
 - **Competitor comparisons.** Describe Radioso on its own terms. No put-downs of other tools, however witty.
 - **Filler openers.** Don't warm up. Start with the thing.
@@ -75,6 +76,14 @@ Real examples from this repo. The "before" text shipped.
 > Before: "Legacy webhook skill endpoints may remain available during cutover."
 >
 > After (verified against the code first): "The per-type webhook routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints are the primary surface."
+
+**Definition by negation** (package readme, written right after the dependency was removed):
+
+> Before: "You bring a `modelGateway`, then use the kit to assemble the engine and stores. It does not import the Radioso backend, Postgres, Express, retrieval, auth, or billing code."
+>
+> After: "You bring a `modelGateway`; the kit assembles the engine, in-memory stores, directive matching, and portable authoring stores into a running conversation. A model is the only thing it needs from you — there is no database, web framework, or account system to stand up first."
+
+The list of absent things was accurate and still nearly useless: it answers "what did you take out?", which no reader asked. The rewrite answers "what do I have to provide?" — same fact, aimed at the reader.
 
 ## Screenshots
 
@@ -121,7 +130,8 @@ Before you commit a doc, check:
 
 1. Read a paragraph aloud. Would you say it to a customer over coffee? If you'd be embarrassed, rewrite it.
 2. Does every sentence add something the heading didn't already say?
-3. Could a reader paste the example and have it work? (Verify claims against the code — endpoints, field names, defaults. Docs that lie are worse than docs that are missing.)
-4. Did you touch a screen the docs show? Retake the screenshot.
+3. Would this sentence still make sense to someone who never saw the previous version? If it only lands as a contrast with what changed, rewrite it as what the reader gets.
+4. Could a reader paste the example and have it work? (Verify claims against the code — endpoints, field names, defaults. Docs that lie are worse than docs that are missing.)
+5. Did you touch a screen the docs show? Retake the screenshot.
 
 Final rule, unchanged from the first version of this guide because it was right: explain what is true, as simply as possible, without trying to make it sound important.

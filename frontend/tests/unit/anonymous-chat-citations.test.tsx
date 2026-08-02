@@ -11,6 +11,7 @@ import {
   useAnonymousChat,
 } from '@/lib/anonymous-chat-context'
 import { publicChatApi } from '@/lib/api'
+import type { ChatConversationSummary, PublicChatConversationEvent } from '@/lib/api'
 
 vi.mock('@/lib/api', () => ({
   clearStoredAnonymousSession: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock('@/lib/api', () => ({
 const publicChatApiMock = vi.mocked(publicChatApi)
 
 beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 const baseConversationList = {
@@ -53,6 +54,25 @@ const baseConversationList = {
   intakeActions: [],
   assistantBootstrapActive: false,
   conversations: [],
+  total: 0,
+  nextCursor: null,
+  hasMore: false,
+}
+
+const conversationSummary: ChatConversationSummary = {
+  id: 'conversation-1',
+  agentId: null,
+  agentName: null,
+  sourceChannel: 'website_embed',
+  sourceOrigin: 'https://site.example',
+  channelContext: null,
+  anonymousSessionId: null,
+  createdAt: '2026-06-01T10:00:00.000Z',
+  updatedAt: '2026-06-01T10:00:00.000Z',
+  messageCount: 1,
+  userMessageCount: 0,
+  assistantMessageCount: 1,
+  preview: 'Policy',
 }
 
 const citedAnswer = {
@@ -171,8 +191,8 @@ describe('anonymous chat citations', () => {
         ...citedAnswer,
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -206,8 +226,8 @@ describe('anonymous chat citations', () => {
         },
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -243,8 +263,8 @@ describe('anonymous chat citations', () => {
         },
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -270,7 +290,7 @@ describe('anonymous chat citations', () => {
   it('preserves citation artifacts from restored public chat history', async () => {
     publicChatApiMock.listConversations.mockResolvedValue({
       ...baseConversationList,
-      conversations: [{ id: 'conversation-1', title: 'Policy', updatedAt: '2026-06-01T10:00:00.000Z' }],
+      conversations: [conversationSummary],
     })
     publicChatApiMock.getConversationDetail.mockResolvedValue({
       conversationId: 'conversation-1',
@@ -278,6 +298,7 @@ describe('anonymous chat citations', () => {
       agentId: null,
       sourceChannel: 'website_embed',
       sourceOrigin: 'https://site.example',
+      channelContext: null,
       createdAt: '2026-06-01T10:00:00.000Z',
       updatedAt: '2026-06-01T10:00:00.000Z',
       messageCount: 1,
@@ -293,6 +314,7 @@ describe('anonymous chat citations', () => {
         {
           id: 'assistant-1',
           role: 'assistant',
+          source: 'ai_agent',
           content: citedAnswer.answer,
           createdAt: '2026-06-01T10:00:00.000Z',
           citations: citedAnswer.citations,
@@ -317,10 +339,10 @@ describe('anonymous chat citations', () => {
   })
 
   it('streams active public conversation notifications for human replies', async () => {
-    let streamHandler: ((event: { type: 'ready' | 'message.created'; conversationId: string; messageId?: string; createdAt?: string }) => void) | null = null
+    let streamHandler: ((event: PublicChatConversationEvent) => void) | null = null
     publicChatApiMock.listConversations.mockResolvedValue({
       ...baseConversationList,
-      conversations: [{ id: 'conversation-1', title: 'Policy', updatedAt: '2026-06-01T10:00:00.000Z' }],
+      conversations: [conversationSummary],
     })
     publicChatApiMock.getConversationDetail.mockResolvedValue({
       conversationId: 'conversation-1',
@@ -328,6 +350,7 @@ describe('anonymous chat citations', () => {
       agentId: null,
       sourceChannel: 'website_embed',
       sourceOrigin: 'https://site.example',
+      channelContext: null,
       createdAt: '2026-06-01T10:00:00.000Z',
       updatedAt: '2026-06-01T10:00:00.000Z',
       messageCount: 2,
@@ -372,8 +395,8 @@ describe('anonymous chat citations', () => {
         ],
       })
     publicChatApiMock.streamConversationEvents.mockImplementation(async (_token, _conversationId, handlers) => {
-      streamHandler = handlers.onEvent ?? null
-      handlers.onEvent?.({ type: 'ready', conversationId: 'conversation-1' })
+      streamHandler = handlers?.onEvent ?? null
+      handlers?.onEvent?.({ type: 'ready', conversationId: 'conversation-1' })
       await new Promise<void>(() => {})
     })
 

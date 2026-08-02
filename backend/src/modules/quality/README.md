@@ -23,11 +23,19 @@ readable but are never classified into the structured reporting vocabulary.
 `triageStore.ts` owns the atomic current-row and append-only history write;
 resolution notes never enter transition history.
 
-Eval evidence crosses the module boundary through
-`QualityVerificationSourcePort`. Quality knows only the linked case id, case
-status, and latest run status/time; it does not import Eval persistence,
+Eval evidence used by Quality's read surfaces crosses the module boundary
+through `QualityVerificationSourcePort`. Quality knows only the linked case id,
+case status, and latest run status/time; it does not import Eval repositories,
 snapshots, assertions, or run details. Application composition adapts Eval's
 bounded batch lookup to this port.
+
+The append-only triage audit has one narrower persistence-level exception:
+`triageStore.ts` joins only `eval_message_case_associations` inside the same SQL
+statement that accepts the triage transition. This snapshots the linked case id
+without a read/write race and preserves it as historical audit data after the
+mutable Eval case and association are deleted. It must not join Eval case,
+snapshot, assertion, or run state; those remain behind
+`QualityVerificationSourcePort`.
 
 The definition of a quality signal is a **domain concern, not a client
 concern**. `domain/qualitySignals.ts` resolves each `QualitySignalId` to a

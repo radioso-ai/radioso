@@ -43,6 +43,13 @@ describe("DB-backed routine composition source", () => {
     expect(registrations[0]!.trigger).toEqual({
       description: "The user asks for help.",
       priority: 7,
+      gateRef: "retrieval.answer",
+    });
+    // Reentry policy is carried by the compiled routine, not duplicated onto the
+    // registration, so the registry and the reentry gate cannot disagree.
+    expect(registrations[0]!.routine.activation).toEqual({
+      triggerDescription: "The user asks for help.",
+      priority: 7,
       reentryMode: "once_per_conversation",
       gateRef: "retrieval.answer",
     });

@@ -21,19 +21,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const SUPPRESS: RoutineReentryDecision = { kind: "suppress" };
 
-/**
- * Reads the author-chosen reentry mode + trigger guidance off the compiled routine's
- * metadata (set by the backend compiler under `metadata.activation`).
- */
-const activationOf = (routine: Routine): { reentryMode?: string; triggerDescription?: string } => {
-  const metadata = isRecord(routine.metadata) ? routine.metadata : {};
-  const activation = isRecord(metadata.activation) ? metadata.activation : {};
-  return {
-    reentryMode: typeof activation.reentryMode === "string" ? activation.reentryMode : undefined,
-    triggerDescription: typeof activation.triggerDescription === "string" ? activation.triggerDescription : undefined,
-  };
-};
-
 const variablesBlock = (variables: Record<string, unknown>): string => {
   const entries = Object.entries(variables);
   if (entries.length === 0) {
@@ -83,14 +70,13 @@ export class RoutineReentryGate implements ConversationRoutineReentryGate {
     if (!routine) {
       return SUPPRESS;
     }
-    const { reentryMode, triggerDescription } = activationOf(routine);
-    if (reentryMode !== "semantic") {
+    if (routine.activation?.reentryMode !== "semantic") {
       return SUPPRESS;
     }
     const { text } = await this.modelGateway.complete({
       messages: turnMessages(input.turn),
       systemPrompt: renderPromptTemplate("chat/routine-reentry-gate.md", this.promptTemplate, {
-        guidance: triggerDescription ?? routine.id,
+        guidance: routine.activation.triggerDescription || routine.id,
         variables: variablesBlock(input.completedState.variables),
       }),
       metadata: {

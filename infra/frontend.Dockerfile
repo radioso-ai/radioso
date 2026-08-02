@@ -38,7 +38,8 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
       --filter @radioso/enterprise-operator-console...
 RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
       mkdir -p ./frontend/node_modules/@radioso && \
-      ln -s ../../../ee/packages/auth-frontend ./frontend/node_modules/@radioso/enterprise-auth-frontend; \
+      ln -s ../../../ee/packages/auth-frontend ./frontend/node_modules/@radioso/enterprise-auth-frontend && \
+      ln -s ../../../ee/packages/operator-console ./frontend/node_modules/@radioso/enterprise-operator-console; \
     fi
 
 FROM deps AS builder
@@ -54,6 +55,7 @@ COPY frontend ./frontend
 COPY packages/routine-definition ./packages/routine-definition
 COPY packages/routine-markdown ./packages/routine-markdown
 COPY packages/ui ./packages/ui
+COPY typescript-sdk ./typescript-sdk
 COPY scripts/sync-ee-frontend-routes.mjs ./scripts/sync-ee-frontend-routes.mjs
 COPY scripts/enterprise-feature-manifests.mjs ./scripts/enterprise-feature-manifests.mjs
 COPY --from=ee-frontend-build /app/ee/packages/auth-frontend/feature-manifest.mjs ./ee/packages/auth-frontend/feature-manifest.mjs

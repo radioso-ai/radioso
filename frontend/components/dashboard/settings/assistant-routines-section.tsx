@@ -75,8 +75,9 @@ import {
 } from '@/lib/api'
 import { getRoutineLineageVersions, groupRoutineLineages, type RoutineLineageGroup } from '@/lib/routine-lineage'
 import {
-  diagnosticTargetFor,
   formToRoutineDraft,
+  renderedDiagnosticTargets,
+  routineLevelDiagnostics,
   routineToForm,
   type RoutineDraftHeader,
   type RoutineFormState,
@@ -620,9 +621,18 @@ function RoutineEditorScreen({
     () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
     [isValidationCurrent, validation?.diagnostics],
   )
+  // The Form editor anchors a diagnostic list against each artifact it renders; the prose
+  // editor renders none of them. Whatever is left over — a genuinely routine-scoped
+  // diagnostic, one naming an artifact this view does not show, or one in a location form
+  // the editor has no site for — surfaces here, so no diagnostic can block publish while
+  // being invisible (FR-030).
+  const renderedFormTargets = useMemo(
+    () => (viewMode === 'form' && form ? renderedDiagnosticTargets(form) : []),
+    [form, viewMode],
+  )
   const routineDiagnostics = useMemo(
-    () => validationDiagnostics.filter((diagnostic) => diagnosticTargetFor(diagnostic).scope === 'routine'),
-    [validationDiagnostics],
+    () => routineLevelDiagnostics(validationDiagnostics, renderedFormTargets),
+    [renderedFormTargets, validationDiagnostics],
   )
 
   useEffect(() => {

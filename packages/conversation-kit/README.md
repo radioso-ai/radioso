@@ -1,18 +1,54 @@
 # @radioso/conversation-kit
 
-Thin runnable wiring for the standalone conversation packages. It assembles the
-conversation engine, default in-memory stores, default directive matching,
-portable authoring stores, and a model gateway. It does not import the Radioso
-backend, Postgres, Express, retrieval, auth, or billing code.
+Composable wiring for the standalone conversation packages. You bring a
+`modelGateway`; the kit assembles the conversation engine, in-memory stores,
+directive matching, and portable authoring stores into a running conversation.
+A model is the only thing it needs from you — there is no database, web
+framework, or account system to stand up first.
+
+## Entry points
+
+The root entry runs anywhere ES modules do: Node, Deno, Cloudflare Workers, the
+browser. Anything that wants a filesystem or an HTTP server lives behind its own
+subpath, so you import it when your host has one.
+
+| Import | What it gives you |
+|---|---|
+| `@radioso/conversation-kit` | The kit, the SDK client, authoring types, and the default ports. |
+| `@radioso/conversation-kit/server` | `createConversationKitServer`, the HTTP host, on `node:http`. |
+| `@radioso/conversation-kit/node` | `FileConversationKitAuthoringStore`, which keeps authoring in a file. |
+
+`tests/entryPoints.test.ts` holds each entry point to a declared budget of what it
+may load, so widening one is an explicit edit.
+
+## Model provider
+
+The kit reaches your model through a single `complete` method, so any provider SDK,
+gateway, or local model works. Pass `modelGateway` and the kit uses it as given:
+
+```ts
+import { createConversationKit } from "@radioso/conversation-kit";
+
+const modelGateway = {
+  async complete({ systemPrompt, messages, metadata }) {
+    // Call whatever you run: another provider's SDK, a gateway, a local model.
+    return { text: await yourModel(systemPrompt, messages), metadata };
+  },
+};
+
+const kit = createConversationKit({ modelGateway });
+```
+
+The same plain gateway value composes with `createConversationKit`,
+`createConversationKitClient`, and `createConversationKitServer` alike. The
+examples below take `modelGateway` from here.
 
 ## Hello World
 
 ```ts
 import { createConversationKitClient } from "@radioso/conversation-kit";
 
-const client = createConversationKitClient({
-  openAiApiKey: process.env.OPENAI_API_KEY,
-});
+const client = createConversationKitClient({ modelGateway });
 
 const agent = client.createAgent({
   name: "Hello World",
@@ -37,22 +73,18 @@ console.log(reply.answer);
 ## Authoring Persistence
 
 The SDK uses a transient authoring store by default. Pass the file-backed adapter
-to keep agents, directives, and routines across process restarts.
+to keep agents, directives, and routines across process restarts. It lives on the
+`/node` subpath because it is the one piece of the kit that needs a filesystem.
 
 ```ts
-import {
-  FileConversationKitAuthoringStore,
-  createConversationKitClient,
-} from "@radioso/conversation-kit";
+import { createConversationKitClient } from "@radioso/conversation-kit";
+import { FileConversationKitAuthoringStore } from "@radioso/conversation-kit/node";
 
 const authoringStore = new FileConversationKitAuthoringStore({
   path: "./conversation-authoring.json",
 });
 
-const client = createConversationKitClient({
-  authoringStore,
-  openAiApiKey: process.env.OPENAI_API_KEY,
-});
+const client = createConversationKitClient({ authoringStore, modelGateway });
 
 const agent = client.getAgent("agent_support") ?? client.createAgent({
   id: "agent_support",
@@ -66,6 +98,119 @@ client.createDirective(agent.id, {
 });
 ```
 
+Any object satisfying `ConversationKitAuthoringStore` works here, so a host that
+already has a database points the kit at that instead.
+
+## Skills
+
+A skill is a named capability a turn can run. Register the definitions with
+`skills` and pair each name with a handler in `localSkills`; a handler receives the
+resolved arguments and returns a settled outcome.
+
+Two things pick the skill for a turn, in this order:
+
+1. **Explicit metadata.** `metadata.skillName` (or `metadata.selectedSkills`) on the
+   turn selects those skills. Your caller took the decision, so it wins.
+2. **An authored directive binding.** Otherwise a matched directive whose `binding`
+   names a registered skill claims the turn. This is the automatic path: behavior is
+   authored ("when the user asks about an order, run `order_lookup`"), never a
+   free-form model tool pick.
+
+If neither applies, no skill runs and the turn composes an ordinary reply.
+
+```ts
+import { createConversationKit } from "@radioso/conversation-kit";
+
+const kit = createConversationKit({
+  modelGateway,
+  skills: [{ name: "order_lookup", description: "Look up an order's status." }],
+  localSkills: new Map([
+    ["order_lookup", async ({ input }) => ({
+      disposition: "settled",
+      outcome: { status: "completed", outputs: { eta: "tomorrow", orderId: input.orderId } },
+    })],
+  ]),
+  directives: [
+    {
+      name: "order_status",
+      condition: { kind: "always" },
+      action: "Answer with the order's status.",
+      binding: { kind: "skill", skillName: "order_lookup" },
+    },
+  ],
+});
+
+const reply = await kit.runTurn({ sessionId: "s1", message: "Where is order A-1?" });
+```
+
+### Declared handler input
+
+Give a turn-level skill a scalar field declaration when its handler needs facts
+from the conversation. The kit extracts only those fields, validates them before
+dispatch, and gives the handler canonical values. This keeps the parsing rule in
+one multilingual model call instead of in every handler.
+
+```ts
+const kit = createConversationKit({
+  modelGateway,
+  skills: [{
+    name: "book_haircut",
+    inputSchema: {
+      fields: [
+        { name: "calendar_date", type: "date", required: true },
+        {
+          name: "haircut_style",
+          type: "string",
+          required: false,
+          permittedValues: ["Short", "Long"],
+        },
+      ],
+    },
+  }],
+  localSkills: new Map([
+    ["book_haircut", async ({ input }) => {
+      // input.calendar_date is YYYY-MM-DD; haircut_style is "Short" or "Long" when present.
+      return { disposition: "settled", outcome: { status: "completed" } };
+    }],
+  ]),
+});
+```
+
+When a required field is absent or rejected, the handler is not called. The turn
+still gets a normal composed reply and its result includes `awaitingSkillInput`,
+with the skill name, outstanding field declarations, choices, and whether each
+field was absent or rejected. All selected skills wait: if one needs input, none
+of them dispatch for that turn.
+
+`awaitingSkillInput` is a report, not a saved engine state. An `always` directive
+will select the skill again on the next turn and can recover the answer from the
+conversation. A contextual directive may not match a bare reply, so a host that
+needs guaranteed retry should retain the report and force the skill on its next
+turn with selection metadata or `SelectedSkill.input`.
+
+Routines run skills too. A `skill` step names the skill, `inputBindings` builds its
+arguments from a literal, a routine variable (`variableRef`), or a turn context
+variable (`contextVariableRef`), and `outputAssignments` stores result fields back
+into routine variables — which `{{slot.<name>}}` in a later step's instruction reads.
+The step is transit: the routine dispatches it and advances on the same turn,
+including onto a failure edge when the skill fails or is not registered.
+
+```ts
+const runLookup = {
+  id: "run_lookup",
+  kind: "skill",
+  skillName: "order_lookup",
+  inputBindings: {
+    orderId: { kind: "variableRef", ref: "orderId" },
+    channel: { kind: "literal", value: "chat" },
+  },
+  outputAssignments: { eta: "eta" },
+};
+```
+
+Pass `routineSkillDispatcher` to run routine skill steps through your own executor
+instead of the local handlers.
+
 ## Routines
 
 Routines are stateful, multi-step flows. The kit wires the routine runner and an
@@ -75,9 +220,15 @@ explicit signal, an LLM intent check, etc.; activation logic lives in your code,
 not the engine). Once a routine is active the engine resumes it across turns until
 it reaches a terminal step.
 
-Clarification helpers are exported from the kit too: policy decision/stage
-builders, the generic pending clarification resolver, clarifier/store contract
-types, and the default routine-activation candidate mapper.
+`routineStore`, `routineSelector`, `routineRenderer`, and `routineRunner` are all
+replaceable ports. The default store is in memory, so a host that runs across
+processes supplies a durable `routineStore` to preserve active state; that store
+also owns routine expiry and TTL. The selector and renderer feed the default runner.
+When you supply `routineRunner`, it owns its routine list instead.
+
+The kit also accepts engine capability ports for steering, turn interpretation,
+retrieval work, routine reentry and slot correction, and clarification. Supply the
+implementation for one and the engine runs that capability on every turn.
 
 ```ts
 import { createConversationKit, type RoutineRegistration } from "@radioso/conversation-kit";
@@ -99,15 +250,21 @@ const signup: RoutineRegistration = {
 };
 
 const kit = createConversationKit({
-  openAiApiKey: process.env.OPENAI_API_KEY,
+  modelGateway,
   routineRegistrations: [signup],
 });
 ```
 
 ## Local Server
 
-```bash
-OPENAI_API_KEY=sk-... pnpm --filter @radioso/conversation-kit exec radioso-conversation-kit serve
+`createConversationKitServer` puts the same kit behind HTTP. It comes from the
+`/server` subpath, which is where `node:http` enters the picture:
+
+```ts
+import { createConversationKitServer } from "@radioso/conversation-kit/server";
+
+const server = createConversationKitServer({ kit });
+const { url } = await server.listen({ host: "127.0.0.1", port: 8787 });
 ```
 
 Then send a turn:

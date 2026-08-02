@@ -2,11 +2,25 @@ import { describe, expect, it } from 'vitest'
 
 import nextConfig from '../../next.config.mjs'
 
+const getHeaderRoutes = async () => {
+  if (!nextConfig.headers) {
+    throw new Error('Next.js headers configuration is missing')
+  }
+  return nextConfig.headers()
+}
+
+const getRewriteRoutes = async () => {
+  if (!nextConfig.rewrites) {
+    throw new Error('Next.js rewrites configuration is missing')
+  }
+  return nextConfig.rewrites()
+}
+
 describe('next security headers', () => {
   it('sets a global content security policy and browser hardening headers', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
 
-    const routes = await nextConfig.headers()
+    const routes = await getHeaderRoutes()
     const globalHeaders = routes.find((route) => route.source === '/:path*')?.headers ?? []
     const headerValues = new Map(globalHeaders.map((header) => [header.key, header.value]))
 
@@ -23,7 +37,7 @@ describe('next security headers', () => {
   it('allows the public embed document to be framed by host sites', async () => {
     expect(nextConfig.headers).toBeTypeOf('function')
 
-    const routes = await nextConfig.headers()
+    const routes = await getHeaderRoutes()
     const embedHeaders = routes.find((route) => route.source === '/embed/:path*')?.headers ?? []
     const embedFrameHeaders = routes.find((route) => route.source === '/embed-frame')?.headers ?? []
     const headerValues = new Map(embedHeaders.map((header) => [header.key, header.value]))
@@ -47,5 +61,15 @@ describe('next security headers', () => {
     expect(frameHeaderValues.get('X-Content-Type-Options')).toBe('nosniff')
     expect(frameHeaderValues.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin')
     expect(frameHeaderValues.get('Permissions-Policy')).toContain('camera=()')
+  })
+
+  it('proxies the legacy widget hostname to the primary EU frontend', async () => {
+    const routes = await getRewriteRoutes()
+
+    expect(routes).toContainEqual({
+      source: '/:path*',
+      has: [{ type: 'host', value: 'platform.radioso.dev' }],
+      destination: 'https://app.radioso.ai/:path*',
+    })
   })
 })

@@ -149,7 +149,6 @@ export const highlightCode = async (
     .codeToTokensWithThemes(code, {
       lang,
       themes: { light: 'github-light', dark: 'github-dark' },
-      defaultColor: false,
     })
     .map((line) => line.map(toHighlightedToken))
 }

@@ -433,17 +433,10 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       resolution: input.resolution,
       legacyReason: input.legacyReason,
     });
-    const linkedEvalCaseId = this.verificationSource
-      ? (await this.verificationSource.getByAssistantMessageIds(
-          workspaceId,
-          [input.assistantMessageId],
-        )).get(input.assistantMessageId)?.caseId ?? null
-      : null;
     return new QualityTriageStore(this.db).transition(workspaceId, {
       assistantMessageId: input.assistantMessageId,
       ...update,
       updatedBy: input.updatedBy ?? null,
-      linkedEvalCaseId,
     });
   }
 

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import {
   AnswerPresentationService,
+  type AnswerPresentationMetrics,
   type ChatGateway,
 } from "../../chat/retrievalSupport.js";
 import type { RetrievalPipelineService } from "./retrievalPipelineService.js";
@@ -29,14 +30,17 @@ export interface RetrievalAnswerServiceDependencies {
   usageLimitPolicy?: UsageLimitPolicy;
   auditService?: AuditPort;
   directiveSteering?: DirectiveSteeringPort;
+  metrics?: AnswerPresentationMetrics | null;
 }
 
 export class RetrievalAnswerService {
-  private readonly answerPresentationService = new AnswerPresentationService();
+  private readonly answerPresentationService: AnswerPresentationService;
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
   private readonly activityTracePresenter = new ActivityTracePresenter();
 
-  constructor(private readonly dependencies: RetrievalAnswerServiceDependencies) {}
+  constructor(private readonly dependencies: RetrievalAnswerServiceDependencies) {
+    this.answerPresentationService = new AnswerPresentationService(dependencies.metrics);
+  }
 
   async answer(input: RetrievalAnswerRequest): Promise<RetrievalAnswerResult> {
     const history = this.buildContextMessages(input);

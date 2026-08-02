@@ -28,7 +28,7 @@ const seedTurn = {
   },
   userTurn: { id: 'user-1', role: 'user', content: 'What changed?', createdAt: '2026-06-01T10:00:00.000Z' },
   assistantTurn: { id: 'assistant-1', role: 'assistant', content: 'Some things changed.', createdAt: '2026-06-01T10:00:01.000Z' },
-} as WorkbenchSeedTurn
+} as unknown as WorkbenchSeedTurn
 
 const draft: DirectiveDraftResponse = {
   directive: {
@@ -55,6 +55,8 @@ const existingDirective: Directive = {
   tags: ['saved'],
   description: 'Existing saved behavior.',
   metadata: { owner: 'ops' },
+  binding: null,
+  lifecycle: null,
   createdAt: '2026-06-01T09:00:00.000Z',
   updatedAt: '2026-06-01T09:00:00.000Z',
 }
@@ -296,7 +298,7 @@ describe('coach state', () => {
       },
       userTurn: { id: 'user-2', role: 'user', content: 'What is next?', createdAt: '2026-06-01T11:00:00.000Z' },
       assistantTurn: { id: 'assistant-2', role: 'assistant', content: 'The next step is unclear.', createdAt: '2026-06-01T11:00:01.000Z' },
-    } as WorkbenchSeedTurn
+    } as unknown as WorkbenchSeedTurn
     const deps = createDeps({
       captureSnapshot: vi.fn()
         .mockResolvedValueOnce({ id: 'snapshot-1' })

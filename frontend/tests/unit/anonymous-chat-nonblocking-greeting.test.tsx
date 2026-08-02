@@ -32,7 +32,7 @@ vi.mock('@/lib/api', () => ({
 const publicChatApiMock = vi.mocked(publicChatApi)
 
 beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 const greetingActiveConversationList = {
@@ -45,6 +45,9 @@ const greetingActiveConversationList = {
   intakeActions: [],
   assistantBootstrapActive: true,
   conversations: [],
+  total: 0,
+  nextCursor: null,
+  hasMore: false,
 }
 
 const flush = () => new Promise((resolve) => window.setTimeout(resolve, 0))
@@ -210,8 +213,8 @@ describe('anonymous chat non-blocking greeting', () => {
         answerSegments: [],
         suggestions: [],
       }
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -278,8 +281,8 @@ describe('anonymous chat non-blocking greeting', () => {
         answerSegments: [],
         suggestions: [],
       }
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
 
@@ -361,8 +364,8 @@ describe('anonymous chat non-blocking greeting', () => {
       assistantBootstrapActive: false,
     })
     publicChatApiMock.streamMessage.mockImplementation(async (_token, _data, handlers) => {
-      handlers.onConversation?.({ conversationId: 'conversation-1' })
-      handlers.onCancelled?.({
+      handlers?.onConversation?.({ conversationId: 'conversation-1' })
+      handlers?.onCancelled?.({
         conversationId: 'conversation-1',
         reason: 'superseded',
         stage: 'routing',

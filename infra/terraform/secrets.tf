@@ -84,7 +84,22 @@ resource "google_secret_manager_secret" "secrets" {
   secret_id = "${local.resource_name_prefix}-${each.key}"
 
   replication {
-    auto {}
+    dynamic "auto" {
+      for_each = length(var.secret_replication_locations) == 0 ? [true] : []
+      content {}
+    }
+
+    dynamic "user_managed" {
+      for_each = length(var.secret_replication_locations) == 0 ? [] : [true]
+      content {
+        dynamic "replicas" {
+          for_each = var.secret_replication_locations
+          content {
+            location = replicas.value
+          }
+        }
+      }
+    }
   }
 
   depends_on = [google_project_service.apis]

@@ -61,6 +61,15 @@ export {
   directiveMatchPriority,
 } from "./directiveMatchRanking.js";
 export {
+  resolveDirectiveBinding,
+  type DirectiveBindingOutcome,
+  type DirectiveBindingResolution,
+  type DirectiveBindingSkillState,
+  type DirectiveBindingSkipReason,
+  type ResolveDirectiveBindingInput,
+  type SkippedDirectiveBinding,
+} from "./domain.js";
+export {
   builtInAnswerDirectiveViews,
   conciseReadableFormattingDirective,
   defaultAnswerDirectives,

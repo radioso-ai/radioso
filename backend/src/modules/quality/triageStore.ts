@@ -43,7 +43,6 @@ const mapTriageRow = (row: TriageRow): QualityTriageRecord => ({
 export interface PersistQualityTriageTransitionInput extends ValidatedQualityTriageUpdate {
   assistantMessageId: string;
   updatedBy: string | null;
-  linkedEvalCaseId: string | null;
 }
 
 /**
@@ -151,11 +150,17 @@ export class QualityTriageStore {
              accepted.version,
              $8,
              accepted.resolution_reason,
-             $9
+             -- Capture the association from the same statement snapshot as the
+             -- accepted transition. The audit keeps this historical identifier
+             -- even if the mutable Eval case is deleted later.
+             association.case_id
            FROM accepted
            JOIN target
              ON target.workspace_id = accepted.workspace_id
             AND target.assistant_message_id = accepted.assistant_message_id
+           LEFT JOIN eval_message_case_associations association
+             ON association.workspace_id = accepted.workspace_id
+            AND association.assistant_message_id = accepted.assistant_message_id
            RETURNING id
          )
          SELECT
@@ -176,7 +181,6 @@ export class QualityTriageStore {
           input.resolution?.note ?? null,
           input.legacyReason,
           input.updatedBy,
-          input.linkedEvalCaseId,
         ],
       ),
     );

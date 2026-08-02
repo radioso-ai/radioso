@@ -202,6 +202,39 @@ describeIfDatabase("Content Planning read model", () => {
     );
   });
 
+  it("does not report an acknowledged topic without an enrichment job as pending", async () => {
+    const topicId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision,
+         enrichment_dirty_at, created_at, updated_at
+       )
+       SELECT $1, $2, $3, embedding_space_id, 'mature', '[0,0,1]'::vector,
+         3, 3, '{}'::uuid[], 1, NULL, $4, $4
+       FROM content_plan_projection_generations
+       WHERE workspace_id = $1 AND id = $2`,
+      [fixture.workspaceId, fixture.generationId, topicId, new Date(AS_OF.getTime() - 1_000)],
+    );
+    const source = new PostgresContentPlanReadSource(database.kysely);
+
+    expect((await source.getProjection(fixture.workspaceId))?.pendingEnrichmentTopicCount).toBe(1);
+
+    await database.execute(
+      `UPDATE content_plan_topics
+       SET enrichment_dirty_at = $4
+       WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+      [fixture.workspaceId, fixture.generationId, topicId, AS_OF],
+    );
+    expect((await source.getProjection(fixture.workspaceId))?.pendingEnrichmentTopicCount).toBe(2);
+
+    await database.execute(
+      `DELETE FROM content_plan_topics
+       WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+      [fixture.workspaceId, fixture.generationId, topicId],
+    );
+  });
+
   it("freezes asOf and ordering in the signed cursor while ignoring changes after the frozen window", async () => {
     const { service } = createService();
     const delayedConversationId = randomUUID();
@@ -622,6 +655,12 @@ const seedFixture = async (database: Database): Promise<Fixture> => {
        ($1, $2, $8, $4, 'merged', NULL, 3, 0, '{}'::uuid[], 1, $3, '2026-08-01T00:00:00Z', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'),
        ($1, $2, $9, $4, 'retired', NULL, 3, 0, '{}'::uuid[], 1, NULL, NULL, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
     [workspaceId, generationId, opportunityTopicId, spaceId, healthyTopicId, provisionalTopicId, mergedTopicId, expiredMergedTopicId, retiredTopicId],
+  );
+  await database.query(
+    `UPDATE content_plan_topics
+     SET enrichment_dirty_at = '2026-08-02T09:00:00Z'
+     WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+    [workspaceId, generationId, healthyTopicId],
   );
 
   type Turn = {

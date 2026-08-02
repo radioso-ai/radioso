@@ -247,7 +247,10 @@ export class PostgresContentPlanReadSource implements ContentPlanReadSourcePort 
              AND pending_topic.generation_id = COALESCE(ps.target_generation_id, ps.coherent_generation_id)
              AND pending_topic.lifecycle = 'mature'
              AND (
-               pending_enrichment.topic_id IS NULL
+               (
+                 pending_enrichment.topic_id IS NULL
+                 AND pending_topic.enrichment_dirty_at IS NOT NULL
+               )
                OR pending_enrichment.state IN ('pending', 'stale')
                OR pending_enrichment.source_topic_revision <> pending_topic.revision
              )

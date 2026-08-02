@@ -82,8 +82,12 @@ implements ContentPlanningOperationalMetricsSourcePort {
              AND topic.generation_id = $2
              AND topic.lifecycle = 'mature'
              AND (
-               enrichment.topic_id IS NULL
+               (
+                 enrichment.topic_id IS NULL
+                 AND topic.enrichment_dirty_at IS NOT NULL
+               )
                OR enrichment.state IN ('pending', 'stale')
+               OR enrichment.source_topic_revision <> topic.revision
              )
          ), 0) AS pending_enrichment_count,
          COALESCE((

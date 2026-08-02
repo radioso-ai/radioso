@@ -122,6 +122,7 @@ describe("local function adapter", () => {
     expect(result.response.answer).toBe("sum:10");
     expect(result.outcomes[0]?.outcome.outputs).toEqual({ sum: 10 });
     expect(result.trace.stages.map((stage) => stage.kind)).toEqual([
+      "message",
       "gather",
       "directive_match",
       "skill_selection",

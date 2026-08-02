@@ -198,10 +198,26 @@ export interface DirectiveCatalogRegistryPort {
   list(): Directive[];
 }
 
+export type SkillInputScalarType = "string" | "number" | "integer" | "boolean" | "date";
+
+interface SkillInputFieldBase {
+  name: string;
+  required: boolean;
+  description?: string;
+}
+
+export type SkillInputField =
+  | (SkillInputFieldBase & { type: "string"; permittedValues?: string[] })
+  | (SkillInputFieldBase & { type: "number" | "integer" | "boolean" | "date"; permittedValues?: never });
+
+export interface SkillInputSchema {
+  fields: SkillInputField[];
+}
+
 export interface SkillDefinition {
   name: string;
   description?: string;
-  inputSchema?: unknown;
+  inputSchema?: SkillInputSchema;
   outputSchema?: unknown;
   outcomeKinds?: string[];
   metadata?: Record<string, unknown>;
@@ -271,6 +287,43 @@ export interface SelectedSkill {
   input?: unknown;
   reason?: string;
   metadata?: Record<string, unknown>;
+}
+
+export type SkillInputValue = string | number | boolean;
+export type SkillInputFieldProvenance = "host" | "model" | "none";
+export type SkillInputFieldStatus = "ready" | "absent" | "rejected";
+
+export interface SkillInputFieldOutcome {
+  name: string;
+  provenance: SkillInputFieldProvenance;
+  status: SkillInputFieldStatus;
+  reason?: string;
+}
+
+export interface OutstandingSkillInputField {
+  name: string;
+  type: SkillInputScalarType;
+  description?: string;
+  permittedValues?: string[];
+  reason: "absent" | "rejected";
+}
+
+export type ConversationSkillInputResolution =
+  | { kind: "ready"; input: Record<string, SkillInputValue>; fields: SkillInputFieldOutcome[] }
+  | { kind: "needs_input"; fields: SkillInputFieldOutcome[]; outstanding: OutstandingSkillInputField[] }
+  | { kind: "failed"; code: string; fields: SkillInputFieldOutcome[] };
+
+export interface ConversationSkillInputResolver {
+  resolve(input: {
+    skill: SkillDefinition;
+    selected: SelectedSkill;
+    turn: TurnContext;
+  }): Promise<ConversationSkillInputResolution>;
+}
+
+export interface AwaitingSkillInput {
+  skillName: string;
+  fields: OutstandingSkillInputField[];
 }
 
 export interface SelectionDecision {
@@ -1097,6 +1150,8 @@ export interface ProcessTurnInput {
   turnInterpreter?: ConversationTurnInterpreter;
   retrievalWork?: ConversationRetrievalWorkPort;
   selector: ConversationSkillSelector;
+  /** Required when a selected skill declares input fields. */
+  skillInputResolver?: ConversationSkillInputResolver;
   composer: ConversationTurnComposer;
   /**
    * Routine machinery, all optional. `routineStore` + `routineRunner` travel together
@@ -1188,6 +1243,8 @@ export interface ProcessTurnResult {
    * create a pending decision row before the routine can be resumed.
    */
   awaitingDecision?: RoutineAwaitingDecision;
+  /** Required fields that prevented selected skills from dispatching this turn. */
+  awaitingSkillInput?: AwaitingSkillInput[];
   /** True when a routine ended in a human handoff terminal. */
   handoff?: { routineId: string; stepId: string };
 }

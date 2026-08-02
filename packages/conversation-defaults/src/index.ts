@@ -35,6 +35,10 @@ export {
 } from "./directiveBoundSkillSelector.js";
 export { resolveSkillArguments } from "./skillArgumentResolver.js";
 export {
+  createConversationSkillInputResolver,
+  type CreateConversationSkillInputResolverOptions,
+} from "./skillInputResolver.js";
+export {
   AlwaysMatchDirectiveMatcher,
 } from "./directiveMatcher.js";
 export type { DirectiveMatcherPort, DirectiveMatchInput } from "@radioso/conversation-contract";

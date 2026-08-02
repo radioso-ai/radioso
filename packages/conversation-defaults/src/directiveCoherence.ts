@@ -5,32 +5,24 @@ import type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
   DirectiveCoherenceConflict,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceMode,
   DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
 export type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
   DirectiveCoherenceConflict,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceMode,
   DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
 
 export interface CreateDirectiveCoherenceCheckerOptions {
   modelGateway: ConversationModelGateway;
   promptTemplate?: string;
-}
-
-export type DirectiveCoherenceMode = "enforce";
-
-export interface DirectiveCoherenceGateOptions {
-  enabled?: boolean;
-  mode?: DirectiveCoherenceMode;
-  checker?: DirectiveCoherenceChecker;
-  promptTemplate?: string;
-}
-
-export interface DirectiveCoherenceGate {
-  mode: DirectiveCoherenceMode;
-  checker: DirectiveCoherenceChecker;
 }
 
 export const DEFAULT_DIRECTIVE_COHERENCE_PROMPT = `You review assistant behavioral directives before they are accepted.

@@ -1,6 +1,7 @@
 import type {
   ConversationAgentConfig,
   ConversationEvent,
+  DirectiveCoherenceGate,
   Directive,
   RenderableTurn,
   Routine,
@@ -16,7 +17,6 @@ import type {
 import {
   createDirectiveCoherenceGate,
   DirectiveCoherenceError,
-  type DirectiveCoherenceGate,
 } from "@radioso/conversation-defaults";
 import { createId } from "./ids.js";
 

@@ -1,6 +1,3 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
-
 import type {
   ConversationAgentConfig,
   DecisionOption,
@@ -52,14 +49,11 @@ interface StoredDirective {
   directive: Directive;
 }
 
-interface ConversationKitAuthoringSnapshot {
+/** The portable shape a persistent adapter reads and writes. */
+export interface ConversationKitAuthoringSnapshot {
   agents: ConversationAgentConfig[];
   directives: StoredDirective[];
   routines: Routine[];
-}
-
-export interface FileConversationKitAuthoringStoreOptions {
-  path: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -504,13 +498,13 @@ const parseRoutine = (value: unknown): Routine | null => {
   };
 };
 
-const emptySnapshot = (): ConversationKitAuthoringSnapshot => ({
+export const emptySnapshot = (): ConversationKitAuthoringSnapshot => ({
   agents: [],
   directives: [],
   routines: [],
 });
 
-const parseSnapshot = (value: unknown): ConversationKitAuthoringSnapshot => {
+export const parseSnapshot = (value: unknown): ConversationKitAuthoringSnapshot => {
   if (!isRecord(value)) {
     return emptySnapshot();
   }
@@ -704,27 +698,3 @@ export class TransientConversationKitAuthoringStore implements ConversationKitAu
     }
   }
 }
-
-export class FileConversationKitAuthoringStore extends TransientConversationKitAuthoringStore {
-  private readonly path: string;
-
-  constructor(options: FileConversationKitAuthoringStoreOptions) {
-    super(loadFileSnapshot(options.path));
-    this.path = options.path;
-  }
-
-  protected override changed(): void {
-    mkdirSync(dirname(this.path), { recursive: true });
-    const temporaryPath = `${this.path}.${process.pid}.tmp`;
-    writeFileSync(temporaryPath, `${JSON.stringify(this.exportSnapshot(), null, 2)}\n`, "utf8");
-    renameSync(temporaryPath, this.path);
-  }
-}
-
-const loadFileSnapshot = (path: string): ConversationKitAuthoringSnapshot => {
-  if (!existsSync(path)) {
-    return emptySnapshot();
-  }
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-  return parseSnapshot(parsed);
-};

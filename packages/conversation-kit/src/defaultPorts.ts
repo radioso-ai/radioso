@@ -12,6 +12,8 @@ import type {
   RoutineSkillResult,
   SelectionDecision,
   SkillDefinition,
+  SkillDispatchResult,
+  SkillExecutorPort,
   StagedContext,
   TurnOutcome,
 } from "@radioso/conversation-contract";
@@ -25,8 +27,6 @@ import {
   resolveSkillArguments,
   type DirectiveBoundSkillSelectorOptions,
   type DirectiveTextGenerationClient,
-  type SkillDispatchResult,
-  type SkillExecutorPort,
 } from "@radioso/conversation-defaults";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

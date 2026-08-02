@@ -6,10 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { Directive, DirectiveLifecycle, Routine } from "@radioso/conversation-contract";
 
-import {
-  FileConversationKitAuthoringStore,
-  TransientConversationKitAuthoringStore,
-} from "../src/index.js";
+import { TransientConversationKitAuthoringStore } from "../src/index.js";
+import { FileConversationKitAuthoringStore } from "../src/node.js";
 
 const sampleDirective = (id = "directive_brief"): Directive => ({
   id,

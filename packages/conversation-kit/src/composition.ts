@@ -1,10 +1,20 @@
 import type {
   ConversationAgentConfig,
+  ConversationClarificationStore,
+  ConversationClarifier,
   ConversationDirectiveMatcher,
   ConversationEngine,
   ConversationEvent,
   ConversationInputEvent,
   ConversationModelGateway,
+  ConversationRetrievalWorkPort,
+  ConversationRoutineReentryGate,
+  ConversationRoutineNextStepSelector,
+  ConversationRoutineRunner,
+  ConversationRoutineSlotCorrection,
+  ConversationRoutineStepRenderer,
+  ConversationRoutineStore,
+  ConversationTurnInterpreter,
   ConversationRoutineSkillDispatcher,
   ConversationSkillInputResolver,
   ConversationSkillDispatcher,
@@ -12,11 +22,16 @@ import type {
   ConversationStores,
   ConversationTurnComposer,
   Directive,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
   ProcessTurnResult,
   Routine,
   SkillDefinition,
+  SteeringResolver,
 } from "@radioso/conversation-contract";
 import {
+  createConversationSkillInputResolver,
+  createDirectiveCoherenceGate,
   InMemoryConversationRoutineStore,
   InMemoryConversationStores,
   RoutineNextStepSelector,
@@ -24,7 +39,6 @@ import {
   RoutineStepRenderer,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
-import * as conversationDefaults from "@radioso/conversation-defaults";
 import { DefaultConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 
 import {
@@ -36,11 +50,6 @@ import {
   type DefaultConversationSkillSelectorOptions,
   type LocalSkillRegistry,
 } from "./defaultPorts.js";
-import {
-  createDirectiveCoherenceGate,
-  type DirectiveCoherenceGate,
-  type DirectiveCoherenceGateOptions,
-} from "@radioso/conversation-defaults";
 import {
   TransientConversationKitAuthoringStore,
   type ConversationKitAuthoringStore,
@@ -56,13 +65,6 @@ export interface RunConversationTurnInput {
   skills?: SkillDefinition[];
   metadata?: Record<string, unknown>;
 }
-
-const createSkillInputResolver = (modelGateway: ConversationModelGateway): ConversationSkillInputResolver => {
-  const factory = (conversationDefaults as typeof conversationDefaults & {
-    createConversationSkillInputResolver: (options: { modelGateway: ConversationModelGateway }) => ConversationSkillInputResolver;
-  }).createConversationSkillInputResolver;
-  return factory({ modelGateway });
-};
 
 export interface ConversationKit {
   readonly agent: ConversationAgentConfig;
@@ -97,6 +99,38 @@ export interface CreateConversationKitOptions extends ConversationKitModelGatewa
    * turn-level dispatch, which stays on `dispatcher`.
    */
   routineSkillDispatcher?: ConversationRoutineSkillDispatcher;
+  /**
+   * Durable store for active routine state. The default is in-memory; a host running
+   * across processes supplies this port to preserve routine state and own expiry/TTL.
+   */
+  routineStore?: ConversationRoutineStore;
+  /**
+   * Selects the next routine step for the default runner. This and `routineRenderer`
+   * are unused when `routineRunner` is supplied.
+   */
+  routineSelector?: ConversationRoutineNextStepSelector;
+  /**
+   * Renders routine steps for the default runner. This and `routineSelector` are
+   * unused when `routineRunner` is supplied.
+   */
+  routineRenderer?: ConversationRoutineStepRenderer;
+  /**
+   * Runs active routines. Without one, the kit rebuilds its default runner per turn
+   * from the current authoring store so CRUD-authored routines remain resumable. A
+   * supplied runner is built once, owns its routine list, and is not rebuilt.
+   */
+  routineRunner?: ConversationRoutineRunner;
+  /**
+   * Optional engine capabilities the host opts into by supplying an implementation.
+   * Omitting any capability leaves it off.
+   */
+  steeringResolver?: SteeringResolver;
+  turnInterpreter?: ConversationTurnInterpreter;
+  retrievalWork?: ConversationRetrievalWorkPort;
+  routineReentryGate?: ConversationRoutineReentryGate;
+  routineSlotCorrection?: ConversationRoutineSlotCorrection;
+  clarifier?: ConversationClarifier;
+  clarificationStore?: ConversationClarificationStore;
   authoringStore?: ConversationKitAuthoringStore;
   skills?: SkillDefinition[];
   localSkills?: LocalSkillRegistry;
@@ -151,7 +185,7 @@ const seedAuthoringStore = (
 export const createConversationKit = (options: CreateConversationKitOptions = {}): ConversationKit => {
   const modelGateway = createConversationKitModelGateway(options);
   const stores = options.stores ?? new InMemoryConversationStores();
-  const routineStore = new InMemoryConversationRoutineStore();
+  const routineStore = options.routineStore ?? new InMemoryConversationRoutineStore();
   const engine = options.engine ?? new DefaultConversationEngine();
   const agent = options.agent ?? defaultAgent();
   const directives = (options.directives ?? []).map(directiveWithId);
@@ -168,14 +202,15 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
   const routineSkillDispatcher = options.routineSkillDispatcher
     ?? createDefaultRoutineSkillDispatcher(options.localSkills ?? new Map(), skills);
   const composer = options.composer ?? createModelBackedConversationComposer(modelGateway);
-  const skillInputResolver = options.skillInputResolver ?? createSkillInputResolver(modelGateway);
+  const skillInputResolver = options.skillInputResolver ?? createConversationSkillInputResolver({ modelGateway });
   const directiveCoherence = createDirectiveCoherenceGate(options.directiveCoherence, modelGateway);
 
   // Routines become runnable, not just authorable: the runner resumes an active routine
-  // and the activator (built from registrations) starts one. The runner is rebuilt per
-  // turn from the current authoring store so routines added via CRUD are also resumable.
-  const routineSelector = new RoutineNextStepSelector(modelGateway);
-  const routineRenderer = new RoutineStepRenderer(modelGateway);
+  // and the activator (built from registrations) starts one. Without a supplied runner,
+  // the default runner is rebuilt per turn from the current authoring store so routines
+  // added via CRUD are also resumable.
+  const routineSelector = options.routineSelector ?? new RoutineNextStepSelector(modelGateway);
+  const routineRenderer = options.routineRenderer ?? new RoutineStepRenderer(modelGateway);
   const routineRegistry = new RoutineRegistry(routineRegistrations);
   const routineActivator = routineRegistry.isEmpty ? undefined : routineRegistry.activator(modelGateway);
 
@@ -202,7 +237,7 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         content: input.message,
         metadata: input.metadata,
       };
-      const routineRunner = new DefaultRoutineRunner(
+      const routineRunner = options.routineRunner ?? new DefaultRoutineRunner(
         authoringStore.listRoutines(),
         routineSelector,
         routineRenderer,
@@ -224,6 +259,13 @@ export const createConversationKit = (options: CreateConversationKitOptions = {}
         routineStore,
         routineRunner,
         ...(routineActivator ? { routineActivator } : {}),
+        ...(options.steeringResolver ? { steeringResolver: options.steeringResolver } : {}),
+        ...(options.turnInterpreter ? { turnInterpreter: options.turnInterpreter } : {}),
+        ...(options.retrievalWork ? { retrievalWork: options.retrievalWork } : {}),
+        ...(options.routineReentryGate ? { routineReentryGate: options.routineReentryGate } : {}),
+        ...(options.routineSlotCorrection ? { routineSlotCorrection: options.routineSlotCorrection } : {}),
+        ...(options.clarifier ? { clarifier: options.clarifier } : {}),
+        ...(options.clarificationStore ? { clarificationStore: options.clarificationStore } : {}),
       });
     },
     listEvents(sessionId) {

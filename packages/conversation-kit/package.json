@@ -8,9 +8,6 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "radioso-conversation-kit": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,20 +16,23 @@
     "./server": {
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "scripts": {
-    "prebuild": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm --dir ../conversation-nlp run build",
+    "prebuild": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build",
     "build": "tsc -p tsconfig.json",
-    "pretest": "pnpm --dir ../conversation-engine run build && pnpm --dir ../conversation-defaults run build && pnpm --dir ../conversation-nlp run build",
+    "pretest": "pnpm run build",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@radioso/conversation-contract": "workspace:*",
     "@radioso/conversation-defaults": "workspace:*",
-    "@radioso/conversation-engine": "workspace:*",
-    "@radioso/conversation-nlp": "workspace:*"
+    "@radioso/conversation-engine": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

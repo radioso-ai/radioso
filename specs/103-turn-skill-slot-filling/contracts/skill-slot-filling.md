@@ -39,4 +39,3 @@ MCP/OpenAPI JSON Schema conversion is intentionally deferred.
 No persistence or resumption protocol; no dashboard/editor model; no backend
 schema projection; no nested/array fields; no routine-step filling; no cross-skill
 same-turn extraction dependency.
-

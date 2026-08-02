@@ -259,6 +259,25 @@ describe("createConversationSkillInputResolver", () => {
     ]);
   });
 
+  it("sends no history at all when the message limit is zero", async () => {
+    const model = gateway(JSON.stringify({ calendar_date: "2026-08-07" }));
+    const resolver = createConversationSkillInputResolver({ modelGateway: model, historyMessageLimit: 0 });
+
+    await resolver.resolve({
+      skill,
+      selected: { skillName: skill.name },
+      turn: turn({ history: [
+        { role: "user", content: "earlier private detail" },
+        { role: "assistant", content: "another earlier turn" },
+      ] }),
+    });
+
+    // A host disabling history must not have it sent anyway: only the current message goes.
+    expect(vi.mocked(model.complete).mock.calls[0]![0].messages.map((message) => message.content)).toEqual([
+      "Untrusted current user message:\nBook a haircut next Friday, short.",
+    ]);
+  });
+
   it("defaults to the newest twenty history messages and drops oldest content first at 8,000 characters", async () => {
     const model = gateway(JSON.stringify({ calendar_date: "2026-08-07" }));
     const resolver = createConversationSkillInputResolver({ modelGateway: model });

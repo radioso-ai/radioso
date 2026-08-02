@@ -667,6 +667,14 @@ export class DefaultConversationEngine implements ConversationEngine {
       resolvedSelections.push({ skill, selected: { ...selected, input: resolution.input }, resolution });
     }
 
+    // A turn either asks for missing input or it does not, and the reported
+    // `awaitingSkillInput` must describe what was actually asked. A failed resolution is
+    // not an ask (D11): it composes an ordinary reply. So when a failure and a
+    // needs-input land in the same turn, the failure dominates and nothing is reported as
+    // awaited — otherwise the result would claim the turn asked for fields it never
+    // mentioned. Per-field detail stays visible on the resolution trace stage either way.
+    // Both the steering and the report read this one flag so they cannot diverge.
+    const asksForSkillInput = !hasFailedResolution && awaitingSkillInput.length > 0;
     const outcomes: TurnOutcome[] = [...preflightOutcomes];
     let mergedSteering = [...selectedTurn.steering];
     if (!hasFailedResolution && awaitingSkillInput.length === 0) {
@@ -706,7 +714,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         ...(outcome.subTrace ? { subTrace: outcome.subTrace } : {}),
       }));
       }
-    } else if (!hasFailedResolution && awaitingSkillInput.length > 0) {
+    } else if (asksForSkillInput) {
       mergedSteering = [...mergedSteering, skillInputSteering(awaitingSkillInput)];
     }
 
@@ -724,7 +732,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
       outcomes,
       composeTurn,
-      ...(awaitingSkillInput.length > 0 ? { awaitingSkillInput } : {}),
+      ...(asksForSkillInput ? { awaitingSkillInput } : {}),
     };
   }
 

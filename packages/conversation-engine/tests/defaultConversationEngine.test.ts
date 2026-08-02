@@ -192,6 +192,35 @@ describe("DefaultConversationEngine", () => {
     expect(result.response.answer).toBe("ordinary reply");
   });
 
+  it("does not report awaiting input when another selection failed in the same turn", async () => {
+    const dispatcher = vi.fn();
+    const composer = vi.fn(async ({ turn }: { turn: { steering: Array<{ source: string }> } }) => ({
+      answer: turn.steering.some((rule) => rule.source === "skill") ? "asked" : "ordinary reply",
+    }));
+    const resolver: ConversationSkillInputResolver = {
+      resolve: vi.fn(async ({ selected }) => selected.skillName === "first"
+        ? { kind: "needs_input", fields: [], outstanding: [{ name: "date", type: "date", reason: "absent" }] }
+        : { kind: "failed", code: "parse_error", fields: [] }),
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(createInput({
+      skills: [
+        { name: "first", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+        { name: "second", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+      ],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "first" }, { skillName: "second" }] })) },
+      skillInputResolver: resolver,
+      dispatcher: { dispatch: dispatcher },
+      composer: { compose: composer },
+    }));
+
+    // A failure composes an ordinary reply (D11), so the turn never asks. Reporting
+    // awaited fields here would claim the turn requested values it never mentioned.
+    expect(dispatcher).not.toHaveBeenCalled();
+    expect(result.response.answer).toBe("ordinary reply");
+    expect(result.awaitingSkillInput).toBeUndefined();
+  });
+
   it("asks once for every outstanding field and includes declared choices", async () => {
     const input = createInput({
       skills: [{ name: "book", inputSchema: { fields: [

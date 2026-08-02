@@ -58,7 +58,9 @@ const normalize = (field: SkillInputField, value: unknown): Normalized => {
 };
 
 const boundedHistory = (history: ConversationMessage[], messageLimit: number, characterLimit: number): ConversationMessage[] => {
-  const limited = history.slice(-Math.max(0, messageLimit));
+  // `slice(-0)` is `slice(0)` and returns the WHOLE array, so a host setting the limit to
+  // 0 to disable history would have got all of it sent to the extraction model instead.
+  const limited = messageLimit <= 0 ? [] : history.slice(-messageLimit);
   let remaining = Math.max(0, characterLimit);
   const reversed: ConversationMessage[] = [];
   for (let index = limited.length - 1; index >= 0 && remaining > 0; index -= 1) {

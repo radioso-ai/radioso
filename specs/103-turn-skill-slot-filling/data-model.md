@@ -60,4 +60,3 @@ stored or resumed by the engine.
 
 Undeclared model keys are discarded. Invalid values are never passed to a
 handler and are observable only structurally.
-

@@ -43,6 +43,11 @@ export type ContentPlanStoredProjectionState =
   | "reprojecting"
   | "degraded"
   | "budget_paused";
+export type ContentPlanProjectionReason =
+  | "daily_budget_exhausted"
+  | "projection_work_pending"
+  | "projection_backlog_delayed"
+  | "projection_terminal_failure";
 export type ContentPlanStoredRecommendationAction =
   | "add_content"
   | "review_existing_content"
@@ -146,6 +151,7 @@ export interface ContentPlanFinalizePendingContextInput {
     "substantive_new" | "substantive_followup" | "clarification_value"
   >;
   vectorWork: ContentPlanVectorWorkInput;
+  resolvedAt: Date;
 }
 
 export interface ContentPlanObservationSourceRecord {
@@ -169,6 +175,7 @@ export interface ContentPlanObservationIntakePort {
     workspaceId: string;
     conversationId: string;
     sourceUserMessageId?: string;
+    asOf: Date;
   }): Promise<ContentPlanObservationRecord | null>;
   finalizePendingContext(
     input: ContentPlanFinalizePendingContextInput,
@@ -219,6 +226,11 @@ export interface ContentPlanObservationSourcePort {
 }
 
 export interface ContentPlanObservationRetentionPort {
+  expirePendingContexts(input: {
+    workspaceId: string;
+    now: Date;
+    limit: number;
+  }): Promise<number>;
   pruneExpiredObservations(input: {
     workspaceId: string;
     observedBefore: Date;
@@ -248,7 +260,7 @@ export interface ContentPlanProjectionStateRecord {
   coherentGenerationId: string | null;
   targetGenerationId: string | null;
   projectionState: ContentPlanStoredProjectionState;
-  reason: string | null;
+  reason: ContentPlanProjectionReason | null;
   discoveryCreatedAt: Date | null;
   discoveryMessageId: string | null;
   processedThrough: Date | null;
@@ -368,13 +380,25 @@ export interface ContentPlanProjectionRepositoryPort {
     coherentGenerationId: string | null;
     targetGenerationId: string | null;
     projectionState: ContentPlanStoredProjectionState;
-    reason: string | null;
+    reason: ContentPlanProjectionReason | null;
     processedThrough: Date | null;
     bootstrapProcessed: string | null;
     bootstrapTotal: string | null;
     budgetVersion: number;
     budgetWindowStartedAt: Date;
   }): Promise<ContentPlanProjectionStateRecord>;
+  markProjectionWorkPending(input: {
+    workspaceId: string;
+    generationId: string;
+    observedAt: Date;
+  }): Promise<boolean>;
+  refreshProjectionFreshness(input: {
+    workspaceId: string;
+    generationId: string;
+    now: Date;
+    delayedAfterMs: number;
+    scanLimit: number;
+  }): Promise<ContentPlanProjectionStateRecord | null>;
   findProjectionState(workspaceId: string): Promise<ContentPlanProjectionStateRecord | null>;
   resolveWritableGeneration(input: {
     workspaceId: string;
@@ -421,6 +445,15 @@ export interface ContentPlanProjectionRepositoryPort {
     coherentAt: Date;
     processedThrough: Date;
   }): Promise<ContentPlanProjectionStateRecord | null>;
+  pruneExpiredGenerations(input: {
+    workspaceId: string;
+    failedBefore: Date;
+    supersededBefore: Date;
+    limit: number;
+  }): Promise<{
+    failedCount: number;
+    supersededCount: number;
+  }>;
 }
 
 export interface ContentPlanTopicRecord {
@@ -429,7 +462,7 @@ export interface ContentPlanTopicRecord {
   id: string;
   embeddingSpaceId: string;
   lifecycle: ContentPlanTopicLifecycle;
-  centroid: number[];
+  centroid: number[] | null;
   dimensions: number;
   centroidWeight: number;
   representativeObservationIds: string[];
@@ -466,7 +499,7 @@ export interface ContentPlanNewTopicInput {
 
 export interface ContentPlanTopicAggregateUpdate {
   lifecycle: "provisional" | "mature" | "retired";
-  centroid: readonly number[];
+  centroid: readonly number[] | null;
   dimensions: number;
   centroidWeight: number;
   representativeObservationIds: readonly string[];
@@ -480,7 +513,8 @@ export interface ContentPlanAffectedTopic {
   topicId: string;
 }
 
-export interface ContentPlanNearestTopic extends ContentPlanTopicRecord {
+export interface ContentPlanNearestTopic extends Omit<ContentPlanTopicRecord, "centroid"> {
+  centroid: number[];
   cosineSimilarity: number;
 }
 

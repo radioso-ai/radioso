@@ -128,9 +128,16 @@ const createHarness = (claims: readonly ContentPlanObservationVectorRecord[]) =>
     })),
   };
   const retention = {
+    expirePendingContexts: vi.fn().mockResolvedValue(0),
     pruneExpiredObservations: vi.fn().mockResolvedValue({
       deletedCount: 0,
       affectedTopics: [],
+    }),
+  };
+  const generationRetention = {
+    pruneExpiredGenerations: vi.fn().mockResolvedValue({
+      failedCount: 0,
+      supersededCount: 0,
     }),
   };
   const observer = { record: vi.fn() };
@@ -141,6 +148,7 @@ const createHarness = (claims: readonly ContentPlanObservationVectorRecord[]) =>
     embeddings,
     topics,
     retention,
+    generationRetention,
     observability: observer,
     clock: () => currentTime,
     createTopicId: () => "topic-created",
@@ -153,6 +161,7 @@ const createHarness = (claims: readonly ContentPlanObservationVectorRecord[]) =>
     embeddings,
     topics,
     retention,
+    generationRetention,
     observer,
     setNow: (value: Date) => {
       currentTime = value;
@@ -486,6 +495,7 @@ describe("ContentPlanningWorker", () => {
       embeddings: harness.embeddings,
       topics: harness.topics,
       retention: harness.retention,
+      generationRetention: harness.generationRetention,
       budget,
       observability: harness.observer,
       clock: () => NOW,
@@ -511,6 +521,7 @@ describe("ContentPlanningWorker", () => {
 
   it("prunes exactly the 60-day boundary in bounded batches and reconciles affected topics", async () => {
     const harness = createHarness([]);
+    harness.retention.expirePendingContexts.mockResolvedValueOnce(3);
     harness.retention.pruneExpiredObservations.mockResolvedValueOnce({
       deletedCount: 2,
       affectedTopics: [
@@ -543,9 +554,18 @@ describe("ContentPlanningWorker", () => {
       redirectedFromTopicId: null,
       hops: 0,
     }));
+    harness.generationRetention.pruneExpiredGenerations.mockResolvedValueOnce({
+      failedCount: 1,
+      supersededCount: 2,
+    });
 
     const result = await harness.worker.runRetentionOnce({ workspaceId: "workspace-1" });
 
+    expect(harness.retention.expirePendingContexts).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      now: NOW,
+      limit: CONTENT_PLAN_WORKER_POLICY_V1.retentionBatchSize,
+    });
     expect(harness.retention.pruneExpiredObservations).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       observedBefore: new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1_000),
@@ -558,6 +578,12 @@ describe("ContentPlanningWorker", () => {
     expect(harness.topics.pruneExpiredRedirects).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       now: NOW,
+      limit: CONTENT_PLAN_WORKER_POLICY_V1.retentionBatchSize,
+    });
+    expect(harness.generationRetention.pruneExpiredGenerations).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      failedBefore: new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1_000),
+      supersededBefore: new Date(NOW.getTime() - 90 * 24 * 60 * 60 * 1_000),
       limit: CONTENT_PLAN_WORKER_POLICY_V1.retentionBatchSize,
     });
     expect(harness.topics.loadReconciliationEvidence).toHaveBeenCalledWith({
@@ -584,9 +610,18 @@ describe("ContentPlanningWorker", () => {
       }),
     }));
     expect(result).toMatchObject({
+      expiredPendingContextCount: 3,
       deletedCount: 2,
       reconciledTopicCount: 2,
       retiredTopicCount: 1,
+      prunedFailedGenerationCount: 1,
+      prunedSupersededGenerationCount: 2,
+    });
+    expect(harness.observer.record).toHaveBeenCalledWith({
+      stage: "generation_retention",
+      outcome: "completed",
+      workspaceId: "workspace-1",
+      itemCount: 3,
     });
   });
 });
@@ -611,6 +646,7 @@ describe("ContentPlanningWorkerObservability", () => {
       embeddings: harness.embeddings,
       topics: harness.topics,
       retention: harness.retention,
+      generationRetention: harness.generationRetention,
       observability,
       clock: () => NOW,
       createTopicId: () => "topic-created",

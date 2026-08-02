@@ -618,9 +618,9 @@ const seedFixture = async (database: Database): Promise<Fixture> => {
        ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 4, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T10:00:00Z', '2026-08-02T10:00:00Z'),
        ($1, $2, $5, $4, 'mature', '[0,1,0]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T09:00:00Z', '2026-08-02T09:00:00Z'),
        ($1, $2, $6, $4, 'provisional', '[0,0,1]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T08:00:00Z', '2026-08-02T08:00:00Z'),
-       ($1, $2, $7, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-12-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
-       ($1, $2, $8, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-08-01T00:00:00Z', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'),
-       ($1, $2, $9, $4, 'retired', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, NULL, NULL, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
+       ($1, $2, $7, $4, 'merged', NULL, 3, 0, '{}'::uuid[], 1, $3, '2026-12-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+       ($1, $2, $8, $4, 'merged', NULL, 3, 0, '{}'::uuid[], 1, $3, '2026-08-01T00:00:00Z', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'),
+       ($1, $2, $9, $4, 'retired', NULL, 3, 0, '{}'::uuid[], 1, NULL, NULL, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
     [workspaceId, generationId, opportunityTopicId, spaceId, healthyTopicId, provisionalTopicId, mergedTopicId, expiredMergedTopicId, retiredTopicId],
   );
 

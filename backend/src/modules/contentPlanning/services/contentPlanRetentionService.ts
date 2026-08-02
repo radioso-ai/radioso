@@ -1,6 +1,7 @@
 import type {
   ContentPlanAffectedTopic,
   ContentPlanObservationRetentionPort,
+  ContentPlanProjectionRepositoryPort,
   ContentPlanTopicRepositoryPort,
 } from "../contracts/persistence.js";
 import type { ContentPlanReconciliationResult } from "./contentPlanReconciliationService.js";
@@ -9,15 +10,19 @@ import type { ContentPlanWorkerEventSink } from "./contentPlanWorkerObservabilit
 import type { ContentPlanWorkerOptions } from "./contentPlanWorkerPolicy.js";
 
 export interface ContentPlanRetentionResult extends ContentPlanReconciliationResult {
+  expiredPendingContextCount: number;
   deletedCount: number;
   scannedTopicCount: number;
   prunedRedirectCount: number;
+  prunedFailedGenerationCount: number;
+  prunedSupersededGenerationCount: number;
   retentionFailureCount: number;
 }
 
 export class ContentPlanRetentionService {
   constructor(private readonly dependencies: {
     retention: ContentPlanObservationRetentionPort;
+    generationRetention: Pick<ContentPlanProjectionRepositoryPort, "pruneExpiredGenerations">;
     topics: Pick<
       ContentPlanTopicRepositoryPort,
       "findTopicsNeedingReconciliation" | "pruneExpiredRedirects"
@@ -25,7 +30,13 @@ export class ContentPlanRetentionService {
     reconciliation: ContentPlanReconciliationService;
     observability: ContentPlanWorkerEventSink;
     clock: () => Date;
-    options: Pick<ContentPlanWorkerOptions, "retentionBatchSize" | "retentionDays">;
+    options: Pick<
+      ContentPlanWorkerOptions,
+      | "retentionBatchSize"
+      | "retentionDays"
+      | "failedGenerationRetentionDays"
+      | "supersededGenerationRetentionDays"
+    >;
   }) {}
 
   async runOnce(input: { workspaceId: string }): Promise<ContentPlanRetentionResult> {
@@ -34,8 +45,24 @@ export class ContentPlanRetentionService {
       now.getTime() - this.dependencies.options.retentionDays * 24 * 60 * 60 * 1_000,
     );
     let deletedCount = 0;
+    let expiredPendingContextCount = 0;
     let retentionFailureCount = 0;
     let affectedTopics: ContentPlanAffectedTopic[] = [];
+    try {
+      expiredPendingContextCount = await this.dependencies.retention.expirePendingContexts({
+        workspaceId: input.workspaceId,
+        now,
+        limit: this.dependencies.options.retentionBatchSize,
+      });
+    } catch {
+      retentionFailureCount += 1;
+      this.dependencies.observability.record({
+        stage: "retention",
+        outcome: "retry_scheduled",
+        reason: "retention_repository_failed",
+        workspaceId: input.workspaceId,
+      });
+    }
     try {
       const pruned = await this.dependencies.retention.pruneExpiredObservations({
         workspaceId: input.workspaceId,
@@ -91,17 +118,52 @@ export class ContentPlanRetentionService {
       ...affectedTopics,
       ...scannedTopics,
     ]);
+    let prunedFailedGenerationCount = 0;
+    let prunedSupersededGenerationCount = 0;
+    try {
+      const pruned = await this.dependencies.generationRetention.pruneExpiredGenerations({
+        workspaceId: input.workspaceId,
+        failedBefore: new Date(
+          now.getTime()
+            - this.dependencies.options.failedGenerationRetentionDays * 24 * 60 * 60 * 1_000,
+        ),
+        supersededBefore: new Date(
+          now.getTime()
+            - this.dependencies.options.supersededGenerationRetentionDays * 24 * 60 * 60 * 1_000,
+        ),
+        limit: this.dependencies.options.retentionBatchSize,
+      });
+      prunedFailedGenerationCount = pruned.failedCount;
+      prunedSupersededGenerationCount = pruned.supersededCount;
+      this.dependencies.observability.record({
+        stage: "generation_retention",
+        outcome: "completed",
+        workspaceId: input.workspaceId,
+        itemCount: pruned.failedCount + pruned.supersededCount,
+      });
+    } catch {
+      retentionFailureCount += 1;
+      this.dependencies.observability.record({
+        stage: "generation_retention",
+        outcome: "retry_scheduled",
+        reason: "generation_retention_repository_failed",
+        workspaceId: input.workspaceId,
+      });
+    }
     this.dependencies.observability.record({
       stage: "retention",
       outcome: retentionFailureCount > 0 ? "retry_scheduled" : "completed",
       ...(retentionFailureCount > 0 ? { reason: "retention_repository_failed" as const } : {}),
       workspaceId: input.workspaceId,
-      itemCount: deletedCount,
+      itemCount: deletedCount + expiredPendingContextCount,
     });
     return {
+      expiredPendingContextCount,
       deletedCount,
       scannedTopicCount: scannedTopics.length,
       prunedRedirectCount,
+      prunedFailedGenerationCount,
+      prunedSupersededGenerationCount,
       retentionFailureCount,
       ...reconciliation,
     };

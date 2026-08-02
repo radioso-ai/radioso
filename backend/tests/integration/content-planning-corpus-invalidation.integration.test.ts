@@ -188,51 +188,6 @@ describeIfDatabase("content-planning corpus invalidation queue", () => {
       const result = await queue.drainWorkspace({ workspaceId, limit: 2 });
       if (!result.pending) break;
     }
-    const beforeTargetedDeletion = await topicRevisions(database, workspaceId, generationId);
-    const documentId = randomUUID();
-    await database.execute(
-      `INSERT INTO documents (
-         id, workspace_id, title, source_content, markdown_content, status, revision, metadata
-       ) VALUES ($1, $2, 'Deleted corpus source', 'source', 'markdown', 'ready', 1, '{}')`,
-      [documentId, workspaceId],
-    );
-    await database.execute(
-      `INSERT INTO content_plan_topic_documents (
-         workspace_id, generation_id, topic_id, document_id, source_topic_revision,
-         similarity, existed_before_gap, retrieved_by_gap_answers,
-         cited_by_gap_answers, changed_after_gap
-       ) VALUES ($1, $2, $3, $4, 1, 0.9, TRUE, FALSE, FALSE, FALSE)`,
-      [workspaceId, generationId, monitorTopicId, documentId],
-    );
-
-    await expect(queue.invalidateDeletedDocument({
-      workspaceId,
-      documentId,
-      dirtyAt: new Date("2026-08-02T12:00:03.000Z"),
-    })).resolves.toBe(1);
-    const targeted = await database.query<{
-      revision: number;
-      state: string;
-      corpus_state: string;
-    }>(
-      `SELECT topic.revision, enrichment.state, enrichment.corpus_state
-       FROM content_plan_topics topic
-       JOIN content_plan_topic_enrichments enrichment
-         ON enrichment.workspace_id = topic.workspace_id
-        AND enrichment.generation_id = topic.generation_id
-        AND enrichment.topic_id = topic.id
-       WHERE topic.workspace_id = $1 AND topic.generation_id = $2 AND topic.id = $3`,
-      [workspaceId, generationId, monitorTopicId],
-    );
-    expect(targeted[0]).toEqual({ revision: 2, state: "stale", corpus_state: "stale" });
-    const afterTargetedDeletion = await topicRevisions(database, workspaceId, generationId);
-    expect(credibleTopicIds.every((topicId) =>
-      afterTargetedDeletion.get(topicId) === beforeTargetedDeletion.get(topicId))).toBe(true);
-    await expect(database.query(
-      `SELECT document_id FROM content_plan_topic_documents
-       WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
-      [workspaceId, generationId, monitorTopicId],
-    )).resolves.toEqual([]);
   });
 });
 

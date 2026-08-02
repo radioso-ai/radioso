@@ -370,7 +370,14 @@ export class ContentPlanEnrichmentRepository implements ContentPlanEnrichmentRep
       let query = trx
         .selectFrom("content_plan_topic_enrichments")
         .select(enrichmentColumns)
-        .where("state", "in", ["pending", "stale"])
+        .where((eb) => eb.or([
+          eb("state", "=", "pending"),
+          eb.and([
+            eb("state", "=", "stale"),
+            eb("failure_stage", "is", null),
+            eb("failure_reason", "is", null),
+          ]),
+        ]))
         .where("available_at", "<=", input.now)
         .where((eb) => eb.or([
           eb("claim_token", "is", null),

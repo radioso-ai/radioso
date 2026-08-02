@@ -11,11 +11,6 @@ export interface ContentPlanCorpusInvalidationDrainResult {
 
 export interface ContentPlanCorpusInvalidationRepositoryPort {
   markWorkspaceDirty(input: { workspaceId: string; dirtyAt: Date }): Promise<void>;
-  invalidateDeletedDocument(input: {
-    workspaceId: string;
-    documentId: string;
-    dirtyAt: Date;
-  }): Promise<number>;
   drainWorkspace(input: {
     workspaceId: string;
     limit: number;

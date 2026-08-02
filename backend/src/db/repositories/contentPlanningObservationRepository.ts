@@ -389,13 +389,18 @@ implements ContentPlanObservationIntakePort,
     workspaceId: string;
     conversationId: string;
     sourceUserMessageId?: string;
+    asOf: Date;
   }): Promise<ContentPlanObservationRecord | null> {
+    if (!Number.isFinite(input.asOf.getTime())) {
+      throw new Error("Content planning pending-context lookup time must be valid");
+    }
     let query = this.db
       .selectFrom("content_plan_observations")
       .select(observationColumns)
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)
-      .where("observation_state", "=", "pending_context");
+      .where("observation_state", "=", "pending_context")
+      .where("resolution_deadline", ">", input.asOf);
     if (input.sourceUserMessageId) {
       query = query.where("source_user_message_id", "=", input.sourceUserMessageId);
     }
@@ -407,6 +412,9 @@ implements ContentPlanObservationIntakePort,
     input: ContentPlanFinalizePendingContextInput,
     dbOverride?: Db,
   ): Promise<ContentPlanObservationRecord | null> {
+    if (!Number.isFinite(input.resolvedAt.getTime())) {
+      throw new Error("Content planning pending-context resolution time must be valid");
+    }
     const run = async (db: Db): Promise<ContentPlanObservationRecord | null> => {
       const assistantMessage = await db
         .selectFrom("messages")
@@ -445,6 +453,7 @@ implements ContentPlanObservationIntakePort,
         .where("workspace_id", "=", input.workspaceId)
         .where("id", "=", input.observationId)
         .where("observation_state", "=", "pending_context")
+        .where("resolution_deadline", ">", input.resolvedAt)
         .returning(observationColumns)
         .executeTakeFirst();
       if (!row) return null;
@@ -695,6 +704,50 @@ implements ContentPlanObservationIntakePort,
         observedAt: new Date(row.observed_at),
         grounding,
       }];
+    });
+  }
+
+  async expirePendingContexts(input: {
+    workspaceId: string;
+    now: Date;
+    limit: number;
+  }): Promise<number> {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_CONTENT_PLAN_CLAIM_BATCH) {
+      throw new Error(`Content planning pending-context expiry limit must be between 1 and ${MAX_CONTENT_PLAN_CLAIM_BATCH}`);
+    }
+    if (!Number.isFinite(input.now.getTime())) {
+      throw new Error("Content planning pending-context expiry time must be valid");
+    }
+    return this.db.transaction().execute(async (trx) => {
+      const selected = await trx
+        .selectFrom("content_plan_observations")
+        .select("id")
+        .where("workspace_id", "=", input.workspaceId)
+        .where("observation_state", "=", "pending_context")
+        .where("resolution_deadline", "<=", input.now)
+        .orderBy("resolution_deadline", "asc")
+        .orderBy("id", "asc")
+        .forUpdate()
+        .skipLocked()
+        .limit(input.limit)
+        .execute();
+      const ids = selected.map((row) => row.id);
+      if (ids.length === 0) return 0;
+      const expired = await trx
+        .updateTable("content_plan_observations")
+        .set({
+          observation_state: "excluded",
+          excluded_reason: "context_resolution_expired",
+          resolution_deadline: null,
+          updated_at: input.now,
+        })
+        .where("workspace_id", "=", input.workspaceId)
+        .where("id", "in", ids)
+        .where("observation_state", "=", "pending_context")
+        .where("resolution_deadline", "<=", input.now)
+        .returning("id")
+        .execute();
+      return expired.length;
     });
   }
 

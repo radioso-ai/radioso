@@ -8,7 +8,7 @@ export class ContentPlanningDocumentCorpusObserver implements DocumentCorpusChan
   constructor(
     private readonly invalidations: Pick<
       ContentPlanCorpusInvalidationRepositoryPort,
-      "markWorkspaceDirty" | "invalidateDeletedDocument"
+      "markWorkspaceDirty"
     >,
     clock?: () => Date,
   ) {
@@ -21,14 +21,6 @@ export class ContentPlanningDocumentCorpusObserver implements DocumentCorpusChan
     change: "published" | "deleted";
   }): Promise<void> {
     const dirtyAt = this.clock();
-    if (input.change === "deleted" && input.documentId) {
-      await this.invalidations.invalidateDeletedDocument({
-        workspaceId: input.workspaceId,
-        documentId: input.documentId,
-        dirtyAt,
-      });
-      return;
-    }
     await this.invalidations.markWorkspaceDirty({ workspaceId: input.workspaceId, dirtyAt });
   }
 }

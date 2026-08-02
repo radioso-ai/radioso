@@ -5,6 +5,7 @@ import type {
   ContentPlanObservationRetentionPort,
   ContentPlanObservationVectorRecord,
   ContentPlanObservationWorkPort,
+  ContentPlanProjectionRepositoryPort,
   ContentPlanTopicRepositoryPort,
 } from "./contracts/persistence.js";
 import {
@@ -70,6 +71,7 @@ export interface ContentPlanningWorkerDependencies {
   embeddings: ContentPlanProjectionEmbeddingPort;
   topics: ContentPlanWorkerTopicPort;
   retention: ContentPlanObservationRetentionPort;
+  generationRetention: Pick<ContentPlanProjectionRepositoryPort, "pruneExpiredGenerations">;
   budget?: ContentPlanFallbackEmbeddingBudgetPort;
   observability?: ContentPlanWorkerEventSink;
   clock?: () => Date;
@@ -161,6 +163,7 @@ export class ContentPlanningWorker {
     });
     this.retention = new ContentPlanRetentionService({
       retention: dependencies.retention,
+      generationRetention: dependencies.generationRetention,
       topics: dependencies.topics,
       reconciliation: this.reconciliation,
       observability: this.observability,

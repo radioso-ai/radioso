@@ -1,8 +1,12 @@
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ensureNoPendingMigrations, runMigrations } from "../../src/db/runMigrations.js";
+import {
+  ensureNoPendingMigrations,
+  parseMigrationScript,
+  runMigrations,
+} from "../../src/db/runMigrations.js";
 import type { AppLogger } from "../../src/shared/observability/logger.js";
 
 type QueryCall = {
@@ -135,8 +139,42 @@ describe("runMigrations", () => {
     const poolSql = database?.poolQueries.map((query) => query.sql).join("\n") ?? "";
     expect(database?.poolQueries[0]?.sql).toContain("to_regclass('public.schema_migrations')");
     expect(poolSql).toMatch(/CREATE TABLE IF NOT EXISTS\s+public\.schema_migrations/i);
-    expect(database?.withTransaction).toHaveBeenCalledTimes((await listMigrationFiles()).length);
+    const migrationFiles = await listMigrationFiles();
+    const transactionalCount = (await Promise.all(migrationFiles.map(async (file) =>
+      parseMigrationScript(await readFile(new URL(`../../src/db/migrations/${file}`, import.meta.url), "utf8")))))
+      .filter((script) => script.transactional).length;
+    expect(database?.withTransaction).toHaveBeenCalledTimes(transactionalCount);
     expect(database?.transactionQueries.some((query) => query.sql.includes("INSERT INTO public.schema_migrations"))).toBe(true);
+    expect(database?.poolQueries.some((query) =>
+      query.sql.includes("CREATE UNIQUE INDEX CONCURRENTLY"),
+    )).toBe(true);
+  });
+
+  it("runs explicitly non-transactional migration statements in autocommit mode with bounded pool timeouts", async () => {
+    const migrationFiles = await listMigrationFiles();
+    const scripts = await Promise.all(migrationFiles.map(async (file) => ({
+      file,
+      script: parseMigrationScript(
+        await readFile(new URL(`../../src/db/migrations/${file}`, import.meta.url), "utf8"),
+      ),
+    })));
+    const nonTransactional = scripts.find(({ script }) => !script.transactional);
+    expect(nonTransactional).toBeDefined();
+    if (!nonTransactional) return;
+    databaseState.appliedFilenames = migrationFiles.filter((file) => file !== nonTransactional.file);
+
+    await runMigrations("postgres://user:secret@localhost:5432/radioso", createLogger());
+
+    const database = databaseState.instances[0]!;
+    expect(database.withTransaction).not.toHaveBeenCalled();
+    expect(database.poolQueries.map(({ sql }) => sql)).toEqual(expect.arrayContaining([
+      expect.stringContaining("DROP INDEX CONCURRENTLY IF EXISTS"),
+      expect.stringContaining("CREATE UNIQUE INDEX CONCURRENTLY"),
+      "INSERT INTO public.schema_migrations (filename) VALUES ($1)",
+    ]));
+    expect(database.poolQueries.find(({ sql }) =>
+      sql === "INSERT INTO public.schema_migrations (filename) VALUES ($1)"),
+    ).toMatchObject({ params: [nonTransactional.file] });
   });
 
   it("disables metadata timeouts locally before executing pending migration SQL", async () => {
@@ -200,5 +238,28 @@ describe("runMigrations", () => {
     expect(databaseState.instances[0]?.poolQueries.some((query) =>
       query.sql.includes("SELECT filename FROM public.schema_migrations"),
     )).toBe(true);
+  });
+});
+
+describe("parseMigrationScript", () => {
+  it("keeps ordinary migration bodies transactional", () => {
+    expect(parseMigrationScript("CREATE TABLE example (id UUID PRIMARY KEY);\n")).toEqual({
+      transactional: true,
+      statements: ["CREATE TABLE example (id UUID PRIMARY KEY);"],
+    });
+  });
+
+  it("splits explicitly non-transactional migrations into restart-safe autocommit statements", () => {
+    expect(parseMigrationScript(`-- radioso:migration-transaction: off
+DROP INDEX CONCURRENTLY IF EXISTS idx_example;
+-- radioso:migration-statement-break
+CREATE UNIQUE INDEX CONCURRENTLY idx_example ON example (workspace_id, id);
+`)).toEqual({
+      transactional: false,
+      statements: [
+        "-- radioso:migration-transaction: off\nDROP INDEX CONCURRENTLY IF EXISTS idx_example;",
+        "CREATE UNIQUE INDEX CONCURRENTLY idx_example ON example (workspace_id, id);",
+      ],
+    });
   });
 });

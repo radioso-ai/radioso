@@ -27,6 +27,7 @@ import { ContentPlanProjectionRepository } from "../../db/repositories/contentPl
 import { ContentPlanTopicRepository } from "../../db/repositories/contentPlanningTopicRepository.js";
 import { ContentPlanEnrichmentRepository } from "../../db/repositories/contentPlanningEnrichmentRepository.js";
 import { ContentPlanEnrichmentTriggerRepository } from "../../db/repositories/contentPlanningEnrichmentTriggerRepository.js";
+import { ContentPlanCorpusInvalidationRepository } from "../../db/repositories/contentPlanningCorpusInvalidationRepository.js";
 import { ContentPlanningCorpusSearchRepository } from "../../db/repositories/contentPlanningCorpusSearchRepository.js";
 import { DocumentProcessingJobRepository } from "../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../db/repositories/embeddingProfileJobRepository.js";
@@ -267,6 +268,7 @@ import { ContentPlanProjectionBudgetService } from "../../modules/contentPlannin
 import { ContentPlanProjectionOrchestrator } from "../../modules/contentPlanning/services/projectionOrchestrator.js";
 import { ContentPlanningWorkerRuntime } from "../../modules/contentPlanning/services/contentPlanningWorkerRuntime.js";
 import { ContentPlanningWorkerObservability } from "../../modules/contentPlanning/services/contentPlanWorkerObservability.js";
+import { ContentPlanCorpusInvalidationFanout } from "../../modules/contentPlanning/services/corpusInvalidation.js";
 import { ContinuousContentPlanningProcessor } from "../../modules/contentPlanning/services/continuousContentPlanningProcessor.js";
 import {
   ContentPlanReportEnrichmentPlanningSource,
@@ -281,7 +283,7 @@ import {
   ContentPlanningEnrichmentService,
   ModelContentPlanningEnrichmentGateway,
 } from "../../modules/contentPlanning/services/topicEnrichmentService.js";
-import { PostgresContentPlanReadSource } from "../../modules/contentPlanning/infra/contentPlanReadSource.js";
+import { PostgresContentPlanEnrichmentPlanningDataSource } from "../../modules/contentPlanning/infra/postgresEnrichmentPlanningDataSource.js";
 import { PostgresContentPlanEnrichmentContextSource } from "../../modules/contentPlanning/infra/postgresEnrichmentContextSource.js";
 import { PostgresContentPlanningOperationalMetricsSource } from "../../modules/contentPlanning/infra/postgresOperationalMetricsSource.js";
 import { ContentPlanningOperationalMetricsReporter } from "../../modules/contentPlanning/services/operationalMetricsReporter.js";
@@ -458,6 +460,7 @@ export const buildRepositories = (
   contentPlanTopicRepository: new ContentPlanTopicRepository(database.kysely),
   contentPlanEnrichmentRepository: new ContentPlanEnrichmentRepository(database.kysely),
   contentPlanEnrichmentTriggerRepository: new ContentPlanEnrichmentTriggerRepository(database.kysely),
+  contentPlanCorpusInvalidationRepository: new ContentPlanCorpusInvalidationRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
@@ -511,6 +514,7 @@ export const buildContentPlanningWorkerRuntime = (input: {
     | "contentPlanTopicRepository"
     | "contentPlanEnrichmentRepository"
     | "contentPlanEnrichmentTriggerRepository"
+    | "contentPlanCorpusInvalidationRepository"
   >;
   embeddingGateway: EmbeddingGenerationGateway;
   embeddingBindings: EmbeddingBindingResolverPort;
@@ -576,7 +580,7 @@ export const buildContentPlanningWorkerRuntime = (input: {
   const enrichmentRepository = input.repositories.contentPlanEnrichmentRepository;
   const planning = new ContentPlanningEnrichmentPlanningService({
     source: new ContentPlanReportEnrichmentPlanningSource({
-      source: new PostgresContentPlanReadSource(input.database.kysely),
+      source: new PostgresContentPlanEnrichmentPlanningDataSource(input.database.kysely),
       qualityEvidence,
     }),
     scheduler: new ContentPlanningEnrichmentScheduler(
@@ -620,7 +624,6 @@ export const buildContentPlanningWorkerRuntime = (input: {
   });
   const orchestrator = new ContentPlanProjectionOrchestrator({
     projections: input.repositories.contentPlanProjectionRepository,
-    population: qualityEvidence,
     discovery: new PostgresContentPlanProjectionDiscovery(input.database.kysely),
     historicalTurns: new ContentPlanHistoricalTurnProjectionService(
       historicalTurns,
@@ -635,6 +638,10 @@ export const buildContentPlanningWorkerRuntime = (input: {
     candidates: new PostgresContentPlanProjectionCandidateSource(input.database.kysely),
     orchestrator,
     processor,
+    corpusInvalidations: new ContentPlanCorpusInvalidationFanout(
+      input.repositories.contentPlanCorpusInvalidationRepository,
+      observability,
+    ),
     logger: input.logger,
   });
 };

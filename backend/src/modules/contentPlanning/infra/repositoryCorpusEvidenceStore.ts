@@ -7,10 +7,7 @@ import {
 
 export class RepositoryContentPlanningCorpusEvidenceStore
 implements ContentPlanningCorpusEvidenceStorePort {
-  constructor(
-    private readonly repository: ContentPlanEnrichmentRepositoryPort,
-    private readonly now: () => Date = () => new Date(),
-  ) {}
+  constructor(private readonly repository: ContentPlanEnrichmentRepositoryPort) {}
 
   async replaceTopicDocuments(input: {
     workspaceId: string;
@@ -38,12 +35,4 @@ implements ContentPlanningCorpusEvidenceStorePort {
     }
   }
 
-  async invalidateDocument(workspaceId: string, documentId: string): Promise<number> {
-    const topicIds = await this.repository.invalidateDocumentEvidence({
-      workspaceId,
-      documentId,
-      dirtyAt: this.now(),
-    });
-    return topicIds.length;
-  }
 }

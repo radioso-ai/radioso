@@ -518,7 +518,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceIngestionReprocessService,
     embeddingCoverage,
     corpusChanges: new ContentPlanningDocumentCorpusObserver(
-      repositories.contentPlanEnrichmentTriggerRepository,
+      repositories.contentPlanCorpusInvalidationRepository,
     ),
     errorReporter: infrastructure.errorReportingService,
     embeddingProfileTerminalFailures: embeddingProfileJobFailures,

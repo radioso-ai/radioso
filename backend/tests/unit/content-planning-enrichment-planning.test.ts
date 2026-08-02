@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EvalQualityVerificationSource } from "../../src/app/composition/adapters/evalQualityVerificationSource.js";
-import type { ContentPlanReadSourcePort } from "../../src/modules/contentPlanning/infra/contentPlanReadSource.js";
+import type {
+  ContentPlanReadSourcePort,
+  ContentPlanReadTopic,
+} from "../../src/modules/contentPlanning/infra/contentPlanReadSource.js";
 import {
   ContentPlanReportEnrichmentPlanningSource,
   ContentPlanningEnrichmentPlanningService,
@@ -15,7 +18,7 @@ import {
 
 describe("Content Planning enrichment planning", () => {
   it("skips the report and Quality scan when no durable topic is dirty", async () => {
-    const source = { load: vi.fn() };
+    const source = { load: vi.fn(), completeRepairPage: vi.fn() };
     const trigger = {
       listDirtyTopics: vi.fn(async () => []),
       acknowledgeDirtyTopics: vi.fn(),
@@ -23,7 +26,10 @@ describe("Content Planning enrichment planning", () => {
     const record = vi.fn();
     const runner = new ContentPlanningEnrichmentPlanningService({
       source,
-      scheduler: new ContentPlanningEnrichmentScheduler({ queue: vi.fn() }),
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue: vi.fn(),
+        rebasePublished: vi.fn(),
+      }),
       trigger,
       observability: { record },
       clock: () => new Date("2026-08-02T12:00:00.000Z"),
@@ -46,7 +52,10 @@ describe("Content Planning enrichment planning", () => {
   it("acknowledges exact durable dirty markers only after scheduling succeeds", async () => {
     const dirtyAt = new Date("2026-08-02T11:59:00.000Z");
     const markers = [{ topicId: "topic_1", revision: 4, dirtyAt }];
-    const source = { load: vi.fn(async () => []) };
+    const source = {
+      load: vi.fn(async () => ({ topics: [], repairCheckpoint: null })),
+      completeRepairPage: vi.fn(async () => true),
+    };
     const trigger = {
       listDirtyTopics: vi.fn(async () => markers),
       acknowledgeDirtyTopics: vi.fn(async () => 1),
@@ -54,7 +63,10 @@ describe("Content Planning enrichment planning", () => {
     const record = vi.fn();
     const runner = new ContentPlanningEnrichmentPlanningService({
       source,
-      scheduler: new ContentPlanningEnrichmentScheduler({ queue: vi.fn() }),
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue: vi.fn(),
+        rebasePublished: vi.fn(),
+      }),
       trigger,
       observability: { record },
       clock: () => new Date("2026-08-02T12:00:00.000Z"),
@@ -84,6 +96,130 @@ describe("Content Planning enrichment planning", () => {
     }));
   });
 
+  it("loads only the selected dirty batch on a hot run", async () => {
+    const dirtyAt = new Date("2026-08-02T11:59:00.000Z");
+    const markers = Array.from({ length: 100 }, (_, index) => ({
+      topicId: `topic_${String(index).padStart(3, "0")}`,
+      revision: 2,
+      dirtyAt,
+    }));
+    const source = {
+      load: vi.fn(async () => ({ topics: [], repairCheckpoint: null })),
+      completeRepairPage: vi.fn(async () => true),
+    };
+    const trigger = {
+      listDirtyTopics: vi.fn(async () => markers),
+      acknowledgeDirtyTopics: vi.fn(async () => markers.length),
+    };
+    const runner = new ContentPlanningEnrichmentPlanningService({
+      source,
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue: vi.fn(),
+        rebasePublished: vi.fn(),
+      }),
+      trigger,
+      clock: () => new Date("2026-08-02T12:00:00.000Z"),
+    });
+
+    await expect(runner.runOnce({ workspaceId: "workspace_1", generationId: "generation_1" }))
+      .resolves.toMatchObject({ dirtyTopicCount: 100, acknowledgedDirtyTopicCount: 100 });
+    expect(trigger.listDirtyTopics).toHaveBeenCalledWith(expect.objectContaining({ limit: 100 }));
+    expect(source.load).toHaveBeenCalledWith({
+      workspaceId: "workspace_1",
+      generationId: "generation_1",
+      asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: markers.map((marker) => marker.topicId),
+      repair: null,
+    });
+  });
+
+  it("streams exact topic evidence through bounded DB and Quality pages", async () => {
+    const observations = Array.from({ length: 501 }, (_, index) => ({
+      id: `observation_${index}`,
+      sourceUserMessageId: `user_${index}`,
+      sourceAssistantMessageId: `assistant_${index}`,
+      conversationId: `conversation_${index}`,
+      observedAt: "2026-07-20T10:00:00.000Z",
+      topicId: "topic_1",
+    }));
+    const pageObservations = vi.fn(async (input: { cursor: unknown; limit: number }) =>
+      input.cursor === null
+        ? {
+            items: observations.slice(0, 500),
+            nextCursor: {
+              observedAt: observations[499]!.observedAt,
+              observationId: observations[499]!.id,
+            },
+          }
+        : { items: observations.slice(500), nextCursor: null });
+    const getEvidenceByAssistantMessageIds = vi.fn(async (_workspaceId: string, ids: string[]) =>
+      new Map(ids.map((assistantMessageId) => {
+        const index = Number(assistantMessageId.slice("assistant_".length));
+        return [
+          assistantMessageId,
+          evidence(assistantMessageId, `conversation_${index}`, "no_support"),
+        ];
+      })));
+    const source = new ContentPlanReportEnrichmentPlanningSource({
+      source: {
+        loadData: vi.fn(async () => ({
+          topics: [readTopic()],
+          documents: [],
+          repairCheckpoint: null,
+        })),
+        pageObservations,
+        completeRepairPage: vi.fn(async () => true),
+      },
+      qualityEvidence: { getEvidenceByAssistantMessageIds },
+    });
+
+    const result = await source.load({
+      workspaceId: "workspace_1",
+      generationId: "generation_1",
+      asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: ["topic_1"],
+      repair: null,
+    });
+
+    expect(result.topics[0]?.current).toMatchObject({
+      memberCount: 501,
+      noSupportCount: 501,
+      credibleOpportunity: true,
+      groundingBand: "high",
+    });
+    expect(pageObservations).toHaveBeenCalledTimes(2);
+    expect(pageObservations.mock.calls.every(([input]) => input.limit === 500)).toBe(true);
+    expect(getEvidenceByAssistantMessageIds.mock.calls.map(([, ids]) => ids.length))
+      .toEqual([500, 1]);
+  });
+
+  it("does not query observations or Quality when the selected batch is empty", async () => {
+    const pageObservations = vi.fn();
+    const getEvidenceByAssistantMessageIds = vi.fn();
+    const source = new ContentPlanReportEnrichmentPlanningSource({
+      source: {
+        loadData: vi.fn(async () => ({
+          topics: [],
+          documents: [],
+          repairCheckpoint: null,
+        })),
+        pageObservations,
+        completeRepairPage: vi.fn(async () => true),
+      },
+      qualityEvidence: { getEvidenceByAssistantMessageIds },
+    });
+
+    await expect(source.load({
+      workspaceId: "workspace_1",
+      generationId: "generation_1",
+      asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: ["topic_retired"],
+      repair: null,
+    })).resolves.toEqual({ topics: [], repairCheckpoint: null });
+    expect(pageObservations).not.toHaveBeenCalled();
+    expect(getEvidenceByAssistantMessageIds).not.toHaveBeenCalled();
+  });
+
   it("runs a cadenced repair scan without dirty topics and retains failed markers", async () => {
     const dirtyAt = new Date("2026-08-02T11:59:00.000Z");
     const markers = [{ topicId: "topic_1", revision: 4, dirtyAt }];
@@ -106,7 +242,13 @@ describe("Content Planning enrichment planning", () => {
       },
       lastEnriched: null,
     };
-    const source = { load: vi.fn(async () => [schedulingTopic]) };
+    const source = {
+      load: vi.fn(async () => ({
+        topics: [schedulingTopic],
+        repairCheckpoint: { expectedVersion: 1, nextTopicId: "topic_1" },
+      })),
+      completeRepairPage: vi.fn(async () => true),
+    };
     const trigger = {
       listDirtyTopics: vi.fn()
         .mockResolvedValueOnce([])
@@ -118,7 +260,10 @@ describe("Content Planning enrichment planning", () => {
     });
     const runner = new ContentPlanningEnrichmentPlanningService({
       source,
-      scheduler: new ContentPlanningEnrichmentScheduler({ queue }),
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue,
+        rebasePublished: vi.fn(async () => true),
+      }),
       trigger,
       clock: () => new Date("2026-08-02T12:00:00.000Z"),
     });
@@ -191,10 +336,10 @@ describe("Content Planning enrichment planning", () => {
         }],
       })),
       getTopicRedirectChain: vi.fn(async () => []),
-      listTopicAssistantMessageIds: vi.fn(async () => []),
+      pageTopicAssistantMessageIds: vi.fn(async () => ({ assistantMessageIds: [], total: 0 })),
     };
     const planningSource = new ContentPlanReportEnrichmentPlanningSource({
-      source: readSource,
+      source: planningDataSource(readSource),
       qualityEvidence: {
         getEvidenceByAssistantMessageIds: vi.fn(async () => new Map([
           ["assistant_1", evidence("assistant_1", "conversation_1", "no_support")],
@@ -202,10 +347,12 @@ describe("Content Planning enrichment planning", () => {
         ])),
       },
     });
-    const topics = await planningSource.load({
+    const { topics } = await planningSource.load({
       workspaceId: "workspace_1",
       generationId: "generation_1",
       asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: ["topic_1"],
+      repair: null,
     });
 
     expect(topics).toHaveLength(1);
@@ -237,7 +384,10 @@ describe("Content Planning enrichment planning", () => {
     const queue = vi.fn(async () => true);
     const runner = new ContentPlanningEnrichmentPlanningService({
       source: planningSource,
-      scheduler: new ContentPlanningEnrichmentScheduler({ queue }),
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue,
+        rebasePublished: vi.fn(async () => true),
+      }),
       trigger: {
         listDirtyTopics: vi.fn(async () => [{
           topicId: "topic_1",
@@ -325,16 +475,18 @@ describe("Content Planning enrichment planning", () => {
         documents: [],
       })),
       getTopicRedirectChain: vi.fn(async () => []),
-      listTopicAssistantMessageIds: vi.fn(async () => []),
+      pageTopicAssistantMessageIds: vi.fn(async () => ({ assistantMessageIds: [], total: 0 })),
     };
 
-    const topics = await new ContentPlanReportEnrichmentPlanningSource({
-      source: readSource,
+    const { topics } = await new ContentPlanReportEnrichmentPlanningSource({
+      source: planningDataSource(readSource),
       qualityEvidence,
     }).load({
       workspaceId: "workspace_1",
       generationId: "generation_1",
       asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: ["topic_1"],
+      repair: null,
     });
 
     expect(lookupVerifications).toHaveBeenCalledWith("workspace_1", assistantMessageIds);
@@ -392,10 +544,10 @@ describe("Content Planning enrichment planning", () => {
         documents: [],
       })),
       getTopicRedirectChain: vi.fn(async () => []),
-      listTopicAssistantMessageIds: vi.fn(async () => []),
+      pageTopicAssistantMessageIds: vi.fn(async () => ({ assistantMessageIds: [], total: 0 })),
     };
     const planningSource = new ContentPlanReportEnrichmentPlanningSource({
-      source: readSource,
+      source: planningDataSource(readSource),
       qualityEvidence: {
         getEvidenceByAssistantMessageIds: vi.fn(async () => new Map([
           ["assistant_1", evidence("assistant_1", "conversation_1", "no_support")],
@@ -403,10 +555,12 @@ describe("Content Planning enrichment planning", () => {
         ])),
       },
     });
-    const topics = await planningSource.load({
+    const { topics } = await planningSource.load({
       workspaceId: "workspace_1",
       generationId: "generation_1",
       asOf: new Date("2026-08-02T12:00:00.000Z"),
+      dirtyTopicIds: ["topic_1"],
+      repair: null,
     });
 
     expect(topics[0]).toMatchObject({
@@ -429,7 +583,10 @@ describe("Content Planning enrichment planning", () => {
     const queue = vi.fn(async () => true);
     const result = await new ContentPlanningEnrichmentPlanningService({
       source: planningSource,
-      scheduler: new ContentPlanningEnrichmentScheduler({ queue }),
+      scheduler: new ContentPlanningEnrichmentScheduler({
+        queue,
+        rebasePublished: vi.fn(async () => true),
+      }),
       trigger: {
         listDirtyTopics: vi.fn(async () => [{
           topicId: "topic_1",
@@ -494,3 +651,64 @@ const evidence = (
   verification: null,
   remediation: { active: true, inactiveReasons: [] },
 });
+
+const readTopic = (): ContentPlanReadTopic => ({
+  id: "topic_1",
+  lifecycle: "mature",
+  representativeObservationIds: [],
+  revision: 1,
+  mergedIntoTopicId: null,
+  redirectExpiresAt: null,
+  updatedAt: "2026-08-02T11:00:00.000Z",
+  enrichment: {
+    state: "pending",
+    sourceTopicRevision: null,
+    label: null,
+    description: null,
+    suggestedTitle: null,
+    rationale: null,
+    questionsToAnswer: null,
+    suggestedShape: null,
+    evidenceStatement: null,
+    persistedAction: null,
+    actionRuleVersion: 1,
+    corpusState: "ready",
+    publishedSourceEvidence: null,
+    publishedSourceEvidenceStrength: null,
+    publishedSourceCorpusEvidenceFingerprint: null,
+    updatedAt: null,
+  },
+});
+
+const planningDataSource = (source: ContentPlanReadSourcePort) => {
+  let observations: ReturnType<typeof observation>[] = [];
+  return {
+    loadData: vi.fn(async (input: {
+      workspaceId: string;
+      generationId: string;
+      window: { from: string; to: string };
+    }) => {
+      const data = await source.getReportData(input.workspaceId, input.generationId, input.window);
+      observations = data.observations as ReturnType<typeof observation>[];
+      return {
+        topics: data.topics,
+        documents: data.documents,
+        repairCheckpoint: null,
+      };
+    }),
+    pageObservations: vi.fn(async (input: { cursor: unknown }) => ({
+      items: input.cursor === null
+        ? observations.map((item) => ({
+            id: item.id,
+            sourceUserMessageId: item.sourceUserMessageId,
+            sourceAssistantMessageId: item.sourceAssistantMessageId,
+            conversationId: item.conversationId,
+            observedAt: item.observedAt,
+            topicId: item.topicId,
+          }))
+        : [],
+      nextCursor: null,
+    })),
+    completeRepairPage: vi.fn(async () => true),
+  };
+};

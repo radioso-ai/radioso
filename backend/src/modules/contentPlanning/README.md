@@ -25,6 +25,24 @@ projection, reconciliation, and enrichment work with leases and revision fences.
 Application composition assembles repositories, provider adapters, observability, and
 worker lifecycle; it does not own content-planning policy.
 
+Bootstrap and reprojection capture Quality's eligible turn IDs into an immutable,
+generation-owned population snapshot before paging begins. Deleting source messages
+cascades snapshot rows and the worker reconciles the remaining total; turns committed
+after capture enter the target generation through normal live intake instead of changing
+the historical cursor.
+
+Document publication advances one coalesced workspace marker. The worker fans credible
+topic invalidation out in bounded batches; single-document deletion targets only topics
+linked to that document before the document row can cascade away. Topic-member drill-down
+also intersects membership with Quality's canonical population and paginates IDs in SQL
+before hydrating the bounded Quality DTO page.
+
+Enrichment planning does not hydrate the full report. It combines the bounded dirty
+batch with the persisted opportunity frontier, current generated-brief carriers, and a
+durable repair page. Source observations and Quality evidence are keyset-paged into a
+content-free accumulator; the repair cursor advances only after the page is scheduled
+or safely rebased.
+
 The read model uses a fixed rolling 30-day current window and the preceding 30 days for
 comparison. Ranking, credible-opportunity eligibility, action selection, clustering,
 maturity, and enrichment scheduling are versioned backend policies. The frontend
@@ -50,9 +68,13 @@ renders these decisions and must not reproduce them.
 - `services/observationIntakeService.ts`: content-free committed-turn registration.
 - `services/contentPlanReadService.ts`: authorized list/detail/member-turn assembly.
 - `services/corpusEvidenceService.ts`: bounded related-document evidence.
+- `services/corpusInvalidation.ts`: coalesced, bounded corpus invalidation fanout.
 - `services/enrichmentScheduler.ts` and `services/enrichmentProcessor.ts`: material
   changes, debounce, provider work, retries, and revision-fenced publication.
-- `infra/contentPlanReadSource.ts`: bounded Postgres report reads.
+- `infra/contentPlanReadSource.ts`: bounded Postgres report and member-page reads.
+- `infra/postgresEnrichmentPlanningDataSource.ts` and
+  `services/enrichmentPlanningAccumulator.ts`: bounded hot/repair planning and exact
+  evidence aggregation without source text.
 
 ## Tests
 

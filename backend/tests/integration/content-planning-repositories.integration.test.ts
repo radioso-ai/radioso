@@ -3,10 +3,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ContentPlanEnrichmentRepository } from "../../src/db/repositories/contentPlanningEnrichmentRepository.js";
+import { ContentPlanCorpusInvalidationRepository } from "../../src/db/repositories/contentPlanningCorpusInvalidationRepository.js";
 import { ContentPlanEnrichmentTriggerRepository } from "../../src/db/repositories/contentPlanningEnrichmentTriggerRepository.js";
 import { ContentPlanObservationRepository } from "../../src/db/repositories/contentPlanningObservationRepository.js";
 import { ContentPlanProjectionRepository } from "../../src/db/repositories/contentPlanningProjectionRepository.js";
 import { ContentPlanTopicRepository } from "../../src/db/repositories/contentPlanningTopicRepository.js";
+import { RepositoryContentPlanEnrichmentQueue } from "../../src/modules/contentPlanning/infra/repositoryEnrichmentPorts.js";
+import { ContentPlanningEnrichmentScheduler } from "../../src/modules/contentPlanning/services/enrichmentScheduler.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
@@ -42,6 +45,7 @@ describeIfDatabase("content-planning Kysely repositories", () => {
   let projections: ContentPlanProjectionRepository;
   let topics: ContentPlanTopicRepository;
   let enrichments: ContentPlanEnrichmentRepository;
+  let corpusInvalidations: ContentPlanCorpusInvalidationRepository;
   let enrichmentTriggers: ContentPlanEnrichmentTriggerRepository;
   const accountIds: string[] = [];
   const enrichmentEvidence = {
@@ -176,6 +180,7 @@ describeIfDatabase("content-planning Kysely repositories", () => {
     projections = new ContentPlanProjectionRepository(database.kysely);
     topics = new ContentPlanTopicRepository(database.kysely);
     enrichments = new ContentPlanEnrichmentRepository(database.kysely);
+    corpusInvalidations = new ContentPlanCorpusInvalidationRepository(database.kysely);
     enrichmentTriggers = new ContentPlanEnrichmentTriggerRepository(database.kysely);
   });
 
@@ -618,7 +623,237 @@ describeIfDatabase("content-planning Kysely repositories", () => {
     })).resolves.toMatchObject({ revision: 5, centroidWeight: 2 });
   });
 
-  it("uses revision-fenced dirty markers and invalidates credible corpus evidence workspace-wide", async () => {
+  it("replenishes expired topic representatives from bounded live memberships", async () => {
+    const fixture = await createFixture("representative-replenishment");
+    const generation = await createGeneration(fixture, "coherent");
+    const topicId = randomUUID();
+    const observations = Array.from({ length: 12 }, (_, index) => ({
+      id: randomUUID(),
+      conversationId: randomUUID(),
+      userMessageId: randomUUID(),
+      assistantMessageId: randomUUID(),
+      index,
+    }));
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision
+       ) VALUES ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 12, $5::uuid[], 1)`,
+      [
+        fixture.workspaceId,
+        generation.id,
+        topicId,
+        fixture.embeddingSpaceId,
+        observations.slice(0, 8).map((observation) => observation.id),
+      ],
+    );
+    for (const observation of observations) {
+      await database.execute(
+        "INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)",
+        [observation.conversationId, fixture.workspaceId],
+      );
+      await database.execute(
+        `INSERT INTO messages (id, conversation_id, workspace_id, role, content, metadata_json)
+         VALUES
+           ($1, $3, $4, 'user', $5, '{}'::jsonb),
+           ($2, $3, $4, 'assistant', 'Answer', '{}'::jsonb)`,
+        [
+          observation.userMessageId,
+          observation.assistantMessageId,
+          observation.conversationId,
+          fixture.workspaceId,
+          `Question ${observation.index}`,
+        ],
+      );
+      await database.execute(
+        `INSERT INTO content_plan_observations (
+           id, workspace_id, source_user_message_id, source_assistant_message_id,
+           conversation_id, semantic_intent_id, semantic_text_hash, interaction_role,
+           observation_state, observed_at
+         ) VALUES ($1, $2, $3, $4, $5, 'primary', $6, 'substantive_new', 'ready', $7)`,
+        [
+          observation.id,
+          fixture.workspaceId,
+          observation.userMessageId,
+          observation.assistantMessageId,
+          observation.conversationId,
+          createHash("sha256").update(`representative-${observation.index}`).digest("hex"),
+          new Date(`2026-07-${String(observation.index + 1).padStart(2, "0")}T12:00:00.000Z`),
+        ],
+      );
+      await database.execute(
+        `INSERT INTO content_plan_observation_vectors (
+           workspace_id, observation_id, generation_id, embedding_space_id,
+           dimensions, embedding, vector_source, state, completed_at
+         ) VALUES ($1, $2, $3, $4, 3, '[1,0,0]'::vector, 'reused', 'assigned', $5)`,
+        [
+          fixture.workspaceId,
+          observation.id,
+          generation.id,
+          fixture.embeddingSpaceId,
+          new Date(`2026-07-${String(observation.index + 1).padStart(2, "0")}T12:00:00.000Z`),
+        ],
+      );
+      await database.execute(
+        `INSERT INTO content_plan_topic_memberships (
+           workspace_id, generation_id, observation_id, topic_id,
+           assignment_version, similarity, cohesion, assigned_at
+         ) VALUES ($1, $2, $3, $4, 1, $5, $5, $6)`,
+        [
+          fixture.workspaceId,
+          generation.id,
+          observation.id,
+          topicId,
+          0.99 - (observation.index / 100),
+          new Date(`2026-07-${String(observation.index + 1).padStart(2, "0")}T12:00:00.000Z`),
+        ],
+      );
+    }
+    await database.execute(
+      "DELETE FROM content_plan_observations WHERE workspace_id = $1 AND id = ANY($2::uuid[])",
+      [fixture.workspaceId, observations.slice(0, 8).map((observation) => observation.id)],
+    );
+
+    const [evidence] = await topics.loadReconciliationEvidence({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicIds: [topicId],
+      limit: 1,
+    });
+
+    expect(evidence).toMatchObject({
+      liveObservationCount: 4,
+      liveConversationCount: 4,
+      representativeObservationIds: observations.slice(8).map((observation) => observation.id),
+    });
+  });
+
+  it("rebases a non-material mature-topic revision without claiming provider work", async () => {
+    const fixture = await createFixture("enrichment-rebase");
+    const generation = await createGeneration(fixture, "coherent");
+    const topicId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision
+       ) VALUES ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 2, '{}'::uuid[], 1)`,
+      [fixture.workspaceId, generation.id, topicId, fixture.embeddingSpaceId],
+    );
+    await enrichments.queueEnrichment({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      sourceTopicRevision: 1,
+      sourceEvidence: enrichmentEvidence,
+      sourceEvidenceStrength: "low",
+      sourceCorpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+      analysisMode: "label_and_brief",
+      publishState: "ready",
+      actionRuleVersion: 1,
+      availableAt: new Date("2026-08-02T12:00:00.000Z"),
+    });
+    const [claim] = await enrichments.claimEnrichmentBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      limit: 1,
+      now: new Date("2026-08-02T12:00:00.000Z"),
+      leaseMs: 30_000,
+    });
+    await expect(enrichments.publishEnrichment({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      topicId,
+      sourceTopicRevision: 1,
+      sourceEvidence: enrichmentEvidence,
+      sourceCorpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+      claimToken: claim!.claimToken!,
+      publishState: "ready",
+      label: "Deployment controls",
+      description: "Questions about deployment configuration.",
+      suggestedTitle: "Deployment controls guide",
+      rationale: "Repeated questions need a clear reference.",
+      questionsToAnswer: ["Where are controls?", "Who can edit?", "When do changes apply?"],
+      suggestedShape: "guide",
+      evidenceStatement: "Based on two conversations.",
+      action: "add_content",
+      actionRuleVersion: 1,
+      corpusState: "ready",
+      corpusCheckedAt: new Date("2026-08-02T12:00:00.000Z"),
+      enrichedAt: new Date("2026-08-02T12:00:01.000Z"),
+    })).resolves.toBe(true);
+
+    await expect(database.execute(
+      `UPDATE content_plan_topics
+       SET revision = 2, centroid_weight = 3, enrichment_dirty_at = $4, updated_at = $4
+       WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+      [
+        fixture.workspaceId,
+        generation.id,
+        topicId,
+        new Date("2026-08-02T12:00:02.000Z"),
+      ],
+    )).resolves.toBe(1);
+    await expect(enrichments.claimEnrichmentBatch({
+      workspaceId: fixture.workspaceId,
+      generationId: generation.id,
+      limit: 1,
+      now: new Date("2026-08-02T12:10:00.000Z"),
+      leaseMs: 30_000,
+    })).resolves.toEqual([]);
+
+    const scheduler = new ContentPlanningEnrichmentScheduler(
+      new RepositoryContentPlanEnrichmentQueue(enrichments),
+    );
+    await expect(scheduler.schedule({
+      now: new Date("2026-08-02T12:00:03.000Z"),
+      topics: [{
+        workspaceId: fixture.workspaceId,
+        generationId: generation.id,
+        topicId,
+        topicRevision: 2,
+        lifecycle: "mature",
+        current: {
+          memberCount: 3,
+          groundedCount: 0,
+          degradedCount: 1,
+          noSupportCount: 2,
+          notEvaluatedCount: 0,
+          credibleOpportunity: true,
+          groundingBand: "low",
+          action: "add_content",
+          corpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+        },
+        lastEnriched: {
+          sourceTopicRevision: 1,
+          ...enrichmentEvidence,
+          groundingBand: "low",
+          action: "add_content",
+          corpusEvidenceFingerprint: enrichmentCorpusFingerprint,
+          analysisMode: "label_and_brief",
+          recommendationState: "ready",
+        },
+      }],
+    })).resolves.toMatchObject({ queuedCount: 0, rebasedCount: 1, failedCount: 0 });
+
+    await expect(database.queryOne<{
+      source_topic_revision: number;
+      state: string;
+      source_member_count: number;
+      published_source_member_count: number;
+    }>(
+      `SELECT source_topic_revision, state, source_member_count, published_source_member_count
+       FROM content_plan_topic_enrichments
+       WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
+      [fixture.workspaceId, generation.id, topicId],
+    )).resolves.toEqual({
+      source_topic_revision: 2,
+      state: "ready",
+      source_member_count: 3,
+      published_source_member_count: 2,
+    });
+  });
+
+  it("uses revision-fenced dirty markers", async () => {
     const fixture = await createFixture("enrichment-triggers");
     const generation = await createGeneration(fixture, "coherent");
     const credibleTopicId = randomUUID();
@@ -696,39 +931,6 @@ describeIfDatabase("content-planning Kysely repositories", () => {
       generationId: generation.id,
       markers: [{ topicId: credibleTopicId, revision: 2, dirtyAt: secondDirtyAt }],
     })).resolves.toBe(1);
-
-    const corpusDirtyAt = new Date("2026-08-02T12:00:02.000Z");
-    await expect(enrichmentTriggers.invalidateWorkspaceCorpusEvidence({
-      workspaceId: fixture.workspaceId,
-      dirtyAt: corpusDirtyAt,
-    })).resolves.toBe(1);
-    const rows = await database.query<{
-      id: string;
-      revision: number;
-      enrichment_dirty_at: Date | null;
-      corpus_state: string;
-    }>(
-      `SELECT topic.id, topic.revision, topic.enrichment_dirty_at, enrichment.corpus_state
-       FROM content_plan_topics topic
-       JOIN content_plan_topic_enrichments enrichment
-         ON enrichment.workspace_id = topic.workspace_id
-        AND enrichment.generation_id = topic.generation_id
-        AND enrichment.topic_id = topic.id
-       WHERE topic.workspace_id = $1 AND topic.generation_id = $2
-       ORDER BY topic.id`,
-      [fixture.workspaceId, generation.id],
-    );
-    const byId = new Map(rows.map((row) => [row.id, row]));
-    expect(byId.get(credibleTopicId)).toMatchObject({
-      revision: 3,
-      enrichment_dirty_at: corpusDirtyAt,
-      corpus_state: "stale",
-    });
-    expect(byId.get(monitorTopicId)).toMatchObject({
-      revision: 1,
-      enrichment_dirty_at: null,
-      corpus_state: "pending",
-    });
   });
 
   it("rejects stale enrichment publication and invalidates bounded document evidence", async () => {
@@ -877,7 +1079,7 @@ describeIfDatabase("content-planning Kysely repositories", () => {
     });
     expect(replaced).toEqual({ applied: true, storedCount: 5, truncatedCount: 1 });
 
-    await enrichments.invalidateDocumentEvidence({
+    await corpusInvalidations.invalidateDeletedDocument({
       workspaceId: fixture.workspaceId,
       documentId: documentIds[0]!,
       dirtyAt: new Date("2026-08-02T12:00:05.000Z"),

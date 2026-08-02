@@ -471,25 +471,14 @@ BEGIN
   IF NEW.revision IS DISTINCT FROM OLD.revision THEN
     UPDATE content_plan_topic_enrichments
     SET
-      -- Every aggregate revision fences stale in-flight output. Only a scheduler-owned
-      -- material dirty-time change makes the last coherent published evidence stale.
-      state = CASE
-        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND state = 'ready'
-          THEN 'stale'
-        ELSE state
-      END,
-      corpus_state = CASE
-        WHEN NEW.enrichment_dirty_at IS DISTINCT FROM OLD.enrichment_dirty_at AND corpus_state = 'ready'
-          THEN 'stale'
-        ELSE corpus_state
-      END,
       claim_token = NULL,
       claim_expires_at = NULL,
       updated_at = NOW()
     WHERE workspace_id = NEW.workspace_id
       AND generation_id = NEW.generation_id
       AND topic_id = NEW.id
-      AND source_topic_revision <> NEW.revision;
+      AND source_topic_revision <> NEW.revision
+      AND claim_token IS NOT NULL;
   END IF;
   RETURN NEW;
 END;
@@ -506,7 +495,7 @@ CREATE FUNCTION public.validate_content_plan_enrichment_revision() RETURNS trigg
 DECLARE
   current_revision INTEGER;
 BEGIN
-  IF NEW.state <> 'ready' THEN
+  IF NEW.state NOT IN ('ready', 'outside_analysis_cap') THEN
     RETURN NEW;
   END IF;
 
@@ -1395,6 +1384,36 @@ CREATE TABLE public.connector_whatsapp_message_log (
 
 
 --
+-- Name: content_plan_corpus_invalidations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_corpus_invalidations (
+    workspace_id uuid NOT NULL,
+    revision bigint DEFAULT 1 NOT NULL,
+    dirty_at timestamp with time zone NOT NULL,
+    after_generation_id uuid,
+    after_topic_id uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_corpus_invalidations_check CHECK ((((after_generation_id IS NULL) AND (after_topic_id IS NULL)) OR ((after_generation_id IS NOT NULL) AND (after_topic_id IS NOT NULL)))),
+    CONSTRAINT content_plan_corpus_invalidations_revision_check CHECK ((revision > 0))
+);
+
+
+--
+-- Name: content_plan_enrichment_repair_cursors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_enrichment_repair_cursors (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    after_topic_id uuid,
+    version integer DEFAULT 1 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT content_plan_enrichment_repair_cursors_version_check CHECK ((version > 0))
+);
+
+
+--
 -- Name: content_plan_observation_vectors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1491,6 +1510,18 @@ CREATE TABLE public.content_plan_projection_generations (
     CONSTRAINT content_plan_projection_generations_kind_check CHECK ((kind = ANY (ARRAY['bootstrap'::text, 'active'::text, 'reprojection'::text]))),
     CONSTRAINT content_plan_projection_generations_policy_version_check CHECK ((policy_version > 0)),
     CONSTRAINT content_plan_projection_generations_state_check CHECK ((state = ANY (ARRAY['building'::text, 'coherent'::text, 'superseded'::text, 'failed'::text])))
+);
+
+
+--
+-- Name: content_plan_projection_population_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.content_plan_projection_population_snapshots (
+    workspace_id uuid NOT NULL,
+    generation_id uuid NOT NULL,
+    assistant_message_id uuid NOT NULL,
+    created_at timestamp with time zone NOT NULL
 );
 
 
@@ -3449,6 +3480,22 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: content_plan_corpus_invalidations content_plan_corpus_invalidations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_corpus_invalidations
+    ADD CONSTRAINT content_plan_corpus_invalidations_pkey PRIMARY KEY (workspace_id);
+
+
+--
+-- Name: content_plan_enrichment_repair_cursors content_plan_enrichment_repair_cursors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_enrichment_repair_cursors
+    ADD CONSTRAINT content_plan_enrichment_repair_cursors_pkey PRIMARY KEY (workspace_id, generation_id);
+
+
+--
 -- Name: content_plan_observation_vectors content_plan_observation_vectors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3502,6 +3549,14 @@ ALTER TABLE ONLY public.content_plan_projection_generations
 
 ALTER TABLE ONLY public.content_plan_projection_generations
     ADD CONSTRAINT content_plan_projection_generations_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: content_plan_projection_population_snapshots content_plan_projection_population_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_population_snapshots
+    ADD CONSTRAINT content_plan_projection_population_snapshots_pkey PRIMARY KEY (workspace_id, generation_id, assistant_message_id);
 
 
 --
@@ -5087,6 +5142,13 @@ CREATE INDEX idx_content_plan_observations_pending_context ON public.content_pla
 --
 
 CREATE INDEX idx_content_plan_observations_workspace_time ON public.content_plan_observations USING btree (workspace_id, observed_at DESC, id DESC);
+
+
+--
+-- Name: idx_content_plan_population_snapshot_page; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_content_plan_population_snapshot_page ON public.content_plan_projection_population_snapshots USING btree (workspace_id, generation_id, created_at, assistant_message_id);
 
 
 --
@@ -7032,6 +7094,30 @@ ALTER TABLE ONLY public.connector_whatsapp_message_log
 
 
 --
+-- Name: content_plan_corpus_invalidations content_plan_corpus_invalidations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_corpus_invalidations
+    ADD CONSTRAINT content_plan_corpus_invalidations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_enrichment_repair_cursors content_plan_enrichment_repair_cursors_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_enrichment_repair_cursors
+    ADD CONSTRAINT content_plan_enrichment_repair_cursors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_enrichment_repair_cursors content_plan_enrichment_repair_generation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_enrichment_repair_cursors
+    ADD CONSTRAINT content_plan_enrichment_repair_generation_fk FOREIGN KEY (workspace_id, generation_id) REFERENCES public.content_plan_projection_generations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: content_plan_topic_enrichments content_plan_enrichments_topic_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7096,6 +7182,22 @@ ALTER TABLE ONLY public.content_plan_observations
 
 
 --
+-- Name: content_plan_projection_population_snapshots content_plan_population_snapshot_generation_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_population_snapshots
+    ADD CONSTRAINT content_plan_population_snapshot_generation_fk FOREIGN KEY (workspace_id, generation_id) REFERENCES public.content_plan_projection_generations(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_population_snapshots content_plan_population_snapshot_message_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_population_snapshots
+    ADD CONSTRAINT content_plan_population_snapshot_message_fk FOREIGN KEY (workspace_id, assistant_message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: content_plan_projection_generations content_plan_projection_generations_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7109,6 +7211,14 @@ ALTER TABLE ONLY public.content_plan_projection_generations
 
 ALTER TABLE ONLY public.content_plan_projection_generations
     ADD CONSTRAINT content_plan_projection_generations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: content_plan_projection_population_snapshots content_plan_projection_population_snapshots_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.content_plan_projection_population_snapshots
+    ADD CONSTRAINT content_plan_projection_population_snapshots_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

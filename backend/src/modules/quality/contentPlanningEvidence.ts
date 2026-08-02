@@ -34,12 +34,11 @@ import {
 import {
   RESOLVED_LATENCY_EXPRESSION,
   TRIAGE_JOIN,
-  TURN_POPULATION_SOURCE,
   bindParam,
   buildEffectiveOpenPredicate,
   buildEffectiveTriageStateExpression,
-  buildTurnPopulationFilters,
 } from "./turnPopulationSql.js";
+import { buildQualityContentPlanningPopulationSql } from "./contentPlanningPopulationSql.js";
 import {
   fetchQualityTurnComments,
   mapQualityTurnReadRow,
@@ -83,13 +82,11 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
   ): Promise<number> {
     validateWindow(input.window);
     const params: unknown[] = [];
-    const filters = buildTurnPopulationFilters({ workspaceId }, params);
-    filters.push(`m.created_at >= ${bindParam(params, input.window.from)}::timestamptz`);
-    filters.push(`m.created_at < ${bindParam(params, input.window.to)}::timestamptz`);
+    const population = buildQualityContentPlanningPopulationSql({ workspaceId, window: input.window }, params);
     const result = await this.db.executeQuery<{ count: string }>(CompiledQuery.raw(
       `SELECT COUNT(*)::text AS count
-       ${TURN_POPULATION_SOURCE}
-       WHERE ${filters.join("\n         AND ")}`,
+       ${population.source}
+       WHERE ${population.filters.join("\n         AND ")}`,
       params,
     ));
     return Number(result.rows[0]?.count ?? "0");
@@ -113,13 +110,11 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
     }
 
     const params: unknown[] = [];
-    const filters = buildTurnPopulationFilters({ workspaceId }, params);
-    filters.push(`m.created_at >= ${bindParam(params, input.window.from)}::timestamptz`);
-    filters.push(`m.created_at < ${bindParam(params, input.window.to)}::timestamptz`);
+    const population = buildQualityContentPlanningPopulationSql({ workspaceId, window: input.window }, params);
     if (input.cursor) {
       const createdAtParam = bindParam(params, input.cursor.createdAt);
       const messageIdParam = bindParam(params, input.cursor.assistantMessageId);
-      filters.push(`(
+      population.filters.push(`(
            m.created_at > ${createdAtParam}::timestamptz
            OR (m.created_at = ${createdAtParam}::timestamptz AND m.id > ${messageIdParam}::uuid)
          )`);
@@ -143,8 +138,8 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
            ORDER BY um.created_at DESC, um.id DESC
            LIMIT 1
          ) AS user_message_id
-       ${TURN_POPULATION_SOURCE}
-       WHERE ${filters.join("\n         AND ")}
+       ${population.source}
+       WHERE ${population.filters.join("\n         AND ")}
        ORDER BY m.created_at ASC, m.id ASC
        LIMIT ${limitParam}`,
       params,
@@ -175,8 +170,8 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
     if (ids.length === 0) return new Map();
 
     const params: unknown[] = [];
-    const filters = buildTurnPopulationFilters({ workspaceId }, params);
-    filters.push(`m.id = ANY(${bindParam(params, ids)}::uuid[])`);
+    const population = buildQualityContentPlanningPopulationSql({ workspaceId }, params);
+    population.filters.push(`m.id = ANY(${bindParam(params, ids)}::uuid[])`);
     const feedbackFreshnessExpression = "quality_feedback.latest_down_updated_at";
     const effectiveTriageOptions = {
       latestDownUpdatedAtExpression: feedbackFreshnessExpression,
@@ -208,10 +203,10 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
            ELSE NULL
          END AS triage_resolution_reason,
          (${effectiveOpen}) AS triage_reopened_by_feedback
-       ${TURN_POPULATION_SOURCE}
+       ${population.source}
        ${TRIAGE_JOIN}
        ${feedbackFreshnessJoin}
-       WHERE ${filters.join("\n         AND ")}
+       WHERE ${population.filters.join("\n         AND ")}
        ORDER BY m.created_at ASC, m.id ASC`,
       params,
     ));
@@ -252,9 +247,9 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
     }
 
     const params: unknown[] = [];
-    const filters = buildTurnPopulationFilters({ workspaceId }, params);
+    const population = buildQualityContentPlanningPopulationSql({ workspaceId }, params);
     const idsParam = bindParam(params, ids);
-    filters.push(`m.id = ANY(${idsParam}::uuid[])`);
+    population.filters.push(`m.id = ANY(${idsParam}::uuid[])`);
     const effectiveOpen = buildEffectiveOpenPredicate({
       latestDownUpdatedAtExpression: "feedback_activity.latest_down_updated_at",
     });
@@ -308,11 +303,11 @@ export class QualityContentPlanningEvidenceSource implements QualityContentPlann
          COALESCE(feedback_activity.up_count, '0') AS up_count,
          COALESCE(feedback_activity.down_count, '0') AS down_count,
          feedback_activity.latest_down_updated_at
-       ${TURN_POPULATION_SOURCE}
+       ${population.source}
        LEFT JOIN agents a ON a.id = c.agent_id
        ${TRIAGE_JOIN}
        ${feedbackActivityJoin}
-       WHERE ${filters.join("\n         AND ")}
+       WHERE ${population.filters.join("\n         AND ")}
        ORDER BY array_position(${idsParam}::uuid[], m.id) ASC`,
       params,
     ));

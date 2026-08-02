@@ -45,7 +45,6 @@ export interface ContentPlanningCorpusEvidenceStorePort {
     sourceTopicRevision: number;
     documents: readonly ContentPlanningRelatedDocument[];
   }): Promise<void>;
-  invalidateDocument(workspaceId: string, documentId: string): Promise<number>;
 }
 
 export type ContentPlanningCorpusEvidenceResult =
@@ -98,10 +97,6 @@ export class ContentPlanningCorpusEvidenceService {
       }
       return { state: "unavailable", documents: [] };
     }
-  }
-
-  invalidateDeletedDocument(workspaceId: string, documentId: string): Promise<number> {
-    return this.dependencies.store.invalidateDocument(workspaceId, documentId);
   }
 }
 

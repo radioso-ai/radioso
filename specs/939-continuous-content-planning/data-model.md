@@ -38,6 +38,30 @@ One row per workspace in `content_plan_projection_states`.
 Cursor advancement and observation discovery are one transaction. Pending counts are
 derived from vector and enrichment states, not copied into this row.
 
+## Projection population snapshot
+
+`content_plan_projection_population_snapshots` freezes the assistant-message population
+for one bootstrap or reprojection generation. It is a membership/control table only;
+source wording stays in `messages`.
+
+| Field | Type | Rules |
+|---|---|---|
+| workspace_id / generation_id | composite | Tenant scope and FK generation; generation deletion cascades |
+| assistant_message_id | UUID | FK workspace message; source deletion cascades immediately |
+| created_at | timestamptz | Stable replay order copied from the source message |
+
+Primary key:
+
+```text
+(workspace_id, generation_id, assistant_message_id)
+```
+
+The projection lease captures the snapshot and initializes `bootstrap_total`
+atomically. The worker keyset-pages this fixed set, so late backdated inserts cannot
+change a generation's denominator or make promotion incoherent. If a snapshotted source
+is deleted, the FK removes it and progress reconciles to processed plus remaining rows.
+Normal committed-turn intake continues into the writable target generation.
+
 ## Projection generation
 
 `content_plan_projection_generations` describes one coherent clustering space.
@@ -219,6 +243,24 @@ enrichment output is retained here. Failure leaves the last coherent ready field
 readable with state `stale` where safe; deletion clears source-derived prose before
 re-enrichment.
 
+## Enrichment repair cursor
+
+`content_plan_enrichment_repair_cursors` records durable progress through mature topics
+that are outside the hot dirty/frontier set.
+
+| Field | Type | Rules |
+|---|---|---|
+| workspace_id / generation_id | composite | Primary key/FK generation; generation deletion cascades |
+| after_topic_id | UUID nullable | Last successfully completed keyset page; null starts or wraps the scan |
+| version | integer | Positive compare-and-swap revision |
+| updated_at | timestamptz | Cursor freshness |
+
+The planning source combines bounded dirty topics, the persisted opportunity frontier,
+current generated-brief carriers, and one bounded repair page. Observation/evidence
+hydration is independently keyset-paged. The cursor advances only after scheduling or
+rebasing the selected page succeeds, so process restarts cannot silently strand a
+topic and no full-report hydration is required.
+
 ## Topic-document evidence
 
 `content_plan_topic_documents` normalizes at most five related documents per topic.
@@ -244,6 +286,26 @@ Primary key:
 Document deletion removes the link and marks/clears the associated enrichment in the
 same invalidation workflow. API reads hydrate only still-authorized document metadata;
 no chunks or excerpts are returned.
+
+## Corpus invalidation marker
+
+`content_plan_corpus_invalidations` coalesces workspace document publication into one
+constant-time marker instead of synchronously revising every credible topic.
+
+| Field | Type | Rules |
+|---|---|---|
+| workspace_id | UUID | Primary key/FK workspace, cascade delete |
+| revision | bigint | Positive monotonic publication revision |
+| dirty_at | timestamptz | Latest corpus change time |
+| after_generation_id / after_topic_id | UUID nullable | Both null or both present; bounded keyset cursor |
+| updated_at | timestamptz | Marker lifecycle timestamp |
+
+Publication upserts and resets this row. The Content Planning worker locks the marker
+and each selected topic while draining at most a bounded page of credible topics,
+revisioning them and marking their corpus/enrichment evidence stale. A later publication
+resets the cursor under the same lock, so concurrent topic changes or publications
+cannot be skipped. A document deletion first targets existing normalized topic links
+before their FK cascade; source-wide changes use the workspace marker.
 
 ## Read-only derived models
 
@@ -306,9 +368,10 @@ generation:
 ## Privacy and reconciliation
 
 1. Source message deletion cascades observation/vector/membership rows.
-2. A deletion trigger/outbox marker identifies affected topic IDs before cascade or a
-   bounded reconciliation scan detects centroid-weight drift; affected topics receive a
-   revision bump, centroid rebuild, representative-ID cleanup, and enrichment clearing.
+2. A deletion trigger/reconciliation marker identifies affected topic IDs before
+   cascade or a bounded reconciliation scan detects centroid-weight drift; affected
+   topics receive a revision bump, centroid rebuild, representative-ID replenishment,
+   and enrichment clearing.
 3. Empty provisional topics retire; empty mature topics retire from active reads and
    preserve only the minimum redirect identity needed by retention policy.
 4. Source text is fetched just-in-time for detail/enrichment and is omitted immediately

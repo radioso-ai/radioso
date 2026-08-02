@@ -41,6 +41,7 @@ describe("ContentPlanningWorkerRuntime", () => {
         contentPlanTopicRepository: {} as never,
         contentPlanEnrichmentRepository: {} as never,
         contentPlanEnrichmentTriggerRepository: {} as never,
+        contentPlanCorpusInvalidationRepository: {} as never,
       },
       embeddingGateway,
       embeddingBindings: embeddingBindings as never,
@@ -204,6 +205,44 @@ describe("ContentPlanningWorkerRuntime", () => {
       workspaceId: "workspace-paused",
       generationId: "generation-1",
     });
+  });
+
+  it("drains a bounded corpus invalidation batch before enrichment planning", async () => {
+    const candidates: ContentPlanningProjectionCandidateSourcePort = {
+      listCandidates: vi.fn().mockResolvedValue([
+        { workspaceId: "workspace-dirty", embeddingSpaceId: "space-1" },
+      ]),
+    };
+    const corpusInvalidations = {
+      runOnce: vi.fn().mockResolvedValue({ invalidatedCount: 2, pending: true }),
+    };
+    const orchestrator = {
+      runWorkspaceOnce: vi.fn().mockResolvedValue({
+        kind: "up_to_date",
+        generationId: "generation-1",
+      }),
+    };
+    const runProjection = vi.fn().mockResolvedValue({ claimedCount: 0 });
+    const processor: ContentPlanningProjectionProcessorPort = {
+      runOnce: runProjection,
+      runRetentionOnce: vi.fn().mockResolvedValue({ deletedObservationCount: 0 }),
+    };
+    const runtime = new ContentPlanningWorkerRuntime({
+      candidates,
+      orchestrator,
+      processor,
+      corpusInvalidations,
+      logger,
+    }, { corpusInvalidationBatchSize: 2 });
+
+    await runtime.runOnce();
+
+    expect(corpusInvalidations.runOnce).toHaveBeenCalledWith({
+      workspaceId: "workspace-dirty",
+      limit: 2,
+    });
+    expect(corpusInvalidations.runOnce.mock.invocationCallOrder[0])
+      .toBeLessThan(runProjection.mock.invocationCallOrder[0]!);
   });
 
   it("keeps idle polling set-based and runs stable-workspace repair only on the maintenance cadence", async () => {

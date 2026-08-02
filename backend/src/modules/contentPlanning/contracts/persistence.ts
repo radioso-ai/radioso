@@ -1,6 +1,11 @@
 import type { ConversationInteractionRole } from "@radioso/conversation-contract";
 
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
+import type {
+  QualityContentPlanningPopulationCursor,
+  QualityContentPlanningPopulationPage,
+  QualityContentPlanningWindow,
+} from "../../quality/contracts/contentPlanningEvidence.js";
 
 export const MAX_CONTENT_PLAN_TURN_CONTRIBUTIONS = 4;
 export const MAX_CONTENT_PLAN_SOURCE_HYDRATION = 8;
@@ -295,6 +300,26 @@ export interface ContentPlanHistoricalTurnRegistration {
 }
 
 export interface ContentPlanProjectionDiscoveryPort {
+  capturePopulationSnapshot(input: {
+    workspaceId: string;
+    generationId: string;
+    leaseToken: string;
+    window: QualityContentPlanningWindow;
+  }): Promise<{ total: number } | null>;
+  listPopulationSnapshotPage(input: {
+    workspaceId: string;
+    generationId: string;
+    window: QualityContentPlanningWindow;
+    cursor?: QualityContentPlanningPopulationCursor;
+    limit: number;
+  }): Promise<QualityContentPlanningPopulationPage>;
+  reconcilePopulationSnapshotProgress(input: {
+    workspaceId: string;
+    generationId: string;
+    leaseToken: string;
+    cursor?: { createdAt: Date; assistantMessageId: string };
+    processed: number;
+  }): Promise<{ processed: number; total: number } | null>;
   commitPage(input: {
     workspaceId: string;
     generationId: string;
@@ -656,6 +681,17 @@ export interface ContentPlanEnrichmentRepositoryPort {
     actionRuleVersion: number;
     availableAt: Date;
   }): Promise<ContentPlanTopicEnrichmentRecord | null>;
+  rebasePublishedEnrichment(input: {
+    workspaceId: string;
+    generationId: string;
+    topicId: string;
+    sourceTopicRevision: number;
+    sourceEvidence: ContentPlanEnrichmentSourceEvidence;
+    sourceEvidenceStrength: ContentPlanStoredEvidenceStrength;
+    sourceCorpusEvidenceFingerprint: string | null;
+    analysisMode: ContentPlanEnrichmentAnalysisMode;
+    publishState: ContentPlanEnrichmentPublishState;
+  }): Promise<ContentPlanTopicEnrichmentRecord | null>;
   claimEnrichmentBatch(input: {
     workspaceId?: string;
     generationId?: string;
@@ -714,9 +750,4 @@ export interface ContentPlanEnrichmentRepositoryPort {
     sourceTopicRevision: number;
     documents: readonly ContentPlanTopicDocumentInput[];
   }): Promise<{ applied: boolean; storedCount: number; truncatedCount: number }>;
-  invalidateDocumentEvidence(input: {
-    workspaceId: string;
-    documentId: string;
-    dirtyAt: Date;
-  }): Promise<string[]>;
 }

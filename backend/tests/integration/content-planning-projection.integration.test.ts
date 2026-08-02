@@ -5,14 +5,15 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PostgresContentPlanProjectionDiscovery } from "../../src/app/composition/adapters/contentPlanningProjectionDiscovery.js";
 import { PostgresContentPlanProjectionCandidateSource } from "../../src/app/composition/adapters/contentPlanningProjectionCandidates.js";
 import { PostgresContentPlanHistoricalTurnSource } from "../../src/app/composition/adapters/contentPlanningHistoricalTurnSource.js";
+import { ContentPlanObservationRepository } from "../../src/db/repositories/contentPlanningObservationRepository.js";
 import { ContentPlanProjectionRepository } from "../../src/db/repositories/contentPlanningProjectionRepository.js";
-import { QualityContentPlanningEvidenceSource } from "../../src/modules/quality/composition.js";
 import {
   CONTENT_PLAN_PROJECTION_BUDGET_V1,
   ContentPlanProjectionBudgetService,
 } from "../../src/modules/contentPlanning/services/projectionBudgetService.js";
 import { ContentPlanProjectionOrchestrator } from "../../src/modules/contentPlanning/services/projectionOrchestrator.js";
 import { ContentPlanHistoricalTurnProjectionService } from "../../src/modules/contentPlanning/services/historicalTurnProjectionService.js";
+import { ObservationIntakeService } from "../../src/modules/contentPlanning/services/observationIntakeService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 
@@ -171,7 +172,6 @@ describeIfDatabase("content-planning projection orchestration", () => {
     await createTurn(fixture, "2026-06-03T00:00:00.000Z", "first");
     await createTurn(fixture, "2026-07-15T12:00:00.000Z", "second");
 
-    const quality = new QualityContentPlanningEvidenceSource(database.kysely);
     const budget = new ContentPlanProjectionBudgetService(projections, {
       ...CONTENT_PLAN_PROJECTION_BUDGET_V1,
       maxRequests: 10,
@@ -179,7 +179,6 @@ describeIfDatabase("content-planning projection orchestration", () => {
     });
     const orchestrator = new ContentPlanProjectionOrchestrator({
       projections,
-      population: quality,
       discovery: new PostgresContentPlanProjectionDiscovery(database.kysely),
       budget,
       historicalTurns: new ContentPlanHistoricalTurnProjectionService(
@@ -196,12 +195,12 @@ describeIfDatabase("content-planning projection orchestration", () => {
       workspaceId: fixture.workspaceId,
       embeddingSpaceId: fixture.embeddingSpaceId,
       now,
-    })).resolves.toMatchObject({ kind: "progressed", processed: 1, total: 2 });
+    })).resolves.toMatchObject({ kind: "progressed", processed: 0, total: 2 });
 
     const firstState = await projections.findProjectionState(fixture.workspaceId);
     expect(firstState).toMatchObject({
       projectionState: "bootstrapping",
-      bootstrapProcessed: "1",
+      bootstrapProcessed: "0",
       bootstrapTotal: "2",
     });
     const target = await projections.findGeneration(
@@ -219,11 +218,17 @@ describeIfDatabase("content-planning projection orchestration", () => {
       workspaceId: fixture.workspaceId,
       embeddingSpaceId: fixture.embeddingSpaceId,
       now: new Date("2026-08-02T00:00:01.000Z"),
+    })).resolves.toMatchObject({ kind: "progressed", processed: 1, total: 2 });
+    await expect(orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now: new Date("2026-08-02T00:00:02.000Z"),
     })).resolves.toMatchObject({ kind: "awaiting_projection", processed: 2, total: 2 });
     await expect(projections.findProjectionState(fixture.workspaceId)).resolves.toMatchObject({
       bootstrapProcessed: "2",
       bootstrapTotal: "2",
     });
+
   });
 
   it("initializes a transaction-created null-progress target from the frozen Quality population before paging", async () => {
@@ -242,11 +247,9 @@ describeIfDatabase("content-planning projection orchestration", () => {
       budgetVersion: 1,
       budgetWindowStartedAt: now,
     });
-    const quality = new QualityContentPlanningEvidenceSource(database.kysely);
     const budget = new ContentPlanProjectionBudgetService(projections);
     const orchestrator = new ContentPlanProjectionOrchestrator({
       projections,
-      population: quality,
       discovery: new PostgresContentPlanProjectionDiscovery(database.kysely),
       historicalTurns: new ContentPlanHistoricalTurnProjectionService(
         new PostgresContentPlanHistoricalTurnSource(database.kysely),
@@ -279,6 +282,178 @@ describeIfDatabase("content-planning projection orchestration", () => {
       embeddingSpaceId: fixture.embeddingSpaceId,
       now: new Date("2026-08-02T00:00:01.000Z"),
     })).resolves.toMatchObject({ kind: "progressed", processed: 1, total: 2 });
+  });
+
+  it("reconciles deleted snapshot rows ahead of the cursor without forgetting completed rows behind it", async () => {
+    const fixture = await createWorkspace("snapshot-deletion");
+    const first = await createTurn(fixture, "2026-07-01T00:00:00.000Z", "snapshot-delete-first");
+    await createTurn(fixture, "2026-07-02T00:00:00.000Z", "snapshot-delete-second");
+    const third = await createTurn(fixture, "2026-07-03T00:00:00.000Z", "snapshot-delete-third");
+    const now = new Date("2026-08-02T00:00:00.000Z");
+    const budget = new ContentPlanProjectionBudgetService(projections);
+    const orchestrator = new ContentPlanProjectionOrchestrator({
+      projections,
+      discovery: new PostgresContentPlanProjectionDiscovery(database.kysely),
+      historicalTurns: new ContentPlanHistoricalTurnProjectionService(
+        new PostgresContentPlanHistoricalTurnSource(database.kysely),
+        budget,
+      ),
+      budget,
+    }, { pageSize: 1, leaseMs: 30_000 });
+
+    // First pass freezes exactly three rows and processes the first page.
+    await orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now,
+    });
+    let state = await projections.findProjectionState(fixture.workspaceId);
+    if (state?.bootstrapProcessed === "0") {
+      await orchestrator.runWorkspaceOnce({
+        workspaceId: fixture.workspaceId,
+        embeddingSpaceId: fixture.embeddingSpaceId,
+        now: new Date(now.getTime() + 1_000),
+      });
+      state = await projections.findProjectionState(fixture.workspaceId);
+    }
+    expect(state).toMatchObject({ bootstrapProcessed: "1", bootstrapTotal: "3" });
+
+    // Delete one already-completed row and one row still ahead of the cursor.
+    await database.execute(
+      "DELETE FROM conversations WHERE workspace_id = $1 AND id = ANY($2::uuid[])",
+      [fixture.workspaceId, [first.conversationId, third.conversationId]],
+    );
+
+    await orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now: new Date(now.getTime() + 2_000),
+    });
+    await expect(orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now: new Date(now.getTime() + 3_000),
+    })).resolves.toMatchObject({ kind: "awaiting_projection", processed: 2, total: 2 });
+    await expect(projections.findProjectionState(fixture.workspaceId)).resolves.toMatchObject({
+      bootstrapProcessed: "2",
+      bootstrapTotal: "2",
+    });
+
+    const targetGenerationId = (await projections.findProjectionState(fixture.workspaceId))!
+      .targetGenerationId!;
+    const [surviving] = await database.query<{ id: string }>(
+      `SELECT id
+       FROM content_plan_observations
+       WHERE workspace_id = $1 AND observation_state = 'ready'`,
+      [fixture.workspaceId],
+    );
+    const topicId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision
+       ) VALUES ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 1, ARRAY[$5::uuid], 1)`,
+      [fixture.workspaceId, targetGenerationId, topicId, fixture.embeddingSpaceId, surviving!.id],
+    );
+    await database.execute(
+      `UPDATE content_plan_observation_vectors
+       SET dimensions = 3, embedding = '[1,0,0]'::vector, vector_source = 'fallback',
+           state = 'assigned', completed_at = $4
+       WHERE workspace_id = $1 AND generation_id = $2 AND observation_id = $3`,
+      [fixture.workspaceId, targetGenerationId, surviving!.id, new Date(now.getTime() + 4_000)],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_topic_memberships (
+         workspace_id, generation_id, observation_id, topic_id,
+         assignment_version, similarity, cohesion, assigned_at
+       ) VALUES ($1, $2, $3, $4, 1, 1, 1, $5)`,
+      [fixture.workspaceId, targetGenerationId, surviving!.id, topicId, new Date(now.getTime() + 4_000)],
+    );
+    await expect(orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now: new Date(now.getTime() + 5_000),
+    })).resolves.toMatchObject({ kind: "promoted", generationId: targetGenerationId });
+  });
+
+  it("keeps the historical population frozen when a backdated row is inserted after capture", async () => {
+    const fixture = await createWorkspace("snapshot-late-insert");
+    await createTurn(fixture, "2026-07-01T00:00:00.000Z", "snapshot-late-first");
+    await createTurn(fixture, "2026-07-03T00:00:00.000Z", "snapshot-late-third");
+    const now = new Date("2026-08-02T00:00:00.000Z");
+    const budget = new ContentPlanProjectionBudgetService(projections);
+    const orchestrator = new ContentPlanProjectionOrchestrator({
+      projections,
+      discovery: new PostgresContentPlanProjectionDiscovery(database.kysely),
+      historicalTurns: new ContentPlanHistoricalTurnProjectionService(
+        new PostgresContentPlanHistoricalTurnSource(database.kysely),
+        budget,
+      ),
+      budget,
+    }, { pageSize: 1, leaseMs: 30_000 });
+
+    await orchestrator.runWorkspaceOnce({
+      workspaceId: fixture.workspaceId,
+      embeddingSpaceId: fixture.embeddingSpaceId,
+      now,
+    });
+    const initialized = await projections.findProjectionState(fixture.workspaceId);
+    expect(initialized).toMatchObject({ bootstrapTotal: "2" });
+    const late = await createTurn(
+      fixture,
+      "2026-07-02T00:00:00.000Z",
+      "snapshot-late-second",
+    );
+    const targetGenerationId = initialized!.targetGenerationId!;
+    const intake = new ObservationIntakeService(
+      new ContentPlanObservationRepository(database.kysely),
+      projections,
+      { clock: () => new Date("2026-07-02T00:00:01.000Z") },
+    );
+    await expect(intake.registerCommittedTurn({
+      workspaceId: fixture.workspaceId,
+      conversationId: late.conversationId,
+      sourceChannel: "embed",
+      sourceUserMessageId: late.userMessageId,
+      sourceAssistantMessageId: late.assistantMessageId,
+      interaction: {
+        role: "substantive_new",
+        semanticIntents: [{ id: "late-live-intent", text: "late live semantic intent" }],
+      },
+      semanticVectors: [],
+    })).resolves.toMatchObject({ status: "processed", acceptedCount: 1 });
+
+    for (let tick = 1; tick <= 3; tick += 1) {
+      await orchestrator.runWorkspaceOnce({
+        workspaceId: fixture.workspaceId,
+        embeddingSpaceId: fixture.embeddingSpaceId,
+        now: new Date(now.getTime() + tick * 1_000),
+      });
+    }
+    const target = (await projections.findProjectionState(fixture.workspaceId))!.targetGenerationId!;
+    const snapshot = await database.query<{ assistant_message_id: string }>(
+      `SELECT assistant_message_id
+       FROM content_plan_projection_population_snapshots
+       WHERE workspace_id = $1 AND generation_id = $2
+       ORDER BY created_at, assistant_message_id`,
+      [fixture.workspaceId, target],
+    );
+    expect(snapshot).toHaveLength(2);
+    expect(snapshot.map((row) => row.assistant_message_id)).not.toContain(late.assistantMessageId);
+    await expect(database.query<{ generation_id: string }>(
+      `SELECT vector.generation_id
+       FROM content_plan_observations observation
+       JOIN content_plan_observation_vectors vector
+         ON vector.workspace_id = observation.workspace_id
+        AND vector.observation_id = observation.id
+       WHERE observation.workspace_id = $1
+         AND observation.source_assistant_message_id = $2`,
+      [fixture.workspaceId, late.assistantMessageId],
+    )).resolves.toEqual([{ generation_id: targetGenerationId }]);
+    await expect(projections.findProjectionState(fixture.workspaceId)).resolves.toMatchObject({
+      bootstrapProcessed: "2",
+      bootstrapTotal: "2",
+    });
   });
 
   it("rolls back observation discovery when cursor/progress cannot commit atomically", async () => {
@@ -557,6 +732,15 @@ describeIfDatabase("content-planning projection orchestration", () => {
     expect(sameDay.has(assignment.fixture.workspaceId)).toBe(true);
     expect(sameDay.has(enrichment.fixture.workspaceId)).toBe(true);
     expect(sameDay.has(fallback.fixture.workspaceId)).toBe(false);
+
+    await database.execute(
+      `INSERT INTO content_plan_corpus_invalidations (workspace_id, dirty_at)
+       VALUES ($1, $2)`,
+      [idle.workspaceId, now],
+    );
+    const corpusInvalidationCandidates = new Set((await candidates.listCandidates({ limit: 100, now }))
+      .map((candidate) => candidate.workspaceId));
+    expect(corpusInvalidationCandidates.has(idle.workspaceId)).toBe(true);
 
     const nextBudgetWindow = new Set((await candidates.listCandidates({
       limit: 100,

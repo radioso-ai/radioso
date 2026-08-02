@@ -87,6 +87,8 @@ aged out.
 - `composition.ts`: the services, the route factory, the Content Planning
   evidence source, signal domain helpers, and DTOs. Application composition
   wires the skill catalog in through `infra/skillCatalogOutcomeSource.ts`.
+- `public.ts`: the narrow canonical-population SQL seam used by Content Planning
+  snapshot and membership queries.
 - `contracts/index.ts`: the two ports (`QualityTurnsServicePort`,
   `QualityStatsServicePort`) and every response shape.
 

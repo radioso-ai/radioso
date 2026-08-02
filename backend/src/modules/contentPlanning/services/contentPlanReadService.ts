@@ -151,18 +151,17 @@ export class ContentPlanReadService implements ContentPlanReadServicePort {
       : query.window === "comparison"
         ? windows.comparison
         : { from: windows.comparison.from, to: windows.current.to };
-    const candidateIds = await this.dependencies.source.listTopicAssistantMessageIds(
+    const memberPage = await this.dependencies.source.pageTopicAssistantMessageIds(
       workspaceId,
       generationId,
       resolved.canonicalTopicId,
       requestedWindow,
+      query.page,
+      query.pageSize,
     );
-    const evidence = await this.getEvidence(workspaceId, candidateIds);
-    const eligibleIds = candidateIds.filter((assistantMessageId) => evidence.has(assistantMessageId));
-    const offset = (query.page - 1) * query.pageSize;
     return this.dependencies.qualityEvidence.mapMemberTurnPage(workspaceId, {
-      assistantMessageIds: eligibleIds.slice(offset, offset + query.pageSize),
-      total: eligibleIds.length,
+      assistantMessageIds: memberPage.assistantMessageIds,
+      total: memberPage.total,
       page: query.page,
       pageSize: query.pageSize,
     });

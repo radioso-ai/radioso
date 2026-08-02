@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { CompiledQuery, QueryResult } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
 import { ContentPlanCursorCodec } from "../../src/modules/contentPlanning/services/contentPlanCursor.js";
@@ -162,8 +162,96 @@ describeIfDatabase("Content Planning read model", () => {
     expect(countingDb.count).toBeLessThanOrEqual(6);
   });
 
+  it("counts a ready enrichment with an obsolete source revision as pending", async () => {
+    const topicId = randomUUID();
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision,
+         created_at, updated_at
+       )
+       SELECT $1, $2, $3, embedding_space_id, 'mature', '[0,0,1]'::vector,
+         3, 0, '{}'::uuid[], 1, $4, $4
+       FROM content_plan_projection_generations
+       WHERE workspace_id = $1 AND id = $2`,
+      [fixture.workspaceId, fixture.generationId, topicId, new Date(AS_OF.getTime() - 1_000)],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_topic_enrichments (
+         workspace_id, generation_id, topic_id, source_topic_revision,
+         action_rule_version, state, label, description, enriched_at
+       ) VALUES ($1, $2, $3, 1, 1, 'ready', 'Revision test', 'Revision test topic', $4)`,
+      [fixture.workspaceId, fixture.generationId, topicId, new Date(AS_OF.getTime() - 1_000)],
+    );
+    const source = new PostgresContentPlanReadSource(database.kysely);
+
+    expect((await source.getProjection(fixture.workspaceId))?.pendingEnrichmentTopicCount).toBe(1);
+    await database.execute(
+      `UPDATE content_plan_topics
+       SET revision = revision + 1
+       WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+      [fixture.workspaceId, fixture.generationId, topicId],
+    );
+    expect((await source.getProjection(fixture.workspaceId))?.pendingEnrichmentTopicCount).toBe(2);
+
+    await database.execute(
+      `DELETE FROM content_plan_topics
+       WHERE workspace_id = $1 AND generation_id = $2 AND id = $3`,
+      [fixture.workspaceId, fixture.generationId, topicId],
+    );
+  });
+
   it("freezes asOf and ordering in the signed cursor while ignoring enrichment-only changes", async () => {
     const { service } = createService();
+    const delayedConversationId = randomUUID();
+    const delayedUserMessageId = randomUUID();
+    const delayedAssistantMessageId = randomUUID();
+    const delayedObservationId = randomUUID();
+    const delayedTopicId = randomUUID();
+    await database.execute(
+      `INSERT INTO conversations (id, workspace_id, source_channel, created_at, updated_at)
+       VALUES ($1, $2, 'embed', $3, $3)`,
+      [delayedConversationId, fixture.workspaceId, new Date(AS_OF.getTime() - 300_000)],
+    );
+    await database.execute(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, created_at)
+       VALUES
+         ($1, $3, $4, 'user', 'Delayed assignment question', $5),
+         ($2, $3, $4, 'assistant', 'Delayed assignment answer', $5 + INTERVAL '1 second')`,
+      [
+        delayedUserMessageId,
+        delayedAssistantMessageId,
+        delayedConversationId,
+        fixture.workspaceId,
+        new Date(AS_OF.getTime() - 300_000),
+      ],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_observations (
+         id, workspace_id, source_user_message_id, source_assistant_message_id,
+         conversation_id, semantic_intent_id, semantic_text_hash, interaction_role,
+         observation_state, observed_at
+       ) VALUES ($1, $2, $3, $4, $5, 'delayed-assignment', $6, 'substantive_new', 'ready', $7)`,
+      [
+        delayedObservationId,
+        fixture.workspaceId,
+        delayedUserMessageId,
+        delayedAssistantMessageId,
+        delayedConversationId,
+        "e".repeat(64),
+        new Date(AS_OF.getTime() - 299_000),
+      ],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_observation_vectors (
+         workspace_id, observation_id, generation_id, embedding_space_id,
+         dimensions, embedding, vector_source, state, completed_at
+       )
+       SELECT $1, $2, $3, embedding_space_id, 3, '[0,1,0]'::vector, 'reused', 'assigned', $4
+       FROM content_plan_projection_generations
+       WHERE workspace_id = $1 AND id = $3`,
+      [fixture.workspaceId, delayedObservationId, fixture.generationId, AS_OF],
+    );
     const first = await service.list(fixture.workspaceId, {
       view: "all_interests",
       limit: 1,
@@ -171,11 +259,37 @@ describeIfDatabase("Content Planning read model", () => {
     expect(first.items.map(({ id }) => id)).toEqual([fixture.opportunityTopicId]);
     expect(first.nextCursor).not.toBeNull();
 
+    await database.execute(
+      `INSERT INTO content_plan_topics (
+         workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
+         dimensions, centroid_weight, representative_observation_ids, revision,
+         created_at, updated_at
+       )
+       SELECT $1, $2, $3, embedding_space_id, 'mature', '[0,0,1]'::vector,
+         3, 0, '{}'::uuid[], 1, $4, $4
+       FROM content_plan_projection_generations
+       WHERE workspace_id = $1 AND id = $2`,
+      [fixture.workspaceId, fixture.generationId, delayedTopicId, new Date(AS_OF.getTime() + 1_000)],
+    );
+
     await database.query(
       `UPDATE content_plan_topic_enrichments
        SET label = 'Enterprise access updated', updated_at = NOW()
        WHERE workspace_id = $1 AND generation_id = $2 AND topic_id = $3`,
       [fixture.workspaceId, fixture.generationId, fixture.opportunityTopicId],
+    );
+    await database.execute(
+      `INSERT INTO content_plan_topic_memberships (
+         workspace_id, generation_id, observation_id, topic_id,
+         assignment_version, similarity, cohesion, assigned_at
+       ) VALUES ($1, $2, $3, $4, 1, 0.94, 0.9, $5)`,
+      [
+        fixture.workspaceId,
+        fixture.generationId,
+        delayedObservationId,
+        fixture.healthyTopicId,
+        new Date(AS_OF.getTime() + 1_000),
+      ],
     );
 
     const second = await service.list(fixture.workspaceId, {
@@ -186,7 +300,9 @@ describeIfDatabase("Content Planning read model", () => {
     expect(second.asOf).toBe(first.asOf);
     expect(second.window).toEqual(first.window);
     expect(second.items.map(({ id }) => id)).toEqual([fixture.healthyTopicId]);
+    expect(second.items[0]?.demand.currentQuestionCount).toBe(1);
     expect(second.recommendedTopicId).toBeNull();
+    expect(second.nextCursor).toBeNull();
 
     await expect(service.list(fixture.workspaceId, {
       view: "opportunities",
@@ -253,7 +369,149 @@ describeIfDatabase("Content Planning read model", () => {
       { window: "current", page: 1, pageSize: 25 },
     )).resolves.toBeNull();
   });
+
+  it("paginates a high-cardinality topic in SQL and hydrates only the selected Quality page", async () => {
+    const memberCount = 1_200;
+    await seedHighCardinalityTopicMembers(database, fixture, memberCount);
+    const countingDb = new CountingDb(database);
+    const verificationSource = {
+      getByAssistantMessageIds: vi.fn(async (
+        _workspaceId: string,
+        _assistantMessageIds: string[],
+      ) => new Map()),
+    };
+    const service = new ContentPlanReadService({
+      source: new PostgresContentPlanReadSource(countingDb as never),
+      qualityEvidence: new QualityContentPlanningEvidenceSource(
+        countingDb as never,
+        verificationSource,
+      ),
+      cursorCodec: new ContentPlanCursorCodec("content-plan-read-test-secret"),
+      now: () => new Date(AS_OF),
+    });
+    const startedAt = performance.now();
+
+    const page = await service.listTopicTurns(
+      fixture.workspaceId,
+      fixture.opportunityTopicId,
+      { window: "current", page: 1, pageSize: 25 },
+    );
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(page).toMatchObject({
+      total: memberCount + fixture.opportunityAssistantMessageIds.length,
+      page: 1,
+      pageSize: 25,
+      totalPages: Math.ceil((memberCount + fixture.opportunityAssistantMessageIds.length) / 25),
+    });
+    expect(page?.items).toHaveLength(25);
+    const verificationBatchSizes = verificationSource.getByAssistantMessageIds.mock.calls
+      .map(([, assistantMessageIds]) => assistantMessageIds.length);
+    expect(verificationBatchSizes).toEqual([25]);
+    expect(countingDb.count).toBeLessThanOrEqual(6);
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
 });
+
+const seedHighCardinalityTopicMembers = async (
+  database: Database,
+  fixture: Fixture,
+  count: number,
+): Promise<void> => {
+  await database.execute(
+    `INSERT INTO conversations (id, workspace_id, source_channel, created_at, updated_at)
+     SELECT
+       md5($1::text || ':high-cardinality:conversation:' || member::text)::uuid,
+       $1::uuid,
+       'embed',
+       $3::timestamptz - make_interval(secs => member * 2),
+       $3::timestamptz - make_interval(secs => member * 2)
+     FROM generate_series(1, $2::int) AS member`,
+    [fixture.workspaceId, count, AS_OF],
+  );
+  await database.execute(
+    `INSERT INTO messages (
+       id, conversation_id, workspace_id, role, content, metadata_json, created_at
+     )
+     SELECT
+       md5($1::text || ':high-cardinality:user:' || member::text)::uuid,
+       md5($1::text || ':high-cardinality:conversation:' || member::text)::uuid,
+       $1::uuid,
+       'user',
+       'High-cardinality source question ' || member::text,
+       '{}'::jsonb,
+       $3::timestamptz - make_interval(secs => member * 2 + 1)
+     FROM generate_series(1, $2::int) AS member
+     UNION ALL
+     SELECT
+       md5($1::text || ':high-cardinality:assistant:' || member::text)::uuid,
+       md5($1::text || ':high-cardinality:conversation:' || member::text)::uuid,
+       $1::uuid,
+       'assistant',
+       'High-cardinality answer ' || member::text,
+       '{}'::jsonb,
+       $3::timestamptz - make_interval(secs => member * 2)
+     FROM generate_series(1, $2::int) AS member`,
+    [fixture.workspaceId, count, AS_OF],
+  );
+  await database.execute(
+    `INSERT INTO content_plan_observations (
+       id, workspace_id, source_user_message_id, source_assistant_message_id,
+       conversation_id, semantic_intent_id, semantic_text_hash, interaction_role,
+       observation_state, observed_at
+     )
+     SELECT
+       md5($1::text || ':high-cardinality:observation:' || member::text)::uuid,
+       $1::uuid,
+       md5($1::text || ':high-cardinality:user:' || member::text)::uuid,
+       md5($1::text || ':high-cardinality:assistant:' || member::text)::uuid,
+       md5($1::text || ':high-cardinality:conversation:' || member::text)::uuid,
+       'high-cardinality-' || member::text,
+       repeat('a', 64),
+       'substantive_new',
+       'ready',
+       $3::timestamptz - make_interval(secs => member * 2)
+     FROM generate_series(1, $2::int) AS member`,
+    [fixture.workspaceId, count, AS_OF],
+  );
+  await database.execute(
+    `INSERT INTO content_plan_observation_vectors (
+       workspace_id, observation_id, generation_id, embedding_space_id,
+       dimensions, embedding, vector_source, state, completed_at
+     )
+     SELECT
+       $1::uuid,
+       md5($1::text || ':high-cardinality:observation:' || member::text)::uuid,
+       $2::uuid,
+       generation.embedding_space_id,
+       3,
+       '[1,0,0]'::vector,
+       'reused',
+       'assigned',
+       $4::timestamptz
+     FROM generate_series(1, $3::int) AS member
+     CROSS JOIN content_plan_projection_generations generation
+     WHERE generation.workspace_id = $1::uuid AND generation.id = $2::uuid`,
+    [fixture.workspaceId, fixture.generationId, count, AS_OF],
+  );
+  await database.execute(
+    `INSERT INTO content_plan_topic_memberships (
+       workspace_id, generation_id, observation_id, topic_id,
+       assignment_version, similarity, cohesion, assigned_at
+     )
+     SELECT
+       $1::uuid,
+       $2::uuid,
+       md5($1::text || ':high-cardinality:observation:' || member::text)::uuid,
+       $5::uuid,
+       1,
+       0.95,
+       0.9,
+       $4::timestamptz - INTERVAL '1 millisecond'
+     FROM generate_series(1, $3::int) AS member`,
+    [fixture.workspaceId, fixture.generationId, count, AS_OF, fixture.opportunityTopicId],
+  );
+};
 
 const seedFixture = async (database: Database): Promise<Fixture> => {
   const accountId = randomUUID();
@@ -321,14 +579,14 @@ const seedFixture = async (database: Database): Promise<Fixture> => {
     `INSERT INTO content_plan_topics (
        workspace_id, generation_id, id, embedding_space_id, lifecycle, centroid,
        dimensions, centroid_weight, representative_observation_ids, revision,
-       merged_into_topic_id, redirect_expires_at, updated_at
+       merged_into_topic_id, redirect_expires_at, created_at, updated_at
      ) VALUES
-       ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 4, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T10:00:00Z'),
-       ($1, $2, $5, $4, 'mature', '[0,1,0]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T09:00:00Z'),
-       ($1, $2, $6, $4, 'provisional', '[0,0,1]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T08:00:00Z'),
-       ($1, $2, $7, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-12-01T00:00:00Z', '2026-08-01T00:00:00Z'),
-       ($1, $2, $8, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-08-01T00:00:00Z', '2026-07-01T00:00:00Z'),
-       ($1, $2, $9, $4, 'retired', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, NULL, NULL, '2026-07-01T00:00:00Z')`,
+       ($1, $2, $3, $4, 'mature', '[1,0,0]'::vector, 3, 4, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T10:00:00Z', '2026-08-02T10:00:00Z'),
+       ($1, $2, $5, $4, 'mature', '[0,1,0]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T09:00:00Z', '2026-08-02T09:00:00Z'),
+       ($1, $2, $6, $4, 'provisional', '[0,0,1]'::vector, 3, 1, '{}'::uuid[], 1, NULL, NULL, '2026-08-02T08:00:00Z', '2026-08-02T08:00:00Z'),
+       ($1, $2, $7, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-12-01T00:00:00Z', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+       ($1, $2, $8, $4, 'merged', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, $3, '2026-08-01T00:00:00Z', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z'),
+       ($1, $2, $9, $4, 'retired', '[1,0,0]'::vector, 3, 0, '{}'::uuid[], 1, NULL, NULL, '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z')`,
     [workspaceId, generationId, opportunityTopicId, spaceId, healthyTopicId, provisionalTopicId, mergedTopicId, expiredMergedTopicId, retiredTopicId],
   );
 
@@ -462,9 +720,9 @@ const seedFixture = async (database: Database): Promise<Fixture> => {
         await database.query(
           `INSERT INTO content_plan_topic_memberships (
              workspace_id, generation_id, observation_id, topic_id,
-             assignment_version, similarity, cohesion
-           ) VALUES ($1, $2, $3, $4, 1, 0.9, 0.88)`,
-          [workspaceId, generationId, observationId, input.topicId],
+             assignment_version, similarity, cohesion, assigned_at
+           ) VALUES ($1, $2, $3, $4, 1, 0.9, 0.88, $5)`,
+          [workspaceId, generationId, observationId, input.topicId, turn.at],
         );
       }
     }

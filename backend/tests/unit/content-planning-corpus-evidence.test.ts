@@ -28,7 +28,6 @@ describe("ContentPlanningCorpusEvidenceService", () => {
     };
     const store: ContentPlanningCorpusEvidenceStorePort = {
       replaceTopicDocuments: vi.fn(async () => {}),
-      invalidateDocument: vi.fn(async () => 0),
     };
     const service = new ContentPlanningCorpusEvidenceService({ search, store });
 
@@ -77,7 +76,6 @@ describe("ContentPlanningCorpusEvidenceService", () => {
     };
     const store: ContentPlanningCorpusEvidenceStorePort = {
       replaceTopicDocuments: vi.fn(async () => {}),
-      invalidateDocument: vi.fn(async () => 1),
     };
     const service = new ContentPlanningCorpusEvidenceService({ search, store });
 
@@ -94,10 +92,6 @@ describe("ContentPlanningCorpusEvidenceService", () => {
     });
     expect(result).toEqual({ state: "ready", documents: [] });
     expect(store.replaceTopicDocuments).toHaveBeenCalledWith(expect.objectContaining({ documents: [] }));
-
-    await expect(service.invalidateDeletedDocument("workspace_1", "deleted_document"))
-      .resolves.toBe(1);
-    expect(store.invalidateDocument).toHaveBeenCalledWith("workspace_1", "deleted_document");
   });
 
   it("reports corpus unavailability without retaining candidates or claiming completeness", async () => {
@@ -106,7 +100,6 @@ describe("ContentPlanningCorpusEvidenceService", () => {
     };
     const store: ContentPlanningCorpusEvidenceStorePort = {
       replaceTopicDocuments: vi.fn(async () => {}),
-      invalidateDocument: vi.fn(async () => 0),
     };
     const service = new ContentPlanningCorpusEvidenceService({ search, store });
 

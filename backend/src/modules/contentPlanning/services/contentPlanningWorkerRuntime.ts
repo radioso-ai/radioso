@@ -33,11 +33,16 @@ export interface ContentPlanningProjectionProcessorPort {
   runRetentionOnce(input: { workspaceId: string }): Promise<unknown>;
 }
 
+export interface ContentPlanningCorpusInvalidationFanoutPort {
+  runOnce(input: { workspaceId: string; limit: number }): Promise<unknown>;
+}
+
 export interface ContentPlanningWorkerRuntimeOptions {
   candidateBatchSize?: number;
   maintenanceBatchSize?: number;
   maintenanceIntervalMs?: number;
   pollIntervalMs?: number;
+  corpusInvalidationBatchSize?: number;
   clock?: () => Date;
 }
 
@@ -46,6 +51,7 @@ export class ContentPlanningWorkerRuntime {
   private readonly maintenanceBatchSize: number;
   private readonly maintenanceIntervalMs: number;
   private readonly pollIntervalMs: number;
+  private readonly corpusInvalidationBatchSize: number;
   private readonly clock: () => Date;
   private timer: NodeJS.Timeout | undefined;
   private inFlight: Promise<void> | undefined;
@@ -60,6 +66,7 @@ export class ContentPlanningWorkerRuntime {
       candidates: ContentPlanningProjectionCandidateSourcePort;
       orchestrator: Pick<ContentPlanProjectionOrchestrator, "runWorkspaceOnce">;
       processor: ContentPlanningProjectionProcessorPort;
+      corpusInvalidations?: ContentPlanningCorpusInvalidationFanoutPort;
       logger: Pick<AppLogger, "error" | "info">;
     },
     options: ContentPlanningWorkerRuntimeOptions = {},
@@ -68,6 +75,7 @@ export class ContentPlanningWorkerRuntime {
     this.maintenanceBatchSize = options.maintenanceBatchSize ?? 100;
     this.maintenanceIntervalMs = options.maintenanceIntervalMs ?? 5 * 60_000;
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000;
+    this.corpusInvalidationBatchSize = options.corpusInvalidationBatchSize ?? 100;
     this.clock = options.clock ?? (() => new Date());
     if (
       !Number.isSafeInteger(this.candidateBatchSize)
@@ -80,6 +88,9 @@ export class ContentPlanningWorkerRuntime {
       || this.maintenanceIntervalMs < 1
       || !Number.isSafeInteger(this.pollIntervalMs)
       || this.pollIntervalMs < 1
+      || !Number.isSafeInteger(this.corpusInvalidationBatchSize)
+      || this.corpusInvalidationBatchSize < 1
+      || this.corpusInvalidationBatchSize > 100
     ) {
       throw new Error("Content planning worker runtime options are invalid");
     }
@@ -165,59 +176,76 @@ export class ContentPlanningWorkerRuntime {
     candidate: ContentPlanningProjectionCandidate & { maintenance: boolean },
     now: Date,
   ): Promise<void> {
+    if (this.dependencies.corpusInvalidations) {
       try {
-        const result = await this.dependencies.orchestrator.runWorkspaceOnce({
+        await this.dependencies.corpusInvalidations.runOnce({
           workspaceId: candidate.workspaceId,
-          embeddingSpaceId: candidate.embeddingSpaceId,
-          now,
-        });
-        const generationId = this.generationIdFrom(result);
-        if (generationId) {
-          await this.dependencies.processor.runOnce({
-            workspaceId: candidate.workspaceId,
-            generationId,
-            ...(candidate.maintenance ? { maintenance: true } : {}),
-          });
-        }
-        if (result.kind !== "up_to_date" && result.kind !== "busy") {
-          this.dependencies.logger.info(
-            {
-              event: "content_planning_projection_progress",
-              workspaceId: candidate.workspaceId,
-              embeddingSpaceId: candidate.embeddingSpaceId,
-              generationId: this.generationIdFrom(result) ?? undefined,
-              outcome: result.kind,
-              ...(result.kind === "progressed" || result.kind === "awaiting_projection"
-                ? { processed: result.processed, total: result.total }
-                : {}),
-            },
-            "Content planning projection progressed",
-          );
-        }
-      } catch {
-        this.dependencies.logger.error(
-          {
-            event: "content_planning_projection_tick_failed",
-            workspaceId: candidate.workspaceId,
-            reason: "projection_tick_failed",
-          },
-          "Content planning projection tick failed",
-        );
-      }
-      try {
-        await this.dependencies.processor.runRetentionOnce({
-          workspaceId: candidate.workspaceId,
+          limit: this.corpusInvalidationBatchSize,
         });
       } catch {
         this.dependencies.logger.error(
           {
-            event: "content_planning_retention_tick_failed",
+            event: "content_planning_corpus_invalidation_tick_failed",
             workspaceId: candidate.workspaceId,
-            reason: "retention_tick_failed",
+            reason: "corpus_invalidation_failed",
           },
-          "Content planning retention tick failed",
+          "Content planning corpus invalidation tick failed",
         );
       }
+    }
+    try {
+      const result = await this.dependencies.orchestrator.runWorkspaceOnce({
+        workspaceId: candidate.workspaceId,
+        embeddingSpaceId: candidate.embeddingSpaceId,
+        now,
+      });
+      const generationId = this.generationIdFrom(result);
+      if (generationId) {
+        await this.dependencies.processor.runOnce({
+          workspaceId: candidate.workspaceId,
+          generationId,
+          ...(candidate.maintenance ? { maintenance: true } : {}),
+        });
+      }
+      if (result.kind !== "up_to_date" && result.kind !== "busy") {
+        this.dependencies.logger.info(
+          {
+            event: "content_planning_projection_progress",
+            workspaceId: candidate.workspaceId,
+            embeddingSpaceId: candidate.embeddingSpaceId,
+            generationId: this.generationIdFrom(result) ?? undefined,
+            outcome: result.kind,
+            ...(result.kind === "progressed" || result.kind === "awaiting_projection"
+              ? { processed: result.processed, total: result.total }
+              : {}),
+          },
+          "Content planning projection progressed",
+        );
+      }
+    } catch {
+      this.dependencies.logger.error(
+        {
+          event: "content_planning_projection_tick_failed",
+          workspaceId: candidate.workspaceId,
+          reason: "projection_tick_failed",
+        },
+        "Content planning projection tick failed",
+      );
+    }
+    try {
+      await this.dependencies.processor.runRetentionOnce({
+        workspaceId: candidate.workspaceId,
+      });
+    } catch {
+      this.dependencies.logger.error(
+        {
+          event: "content_planning_retention_tick_failed",
+          workspaceId: candidate.workspaceId,
+          reason: "retention_tick_failed",
+        },
+        "Content planning retention tick failed",
+      );
+    }
   }
 
   private generationIdFrom(result: ContentPlanProjectionOrchestrationResult): string | null {

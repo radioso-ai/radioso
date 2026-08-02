@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type {
-  QualityContentPlanningEvidenceSourcePort,
   QualityContentPlanningPopulationCursor,
 } from "../../quality/contracts/contentPlanningEvidence.js";
 import type {
@@ -63,10 +62,6 @@ export class ContentPlanProjectionOrchestrator {
   constructor(
     private readonly dependencies: {
       projections: ContentPlanProjectionRepositoryPort;
-      population: Pick<
-        QualityContentPlanningEvidenceSourcePort,
-        "countPopulation" | "listPopulationPage"
-      >;
       discovery: ContentPlanProjectionDiscoveryPort;
       historicalTurns: ContentPlanHistoricalTurnProjectionPort;
       budget: ContentPlanProjectionBudgetPort & {
@@ -205,20 +200,59 @@ export class ContentPlanProjectionOrchestrator {
             windowTo: window.to,
           }
         : undefined;
-    const page = await this.dependencies.population.listPopulationPage(input.workspaceId, {
+    const page = await this.dependencies.discovery.listPopulationSnapshotPage({
+      workspaceId: input.workspaceId,
+      generationId: target.generation.id,
       window,
       cursor,
       limit: this.pageSize,
     });
     if (page.items.length === 0) {
-      await this.dependencies.projections.releaseProjectionLease({
+      const reconciled = await this.dependencies.discovery.reconcilePopulationSnapshotProgress({
         workspaceId: input.workspaceId,
+        generationId: target.generation.id,
         leaseToken: lease.leaseToken,
+        ...(cursor
+          ? {
+              cursor: {
+                createdAt: new Date(cursor.createdAt),
+                assistantMessageId: cursor.assistantMessageId,
+              },
+            }
+          : {}),
+        processed,
       });
+      if (!reconciled) {
+        return this.recordProjectionResult({
+          input,
+          generation: target.generation,
+          result: { kind: "busy" },
+          startedAt,
+        });
+      }
+      if (reconciled.processed === reconciled.total) {
+        const state = await this.dependencies.projections.findProjectionState(input.workspaceId);
+        if (state) {
+          const result = await this.tryPromote({
+            workspaceId: input.workspaceId,
+            generation: target.generation,
+            state,
+            processed: reconciled.processed,
+            total: reconciled.total,
+            now,
+          });
+          return this.recordProjectionResult({ input, generation: target.generation, result, startedAt });
+        }
+      }
       return this.recordProjectionResult({
         input,
         generation: target.generation,
-        result: { kind: "awaiting_projection", processed, total, generationId: target.generation.id },
+        result: {
+          kind: "awaiting_projection",
+          processed: reconciled.processed,
+          total: reconciled.total,
+          generationId: target.generation.id,
+        },
         startedAt,
       });
     }
@@ -345,23 +379,20 @@ export class ContentPlanProjectionOrchestrator {
       return { kind: "busy" };
     }
     try {
-      const total = await this.dependencies.population.countPopulation(input.workspaceId, {
+      const initialized = await this.dependencies.discovery.capturePopulationSnapshot({
+        workspaceId: input.workspaceId,
+        generationId: input.generation.id,
+        leaseToken: lease.leaseToken,
         window: {
           from: input.generation.horizonFrom.toISOString(),
           to: input.generation.horizonTo.toISOString(),
         },
       });
-      const initialized = await this.dependencies.projections.initializeTargetProgress({
-        workspaceId: input.workspaceId,
-        targetGenerationId: input.generation.id,
-        leaseToken: lease.leaseToken,
-        total: String(total),
-      });
       if (!initialized) return { kind: "busy" };
       return {
         kind: "progressed",
         processed: 0,
-        total,
+        total: initialized.total,
         generationId: input.generation.id,
       };
     } catch (error) {
@@ -406,8 +437,6 @@ export class ContentPlanProjectionOrchestrator {
 
     const horizonTo = new Date(input.now);
     const horizonFrom = new Date(horizonTo.getTime() - HORIZON_MS);
-    const window = { from: horizonFrom.toISOString(), to: horizonTo.toISOString() };
-    const total = await this.dependencies.population.countPopulation(input.workspaceId, { window });
     return this.dependencies.projections.ensureTargetGeneration({
       workspaceId: input.workspaceId,
       embeddingSpaceId: input.embeddingSpaceId,
@@ -415,7 +444,7 @@ export class ContentPlanProjectionOrchestrator {
       policyVersion: this.policyVersion,
       horizonFrom,
       horizonTo,
-      total: String(total),
+      total: null,
       budgetVersion: this.budgetVersion,
       budgetWindowStartedAt: utcBudgetWindowStart(input.now),
     });

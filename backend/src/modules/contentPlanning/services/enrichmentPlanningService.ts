@@ -1,15 +1,11 @@
 import type {
   QualityContentPlanningEvidenceSourcePort,
-  QualityContentPlanningTurnEvidence,
 } from "../../quality/contracts/contentPlanningEvidence.js";
-import type { ContentPlanProjection } from "../contracts/index.js";
 import { resolveContentPlanWindows } from "../domain/aggregationPolicy.js";
 import type {
-  ContentPlanReadSourcePort,
-  ContentPlanReportReadData,
+  ContentPlanReadDocument,
+  ContentPlanReadTopic,
 } from "../infra/contentPlanReadSource.js";
-import { presentContentPlanReport } from "./contentPlanPresenter.js";
-import { contentPlanCorpusEvidenceFingerprint } from "./enrichmentContextService.js";
 import {
   NOOP_CONTENT_PLAN_WORKER_OBSERVABILITY,
   type ContentPlanWorkerEventSink,
@@ -18,9 +14,14 @@ import {
   ContentPlanningEnrichmentScheduler,
   type ContentPlanEnrichmentSchedulingTopic,
 } from "./enrichmentScheduler.js";
+import {
+  ContentPlanEnrichmentPlanningAccumulator,
+  type ContentPlanEnrichmentPlanningObservation,
+} from "./enrichmentPlanningAccumulator.js";
 
 const QUALITY_EVIDENCE_BATCH_SIZE = 500;
 const DIRTY_TOPIC_BATCH_SIZE = 100;
+const REPAIR_TOPIC_BATCH_SIZE = 100;
 
 export interface ContentPlanEnrichmentDirtyMarker {
   topicId: string;
@@ -39,10 +40,6 @@ export interface ContentPlanEnrichmentTriggerPort {
     generationId: string;
     markers: readonly ContentPlanEnrichmentDirtyMarker[];
   }): Promise<number>;
-  invalidateWorkspaceCorpusEvidence(input: {
-    workspaceId: string;
-    dirtyAt: Date;
-  }): Promise<number>;
 }
 
 export interface ContentPlanEnrichmentPlanningSourcePort {
@@ -50,13 +47,63 @@ export interface ContentPlanEnrichmentPlanningSourcePort {
     workspaceId: string;
     generationId: string;
     asOf: Date;
-  }): Promise<ContentPlanEnrichmentSchedulingTopic[]>;
+    dirtyTopicIds: readonly string[];
+    repair: { limit: number } | null;
+  }): Promise<{
+    topics: ContentPlanEnrichmentSchedulingTopic[];
+    repairCheckpoint: ContentPlanEnrichmentRepairCheckpoint | null;
+  }>;
+  completeRepairPage(input: {
+    workspaceId: string;
+    generationId: string;
+    checkpoint: ContentPlanEnrichmentRepairCheckpoint;
+  }): Promise<boolean>;
+}
+
+export interface ContentPlanEnrichmentRepairCheckpoint {
+  expectedVersion: number;
+  nextTopicId: string | null;
+}
+
+export interface ContentPlanEnrichmentObservationCursor {
+  observedAt: string;
+  observationId: string;
+}
+
+export interface ContentPlanEnrichmentPlanningDataSourcePort {
+  loadData(input: {
+    workspaceId: string;
+    generationId: string;
+    window: { from: string; to: string };
+    dirtyTopicIds: readonly string[];
+    repair: { limit: number } | null;
+  }): Promise<{
+    topics: ContentPlanReadTopic[];
+    documents: ContentPlanReadDocument[];
+    repairCheckpoint: ContentPlanEnrichmentRepairCheckpoint | null;
+  }>;
+  pageObservations(input: {
+    workspaceId: string;
+    generationId: string;
+    window: { from: string; to: string };
+    topicIds: readonly string[];
+    cursor: ContentPlanEnrichmentObservationCursor | null;
+    limit: number;
+  }): Promise<{
+    items: ContentPlanEnrichmentPlanningObservation[];
+    nextCursor: ContentPlanEnrichmentObservationCursor | null;
+  }>;
+  completeRepairPage(input: {
+    workspaceId: string;
+    generationId: string;
+    checkpoint: ContentPlanEnrichmentRepairCheckpoint;
+  }): Promise<boolean>;
 }
 
 export class ContentPlanReportEnrichmentPlanningSource
 implements ContentPlanEnrichmentPlanningSourcePort {
   constructor(private readonly dependencies: {
-    source: ContentPlanReadSourcePort;
+    source: ContentPlanEnrichmentPlanningDataSourcePort;
     qualityEvidence: Pick<QualityContentPlanningEvidenceSourcePort, "getEvidenceByAssistantMessageIds">;
   }) {}
 
@@ -64,38 +111,59 @@ implements ContentPlanEnrichmentPlanningSourcePort {
     workspaceId: string;
     generationId: string;
     asOf: Date;
-  }): Promise<ContentPlanEnrichmentSchedulingTopic[]> {
+    dirtyTopicIds: readonly string[];
+    repair: { limit: number } | null;
+  }): Promise<{
+    topics: ContentPlanEnrichmentSchedulingTopic[];
+    repairCheckpoint: ContentPlanEnrichmentRepairCheckpoint | null;
+  }> {
     const windows = resolveContentPlanWindows(input.asOf);
-    const data = await this.dependencies.source.getReportData(
-      input.workspaceId,
-      input.generationId,
-      { from: windows.comparison.from, to: windows.current.to },
-    );
-    const evidence = await this.loadEvidence(
-      input.workspaceId,
-      data.observations.map((observation) => observation.sourceAssistantMessageId),
-    );
-    const report = presentContentPlanReport({
-      asOf: input.asOf,
-      projection: EMPTY_PROJECTION,
-      data,
-      evidenceByAssistantMessageId: evidence,
+    const batch = await this.dependencies.source.loadData({
+      workspaceId: input.workspaceId,
+      generationId: input.generationId,
+      window: { from: windows.comparison.from, to: windows.current.to },
+      dirtyTopicIds: input.dirtyTopicIds,
+      repair: input.repair,
     });
-    return toSchedulingTopics(input, data, report.topics);
+    const accumulator = new ContentPlanEnrichmentPlanningAccumulator({
+      workspaceId: input.workspaceId,
+      generationId: input.generationId,
+      asOf: input.asOf,
+      topics: batch.topics,
+      documents: batch.documents,
+    });
+    if (batch.topics.length === 0) {
+      return { topics: [], repairCheckpoint: batch.repairCheckpoint };
+    }
+    let cursor: ContentPlanEnrichmentObservationCursor | null = null;
+    do {
+      const page = await this.dependencies.source.pageObservations({
+        workspaceId: input.workspaceId,
+        generationId: input.generationId,
+        window: { from: windows.comparison.from, to: windows.current.to },
+        topicIds: batch.topics.map((topic) => topic.id),
+        cursor,
+        limit: QUALITY_EVIDENCE_BATCH_SIZE,
+      });
+      const evidence = await this.dependencies.qualityEvidence.getEvidenceByAssistantMessageIds(
+        input.workspaceId,
+        page.items.map((observation) => observation.sourceAssistantMessageId),
+      );
+      accumulator.addPage(page.items, evidence);
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    return {
+      topics: accumulator.finish(),
+      repairCheckpoint: batch.repairCheckpoint,
+    };
   }
 
-  private async loadEvidence(workspaceId: string, assistantMessageIds: string[]) {
-    const unique = [...new Set(assistantMessageIds)];
-    const combined = new Map<string, QualityContentPlanningTurnEvidence>();
-    for (let offset = 0; offset < unique.length; offset += QUALITY_EVIDENCE_BATCH_SIZE) {
-      const batch = unique.slice(offset, offset + QUALITY_EVIDENCE_BATCH_SIZE);
-      const evidence = await this.dependencies.qualityEvidence
-        .getEvidenceByAssistantMessageIds(workspaceId, batch);
-      for (const [assistantMessageId, value] of evidence) {
-        combined.set(assistantMessageId, value);
-      }
-    }
-    return combined;
+  completeRepairPage(input: {
+    workspaceId: string;
+    generationId: string;
+    checkpoint: ContentPlanEnrichmentRepairCheckpoint;
+  }): Promise<boolean> {
+    return this.dependencies.source.completeRepairPage(input);
   }
 }
 
@@ -157,8 +225,17 @@ export class ContentPlanningEnrichmentPlanningService {
       });
       return { kind: "skipped" as const, dirtyTopicCount: 0 };
     }
-    const topics = await this.dependencies.source.load({ ...input, asOf: now });
-    const scheduled = await this.dependencies.scheduler.schedule({ topics, now });
+    const repair = input.forceRepair
+      ? { limit: REPAIR_TOPIC_BATCH_SIZE }
+      : null;
+    const batch = await this.dependencies.source.load({
+      workspaceId: input.workspaceId,
+      generationId: input.generationId,
+      asOf: now,
+      dirtyTopicIds: dirtyMarkers.map((marker) => marker.topicId),
+      repair,
+    });
+    const scheduled = await this.dependencies.scheduler.schedule({ topics: batch.topics, now });
     const acknowledgedDirtyTopicCount = scheduled.failedCount === 0 && dirtyMarkers.length > 0
       ? await this.dependencies.trigger.acknowledgeDirtyTopics({
           workspaceId: input.workspaceId,
@@ -166,15 +243,22 @@ export class ContentPlanningEnrichmentPlanningService {
           markers: dirtyMarkers,
         })
       : 0;
+    if (input.forceRepair && scheduled.failedCount === 0 && batch.repairCheckpoint) {
+      await this.dependencies.source.completeRepairPage({
+        workspaceId: input.workspaceId,
+        generationId: input.generationId,
+        checkpoint: batch.repairCheckpoint,
+      });
+    }
     this.observability.record({
       stage: "enrichment_schedule",
       outcome: scheduled.failedCount > 0 ? "retry_scheduled" : "completed",
       ...(scheduled.failedCount > 0 ? { reason: "enrichment_schedule_failed" as const } : {}),
       workspaceId: input.workspaceId,
       generationId: input.generationId,
-      itemCount: scheduled.queuedCount,
+      itemCount: scheduled.queuedCount + scheduled.rebasedCount,
       durationMs: Math.max(0, Date.now() - startedAt),
-      matureTopicCount: topics.length,
+      matureTopicCount: batch.topics.length,
       pendingEnrichmentCount: scheduled.jobs.length,
     });
     return {
@@ -185,94 +269,3 @@ export class ContentPlanningEnrichmentPlanningService {
     };
   }
 }
-
-const toSchedulingTopics = (
-  input: { workspaceId: string; generationId: string },
-  data: ContentPlanReportReadData,
-  topics: ReturnType<typeof presentContentPlanReport>["topics"],
-): ContentPlanEnrichmentSchedulingTopic[] => {
-  const sourceTopics = new Map(data.topics.map((topic) => [topic.id, topic]));
-  const documentsByTopic = new Map<string, ContentPlanReportReadData["documents"]>();
-  for (const document of data.documents) {
-    const documents = documentsByTopic.get(document.topicId) ?? [];
-    documents.push(document);
-    documentsByTopic.set(document.topicId, documents);
-  }
-  return topics.flatMap((presented) => {
-    const source = sourceTopics.get(presented.summary.id);
-    if (!source || source.lifecycle !== "mature") return [];
-    const documents = documentsByTopic.get(source.id) ?? [];
-    const corpusEvidenceFingerprint = contentPlanCorpusEvidenceFingerprint({
-      state: source.enrichment.corpusState,
-      documents: documents.map((document) => ({
-        id: document.id,
-        updatedAt: document.updatedAt,
-        possibleRelevance: document.possibleRelevance,
-        evidence: {
-          existedBeforeGap: document.existedBeforeGap,
-          retrievedByGapAnswers: document.retrievedByGapAnswers,
-          citedByGapAnswers: document.citedByGapAnswers,
-          changedAfterGap: document.changedAfterGap,
-        },
-      })),
-    });
-    const publishedEvidence = source.enrichment.publishedSourceEvidence;
-    const publishedStrength = source.enrichment.publishedSourceEvidenceStrength;
-    const publishedAnalysisMode = hasPublishedContentBrief(source.enrichment)
-      ? "label_and_brief"
-      : "label_only";
-    return [{
-      workspaceId: input.workspaceId,
-      generationId: input.generationId,
-      topicId: source.id,
-      topicRevision: source.revision,
-      lifecycle: "mature" as const,
-      current: {
-        memberCount: presented.summary.demand.currentQuestionCount,
-        groundedCount: presented.summary.grounding.groundedAnswerCount,
-        degradedCount: presented.summary.grounding.degradedAnswerCount,
-        noSupportCount: presented.summary.grounding.noSupportAnswerCount,
-        notEvaluatedCount: presented.summary.grounding.notEvaluatedAnswerCount,
-        credibleOpportunity: presented.summary.opportunity.credible,
-        groundingBand: presented.summary.evidence.strength,
-        action: presented.summary.recommendation.action,
-        corpusEvidenceFingerprint,
-      },
-      lastEnriched: publishedEvidence && publishedStrength
-        ? {
-            ...publishedEvidence,
-            groundingBand: publishedStrength,
-            action: source.enrichment.persistedAction,
-            corpusEvidenceFingerprint: source.enrichment.publishedSourceCorpusEvidenceFingerprint,
-            analysisMode: publishedAnalysisMode,
-            recommendationState: publishedEvidence.credibleOpportunity
-              && publishedAnalysisMode === "label_only"
-              ? "outside_analysis_cap"
-              : "ready",
-          }
-        : null,
-    }];
-  });
-};
-
-const hasPublishedContentBrief = (
-  enrichment: ContentPlanReportReadData["topics"][number]["enrichment"],
-): boolean => enrichment.suggestedTitle !== null
-  && enrichment.rationale !== null
-  && Array.isArray(enrichment.questionsToAnswer)
-  && enrichment.questionsToAnswer.length >= 3
-  && enrichment.suggestedShape !== null
-  && enrichment.evidenceStatement !== null;
-
-const EMPTY_PROJECTION: ContentPlanProjection = {
-  state: "ready",
-  processedThrough: null,
-  processingLagSeconds: null,
-  pendingEmbeddingCount: 0,
-  pendingAssignmentCount: 0,
-  pendingEnrichmentTopicCount: 0,
-  processedCount: null,
-  totalCount: null,
-  embeddingSpaceFingerprint: null,
-  reason: null,
-};

@@ -244,10 +244,11 @@ const seedPerformanceFixture = async (database: Database): Promise<Fixture> => {
       `INSERT INTO content_plan_topics (
          workspace_id, generation_id, id, embedding_space_id, lifecycle,
          centroid, dimensions, centroid_weight, representative_observation_ids, revision,
-         updated_at
+         created_at, updated_at
        )
        SELECT $1, $2, topic.id, $3, 'mature', '[1,0,0]'::vector, 3,
-              $4::integer / $5::integer, '{}'::uuid[], 1, $6
+              $4::integer / $5::integer, '{}'::uuid[], 1,
+              $6::timestamptz - INTERVAL '1 second', $6
        FROM perf_topics topic`,
       [workspaceId, generationId, embeddingSpaceId, OBSERVATION_COUNT, TOPIC_COUNT, AS_OF.toISOString()],
     );

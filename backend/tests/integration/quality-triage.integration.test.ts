@@ -171,6 +171,62 @@ describeIfDatabase("quality triage transitions", () => {
     ]);
   });
 
+  it("snapshots linked Eval identity in audit history after the mutable case is deleted", async () => {
+    const fixture = await seedTurn();
+    const snapshotId = randomUUID();
+    const caseId = randomUUID();
+
+    await database.query(
+      `INSERT INTO eval_snapshots (
+         id, workspace_id, source_conversation_id, source_message_id, fidelity, messages
+       )
+       VALUES ($1, $2, $3, $4, 'messages_only', '[]'::jsonb)`,
+      [
+        snapshotId,
+        fixture.workspaceId,
+        fixture.conversationId,
+        fixture.assistantMessageId,
+      ],
+    );
+    await database.query(
+      `INSERT INTO eval_cases (id, workspace_id, snapshot_id, name, status)
+       VALUES ($1, $2, $3, 'Quality audit case', 'pending')`,
+      [caseId, fixture.workspaceId, snapshotId],
+    );
+    await database.query(
+      `INSERT INTO eval_message_case_associations (
+         workspace_id, assistant_message_id, case_id
+       )
+       VALUES ($1, $2, $3)`,
+      [fixture.workspaceId, fixture.assistantMessageId, caseId],
+    );
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
+    await expect(service.setTriageState(fixture.workspaceId, {
+      assistantMessageId: fixture.assistantMessageId,
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+      updatedBy: fixture.userId,
+    })).resolves.toMatchObject({ kind: "updated" });
+
+    const loadLinkedCaseIds = () => database.query<{ linked_eval_case_id: string | null }>(
+      `SELECT linked_eval_case_id
+       FROM assistant_answer_triage_transitions
+       WHERE workspace_id = $1 AND assistant_message_id = $2`,
+      [fixture.workspaceId, fixture.assistantMessageId],
+    );
+    await expect(loadLinkedCaseIds()).resolves.toEqual([{ linked_eval_case_id: caseId }]);
+
+    await database.query("DELETE FROM eval_cases WHERE id = $1", [caseId]);
+
+    await expect(database.query(
+      "SELECT 1 FROM eval_message_case_associations WHERE case_id = $1",
+      [caseId],
+    )).resolves.toHaveLength(0);
+    await expect(loadLinkedCaseIds()).resolves.toEqual([{ linked_eval_case_id: caseId }]);
+  });
+
   it("allows one concurrent first write and returns the winner to the stale caller", async () => {
     const fixture = await seedTurn();
     const firstService = new QualityTurnsService(database.kysely, stubOutcomeCatalog());

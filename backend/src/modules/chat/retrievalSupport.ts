@@ -1,6 +1,7 @@
 export {
   AnswerPresentationService,
 } from "./services/answerPresentationService.js";
+export type { AnswerPresentationMetrics } from "./services/answerPresentationService.js";
 export { composeGroundedAnswerSystemPrompt } from "./services/groundedAnswerPromptComposer.js";
 export {
   GROUNDED_ANSWER_RESPONSE_FORMAT,

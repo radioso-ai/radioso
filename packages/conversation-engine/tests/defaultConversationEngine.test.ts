@@ -5,6 +5,7 @@ import { DefaultRoutineRunner } from "../src/routineRunner.js";
 import type {
   ClarificationCandidate,
   ConversationEvent,
+  ConversationSkillInputResolver,
   ProcessTurnStreamEvent,
   ProcessTurnStreamInput,
   ProcessTurnInput,
@@ -87,6 +88,246 @@ const createInput = (overrides: Partial<ProcessTurnInput> = {}): ProcessTurnInpu
 };
 
 describe("DefaultConversationEngine", () => {
+  it("resolves every declared selection from one immutable snapshot before preserving staged dispatch sequencing", async () => {
+    const skills = [
+      { name: "first", inputSchema: { fields: [{ name: "id", type: "string" as const, required: true }] } },
+      { name: "second", inputSchema: { fields: [{ name: "id", type: "string" as const, required: true }] } },
+    ];
+    const seenTurns: unknown[] = [];
+    const resolver: ConversationSkillInputResolver = {
+      resolve: vi.fn(async ({ selected, turn }) => {
+        // Record what this call RECEIVED before mutating, so the assertion measures what
+        // the next resolver was handed rather than this one's own scribbles.
+        seenTurns.push({ turn, staged: [...turn.stagedContext], history: [...turn.history] });
+        // A careless or hostile host resolver mutating what it was handed must not change
+        // what the next resolver sees.
+        turn.stagedContext.push({ kind: `mutated_by_${selected.skillName}`, data: {} });
+        turn.history.push({ role: "user", content: `mutated_by_${selected.skillName}` });
+        return { kind: "ready", input: { id: selected.skillName }, fields: [{ name: "id", provenance: "model", status: "ready" }] };
+      }),
+    };
+    const dispatchTurns: unknown[] = [];
+    const input = createInput({
+      skills,
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "first" }, { skillName: "second" }] })) },
+      skillInputResolver: resolver,
+      dispatcher: {
+        dispatch: vi.fn(async ({ skill, turn, selected }): Promise<TurnOutcome> => {
+          dispatchTurns.push(turn);
+          return {
+            kind: "generic",
+            skillName: skill.name,
+            outcome: { status: "completed", outputs: { id: selected.input } },
+            stagedContext: [{ kind: skill.name, data: {} }],
+            steering: turn.steering,
+            trace: { traceId: skill.name, startedAt: new Date(0).toISOString(), stages: [] },
+          };
+        }),
+      },
+    });
+
+    await new DefaultConversationEngine().processTurn(input);
+
+    expect(resolver.resolve).toHaveBeenCalledTimes(2);
+    const [first, second] = seenTurns as Array<{ turn: unknown; staged: unknown[]; history: unknown[] }>;
+    // Independent snapshots, not one shared object.
+    expect(first!.turn).not.toBe(second!.turn);
+    // The second resolver saw neither the first skill's dispatch output (nothing has
+    // dispatched yet) nor the first resolver's mutations.
+    expect(second!.staged).toEqual([]);
+    expect(second!.history).toEqual(first!.history);
+    expect(second!.history).not.toContainEqual({ role: "user", content: "mutated_by_first" });
+    expect((dispatchTurns[1] as { stagedContext: unknown[] }).stagedContext).toEqual([
+      expect.objectContaining({ kind: "first" }),
+    ]);
+  });
+
+  it("parks all declared selections before dispatch and forwards awaiting skill input through normal composition", async () => {
+    const dispatcher = vi.fn();
+    const input = createInput({
+      skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
+      skillInputResolver: {
+        resolve: vi.fn(async () => ({
+          kind: "needs_input",
+          fields: [{ name: "date", provenance: "none", status: "absent" }],
+          outstanding: [{ name: "date", type: "date", description: "When", reason: "absent" }],
+        })),
+      },
+      dispatcher: { dispatch: dispatcher },
+      composer: { compose: vi.fn(async ({ turn }) => ({ answer: turn.steering.map((rule) => rule.action).join(" ") })) },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(dispatcher).not.toHaveBeenCalled();
+    expect(result.awaitingSkillInput).toEqual([{ skillName: "book", fields: [{ name: "date", type: "date", description: "When", reason: "absent" }] }]);
+    expect(result.response.answer).toContain("date");
+  });
+
+  it("preflights every selection and dispatches none when one resolution fails", async () => {
+    const dispatcher = vi.fn();
+    const composer = vi.fn(async ({ turn }: { turn: { steering: Array<{ source: string }> } }) => ({
+      answer: turn.steering.some((rule) => rule.source === "skill") ? "asked" : "ordinary reply",
+    }));
+    const resolver: ConversationSkillInputResolver = {
+      resolve: vi.fn(async ({ selected }) => selected.skillName === "first"
+        ? { kind: "ready", input: { date: "2026-08-07" }, fields: [] }
+        : { kind: "failed", code: "parse_error", fields: [] }),
+    };
+    const result = await new DefaultConversationEngine().processTurn(createInput({
+      skills: [
+        { name: "first", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+        { name: "second", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+      ],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "first" }, { skillName: "second" }] })) },
+      skillInputResolver: resolver,
+      dispatcher: { dispatch: dispatcher },
+      composer: { compose: composer },
+    }));
+
+    expect(resolver.resolve).toHaveBeenCalledTimes(2);
+    expect(dispatcher).not.toHaveBeenCalled();
+    expect(result.awaitingSkillInput).toBeUndefined();
+    expect(result.response.answer).toBe("ordinary reply");
+  });
+
+  it("does not report awaiting input when another selection failed in the same turn", async () => {
+    const dispatcher = vi.fn();
+    const composer = vi.fn(async ({ turn }: { turn: { steering: Array<{ source: string }> } }) => ({
+      answer: turn.steering.some((rule) => rule.source === "skill") ? "asked" : "ordinary reply",
+    }));
+    const resolver: ConversationSkillInputResolver = {
+      resolve: vi.fn(async ({ selected }) => selected.skillName === "first"
+        ? { kind: "needs_input", fields: [], outstanding: [{ name: "date", type: "date", reason: "absent" }] }
+        : { kind: "failed", code: "parse_error", fields: [] }),
+    };
+
+    const result = await new DefaultConversationEngine().processTurn(createInput({
+      skills: [
+        { name: "first", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+        { name: "second", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } },
+      ],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "first" }, { skillName: "second" }] })) },
+      skillInputResolver: resolver,
+      dispatcher: { dispatch: dispatcher },
+      composer: { compose: composer },
+    }));
+
+    // A failure composes an ordinary reply (D11), so the turn never asks. Reporting
+    // awaited fields here would claim the turn requested values it never mentioned.
+    expect(dispatcher).not.toHaveBeenCalled();
+    expect(result.response.answer).toBe("ordinary reply");
+    expect(result.awaitingSkillInput).toBeUndefined();
+  });
+
+  it("asks once for every outstanding field and includes declared choices", async () => {
+    const input = createInput({
+      skills: [{ name: "book", inputSchema: { fields: [
+        { name: "date", type: "date", required: true },
+        { name: "style", type: "string", required: true, permittedValues: ["Short", "Long"] },
+      ] } }],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
+      skillInputResolver: {
+        resolve: vi.fn(async () => ({
+          kind: "needs_input",
+          fields: [],
+          outstanding: [
+            { name: "date", type: "date", reason: "absent" },
+            { name: "style", type: "string", permittedValues: ["Short", "Long"], reason: "absent" },
+          ],
+        })),
+      },
+      dispatcher: { dispatch: vi.fn() },
+      composer: { compose: vi.fn(async ({ turn }) => ({ answer: turn.steering.at(-1)?.action ?? "" })) },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+
+    expect(result.response.answer).toContain("date");
+    expect(result.response.answer).toContain("Short, Long");
+    expect(result.awaitingSkillInput).toHaveLength(1);
+  });
+
+  it("emits a final stream event for a parked skill-input turn", async () => {
+    const dispatcher = vi.fn();
+    const input = createInput({
+      skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book" }] })) },
+      skillInputResolver: {
+        resolve: vi.fn(async () => ({
+          kind: "needs_input",
+          fields: [{ name: "date", provenance: "none", status: "absent" }],
+          outstanding: [{ name: "date", type: "date", reason: "absent" }],
+        })),
+      },
+      dispatcher: { dispatch: dispatcher },
+      composer: {
+        async *stream() {
+          yield { type: "final" as const, response: { answer: "What date works?" } };
+        },
+      },
+    }) as ProcessTurnStreamInput;
+
+    const events: ProcessTurnStreamEvent[] = [];
+    for await (const event of new DefaultConversationEngine().processTurnStream(input)) events.push(event);
+
+    expect(dispatcher).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({
+      type: "final",
+      result: { awaitingSkillInput: [{ skillName: "book" }] },
+    });
+  });
+
+  it("records structural skill-input resolution details without leaking values", async () => {
+    const secret = "do-not-trace-this-value";
+    const input = createInput({
+      skills: [{ name: "book", inputSchema: { fields: [{ name: "date", type: "date", required: true }] } }],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "book", input: { date: secret } }] })) },
+      skillInputResolver: {
+        resolve: vi.fn(async () => ({
+          kind: "needs_input",
+          fields: [{ name: "date", provenance: "host", status: "rejected", reason: "invalid_date" }],
+          outstanding: [{ name: "date", type: "date", reason: "rejected" }],
+        })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+    const resolution = result.trace.stages.find((stage) => stage.kind === "skill_input_resolution");
+
+    expect(resolution?.outputs).toEqual({
+      skillName: "book",
+      fields: [{ name: "date", provenance: "host", status: "rejected", reason: "invalid_date" }],
+    });
+    expect(JSON.stringify(result.trace)).not.toContain(secret);
+  });
+
+  it("omits the resolution stage for a no-fields skill without calling the resolver", async () => {
+    const resolver: ConversationSkillInputResolver = { resolve: vi.fn() };
+    const dispatcher = vi.fn(async ({ selected }): Promise<TurnOutcome> => ({
+      kind: "generic",
+      skillName: "legacy",
+      outcome: { status: "completed" },
+      stagedContext: [],
+      steering: [],
+      trace: { traceId: "legacy", startedAt: new Date(0).toISOString(), stages: [] },
+    }));
+    const result = await new DefaultConversationEngine().processTurn(createInput({
+      skills: [{ name: "legacy" }],
+      selector: { select: vi.fn(async () => ({ selected: [{ skillName: "legacy", input: { untouched: true } }] })) },
+      skillInputResolver: resolver,
+      dispatcher: { dispatch: dispatcher },
+    }));
+
+    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(dispatcher).toHaveBeenCalledWith(expect.objectContaining({
+      selected: { skillName: "legacy", input: { untouched: true } },
+    }));
+    expect(result.trace.stages).not.toContainEqual(expect.objectContaining({
+      kind: "skill_input_resolution",
+    }));
+  });
   it("records wall-clock boundaries for every real stage in the normal turn spine", async () => {
     const now = vi.spyOn(Date, "now");
     let current = Date.parse("2026-07-18T10:00:00.000Z");

@@ -76,6 +76,9 @@ const behaviorSettings = (overrides: Partial<AssistantBehaviorSettings> = {}): A
 
 const retrievalDefaults = (overrides: Partial<RetrievalDefaults> = {}): RetrievalDefaults => ({
   queryRewriteEnabled: true,
+  temporalStructuredLookupEnabled: true,
+  temporalBoostUpcomingEnabled: true,
+  temporalDeterministicSortEnabled: true,
   semanticRewriteInstructions: '',
   lexicalRewriteInstructions: '',
   suggestedQuestionsEnabled: true,

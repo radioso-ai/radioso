@@ -2,6 +2,8 @@ import type {
   AttemptRoutineInput,
   ConversationEngine,
   ConversationEvent,
+  AwaitingSkillInput,
+  ConversationSkillInputResolution,
   ConversationRoutineSteeringInput,
   ConversationTrace,
   ConversationTraceStage,
@@ -21,6 +23,7 @@ import type {
   RoutineAwaitingDecision,
   SelectionDecision,
   SkillDefinition,
+  SelectedSkill,
   SkillTransientGuidance,
   StagedContext,
   SteeringResolver,
@@ -317,6 +320,7 @@ interface PreparedTurnRun {
   decision: SelectionDecision;
   outcomes: TurnOutcome[];
   composeTurn: TurnContext;
+  awaitingSkillInput?: AwaitingSkillInput[];
 }
 
 const createInputEvent = (input: AttemptRoutineInput): ConversationEvent => ({
@@ -401,6 +405,7 @@ const createProcessTurnResult = (input: {
   actions?: RoutineActionRequest[];
   handoff?: { routineId: string; stepId: string };
   awaitingDecision?: RoutineAwaitingDecision;
+  awaitingSkillInput?: AwaitingSkillInput[];
 }): ProcessTurnResult => ({
   sessionId: input.sessionId,
   events: input.events,
@@ -411,6 +416,45 @@ const createProcessTurnResult = (input: {
   ...(input.actions && input.actions.length > 0 ? { actions: input.actions } : {}),
   ...(input.handoff ? { handoff: input.handoff } : {}),
   ...(input.awaitingDecision ? { awaitingDecision: input.awaitingDecision } : {}),
+  ...(input.awaitingSkillInput && input.awaitingSkillInput.length > 0
+    ? { awaitingSkillInput: input.awaitingSkillInput }
+    : {}),
+});
+
+const skillInputResolutionStage = (input: {
+  skillName: string;
+  resolution: ConversationSkillInputResolution;
+  startedAtMs?: number;
+  completedAtMs?: number;
+}): ConversationTraceStage => {
+  const traceInput = {
+    id: `skill-input:${input.skillName}`,
+    kind: "skill_input_resolution" as const,
+    status: input.resolution.kind === "ready"
+      ? "applied" as const
+      : input.resolution.kind === "needs_input" ? "rejected" as const : "failed" as const,
+    outputs: {
+      skillName: input.skillName,
+      fields: input.resolution.fields.map((field) => ({
+        name: field.name,
+        provenance: field.provenance,
+        status: field.status,
+        ...(field.reason ? { reason: field.reason } : {}),
+      })),
+      ...(input.resolution.kind === "failed" ? { failureCode: input.resolution.code } : {}),
+    },
+  };
+  return input.startedAtMs === undefined || input.completedAtMs === undefined
+    ? stage(traceInput)
+    : timedStage(input.startedAtMs, input.completedAtMs, traceInput);
+};
+
+const skillInputSteering = (awaiting: AwaitingSkillInput[]): SteeringRule => ({
+  source: "skill",
+  lifespan: "response",
+  action: `Ask the user for all required skill inputs in one response: ${awaiting.map((entry) =>
+    `${entry.skillName} (${entry.fields.map((field) =>
+      `${field.name} (${field.type})${field.permittedValues ? `: ${field.permittedValues.join(", ")}` : ""}`).join(", ")})`).join("; ")}.`,
 });
 
 export class DefaultConversationEngine implements ConversationEngine {
@@ -559,16 +603,83 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
     }));
 
-    const outcomes: TurnOutcome[] = [];
-    let mergedSteering = [...selectedTurn.steering];
+    // Every resolver call gets its own copy of the pre-dispatch turn. Sharing one object
+    // would let a host resolver mutate what it was handed and change what the next
+    // resolver sees, which is precisely the cross-skill coupling D1 exists to prevent.
+    // Element objects are still shared with the dispatch path, so this bounds container
+    // mutation rather than deep-freezing state the rest of the turn also reads.
+    const preDispatchSnapshot = (): TurnContext => ({
+      ...selectedTurn,
+      history: [...selectedTurn.history],
+      stagedContext: [...selectedTurn.stagedContext],
+      steering: [...selectedTurn.steering],
+    });
+    const resolvedSelections: Array<{ skill: SkillDefinition; selected: SelectedSkill; resolution?: ConversationSkillInputResolution }> = [];
+    const awaitingSkillInput: AwaitingSkillInput[] = [];
+    const preflightOutcomes: TurnOutcome[] = [];
+    let hasFailedResolution = false;
+
     for (const selected of decision.selected) {
+      const resolutionStartedAt = Date.now();
       const skill = findSkill(input.skills, selected.skillName);
       if (!skill) {
-        const failed = missingSkillOutcome(selected.skillName, mergedSteering);
-        outcomes.push(failed);
+        const resolution: ConversationSkillInputResolution = {
+          kind: "failed",
+          code: "skill_not_found",
+          fields: [],
+        };
+        stages.push(skillInputResolutionStage({
+          skillName: selected.skillName,
+          resolution,
+          startedAtMs: resolutionStartedAt,
+          completedAtMs: Date.now(),
+        }));
+        const failed = missingSkillOutcome(selected.skillName, selectedTurn.steering);
+        preflightOutcomes.push(failed);
         stages.push(...failed.trace.stages);
+        hasFailedResolution = true;
         continue;
       }
+      // A skill that declares no fields has nothing to resolve, so it emits no stage.
+      // FR-015 keeps such a skill behaving exactly as it did before this feature, and a
+      // stage reporting "nothing to do" on every turn would be trace noise for the many
+      // hosts that declare no fields at all.
+      if ((skill.inputSchema?.fields.length ?? 0) === 0) {
+        resolvedSelections.push({ skill, selected });
+        continue;
+      }
+      const resolution = input.skillInputResolver
+        ? await input.skillInputResolver.resolve({ skill, selected, turn: preDispatchSnapshot() })
+        : { kind: "failed", code: "skill_input_resolver_unavailable", fields: [] } as ConversationSkillInputResolution;
+      stages.push(skillInputResolutionStage({
+        skillName: selected.skillName,
+        resolution,
+        startedAtMs: resolutionStartedAt,
+        completedAtMs: Date.now(),
+      }));
+      if (resolution.kind === "failed") {
+        hasFailedResolution = true;
+        continue;
+      }
+      if (resolution.kind === "needs_input") {
+        awaitingSkillInput.push({ skillName: selected.skillName, fields: resolution.outstanding });
+        continue;
+      }
+      resolvedSelections.push({ skill, selected: { ...selected, input: resolution.input }, resolution });
+    }
+
+    // A turn either asks for missing input or it does not, and the reported
+    // `awaitingSkillInput` must describe what was actually asked. A failed resolution is
+    // not an ask (D11): it composes an ordinary reply. So when a failure and a
+    // needs-input land in the same turn, the failure dominates and nothing is reported as
+    // awaited — otherwise the result would claim the turn asked for fields it never
+    // mentioned. Per-field detail stays visible on the resolution trace stage either way.
+    // Both the steering and the report read this one flag so they cannot diverge.
+    const asksForSkillInput = !hasFailedResolution && awaitingSkillInput.length > 0;
+    const outcomes: TurnOutcome[] = [...preflightOutcomes];
+    let mergedSteering = [...selectedTurn.steering];
+    if (!hasFailedResolution && awaitingSkillInput.length === 0) {
+      for (const { skill, selected } of resolvedSelections) {
 
       const turnForSkill: TurnContext = {
         ...selectedTurn,
@@ -603,6 +714,9 @@ export class DefaultConversationEngine implements ConversationEngine {
         // A capability's domain trace rides through opaquely; the engine never inspects it.
         ...(outcome.subTrace ? { subTrace: outcome.subTrace } : {}),
       }));
+      }
+    } else if (asksForSkillInput) {
+      mergedSteering = [...mergedSteering, skillInputSteering(awaitingSkillInput)];
     }
 
     const composeTurn: TurnContext = {
@@ -619,6 +733,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       },
       outcomes,
       composeTurn,
+      ...(asksForSkillInput ? { awaitingSkillInput } : {}),
     };
   }
 
@@ -1129,6 +1244,7 @@ export class DefaultConversationEngine implements ConversationEngine {
       outcomes: prepared.outcomes,
       response,
       trace: createTrace(prepared.stages, composeAdherenceLinks(response)),
+      awaitingSkillInput: prepared.awaitingSkillInput,
     });
   }
 
@@ -1198,6 +1314,7 @@ export class DefaultConversationEngine implements ConversationEngine {
         outcomes: prepared.outcomes,
         response,
         trace: createTrace(prepared.stages, composeAdherenceLinks(response)),
+        awaitingSkillInput: prepared.awaitingSkillInput,
       }),
       metadata: finalMetadata,
     };

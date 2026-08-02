@@ -99,16 +99,38 @@ imports from `services/`.
   assertion opens the stream gate; `[[?]]`, malformed, and anchor-free output
   stays held until the computed final presentation is available. The gate retains
   at most 4,096 Unicode code points. Reaching that cap aborts the candidate and
-  returns the focused decline; elapsed time never closes the gate. When retrieved contexts exist, an
-  answer or malformed result with no valid sourced assertion remains visible with a
-  computed `degraded` verdict; it is not replaced by a second generated refusal.
-  Partial answers with at least one valid assertion remain visible and degraded.
+  returns the focused decline; elapsed time never closes the gate. When retrieved
+  contexts exist, a valid `outcome=answer` result without a valid sourced assertion
+  is discarded and rewritten through the focused decline path. Lexical overlap
+  never satisfies this delivery guard. A page-read turn whose typed gate captured
+  page content is exempt because that content is an admitted source outside the
+  citation index. Malformed results remain visible with a computed `degraded`
+  verdict, while partial answers with at least one valid assertion remain visible
+  and degraded.
   Raw envelope JSON is never emitted or persisted.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
   only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
+  `citationTextNormalization.ts` owns the punctuation classes for the anchor
+  seam. Both are Unicode properties, never script or keyword lists:
+  `Terminal_Punctuation` for the spacing rule that runs over arbitrary answer
+  text, plus `Pe`/`Pf` for the narrower line-leading strand check.
+  Segment boundaries are markdown-safe. Each `AnswerSegment` is rendered through
+  its own markdown pass downstream, so `normalizeAnchoredAnswer` runs every
+  anchor offset through `shared/text/markdownSplitBoundary.ts` and cuts at the
+  nearest offset that divides no construct (fenced code, code spans, emphasis,
+  links, images, autolinks, and whole GFM table blocks). The citation marker
+  therefore attaches *after* a closing delimiter, and anchors sharing one
+  indivisible construct merge into a single boundary. That resolver is pure
+  markdown knowledge and never learns what a citation anchor is — the caller
+  declares anchor spans through its `ignoredRanges` port. Relocations increment
+  the content-free `chat_citation_anchor_split_relocations_total` counter,
+  labelled by construct.
+  Tests: `tests/unit/answer-presentation.test.ts`,
+  `tests/unit/markdown-split-boundary.test.ts`,
+  `tests/unit/citation-text-normalization.test.ts`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or

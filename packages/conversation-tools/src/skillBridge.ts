@@ -135,7 +135,6 @@ export const toolToSkillDefinition = (
   return {
     name: skillName,
     description: tool.description,
-    inputSchema: tool.inputSchema,
     outputSchema: tool.outputSchema,
     outcomeKinds: tool.outcomeKinds,
     metadata: {

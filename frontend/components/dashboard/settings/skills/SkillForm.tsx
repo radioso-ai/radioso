@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, ChevronDown, Plus, Wrench } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, Check, ChevronDown, Plus, RefreshCw, Wrench } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -28,10 +28,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { AssistantSourceScopeSelector } from '@/components/dashboard/settings/assistant-source-scope-selector'
 import { MetadataRulesEditor } from '@/components/dashboard/settings/metadata-rules-editor'
 import type { AgentSourceScope, DocumentSourceListItem, RetrievalMetadataRule } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/api-error'
+import { externalSkillsApi } from '@/lib/api-external-skills'
 import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
+import type { DiscoveredMcpTool } from '@/lib/external-skills'
 import { cn } from '@/lib/utils'
 import {
   buildAgentSkillInput,
+  createInputDrafts,
   createInitialSkillDraft,
   deriveSkillFields,
   formatCapabilityLabel,
@@ -57,6 +61,7 @@ const sourceTargetsToList = (capability: SkillCapabilityDescriptor | null): Docu
       lastSyncStatus: target.status ?? null,
       lastSyncedAt: null,
       documentCount: 0,
+      documentEnrichmentOverride: 'inherit',
       createdAt: '',
       updatedAt: '',
     }))
@@ -71,6 +76,14 @@ const groupedSettingsFields = (fields: readonly SkillCapabilitySettingsField[]) 
 }
 
 const DEFAULT_SELECT_VALUE = '__default__'
+
+const preserveInputDrafts = (
+  nextDrafts: SkillFormDraft['inputDrafts'],
+  currentDrafts: SkillFormDraft['inputDrafts'],
+): SkillFormDraft['inputDrafts'] =>
+  Object.fromEntries(
+    Object.entries(nextDrafts).map(([name, nextDraft]) => [name, currentDrafts[name] ?? nextDraft]),
+  )
 
 const optionLabel = (field: SkillCapabilitySettingsField, value: unknown): string | null =>
   typeof value === 'string'
@@ -353,6 +366,7 @@ function SkillSettingControl({
 }
 
 export function SkillForm({
+  agentId,
   open,
   capabilities,
   skills,
@@ -363,6 +377,7 @@ export function SkillForm({
   onOpenChange,
   onSubmit,
 }: {
+  agentId: string
   open: boolean
   capabilities: SkillCapabilityDescriptor[]
   skills: AgentSkill[]
@@ -383,16 +398,38 @@ export function SkillForm({
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [routineOpen, setRoutineOpen] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
+  const [discoveredTools, setDiscoveredTools] = useState<DiscoveredMcpTool[]>([])
+  const [isDiscovering, setIsDiscovering] = useState(false)
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+  const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false)
+  const discoveryRequestId = useRef(0)
   const capability = useMemo(
     () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
     [scopedCapabilities, draft.capabilityId],
   )
-  const fields = useMemo(() => capability ? deriveSkillFields(capability) : [], [capability])
+  const selectedTool = useMemo(
+    () => discoveredTools.find((tool) => tool.name === draft.toolName) ?? null,
+    [discoveredTools, draft.toolName],
+  )
+  const fields = useMemo(
+    () => capability ? deriveSkillFields(capability, selectedTool?.inputSchema) : [],
+    [capability, selectedTool],
+  )
   const nameError = validateSkillName(draft.name, skills, editingSkill?.id)
   const selectedCapabilityAvailable = Boolean(capability?.available)
   const selectedTarget = capability?.targets.find((target) => target.id === draft.targetId) ?? null
   const targetReady = Boolean(capability && (!(capability.requiresTarget ?? true) || draft.targetId))
-  const canSubmit = Boolean(capability && selectedCapabilityAvailable && targetReady && !nameError && draft.invocationMode && !isSaving)
+  const canUsePersistedDiscoveredConfig = Boolean(
+    editingSkill
+      && capability?.inputSchema.source === 'discovered'
+      && discoveryUnavailable
+      && editingSkill.target.id === draft.targetId
+      && typeof editingSkill.config.toolName === 'string'
+      && editingSkill.config.toolName === draft.toolName,
+  )
+  const discoveryReady = capability?.inputSchema.source !== 'discovered'
+    || Boolean(!isDiscovering && (selectedTool || canUsePersistedDiscoveredConfig))
+  const canSubmit = Boolean(capability && selectedCapabilityAvailable && targetReady && discoveryReady && !nameError && draft.invocationMode && !isSaving)
   const essentialSettingsFields = useMemo(
     () => capability?.settingsFields.filter((field) => field.advanced !== true) ?? [],
     [capability],
@@ -412,6 +449,79 @@ export function SkillForm({
     })
   }, [editingSkill, open, scopedCapabilities, skills])
 
+  const discoverTools = useCallback(async (connectionId: string, preferredToolName: string) => {
+    if (!capability || capability.inputSchema.source !== 'discovered') return
+
+    const requestId = discoveryRequestId.current + 1
+    discoveryRequestId.current = requestId
+    setIsDiscovering(true)
+    setDiscoveryError(null)
+    setDiscoveryUnavailable(false)
+    try {
+      const response = await externalSkillsApi.discoverTools(agentId, connectionId)
+      if (discoveryRequestId.current !== requestId) return
+
+      const selected = response.tools.find((tool) => tool.name === preferredToolName)
+        ?? (preferredToolName ? null : response.tools[0])
+        ?? null
+      const configuredToolMissing = Boolean(preferredToolName && !selected)
+      const existingConfig = editingSkill?.target.id === connectionId
+        && editingSkill.config.toolName === selected?.name
+        ? editingSkill.config
+        : undefined
+      const nextFields = deriveSkillFields(capability, selected?.inputSchema)
+
+      setDiscoveredTools(response.tools)
+      setDiscoveryError(response.tools.length === 0
+        ? 'This connection did not publish any MCP tools.'
+        : configuredToolMissing
+          ? `The configured tool “${preferredToolName}” is no longer published by this connection. Choose a replacement tool to continue.`
+          : null)
+      setDraft((current) => current.targetId === connectionId
+        ? {
+            ...current,
+            toolName: selected?.name ?? '',
+            inputDrafts: preserveInputDrafts(
+              createInputDrafts(nextFields, existingConfig),
+              current.inputDrafts,
+            ),
+          }
+        : current)
+    } catch (discoverError) {
+      if (discoveryRequestId.current !== requestId) return
+      setDiscoveredTools([])
+      setDiscoveryError(getApiErrorMessage(discoverError, 'Failed to discover MCP tools.'))
+      setDiscoveryUnavailable(true)
+    } finally {
+      if (discoveryRequestId.current === requestId) {
+        setIsDiscovering(false)
+      }
+    }
+  }, [agentId, capability, editingSkill])
+
+  useEffect(() => {
+    if (!open || !capability || capability.inputSchema.source !== 'discovered' || !draft.targetId) {
+      discoveryRequestId.current += 1
+      queueMicrotask(() => {
+        setDiscoveredTools([])
+        setDiscoveryError(null)
+        setDiscoveryUnavailable(false)
+        setIsDiscovering(false)
+      })
+      return
+    }
+
+    // Discovery is tied to the connection. Tool changes use the already fetched
+    // schemas and must not trigger another network request.
+    queueMicrotask(() => {
+      void discoverTools(draft.targetId, draft.toolName)
+    })
+    return () => {
+      discoveryRequestId.current += 1
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [capability, discoverTools, draft.targetId, open])
+
   const updateDraft = (patch: Partial<SkillFormDraft>) => {
     setLocalError(null)
     setDraft((current) => ({ ...current, ...patch }))
@@ -429,6 +539,34 @@ export function SkillForm({
         },
       },
     }))
+  }
+
+  const updateTarget = (targetId: string) => {
+    if (capability?.inputSchema.source === 'discovered') {
+      discoveryRequestId.current += 1
+      setDiscoveredTools([])
+      setDiscoveryError(null)
+      setDiscoveryUnavailable(false)
+      updateDraft({ targetId, toolName: '', inputDrafts: {} })
+      return
+    }
+    updateDraft({ targetId })
+  }
+
+  const selectDiscoveredTool = (toolName: string) => {
+    if (!capability) return
+    if (toolName === draft.toolName) return
+    const tool = discoveredTools.find((candidate) => candidate.name === toolName)
+    if (!tool) return
+    const existingConfig = editingSkill?.target.id === draft.targetId
+      && editingSkill.config.toolName === toolName
+      ? editingSkill.config
+      : undefined
+    setDiscoveryError(null)
+    updateDraft({
+      toolName,
+      inputDrafts: createInputDrafts(deriveSkillFields(capability, tool.inputSchema), existingConfig),
+    })
   }
 
   const updateSetting = (key: string, value: SkillSettingDraftValue) => {
@@ -462,6 +600,17 @@ export function SkillForm({
     let input: AgentSkillCreateInput
     try {
       input = buildAgentSkillInput(capability, draft, fields)
+      if (canUsePersistedDiscoveredConfig && editingSkill) {
+        input = {
+          ...input,
+          config: {
+            ...input.config,
+            toolName: editingSkill.config.toolName,
+            boundParams: editingSkill.config.boundParams ?? {},
+            exposedParams: editingSkill.config.exposedParams ?? {},
+          },
+        }
+      }
     } catch (buildError) {
       setLocalError(buildError instanceof Error ? buildError.message : 'Invalid skill configuration.')
       return
@@ -545,7 +694,7 @@ export function SkillForm({
                 <Label htmlFor="skill-target">Target</Label>
                 <Select
                   value={draft.targetId}
-                  onValueChange={(targetId) => updateDraft({ targetId })}
+                  onValueChange={updateTarget}
                   disabled={!capability || !capability.available || capability.targets.length === 0}
                 >
                   <SelectTrigger id="skill-target">
@@ -573,13 +722,38 @@ export function SkillForm({
 
           {capability?.inputSchema.source === 'discovered' ? (
             <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3">
-              <Label htmlFor="skill-tool-name">Discovered tool name</Label>
-              <Input
-                id="skill-tool-name"
-                value={draft.toolName}
-                onChange={(event) => updateDraft({ toolName: event.target.value })}
-                placeholder="tool_name"
-              />
+              <div className="flex items-center justify-between gap-3">
+                <Label htmlFor="skill-tool-name">MCP tool</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void discoverTools(draft.targetId, draft.toolName)}
+                  disabled={!draft.targetId || isDiscovering}
+                >
+                  {isDiscovering ? <Spinner className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+                  Refresh tools
+                </Button>
+              </div>
+              {discoveredTools.length > 0 ? (
+                <Select value={draft.toolName} onValueChange={selectDiscoveredTool} disabled={isDiscovering}>
+                  <SelectTrigger id="skill-tool-name">
+                    <SelectValue placeholder="Choose a discovered tool" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {discoveredTools.map((tool) => (
+                      <SelectItem key={tool.name} value={tool.name}>{tool.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : isDiscovering ? (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Spinner className="h-4 w-4" />
+                  Discovering tools...
+                </p>
+              ) : null}
+              {selectedTool?.description ? <p className="text-xs text-muted-foreground">{selectedTool.description}</p> : null}
+              {discoveryError ? <p className="text-sm text-destructive" role="alert">{discoveryError}</p> : null}
             </div>
           ) : null}
 
@@ -641,7 +815,17 @@ export function SkillForm({
               <div className="space-y-5 border-t border-border p-3">
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-foreground">Inputs</h4>
-                  {fields.length === 0 ? (
+                  {capability?.inputSchema.source === 'discovered' && isDiscovering ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">
+                      Loading tool schema…
+                    </p>
+                  ) : capability?.inputSchema.source === 'discovered' && !selectedTool ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">
+                      {canUsePersistedDiscoveredConfig
+                        ? 'Saved tool inputs will be preserved when this skill is saved.'
+                        : 'Choose a discovered MCP tool to configure its inputs.'}
+                    </p>
+                  ) : fields.length === 0 ? (
                     <p className="px-3 py-4 text-sm text-muted-foreground">
                       No inputs are published for this capability.
                     </p>

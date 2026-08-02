@@ -426,7 +426,7 @@ test("an outcome chip compiles a branch on the preceding skill's result", async 
   expect(toolStep).toBeTruthy();
   const transitions = created?.body?.transitions ?? [];
   const outcomeEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "outcome");
-  expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep.stableStepId });
+  expect(outcomeEdge).toMatchObject({ guardKind: "outcome", outcomeStatus: "failed", toRef: "handoff", fromStep: toolStep?.stableStepId });
 });
 
 test("a 'when filled' chip compiles a slot_filled branch on the collected slots", async ({ page }) => {
@@ -470,7 +470,7 @@ test("a 'when filled' chip compiles a slot_filled branch on the collected slots"
   const transitions = created?.body?.transitions ?? [];
   const slotFilledEdge = transitions.find((transition: { guardKind: string }) => transition.guardKind === "slot_filled");
   expect(slotFilledEdge).toMatchObject({ guardKind: "slot_filled", toRef: "handoff" });
-  expect(slotFilledEdge.guardText).toContain("{{slot.email}}");
+  expect(slotFilledEdge?.guardText).toContain("{{slot.email}}");
 });
 
 test("a condition chip compiles a decided-in-code (field) branch", async ({ page }) => {
@@ -705,7 +705,7 @@ test("an action chip compiles to an action step naming the action type", async (
   expect(actionStep).toMatchObject({ kind: "action", actionType: "contact.send" });
   // The action step has a follow-up edge (the validator requires one).
   const transitions = created?.body?.transitions ?? [];
-  expect(transitions.some((transition: { fromStep: string }) => transition.fromStep === actionStep.stableStepId)).toBe(true);
+  expect(transitions.some((transition: { fromStep: string }) => transition.fromStep === actionStep?.stableStepId)).toBe(true);
 });
 
 test("a skill chip compiles to a tool step naming the skill", async ({ page }) => {

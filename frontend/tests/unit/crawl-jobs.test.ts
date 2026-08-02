@@ -37,9 +37,9 @@ describe('summarizeCrawlFailureReason', () => {
   it('returns the most frequently recorded crawl reason', () => {
     expect(
       summarizeCrawlFailureReason([
-        { sourceUrl: 'https://example.com/a', reason: 'Skipped low-quality extracted content' },
-        { sourceUrl: 'https://example.com/b', reason: 'Skipped low-quality extracted content' },
-        { sourceUrl: 'https://example.com/c', reason: 'Page did not contain crawlable content' },
+        { reason: 'Skipped low-quality extracted content' },
+        { reason: 'Skipped low-quality extracted content' },
+        { reason: 'Page did not contain crawlable content' },
       ]),
     ).toBe('Skipped low-quality extracted content')
   })
@@ -47,8 +47,8 @@ describe('summarizeCrawlFailureReason', () => {
   it('ignores blank reasons', () => {
     expect(
       summarizeCrawlFailureReason([
-        { sourceUrl: 'https://example.com/a', reason: '   ' },
-        { sourceUrl: 'https://example.com/b', reason: 'Page URL was invalid' },
+        { reason: '   ' },
+        { reason: 'Page URL was invalid' },
       ]),
     ).toBe('Page URL was invalid')
   })

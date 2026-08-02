@@ -1,3 +1,8 @@
+/**
+ * The kit's runtime-agnostic core, which runs anywhere ES modules do. The HTTP host
+ * lives at `@radioso/conversation-kit/server` and the filesystem authoring store at
+ * `@radioso/conversation-kit/node`, so each stays with the runtime that provides it.
+ */
 export {
   createConversationKit,
   type ConversationKit,
@@ -5,33 +10,9 @@ export {
   type RunConversationTurnInput,
 } from "./composition.js";
 export {
-  conversationRoutineActivatorFromCandidate,
   RoutineRegistry,
   type RoutineRegistration,
 } from "@radioso/conversation-defaults";
-export {
-  clarificationStage,
-  decideClarification,
-  orderClarificationCandidates,
-  resolvePendingClarification,
-  type ClarificationDecisionContext,
-  type PendingClarificationResolution,
-} from "@radioso/conversation-engine";
-export type {
-  ClarificationAutoPickReason,
-  ClarificationCandidate,
-  ClarificationClearOutcome,
-  ClarificationDecision,
-  ClarificationPolicy,
-  ClarificationReplyMapInput,
-  ClarificationReplyMapping,
-  ConversationClarificationStore,
-  ConversationClarifier,
-  PendingClarification,
-  PendingClarificationMode,
-  PendingClarificationStatus,
-  RecentClarificationReader,
-} from "@radioso/conversation-contract";
 export {
   createConversationKitClient,
   type ConversationKitClient,
@@ -42,24 +23,14 @@ export {
   type SendMessageInput,
 } from "./sdk.js";
 export {
-  FileConversationKitAuthoringStore,
   TransientConversationKitAuthoringStore,
   type ConversationKitAuthoringStore,
-  type FileConversationKitAuthoringStoreOptions,
   type UpdateConversationKitAgentInput,
   type UpdateConversationKitDirectiveInput,
   type UpdateConversationKitRoutineInput,
 } from "./authoringStore.js";
 export {
-  createConversationKitServer,
-  type ConversationKitListenAddress,
-  type ConversationKitServer,
-  type CreateConversationKitServerOptions,
-  type ListenOptions,
-} from "./server.js";
-export {
   createConversationKitModelGateway,
-  DEFAULT_OPENAI_MODEL,
   type ConversationKitModelGatewayOptions,
 } from "./modelGateway.js";
 export {
@@ -69,19 +40,23 @@ export {
   DirectiveCoherenceError,
   ModelDirectiveCoherenceChecker,
   type CreateDirectiveCoherenceCheckerOptions,
-  type DirectiveCoherenceCheckInput,
-  type DirectiveCoherenceChecker,
-  type DirectiveCoherenceConflict,
-  type DirectiveCoherenceGate,
-  type DirectiveCoherenceGateOptions,
-  type DirectiveCoherenceMode,
-  type DirectiveCoherenceVerdict,
 } from "@radioso/conversation-defaults";
+export type {
+  DirectiveCoherenceCheckInput,
+  DirectiveCoherenceChecker,
+  DirectiveCoherenceConflict,
+  DirectiveCoherenceGate,
+  DirectiveCoherenceGateOptions,
+  DirectiveCoherenceMode,
+  DirectiveCoherenceVerdict,
+} from "@radioso/conversation-contract";
 export {
   createDefaultConversationDirectiveMatcher,
   createDefaultConversationSkillDispatcher,
   createDefaultConversationSkillSelector,
+  createDefaultRoutineSkillDispatcher,
   createModelBackedConversationComposer,
+  type DefaultConversationSkillSelectorOptions,
   type LocalSkillHandler,
   type LocalSkillHandlerInput,
   type LocalSkillRegistry,

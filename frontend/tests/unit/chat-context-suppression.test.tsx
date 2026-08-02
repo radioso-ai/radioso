@@ -20,7 +20,7 @@ vi.mock('@/lib/api', () => ({
 const chatApiMock = vi.mocked(chatApi)
 
 beforeAll(() => {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true
+  ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 })
 
 const flush = () => new Promise((resolve) => window.setTimeout(resolve, 0))
@@ -132,8 +132,8 @@ describe('workspace chat HITL suppression', () => {
         },
       }
 
-      handlers.onConversation?.({ conversationId: completion.conversationId })
-      handlers.onDone?.(completion)
+      handlers?.onConversation?.({ conversationId: completion.conversationId })
+      handlers?.onDone?.(completion)
       return completion
     })
   }
@@ -182,8 +182,8 @@ describe('workspace chat HITL suppression', () => {
 
   it('ends a cancelled turn without assistant error state while retaining the user message', async () => {
     chatApiMock.streamChatResponse.mockImplementation(async (_data, handlers) => {
-      handlers.onConversation?.({ conversationId: 'conversation-1' })
-      handlers.onCancelled?.({
+      handlers?.onConversation?.({ conversationId: 'conversation-1' })
+      handlers?.onCancelled?.({
         conversationId: 'conversation-1',
         reason: 'superseded',
         stage: 'routing',

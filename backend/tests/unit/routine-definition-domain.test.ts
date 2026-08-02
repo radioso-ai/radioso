@@ -93,11 +93,11 @@ describe("routine reentry mode (issue #746)", () => {
     })).toThrow();
   });
 
-  it("compiles reentryMode onto the routine activation metadata", () => {
+  it("compiles reentryMode onto the routine's typed activation", () => {
     const definition = baseDefinition();
     definition.activation.reentryMode = "always";
     const routine = compileRoutineDefinition(definition);
-    expect(routine.metadata).toMatchObject({ activation: { reentryMode: "always" } });
+    expect(routine.activation?.reentryMode).toBe("always");
   });
 
   it("defaults compiled reentryMode to once_per_conversation for legacy definitions", () => {
@@ -106,7 +106,7 @@ describe("routine reentry mode (issue #746)", () => {
     const definition = baseDefinition();
     delete (definition.activation as { reentryMode?: unknown }).reentryMode;
     const routine = compileRoutineDefinition(definition);
-    expect(routine.metadata).toMatchObject({ activation: { reentryMode: "once_per_conversation" } });
+    expect(routine.activation?.reentryMode).toBe("once_per_conversation");
   });
 });
 

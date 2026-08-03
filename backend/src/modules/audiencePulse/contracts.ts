@@ -60,6 +60,10 @@ export interface AudiencePulseRunGate {
   tryAcquire(workspaceId: string): Promise<AudiencePulseRunLease | null>;
 }
 
+export interface AudiencePulseRefreshRateLimitPort {
+  enforce(input: { accountId: string; workspaceId: string }): Promise<void>;
+}
+
 export interface AudiencePulseInferenceFactory {
   create(input: {
     workspaceContext: { workspaceId: string; accountId?: string | null };

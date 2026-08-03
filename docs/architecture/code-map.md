@@ -695,6 +695,7 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
+- `backend/src/modules/audiencePulse/infra/audiencePulseRefreshRateLimiter.ts`
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
 - `backend/src/db/migrations/135_audience_pulse_snapshots.sql`

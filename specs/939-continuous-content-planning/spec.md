@@ -380,8 +380,8 @@ the first answer is human-authored, or it has no complete diagnostic, the sample
   caching, generic model execution, cancellation, and provider behavior. It must not
   know Audience Pulse product rules.
 - Application composition supplies the history port, authorized model runner, snapshot
-  store, run gate, and route wiring. It assembles dependencies but owns no analysis
-  policy.
+  store, run gate, refresh-rate limiter, and route wiring. It assembles dependencies but
+  owns no analysis policy.
 - The dashboard owns layout, local loading state, and navigation to existing
   conversation detail. It must not calculate counts or reinterpret model output. It
   owns the one-shot draft intent but not document persistence.
@@ -413,11 +413,13 @@ Build only these reusable seams before or as the first slice of Audience Pulse:
    and cleared on open, cancellation, or mismatch. It is a UI capability, not an agent
    tool and not a document-write API.
 5. **Cost and concurrency guard**: a database-backed, replica-safe workspace run lease,
-   dedicated durable refresh rate limit, and usage reservation seam. A refresh reserves
-   only before a provider call and commits after validated model work, before the atomic
-   snapshot save, so a later persistence failure cannot make provider work unmetered. It
-   releases the reservation only when the model work is cancelled, invalid, or never
-   completes; the lease has automatic crash recovery through the database.
+   dedicated durable refresh rate limit, and usage reservation seam. A refresh acquires
+   the lease before it charges the refresh budget, so a concurrent `busy` outcome does
+   not spend an attempt. It reserves only before a provider call and commits after
+   validated model work, before the atomic snapshot save, so a later persistence failure
+   cannot make provider work unmetered. It releases the reservation only when the model
+   work is cancelled, invalid, or never completes; the lease has automatic crash recovery
+   through the database.
 
 ### Deliberate non-architecture
 
@@ -657,11 +659,13 @@ from the verified evidence IDs.
   navigating to the composer, cancelling, or switching workspace MUST NOT call a
   document-write endpoint or persist a draft. Only the existing composer’s explicit Save
   action may create a document.
-- **FR-031**: The provider path MUST reserve the existing usage allowance only after a
-  no-traffic check and run-gate acquisition. It MUST commit a validated model completion
-  before the atomic snapshot save and release only when model work is cancelled, invalid,
-  or never completes. History, snapshot, and usage-accounting failures MUST propagate as
-  server errors rather than being presented as retryable provider unavailability.
+- **FR-031**: A refresh MUST acquire the run gate before charging the dedicated durable
+  refresh budget; a `busy` outcome MUST NOT consume that budget. The provider path MUST
+  reserve the existing usage allowance only after a no-traffic check and run-gate
+  acquisition. It MUST commit a validated model completion before the atomic snapshot
+  save and release only when model work is cancelled, invalid, or never completes.
+  History, snapshot, and usage-accounting failures MUST propagate as server errors rather
+  than being presented as retryable provider unavailability.
 - **FR-032**: The frontend MUST disable repeat submission while its request is active
   and use the existing request-cancellation behavior when the workspace changes or the
   page unmounts; this is supplementary to, not a substitute for, the server run gate.
@@ -686,9 +690,9 @@ a stale read cannot delete a newer refresh result.
 POST has no user-selectable range in v1. It runs the fixed 30-day analysis and returns
 no_traffic, unavailable, or completed; completed atomically replaces the saved
 snapshot. A concurrent POST returns `AUDIENCE_PULSE_REFRESH_IN_PROGRESS`/HTTP 409; the
-dedicated refresh rate limit and a usage-limit rejection return distinct HTTP 429 errors.
-The dashboard presents all three as retry-later/capacity states rather than a provider
-failure.
+dedicated refresh budget is charged only after the run lease is acquired, and it and a
+usage-limit rejection return distinct HTTP 429 errors. The dashboard presents all three
+as retry-later/capacity states rather than a provider failure.
 
 `POST /evidence-anchor` is not a report endpoint or a general history API. It is a
 dashboard-session-only, body-only read helper requiring `workspace.history.read`; it

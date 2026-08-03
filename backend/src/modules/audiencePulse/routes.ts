@@ -2,7 +2,6 @@ import { Router } from "express";
 
 import type { AppDependencies } from "../../app/server/types.js";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
-import { createAudiencePulseRefreshRateLimiter } from "../../app/http/middleware/audiencePulseRefreshRateLimiter.js";
 import {
   requireDashboardWorkspaceSession,
   type DashboardWorkspaceSessionDependencies,
@@ -11,7 +10,7 @@ import { requireWorkspacePermission } from "../../app/http/middleware/requirePer
 import { audiencePulseEvidenceAnchorRequestSchema, type AudiencePulsePort } from "./contracts.js";
 
 export type AudiencePulseRouteDependencies = DashboardWorkspaceSessionDependencies
-  & Pick<AppDependencies, "accountAccessService" | "abuseControlService" | "auditService" | "env">;
+  & Pick<AppDependencies, "accountAccessService" | "env">;
 
 export const createAudiencePulseRoutes = (
   dependencies: AudiencePulseRouteDependencies,
@@ -21,7 +20,6 @@ export const createAudiencePulseRoutes = (
   const dashboardSession = requireDashboardWorkspaceSession(dependencies);
   const qualityRead = requireWorkspacePermission(dependencies, "workspace.quality.read");
   const historyRead = requireWorkspacePermission(dependencies, "workspace.history.read");
-  const refreshRateLimit = createAudiencePulseRefreshRateLimiter(dependencies);
 
   router.get("/", dashboardSession, qualityRead, async (_req, res, next) => {
     try {
@@ -64,7 +62,7 @@ export const createAudiencePulseRoutes = (
     }
   });
 
-  router.post("/", dashboardSession, qualityRead, refreshRateLimit, async (req, res, next) => {
+  router.post("/", dashboardSession, qualityRead, async (req, res, next) => {
     const controller = new AbortController();
     const abort = () => {
       if (!res.writableEnded) controller.abort();

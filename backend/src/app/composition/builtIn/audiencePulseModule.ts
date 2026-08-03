@@ -2,6 +2,7 @@ import { AudiencePulseSnapshotRepository } from "../../../db/repositories/audien
 import { PostgresAudiencePulseHistorySource } from "../../../modules/chat/composition.js";
 import {
   AudiencePulseService,
+  AudiencePulseRefreshRateLimiter,
   PostgresAudiencePulseRunGate,
   createAudiencePulseRoutes,
 } from "../../../modules/audiencePulse/composition.js";
@@ -20,6 +21,10 @@ export const createAudiencePulseApplicationModule = (): ApplicationModule => ({
           historySource: new PostgresAudiencePulseHistorySource(dependencies.connectorDb.kysely),
           snapshotStore: new AudiencePulseSnapshotRepository(dependencies.connectorDb.kysely),
           runGate: new PostgresAudiencePulseRunGate(dependencies.connectorDb.kysely),
+          refreshRateLimit: new AudiencePulseRefreshRateLimiter({
+            abuseControlService: dependencies.abuseControlService,
+            auditService: dependencies.auditService,
+          }),
           inferenceFactory: new ContextualStructuredInferenceFactory({
             resolver: dependencies.llmCapabilityResolver,
           }, dependencies.usageEventRecorder),

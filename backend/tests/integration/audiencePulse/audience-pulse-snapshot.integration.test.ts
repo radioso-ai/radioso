@@ -74,6 +74,7 @@ const unreachableReadDependencies = (input: {
 }): AudiencePulseServiceDependencies => ({
   ...input,
   runGate: { async tryAcquire() { throw new Error("read does not acquire a refresh lease"); } },
+  refreshRateLimit: { async enforce() { throw new Error("read does not enforce a refresh rate limit"); } },
   inferenceFactory: { async create() { throw new Error("read does not create inference"); } },
   usageLimitPolicy: {
     async reserveAnswer() { throw new Error("read does not reserve usage"); },

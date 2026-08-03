@@ -146,7 +146,7 @@ describe("Audience Pulse routes", () => {
     expect(service.reads).toBe(1);
   });
 
-  it("rate-limits only a session-authorized refresh subject", async () => {
+  it("delegates a session-authorized refresh without charging an HTTP rate-limit budget", async () => {
     const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
     const service = new CapturingService();
     const response = await request(createApp(service, calls))
@@ -155,9 +155,33 @@ describe("Audience Pulse routes", () => {
       .set("X-Workspace-Id", WORKSPACE_ID);
 
     expect(response.status).toBe(200);
-    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 1, permissions: ["workspace.quality.read"] });
+    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.quality.read"] });
     expect(service.refreshes).toBe(1);
     expect(service.refreshSignalAborted).toBe(false);
+  });
+
+  it("does not charge a refresh budget when the service reports an in-progress refresh", async () => {
+    const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+    const service = new CapturingService();
+    service.refresh = async () => {
+      service.refreshes += 1;
+      return { kind: "busy" };
+    };
+
+    const response = await request(createApp(service, calls))
+      .post("/api/v1/quality/audience-pulse")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("X-Workspace-Id", WORKSPACE_ID);
+
+    expect(response.status).toBe(409);
+    expect(response.body).toEqual({
+      error: {
+        code: "AUDIENCE_PULSE_REFRESH_IN_PROGRESS",
+        message: "Audience Pulse refresh is already in progress",
+      },
+    });
+    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.quality.read"] });
+    expect(service.refreshes).toBe(1);
   });
 
   it("returns 500 when refresh accounting fails instead of reporting an unavailable result", async () => {
@@ -175,7 +199,7 @@ describe("Audience Pulse routes", () => {
 
     expect(response.status).toBe(500);
     expect(response.body).toEqual({ error: { code: "internal_error" } });
-    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 1, permissions: ["workspace.quality.read"] });
+    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 0, permissions: ["workspace.quality.read"] });
     expect(service.refreshes).toBe(1);
   });
 

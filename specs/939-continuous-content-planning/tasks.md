@@ -34,8 +34,8 @@ Quality, generic auth, or generic inference code.
   replies, and typed outcome classification in
   `backend/tests/unit/audiencePulse/audience-pulse-history-source.test.ts`.
 - [x] T008 Implement `requireDashboardWorkspaceSession` and a code-owned
-  `audiencePulseRefreshRateLimiter` under `backend/src/app/http/middleware/`, with safe
-  rate-limit audit context.
+  `AudiencePulseRefreshRateLimiter` under `backend/src/modules/audiencePulse/infra/`,
+  with safe rate-limit audit context after the service acquires its run lease.
 - [x] T009 Extract a generic contextual structured-inference factory in
   `backend/src/shared/infra/llm/contextualGateways.ts` that accepts caller-provided
   `ModelCallUsageContext`, retaining no Audience Pulse-specific rule.

@@ -62,6 +62,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     commit: 0,
     release: 0,
     leaseRelease: 0,
+    rate: 0,
     replace: 0,
     invalidate: 0,
     lifecycle: [] as string[],
@@ -93,6 +94,9 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       async tryAcquire() {
         return { async release() { calls.leaseRelease += 1; } };
       },
+    },
+    refreshRateLimit: {
+      async enforce() { calls.rate += 1; },
     },
     inferenceFactory: {
       async create() {
@@ -240,7 +244,54 @@ describe("AudiencePulseService", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("no_traffic");
-    expect(calls).toMatchObject({ inference: 0, reserve: 0, commit: 0, release: 0, replace: 0, leaseRelease: 1 });
+    expect(calls).toMatchObject({ inference: 0, reserve: 0, commit: 0, release: 0, rate: 1, replace: 0, leaseRelease: 1 });
+  });
+
+  it("charges the durable refresh budget only after acquiring a refresh lease", async () => {
+    const lifecycle: string[] = [];
+    const { service } = createService({
+      runGate: {
+        async tryAcquire() {
+          lifecycle.push("gate");
+          return { async release() {} };
+        },
+      },
+      refreshRateLimit: {
+        async enforce() { lifecycle.push("rate_limit"); },
+      },
+      historySource: {
+        async read() {
+          lifecycle.push("history");
+          return history();
+        },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed" });
+
+    expect(lifecycle.slice(0, 3)).toEqual(["gate", "rate_limit", "history"]);
+  });
+
+  it("releases an acquired lease when the durable refresh budget rejects", async () => {
+    const rateLimitError = Object.assign(new Error("Rate limit exceeded"), { statusCode: 429 });
+    const { service, calls } = createService({
+      refreshRateLimit: {
+        async enforce() { throw rateLimitError; },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(rateLimitError);
+
+    expect(calls).toMatchObject({ inference: 0, reserve: 0, rate: 0, leaseRelease: 1 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      eventStatus: "failure",
+      metadata: { outcome: "rate_limited" },
+    });
   });
 
   it("commits usage after a validated model result before saving the report", async () => {
@@ -249,7 +300,7 @@ describe("AudiencePulseService", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
-    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, leaseRelease: 1 });
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1 });
     expect(calls.lifecycle).toEqual(["commit", "snapshot"]);
   });
 
@@ -528,7 +579,7 @@ describe("AudiencePulseService", () => {
     });
     await expect(busy.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
       .resolves.toEqual({ kind: "busy" });
-    expect(busy.calls).toMatchObject({ inference: 0, reserve: 0, leaseRelease: 0 });
+    expect(busy.calls).toMatchObject({ inference: 0, reserve: 0, rate: 0, leaseRelease: 0 });
     expect(busy.calls.auditEvents.map((event) => [event.eventType, event.eventStatus])).toEqual([
       ["audience_pulse.refresh_requested", "success"],
       ["audience_pulse.refresh_failed", "failure"],

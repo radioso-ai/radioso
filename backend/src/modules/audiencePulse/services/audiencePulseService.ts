@@ -23,6 +23,7 @@ import type {
   AudiencePulseInferenceFactory,
   AudiencePulsePort,
   AudiencePulsePromptEvidenceReference,
+  AudiencePulseRefreshRateLimitPort,
   AudiencePulseReadResult,
   AudiencePulseRefreshResult,
   AudiencePulseRunGate,
@@ -50,6 +51,7 @@ export interface AudiencePulseServiceDependencies {
   historySource: AudiencePulseHistorySource;
   snapshotStore: AudiencePulseSnapshotStore;
   runGate: AudiencePulseRunGate;
+  refreshRateLimit: AudiencePulseRefreshRateLimitPort;
   inferenceFactory: AudiencePulseInferenceFactory;
   usageLimitPolicy: UsageLimitPolicy;
   auditService: AudiencePulseAuditPort;
@@ -74,6 +76,25 @@ const errorStatusCode = (error: unknown): number | undefined => {
   if (!error || typeof error !== "object" || !("statusCode" in error)) return undefined;
   const statusCode = (error as { statusCode?: unknown }).statusCode;
   return typeof statusCode === "number" ? statusCode : undefined;
+};
+
+type AudiencePulseRefreshFailureOutcome =
+  | "provider"
+  | "validation"
+  | "cancelled"
+  | "rate_limited"
+  | "rate_limit_unavailable"
+  | "internal";
+
+const rateLimitFailureOutcome = (error: unknown): AudiencePulseRefreshFailureOutcome | null => {
+  switch (errorStatusCode(error)) {
+    case 429:
+      return "rate_limited";
+    case 503:
+      return "rate_limit_unavailable";
+    default:
+      return null;
+  }
 };
 
 const unavailableReason = (error: unknown): "provider" | "validation" | "cancelled" => {
@@ -274,8 +295,18 @@ export class AudiencePulseService implements AudiencePulsePort {
 
     let reservation: UsageLimitReservation | null = null;
     let reservationMustRemain = false;
-    let deferredFailureOutcome: "provider" | "validation" | "cancelled" | "internal" | null = null;
+    let deferredFailureOutcome: AudiencePulseRefreshFailureOutcome | null = null;
     try {
+      try {
+        await this.deps.refreshRateLimit.enforce({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+        });
+      } catch (error) {
+        deferredFailureOutcome = rateLimitFailureOutcome(error);
+        throw error;
+      }
+
       const history = await this.deps.historySource.read({
         workspaceId: input.workspaceId,
         analysisStart,
@@ -383,7 +414,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       });
       return { kind: "completed", report: hydrated };
     } catch (error) {
-      deferredFailureOutcome = errorStatusCode(error) === 503 ? "provider" : "internal";
+      deferredFailureOutcome ??= errorStatusCode(error) === 503 ? "provider" : "internal";
       throw error;
     } finally {
       try {

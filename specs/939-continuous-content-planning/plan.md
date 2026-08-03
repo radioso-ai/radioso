@@ -69,10 +69,10 @@ backend/
 │   ├── app/
 │   │   ├── composition/builtIn/audiencePulseModule.ts
 │   │   └── http/
-│   │       ├── middleware/{requireDashboardWorkspaceSession,audiencePulseRefreshRateLimiter}.ts
+│   │       ├── middleware/requireDashboardWorkspaceSession.ts
 │   │       └── openapi/{schemas/audiencePulseSchemas.ts,paths/audiencePulsePaths.ts}
 │   ├── db/{migrations/135_audience_pulse_snapshots.sql,repositories/audiencePulseSnapshotRepository.ts}
-│   ├── modules/{audiencePulse,chat/audiencePulseHistorySource.ts}
+│   ├── modules/{audiencePulse/infra/audiencePulseRefreshRateLimiter.ts,chat/audiencePulseHistorySource.ts}
 │   └── shared/infra/llm/contextualGateways.ts
 └── tests/{unit,contract,integration}/audiencePulse/
 
@@ -86,7 +86,8 @@ frontend/
 **Structure Decision**: `modules/audiencePulse` owns product policy and exposes a narrow
 read/refresh port. A Chat adapter owns history querying/pairing; the Audience Pulse
 module never imports chat repositories. Postgres snapshot/run-gate adapters own SQL and
-locking. Routes validate, authorize, rate limit, and present typed outcomes only.
+locking. Routes validate, authorize, and present typed outcomes only. The service
+acquires the run lease before it charges the product-owned refresh budget.
 Application composition assembles dependencies. The frontend owns presentation and an
 account/workspace-bound `sessionStorage` handoff to Documents, not document persistence.
 
@@ -94,13 +95,14 @@ account/workspace-bound `sessionStorage` handoff to Documents, not document pers
 
 - **Transport**: `createAudiencePulseRoutes` mounts at `/api/v1/quality/audience-pulse`.
   It applies cookie-only auth; saved-report read/refresh require `workspace.quality.read`
-  and only refresh has the dedicated rate limiter. The body-only evidence-anchor helper
-  requires `workspace.history.read`, reauthorizes one exact source, and returns at most
-  that source plus its next assistant reply. Routes map service results to HTTP/OpenAPI
-  and perform no sampling or provider call themselves.
+  and the service applies the dedicated refresh budget after it holds the run lease. The
+  body-only evidence-anchor helper requires `workspace.history.read`, reauthorizes one
+  exact source, and returns at most that source plus its next assistant reply. Routes map
+  service results to HTTP/OpenAPI and perform no sampling or provider call themselves.
 - **Orchestration**: `AudiencePulseService` captures the interval, handles no traffic,
-  acquires/releases the durable run lease, reserves/commits/releases usage, invokes one
-  inference operation, saves only validated reports, and emits safe audit/telemetry.
+  acquires/releases the durable run lease, charges the dedicated refresh budget only
+  after acquisition, reserves/commits/releases usage, invokes one inference operation,
+  saves only validated reports, and emits safe audit/telemetry.
 - **Domain**: Zod contracts, sampling policy, typed `contentGapEligible`, theme and
   recommendation integrity, and report projection are pure named helpers. The model
   supplies neither totals, eligibility, membership resolution, recurrence, duplicate

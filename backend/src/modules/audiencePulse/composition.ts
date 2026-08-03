@@ -1,5 +1,6 @@
 export { AudiencePulseService, hydrateReport } from "./services/audiencePulseService.js";
 export { PostgresAudiencePulseRunGate } from "./infra/postgresAudiencePulseRunGate.js";
+export { AudiencePulseRefreshRateLimiter } from "./infra/audiencePulseRefreshRateLimiter.js";
 export { createAudiencePulseRoutes, type AudiencePulseRouteDependencies } from "./routes.js";
 export {
   AUDIENCE_PULSE_ANALYSIS_DAYS,

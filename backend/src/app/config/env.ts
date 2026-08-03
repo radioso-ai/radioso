@@ -116,6 +116,8 @@ const envSchema = z.object({
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(60),
+  AUDIENCE_PULSE_REFRESH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
+  AUDIENCE_PULSE_REFRESH_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(10),
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(600),

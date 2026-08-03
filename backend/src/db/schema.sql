@@ -678,6 +678,24 @@ CREATE TABLE public.assistant_answer_triage_transitions (
 
 
 --
+-- Name: audience_pulse_snapshots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.audience_pulse_snapshots (
+    workspace_id uuid NOT NULL,
+    revision uuid NOT NULL,
+    period_start timestamp with time zone NOT NULL,
+    period_end timestamp with time zone NOT NULL,
+    generated_at timestamp with time zone NOT NULL,
+    report jsonb NOT NULL,
+    prompt_evidence_refs jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT audience_pulse_snapshots_check CHECK ((period_start < period_end))
+);
+
+
+--
 -- Name: audit_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2611,6 +2629,14 @@ ALTER TABLE ONLY public.assistant_answer_triage_transitions
 
 ALTER TABLE ONLY public.assistant_answer_triage_transitions
     ADD CONSTRAINT assistant_answer_triage_transitions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: audience_pulse_snapshots audience_pulse_snapshots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_snapshots
+    ADD CONSTRAINT audience_pulse_snapshots_pkey PRIMARY KEY (workspace_id);
 
 
 --
@@ -6210,6 +6236,14 @@ ALTER TABLE ONLY public.assistant_answer_triage
 
 ALTER TABLE ONLY public.assistant_answer_triage
     ADD CONSTRAINT assistant_answer_triage_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: audience_pulse_snapshots audience_pulse_snapshots_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audience_pulse_snapshots
+    ADD CONSTRAINT audience_pulse_snapshots_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

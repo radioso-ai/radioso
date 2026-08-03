@@ -1,0 +1,359 @@
+import { randomUUID } from "node:crypto";
+
+import { ZodError } from "zod";
+
+import type { UsageLimitPolicy, UsageLimitReservation } from "../../../shared/domain/usageLimitPolicy.js";
+import { isUsageLimitExceededError } from "../../../shared/domain/usageLimitPolicy.js";
+import type {
+  AudiencePulseEvidence,
+  AudiencePulseModelOutput,
+  AudiencePulseStoredReport,
+} from "../domain/report.js";
+import {
+  AudiencePulseReportValidationError,
+  buildAudiencePulseReport,
+  parseAudiencePulseModelOutput,
+} from "../domain/report.js";
+import type {
+  AudiencePulseAuditPort,
+  AudiencePulseEvidenceAnchor,
+  AudiencePulseHistorySource,
+  AudiencePulseHydratedEvidence,
+  AudiencePulseHydratedReport,
+  AudiencePulseInferenceFactory,
+  AudiencePulsePort,
+  AudiencePulsePromptEvidenceReference,
+  AudiencePulseReadResult,
+  AudiencePulseRefreshResult,
+  AudiencePulseRunGate,
+  AudiencePulseSnapshotRecord,
+  AudiencePulseSnapshotStore,
+} from "../contracts.js";
+import {
+  AUDIENCE_PULSE_ANALYSIS_DAYS,
+  DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
+} from "../contracts.js";
+import {
+  AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
+  AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+  AUDIENCE_PULSE_RESPONSE_FORMAT,
+  boundAudiencePulseHistoryForPrompt,
+  buildAudiencePulsePrompt,
+} from "./prompt.js";
+
+interface SafeLogger {
+  info?(context: Record<string, unknown>, message: string): void;
+  warn?(context: Record<string, unknown>, message: string): void;
+}
+
+export interface AudiencePulseServiceDependencies {
+  historySource: AudiencePulseHistorySource;
+  snapshotStore: AudiencePulseSnapshotStore;
+  runGate: AudiencePulseRunGate;
+  inferenceFactory: AudiencePulseInferenceFactory;
+  usageLimitPolicy: UsageLimitPolicy;
+  auditService: AudiencePulseAuditPort;
+  logger?: SafeLogger;
+  now?: () => Date;
+}
+
+const safeAudit = async (
+  auditService: AudiencePulseAuditPort,
+  input: Parameters<AudiencePulseAuditPort["record"]>[0],
+): Promise<void> => {
+  await auditService.record(input).catch(() => undefined);
+};
+
+const isAbortError = (error: unknown): boolean =>
+  Boolean(error && typeof error === "object" && "name" in error && (error as { name?: unknown }).name === "AbortError");
+
+const unavailableReason = (error: unknown): "provider" | "validation" | "cancelled" => {
+  if (isAbortError(error)) return "cancelled";
+  if (error instanceof AudiencePulseReportValidationError || error instanceof ZodError || error instanceof SyntaxError) {
+    return "validation";
+  }
+  return "provider";
+};
+
+const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, AudiencePulseHydratedEvidence> =>
+  new Map(evidence.map((item) => [item.id, {
+    evidenceId: item.id,
+    conversationId: item.reference.conversationId,
+    messageId: item.reference.messageId,
+    question: item.question,
+  }]));
+
+const hydrateReport = (
+  report: AudiencePulseStoredReport,
+  evidenceById: Map<string, AudiencePulseHydratedEvidence>,
+): AudiencePulseHydratedReport => {
+  const resolve = (evidenceId: string): AudiencePulseHydratedEvidence => {
+    const evidence = evidenceById.get(evidenceId);
+    if (!evidence) {
+      throw new AudiencePulseReportValidationError("A saved report source could not be rehydrated");
+    }
+    return evidence;
+  };
+
+  return {
+    period: report.period,
+    generatedAt: report.generatedAt,
+    coverage: report.coverage,
+    weeklyVolume: report.weeklyVolume,
+    summary: report.summary,
+    themes: report.themes.map((theme) => ({
+      id: theme.id,
+      title: theme.title,
+      description: theme.description,
+      sampleCount: theme.sampleCount,
+      weeklyPulse: theme.weeklyPulse,
+      grounding: theme.grounding,
+      evidence: theme.evidenceIds.map((id) => {
+        const evidence = resolve(id);
+        return {
+          reference: evidence.evidenceId,
+          conversationId: evidence.conversationId,
+          messageId: evidence.messageId,
+          question: evidence.question,
+        };
+      }),
+    })),
+    contentGaps: report.contentGaps,
+    recommendations: report.recommendations.map((recommendation) => ({
+      id: recommendation.id,
+      themeId: recommendation.themeId,
+      title: recommendation.title,
+      rationale: recommendation.rationale,
+      questions: recommendation.questions,
+      evidenceReferences: recommendation.evidenceIds.map((id) => resolve(id).evidenceId),
+      startDraft: {
+        title: recommendation.title,
+        questions: recommendation.questions,
+      },
+    })),
+    caveats: report.caveats,
+  };
+};
+
+const parseModelResult = (text: string): AudiencePulseModelOutput => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new AudiencePulseReportValidationError("Audience Pulse model response was not valid JSON");
+  }
+  try {
+    return parseAudiencePulseModelOutput(parsed);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      throw new AudiencePulseReportValidationError("Audience Pulse model response did not match the approved schema");
+    }
+    throw error;
+  }
+};
+
+const promptEvidenceReferences = (evidence: AudiencePulseEvidence[]): AudiencePulsePromptEvidenceReference[] =>
+  evidence.map((item) => ({
+    evidenceId: item.id,
+    messageId: item.reference.messageId,
+    conversationId: item.reference.conversationId,
+  }));
+
+/**
+ * Orchestrates the bounded report without querying Chat persistence directly. The
+ * Chat-owned history source is responsible for source eligibility and reauthorization.
+ */
+export class AudiencePulseService implements AudiencePulsePort {
+  private readonly now: () => Date;
+
+  constructor(private readonly deps: AudiencePulseServiceDependencies) {
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  async read(input: { accountId: string; userId: string; workspaceId: string }): Promise<AudiencePulseReadResult> {
+    // A failed revision-conditional invalidation means a refresh won the race. Re-read it
+    // once so an old GET can neither delete nor hide a fresh report.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const snapshot = await this.deps.snapshotStore.find(input.workspaceId);
+      if (!snapshot) return { kind: "not_generated" };
+
+      const hydrated = await this.deps.historySource.rehydrate({
+        workspaceId: input.workspaceId,
+        references: snapshot.promptEvidenceRefs,
+      });
+      if (hydrated.size === snapshot.promptEvidenceRefs.length) {
+        return { kind: "completed", report: hydrateReport(snapshot.report, hydrated) };
+      }
+
+      const invalidated = await this.deps.snapshotStore.invalidate({
+        workspaceId: input.workspaceId,
+        expectedRevision: snapshot.revision,
+      });
+      if (invalidated) return { kind: "not_generated" };
+    }
+    return { kind: "not_generated" };
+  }
+
+  async readEvidenceAnchor(input: {
+    accountId: string;
+    userId: string;
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  }): Promise<AudiencePulseEvidenceAnchor | null> {
+    return this.deps.historySource.readEvidenceAnchor({
+      workspaceId: input.workspaceId,
+      conversationId: input.conversationId,
+      messageId: input.messageId,
+    });
+  }
+
+  async refresh(input: {
+    accountId: string;
+    userId: string;
+    workspaceId: string;
+    signal?: AbortSignal;
+  }): Promise<AudiencePulseRefreshResult> {
+    const startedAt = this.now();
+    const analysisEnd = startedAt;
+    const analysisStart = new Date(analysisEnd.getTime() - AUDIENCE_PULSE_ANALYSIS_DAYS * 24 * 60 * 60 * 1000);
+    await safeAudit(this.deps.auditService, {
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "audience_pulse.refresh_requested",
+      eventStatus: "success",
+      metadata: { userId: input.userId },
+    });
+
+    const lease = await this.deps.runGate.tryAcquire(input.workspaceId);
+    if (!lease) {
+      await this.recordOutcome(input, "busy", startedAt, {});
+      return { kind: "busy" };
+    }
+
+    let reservation: UsageLimitReservation | null = null;
+    let committed = false;
+    try {
+      const history = await this.deps.historySource.read({
+        workspaceId: input.workspaceId,
+        analysisStart,
+        analysisEnd,
+        samplePolicy: DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
+      });
+      if (history.coverage.populationSize === 0 || history.evidence.length === 0) {
+        await this.recordOutcome(input, "no_traffic", startedAt, {
+          populationSize: history.coverage.populationSize,
+        });
+        return {
+          kind: "no_traffic",
+          period: { start: analysisStart.toISOString(), end: analysisEnd.toISOString() },
+          weeklyVolume: history.weeklyVolume,
+        };
+      }
+
+      try {
+        reservation = await this.deps.usageLimitPolicy.reserveAnswer({
+          accountId: input.accountId,
+          workspaceId: input.workspaceId,
+          surface: "audience_pulse",
+        });
+      } catch (error) {
+        if (isUsageLimitExceededError(error)) {
+          await this.recordOutcome(input, "usage_limited", startedAt, {
+            populationSize: history.coverage.populationSize,
+            sampleSize: history.coverage.sampleSize,
+          });
+          return { kind: "usage_limited" };
+        }
+        throw error;
+      }
+
+      const boundedHistory = boundAudiencePulseHistoryForPrompt(history);
+      const modelCallContext = {
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        requestId: randomUUID(),
+        surface: "audience_pulse",
+        operation: "analysis",
+        attemptKey: randomUUID(),
+      };
+      const inference = await this.deps.inferenceFactory.create({
+        workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
+        modelCallContext,
+      });
+      const completion = await inference.complete({
+        prompt: buildAudiencePulsePrompt(boundedHistory),
+        maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+        maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
+        responseFormat: AUDIENCE_PULSE_RESPONSE_FORMAT,
+        signal: input.signal,
+        operation: modelCallContext,
+        validateResult(result) {
+          parseModelResult(result.text);
+        },
+      });
+      const model = parseModelResult(completion.text);
+      const generatedAt = this.now();
+      const report = buildAudiencePulseReport({
+        period: boundedHistory.period,
+        generatedAt,
+        coverage: boundedHistory.coverage,
+        weeklyVolume: boundedHistory.weeklyVolume,
+        evidence: boundedHistory.evidence,
+        model,
+      });
+      await this.deps.snapshotStore.replace({
+        workspaceId: input.workspaceId,
+        period: boundedHistory.period,
+        generatedAt,
+        report,
+        promptEvidenceRefs: promptEvidenceReferences(boundedHistory.evidence),
+      });
+      await reservation.commit();
+      committed = true;
+      const hydrated = hydrateReport(report, createHydratedEvidence(boundedHistory.evidence));
+      await this.recordOutcome(input, "completed", startedAt, {
+        populationSize: history.coverage.populationSize,
+        sampleSize: history.coverage.sampleSize,
+      });
+      return { kind: "completed", report: hydrated };
+    } catch (error) {
+      if (error && typeof error === "object" && "statusCode" in error && (error as { statusCode?: unknown }).statusCode === 503) {
+        await this.recordOutcome(input, "provider", startedAt, {});
+        throw error;
+      }
+      const reason = unavailableReason(error);
+      await this.recordOutcome(input, reason, startedAt, {});
+      return { kind: "unavailable", reason };
+    } finally {
+      if (reservation && !committed) {
+        await reservation.release().catch(() => undefined);
+      }
+      await lease.release().catch(() => undefined);
+    }
+  }
+
+  private async recordOutcome(
+    input: { accountId: string; userId: string; workspaceId: string },
+    outcome: string,
+    startedAt: Date,
+    counts: Record<string, number>,
+  ): Promise<void> {
+    const durationMs = Math.max(0, this.now().getTime() - startedAt.getTime());
+    const eventStatus: "success" | "failure" = outcome === "completed" || outcome === "no_traffic" ? "success" : "failure";
+    const metadata = { userId: input.userId, outcome, durationMs, ...counts };
+    await safeAudit(this.deps.auditService, {
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: outcome === "completed" || outcome === "no_traffic"
+        ? "audience_pulse.refresh_completed"
+        : "audience_pulse.refresh_failed",
+      eventStatus,
+      metadata,
+    });
+    const log = eventStatus === "success" ? this.deps.logger?.info : this.deps.logger?.warn;
+    log?.({ workspaceId: input.workspaceId, outcome, durationMs, ...counts }, "audience_pulse_refresh");
+  }
+}
+
+export { hydrateReport };

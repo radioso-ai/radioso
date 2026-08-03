@@ -14,6 +14,7 @@ import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
 import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
+import { registerAudiencePulseSchemas } from "./schemas/audiencePulseSchemas.js";
 
 extendZodWithOpenApi(z);
 
@@ -190,6 +191,10 @@ export interface OpenApiSchemaCatalog {
   QualityTriageStateSchema: z.ZodTypeAny;
   QualityTriageRecordSchema: z.ZodTypeAny;
   SetQualityTriageRequestSchema: z.ZodTypeAny;
+  AudiencePulseEvidenceAnchorRequestSchema: z.ZodTypeAny;
+  AudiencePulseEvidenceAnchorResponseSchema: z.ZodTypeAny;
+  AudiencePulseReadResponseSchema: z.ZodTypeAny;
+  AudiencePulseRefreshResponseSchema: z.ZodTypeAny;
   UsageTrendBucketSchema: z.ZodTypeAny;
   UsageTrendGranularitySchema: z.ZodTypeAny;
   UsageTrendsQuerySchema: RouteParameterSchema;
@@ -332,6 +337,7 @@ export const createOpenApiRegistry = () => {
   registerQualitySchemas(registry, schemas);
   registerUsageTrendSchemas(registry, schemas);
   registerContextVariableSchemas(registry, schemas);
+  registerAudiencePulseSchemas(registry, schemas);
 
   return {
     registry,

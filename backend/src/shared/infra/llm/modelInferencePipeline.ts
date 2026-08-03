@@ -57,7 +57,11 @@ const estimateBudgetInputTokens = (text: string): number => {
   );
 };
 
-const estimateRequestInputTokens = (request: TextGenerationRequest): number =>
+/**
+ * Conservative language-aware estimate used before a provider call. This is a budget
+ * guard rather than usage accounting, so non-ASCII code points count as one token.
+ */
+export const estimateTextGenerationInputTokens = (request: Pick<TextGenerationRequest, "prompt" | "systemPrompt">): number =>
   estimateBudgetInputTokens(`${request.systemPrompt ?? ""}\n${request.prompt}`);
 
 const usageErrorCode = (error: unknown): string => {
@@ -322,7 +326,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
 
   private enforceInputBudget(input: ModelInferenceRequest, request: TextGenerationRequest): void {
     const maxInputTokens = input.maxInputTokens ?? LLM_DEFAULTS.textGenerationMaxInputTokens;
-    const estimatedInputTokens = estimateRequestInputTokens(request);
+    const estimatedInputTokens = estimateTextGenerationInputTokens(request);
     const estimatedTotalTokens =
       request.maxOutputTokens === undefined ? estimatedInputTokens : estimatedInputTokens + request.maxOutputTokens;
     if (estimatedTotalTokens > maxInputTokens) {

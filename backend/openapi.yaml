@@ -18,6 +18,7 @@ tags:
   - name: Settings
   - name: Documents
   - name: Connectors
+  - name: Audience Pulse
 components:
   securitySchemes:
     sessionCookie:
@@ -9048,6 +9049,387 @@ components:
           pattern: ^[0-9a-f]{64}$
       required:
         - signingKey
+    AudiencePulseGrounding:
+      type: object
+      properties:
+        grounded:
+          type: integer
+          minimum: 0
+        degraded:
+          type: integer
+          minimum: 0
+        noSupport:
+          type: integer
+          minimum: 0
+        unknown:
+          type: integer
+          minimum: 0
+        contentGapEligible:
+          type: integer
+          minimum: 0
+      required:
+        - grounded
+        - degraded
+        - noSupport
+        - unknown
+        - contentGapEligible
+    AudiencePulseCoverage:
+      type: object
+      properties:
+        populationSize:
+          type: integer
+          minimum: 0
+        sampleSize:
+          type: integer
+          minimum: 0
+        sampled:
+          type: boolean
+      required:
+        - populationSize
+        - sampleSize
+        - sampled
+    AudiencePulseWeeklyVolume:
+      type: object
+      properties:
+        weekStart:
+          type: string
+          format: date-time
+        visitorQuestionCount:
+          type: integer
+          minimum: 0
+        conversationCount:
+          type: integer
+          minimum: 0
+      required:
+        - weekStart
+        - visitorQuestionCount
+        - conversationCount
+    AudiencePulseEvidence:
+      type: object
+      properties:
+        reference:
+          type: string
+        conversationId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+        question:
+          type: string
+          maxLength: 1200
+      required:
+        - reference
+        - conversationId
+        - messageId
+        - question
+    AudiencePulseEvidenceAnchorRequest:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        messageId:
+          type: string
+          format: uuid
+      required:
+        - conversationId
+        - messageId
+      additionalProperties: false
+    AudiencePulseEvidenceAnchorSource:
+      type: object
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - user
+        source:
+          type: string
+          enum:
+            - customer
+        content:
+          type: string
+          maxLength: 1200
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - messageId
+        - role
+        - source
+        - content
+        - createdAt
+    AudiencePulseEvidenceAnchorNextAssistant:
+      type: object
+      properties:
+        messageId:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum:
+            - assistant
+        source:
+          type: string
+          enum:
+            - customer
+            - ai_agent
+            - human_agent
+            - human_agent_on_behalf_of_ai_agent
+            - system
+        content:
+          type: string
+          maxLength: 1200
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - messageId
+        - role
+        - source
+        - content
+        - createdAt
+    AudiencePulseEvidenceAnchorResponse:
+      type: object
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        source:
+          $ref: "#/components/schemas/AudiencePulseEvidenceAnchorSource"
+        nextAssistant:
+          anyOf:
+            - $ref: "#/components/schemas/AudiencePulseEvidenceAnchorNextAssistant"
+            - type: "null"
+            - type: "null"
+      required:
+        - conversationId
+        - source
+        - nextAssistant
+    AudiencePulseTheme:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        sampleCount:
+          type: integer
+          minimum: 0
+        weeklyPulse:
+          type: array
+          items:
+            type: object
+            properties:
+              weekStart:
+                type: string
+                format: date-time
+              count:
+                type: integer
+                minimum: 0
+            required:
+              - weekStart
+              - count
+        grounding:
+          $ref: "#/components/schemas/AudiencePulseGrounding"
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseEvidence"
+      required:
+        - id
+        - title
+        - description
+        - sampleCount
+        - weeklyPulse
+        - grounding
+        - evidence
+    AudiencePulseContentGap:
+      type: object
+      properties:
+        themeId:
+          type: string
+        eligibleEvidenceCount:
+          type: integer
+          minimum: 0
+        distinctConversationCount:
+          type: integer
+          minimum: 0
+      required:
+        - themeId
+        - eligibleEvidenceCount
+        - distinctConversationCount
+    AudiencePulseRecommendation:
+      type: object
+      properties:
+        id:
+          type: string
+        themeId:
+          type: string
+        title:
+          type: string
+        rationale:
+          type: string
+        questions:
+          type: array
+          items:
+            type: string
+        evidenceReferences:
+          type: array
+          items:
+            type: string
+        startDraft:
+          type: object
+          properties:
+            title:
+              type: string
+            questions:
+              type: array
+              items:
+                type: string
+          required:
+            - title
+            - questions
+      required:
+        - id
+        - themeId
+        - title
+        - rationale
+        - questions
+        - evidenceReferences
+        - startDraft
+    AudiencePulseReport:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+          required:
+            - start
+            - end
+        generatedAt:
+          type: string
+          format: date-time
+        coverage:
+          $ref: "#/components/schemas/AudiencePulseCoverage"
+        weeklyVolume:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseWeeklyVolume"
+        summary:
+          type: string
+        themes:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseTheme"
+        contentGaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseContentGap"
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/AudiencePulseRecommendation"
+        caveats:
+          type: array
+          items:
+            type: string
+      required:
+        - period
+        - generatedAt
+        - coverage
+        - weeklyVolume
+        - summary
+        - themes
+        - contentGaps
+        - recommendations
+        - caveats
+    AudiencePulseReadResponse:
+      anyOf:
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - not_generated
+          required:
+            - kind
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - completed
+            report:
+              $ref: "#/components/schemas/AudiencePulseReport"
+          required:
+            - kind
+            - report
+    AudiencePulseRefreshResponse:
+      anyOf:
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - no_traffic
+            period:
+              type: object
+              properties:
+                start:
+                  type: string
+                  format: date-time
+                end:
+                  type: string
+                  format: date-time
+              required:
+                - start
+                - end
+            weeklyVolume:
+              type: array
+              items:
+                $ref: "#/components/schemas/AudiencePulseWeeklyVolume"
+          required:
+            - kind
+            - period
+            - weeklyVolume
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - unavailable
+            reason:
+              type: string
+              enum:
+                - provider
+                - validation
+                - cancelled
+          required:
+            - kind
+            - reason
+        - type: object
+          properties:
+            kind:
+              type: string
+              enum:
+                - completed
+            report:
+              $ref: "#/components/schemas/AudiencePulseReport"
+          required:
+            - kind
+            - report
     PendingApprovalDecisionOption:
       type: object
       properties:
@@ -20520,6 +20902,122 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/QualityTriageConflictResponse"
+  /api/v1/quality/audience-pulse:
+    get:
+      tags:
+        - Audience Pulse
+      summary: Read the saved Audience Pulse report
+      description: Returns the one saved workspace report without invoking an AI provider. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
+      operationId: getAudiencePulse
+      security: *a43
+      responses:
+        "200":
+          description: Saved report or no saved report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudiencePulseReadResponse"
+        "401":
+          description: Browser dashboard session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.quality.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      tags:
+        - Audience Pulse
+      summary: Analyze the last 30 days of visitor questions
+      description: Explicitly refreshes one bounded saved workspace report. This route has a dedicated durable rate limit and accepts only a browser dashboard session, never bearer/API authentication.
+      operationId: refreshAudiencePulse
+      security: *a43
+      responses:
+        "200":
+          description: Completed, no-traffic, or retryable inference result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudiencePulseRefreshResponse"
+        "401":
+          description: Browser dashboard session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.quality.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: A workspace refresh is already in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Refresh rate or usage capacity exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Workspace inference capability is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/quality/audience-pulse/evidence-anchor:
+    post:
+      tags:
+        - Audience Pulse
+      summary: Read a bounded authorized source window
+      description: Reads one workspace-authorized source message and, when it occurs before the next visitor turn, its next assistant reply. Source identifiers are supplied only in the JSON request body. Requires a browser dashboard session and workspace.history.read; bearer/API authentication is intentionally not accepted.
+      operationId: getAudiencePulseEvidenceAnchor
+      security: *a43
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AudiencePulseEvidenceAnchorRequest"
+      responses:
+        "200":
+          description: Bounded source and next assistant context
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudiencePulseEvidenceAnchorResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Browser dashboard session required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.history.read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Exact source was not found in the selected workspace conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/evals/cases/by-source-message/{assistantMessageId}:
     get:
       tags:

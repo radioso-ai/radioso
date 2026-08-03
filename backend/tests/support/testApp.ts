@@ -180,6 +180,7 @@ import {
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   noopOrganizationCreationGuard,
   type OrganizationCreationGuard,
@@ -287,6 +288,8 @@ export const createTestEnv = (): Env => ({
   WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS: 60_000,
   EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS: 60,
+  AUDIENCE_PULSE_REFRESH_RATE_LIMIT_WINDOW_MS: 900_000,
+  AUDIENCE_PULSE_REFRESH_RATE_LIMIT_MAX_ATTEMPTS: 3,
   PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
@@ -588,6 +591,7 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
+  const usageEventRecorder = new NoopUsageEventRecorder();
   const organizationCreationGuard = overrides.organizationCreationGuard ?? noopOrganizationCreationGuard;
   const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -1645,6 +1649,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
+    usageEventRecorder,
     organizationCreationGuard,
     publicChatActionAdvertiser,
     publicConversationEventBus,
@@ -1675,6 +1680,11 @@ export const createTestDependencies = (overrides: {
     externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
+    llmCapabilityResolver: {
+      async resolve() {
+        throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
+      },
+    },
     authService: new AuthService({
       env,
       auditService,

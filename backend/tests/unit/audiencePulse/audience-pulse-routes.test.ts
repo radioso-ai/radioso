@@ -60,8 +60,6 @@ class CapturingService implements AudiencePulsePort {
 const createDependencies = (calls: { bearer: number; permission: number; rate: number; permissions: string[] }): AudiencePulseRouteDependencies => ({
   env: {
     SESSION_COOKIE_NAME: "radioso_session",
-    AUDIENCE_PULSE_REFRESH_RATE_LIMIT_MAX_ATTEMPTS: 3,
-    AUDIENCE_PULSE_REFRESH_RATE_LIMIT_WINDOW_MS: 900_000,
   },
   authService: {
     async authenticateSession(token: string) {

@@ -402,7 +402,7 @@ The limit is scoped by account and workspace for browser sessions. Workspace API
 
 ### Audience Pulse refresh limits
 
-Audience Pulse is an on-demand dashboard analysis, so loading a saved report does not consume this limit. Operators can tune explicit refreshes with `AUDIENCE_PULSE_REFRESH_RATE_LIMIT_WINDOW_MS` and `AUDIENCE_PULSE_REFRESH_RATE_LIMIT_MAX_ATTEMPTS`; the defaults allow 3 refresh attempts per account and workspace every 15 minutes.
+Audience Pulse is an on-demand dashboard analysis, so loading a saved report does not consume its refresh budget. Each account and workspace can make three explicit refresh attempts every 15 minutes.
 
 This limit applies only to cookie-authenticated dashboard sessions. Workspace API tokens and bearer requests cannot access Audience Pulse.
 

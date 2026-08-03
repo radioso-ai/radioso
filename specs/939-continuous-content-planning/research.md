@@ -32,8 +32,8 @@
 - Draft data in a URL: customer-derived recommendation text would leak into browser
   history, logs, and sharing surfaces.
 
-## Configuration
+## Refresh policy
 
-Add `AUDIENCE_PULSE_REFRESH_RATE_LIMIT_WINDOW_MS` (default `900000`) and
-`AUDIENCE_PULSE_REFRESH_RATE_LIMIT_MAX_ATTEMPTS` (default `3`) to the backend environment
-schema and README configuration section. The scope string is `audience_pulse.refresh`.
+The `audience_pulse.refresh` scope has a code-owned budget of three explicit refresh
+attempts per account and workspace every 15 minutes. It is product policy, not an
+operator environment setting.

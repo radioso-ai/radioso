@@ -33,9 +33,9 @@ Quality, generic auth, or generic inference code.
   exclusions, `(created_at,id)` order, next-user cutoff, `analysisEnd` cutoff, human
   replies, and typed outcome classification in
   `backend/tests/unit/audiencePulse/audience-pulse-history-source.test.ts`.
-- [x] T008 Implement `requireDashboardWorkspaceSession` and
-  `audiencePulseRefreshRateLimiter` under `backend/src/app/http/middleware/`; add the
-  dedicated environment settings and safe rate-limit audit context.
+- [x] T008 Implement `requireDashboardWorkspaceSession` and a code-owned
+  `audiencePulseRefreshRateLimiter` under `backend/src/app/http/middleware/`, with safe
+  rate-limit audit context.
 - [x] T009 Extract a generic contextual structured-inference factory in
   `backend/src/shared/infra/llm/contextualGateways.ts` that accepts caller-provided
   `ModelCallUsageContext`, retaining no Audience Pulse-specific rule.
@@ -118,8 +118,8 @@ writing a document.
 
 - [x] T025 Regenerate/check database schema and code-first OpenAPI outputs; run focused
   backend unit, contract, and integration suites plus `backend` build.
-- [x] T026 Update `readme.md` (following `docs/document-writer-prompt.md`) with the two
-  Audience Pulse refresh rate-limit settings if they ship.
+- [x] T026 Update `readme.md` (following `docs/document-writer-prompt.md`) with the
+  fixed Audience Pulse refresh budget.
 - [x] T027 Run frontend lint/build and the focused Audience Pulse Playwright suite.
 - [x] T028 Run `./run-dev.sh` and complete the browser walkthrough in `quickstart.md`
   against localhost; capture the result and any fixes in `.context/`.

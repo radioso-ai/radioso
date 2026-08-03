@@ -1053,6 +1053,14 @@ export const retargetDashboardRouteToWorkspace = (
     })
   }
 
+  if (state.section === 'quality') {
+    return normalizeState({
+      section: 'quality',
+      qualityView: state.qualityView,
+      ...workspaceState,
+    })
+  }
+
   return normalizeState({
     section: state.section,
     ...workspaceState,

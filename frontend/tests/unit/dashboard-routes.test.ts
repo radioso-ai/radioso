@@ -390,6 +390,21 @@ describe('dashboard route state', () => {
     })
   })
 
+  it('retargets a quality route to another workspace while preserving the selected subview', () => {
+    expect(retargetDashboardRouteToWorkspace({
+      section: 'quality',
+      workspaceId: 'workspace-1',
+      workspacePublicRouteKey: 'workspace-one-abc123',
+      qualityView: 'audience-pulse',
+      qualityFeedback: ['down'],
+    }, 'workspace-2', 'workspace-two-abc123')).toEqual({
+      section: 'quality',
+      workspaceId: 'workspace-2',
+      workspacePublicRouteKey: 'workspace-two-abc123',
+      qualityView: 'audience-pulse',
+    })
+  })
+
   it('treats equivalent route states as equal even when they are rebuilt from fresh objects', () => {
     const parsed = parseDashboardRoute(['settings'], new URLSearchParams({
       workspace: 'workspace-9',

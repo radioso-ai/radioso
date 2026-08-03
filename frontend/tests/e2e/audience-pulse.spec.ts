@@ -33,6 +33,7 @@ const completedReport = {
       title: "Refund timing",
       description: "Repeat questions about how long refunds take after a return is accepted.",
       sampleCount: 12,
+      distinctQuestionCount: 2,
       weeklyPulse: [
         { weekStart: "2026-04-01T00:00:00.000Z", count: 2 },
         { weekStart: "2026-04-08T00:00:00.000Z", count: 3 },
@@ -46,12 +47,14 @@ const completedReport = {
           conversationId: conversationOne,
           messageId: evidenceMessageOne,
           question: "How long until I get my refund after returning?",
+          occurrenceCount: 1,
         },
         {
           reference: "ev-2",
           conversationId: conversationTwo,
           messageId: evidenceMessageTwo,
           question: "When does a refund show up on my card?",
+          occurrenceCount: 1,
         },
       ],
     },
@@ -80,9 +83,8 @@ const completedReport = {
       },
     },
   ],
-  caveats: [
-    "Sample was capped at 80 questions across 60 conversations. Rates reflect the analyzed sample, not the full workspace.",
-  ],
+  caveats: [],
+  unclassifiedQuestionCount: 0,
 };
 
 interface AudiencePulseMocks {
@@ -186,13 +188,12 @@ test.describe("Audience Pulse dashboard", () => {
 
     // Explicit analyze runs the provider once and renders the completed report.
     await page.getByRole("button", { name: "Analyze last 30 days" }).first().click();
-    await expect(page.getByRole("heading", { name: "Topics being discussed" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Topics" })).toBeVisible();
     const topicsSection = page.locator('section[aria-labelledby="audience-pulse-topics"]');
     await expect(topicsSection.getByText("Refund timing", { exact: true })).toBeVisible();
     await expect(page.getByText("Explain refund timelines end-to-end")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Observed content gaps" })).toBeVisible();
-    // Sample-caveat wording is visible (not a footer-only caveat).
-    await expect(page.getByText(/analyzed sample, not total demand/i)).toBeVisible();
+    // Canonical sampling caveat rendered by the view appears exactly once — no duplicate from model caveats.
+    await expect(page.getByText(/questions we read, not total demand/i)).toHaveCount(1);
     expect(mocks.state.postCount).toBe(1);
   });
 
@@ -233,7 +234,7 @@ test.describe("Audience Pulse dashboard", () => {
     await expect(analyzeControls.nth(1)).toBeDisabled();
 
     releaseRefreshResolve?.();
-    await expect(page.getByRole("heading", { name: "Topics being discussed" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Topics" })).toBeVisible();
   });
 
   test("refresh is disabled while running and surfaces 409 as a busy state, not a provider failure", async ({ page }) => {
@@ -442,6 +443,8 @@ test.describe("Audience Pulse dashboard", () => {
     });
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+    // Expand the theme card to reveal evidence questions.
+    await page.getByRole("button", { name: "Show questions" }).first().click();
     await page.getByRole("button", { name: "How long until I get my refund after returning?" }).click();
 
     await expect(page).toHaveURL(/\/activity\?tab=all$/);
@@ -493,6 +496,89 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/activity?tab=all&filter=chat&itemKind=chat&itemId=${conversationOne}`);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem("radioso.audiencePulseEvidenceHandoff")))
       .toBeNull();
+  });
+
+  test("collapsed topic card shows distinct questions and occurrence multiplier when deduplicated", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const deduplicatedReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        sampleCount: 9,
+        distinctQuestionCount: 3,
+        evidence: [
+          { ...completedReport.themes[0].evidence[0], occurrenceCount: 3 },
+          completedReport.themes[0].evidence[1],
+        ],
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: deduplicatedReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    // Collapsed card shows both distinct question count and raw occurrence total.
+    await expect(page.getByText(/3 questions · asked 9×/)).toBeVisible();
+
+    // Expanding reveals per-evidence occurrence count.
+    await page.getByRole("button", { name: "Show questions" }).first().click();
+    await expect(page.getByText(/asked 3×/)).toBeVisible();
+  });
+
+  test("ungrouped majority notice appears when most questions were not grouped into a topic", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const highUnclassifiedReport = {
+      ...completedReport,
+      unclassifiedQuestionCount: 50, // 50 > 80 / 2 = 40
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: highUnclassifiedReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/Most questions weren/)).toBeVisible();
+    await expect(page.getByText(/50 of 80/)).toBeVisible();
+  });
+
+  test("expanding a topic whose grounding is entirely unknown does not render the grounding-summary strip", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const unknownGroundingReport = {
+      ...completedReport,
+      themes: [{
+        ...completedReport.themes[0],
+        grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 12, contentGapEligible: 0 },
+      }],
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: unknownGroundingReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+    await page.getByRole("button", { name: "Show questions" }).first().click();
+    await expect(page.getByLabel("Grounding summary")).toHaveCount(0);
   });
 
   test("a seed keyed to a different workspace is discarded and never leaks into the composer", async ({ page }) => {

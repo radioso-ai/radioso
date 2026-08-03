@@ -19,7 +19,6 @@ import {
   type AudiencePulseRefreshResponse,
   type AudiencePulseTheme,
   type AudiencePulseThemeEvidence,
-  type AudiencePulseWeeklyVolume,
 } from '@/lib/api-audience-pulse'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import {
@@ -41,7 +40,7 @@ type SnapshotState =
   | { kind: 'initial-loading' }
   | { kind: 'load-failed'; message: string }
   | { kind: 'empty' }
-  | { kind: 'no-traffic'; period: { start: string; end: string }; weeklyVolume: AudiencePulseWeeklyVolume[] }
+  | { kind: 'no-traffic'; period: { start: string; end: string } }
   | { kind: 'ready'; report: AudiencePulseHydratedReport }
 
 type RefreshState =
@@ -56,7 +55,6 @@ type RefreshState =
 const numberFormat = new Intl.NumberFormat()
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const weekFormat = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' })
 
 const formatDate = (iso: string) => {
   const date = new Date(iso)
@@ -68,21 +66,6 @@ const formatDateTime = (iso: string) => {
   return Number.isNaN(date.getTime()) ? iso : dateTimeFormat.format(date)
 }
 
-const formatWeek = (iso: string) => {
-  const date = new Date(iso)
-  return Number.isNaN(date.getTime()) ? iso : weekFormat.format(date)
-}
-
-const pulseIntensity = (count: number, max: number): { label: string; className: string } => {
-  if (max === 0 || count === 0) {
-    return { label: 'no evidence', className: 'bg-muted text-muted-foreground' }
-  }
-  const ratio = count / max
-  if (ratio < 0.25) return { label: 'low', className: 'bg-sky-500/20 text-sky-900 dark:text-sky-100' }
-  if (ratio < 0.5) return { label: 'moderate', className: 'bg-sky-500/40 text-sky-950 dark:text-sky-50' }
-  if (ratio < 0.75) return { label: 'high', className: 'bg-sky-600/60 text-white' }
-  return { label: 'very high', className: 'bg-sky-700 text-white' }
-}
 
 export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewProps) {
   const router = useRouter()
@@ -153,7 +136,7 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
         setSnapshot((current) =>
           current.kind === 'ready'
             ? current
-            : { kind: 'no-traffic', period: response.period, weeklyVolume: response.weeklyVolume },
+            : { kind: 'no-traffic', period: response.period },
         )
         setRefresh({ kind: 'idle' })
       } else {
@@ -262,7 +245,7 @@ export function AudiencePulseView({ accountId, routeState }: AudiencePulseViewPr
   return (
     <DashboardPage
       title="Audience Pulse"
-      description="A read-only synthesis of the last 30 days of visitor conversations. Analysis runs only when you ask for it."
+      description="What visitors asked about in the last 30 days."
       actions={headerActions}
     >
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
@@ -305,7 +288,7 @@ function RefreshBanner({
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <div>
           <p className="font-medium">Another refresh is already running for this workspace.</p>
-          <p className="text-xs opacity-80">Try again in a moment. This is not a provider failure.</p>
+          <p className="text-xs opacity-80">Try again in a moment.</p>
         </div>
       </div>
     )
@@ -330,22 +313,16 @@ function RefreshBanner({
     )
   }
   if (state.kind === 'unavailable') {
-    const label =
-      state.reason === 'provider'
-        ? 'Analysis provider is unavailable.'
-        : state.reason === 'validation'
-          ? 'The analysis result could not be validated.'
-          : 'The refresh was cancelled.'
     return (
       <div className={`${commonClass} border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100`} role="alert">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <div>
-          <p className="font-medium">{label}</p>
-          <p className="text-xs opacity-80">
-            {hasSavedReport
-              ? `The previous saved report is still shown${finishedAt ? ` (attempt ended ${finishedAt})` : ''}.`
-              : 'No report has been saved yet. Try again in a moment.'}
-          </p>
+          <p className="font-medium">We couldn&apos;t complete the analysis. Try again in a moment.</p>
+          {hasSavedReport ? (
+            <p className="text-xs opacity-80">
+              The previous report is still shown{finishedAt ? ` (attempt ended ${finishedAt})` : ''}.
+            </p>
+          ) : null}
         </div>
       </div>
     )
@@ -424,14 +401,9 @@ function SnapshotBody({
           <CardTitle>Not enough recent visitor traffic</CardTitle>
           <CardDescription>
             The 30-day window from {formatDate(snapshot.period.start)} to {formatDate(snapshot.period.end)} did not
-            contain eligible visitor conversations to analyze. No provider call was made.
+            contain enough visitor conversations to analyze.
           </CardDescription>
         </CardHeader>
-        {snapshot.weeklyVolume.length > 0 ? (
-          <CardContent>
-            <WeeklyVolumeTable weeklyVolume={snapshot.weeklyVolume} caption="Eligible visitor volume by week" />
-          </CardContent>
-        ) : null}
       </Card>
     )
   }
@@ -463,98 +435,54 @@ function ReportContent({
     return map
   }, [report.themes])
 
-  const contentGapThemeIds = useMemo(
-    () => new Set(report.contentGaps.map((gap) => gap.themeId)),
-    [report.contentGaps],
-  )
   const contentGapByTheme = useMemo(() => {
     const map = new Map<string, AudiencePulseContentGap>()
     for (const gap of report.contentGaps) map.set(gap.themeId, gap)
     return map
   }, [report.contentGaps])
 
-  const sampled = report.coverage.sampled
+  const { sampled, sampleSize, populationSize } = report.coverage
 
   return (
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader>
-          <CardTitle>
-            {formatDate(report.period.start)} to {formatDate(report.period.end)}
-          </CardTitle>
+          <CardTitle>Last 30 days</CardTitle>
           <CardDescription>
-            Saved report generated {formatDateTime(report.generatedAt)}. Population:{' '}
-            {numberFormat.format(report.coverage.populationSize)} eligible visitor questions. Analyzed sample:{' '}
-            {numberFormat.format(report.coverage.sampleSize)}
-            {sampled ? ' — theme intensity and counts below reflect the analyzed sample, not total demand.' : '.'}
+            {formatDate(report.period.start)} – {formatDate(report.period.end)}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-2">
+          <p className="text-xs text-muted-foreground">
+            Saved {formatDateTime(report.generatedAt)}.{' '}
+            {sampled
+              ? `Read ${numberFormat.format(sampleSize)} of ${numberFormat.format(populationSize)} questions.`
+              : `Read ${numberFormat.format(populationSize)} questions.`}
+          </p>
           <p className="text-sm text-muted-foreground">{report.summary}</p>
-          <WeeklyVolumeTable
-            weeklyVolume={report.weeklyVolume}
-            caption="Exact eligible visitor volume by week"
-          />
         </CardContent>
       </Card>
 
-      <section aria-labelledby="audience-pulse-topics">
-        <h2 id="audience-pulse-topics" className="mb-2 text-base font-semibold text-foreground">
-          Topics being discussed
-        </h2>
-        {report.themes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">The analysis did not identify any recurring themes.</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {report.themes.map((theme) => (
-              <ThemeCard
-                key={theme.id}
-                theme={theme}
-                sampled={sampled}
-                isContentGap={contentGapThemeIds.has(theme.id)}
-                onOpenConversation={onOpenConversation}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {report.contentGaps.length > 0 ? (
-        <section aria-labelledby="audience-pulse-gaps">
-          <h2 id="audience-pulse-gaps" className="mb-2 text-base font-semibold text-foreground">
-            Observed content gaps
-          </h2>
-          <p className="mb-3 text-xs text-muted-foreground">
-            These themes had recurring visitor questions whose assistant answers had no or degraded grounded support in
-            the analyzed sample. This is a recurring sample signal — not proof that a document is absent from your
-            workspace. Refine your source coverage or run a corpus check before assuming anything is missing.
+      {report.unclassifiedQuestionCount > report.coverage.sampleSize / 2 ? (
+        <div className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>
+            Most questions weren&apos;t grouped into a topic (
+            {numberFormat.format(report.unclassifiedQuestionCount)} of{' '}
+            {numberFormat.format(report.coverage.sampleSize)}).
           </p>
-          <div className="flex flex-col gap-3">
-            {report.contentGaps.map((gap) => {
-              const theme = themesById.get(gap.themeId)
-              if (!theme) return null
-              return (
-                <Card key={gap.themeId} className="border-amber-500/30">
-                  <CardHeader>
-                    <CardTitle className="text-sm">{theme.title}</CardTitle>
-                    <CardDescription>
-                      {numberFormat.format(gap.eligibleEvidenceCount)} eligible signals across{' '}
-                      {numberFormat.format(gap.distinctConversationCount)} distinct conversations in the analyzed
-                      sample.
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              )
-            })}
-          </div>
-        </section>
+        </div>
       ) : null}
 
-      {report.recommendations.length > 0 ? (
-        <section aria-labelledby="audience-pulse-recommendations">
-          <h2 id="audience-pulse-recommendations" className="mb-2 text-base font-semibold text-foreground">
-            Content opportunities
-          </h2>
+      <section aria-labelledby="audience-pulse-recommendations">
+        <h2 id="audience-pulse-recommendations" className="mb-2 text-base font-semibold text-foreground">
+          Content opportunities
+        </h2>
+        {report.recommendations.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No recurring content opportunity was identified in this period.
+          </p>
+        ) : (
           <div className="flex flex-col gap-3">
             {report.recommendations.map((recommendation) => {
               const theme = themesById.get(recommendation.themeId)
@@ -564,11 +492,17 @@ function ReportContent({
                   <CardHeader>
                     <CardTitle className="text-sm">{recommendation.title}</CardTitle>
                     <CardDescription>
-                      {theme ? <>Anchored to theme <strong>{theme.title}</strong>. </> : null}
-                      {gap ? (
+                      {theme && gap ? (
                         <>
-                          Based on {numberFormat.format(gap.eligibleEvidenceCount)} recurring signals across{' '}
-                          {numberFormat.format(gap.distinctConversationCount)} conversations in the analyzed sample.
+                          From &ldquo;{theme.title}&rdquo; · asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
+                          {numberFormat.format(gap.distinctConversationCount)} conversations.
+                        </>
+                      ) : theme ? (
+                        <>From &ldquo;{theme.title}&rdquo;.</>
+                      ) : gap ? (
+                        <>
+                          Asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
+                          {numberFormat.format(gap.distinctConversationCount)} conversations.
                         </>
                       ) : null}
                     </CardDescription>
@@ -605,13 +539,33 @@ function ReportContent({
               )
             })}
           </div>
-        </section>
-      ) : null}
+        )}
+      </section>
+
+      <section aria-labelledby="audience-pulse-topics">
+        <h2 id="audience-pulse-topics" className="mb-2 text-base font-semibold text-foreground">
+          Topics
+        </h2>
+        {report.themes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">The analysis did not identify any recurring themes.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {report.themes.map((theme) => (
+              <ThemeCard
+                key={theme.id}
+                theme={theme}
+                gap={contentGapByTheme.get(theme.id) ?? null}
+                onOpenConversation={onOpenConversation}
+              />
+            ))}
+          </div>
+        )}
+      </section>
 
       {report.caveats.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Analysis caveats</CardTitle>
+            <CardTitle className="text-sm">What this doesn&apos;t tell you</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
@@ -622,87 +576,84 @@ function ReportContent({
           </CardContent>
         </Card>
       ) : null}
+
+      {sampled ? (
+        <p className="text-xs text-muted-foreground">
+          Counts reflect the questions we read, not total demand.
+        </p>
+      ) : null}
     </div>
   )
 }
 
 function ThemeCard({
   theme,
-  sampled,
-  isContentGap,
+  gap,
   onOpenConversation,
 }: {
   theme: AudiencePulseTheme
-  sampled: boolean
-  isContentGap: boolean
+  gap: AudiencePulseContentGap | null
   onOpenConversation: (evidence: AudiencePulseThemeEvidence) => void
 }) {
-  const maxPulse = theme.weeklyPulse.reduce((max, cell) => (cell.count > max ? cell.count : max), 0)
+  const [expanded, setExpanded] = useState(false)
+  const questionCount = theme.distinctQuestionCount
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm">
           <span>{theme.title}</span>
-          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-            {numberFormat.format(theme.sampleCount)} sampled
-          </Badge>
-          {isContentGap ? (
+          {gap ? (
             <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100">
-              Observed content gap
+              Not covered · asked {numberFormat.format(gap.eligibleEvidenceCount)}× in{' '}
+              {numberFormat.format(gap.distinctConversationCount)} conversations
             </Badge>
           ) : null}
         </CardTitle>
         <CardDescription>{theme.description}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <GroundingSummaryStrip
-          grounding={theme.grounding}
-          sampled={sampled}
-        />
-        <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {sampled ? 'Analyzed-sample weekly pulse' : 'Weekly pulse'}
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">
+            {numberFormat.format(questionCount)} {questionCount === 1 ? 'question' : 'questions'}
+            {theme.sampleCount > questionCount ? ` · asked ${numberFormat.format(theme.sampleCount)}×` : null}
           </p>
-          <div
-            className="flex flex-wrap gap-1"
-            role="list"
-            aria-label={sampled ? 'Analyzed-sample weekly pulse' : 'Weekly pulse'}
+          <button
+            type="button"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((prev) => !prev)}
+            className="text-xs font-medium text-foreground underline-offset-2 hover:underline focus:outline-none focus-visible:underline"
           >
-            {theme.weeklyPulse.map((cell) => {
-              const meta = pulseIntensity(cell.count, maxPulse)
-              return (
-                <span
-                  key={cell.weekStart}
-                  role="listitem"
-                  aria-label={`Week of ${formatWeek(cell.weekStart)}: ${numberFormat.format(cell.count)} sampled visitor question${cell.count === 1 ? '' : 's'} (${meta.label})`}
-                  className={`inline-flex min-w-[3.5rem] flex-col items-center rounded-md border border-transparent px-2 py-1 text-[10px] font-medium ${meta.className}`}
-                >
-                  <span className="text-[10px] uppercase opacity-80">{formatWeek(cell.weekStart)}</span>
-                  <span className="text-xs" aria-hidden>{numberFormat.format(cell.count)}</span>
-                </span>
-              )
-            })}
-          </div>
+            {expanded ? 'Hide questions' : 'Show questions'}
+          </button>
         </div>
-        {theme.evidence.length > 0 ? (
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Representative evidence
-            </p>
-            <ul className="flex flex-col gap-1 text-sm">
-              {theme.evidence.map((evidence) => (
-                <li key={evidence.reference} className="flex items-start gap-2">
-                  <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                  <button
-                    type="button"
-                    onClick={() => onOpenConversation(evidence)}
-                    className="text-left text-sm text-foreground underline-offset-2 hover:underline focus:outline-none focus-visible:underline"
-                  >
-                    {evidence.question}
-                  </button>
-                </li>
-              ))}
-            </ul>
+        {expanded ? (
+          <div className="space-y-3">
+            <GroundingSummaryStrip grounding={theme.grounding} />
+            {theme.evidence.length > 0 ? (
+              <div>
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  What visitors asked
+                </p>
+                <ul className="flex flex-col gap-1 text-sm">
+                  {theme.evidence.map((evidence) => (
+                    <li key={evidence.reference} className="flex items-start gap-2">
+                      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                      <button
+                        type="button"
+                        onClick={() => onOpenConversation(evidence)}
+                        className="text-left text-sm text-foreground underline-offset-2 hover:underline focus:outline-none focus-visible:underline"
+                      >
+                        {evidence.question}
+                        {evidence.occurrenceCount > 1
+                          ? ` · asked ${numberFormat.format(evidence.occurrenceCount)}×`
+                          : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </CardContent>
@@ -712,22 +663,22 @@ function ThemeCard({
 
 function GroundingSummaryStrip({
   grounding,
-  sampled,
 }: {
   grounding: AudiencePulseTheme['grounding']
-  sampled: boolean
 }) {
   const entries: Array<{ label: string; value: number; tone: string; description: string }> = [
-    { label: 'Grounded', value: grounding.grounded, tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100', description: 'Answered with grounded support.' },
-    { label: 'Degraded', value: grounding.degraded, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100', description: 'Answered with partial grounded support.' },
-    { label: 'No support', value: grounding.noSupport, tone: 'border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-100', description: 'Answer had no grounded support.' },
-    { label: 'Unknown', value: grounding.unknown, tone: 'border-muted bg-muted text-muted-foreground', description: 'No grounding diagnostic was available.' },
-    { label: 'Gap-eligible', value: grounding.contentGapEligible, tone: 'border-sky-500/40 bg-sky-500/10 text-sky-900 dark:text-sky-100', description: 'Signals that qualify for the recurring content-gap section.' },
+    { label: 'Answered from your docs', value: grounding.grounded, tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100', description: 'Answered with grounded support.' },
+    { label: 'Partly answered', value: grounding.degraded, tone: 'border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100', description: 'Answered with partial grounded support.' },
+    { label: "Couldn't answer", value: grounding.noSupport, tone: 'border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-100', description: 'Answer had no grounded support.' },
+    { label: 'Not recorded', value: grounding.unknown, tone: 'border-muted bg-muted text-muted-foreground', description: 'No grounding diagnostic was available.' },
   ]
 
+  const visible = entries.filter((e) => e.value > 0)
+  if (visible.length <= 1) return null
+
   return (
-    <div className="flex flex-wrap gap-2" aria-label={sampled ? 'Analyzed-sample grounding summary' : 'Grounding summary'}>
-      {entries.map((entry) => (
+    <div className="flex flex-wrap gap-2" aria-label="Grounding summary">
+      {visible.map((entry) => (
         <span
           key={entry.label}
           title={entry.description}
@@ -738,36 +689,5 @@ function GroundingSummaryStrip({
         </span>
       ))}
     </div>
-  )
-}
-
-function WeeklyVolumeTable({
-  weeklyVolume,
-  caption,
-}: {
-  weeklyVolume: AudiencePulseWeeklyVolume[]
-  caption: string
-}) {
-  if (weeklyVolume.length === 0) return null
-  return (
-    <table className="w-full border-collapse text-sm">
-      <caption className="sr-only">{caption}</caption>
-      <thead>
-        <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <th scope="col" className="py-1 pr-2 font-medium">Week starting</th>
-          <th scope="col" className="py-1 pr-2 font-medium">Visitor questions</th>
-          <th scope="col" className="py-1 font-medium">Conversations</th>
-        </tr>
-      </thead>
-      <tbody>
-        {weeklyVolume.map((week) => (
-          <tr key={week.weekStart} className="border-b border-border/40 last:border-b-0">
-            <th scope="row" className="py-1 pr-2 font-normal text-foreground">{formatWeek(week.weekStart)}</th>
-            <td className="py-1 pr-2 tabular-nums">{numberFormat.format(week.visitorQuestionCount)}</td>
-            <td className="py-1 tabular-nums">{numberFormat.format(week.conversationCount)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   )
 }

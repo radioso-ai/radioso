@@ -30,6 +30,7 @@ export interface AudiencePulseThemeEvidence {
   conversationId: string
   messageId: string
   question: string
+  occurrenceCount: number
 }
 
 export interface AudiencePulseTheme {
@@ -37,6 +38,7 @@ export interface AudiencePulseTheme {
   title: string
   description: string
   sampleCount: number
+  distinctQuestionCount: number
   weeklyPulse: Array<{ weekStart: string; count: number }>
   grounding: AudiencePulseGroundingSummary
   evidence: AudiencePulseThemeEvidence[]
@@ -68,6 +70,7 @@ export interface AudiencePulseHydratedReport {
   contentGaps: AudiencePulseContentGap[]
   recommendations: AudiencePulseRecommendation[]
   caveats: string[]
+  unclassifiedQuestionCount: number
 }
 
 type AudiencePulseMessageSource =

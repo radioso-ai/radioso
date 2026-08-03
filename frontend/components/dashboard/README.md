@@ -2,7 +2,7 @@
 
 Dashboard components own the authenticated product UI: navigation, workspace
 views, document management, chat surfaces, settings, activity diagnostics,
-quality views, usage, and users.
+quality and Audience Pulse views, usage, and users.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../docs/architecture/code-map.md).
@@ -30,6 +30,8 @@ services.
   here, not in either caller.
 - `documents-view.tsx` and `documents/`: document list, import, crawl, edit, and
   inspection UI.
+- `audience-pulse-view.tsx`: saved topic, grounding-gap, and content-recommendation
+  dashboard, with evidence and document-draft handoffs.
 - `settings-view.tsx` and `settings/`: assistant, retrieval, ingestion, provider,
   and channel settings.
 - `activity-*`: retrieval and activity diagnostics views.
@@ -68,6 +70,10 @@ services.
   (`dashboard-routes` param `agentChatPreviewRoutineId`) does the same test full-page.
 - Settings UI: `settings-view.tsx`, `settings/`, and settings docs sources.
 - Documents UI: `documents-view.tsx`, `document-sources-view.tsx`, `documents/`.
+- Audience Pulse: `audience-pulse-view.tsx`, `frontend/lib/api-audience-pulse.ts`,
+  `frontend/lib/audience-pulse-draft-seed.ts`,
+  `frontend/lib/audience-pulse-evidence-handoff.ts`, `dashboard-routes.ts`, and
+  `documents-view.tsx` / `conversation-drawer.tsx` for handoffs.
 - Shared table/page patterns: `shared/`.
 
 ## Tests
@@ -79,3 +85,4 @@ transitions or data transforms:
 - `cd frontend && pnpm test -- tests/unit/settings-tab-metadata.test.ts`
 - `cd frontend && pnpm run test:e2e -- assistant-history.spec.ts`
 - `cd frontend && pnpm run test:e2e -- assistant-retrieval-settings.spec.ts`
+- `cd frontend && pnpm run test:e2e -- audience-pulse.spec.ts`

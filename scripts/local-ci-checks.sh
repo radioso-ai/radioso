@@ -256,6 +256,8 @@ fi
 
 if [ "$typescript_sdk" = true ]; then
   run pnpm install --frozen-lockfile --filter @radioso/typescript-sdk...
+  run_sh "cd typescript-sdk && pnpm run sync"
+  run_sh "git diff --exit-code -- typescript-sdk/openapi typescript-sdk/src/generated"
   run_sh "cd typescript-sdk && pnpm run build"
   run_sh "cd typescript-sdk && pnpm test"
 fi

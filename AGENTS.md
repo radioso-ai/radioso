@@ -159,6 +159,26 @@ Watch for tactical tells that signal dodged design work: "for now," "the cheap o
 
 For backend feature work, explicitly review whether the change needs logs, metrics, telemetry events, audit events, or OpenTelemetry spans. Add or update observability when the change introduces a new runtime path, worker job, queue handoff, provider call, integration, failure mode, operator-relevant latency, retry, fallback, skip, degradation behavior, or support/debug correlation need across requests, jobs, conversations, documents, or workspaces. Do not add noisy logs or high-cardinality metrics by default. Observability output must avoid raw prompts, completions, document content, retrieved chunks, tokens, credentials, cookies, and connection strings. If no observability is needed, note why in the spec, plan, or PR summary.
 
+## Context Discipline
+
+Agent context is billed on every turn, not once. A file read on turn 3 is re-read on turns 4..N; measured amplification in this repo is roughly 600x. The bill is therefore the sum of context size across turns, driven by how long a session runs and how much it accumulates — not by any single expensive call. Optimize for what stays out of the thread.
+
+- **One task per session.** Peak context sets the cost: a session peaking at 700k tokens costs about 5x one peaking at 150k for the same work. Start a fresh session or workspace per task instead of continuing in a warm one.
+- **Delegate file-heavy work to subagents.** Any question answered by reading many files — locating a symbol, mapping a module, checking a convention, auditing a pattern — belongs in a subagent that returns only the conclusion. The parent pays for the answer, not the search.
+- **Read narrowly.** Prefer targeted search and offset-limited reads over whole files. Re-reading a file already read in the same session is a defect, not a precaution.
+- **Edit, don't rewrite.** Full-file writes are billed as tool input and then re-read for the rest of the session. Use targeted edits on files that already exist.
+- **Keep bulk material out of the main thread.** Large logs, transcripts, and design memos belong in `.context/`, read by a subagent that reports findings.
+
+Match model tier to task and prefer the cheapest tier that can do the job:
+
+| Task | Claude | Codex |
+|------|--------|-------|
+| Architecture, ambiguous design, hard debugging | `opus` | `gpt-5.6-sol` |
+| Feature implementation, code review, tests | `sonnet` | `gpt-5.6-terra` |
+| Mechanical scans, greps, inventories, formatting | `haiku` | `gpt-5.6-luna` |
+
+Orchestrate on the strong tier and fan work out on cheaper ones. A subagent running a grep sweep does not need the model that designed the change.
+
 ## Code Style
 
 - Prefer small, named modules over large orchestration files. If a service mixes persistence, orchestration, audit, analytics, and formatting concerns, extract the most self-contained concern first.

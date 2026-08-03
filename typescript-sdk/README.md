@@ -16,12 +16,19 @@ Requires Node.js 24 or later. The package has no runtime dependencies.
 import { createRadiosoClient } from "@radioso/typescript-sdk";
 
 const client = createRadiosoClient({
-  baseUrl: "https://your-radioso-instance.example.com",
   apiToken: process.env.RADIOSO_API_TOKEN!,
 });
 
 const documents = await client.documents.list({ limit: 10 });
 ```
+
+`createRadiosoClient` talks to `https://api.radioso.ai` by default, exported as `DEFAULT_BASE_URL`. Pass `baseUrl` when your workspace lives somewhere else:
+
+- `https://api.radioso.ai` — the default, EU-hosted instance
+- `https://api-us.radioso.ai` — the US-hosted instance
+- your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
+
+A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## Status
 

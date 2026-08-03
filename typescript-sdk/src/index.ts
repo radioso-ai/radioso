@@ -71,6 +71,7 @@ export type {
   WebsiteCrawlJobListResponse,
   WebsiteCrawlJobListQuery,
 } from "./generated/client.js";
+export { DEFAULT_BASE_URL } from "./core/config.js";
 export type { RadiosoClientOptions } from "./core/config.js";
 export type {
   RadiosoChatStreamCancelledEvent,

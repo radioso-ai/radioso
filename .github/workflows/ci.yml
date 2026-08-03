@@ -436,6 +436,15 @@ jobs:
       - name: Install TypeScript SDK dependencies
         run: pnpm install --frozen-lockfile --filter @radioso/typescript-sdk...
 
+      - name: Sync contract snapshot
+        working-directory: typescript-sdk
+        run: pnpm run sync
+
+      # The published package builds from the committed snapshot, so a stale
+      # snapshot would ship types that do not match the backend contract.
+      - name: Verify committed contract snapshot is current
+        run: git diff --exit-code -- typescript-sdk/openapi typescript-sdk/src/generated
+
       - name: Build TypeScript SDK
         working-directory: typescript-sdk
         run: pnpm run build

@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
 description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
-last_updated: 2026-07-02
+last_updated: 2026-08-03
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -18,15 +18,17 @@ The SDK uses workspace API tokens. These are secret bearer credentials bound to 
 
 ## Install
 
-If you are working in this repo:
+```bash
+npm install @radioso/typescript-sdk
+```
+
+To work on the SDK itself in this repo instead of installing the published package:
 
 ```bash
 cd typescript-sdk
 pnpm install --filter @radioso/typescript-sdk...
 pnpm run build
 ```
-
-If you are consuming the built package from another project, point your package manager at the SDK package output or local package path.
 
 ## Create a Client
 

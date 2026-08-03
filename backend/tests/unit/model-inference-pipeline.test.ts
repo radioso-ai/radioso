@@ -300,6 +300,35 @@ describe("ModelInferencePipelineService", () => {
     expect(complete).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards separately reported reasoning usage to the durable model event", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-reasoning" },
+      async complete() {
+        return textResult("Answer", {
+          inputTokens: 100,
+          outputTokens: 40,
+          reasoningTokens: 12,
+          totalTokens: 140,
+          quality: "actual",
+        });
+      },
+      stream: () => streamResult(["unused"]),
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+
+    await pipeline.complete({ operation: usageContext, prompt: "Private prompt" });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      inputTokens: 100,
+      outputTokens: 40,
+      reasoningTokens: 12,
+      totalTokens: 140,
+      usageQuality: "actual",
+    });
+  });
+
   it("records an early-returned stream exactly once as cancelled with provider usage", async () => {
     const { recorder, events } = recordingUsageRecorder();
     const providerUsage = {

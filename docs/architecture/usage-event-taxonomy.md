@@ -1,7 +1,7 @@
 ---
 title: "Usage Event Taxonomy"
 description: "Specification of how model inference and embedding operations are tracked and recorded in usage events with surface names and operation lineage."
-last_updated: 2026-07-22
+last_updated: 2026-08-03
 ---
 
 # Usage Event Taxonomy
@@ -21,12 +21,16 @@ usage events.
 
 ## Identity
 
-The current recorder contract has one `idempotencyKey`. Until the ledger gains
-separate logical operation and provider-attempt identities, model events use
-this format:
+The recorder contract has one `idempotencyKey`. Model events use this format:
 
 ```text
 model:{surface}:{operation}:{conversationOrRequest}:{messageOrNone}:{attemptKey}:{provider}:{model}:{status}
+```
+
+Embedding events use the same lineage shape with an `embedding` prefix:
+
+```text
+embedding:{surface}:{operation}:{conversationOrRequest}:{messageOrNone}:{attemptKey}:{provider}:{model}:{status}
 ```
 
 `conversationOrRequest` is the conversation id when one exists. Request-scoped
@@ -35,6 +39,22 @@ when one exists, otherwise `none`.
 
 Retries that can consume provider resources must use distinct `attemptKey`
 values. Replays of the same provider attempt must reuse the same key.
+
+## Recorded Dimensions
+
+Every new pipeline write sets `event_kind` to `model` or `embedding`. The
+ledger keeps `unknown` for historic rows whose stored evidence cannot establish
+which kind of provider operation created them. Reports keep that usage visible
+without folding it into model or embedding totals.
+
+Model events store provider-reported `reasoning_tokens` when the provider
+supplies it. A missing value means the provider did not supply a usable
+reasoning count; it is not treated as zero. The dashboard uses this distinction
+when it reports visible output tokens.
+
+The recorder can also store `agent_id` when the calling product flow knows the
+agent. It complements workspace, conversation, message, document, and job
+lineage; it does not replace them.
 
 ## Current Surfaces And Operations
 
@@ -64,6 +84,7 @@ values. Replays of the same provider attempt must reuse the same key.
 | `documents` | `query_embedding` | Document search semantic query embeddings | workspace, search request |
 | `documents` | `rerank` | Document search model reranking | workspace, search request |
 | `documents` | `semantic_chunking_embedding` | Document processing semantic chunking embeddings | workspace, document job |
+| `documents` | `document_enrichment` | Metadata generation for a processed document | workspace, document, revision |
 | `eval` | `query_interpretation` | Eval replay query rewrite and query interpretation | workspace, eval run |
 | `eval` | `trigger_analysis` | Eval replay metadata trigger analysis | workspace, eval run |
 | `eval` | `query_embedding` | Eval replay semantic query embeddings | workspace, eval run |
@@ -72,7 +93,28 @@ values. Replays of the same provider attempt must reuse the same key.
 | `eval` | `full_assistant` | Eval replay of full assistant answer generation | workspace, eval run |
 | `eval` | `llm_judge` | Eval judge assertions | workspace, eval run |
 | `agent_wizard` | `analyze_website` | Agent Wizard website analysis | workspace, analysis request |
+| `agents` | `draft_directive` | Drafting a directive from an operator's coaching input | workspace, agent, request |
+| `agents` | `directive_coherence` | Checking a proposed directive against the agent's existing directives | workspace, agent |
 | `documents` | `embedding` | Document processing chunk embeddings | account when resolvable, workspace, document, revision, job |
+
+## Detailed Usage Reporting
+
+The account Usage screen and its reporting routes read the immutable ledger in
+two views. The message view groups visitor-facing user-message activity and
+keeps model and embedding subtotals separate. The internal view shows each
+other recorded event, including agent setup, test chat, eval, directive work,
+metadata generation, and unlinked document processing.
+
+Message rows qualify only when the linked message has role `user`, its
+conversation is not `authenticated_chat` or `workbench_replay`, and the event
+surface is not `eval`. Every other event belongs in the internal view. This
+keeps operator and evaluation work out of visitor-message reporting while
+retaining it for account operators.
+
+Detailed reporting returns operation attribution, provider and model names,
+token dimensions, attempt status, usage quality, and vector counts. It never
+returns prompts, completions, message text, document content, provider request
+IDs, idempotency keys, or error details.
 
 ## Adding A Model-Backed Operation
 

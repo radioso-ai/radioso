@@ -6,11 +6,11 @@ import { UsersPanel } from '@/components/dashboard/users-view'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
 
 /** Content for the Account area: Members (team management) or Usage. */
-export function AccountView({ routeState }: { routeState: DashboardRouteState }) {
+export function AccountView({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
   const tab = routeState.accountTab ?? 'members'
 
   if (tab === 'usage') {
-    return <UsageView />
+    return <UsageView accountId={accountId} />
   }
 
   return (

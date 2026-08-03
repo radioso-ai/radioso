@@ -216,6 +216,7 @@ export class DirectiveAuthorService {
         run: () => this.options.textGenerationClient.complete({
           operation: {
             workspaceId: input.workspaceId,
+            agentId: input.agentId,
             requestId: input.requestId,
             surface: "agents",
             operation: "draft_directive",

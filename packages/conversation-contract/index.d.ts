@@ -184,10 +184,16 @@ export interface DirectiveCoherenceVerdict {
   rationale: string;
 }
 
+export interface DirectiveCoherenceInvocationContext {
+  workspaceId: string;
+  agentId: string;
+}
+
 export interface DirectiveCoherenceCheckInput {
   agent: ConversationAgentConfig;
   candidate: Directive;
   existingDirectives: Directive[];
+  invocationContext?: DirectiveCoherenceInvocationContext;
 }
 
 export interface DirectiveCoherenceChecker {

@@ -133,14 +133,23 @@ class StubAgentSkillRepository {
 }
 
 class CapturingChecker implements DirectiveCoherenceChecker {
-  readonly checks: Array<{ candidate: Directive; existingDirectives: Directive[] }> = [];
+  readonly checks: Array<{
+    candidate: Directive;
+    existingDirectives: Directive[];
+    invocationContext?: unknown;
+  }> = [];
 
   constructor(private readonly verdict: DirectiveCoherenceVerdict = coherentVerdict) {}
 
-  async check(input: { candidate: Directive; existingDirectives: Directive[] }): Promise<DirectiveCoherenceVerdict> {
+  async check(input: {
+    candidate: Directive;
+    existingDirectives: Directive[];
+    invocationContext?: unknown;
+  }): Promise<DirectiveCoherenceVerdict> {
     this.checks.push({
       candidate: input.candidate,
       existingDirectives: input.existingDirectives,
+      invocationContext: input.invocationContext,
     });
     return this.verdict;
   }
@@ -206,6 +215,20 @@ describe("AuthoredDirectiveService", () => {
     expect(repository.created).toHaveLength(1);
     expect(result.directive.name).toBe(repository.created[0]?.name);
     expect(result.coherence).toEqual(coherentVerdict);
+  });
+
+  it("passes real workspace and agent attribution into the coherence invocation", async () => {
+    const repository = new StubAgentRepository();
+    const checker = new CapturingChecker(coherentVerdict);
+    const service = new AuthoredDirectiveService({
+      repository,
+      coherenceChecker: checker,
+      registeredCapabilityNames: new Set(),
+    });
+
+    await service.create(workspaceId, agentId, directiveInput());
+
+    expect(checker.checks[0]?.invocationContext).toEqual({ workspaceId, agentId });
   });
 
   it("preserves scope tags through validation, coherence, and persistence", async () => {

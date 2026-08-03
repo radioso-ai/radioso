@@ -9,6 +9,8 @@ import {
 import { withQuery } from './api-query'
 import type {
   AccountUsageSummary,
+  InternalUsageResponse,
+  MessageUsageResponse,
   UsageTrendsResponse,
   AccountUserSummary,
   AccountUsersResponse,
@@ -43,6 +45,30 @@ export const accountApi = {
     agentId?: string
   }): Promise<UsageTrendsResponse> {
     return request<UsageTrendsResponse>(withQuery('/account/usage-trends', input), {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async getMessageUsage(input: {
+    from: string
+    to: string
+    workspaceId?: string
+    limit?: number
+    cursor?: string
+  }): Promise<MessageUsageResponse> {
+    return request<MessageUsageResponse>(withQuery('/account/usage/messages', input), {
+      method: 'GET',
+    }, { withSession: true })
+  },
+
+  async getInternalUsage(input: {
+    from: string
+    to: string
+    workspaceId?: string
+    limit?: number
+    cursor?: string
+  }): Promise<InternalUsageResponse> {
+    return request<InternalUsageResponse>(withQuery('/account/usage/internal-operations', input), {
       method: 'GET',
     }, { withSession: true })
   },

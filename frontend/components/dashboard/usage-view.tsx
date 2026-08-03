@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { LogoSpinner } from '@/components/ui/spinner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { UsageDetailsView } from '@/components/dashboard/usage-details-view'
 import { UsageTrendsView } from '@/components/dashboard/usage-trends-view'
 import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary, type WorkspaceSummaryResponse } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
@@ -25,6 +27,7 @@ const formatDate = (value: string) => (
 
 const formatUsageLimit = (value: number | null) => (value === null ? 'Unlimited' : formatCount(value))
 const formatByteLimit = (value: number | null) => (value === null ? 'Unlimited' : formatBytes(value))
+type UsageViewTab = 'overview' | 'ai-usage'
 
 const usagePercent = (used: number, limit: number | null) => {
   if (limit === null || limit === 0) {
@@ -83,8 +86,9 @@ function UsageMeter({
   )
 }
 
-export function UsageView() {
+export function UsageView({ accountId }: { accountId: string }) {
   const usageLimitsEnabled = editionController.canUseEnterpriseUsageLimits()
+  const [activeTab, setActiveTab] = useState<UsageViewTab>('overview')
   const [usage, setUsage] = useState<AccountUsageSummary | null>(null)
   const [workspaceSummary, setWorkspaceSummary] = useState<WorkspaceSummaryResponse | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -128,118 +132,129 @@ export function UsageView() {
   return (
     <DashboardPage
       title="Usage"
-      description={usageLimitsEnabled ? 'Limits, current totals, and usage trends for this account.' : 'Current workspace usage and account trends.'}
+      description={usageLimitsEnabled ? 'Limits, current totals, trends, and detailed AI usage for this account.' : 'Current workspace usage, account trends, and detailed AI usage.'}
       contentClassName="p-6"
     >
-      {isLoading ? (
-        <div className="flex h-full items-center justify-center">
-          <LogoSpinner imageClassName="h-7 w-7" />
-        </div>
-      ) : error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Usage unavailable</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-        </Card>
-      ) : usageLimitsEnabled && usage ? (
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <UsageMeter
-              label="Monthly answers"
-              used={usage.monthlyAnswers.used}
-              limit={usage.monthlyAnswers.limit}
-              caption="Assistant and retrieval answers used this month."
-            />
-            <UsageMeter
-              label="Indexed storage"
-              unit="bytes"
-              used={usage.storedIndexedBytes.used}
-              limit={usage.storedIndexedBytes.limit}
-              caption="Content Radioso keeps searchable."
-            />
-            <UsageMeter
-              label="Monthly indexed content"
-              unit="bytes"
-              used={usage.monthlyIndexedBytes.used}
-              limit={usage.monthlyIndexedBytes.limit}
-              caption="Content added or refreshed this month."
-            />
-            <UsageMeter
-              label="Stored documents"
-              used={usage.storedDocuments.used}
-              limit={usage.storedDocuments.limit}
-              caption="Document count guardrail."
-            />
-          </div>
-
-          {usage?.profile ? (
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as UsageViewTab)} className="gap-6">
+        <TabsList aria-label="Usage view">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="ai-usage">AI usage</TabsTrigger>
+        </TabsList>
+        <TabsContent value="overview">
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <LogoSpinner imageClassName="h-7 w-7" />
+            </div>
+          ) : error ? (
             <Card>
               <CardHeader>
-                <CardTitle>{usage.profile.displayName}</CardTitle>
-                <CardDescription>
-                  Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers,{' '}
-                  {formatByteLimit(usage.storedIndexedBytes.limit)} indexed storage,{' '}
-                  {formatByteLimit(usage.monthlyIndexedBytes.limit)} monthly indexed content,{' '}
-                  {formatUsageLimit(usage.storedDocuments.limit)} stored documents
-                </CardDescription>
+                <CardTitle>Usage unavailable</CardTitle>
+                <CardDescription>{error}</CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
-                {usage.monthlyAnswers.limit === null ? null : (
-                  <div>
-                    <div className="font-medium text-foreground">Monthly answer reset</div>
-                    <div>{formatDate(usage.monthlyAnswers.resetAt)}</div>
-                  </div>
-                )}
-                <div>
-                  <div className="font-medium text-foreground">Current period</div>
-                  <div>Started {formatDate(usage.monthlyAnswers.periodStart)}</div>
-                </div>
-              </CardContent>
             </Card>
-          ) : null}
+          ) : usageLimitsEnabled && usage ? (
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <UsageMeter
+                  label="Monthly answers"
+                  used={usage.monthlyAnswers.used}
+                  limit={usage.monthlyAnswers.limit}
+                  caption="Assistant and retrieval answers used this month."
+                />
+                <UsageMeter
+                  label="Indexed storage"
+                  unit="bytes"
+                  used={usage.storedIndexedBytes.used}
+                  limit={usage.storedIndexedBytes.limit}
+                  caption="Content Radioso keeps searchable."
+                />
+                <UsageMeter
+                  label="Monthly indexed content"
+                  unit="bytes"
+                  used={usage.monthlyIndexedBytes.used}
+                  limit={usage.monthlyIndexedBytes.limit}
+                  caption="Content added or refreshed this month."
+                />
+                <UsageMeter
+                  label="Stored documents"
+                  used={usage.storedDocuments.used}
+                  limit={usage.storedDocuments.limit}
+                  caption="Document count guardrail."
+                />
+              </div>
 
-          <UsageTrendsView />
-        </div>
-      ) : workspaceSummary ? (
-        <div className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <UsageMeter
-              label="Conversations"
-              used={workspaceSummary.conversationCount}
-              limit={null}
-              caption="Saved conversations in this workspace."
-            />
-            <UsageMeter
-              label="Stored documents"
-              used={workspaceSummary.documentCount}
-              limit={null}
-              caption="Documents currently stored in this workspace."
-            />
-            <UsageMeter
-              label="Ready documents"
-              used={workspaceSummary.readyDocumentCount}
-              limit={null}
-              caption="Documents available for retrieval."
-            />
-            <UsageMeter
-              label="Pending documents"
-              used={workspaceSummary.pendingDocumentCount}
-              limit={null}
-              caption="Documents waiting for processing."
-            />
-          </div>
+              {usage?.profile ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>{usage.profile.displayName}</CardTitle>
+                    <CardDescription>
+                      Limits: {formatUsageLimit(usage.monthlyAnswers.limit)} monthly answers,{' '}
+                      {formatByteLimit(usage.storedIndexedBytes.limit)} indexed storage,{' '}
+                      {formatByteLimit(usage.monthlyIndexedBytes.limit)} monthly indexed content,{' '}
+                      {formatUsageLimit(usage.storedDocuments.limit)} stored documents
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 text-sm text-muted-foreground sm:grid-cols-2">
+                    {usage.monthlyAnswers.limit === null ? null : (
+                      <div>
+                        <div className="font-medium text-foreground">Monthly answer reset</div>
+                        <div>{formatDate(usage.monthlyAnswers.resetAt)}</div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="font-medium text-foreground">Current period</div>
+                      <div>Started {formatDate(usage.monthlyAnswers.periodStart)}</div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
 
-          <UsageTrendsView />
-        </div>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Usage unavailable</CardTitle>
-            <CardDescription>No usage data is available.</CardDescription>
-          </CardHeader>
-        </Card>
-      )}
+              <UsageTrendsView />
+            </div>
+          ) : workspaceSummary ? (
+            <div className="space-y-6">
+              <div className="grid gap-6 lg:grid-cols-2">
+                <UsageMeter
+                  label="Conversations"
+                  used={workspaceSummary.conversationCount}
+                  limit={null}
+                  caption="Saved conversations in this workspace."
+                />
+                <UsageMeter
+                  label="Stored documents"
+                  used={workspaceSummary.documentCount}
+                  limit={null}
+                  caption="Documents currently stored in this workspace."
+                />
+                <UsageMeter
+                  label="Ready documents"
+                  used={workspaceSummary.readyDocumentCount}
+                  limit={null}
+                  caption="Documents available for retrieval."
+                />
+                <UsageMeter
+                  label="Pending documents"
+                  used={workspaceSummary.pendingDocumentCount}
+                  limit={null}
+                  caption="Documents waiting for processing."
+                />
+              </div>
+
+              <UsageTrendsView />
+            </div>
+          ) : (
+            <Card>
+              <CardHeader>
+                <CardTitle>Usage unavailable</CardTitle>
+                <CardDescription>No usage data is available.</CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+        </TabsContent>
+        <TabsContent value="ai-usage">
+          <UsageDetailsView accountId={accountId} />
+        </TabsContent>
+      </Tabs>
     </DashboardPage>
   )
 }

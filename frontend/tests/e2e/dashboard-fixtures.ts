@@ -796,6 +796,10 @@ export const installDashboardApiMocks = async (
     ingestionSettingsUpdates?: unknown[];
     ingestionSettingsUpdateError?: string;
     usageTrends?: unknown;
+    messageUsage?: unknown;
+    messageUsageNextPage?: unknown;
+    messageUsageLoadMoreDelayMs?: number;
+    internalUsage?: unknown;
     qualityStats?: unknown;
     mcpConnections?: McpConnectionFixture[];
     mcpDiscoveredTools?: DiscoveredMcpToolFixture[];
@@ -996,6 +1000,72 @@ export const installDashboardApiMocks = async (
       },
     ],
   };
+  const messageUsage = options.messageUsage ?? {
+    from: "2026-05-28",
+    to: "2026-06-26",
+    filters: { workspaceId: null },
+    items: [
+      {
+        messageId: "11111111-1111-4111-8111-111111111111",
+        conversationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        workspaceId,
+        agentId: defaultAgentId,
+        content: "A visitor message must never be rendered in Usage.",
+        lastOccurredAt: nowIso,
+        providers: ["openai"],
+        models: ["gpt-5.2", "text-embedding-3-small"],
+        operations: [{ surface: "assistant", name: "respond", label: "Assistant response" }],
+        attempts: { total: 2, succeeded: 2, failed: 0 },
+        quality: { actual: 2, estimated: 0 },
+        modelTokens: {
+          input: 120,
+          completion: 80,
+          reasoning: { tokens: null, coverage: "unavailable" },
+          visibleOutput: null,
+          total: 200,
+        },
+        embeddingTokens: { input: 40, total: 40, vectors: 1, attempts: 1 },
+        unknownHistorical: { total: 0, attempts: 0 },
+      },
+    ],
+    nextCursor: "next-message-page",
+  };
+  const internalUsage = options.internalUsage ?? {
+    from: "2026-05-28",
+    to: "2026-06-26",
+    filters: { workspaceId: null },
+    items: [
+      {
+        eventId: "22222222-2222-4222-8222-222222222222",
+        workspaceId,
+        agentId: defaultAgentId,
+        occurredAt: nowIso,
+        kind: "embedding",
+        operation: { surface: "documents", name: "document_enrichment", label: "Metadata generation" },
+        provider: "openai",
+        model: "text-embedding-3-small",
+        status: "succeeded",
+        usageQuality: "actual",
+        tokens: { input: 80, completion: null, reasoning: null, visibleOutput: null, total: 80 },
+        vectorCount: 3,
+      },
+      {
+        eventId: "33333333-3333-4333-8333-333333333333",
+        workspaceId,
+        agentId: defaultAgentId,
+        occurredAt: "2026-04-26T11:00:00.000Z",
+        kind: "model",
+        operation: { surface: "agent_wizard", name: "analyze_website", label: "Agent setup" },
+        provider: "openai",
+        model: "gpt-5-mini",
+        status: "succeeded",
+        usageQuality: "actual",
+        tokens: { input: 140, completion: 90, reasoning: 30, visibleOutput: 60, total: 230 },
+        vectorCount: null,
+      },
+    ],
+    nextCursor: null,
+  };
   const qualityStats = options.qualityStats ?? baseQualityStats();
 
   await page.route("**/backend/health", async (route) => {
@@ -1058,6 +1128,23 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "GET" && path === "/account/usage-trends") {
       await json(route, usageTrends);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/account/usage/messages") {
+      const isNextPage = Boolean(url.searchParams.get("cursor"));
+      if (isNextPage && options.messageUsageLoadMoreDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, options.messageUsageLoadMoreDelayMs));
+      }
+      const nextPage = isNextPage
+        ? options.messageUsageNextPage ?? { ...(messageUsage as Record<string, unknown>), items: [], nextCursor: null }
+        : messageUsage;
+      await json(route, nextPage);
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/account/usage/internal-operations") {
+      await json(route, internalUsage);
       return;
     }
 

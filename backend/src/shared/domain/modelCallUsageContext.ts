@@ -1,6 +1,7 @@
 export interface ModelCallUsageContext {
   accountId?: string | null;
   workspaceId: string;
+  agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
   requestId?: string | null;

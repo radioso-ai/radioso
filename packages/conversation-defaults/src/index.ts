@@ -132,6 +132,7 @@ export type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
   DirectiveCoherenceConflict,
+  DirectiveCoherenceInvocationContext,
   DirectiveCoherenceVerdict,
 } from "@radioso/conversation-contract";
 export {

@@ -625,6 +625,10 @@ export type AccountInvitationSummary = ApiSchemas['AccountInvitation']
 export type WorkspaceGrantSummary = ApiSchemas['WorkspaceGrant']
 export type UsageTrendsResponse = ApiSchemas['UsageTrendsResponse']
 export type UsageTrendBucket = ApiSchemas['UsageTrendBucket']
+export type MessageUsageResponse = ApiSchemas['MessageUsageResponse']
+export type MessageUsageSummary = ApiSchemas['MessageUsageSummary']
+export type InternalUsageResponse = ApiSchemas['InternalUsageResponse']
+export type InternalUsageEvent = ApiSchemas['InternalUsageEvent']
 
 
 export type AccountUsersResponse = ApiSchemas['AccountUsersResponse']

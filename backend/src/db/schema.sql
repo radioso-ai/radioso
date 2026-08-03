@@ -2098,7 +2098,11 @@ CREATE TABLE public.usage_events (
     provider_request_id text,
     error_code text,
     occurred_at timestamp with time zone DEFAULT now() NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    reasoning_tokens bigint,
+    event_kind text DEFAULT 'unknown'::text NOT NULL,
+    agent_id uuid,
+    CONSTRAINT usage_events_event_kind_check CHECK ((event_kind = ANY (ARRAY['model'::text, 'embedding'::text, 'unknown'::text])))
 );
 
 
@@ -4921,6 +4925,13 @@ CREATE INDEX idx_usage_events_account_occurred_at ON public.usage_events USING b
 
 
 --
+-- Name: idx_usage_events_account_occurred_at_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_usage_events_account_occurred_at_id ON public.usage_events USING btree (account_id, occurred_at DESC, id DESC);
+
+
+--
 -- Name: idx_usage_events_account_operation_day; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6810,6 +6821,14 @@ ALTER TABLE ONLY public.usage_daily_rollups
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: usage_events usage_events_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_events
+    ADD CONSTRAINT usage_events_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
 
 
 --

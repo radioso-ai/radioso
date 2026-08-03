@@ -125,7 +125,7 @@ writing a document.
   against localhost; capture the result and any fixes in `.context/`.
 - [x] T029 Request an independent code review after localhost verification; address
   actionable feedback and repeat for at most three total review/fix cycles.
-- [ ] T030 Run `pnpm run ci:local -- origin/main`, inspect `git diff origin/main...`,
+- [x] T030 Run `pnpm run ci:local -- origin/main`, inspect `git diff origin/main...`,
   commit intentionally, push the existing branch, and create a pull request targeting
   `main`.
 

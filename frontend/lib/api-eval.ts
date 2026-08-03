@@ -188,6 +188,7 @@ export interface EvalCaseAgentRef {
   agentId: string | null
   // Current agent name when it still exists, else the frozen capture-time name.
   name: string | null
+  internalName: string | null
   // agentId known but the agent row is gone; name is the frozen capture-time one.
   deleted: boolean
 }

@@ -184,6 +184,7 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(byId.get(scored.id)?.agent).toEqual({
       agentId: null,
       name: "Support",
+      internalName: null,
       deleted: false,
     });
   });
@@ -225,7 +226,12 @@ describeIntegration("EvalRepository (Postgres)", () => {
         ?.agent;
 
     // Live agent present: current name wins, not deleted.
-    expect(await findAgent()).toEqual({ agentId, name: "Concierge", deleted: false });
+    expect(await findAgent()).toEqual({
+      agentId,
+      name: "Concierge",
+      internalName: null,
+      deleted: false,
+    });
 
     // Remove the agent row (source_agent_id has no FK, so it survives on the
     // snapshot): the ref keeps the id, falls back to the frozen name, marks removed.
@@ -234,6 +240,7 @@ describeIntegration("EvalRepository (Postgres)", () => {
     expect(await findAgent()).toEqual({
       agentId,
       name: "Concierge (frozen)",
+      internalName: null,
       deleted: true,
     });
   });

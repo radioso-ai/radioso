@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
+import { normalizeNullableText } from "../../../shared/domain/nullableText.js";
 import { currentTimestamp, toJsonb } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
@@ -184,6 +185,7 @@ export class EvalRepository implements EvalRepositoryPort {
       .select([
         "eval_snapshots.source_agent_id as source_agent_id",
         "agents.name as live_agent_name",
+        "agents.internal_name as live_agent_internal_name",
         sql<string | null>`eval_snapshots.original_agent_config ->> 'name'`.as(
           "frozen_config_agent_name",
         ),
@@ -234,6 +236,7 @@ export class EvalRepository implements EvalRepositoryPort {
     return caseRows.map((row) => {
       const sourceAgentId = (row.source_agent_id as string | null) ?? null;
       const liveName = (row.live_agent_name as string | null) ?? null;
+      const liveInternalName = (row.live_agent_internal_name as string | null) ?? null;
       // Live name when the agent still exists; otherwise the name frozen on the
       // snapshot (full config first, then the legacy thin AgentSnapshot).
       const frozenName =
@@ -246,6 +249,7 @@ export class EvalRepository implements EvalRepositoryPort {
         agent: {
           agentId: sourceAgentId,
           name: liveName ?? frozenName,
+          internalName: liveName === null ? null : normalizeNullableText(liveInternalName),
           deleted: sourceAgentId !== null && liveName === null,
         },
       };

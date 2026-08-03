@@ -3465,17 +3465,20 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceOrigin: string | null = null,
     channelContext: ConversationRecord["channelContext"] = null,
     verifiedCustomerId: string | null = null,
+    options?: { entryPageUrl?: string | null },
   ): Promise<ConversationRecord> {
     const record: ConversationRecord = {
       id: randomUUID(),
       workspaceId,
       agentId,
       agentName: null,
+      agentInternalName: null,
       sourceChannel,
       sourceOrigin,
       channelContext,
       anonymousSessionId,
       verifiedCustomerId,
+      entryPageUrl: options?.entryPageUrl ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -3491,6 +3494,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
     sourceOrigin?: string | null;
     channelContext?: ConversationRecord["channelContext"];
     verifiedCustomerId?: string | null;
+    entryPageUrl?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     const conversation = await this.create(
@@ -3501,6 +3505,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       input.sourceOrigin ?? null,
       input.channelContext ?? null,
       input.verifiedCustomerId ?? null,
+      { entryPageUrl: input.entryPageUrl ?? null },
     );
     const assistantMessage: MessageRecord = {
       id: randomUUID(),
@@ -3542,10 +3547,11 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       cursor?: string;
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
+      agentId?: string | null;
     } = { limit: 50, offset: 0 },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const workspaceConversations = [...this.items.values()]
-      .filter((item) => item.workspaceId === workspaceId)
+      .filter((item) => item.workspaceId === workspaceId && (!input.agentId || item.agentId === input.agentId))
       .sort((left, right) => {
         const timeDiff = right.updatedAt.getTime() - left.updatedAt.getTime();
         return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
@@ -4131,11 +4137,11 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null } = { limit: 50, offset: 0 },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
     const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
-      .filter((conversation) => conversation.workspaceId === workspaceId)
+      .filter((conversation) => conversation.workspaceId === workspaceId && (!input.agentId || conversation.agentId === input.agentId))
       .map((conversation) => ({
         kind: "chat" as const,
         id: conversation.id,
@@ -4143,7 +4149,7 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
         conversation,
       }));
     const searches: HistoryItemsSourceRecord[] = this.auditEventRepository.items
-      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search")
+      .filter((event) => event.workspaceId === workspaceId && event.eventType === "document.search" && !input.agentId)
       .map((event) => ({
         kind: "search" as const,
         id: typeof event.metadata.searchId === "string" ? event.metadata.searchId : event.id,

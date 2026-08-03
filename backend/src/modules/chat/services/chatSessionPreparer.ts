@@ -226,6 +226,7 @@ export class ChatSessionPreparer {
         input.sourceOrigin ?? null,
         input.channelContext ?? null,
         input.verifiedCustomerId ?? null,
+        { entryPageUrl: input.pageContext?.pageUrl ?? null },
       );
     if (conversation && input.verifiedCustomerId && !conversation.verifiedCustomerId) {
       await this.conversationRepository.setVerifiedCustomerId(

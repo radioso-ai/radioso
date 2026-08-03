@@ -2,6 +2,12 @@ import type { ConversationSourceScope } from "../../../shared/domain/conversatio
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { ChatHistoryService } from "./chatHistoryService.js";
 
+const dashboardConversationDetailOptions = {
+  includeAnswerFeedback: true,
+  includeOwnership: true,
+  includeAgentInternalName: true,
+};
+
 export class AssistantHistoryService {
   constructor(private readonly chatHistoryService: ChatHistoryService) {}
 
@@ -37,12 +43,9 @@ export class AssistantHistoryService {
     conversationId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ) {
-    // Dashboard surface: include ownership (operator-only). The public visitor path calls
-    // chatHistoryService.getConversation directly and never sets this.
-    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, {
-      includeAnswerFeedback: true,
-      includeOwnership: true,
-    });
+    // Dashboard surface: include operator-only ownership and agent details. The public visitor
+    // path calls chatHistoryService.getConversation directly and never sets these.
+    return this.chatHistoryService.getConversation(workspaceId, conversationId, input, dashboardConversationDetailOptions);
   }
 
   tailConversation(
@@ -60,6 +63,6 @@ export class AssistantHistoryService {
     requestId: string,
     input: { limit: number; offset?: number; cursor?: string },
   ) {
-    return this.chatHistoryService.getContactRequest(workspaceId, requestId, input);
+    return this.chatHistoryService.getContactRequest(workspaceId, requestId, input, dashboardConversationDetailOptions);
   }
 }

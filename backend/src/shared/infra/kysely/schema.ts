@@ -384,6 +384,7 @@ export interface Conversations {
   anonymous_session_id: string | null;
   channel_context: Json | null;
   created_at: Generated<Timestamp>;
+  entry_page_url: string | null;
   id: string;
   source_channel: string | null;
   source_origin: string | null;

@@ -26,6 +26,7 @@ const turn = (overrides: Partial<LowQualityTurn> = {}): LowQualityTurn => ({
   conversationId: 'conversation-1',
   agentId: 'agent-1',
   agentName: 'Support',
+  agentInternalName: null,
   channel: 'authenticated_chat',
   question: 'Can I return an opened item?',
   answerPreview: 'Items can be returned within 30 days.',

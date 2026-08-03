@@ -191,7 +191,7 @@ import {
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
-import { NoopContactHistoryProvider } from "../../src/modules/chat/services/contactHistoryProvider.js";
+import { NoopContactHistoryProvider, type ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
   createDefaultSkillCatalogRegistry,
@@ -554,6 +554,7 @@ export const createTestDependencies = (overrides: {
   usageLimitPolicy?: UsageLimitPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  contactHistoryProvider?: ContactHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;
@@ -1409,7 +1410,7 @@ export const createTestDependencies = (overrides: {
     messageRepository,
     auditEventRepository,
     new InMemoryHistoryItemsRepository(conversationRepository, auditEventRepository),
-    new NoopContactHistoryProvider(),
+    overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     overrides.answerFeedbackHistoryProvider,
     conversationOwnershipRepository,
   );
@@ -1651,7 +1652,7 @@ export const createTestDependencies = (overrides: {
     organizationCreationGuard,
     publicChatActionAdvertiser,
     publicConversationEventBus,
-    contactHistoryProvider: new NoopContactHistoryProvider(),
+    contactHistoryProvider: overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({
       logger,
@@ -1848,6 +1849,7 @@ export const createTestApp = (overrides: {
   usageLimitPolicy?: UsageLimitPolicy;
   organizationCreationGuard?: OrganizationCreationGuard;
   answerFeedbackHistoryProvider?: AnswerFeedbackHistoryProviderPort;
+  contactHistoryProvider?: ContactHistoryProviderPort;
   publicChatActionAdvertiser?: PublicChatActionAdvertiserPort;
   applicationRouteMounts?: ApplicationRouteMount[];
   workbenchReplayRunner?: Pick<WorkbenchReplayRunner, "run">;

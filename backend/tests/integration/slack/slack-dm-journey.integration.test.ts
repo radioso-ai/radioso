@@ -94,6 +94,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(`CREATE TABLE accounts (id UUID PRIMARY KEY)`);
     await client.query(`CREATE TABLE workspaces (id UUID PRIMARY KEY, account_id UUID NOT NULL)`);
     await client.query(`CREATE TABLE agents (id UUID PRIMARY KEY, workspace_id UUID NOT NULL REFERENCES workspaces(id), name TEXT NOT NULL)`);
+    // Mirrors the real conversations table; add any column ConversationRepository reads or writes.
     await client.query(`
       CREATE TABLE conversations (
         id UUID PRIMARY KEY,
@@ -101,6 +102,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         agent_id UUID REFERENCES agents(id),
         source_channel TEXT,
         source_origin TEXT,
+        entry_page_url TEXT,
         channel_context JSONB,
         anonymous_session_id TEXT,
         verified_customer_id UUID,

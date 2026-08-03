@@ -88,6 +88,7 @@ import { buildEvalSeedTurn } from '@/lib/eval-workbench-seed'
 import { getPrimaryLeafTrace } from '@/lib/turn-trace'
 import { RETRIEVAL_ANSWER_SKILL_NAME } from '@/lib/retrieval-skill-settings'
 import { TurnFlowGraph } from './turn-flow-graph'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 
 type AnyStatus = EvalCaseStatus | EvalRunStatus | AssertionVerdictStatus
 
@@ -129,7 +130,7 @@ const agentFilterKey = (agent: EvalCaseListItem['agent']): string =>
   agent.agentId ?? (agent.name ? `name:${agent.name}` : UNKNOWN_AGENT_FILTER)
 
 const agentLabel = (agent: EvalCaseListItem['agent']): string => {
-  const name = agent.name ?? 'Unknown agent'
+  const name = getAgentOperatorLabel({ internalName: agent.internalName, name: agent.name }, 'Unknown agent')
   return agent.deleted ? `${name} (removed)` : name
 }
 
@@ -740,7 +741,7 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                   <span className="block truncate font-medium text-foreground">{c.name}</span>
                 </DashboardTableCell>
                 <DashboardTableCell className="w-44">
-                  {c.agent.name ? (
+                  {c.agent.name || c.agent.internalName ? (
                     <span
                       className="block truncate text-muted-foreground"
                       title={`Captured from ${agentLabel(c.agent)}`}

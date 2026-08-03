@@ -55,6 +55,7 @@ export interface InboxItem {
   triage?: QualityTriageRecord
   agentId?: string | null
   agentName?: string | null
+  agentInternalName?: string | null
 }
 
 const byTimestampDesc = (left: string, right: string): number =>
@@ -188,6 +189,7 @@ export const buildInboxModel = (input: {
       triage: turn.triage,
       agentId: turn.agentId,
       agentName: turn.agentName,
+      agentInternalName: turn.agentInternalName,
     }] : []
   })
 

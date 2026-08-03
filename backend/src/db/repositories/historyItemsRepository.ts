@@ -8,6 +8,7 @@ import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
+import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 
 // A parameterized `AND` fragment that filters conversation rows by source scope. `column` is the
 // (correctly aliased) `source_channel` reference to use — the CTE reads `c.source_channel`, the
@@ -60,11 +61,13 @@ interface HistoryItemsRow {
   conversation_workspace_id: string | null;
   conversation_agent_id: string | null;
   conversation_agent_name: string | null;
+  conversation_agent_internal_name: string | null;
   source_channel: string | null;
   source_origin: string | null;
   channel_context: ConversationChannelContext | null;
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
+  entry_page_url: string | null;
   conversation_created_at: Date | null;
   conversation_updated_at: Date | null;
   audit_id: string | null;
@@ -105,11 +108,13 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            c.workspace_id AS conversation_workspace_id,
            c.agent_id AS conversation_agent_id,
            ag.name AS conversation_agent_name,
+           ag.internal_name AS conversation_agent_internal_name,
            c.source_channel,
            c.source_origin,
            c.channel_context,
            c.anonymous_session_id,
            c.verified_customer_id,
+           c.entry_page_url,
            c.created_at AS conversation_created_at,
            c.updated_at AS conversation_updated_at,
            NULL::uuid AS audit_id,
@@ -137,11 +142,13 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
            NULL::uuid AS conversation_workspace_id,
            NULL::uuid AS conversation_agent_id,
            NULL::text AS conversation_agent_name,
+           NULL::text AS conversation_agent_internal_name,
            NULL::text AS source_channel,
            NULL::text AS source_origin,
            NULL::jsonb AS channel_context,
            NULL::text AS anonymous_session_id,
            NULL::text AS verified_customer_id,
+           NULL::text AS entry_page_url,
            NULL::timestamptz AS conversation_created_at,
            NULL::timestamptz AS conversation_updated_at,
            a.id AS audit_id,
@@ -165,7 +172,8 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
        counted AS (
          SELECT (
            (SELECT COUNT(*) FROM conversations WHERE workspace_id = ${workspaceId} ${countScopeFilter}) +
-           (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search')
+           (SELECT COUNT(*) FROM audit_events WHERE workspace_id = ${workspaceId} AND event_type = 'document.search'
+           )
          )::text AS total_count
        ),
        paged AS (
@@ -192,11 +200,13 @@ export class HistoryItemsRepository implements HistoryItemsRepositoryPort {
             workspaceId: row.conversation_workspace_id,
             agentId: row.conversation_agent_id ?? null,
             agentName: row.conversation_agent_name ?? null,
+            agentInternalName: normalizeNullableText(row.conversation_agent_internal_name),
             sourceChannel: row.source_channel,
             sourceOrigin: row.source_origin,
             channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
             anonymousSessionId: row.anonymous_session_id,
             verifiedCustomerId: row.verified_customer_id,
+            entryPageUrl: row.entry_page_url,
             createdAt: new Date(row.conversation_created_at),
             updatedAt: new Date(row.conversation_updated_at),
           },

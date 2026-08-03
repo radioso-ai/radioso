@@ -213,7 +213,7 @@ export class InMemoryEvalRepository implements EvalRepositoryPort, EvalMessageCa
                 outcomeReason: latest.outcomeReason,
               }
             : null,
-          agent: { agentId, name, deleted: false },
+          agent: { agentId, name, internalName: null, deleted: false },
         };
       });
   }

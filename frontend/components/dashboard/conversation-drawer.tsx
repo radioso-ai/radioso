@@ -37,9 +37,10 @@ import { hitlApi } from '@/lib/api-hitl'
 import { useConversationTail } from '@/hooks/use-conversation-tail'
 import {
   formatConversationChannelContextDetails,
-  formatConversationSource,
+  formatConversationLocation,
   getConversationSourceBadge,
 } from '@/lib/history-source'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import {
   presentActivityOutcome,
   presentRunParameters,
@@ -61,6 +62,13 @@ const contactStatusLabels: Record<ContactHistoryDetail['status'], string> = {
   delivered: 'Delivered',
   failed: 'Failed',
 }
+
+const drawerTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+
+const formatDrawerTimestamp = (value: string) => drawerTimestampFormatter.format(new Date(value))
 
 function ContactRequestPanel({
   contact,
@@ -480,20 +488,40 @@ export function ConversationDrawer({
                   />
                 ) : null}
                 {(selectedItem?.kind === 'chat' || selectedItem?.kind === 'contact') && conversationDetail ? (() => {
-                  const source = formatConversationSource(conversationDetail)
+                  const location = formatConversationLocation(conversationDetail)
                   const sourceBadge = getConversationSourceBadge(conversationDetail)
                   const contextDetails = formatConversationChannelContextDetails(conversationDetail.channelContext)
-                  return source ? (
-                    <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                  return (
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      <span className="shrink-0 font-medium text-foreground">
+                        {getAgentOperatorLabel({ internalName: conversationDetail.agentInternalName, name: conversationDetail.agentName }, conversationDetail.agentId ? 'Unknown agent' : 'No agent')}
+                      </span>
+                      <span className="shrink-0">{conversationDetail.messageCount} messages</span>
+                      <span className="shrink-0">Created {formatDrawerTimestamp(conversationDetail.createdAt)}</span>
+                      <span className="shrink-0">Updated {formatDrawerTimestamp(conversationDetail.updatedAt)}</span>
                       {sourceBadge ? (
                         <span className={`${sourceBadge.className} shrink-0 font-medium`}>{sourceBadge.label}</span>
                       ) : null}
-                      <span className="shrink-0 rounded-full bg-muted px-2.5 py-0.5">{source}</span>
+                      {location.href ? (
+                        <a
+                          href={location.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={location.title ?? undefined}
+                          className="min-w-0 max-w-64 truncate rounded-full bg-muted px-2.5 py-0.5 hover:text-primary"
+                        >
+                          {location.text}
+                        </a>
+                      ) : (
+                        <span className="min-w-0 max-w-64 truncate rounded-full bg-muted px-2.5 py-0.5" title={location.title ?? undefined}>
+                          {location.text}
+                        </span>
+                      )}
                       {contextDetails.length > 0 ? (
                         <span className="min-w-0 truncate">{contextDetails.join(' · ')}</span>
                       ) : null}
                     </div>
-                  ) : null
+                  )
                 })() : null}
               </div>
               <div className="flex items-center gap-2">

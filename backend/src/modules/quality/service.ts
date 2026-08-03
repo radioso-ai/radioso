@@ -1,6 +1,7 @@
 import { CompiledQuery } from "kysely";
 
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
+import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type {
   ListLowQualityTurnsInput,
@@ -64,6 +65,7 @@ type TurnRow = GroundingDiagnosticRow & {
   conversation_id: string;
   agent_id: string | null;
   agent_name: string | null;
+  agent_internal_name: string | null;
   source_channel: string | null;
   answer_content: string;
   skill_name: string | null;
@@ -333,6 +335,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
          m.conversation_id,
          c.agent_id,
          a.name AS agent_name,
+         a.internal_name AS agent_internal_name,
          c.source_channel,
          m.content AS answer_content,
          m.skill_name,
@@ -390,6 +393,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       conversationId: row.conversation_id,
       agentId: row.agent_id,
       agentName: row.agent_name,
+      agentInternalName: normalizeNullableText(row.agent_internal_name),
       channel: row.source_channel,
       question: buildPreview(row.user_question) || null,
       answerPreview: buildPreview(row.answer_content),

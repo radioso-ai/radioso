@@ -240,6 +240,7 @@ class InMemoryEvalRepository implements EvalRepositoryPort {
           agent: {
             agentId: snapshot?.sourceAgentId ?? null,
             name: snapshot?.originalAgentConfig?.name ?? snapshot?.originalAgent?.name ?? null,
+            internalName: null,
             deleted: false,
           },
         };

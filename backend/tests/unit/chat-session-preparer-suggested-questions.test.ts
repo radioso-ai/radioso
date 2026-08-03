@@ -145,11 +145,13 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       workspaceId: "ws-1",
       agentId: agent.id,
       agentName: agent.name,
+      agentInternalName: agent.internalName ?? null,
       sourceChannel: "workbench_replay",
       sourceOrigin: null,
       channelContext: null,
       anonymousSessionId: null,
       verifiedCustomerId: null,
+      entryPageUrl: null,
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     };

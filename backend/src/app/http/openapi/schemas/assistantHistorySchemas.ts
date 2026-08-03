@@ -279,6 +279,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       id: z.string().uuid(),
       agentId: z.string().uuid().nullable(),
       agentName: z.string().nullable(),
+      agentInternalName: z.string().nullable(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
@@ -286,6 +287,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       // non-Slack conversation) would be invalid against the published schema.
       channelContext: z.union([ConversationChannelContextSchema, z.null()]),
       anonymousSessionId: z.string().nullable(),
+      entryPageUrl: z.string().nullable(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       messageCount: z.number().int().min(0),
@@ -486,8 +488,12 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       conversationId: z.string().uuid(),
       workspaceId: z.string().uuid(),
       agentId: z.string().uuid().nullable(),
+      agentName: z.string().nullable().optional(),
+      agentInternalName: z.string().nullable().optional(),
       sourceChannel: z.string().nullable(),
       sourceOrigin: z.string().nullable(),
+      // Entry page provenance is dashboard-only; the public detail response omits it.
+      entryPageUrl: z.string().nullable().optional(),
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
       // non-Slack conversation) would be invalid against the published schema.

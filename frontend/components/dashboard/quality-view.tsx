@@ -80,6 +80,8 @@ import {
   type QualityResolutionReasonFilter,
 } from '@/lib/dashboard-routes'
 import { buildQualityTurnEvalRoute } from '@/lib/workbench-handoffs'
+import { formatConversationSource, getConversationSourceBadge } from '@/lib/history-source'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { useWorkspace } from '@/lib/workspace-context'
 import {
   isTerminalQualityTriageState,
@@ -267,22 +269,6 @@ const formatPageSummary = ({
   const pageStart = totalItems === 0 ? 0 : (currentPage - 1) * pageSize
   const pageEnd = Math.min(pageStart + pageItemCount, totalItems)
   return `${pageStart + 1} to ${pageEnd} of ${totalItems}`
-}
-
-const getChannelLabel = (channel: string | null): string => {
-  if (!channel) {
-    return 'Dashboard chat'
-  }
-  if (channel === 'anonymous') {
-    return 'Public chat'
-  }
-  if (channel === 'website_embed') {
-    return 'Website embed'
-  }
-  if (channel === 'mcp') {
-    return 'MCP'
-  }
-  return channel
 }
 
 type BadgeTone = 'positive' | 'neutral' | 'info' | 'warning' | 'muted'
@@ -1635,10 +1621,10 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
                       <DashboardTableCell className="w-32">
                         <div className="flex flex-col gap-0.5">
                           <span className="block truncate text-sm text-muted-foreground">
-                            {turn.agentName ?? '—'}
+                            {getAgentOperatorLabel({ internalName: turn.agentInternalName, name: turn.agentName }, '—')}
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
-                            {getChannelLabel(turn.channel)}
+                            {getConversationSourceBadge(turn.channel)?.label ?? formatConversationSource(turn.channel) ?? 'Dashboard chat'}
                           </span>
                         </div>
                       </DashboardTableCell>

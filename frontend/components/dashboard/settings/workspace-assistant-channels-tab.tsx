@@ -20,6 +20,7 @@ import { SkillList } from '@/components/dashboard/settings/skills/SkillList'
 import { SettingsRow, SettingsRowList } from '@/components/dashboard/settings/settings-row-list'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import {
   getAssistantLocaleLabel,
   NO_GREETING_LOCALE_LABEL,
@@ -180,6 +181,7 @@ export function WorkspaceAssistantChannelsTab({
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false)
   const [deleteOrgError, setDeleteOrgError] = useState<string | null>(null)
   const [agentName, setAgentName] = useState<string>('')
+  const [agentInternalName, setAgentInternalName] = useState<string>('')
   const [agentCount, setAgentCount] = useState<number>(0)
   const [deleteAgentConfirmName, setDeleteAgentConfirmName] = useState('')
   const [isDeletingAgent, setIsDeletingAgent] = useState(false)
@@ -441,7 +443,10 @@ export function WorkspaceAssistantChannelsTab({
 
   const canDeleteAgent = currentAccountRole === 'owner' || currentAccountRole === 'admin'
   const isLastAgent = agentCount <= 1
-  const deleteAgentConfirmValid = agentName.trim().length > 0 && deleteAgentConfirmName.trim() === agentName.trim()
+  const operatorAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, 'Agent')
+  // Slack must use an empty label fallback so the workspace assistant name can still be used.
+  const slackAgentName = getAgentOperatorLabel({ internalName: agentInternalName, name: agentName }, '') || anonSettings?.assistantName || ''
+  const deleteAgentConfirmValid = deleteAgentConfirmName.trim() === operatorAgentName.trim()
 
   const handleDeleteAgent = async () => {
     if (!agentId || !canDeleteAgent || !deleteAgentConfirmValid || isLastAgent) return
@@ -475,13 +480,16 @@ export function WorkspaceAssistantChannelsTab({
         if (agentId) {
           const current = response.agents.find((agent) => agent.id === agentId)
           setAgentName(current?.name ?? '')
+          setAgentInternalName(current?.internalName ?? '')
         } else {
           setAgentName('')
+          setAgentInternalName('')
         }
       } catch {
         if (!active) return
         setAgentCount(0)
         setAgentName('')
+        setAgentInternalName('')
       }
     })()
     return () => {
@@ -1141,7 +1149,7 @@ export function WorkspaceAssistantChannelsTab({
             <SlackChannelCard
               workspaceId={activeWorkspaceId}
               agentId={agentId}
-              agentName={agentName || anonSettings?.assistantName || ''}
+              agentName={slackAgentName}
             />
           </section>
           ) : null}
@@ -1459,19 +1467,19 @@ export function WorkspaceAssistantChannelsTab({
                     <DialogHeader>
                       <DialogTitle>Delete agent</DialogTitle>
                       <DialogDescription>
-                        This will permanently delete the agent <strong>{agentName || 'this agent'}</strong> and
+                        This will permanently delete the agent <strong>{operatorAgentName}</strong> and
                         its channel tokens, conversations, and settings. This action cannot be undone.
                       </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2 py-2">
                       <Label htmlFor="deleteAgentConfirm" className="text-foreground">
-                        Type <strong>{agentName || 'agent name'}</strong> to confirm
+                        Type <strong>{operatorAgentName}</strong> to confirm
                       </Label>
                       <Input
                         id="deleteAgentConfirm"
                         value={deleteAgentConfirmName}
                         onChange={(event) => setDeleteAgentConfirmName(event.target.value)}
-                        placeholder={agentName}
+                        placeholder={operatorAgentName}
                         disabled={!canDeleteAgent || isLastAgent}
                       />
                     </div>

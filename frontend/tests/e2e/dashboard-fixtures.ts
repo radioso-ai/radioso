@@ -1196,6 +1196,11 @@ export const installDashboardApiMocks = async (
       return;
     }
 
+    if (request.method() === "GET" && path === "/agents") {
+      await json(route, { agents: [agentSettings] });
+      return;
+    }
+
     if (request.method() === "GET" && path === "/history/search") {
       await json(route, searchHistory);
       return;
@@ -1316,11 +1321,6 @@ export const installDashboardApiMocks = async (
         conversationId: null,
         resumed: true,
       });
-      return;
-    }
-
-    if (request.method() === "GET" && path === "/agents") {
-      await json(route, { agents: [agentSettings] });
       return;
     }
 

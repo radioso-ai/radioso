@@ -187,6 +187,7 @@ describe("quality routes", () => {
           conversationId: "conv-1",
           agentId: null,
           agentName: null,
+          agentInternalName: null,
           channel: "embed",
           question: "Why?",
           answerPreview: "Because.",

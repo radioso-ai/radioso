@@ -263,6 +263,7 @@ export interface EvalCaseAgentRef {
    * name); falls back to the name frozen on the snapshot when the agent was
    * deleted or was never recorded. Null when nothing is known. */
   name: string | null;
+  internalName: string | null;
   /** True when `agentId` is known but the agent row no longer exists in the
    * workspace — the shown name is the frozen capture-time name, so the UI can
    * mark it as removed. */

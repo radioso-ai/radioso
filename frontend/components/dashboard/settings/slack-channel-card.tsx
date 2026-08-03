@@ -19,6 +19,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { slackApi, type SlackBinding, type SlackInstallStatusResponse, type SlackManifestResponse } from '@/lib/api-slack'
 
 type SlackChannelCardProps = {
@@ -51,7 +52,7 @@ export function SlackChannelCard({ workspaceId, agentId, agentName }: SlackChann
   const slackReady = status?.readiness.configured ?? false
   const missingSlackEnv = status?.readiness.missingEnvVars ?? []
   const canStartInstall = canUseSlack && slackReady
-  const resolvedAgentName = agentName.trim() || 'This agent'
+  const resolvedAgentName = getAgentOperatorLabel({ name: agentName }, 'This agent')
   const defaultAnsweringAgentId = binding?.answeringAgentId ?? agentId ?? ''
   const selectedAgentId = binding?.answeringAgentId === agentId ? agentId : ''
   const agentChannelBindings = channelBindings.filter(

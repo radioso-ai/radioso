@@ -98,10 +98,12 @@ export interface ChatConversationSummary {
   id: string;
   agentId: string | null;
   agentName: string | null;
+  agentInternalName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
+  entryPageUrl: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -165,9 +167,12 @@ export interface ChatConversationDetail {
   conversationId: string;
   workspaceId: string;
   agentId: string | null;
+  agentName: string | null;
+  agentInternalName?: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
+  entryPageUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   messageCount: number;
@@ -757,7 +762,11 @@ export class ChatHistoryService {
     const sourceLimit = offset + input.limit;
     const sourceScope = input.sourceScope ?? "end_user";
     const [basePage, contactPage] = await Promise.all([
-      this.historyItemsRepository.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0, sourceScope }),
+      this.historyItemsRepository.listPageByWorkspaceId(workspaceId, {
+        limit: sourceLimit,
+        offset: 0,
+        sourceScope,
+      }),
       this.contactHistoryProvider.listPageByWorkspaceId(workspaceId, { limit: sourceLimit, offset: 0 }),
     ]);
     const baseItems = basePage.items;
@@ -813,6 +822,11 @@ export class ChatHistoryService {
     workspaceId: string,
     requestId: string,
     input: { limit: number; offset?: number; cursor?: string } = { limit: 50, offset: 0 },
+    options: {
+      includeAnswerFeedback?: boolean;
+      includeOwnership?: boolean;
+      includeAgentInternalName?: boolean;
+    } = { includeAnswerFeedback: true },
   ): Promise<ContactHistoryDetailResponse> {
     const contact = await this.contactHistoryProvider.getById(workspaceId, requestId);
     if (!contact) {
@@ -821,7 +835,7 @@ export class ChatHistoryService {
 
     return {
       contact,
-      conversation: await this.getConversation(workspaceId, contact.conversationId, input, { includeAnswerFeedback: true }),
+      conversation: await this.getConversation(workspaceId, contact.conversationId, input, options),
     };
   }
 
@@ -867,7 +881,13 @@ export class ChatHistoryService {
     // includeOwnership is OFF by default: ownership exposes the operator's identity and is
     // a DASHBOARD-only concern. The public/embed visitor surface shares this method and must
     // never receive it.
-    options: { includeAnswerFeedback?: boolean; includeOwnership?: boolean } = {},
+    options: {
+      includeAnswerFeedback?: boolean;
+      includeOwnership?: boolean;
+      // The internal agent label is an operator-only presentation fact. It must never reach
+      // the public/embed visitor surface, which shares this read method.
+      includeAgentInternalName?: boolean;
+    } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -903,6 +923,10 @@ export class ChatHistoryService {
       conversationId: conversation.id,
       workspaceId: conversation.workspaceId,
       agentId: conversation.agentId,
+      agentName: conversation.agentName,
+      ...(options.includeAgentInternalName
+        ? { agentInternalName: conversation.agentInternalName, entryPageUrl: conversation.entryPageUrl }
+        : {}),
       sourceChannel: conversation.sourceChannel,
       sourceOrigin: conversation.sourceOrigin,
       channelContext: conversation.channelContext,

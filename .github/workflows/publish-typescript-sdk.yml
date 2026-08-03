@@ -1,0 +1,76 @@
+name: Publish TypeScript SDK
+
+# Cut a release by pushing a tag that matches the package version, e.g.
+#   git tag typescript-sdk-v0.2.0 && git push origin typescript-sdk-v0.2.0
+#
+# The package builds from the contract snapshot committed under
+# typescript-sdk/openapi and typescript-sdk/src/generated. The TypeScript SDK
+# job in ci.yml fails when that snapshot drifts from backend/openapi.json, so a
+# tag on a green commit is safe to publish without regenerating from backend.
+
+on:
+  push:
+    tags:
+      - "typescript-sdk-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and inspect the tarball without publishing"
+        type: boolean
+        default: true
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.0 --activate
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        working-directory: typescript-sdk
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          tag_version="${GITHUB_REF_NAME#typescript-sdk-v}"
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package version ${package_version}." >&2
+            exit 1
+          fi
+
+      - name: Install TypeScript SDK dependencies
+        run: pnpm install --frozen-lockfile --filter @radioso/typescript-sdk...
+
+      - name: Build TypeScript SDK
+        working-directory: typescript-sdk
+        run: pnpm run build
+
+      - name: Test TypeScript SDK
+        working-directory: typescript-sdk
+        run: pnpm test
+
+      - name: Inspect package contents
+        working-directory: typescript-sdk
+        run: npm pack --dry-run
+
+      # npm drops provenance attestation for publishes from private source
+      # repositories, so this publishes without it while radioso/radioso is
+      # private. Add --provenance (and id-token: write above) if the repo
+      # becomes public.
+      - name: Publish
+        if: github.event_name == 'push' || inputs.dry_run == false
+        working-directory: typescript-sdk
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

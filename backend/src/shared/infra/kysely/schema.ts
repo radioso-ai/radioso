@@ -891,11 +891,13 @@ export interface UsageDailyRollups {
 
 export interface UsageEvents {
   account_id: string | null;
+  agent_id: string | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   document_id: string | null;
   document_revision: number | null;
   error_code: string | null;
+  event_kind: Generated<string>;
   id: string;
   idempotency_key: string;
   input_bytes: Generated<Int8>;
@@ -909,6 +911,7 @@ export interface UsageEvents {
   output_tokens: Generated<Int8>;
   provider: string;
   provider_request_id: string | null;
+  reasoning_tokens: Int8 | null;
   source_id: string | null;
   status: string;
   surface: string;

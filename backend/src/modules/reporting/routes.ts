@@ -4,7 +4,8 @@ import { z } from "zod";
 import type { AppDependencies } from "../../app/server/types.js";
 import { requireSession, type SessionDependencies } from "../../app/http/middleware/requireSession.js";
 import { badRequest } from "../../shared/domain/errors.js";
-import type { UsageTrendsServicePort } from "./contracts/index.js";
+import type { UsageDetailsServicePort, UsageTrendsServicePort } from "./contracts/index.js";
+import { createUsageDetailsRoutes } from "./usageDetailsRoutes.js";
 
 const usageTrendsQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -50,5 +51,16 @@ export const createUsageTrendsRoutes = (
     }
   });
 
+  return router;
+};
+
+export const createUsageReportingRoutes = (
+  dependencies: UsageTrendsRouteDependencies,
+  trendsService: UsageTrendsServicePort,
+  detailsService: UsageDetailsServicePort,
+): Router => {
+  const router = Router();
+  router.use(createUsageTrendsRoutes(dependencies, trendsService));
+  router.use(createUsageDetailsRoutes(dependencies, detailsService));
   return router;
 };

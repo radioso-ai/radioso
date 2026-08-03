@@ -134,6 +134,7 @@ describe("RoutineDraftAssistService", () => {
     expect(textGenerationClient.calls[0]?.prompt).toContain("contact.send");
     expect(textGenerationClient.calls[0]?.operation).toMatchObject({
       workspaceId,
+      agentId,
       surface: "agents",
       operation: "draft_routine",
       attemptKey: "primary",

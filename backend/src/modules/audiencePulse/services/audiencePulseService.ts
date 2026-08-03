@@ -67,9 +67,18 @@ const safeAudit = async (
 const isAbortError = (error: unknown): boolean =>
   Boolean(error && typeof error === "object" && "name" in error && (error as { name?: unknown }).name === "AbortError");
 
+const isModelValidationError = (error: unknown): boolean =>
+  error instanceof AudiencePulseReportValidationError || error instanceof ZodError || error instanceof SyntaxError;
+
+const errorStatusCode = (error: unknown): number | undefined => {
+  if (!error || typeof error !== "object" || !("statusCode" in error)) return undefined;
+  const statusCode = (error as { statusCode?: unknown }).statusCode;
+  return typeof statusCode === "number" ? statusCode : undefined;
+};
+
 const unavailableReason = (error: unknown): "provider" | "validation" | "cancelled" => {
   if (isAbortError(error)) return "cancelled";
-  if (error instanceof AudiencePulseReportValidationError || error instanceof ZodError || error instanceof SyntaxError) {
+  if (isModelValidationError(error)) {
     return "validation";
   }
   return "provider";
@@ -264,7 +273,8 @@ export class AudiencePulseService implements AudiencePulsePort {
     }
 
     let reservation: UsageLimitReservation | null = null;
-    let committed = false;
+    let reservationMustRemain = false;
+    let deferredFailureOutcome: "provider" | "validation" | "cancelled" | "internal" | null = null;
     try {
       const history = await this.deps.historySource.read({
         workspaceId: input.workspaceId,
@@ -301,6 +311,7 @@ export class AudiencePulseService implements AudiencePulsePort {
       }
 
       const boundedHistory = boundAudiencePulseHistoryForPrompt(history);
+      const prompt = buildAudiencePulsePrompt(boundedHistory);
       const modelCallContext = {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -313,27 +324,51 @@ export class AudiencePulseService implements AudiencePulsePort {
         workspaceContext: { workspaceId: input.workspaceId, accountId: input.accountId },
         modelCallContext,
       });
-      const completion = await inference.complete({
-        prompt: buildAudiencePulsePrompt(boundedHistory),
-        maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
-        maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
-        responseFormat: AUDIENCE_PULSE_RESPONSE_FORMAT,
-        signal: input.signal,
-        operation: modelCallContext,
-        validateResult(result) {
-          parseModelResult(result.text);
-        },
-      });
-      const model = parseModelResult(completion.text);
-      const generatedAt = this.now();
-      const report = buildAudiencePulseReport({
-        period: boundedHistory.period,
-        generatedAt,
-        coverage: boundedHistory.coverage,
-        weeklyVolume: boundedHistory.weeklyVolume,
-        evidence: boundedHistory.evidence,
-        model,
-      });
+
+      let completion: Awaited<ReturnType<typeof inference.complete>>;
+      try {
+        completion = await inference.complete({
+          prompt,
+          maxInputTokens: AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+          maxOutputTokens: AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
+          responseFormat: AUDIENCE_PULSE_RESPONSE_FORMAT,
+          signal: input.signal,
+          operation: modelCallContext,
+          validateResult(result) {
+            parseModelResult(result.text);
+          },
+        });
+      } catch (error) {
+        if (errorStatusCode(error) !== undefined) throw error;
+        const reason = unavailableReason(error);
+        deferredFailureOutcome = reason;
+        return { kind: "unavailable", reason };
+      }
+
+      let report: AudiencePulseStoredReport;
+      let generatedAt: Date;
+      try {
+        const model = parseModelResult(completion.text);
+        generatedAt = this.now();
+        report = buildAudiencePulseReport({
+          period: boundedHistory.period,
+          generatedAt,
+          coverage: boundedHistory.coverage,
+          weeklyVolume: boundedHistory.weeklyVolume,
+          evidence: boundedHistory.evidence,
+          model,
+        });
+      } catch (error) {
+        if (!isAbortError(error) && !isModelValidationError(error)) throw error;
+        const reason = unavailableReason(error);
+        deferredFailureOutcome = reason;
+        return { kind: "unavailable", reason };
+      }
+
+      // A validated model completion is billable even when a later snapshot write or
+      // accounting operation fails, so do not release its reservation afterward.
+      reservationMustRemain = true;
+      await reservation.commit();
       await this.deps.snapshotStore.replace({
         workspaceId: input.workspaceId,
         period: boundedHistory.period,
@@ -341,8 +376,6 @@ export class AudiencePulseService implements AudiencePulsePort {
         report,
         promptEvidenceRefs: promptEvidenceReferences(boundedHistory.evidence),
       });
-      await reservation.commit();
-      committed = true;
       const hydrated = hydrateReport(report, createHydratedEvidence(boundedHistory.evidence));
       await this.recordOutcome(input, "completed", startedAt, {
         populationSize: history.coverage.populationSize,
@@ -350,18 +383,23 @@ export class AudiencePulseService implements AudiencePulsePort {
       });
       return { kind: "completed", report: hydrated };
     } catch (error) {
-      if (error && typeof error === "object" && "statusCode" in error && (error as { statusCode?: unknown }).statusCode === 503) {
-        await this.recordOutcome(input, "provider", startedAt, {});
-        throw error;
-      }
-      const reason = unavailableReason(error);
-      await this.recordOutcome(input, reason, startedAt, {});
-      return { kind: "unavailable", reason };
+      deferredFailureOutcome = errorStatusCode(error) === 503 ? "provider" : "internal";
+      throw error;
     } finally {
-      if (reservation && !committed) {
-        await reservation.release().catch(() => undefined);
+      try {
+        if (reservation && !reservationMustRemain) {
+          await reservation.release();
+        }
+      } catch (error) {
+        // Releasing is accounting work, so surface failures while still cleaning up the lease.
+        await this.recordOutcome(input, "internal", startedAt, {}).catch(() => undefined);
+        throw error;
+      } finally {
+        await lease.release().catch(() => undefined);
       }
-      await lease.release().catch(() => undefined);
+      if (deferredFailureOutcome) {
+        await this.recordOutcome(input, deferredFailureOutcome, startedAt, {});
+      }
     }
   }
 

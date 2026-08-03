@@ -64,6 +64,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     leaseRelease: 0,
     replace: 0,
     invalidate: 0,
+    lifecycle: [] as string[],
     auditEvents: [] as Array<{ eventType: string; eventStatus: string; metadata?: Record<string, unknown> }>,
   };
   const dependencies: AudiencePulseServiceDependencies = {
@@ -83,6 +84,7 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       async find() { return null; },
       async replace(input) {
         calls.replace += 1;
+        calls.lifecycle.push("snapshot");
         return { ...input, revision: "revision-1" };
       },
       async invalidate() { calls.invalidate += 1; return true; },
@@ -105,7 +107,10 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
       async reserveAnswer() {
         calls.reserve += 1;
         return {
-          async commit() { calls.commit += 1; },
+          async commit() {
+            calls.commit += 1;
+            calls.lifecycle.push("commit");
+          },
           async release() { calls.release += 1; },
         };
       },
@@ -238,13 +243,145 @@ describe("AudiencePulseService", () => {
     expect(calls).toMatchObject({ inference: 0, reserve: 0, commit: 0, release: 0, replace: 0, leaseRelease: 1 });
   });
 
-  it("commits usage only after atomically saving a validated completed report", async () => {
+  it("commits usage after a validated model result before saving the report", async () => {
     const { service, calls } = createService();
 
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
     expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, leaseRelease: 1 });
+    expect(calls.lifecycle).toEqual(["commit", "snapshot"]);
+  });
+
+  it("rethrows persistence and accounting failures after completed model work", async () => {
+    const snapshotFailure = new Error("snapshot write failed");
+    let snapshotReplaceCalls = 0;
+    const snapshot = createService({
+      snapshotStore: {
+        async find() { return null; },
+        async replace() {
+          snapshotReplaceCalls += 1;
+          throw snapshotFailure;
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    await expect(snapshot.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(snapshotFailure);
+    expect(snapshot.calls).toMatchObject({ inference: 1, reserve: 1, replace: 0, commit: 1, release: 0, leaseRelease: 1 });
+    expect(snapshotReplaceCalls).toBe(1);
+    expect(snapshot.calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "internal" },
+    });
+
+    const accountingFailure = new Error("usage commit failed");
+    let accountingCommitCalls = 0;
+    let accountingReleaseCalls = 0;
+    const accounting = createService({
+      usageLimitPolicy: {
+        async reserveAnswer() {
+          return {
+            async commit() {
+              accountingCommitCalls += 1;
+              throw accountingFailure;
+            },
+            async release() { accountingReleaseCalls += 1; },
+          };
+        },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(accounting.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(accountingFailure);
+    expect(accounting.calls).toMatchObject({ inference: 1, replace: 0, leaseRelease: 1 });
+    expect({ accountingCommitCalls, accountingReleaseCalls }).toEqual({ accountingCommitCalls: 1, accountingReleaseCalls: 0 });
+
+    const historyFailure = new Error("history read failed");
+    const historyRead = createService({
+      historySource: {
+        async read() { throw historyFailure; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+    });
+
+    await expect(historyRead.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(historyFailure);
+    expect(historyRead.calls).toMatchObject({ inference: 0, reserve: 0, replace: 0, commit: 0, release: 0, leaseRelease: 1 });
+  });
+
+  it("rethrows release accounting failures and still releases the refresh lease", async () => {
+    const releaseFailure = new Error("usage release failed");
+    let releaseCalls = 0;
+    const { service, calls } = createService({
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { throw new Error("provider unavailable"); },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+      usageLimitPolicy: {
+        async reserveAnswer() {
+          return {
+            async commit() { throw new Error("not used"); },
+            async release() {
+              releaseCalls += 1;
+              throw releaseFailure;
+            },
+          };
+        },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(releaseFailure);
+    expect({ releaseCalls, leaseReleaseCalls: calls.leaseRelease }).toEqual({ releaseCalls: 1, leaseReleaseCalls: 1 });
+    expect(calls.auditEvents.filter((event) => event.eventType === "audience_pulse.refresh_failed")).toEqual([
+      expect.objectContaining({ metadata: expect.objectContaining({ outcome: "internal" }) }),
+    ]);
+  });
+
+  it("records only the release failure when provider setup fails before cleanup", async () => {
+    const providerFailure = Object.assign(new Error("provider unavailable"), { statusCode: 503 });
+    const releaseFailure = new Error("usage release failed");
+    let releaseCalls = 0;
+    const { service, calls } = createService({
+      inferenceFactory: {
+        async create() { throw providerFailure; },
+      },
+      usageLimitPolicy: {
+        async reserveAnswer() {
+          return {
+            async commit() { throw new Error("not used"); },
+            async release() {
+              releaseCalls += 1;
+              throw releaseFailure;
+            },
+          };
+        },
+        async reserveDocument() { throw new Error("not used"); },
+        async reserveIndexedStorage() { throw new Error("not used"); },
+        async reserveMonthlyIndexedContent() { throw new Error("not used"); },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toBe(releaseFailure);
+    expect({ releaseCalls, leaseReleaseCalls: calls.leaseRelease }).toEqual({ releaseCalls: 1, leaseReleaseCalls: 1 });
+    expect(calls.auditEvents.filter((event) => event.eventType === "audience_pulse.refresh_failed")).toEqual([
+      expect.objectContaining({ metadata: expect.objectContaining({ outcome: "internal" }) }),
+    ]);
   });
 
   it("invalidates the whole saved revision when any full prompt evidence reference cannot rehydrate", async () => {

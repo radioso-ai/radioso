@@ -160,6 +160,25 @@ describe("Audience Pulse routes", () => {
     expect(service.refreshSignalAborted).toBe(false);
   });
 
+  it("returns 500 when refresh accounting fails instead of reporting an unavailable result", async () => {
+    const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
+    const service = new CapturingService();
+    service.refresh = async () => {
+      service.refreshes += 1;
+      throw new Error("usage release failed");
+    };
+
+    const response = await request(createApp(service, calls))
+      .post("/api/v1/quality/audience-pulse")
+      .set("Cookie", "radioso_session=valid-session")
+      .set("X-Workspace-Id", WORKSPACE_ID);
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: { code: "internal_error" } });
+    expect(calls).toEqual({ bearer: 0, permission: 1, rate: 1, permissions: ["workspace.quality.read"] });
+    expect(service.refreshes).toBe(1);
+  });
+
   it("uses a dashboard session and history permission for a body-only bounded evidence anchor", async () => {
     const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
     const service = new CapturingService();

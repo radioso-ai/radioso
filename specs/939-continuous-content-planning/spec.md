@@ -329,9 +329,11 @@ during a request.
    analysis agent.
 5. The service validates the model result, verifies every evidence ID against the
    submitted sample, calculates all displayed counts, pulse cells, recurrence checks,
-   theme grounding summaries, and content-gap eligibility server-side, and atomically
-   replaces the workspace's saved snapshot. It commits the usage reservation only after
-   that save, otherwise releases it, and records a content-free audit outcome.
+   theme grounding summaries, and content-gap eligibility server-side. Once the model
+   result is validated, it commits the usage reservation before atomically replacing the
+   workspace's saved snapshot so provider work remains metered if a later persistence
+   operation fails; it releases only work that did not reach a validated completion and
+   records a content-free audit outcome.
 6. On every saved-report read, the service reauthorizes and rehydrates every source
    reference from the full prompt evidence set, not merely references rendered in a
    theme or recommendation. If any source is unavailable, it conditionally invalidates
@@ -412,9 +414,10 @@ Build only these reusable seams before or as the first slice of Audience Pulse:
    tool and not a document-write API.
 5. **Cost and concurrency guard**: a database-backed, replica-safe workspace run lease,
    dedicated durable refresh rate limit, and usage reservation seam. A refresh reserves
-   only before a provider call, commits only after an atomic save, and releases both
-   lease and reservation on every failed, cancelled, or unsaved path. The lease has
-   automatic crash recovery through the database.
+   only before a provider call and commits after validated model work, before the atomic
+   snapshot save, so a later persistence failure cannot make provider work unmetered. It
+   releases the reservation only when the model work is cancelled, invalid, or never
+   completes; the lease has automatic crash recovery through the database.
 
 ### Deliberate non-architecture
 
@@ -655,8 +658,10 @@ from the verified evidence IDs.
   document-write endpoint or persist a draft. Only the existing composer’s explicit Save
   action may create a document.
 - **FR-031**: The provider path MUST reserve the existing usage allowance only after a
-  no-traffic check and run-gate acquisition, commit it only after atomic snapshot save,
-  and release it on provider, validation, cancellation, or any unsaved failure path.
+  no-traffic check and run-gate acquisition. It MUST commit a validated model completion
+  before the atomic snapshot save and release only when model work is cancelled, invalid,
+  or never completes. History, snapshot, and usage-accounting failures MUST propagate as
+  server errors rather than being presented as retryable provider unavailability.
 - **FR-032**: The frontend MUST disable repeat submission while its request is active
   and use the existing request-cancellation behavior when the workspace changes or the
   page unmounts; this is supplementary to, not a substitute for, the server run gate.
@@ -841,5 +846,6 @@ uses that form's usual Save action.
   cannot make more than one provider call for a workspace across application replicas;
   a crashed refresh lease recovers safely.
 - **SC-013**: Focused backend tests prove usage is reserved only for provider work,
-  committed only after an atomic snapshot save, and released on every unsaved path;
-  audit/telemetry fixtures contain only safe identifiers, outcome, counts, and duration.
+  retained after a validated model completion even when snapshot persistence or usage
+  accounting fails, and released only before model completion; audit/telemetry fixtures
+  contain only safe identifiers, outcome, counts, and duration.

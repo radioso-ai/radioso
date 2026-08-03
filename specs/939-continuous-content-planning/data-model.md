@@ -72,6 +72,13 @@ product rules.
 `no_support`, or `retrieval.answer:grounded_degraded` with `degraded`. All human,
 unpaired, unknown, unavailable, out-of-scope, and other-skill states are false.
 
+Recommendation prose remains model-authored, but its visible evidence is server-bound.
+When a recommendation names a valid parent theme yet cites an insufficient subset, the
+server deterministically binds it to two qualifying parent evidence items from distinct
+conversations. If the parent has no recurring qualifying evidence, the advisory
+recommendation is omitted. Unknown evidence and evidence outside the parent theme still
+invalidate the model result.
+
 ## Browser-only Draft Intent
 
 `sessionStorage` contains `{ accountId, workspaceId, title, content }`. `content` is a

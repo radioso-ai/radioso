@@ -31,7 +31,7 @@ export const AUDIENCE_PULSE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
           properties: {
             title: { type: "string", minLength: 1, maxLength: 120 },
             description: { type: "string", minLength: 1, maxLength: 500 },
-            evidenceIds: { type: "array", minItems: 1, maxItems: 12, items: { type: "string", maxLength: 80 } },
+            evidenceIds: { type: "array", minItems: 2, maxItems: 12, items: { type: "string", maxLength: 80 } },
           },
         },
       },
@@ -47,7 +47,7 @@ export const AUDIENCE_PULSE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
             title: { type: "string", minLength: 1, maxLength: 160 },
             rationale: { type: "string", minLength: 1, maxLength: 500 },
             questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: 240 } },
-            evidenceIds: { type: "array", minItems: 1, maxItems: 12, items: { type: "string", maxLength: 80 } },
+            evidenceIds: { type: "array", minItems: 2, maxItems: 12, items: { type: "string", maxLength: 80 } },
           },
         },
       },
@@ -74,6 +74,7 @@ const toPromptInput = (snapshot: AudiencePulseHistorySnapshot) => ({
   weeklyVolume: snapshot.weeklyVolume,
   evidence: snapshot.evidence.map((item) => ({
     id: item.id,
+    conversationId: item.reference.conversationId,
     weekStart: item.weekStart,
     grounding: item.grounding,
     contentGapEligible: item.contentGapEligible,

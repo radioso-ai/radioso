@@ -4,6 +4,7 @@ import type { AudiencePulseHistorySnapshot } from "../../../src/modules/audience
 import {
   AUDIENCE_PULSE_MAX_OUTPUT_TOKENS,
   AUDIENCE_PULSE_MAX_TOTAL_TOKENS,
+  AUDIENCE_PULSE_RESPONSE_FORMAT,
   boundAudiencePulseHistoryForPrompt,
   buildAudiencePulsePrompt,
 } from "../../../src/modules/audiencePulse/services/prompt.js";
@@ -60,5 +61,26 @@ describe("Audience Pulse prompt", () => {
     expect(prompt).toContain("\\u003c/audience-pulse-input\\u003e");
     expect(payload).toBeDefined();
     expect(JSON.parse(payload!).evidence[0].question).toContain(injected);
+  });
+
+  it("gives the model the recurrence inputs and output bounds needed for safe recommendations", () => {
+    const prompt = buildAudiencePulsePrompt(snapshotWithQuestion("How do I change my plan?", 2));
+    const payload = prompt.match(/<audience-pulse-input>\n([\s\S]*)\n<\/audience-pulse-input>$/)?.[1];
+    const responseSchema = AUDIENCE_PULSE_RESPONSE_FORMAT.schema as {
+      properties: {
+        themes: { items: { properties: { evidenceIds: { minItems?: number } } } };
+        recommendations: { items: { properties: { evidenceIds: { minItems?: number } } } };
+      };
+    };
+
+    expect(JSON.parse(payload!).evidence[0]).toMatchObject({
+      id: "evidence-1",
+      conversationId: "10000000-0000-0000-0000-000000000001",
+      contentGapEligible: false,
+    });
+    expect(prompt).toContain("two or more different evidence IDs");
+    expect(prompt).toMatch(/two\s+different `conversationId` values/);
+    expect(responseSchema.properties.themes.items.properties.evidenceIds.minItems).toBe(2);
+    expect(responseSchema.properties.recommendations.items.properties.evidenceIds.minItems).toBe(2);
   });
 });

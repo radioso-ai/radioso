@@ -81,21 +81,21 @@ export interface AudiencePulseStoredReport {
 }
 
 const boundedText = (max: number) => z.string().trim().min(1).max(max);
-const evidenceIdsSchema = z.array(z.string().trim().min(1).max(80)).min(1).max(12);
+const evidenceIdsSchema = (minimum: number) => z.array(z.string().trim().min(1).max(80)).min(minimum).max(12);
 
 export const audiencePulseModelOutputSchema = z.object({
   summary: boundedText(600),
   themes: z.array(z.object({
     title: boundedText(120),
     description: boundedText(500),
-    evidenceIds: evidenceIdsSchema,
+    evidenceIds: evidenceIdsSchema(2),
   }).strict()).max(8),
   recommendations: z.array(z.object({
     themeIndex: z.number().int().min(0).max(7),
     title: boundedText(160),
     rationale: boundedText(500),
     questions: z.array(boundedText(240)).min(1).max(8),
-    evidenceIds: evidenceIdsSchema,
+    evidenceIds: evidenceIdsSchema(2),
   }).strict()).max(8),
   caveats: z.array(boundedText(320)).max(6),
 }).strict();
@@ -164,6 +164,22 @@ const recurringGap = (items: AudiencePulseEvidence[]): {
   };
 };
 
+const pickRecurringContentGapEvidenceIds = (
+  theme: AudiencePulseStoredTheme,
+  evidenceById: Map<string, AudiencePulseEvidence>,
+): string[] => {
+  const conversationIds = new Set<string>();
+  const evidenceIds: string[] = [];
+  for (const evidenceId of theme.evidenceIds) {
+    const item = evidenceById.get(evidenceId);
+    if (!item?.contentGapEligible || conversationIds.has(item.reference.conversationId)) continue;
+    evidenceIds.push(evidenceId);
+    conversationIds.add(item.reference.conversationId);
+    if (evidenceIds.length === 2) return evidenceIds;
+  }
+  return [];
+};
+
 const resolveEvidence = (
   ids: string[],
   evidenceById: Map<string, AudiencePulseEvidence>,
@@ -225,7 +241,7 @@ export const buildAudiencePulseReport = (input: {
     }] : [];
   });
 
-  const recommendations = model.recommendations.map((recommendation, recommendationIndex): AudiencePulseStoredRecommendation => {
+  const recommendations = model.recommendations.flatMap((recommendation, recommendationIndex): AudiencePulseStoredRecommendation[] => {
     const parentTheme = themes[recommendation.themeIndex];
     if (!parentTheme) {
       throw new AudiencePulseReportValidationError("Recommendation references an unknown theme");
@@ -236,19 +252,18 @@ export const buildAudiencePulseReport = (input: {
       throw new AudiencePulseReportValidationError("Recommendation evidence must be a subset of its parent theme");
     }
     const gap = recurringGap(items);
-    if (!gap.qualifies) {
-      throw new AudiencePulseReportValidationError(
-        "Recommendation requires two content-gap-eligible evidence items from distinct conversations",
-      );
-    }
-    return {
+    const evidenceIds = gap.qualifies
+      ? [...recommendation.evidenceIds]
+      : pickRecurringContentGapEvidenceIds(parentTheme, evidenceById);
+    if (evidenceIds.length === 0) return [];
+    return [{
       id: `recommendation-${recommendationIndex + 1}`,
       themeId: parentTheme.id,
       title: recommendation.title,
       rationale: recommendation.rationale,
       questions: [...recommendation.questions],
-      evidenceIds: [...recommendation.evidenceIds],
-    };
+      evidenceIds,
+    }];
   });
 
   return {

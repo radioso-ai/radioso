@@ -12,11 +12,13 @@
 
 export type UsageEventStatus = "succeeded" | "failed";
 export type UsageEventQuality = "actual" | "estimated";
+export type UsageEventKind = "model" | "embedding" | "unknown";
 
 export interface EmbeddingUsageEvent {
   idempotencyKey: string;
   accountId?: string | null;
   workspaceId: string;
+  agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
   surface?: string;
@@ -48,6 +50,7 @@ export interface ModelUsageEvent {
   idempotencyKey: string;
   accountId?: string | null;
   workspaceId: string;
+  agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
   surface: string;
@@ -56,6 +59,7 @@ export interface ModelUsageEvent {
   model: string;
   inputTokens?: number | null;
   outputTokens?: number | null;
+  reasoningTokens?: number | null;
   totalTokens?: number | null;
   inputBytes?: number | null;
   outputBytes?: number | null;

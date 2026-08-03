@@ -5,6 +5,7 @@ export type {
   EmbeddingUsageEvent,
   ModelUsageEvent,
   UsageEventQuality,
+  UsageEventKind,
   UsageEventRecorder,
   UsageEventStatus,
 } from "@radioso/usage-contract";

@@ -153,6 +153,7 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
       idempotencyKey: buildUsageIdempotencyKey(input.operation, identity.provider, identity.model, status),
       accountId: input.operation.accountId ?? null,
       workspaceId: input.operation.workspaceId,
+      agentId: input.operation.agentId ?? null,
       conversationId: input.operation.conversationId ?? null,
       messageId: input.operation.messageId ?? null,
       surface: input.operation.surface,

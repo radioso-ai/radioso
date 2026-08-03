@@ -1,6 +1,7 @@
 ---
 title: Accounts and users
 description: List accounts, invite users, manage organization roles, and switch account context.
+last_updated: 2026-08-03
 ---
 
 # Accounts and users
@@ -15,7 +16,7 @@ Use these routes after a session has already been established.
 2. Switch the active account if needed.
 3. List current users, invitations, and workspace grants for that account.
 4. Create invitations, update roles, assign workspace grants, or remove access.
-5. Read usage trends when a member needs account-level activity reporting.
+5. Read aggregate trends or detailed AI usage when a member needs account-level activity reporting.
 
 Organization roles are scoped to one account:
 
@@ -46,6 +47,23 @@ Use `granularity=day`, `granularity=week`, or `granularity=month`. `from` and `t
 You can narrow the report with `workspaceId` and `agentId`. Both filters must belong to the current account. Token usage is directly scoped by account and workspace. When `agentId` is supplied, token events are attributed through their conversation. Token events without a conversation are not included in agent-filtered token totals because they cannot be tied to an agent.
 
 The report returns aggregate counts only. It does not return message content, prompts, completions, retrieved chunks, or document content.
+
+## Detailed AI usage
+
+Use detailed usage when you need to understand the model and embedding work behind a date range, rather than just its aggregate trend. Any active account member can read the two views:
+
+```text
+GET /api/v1/account/usage/messages?from=2026-06-01&to=2026-06-30
+GET /api/v1/account/usage/internal-operations?from=2026-06-01&to=2026-06-30
+```
+
+`/usage/messages` returns one summary for each visitor-facing user message. Its `modelTokens` and `embeddingTokens` fields stay separate: model totals include input, completion, reasoning coverage, and—when reasoning coverage is complete—visible output. Each summary also includes its `messageId` and `conversationId`, which lets the dashboard open that turn without returning the message body. Embedding input and vector counts remain a separate subtotal, so a retrieval embedding cannot change the message's reasoning or visible-output figure.
+
+`/usage/internal-operations` returns one event at a time. It covers work such as agent setup, dashboard test chat, evals, directive drafting and coherence checks, metadata generation, document processing, and provider attempts that have no visitor message. Each row includes a stable operation label, provider and model, event kind, status, usage quality, token dimensions when available, and embedding vector count when applicable.
+
+Both endpoints accept inclusive UTC `from` and `to` dates in `YYYY-MM-DD` form, an optional account-owned `workspaceId`, `limit` from 1 through 100 (50 by default), and an opaque `cursor` for the next page. The date range can span at most 90 days. A workspace filter that belongs to another account returns `400`.
+
+The responses are deliberately operational rather than conversational. They return attribution and token accounting, never prompt text, model completion text, message bodies, document content, provider request IDs, idempotency keys, or error details.
 
 ## Invite a user
 
@@ -111,6 +129,8 @@ Exact request and response schemas for these routes live in the [API Reference](
 GET    /api/v1/account/users
 GET    /api/v1/account/accounts
 GET    /api/v1/account/usage-trends
+GET    /api/v1/account/usage/messages
+GET    /api/v1/account/usage/internal-operations
 POST   /api/v1/account/accounts
 POST   /api/v1/account/invitations
 POST   /api/v1/account/switch
@@ -124,6 +144,7 @@ DELETE /api/v1/account/users/{membershipId}
 ## Common failure modes
 
 - `401` means the session is missing or no longer valid.
+- `400` means a usage range, cursor, page limit, or workspace filter is invalid for the current account.
 - `403` means the caller lacks the required permission. It is also returned when an open-source user attempts to create an additional organization.
 - `404` means the membership does not exist in the current account.
 - `409` usually means the requested removal would violate an account rule.

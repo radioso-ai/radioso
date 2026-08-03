@@ -85,6 +85,7 @@ describe("DirectiveAuthorService", () => {
     expect(textGenerationClient.calls[0]?.prompt).toContain("Coachable assistant");
     expect(textGenerationClient.calls[0]?.operation).toMatchObject({
       workspaceId,
+      agentId,
       surface: "agents",
       operation: "draft_directive",
       attemptKey: "primary",

@@ -13,6 +13,7 @@ import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchem
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
+import { registerUsageDetailsSchemas } from "./schemas/usageDetailsSchemas.js";
 import { registerContextVariableSchemas } from "./schemas/contextVariableSchemas.js";
 
 extendZodWithOpenApi(z);
@@ -194,6 +195,9 @@ export interface OpenApiSchemaCatalog {
   UsageTrendGranularitySchema: z.ZodTypeAny;
   UsageTrendsQuerySchema: RouteParameterSchema;
   UsageTrendsResponseSchema: z.ZodTypeAny;
+  UsageDetailsQuerySchema: RouteParameterSchema;
+  MessageUsageResponseSchema: z.ZodTypeAny;
+  InternalUsageResponseSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
   ReprocessIngestionRequestSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
@@ -331,6 +335,7 @@ export const createOpenApiRegistry = () => {
   registerConnectorSchemas(registry, schemas);
   registerQualitySchemas(registry, schemas);
   registerUsageTrendSchemas(registry, schemas);
+  registerUsageDetailsSchemas(registry, schemas);
   registerContextVariableSchemas(registry, schemas);
 
   return {

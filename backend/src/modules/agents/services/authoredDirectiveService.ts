@@ -52,7 +52,7 @@ export class AuthoredDirectiveService {
     const directive = this.validateInput(input);
     await this.validateBinding(workspaceId, agentId, directive);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
-    const coherence = await this.checkCoherence(agent, directive, existingDirectives);
+    const coherence = await this.checkCoherence(workspaceId, agent, directive, existingDirectives);
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
       ...directive,
       routes: [],
@@ -88,7 +88,7 @@ export class AuthoredDirectiveService {
     });
     await this.validateBinding(workspaceId, agentId, directive);
     const comparisonDirectives = existingDirectives.filter((directiveToCompare) => directiveToCompare.id !== directiveId);
-    const coherence = await this.checkCoherence(agent, directive, comparisonDirectives);
+    const coherence = await this.checkCoherence(workspaceId, agent, directive, comparisonDirectives);
     const saved = await this.options.repository.updateDirective(agentId, workspaceId, directiveId, {
       ...directive,
       routes: [],
@@ -149,12 +149,14 @@ export class AuthoredDirectiveService {
   }
 
   private async checkCoherence(
+    workspaceId: string,
     agent: AuthoredDirectiveAgentContext,
     candidate: NormalizedAuthoredDirectiveInput,
     existingDirectives: AuthoredDirective[],
   ): Promise<DirectiveCoherenceVerdict> {
     try {
       return await this.options.coherenceChecker.check({
+        invocationContext: { workspaceId, agentId: agent.id },
         agent: {
           id: agent.id,
           name: agent.name,

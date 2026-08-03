@@ -38,6 +38,7 @@ const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe
 
 describeIfDatabase("usage ledger OSS migration", () => {
   const ledgerMigrationFile = "067_usage_ledger_oss.sql";
+  const detailDimensionsMigrationFile = "134_usage_event_detail_dimensions.sql";
 
   let database: Database;
   let accountRepository: AccountRepository;
@@ -92,18 +93,26 @@ describeIfDatabase("usage ledger OSS migration", () => {
       model: "gpt-test",
       inputTokens: 100,
       outputTokens: 20,
+      reasoningTokens: 8,
       totalTokens: 120,
       status: "succeeded",
       usageQuality: "actual",
     });
 
-    const rows = await database.query<{ total_tokens: string; operation: string }>(
-      "SELECT total_tokens, operation FROM usage_events WHERE idempotency_key = $1",
+    const rows = await database.query<{
+      total_tokens: string;
+      operation: string;
+      reasoning_tokens: string | null;
+      event_kind: string;
+    }>(
+      "SELECT total_tokens, operation, reasoning_tokens, event_kind FROM usage_events WHERE idempotency_key = $1",
       [idempotencyKey],
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].operation).toBe("answer");
     expect(Number(rows[0].total_tokens)).toBe(120);
+    expect(Number(rows[0].reasoning_tokens)).toBe(8);
+    expect(rows[0].event_kind).toBe("model");
   });
 
   it("does not double-count a replayed idempotency key", async () => {
@@ -156,14 +165,23 @@ describeIfDatabase("usage ledger OSS migration", () => {
       chunks: [{ chunkIndex: 0, contentBytes: 512, estimatedTokens: 128 }],
     });
 
-    const events = await database.query<{ id: string; operation: string; total_tokens: string; vector_count: string }>(
-      "SELECT id, operation, total_tokens, vector_count FROM usage_events WHERE idempotency_key = $1",
+    const events = await database.query<{
+      id: string;
+      operation: string;
+      total_tokens: string;
+      vector_count: string;
+      event_kind: string;
+      reasoning_tokens: string | null;
+    }>(
+      "SELECT id, operation, total_tokens, vector_count, event_kind, reasoning_tokens FROM usage_events WHERE idempotency_key = $1",
       [idempotencyKey],
     );
     expect(events).toHaveLength(1);
     expect(events[0].operation).toBe("embedding");
     expect(Number(events[0].total_tokens)).toBe(200);
     expect(Number(events[0].vector_count)).toBe(1);
+    expect(events[0].event_kind).toBe("embedding");
+    expect(events[0].reasoning_tokens).toBeNull();
 
     const items = await database.query<{ chunk_index: number; content_bytes: string }>(
       "SELECT chunk_index, content_bytes FROM embedding_usage_items WHERE usage_event_id = $1",
@@ -214,6 +232,42 @@ describeIfDatabase("usage ledger OSS migration", () => {
       [accountId],
     );
     expect(Number(rollups[0].count)).toBe(0);
+  });
+
+  it("classifies historical rows only when durable evidence exists", async () => {
+    const { accountId, workspaceId } = await seedWorkspace();
+    const keyPrefix = `usage-history-test-${randomUUID()}`;
+    const modelKey = `model:${keyPrefix}`;
+    const embeddingKey = `embedding:${keyPrefix}`;
+    const unknownKey = `legacy:${keyPrefix}`;
+
+    // Simulate the nullable column state immediately after it is added, then
+    // replay the real migration. A failed zero-vector legacy row has no durable
+    // proof of its type and must remain unknown.
+    await database.query("ALTER TABLE usage_events ALTER COLUMN event_kind DROP NOT NULL");
+    await database.query(
+      `INSERT INTO usage_events (
+         id, idempotency_key, account_id, workspace_id, surface, operation, provider, model,
+         input_tokens, output_tokens, total_tokens, vector_count, event_kind, status, usage_quality, occurred_at
+       ) VALUES
+         ($1, $2, $3, $4, 'assistant', 'answer', 'openai', 'gpt-test', 1, 1, 2, 0, NULL, 'succeeded', 'actual', NOW()),
+         ($5, $6, $3, $4, 'documents', 'embedding', 'openai', 'text-embedding-3-small', 1, 0, 1, 0, NULL, 'failed', 'estimated', NOW()),
+         ($7, $8, $3, $4, 'legacy', 'unknown', 'openai', 'old-model', 1, 0, 1, 0, NULL, 'failed', 'estimated', NOW())`,
+      [randomUUID(), modelKey, accountId, workspaceId, randomUUID(), embeddingKey, randomUUID(), unknownKey],
+    );
+
+    const migrationSql = await readFile(path.join(testMigrationsPath, detailDimensionsMigrationFile), "utf8");
+    await database.pool.query(migrationSql);
+
+    const rows = await database.query<{ idempotency_key: string; event_kind: string }>(
+      "SELECT idempotency_key, event_kind FROM usage_events WHERE idempotency_key IN ($1, $2, $3)",
+      [modelKey, embeddingKey, unknownKey],
+    );
+    expect(Object.fromEntries(rows.map((row) => [row.idempotency_key, row.event_kind]))).toEqual({
+      [modelKey]: "model",
+      [embeddingKey]: "embedding",
+      [unknownKey]: "unknown",
+    });
   });
 
   it("renames legacy ee_usage_* tables in place without losing rows", async () => {

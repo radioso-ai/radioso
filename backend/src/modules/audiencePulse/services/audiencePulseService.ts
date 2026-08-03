@@ -351,8 +351,12 @@ export class AudiencePulseService implements AudiencePulsePort {
       eventStatus,
       metadata,
     });
-    const log = eventStatus === "success" ? this.deps.logger?.info : this.deps.logger?.warn;
-    log?.({ workspaceId: input.workspaceId, outcome, durationMs, ...counts }, "audience_pulse_refresh");
+    const context = { workspaceId: input.workspaceId, outcome, durationMs, ...counts };
+    if (eventStatus === "success") {
+      this.deps.logger?.info?.(context, "audience_pulse_refresh");
+    } else {
+      this.deps.logger?.warn?.(context, "audience_pulse_refresh");
+    }
   }
 }
 

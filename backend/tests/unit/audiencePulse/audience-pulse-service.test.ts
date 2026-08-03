@@ -304,6 +304,31 @@ describe("AudiencePulseService", () => {
     }
   });
 
+  it("keeps a validation failure available when the injected logger needs its receiver", async () => {
+    const logger = {
+      warningCount: 0,
+      warn(this: { warningCount: number }, _context: Record<string, unknown>, _message: string) {
+        this.warningCount += 1;
+      },
+    };
+    const { service } = createService({
+      logger,
+      inferenceFactory: {
+        async create() {
+          return {
+            metadata: { capability: "chat", provider: "openai", model: "test" },
+            async complete() { return { text: "not json" }; },
+            stream() { throw new Error("not used"); },
+          };
+        },
+      },
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toEqual({ kind: "unavailable", reason: "validation" });
+    expect(logger.warningCount).toBe(1);
+  });
+
   it("returns distinct busy and usage-limit outcomes without a provider call and records safe audit outcomes", async () => {
     const busy = createService({
       runGate: { async tryAcquire() { return null; } },

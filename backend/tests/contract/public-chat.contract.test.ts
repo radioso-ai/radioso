@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import request from "supertest";
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 import { resetRateLimiterState } from "../../src/app/http/middleware/anonymousRateLimiter.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
 import { signVisitorIdentity } from "../../src/modules/context-variables/public.js";
@@ -72,7 +72,7 @@ describe("public chat contract", () => {
     // conversation with this message"). The message must be answered, not
     // silently dropped for an empty greeting (which 204s and looks like a failure
     // to browser clients).
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "public-chat-startconv-message@example.com");
 
     await request(app)
@@ -198,6 +198,85 @@ describe("public chat contract", () => {
     expect(allPrompts).not.toContain("https://example.com/retreats");
     expect(allPrompts).not.toContain("Summer retreats are open for registration.");
     expect(allPrompts).not.toContain("Visible page excerpt");
+  });
+
+  it("persists the first website embed page URL in operator history", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-entry-page@example.com");
+    const origin = "https://example.com";
+    const firstPageUrl = `${origin}/first-page`;
+    const secondPageUrl = `${origin}/second-page`;
+
+    const settings = await request(app)
+      .put("/api/v1/settings/general")
+      .set(adminSessionHeaders(session))
+      .send({
+        websiteEmbedEnabled: true,
+        websiteEmbedAllowedOrigins: [origin],
+      });
+    expect(settings.status).toBe(200);
+    const publicChatToken = settings.body.websiteEmbedToken as string;
+
+    const publicSession = await request(app)
+      .post(`/api/v1/public/chat/${publicChatToken}/sessions`)
+      .set("Origin", origin)
+      .send({ channel: "website_embed" });
+    expect(publicSession.status).toBe(200);
+
+    const first = await request(app)
+      .post(`/api/v1/public/chat/${publicChatToken}`)
+      .set("Origin", origin)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .send({
+        message: "Tell me about this page.",
+        stream: false,
+        pageContext: {
+          pageUrl: firstPageUrl,
+          pageTitle: "First page",
+          pageLocale: "en",
+          browserLocale: "en-US",
+          content: "The first page content.",
+        },
+      });
+    expect(first.status).toBe(200);
+
+    const anonCookie = findAnonymousCookie(first.headers["set-cookie"]);
+    const second = await request(app)
+      .post(`/api/v1/public/chat/${publicChatToken}`)
+      .set("Origin", origin)
+      .set("x-radioso-public-session", publicSession.body.publicSessionToken)
+      .set("Cookie", anonCookie!)
+      .send({
+        message: "Tell me about this page now.",
+        stream: false,
+        conversationId: first.body.conversationId,
+        pageContext: {
+          pageUrl: secondPageUrl,
+          pageTitle: "Second page",
+          pageLocale: "en",
+          browserLocale: "en-US",
+          content: "The second page content.",
+        },
+      });
+    expect(second.status).toBe(200);
+    expect(second.body.conversationId).toBe(first.body.conversationId);
+
+    const history = await request(app)
+      .get("/api/v1/history")
+      .set(adminSessionHeaders(session));
+
+    expect(history.status).toBe(200);
+    expect(history.body.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "chat",
+          id: first.body.conversationId,
+          conversation: expect.objectContaining({
+            entryPageUrl: firstPageUrl,
+          }),
+        }),
+      ]),
+    );
   });
 
   it("uses a valid signed identity to unlock customer-scoped context and treats invalid identity as anonymous", async () => {
@@ -554,6 +633,62 @@ describe("public chat contract", () => {
     expect(Array.isArray(assistantTurn?.answerSegments)).toBe(true);
     expect(detail.body.nextCursor).toBeNull();
     expect(detail.body.hasOlderMessages).toBe(false);
+  });
+
+  it("keeps operator agent details and entry provenance off the public conversation detail", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestToken(app, "public-chat-detail-boundary@example.com");
+    const authorization = `Bearer ${session.token}`;
+    const agent = await request(app)
+      .post("/api/v1/agents")
+      .set("Authorization", authorization)
+      .send({ name: "Public support", internalName: "Website support" })
+      .expect(201);
+    await request(app)
+      .put(`/api/v1/agents/${agent.body.id}`)
+      .set("Authorization", authorization)
+      .send({ surfaceSettings: { anonymousChat: { enabled: true } } })
+      .expect(200);
+    const tokenResponse = await request(app)
+      .post(`/api/v1/agents/${agent.body.id}/anonymous-chat-token/rotate`)
+      .set("Authorization", authorization)
+      .expect(200);
+    const chatToken = tokenResponse.body.surfaceSettings.anonymousChat.token as string;
+    const publicSession = await createPublicSession(app, chatToken);
+    const conversation = await repositories.conversationRepository.create(
+      session.workspaceId,
+      agent.body.id,
+      "anonymous",
+      publicSession.publicSessionId,
+      null,
+      null,
+      null,
+      { entryPageUrl: "https://example.com/support" },
+    );
+    expect(conversation.agentId).toBe(agent.body.id);
+    const storedConversation = repositories.conversationRepository.items.get(conversation.id);
+    if (!storedConversation) {
+      throw new Error("conversation fixture was not stored");
+    }
+    storedConversation.agentName = "Public support";
+    storedConversation.agentInternalName = "Website support";
+
+    const publicDetail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${conversation.id}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken);
+    const operatorDetail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+
+    expect(publicDetail.status).toBe(200);
+    expect(publicDetail.body).not.toHaveProperty("agentInternalName");
+    expect(publicDetail.body).not.toHaveProperty("entryPageUrl");
+    expect(operatorDetail.status).toBe(200);
+    expect(operatorDetail.body).toMatchObject({
+      agentName: "Public support",
+      agentInternalName: "Website support",
+      entryPageUrl: "https://example.com/support",
+    });
   });
 
   it("streams public chat responses with SSE event framing", async () => {

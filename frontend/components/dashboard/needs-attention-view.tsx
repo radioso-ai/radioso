@@ -38,6 +38,7 @@ import {
 import { getApiErrorMessage } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { cn } from '@/lib/utils'
 import {
   buildInboxModel,
@@ -401,8 +402,8 @@ function InboxRow({
             <span className="block truncate text-sm font-medium leading-5 text-foreground">
               {item.title}
             </span>
-            {item.agentName ? (
-              <span className="block truncate text-xs text-muted-foreground">{item.agentName}</span>
+            {item.agentName || item.agentInternalName ? (
+              <span className="block truncate text-xs text-muted-foreground">{getAgentOperatorLabel({ internalName: item.agentInternalName, name: item.agentName }, 'Unknown agent')}</span>
             ) : null}
           </div>
         ) : (
@@ -487,7 +488,9 @@ function MobileInboxRow({
       </p>
       <div className="flex min-h-11 items-center justify-between gap-3">
         <span className="truncate text-xs text-muted-foreground">
-          {item.agentName ?? (item.type === 'handoff' ? item.detail : '')}
+          {item.type === 'negative_feedback'
+            ? getAgentOperatorLabel({ internalName: item.agentInternalName, name: item.agentName }, 'Unknown agent')
+            : (item.agentName ?? (item.type === 'handoff' ? item.detail : ''))}
         </span>
         <div className="flex items-center gap-2">
           <Button

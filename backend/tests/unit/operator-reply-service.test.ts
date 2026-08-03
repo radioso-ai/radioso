@@ -8,11 +8,13 @@ const conversation: ConversationRecord = {
   workspaceId: "workspace-1",
   agentId: null,
   agentName: null,
+  agentInternalName: null,
   sourceChannel: "authenticated_chat",
   sourceOrigin: null,
   channelContext: null,
   anonymousSessionId: null,
   verifiedCustomerId: null,
+  entryPageUrl: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   updatedAt: new Date("2026-01-01T00:00:00Z"),
 };

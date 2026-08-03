@@ -5516,10 +5516,12 @@ export interface components {
             /** Format: uuid */
             agentId: string | null;
             agentName: string | null;
+            agentInternalName: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             anonymousSessionId: string | null;
+            entryPageUrl: string | null;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -5713,8 +5715,11 @@ export interface components {
             workspaceId: string;
             /** Format: uuid */
             agentId: string | null;
+            agentName?: string | null;
+            agentInternalName?: string | null;
             sourceChannel: string | null;
             sourceOrigin: string | null;
+            entryPageUrl?: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;
             /** Format: date-time */
             createdAt: string;
@@ -5903,6 +5908,7 @@ export interface components {
             /** Format: uuid */
             agentId: string | null;
             agentName: string | null;
+            agentInternalName: string | null;
             channel: string | null;
             question: string | null;
             answerPreview: string;
@@ -6433,6 +6439,13 @@ export interface components {
                 createdAt: string;
                 /** Format: date-time */
                 updatedAt: string;
+                agent?: {
+                    /** Format: uuid */
+                    agentId: string | null;
+                    name: string | null;
+                    internalName: string | null;
+                    deleted: boolean;
+                };
             };
             snapshot: {
                 /** Format: uuid */

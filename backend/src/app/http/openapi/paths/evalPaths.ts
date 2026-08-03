@@ -110,6 +110,12 @@ const EvalCaseSchema = z.object({
   lastRunId: z.string().uuid().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  agent: z.object({
+    agentId: z.string().uuid().nullable(),
+    name: z.string().nullable(),
+    internalName: z.string().nullable(),
+    deleted: z.boolean(),
+  }).optional(),
 });
 
 const EvalSnapshotMessageSchema = z.object({

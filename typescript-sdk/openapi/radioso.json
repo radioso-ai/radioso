@@ -10772,6 +10772,12 @@
               "null"
             ]
           },
+          "agentInternalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sourceChannel": {
             "type": [
               "string",
@@ -10798,6 +10804,12 @@
             ]
           },
           "anonymousSessionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entryPageUrl": {
             "type": [
               "string",
               "null"
@@ -10837,10 +10849,12 @@
           "id",
           "agentId",
           "agentName",
+          "agentInternalName",
           "sourceChannel",
           "sourceOrigin",
           "channelContext",
           "anonymousSessionId",
+          "entryPageUrl",
           "createdAt",
           "updatedAt",
           "messageCount",
@@ -11535,6 +11549,18 @@
             ],
             "format": "uuid"
           },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "agentInternalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "sourceChannel": {
             "type": [
               "string",
@@ -11542,6 +11568,12 @@
             ]
           },
           "sourceOrigin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entryPageUrl": {
             "type": [
               "string",
               "null"
@@ -12383,6 +12415,12 @@
               "null"
             ]
           },
+          "agentInternalName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "channel": {
             "type": [
               "string",
@@ -12471,6 +12509,7 @@
           "conversationId",
           "agentId",
           "agentName",
+          "agentInternalName",
           "channel",
           "question",
           "answerPreview",
@@ -14539,6 +14578,39 @@
               "updatedAt": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "agent": {
+                "type": "object",
+                "properties": {
+                  "agentId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "uuid"
+                  },
+                  "name": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "internalName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "deleted": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "agentId",
+                  "name",
+                  "internalName",
+                  "deleted"
+                ]
               }
             },
             "required": [

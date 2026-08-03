@@ -13,7 +13,6 @@ This guide covers the main things you are likely to do first with the SDK.
 import { createRadiosoClient, RadiosoError } from '@radioso/typescript-sdk'
 
 const client = createRadiosoClient({
-  baseUrl: 'https://your-radioso-instance.example.com',
   apiToken: process.env.RADIOSO_API_TOKEN!,
 })
 ```
@@ -390,7 +389,7 @@ try {
 
 ## Notes
 
-- `baseUrl` should be the Radioso server origin, without a trailing slash.
+- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — a workspace API token only works against the instance that issued it.
 - The SDK sends the API token as `Authorization: Bearer <token>`.
 - Streaming chat is layered on top of `POST /api/v1/assistant/chat`, with `stream: true`.
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.

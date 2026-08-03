@@ -1,14 +1,6 @@
 import { AppError, tooManyRequests, serviceUnavailable } from "../../../shared/domain/errors.js";
 import type { AbuseControlEntry, AbuseControlRepositoryPort } from "../../../db/repositories/abuseControlRepository.js";
-
-export interface AbuseControlPolicy {
-  scope: string;
-  subjectKey: string;
-  limit: number;
-  windowMs: number;
-  blockMs?: number;
-  now?: Date;
-}
+import type { AbuseControlPolicy, AbuseControlPort } from "../contracts/abuseControl.js";
 
 export interface AbuseControlResult {
   enforced: boolean;
@@ -16,7 +8,7 @@ export interface AbuseControlResult {
   entry: AbuseControlEntry;
 }
 
-export class AbuseControlService {
+export class AbuseControlService implements AbuseControlPort {
   constructor(private readonly repository: AbuseControlRepositoryPort) {}
 
   async enforce(policy: AbuseControlPolicy): Promise<AbuseControlResult> {

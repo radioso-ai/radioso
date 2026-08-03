@@ -1,4 +1,4 @@
-import type { AbuseControlPolicy } from "../../security/services/abuseControlService.js";
+import type { AbuseControlPort } from "../../security/contracts/abuseControl.js";
 
 import type { AudiencePulseAuditPort, AudiencePulseRefreshRateLimitPort } from "../contracts.js";
 
@@ -10,9 +10,7 @@ const audiencePulseRefreshRateLimit = {
 } as const;
 
 export interface AudiencePulseRefreshRateLimiterDependencies {
-  abuseControlService: {
-    enforce(input: AbuseControlPolicy): Promise<unknown>;
-  };
+  abuseControlService: AbuseControlPort;
   auditService: AudiencePulseAuditPort;
 }
 

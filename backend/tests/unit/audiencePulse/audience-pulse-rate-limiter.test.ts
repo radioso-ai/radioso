@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AbuseControlPolicy } from "../../../src/modules/security/services/abuseControlService.js";
+import type { AbuseControlPolicy } from "../../../src/modules/security/contracts/abuseControl.js";
 import {
   AudiencePulseRefreshRateLimiter,
   type AudiencePulseRefreshRateLimiterDependencies,

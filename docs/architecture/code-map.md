@@ -697,7 +697,7 @@ Primary internals:
 - `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
-- `backend/src/db/migrations/134_audience_pulse_snapshots.sql`
+- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`
 - `backend/prompts/audience-pulse.md`
 
 Useful searches:

@@ -71,7 +71,7 @@ backend/
 │   │   └── http/
 │   │       ├── middleware/{requireDashboardWorkspaceSession,audiencePulseRefreshRateLimiter}.ts
 │   │       └── openapi/{schemas/audiencePulseSchemas.ts,paths/audiencePulsePaths.ts}
-│   ├── db/{migrations/134_audience_pulse_snapshots.sql,repositories/audiencePulseSnapshotRepository.ts}
+│   ├── db/{migrations/135_audience_pulse_snapshots.sql,repositories/audiencePulseSnapshotRepository.ts}
 │   ├── modules/{audiencePulse,chat/audiencePulseHistorySource.ts}
 │   └── shared/infra/llm/contextualGateways.ts
 └── tests/{unit,contract,integration}/audiencePulse/

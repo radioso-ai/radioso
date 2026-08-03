@@ -39,7 +39,7 @@ Quality, generic auth, or generic inference code.
 - [x] T009 Extract a generic contextual structured-inference factory in
   `backend/src/shared/infra/llm/contextualGateways.ts` that accepts caller-provided
   `ModelCallUsageContext`, retaining no Audience Pulse-specific rule.
-- [x] T010 Add migration `backend/src/db/migrations/134_audience_pulse_snapshots.sql`,
+- [x] T010 Add migration `backend/src/db/migrations/135_audience_pulse_snapshots.sql`,
   regenerate the database schema type/snapshot, and implement
   `backend/src/db/repositories/audiencePulseSnapshotRepository.ts` with revisioned
   find/replace/conditional-invalidate.

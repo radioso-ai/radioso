@@ -25,8 +25,20 @@ describe("Audience Pulse OpenAPI contract", () => {
     const evidence = document.components?.schemas?.AudiencePulseEvidence;
     expect(evidence).toMatchObject({
       type: "object",
-      required: expect.arrayContaining(["messageId"]),
-      properties: { messageId: { type: "string", format: "uuid" } },
+      required: expect.arrayContaining(["messageId", "occurrenceCount"]),
+      properties: {
+        messageId: { type: "string", format: "uuid" },
+        occurrenceCount: { type: "integer", minimum: 1 },
+      },
+    });
+
+    expect(document.components?.schemas?.AudiencePulseTheme).toMatchObject({
+      required: expect.arrayContaining(["distinctQuestionCount"]),
+      properties: { distinctQuestionCount: { type: "integer", minimum: 0 } },
+    });
+    expect(document.components?.schemas?.AudiencePulseReport).toMatchObject({
+      required: expect.arrayContaining(["unclassifiedQuestionCount"]),
+      properties: { unclassifiedQuestionCount: { type: "integer", minimum: 0 } },
     });
 
     expect(anchorPath?.post?.operationId).toBe("getAudiencePulseEvidenceAnchor");

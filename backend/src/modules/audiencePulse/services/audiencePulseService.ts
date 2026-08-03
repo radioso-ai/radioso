@@ -83,6 +83,43 @@ const createHydratedEvidence = (evidence: AudiencePulseEvidence[]): Map<string, 
     question: item.question,
   }]));
 
+type AudiencePulseThemeResponse = AudiencePulseHydratedReport["themes"][number];
+type AudiencePulseEvidenceResponse = AudiencePulseThemeResponse["evidence"][number];
+
+const normalizeQuestionForDisplay = (question: string): string => question
+  .trim()
+  .replace(/\s+/gu, " ");
+
+const questionDisplayKey = (question: string): string => normalizeQuestionForDisplay(question).toLowerCase();
+
+const hydrateThemeEvidence = (
+  evidenceIds: string[],
+  resolve: (evidenceId: string) => AudiencePulseHydratedEvidence,
+): Pick<AudiencePulseThemeResponse, "distinctQuestionCount" | "evidence"> => {
+  const occurrences = new Map<string, AudiencePulseEvidenceResponse>();
+  for (const evidenceId of evidenceIds) {
+    const source = resolve(evidenceId);
+    const question = normalizeQuestionForDisplay(source.question);
+    const key = questionDisplayKey(question);
+    const existing = occurrences.get(key);
+    if (existing) {
+      existing.occurrenceCount += 1;
+      continue;
+    }
+    occurrences.set(key, {
+      reference: source.evidenceId,
+      conversationId: source.conversationId,
+      messageId: source.messageId,
+      question,
+      occurrenceCount: 1,
+    });
+  }
+  return {
+    distinctQuestionCount: occurrences.size,
+    evidence: [...occurrences.values()],
+  };
+};
+
 const hydrateReport = (
   report: AudiencePulseStoredReport,
   evidenceById: Map<string, AudiencePulseHydratedEvidence>,
@@ -94,6 +131,7 @@ const hydrateReport = (
     }
     return evidence;
   };
+  const groupedEvidenceIds = new Set(report.themes.flatMap((theme) => theme.evidenceIds));
 
   return {
     period: report.period,
@@ -101,22 +139,16 @@ const hydrateReport = (
     coverage: report.coverage,
     weeklyVolume: report.weeklyVolume,
     summary: report.summary,
+    unclassifiedQuestionCount: [...evidenceById.keys()]
+      .filter((evidenceId) => !groupedEvidenceIds.has(evidenceId)).length,
     themes: report.themes.map((theme) => ({
       id: theme.id,
       title: theme.title,
       description: theme.description,
       sampleCount: theme.sampleCount,
+      ...hydrateThemeEvidence(theme.evidenceIds, resolve),
       weeklyPulse: theme.weeklyPulse,
       grounding: theme.grounding,
-      evidence: theme.evidenceIds.map((id) => {
-        const evidence = resolve(id);
-        return {
-          reference: evidence.evidenceId,
-          conversationId: evidence.conversationId,
-          messageId: evidence.messageId,
-          question: evidence.question,
-        };
-      }),
     })),
     contentGaps: report.contentGaps,
     recommendations: report.recommendations.map((recommendation) => ({

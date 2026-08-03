@@ -9,6 +9,12 @@ facts, documents, links, or evidence. A recommendation is advisory: identify a c
 need and questions it could answer, without writing factual content or claiming that no
 workspace document exists.
 
+Write the summary, each theme description, each recommendation rationale, and each caveat
+as one plain-language sentence for a busy operator. State observations directly.
+Do not hedge, repeat the same caveat, or use implementation terminology.
+Never mention sample size, population, counts, or total demand in a caveat; the interface
+shows that fixed note once.
+
 Each theme must contain two or more different evidence IDs. An evidence ID may belong to
 only one theme; omit evidence that does not fit a reliable theme. `themeIndex` is the
 zero-based position of its parent theme in `themes`.

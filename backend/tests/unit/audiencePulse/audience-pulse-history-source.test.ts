@@ -4,6 +4,7 @@ import {
   audiencePulseWeekStartUtc,
   boundAudiencePulseQuestionExcerpts,
   classifyAudiencePulseQuestion,
+  completeAudiencePulseWeeklyVolume,
   isAudiencePulseCustomerSource,
   isAudiencePulseEndUserChannel,
   selectAudiencePulseSample,
@@ -74,6 +75,23 @@ describe("Audience Pulse history source helpers", () => {
     expect(isAudiencePulseEndUserChannel(null)).toBe(true);
     expect(isAudiencePulseEndUserChannel("authenticated_chat")).toBe(false);
     expect(isAudiencePulseEndUserChannel("workbench_replay")).toBe(false);
+  });
+
+  it("keeps every UTC week that intersects the analysis period, including zero-volume weeks", () => {
+    expect(completeAudiencePulseWeeklyVolume({
+      analysisStart: new Date("2026-07-04T00:00:00.000Z"),
+      analysisEnd: new Date("2026-08-03T00:00:00.000Z"),
+      aggregate: [
+        { weekStart: "2026-07-13T00:00:00.000Z", visitorQuestionCount: 4, conversationCount: 3 },
+        { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 2, conversationCount: 2 },
+      ],
+    })).toEqual([
+      { weekStart: "2026-06-29T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
+      { weekStart: "2026-07-06T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
+      { weekStart: "2026-07-13T00:00:00.000Z", visitorQuestionCount: 4, conversationCount: 3 },
+      { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
+      { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 2, conversationCount: 2 },
+    ]);
   });
 
   it("round-robins deterministic week/channel strata from metadata while respecting conversation caps", () => {

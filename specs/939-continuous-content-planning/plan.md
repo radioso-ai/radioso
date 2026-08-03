@@ -103,11 +103,12 @@ account/workspace-bound `sessionStorage` handoff to Documents, not document pers
   inference operation, saves only validated reports, and emits safe audit/telemetry.
 - **Domain**: Zod contracts, sampling policy, typed `contentGapEligible`, theme and
   recommendation integrity, and report projection are pure named helpers. The model
-  supplies neither totals, eligibility, membership resolution, nor recurrence.
+  supplies neither totals, eligibility, membership resolution, recurrence, duplicate
+  display occurrences, or the count of ungrouped sampled questions.
 - **History port**: Chat's `AudiencePulseHistorySource` owns eligible population,
-  `(created_at,id)` pairing, AI/human distinction, typed outcomes, rehydration, and the
-  exact, bounded evidence-anchor source/reply read. It never exposes arbitrary history
-  traversal through Audience Pulse.
+  zero-filled UTC-week aggregation, `(created_at,id)` pairing, AI/human distinction,
+  typed outcomes, rehydration, and the exact, bounded evidence-anchor source/reply read.
+  It never exposes arbitrary history traversal through Audience Pulse.
 - **Persistence/integration**: `AudiencePulseSnapshotRepository` owns revisioned atomic
   replace/find/conditional-invalidate. `PostgresAudiencePulseRunGate` uses a pinned
   Kysely connection and session advisory lock keyed by workspace, released in `finally`

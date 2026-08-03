@@ -30,6 +30,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     conversationId: z.string().uuid(),
     messageId: z.string().uuid(),
     question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+    occurrenceCount: z.number().int().min(1),
   }));
   const AudiencePulseEvidenceAnchorRequestSchema = registry.register(
     "AudiencePulseEvidenceAnchorRequest",
@@ -60,6 +61,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     title: z.string(),
     description: z.string(),
     sampleCount: z.number().int().min(0),
+    distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: z.string().datetime(), count: z.number().int().min(0) })),
     grounding: AudiencePulseGroundingSchema,
     evidence: z.array(AudiencePulseEvidenceSchema),
@@ -84,6 +86,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     coverage: AudiencePulseCoverageSchema,
     weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
     summary: z.string(),
+    unclassifiedQuestionCount: z.number().int().min(0),
     themes: z.array(AudiencePulseThemeSchema),
     contentGaps: z.array(AudiencePulseContentGapSchema),
     recommendations: z.array(AudiencePulseRecommendationSchema),

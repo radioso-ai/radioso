@@ -233,4 +233,28 @@ describe("Audience Pulse report domain", () => {
       caveats: [],
     })).toThrow();
   });
+
+  it("keeps model-generated prose compact", () => {
+    const validOutput = {
+      summary: "Summary",
+      themes: [{ title: "Theme", description: "Description", evidenceIds: ["evidence-1", "evidence-2"] }],
+      recommendations: [{
+        themeIndex: 0,
+        title: "Recommendation",
+        rationale: "Rationale",
+        questions: ["Question"],
+        evidenceIds: ["evidence-1", "evidence-2"],
+      }],
+      caveats: ["Caveat"],
+    };
+
+    for (const output of [
+      { ...validOutput, summary: "s".repeat(301) },
+      { ...validOutput, themes: [{ ...validOutput.themes[0]!, description: "d".repeat(251) }] },
+      { ...validOutput, recommendations: [{ ...validOutput.recommendations[0]!, rationale: "r".repeat(251) }] },
+      { ...validOutput, caveats: ["c".repeat(161)] },
+    ]) {
+      expect(() => parseAudiencePulseModelOutput(output)).toThrow();
+    }
+  });
 });

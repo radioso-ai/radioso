@@ -305,6 +305,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       { weekStart: "2026-06-29T00:00:00.000Z", visitorQuestionCount: 4, conversationCount: 2 },
       { weekStart: "2026-07-06T00:00:00.000Z", visitorQuestionCount: 1, conversationCount: 1 },
       { weekStart: "2026-07-13T00:00:00.000Z", visitorQuestionCount: 1, conversationCount: 1 },
+      { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
       { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 1, conversationCount: 1 },
     ]);
     expect(evidenceByMessageId.get(legacyQuestionId)).toMatchObject({
@@ -376,7 +377,11 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
 
     expect(snapshot.coverage).toEqual({ populationSize, sampleSize: 3, sampled: true });
     expect(snapshot.weeklyVolume).toEqual([
+      { weekStart: "2026-06-29T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
+      { weekStart: "2026-07-06T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
+      { weekStart: "2026-07-13T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
       { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: populationSize, conversationCount: populationSize },
+      { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
     ]);
     expect(snapshot.evidence).toHaveLength(3);
     expect(snapshot.evidence.every((item) => item.question.length <= 1_200)).toBe(true);

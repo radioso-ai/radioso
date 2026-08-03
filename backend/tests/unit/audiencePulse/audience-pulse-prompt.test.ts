@@ -68,8 +68,10 @@ describe("Audience Pulse prompt", () => {
     const payload = prompt.match(/<audience-pulse-input>\n([\s\S]*)\n<\/audience-pulse-input>$/)?.[1];
     const responseSchema = AUDIENCE_PULSE_RESPONSE_FORMAT.schema as {
       properties: {
-        themes: { items: { properties: { evidenceIds: { minItems?: number } } } };
-        recommendations: { items: { properties: { evidenceIds: { minItems?: number } } } };
+        summary: { maxLength?: number };
+        themes: { items: { properties: { evidenceIds: { minItems?: number }; description: { maxLength?: number } } } };
+        recommendations: { items: { properties: { evidenceIds: { minItems?: number }; rationale: { maxLength?: number } } } };
+        caveats: { items: { maxLength?: number } };
       };
     };
 
@@ -80,6 +82,13 @@ describe("Audience Pulse prompt", () => {
     });
     expect(prompt).toContain("two or more different evidence IDs");
     expect(prompt).toMatch(/two\s+different `conversationId` values/);
+    expect(prompt).toContain("one plain-language sentence");
+    expect(prompt).toContain("Do not hedge");
+    expect(prompt).toContain("Never mention sample size, population, counts, or total demand");
+    expect(responseSchema.properties.summary.maxLength).toBe(300);
+    expect(responseSchema.properties.themes.items.properties.description.maxLength).toBe(250);
+    expect(responseSchema.properties.recommendations.items.properties.rationale.maxLength).toBe(250);
+    expect(responseSchema.properties.caveats.items.maxLength).toBe(160);
     expect(responseSchema.properties.themes.items.properties.evidenceIds.minItems).toBe(2);
     expect(responseSchema.properties.recommendations.items.properties.evidenceIds.minItems).toBe(2);
   });

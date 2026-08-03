@@ -10,6 +10,7 @@ import {
   AudiencePulseHydratedEvidence,
   AudiencePulsePromptEvidenceReference,
   AudiencePulseSamplePolicy,
+  type AudiencePulseWeeklyVolume,
 } from "../audiencePulse/contracts/history.js";
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import { isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
@@ -70,6 +71,31 @@ export const audiencePulseWeekStartUtc = (date: Date): string => {
   const daysSinceMonday = (day + 6) % 7;
   result.setUTCDate(result.getUTCDate() - daysSinceMonday);
   return result.toISOString();
+};
+
+/** Completes calendar buckets after SQL computes exact non-zero aggregates. */
+export const completeAudiencePulseWeeklyVolume = (input: {
+  analysisStart: Date;
+  analysisEnd: Date;
+  aggregate: AudiencePulseWeeklyVolume[];
+}): AudiencePulseWeeklyVolume[] => {
+  const aggregateByWeek = new Map(input.aggregate.map((week) => [
+    new Date(week.weekStart).toISOString(),
+    week,
+  ]));
+  const complete: AudiencePulseWeeklyVolume[] = [];
+  const cursor = new Date(audiencePulseWeekStartUtc(input.analysisStart));
+  while (cursor < input.analysisEnd) {
+    const weekStart = cursor.toISOString();
+    const aggregate = aggregateByWeek.get(weekStart);
+    complete.push(aggregate ?? {
+      weekStart,
+      visitorQuestionCount: 0,
+      conversationCount: 0,
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 7);
+  }
+  return complete;
 };
 
 export const isAudiencePulseEndUserChannel = (sourceChannel: string | null): boolean =>
@@ -467,11 +493,16 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
     const aggregateRows = await buildAudiencePulseAggregateQuery(this.db, input)
       .execute() as AudiencePulseAggregateRow[];
     const populationSize = Number(aggregateRows[0]?.population_size ?? "0");
-    const weeklyVolume = aggregateRows.map((row) => ({
+    const aggregateWeeklyVolume = aggregateRows.map((row) => ({
       weekStart: new Date(row.week_start).toISOString(),
       visitorQuestionCount: Number(row.visitor_question_count),
       conversationCount: Number(row.conversation_count),
     }));
+    const weeklyVolume = completeAudiencePulseWeeklyVolume({
+      analysisStart: input.analysisStart,
+      analysisEnd: input.analysisEnd,
+      aggregate: aggregateWeeklyVolume,
+    });
     if (populationSize === 0) {
       return {
         period: { start: input.analysisStart, end: input.analysisEnd },

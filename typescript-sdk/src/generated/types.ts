@@ -6134,6 +6134,7 @@ export interface components {
             /** Format: uuid */
             messageId: string;
             question: string;
+            occurrenceCount: number;
         };
         AudiencePulseEvidenceAnchorRequest: {
             /** Format: uuid */
@@ -6174,6 +6175,7 @@ export interface components {
             title: string;
             description: string;
             sampleCount: number;
+            distinctQuestionCount: number;
             weeklyPulse: {
                 /** Format: date-time */
                 weekStart: string;
@@ -6211,6 +6213,7 @@ export interface components {
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
             summary: string;
+            unclassifiedQuestionCount: number;
             themes: components["schemas"]["AudiencePulseTheme"][];
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];
             recommendations: components["schemas"]["AudiencePulseRecommendation"][];

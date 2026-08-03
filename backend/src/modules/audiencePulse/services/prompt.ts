@@ -1,6 +1,7 @@
 import type { JsonSchemaResponseFormat } from "../../../shared/infra/llm/providerTypes.js";
 import { estimateTextGenerationInputTokens } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import { AUDIENCE_PULSE_MODEL_TEXT_LIMITS } from "../domain/report.js";
 import {
   AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
   type AudiencePulseHistorySnapshot,
@@ -20,7 +21,7 @@ export const AUDIENCE_PULSE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
     additionalProperties: false,
     required: ["summary", "themes", "recommendations", "caveats"],
     properties: {
-      summary: { type: "string", minLength: 1, maxLength: 600 },
+      summary: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.summary },
       themes: {
         type: "array",
         maxItems: 8,
@@ -29,8 +30,8 @@ export const AUDIENCE_PULSE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
           additionalProperties: false,
           required: ["title", "description", "evidenceIds"],
           properties: {
-            title: { type: "string", minLength: 1, maxLength: 120 },
-            description: { type: "string", minLength: 1, maxLength: 500 },
+            title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.themeTitle },
+            description: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.themeDescription },
             evidenceIds: { type: "array", minItems: 2, maxItems: 12, items: { type: "string", maxLength: 80 } },
           },
         },
@@ -44,14 +45,14 @@ export const AUDIENCE_PULSE_RESPONSE_FORMAT: JsonSchemaResponseFormat = {
           required: ["themeIndex", "title", "rationale", "questions", "evidenceIds"],
           properties: {
             themeIndex: { type: "integer", minimum: 0, maximum: 7 },
-            title: { type: "string", minLength: 1, maxLength: 160 },
-            rationale: { type: "string", minLength: 1, maxLength: 500 },
-            questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: 240 } },
+            title: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle },
+            rationale: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale },
+            questions: { type: "array", minItems: 1, maxItems: 8, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question } },
             evidenceIds: { type: "array", minItems: 2, maxItems: 12, items: { type: "string", maxLength: 80 } },
           },
         },
       },
-      caveats: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: 320 } },
+      caveats: { type: "array", maxItems: 6, items: { type: "string", minLength: 1, maxLength: AUDIENCE_PULSE_MODEL_TEXT_LIMITS.caveat } },
     },
   },
 };

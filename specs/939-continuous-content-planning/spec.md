@@ -49,6 +49,37 @@ Audience Pulse replaces the proposed Continuous Content Planning v1.
 - Analysis uses workspace-scoped structured inference. It must not participate in
   customer turn routing or require the generic tool-calling agent runtime.
 
+## Approved Readability Refinement — 2026-08-03
+
+The saved report is a decision surface, not a diagnostic dump. This refinement supersedes
+any earlier presentation wording that makes a volume table, a separate observed-gap list,
+or repeated sample caveats prominent.
+
+- The dashboard leads with content opportunities; Topics provide the supporting evidence.
+  A topic’s badge carries its recurring uncovered signal, so there is no redundant
+  Observed content gaps section.
+- The completed report leads with **Last 30 days** and a supporting date range. Coverage
+  is one plain sentence, such as “Read 72 of 104 questions”; a sampling caveat appears
+  once at the bottom.
+- Chat owns exact weekly aggregation and returns every UTC week intersecting the analysis
+  interval, including zero-volume weeks. The dashboard may keep that data behind topic
+  disclosure and does not make a volume table a primary surface.
+- The server derives display occurrences from normalized identical question text at
+  hydration time. A theme returns both raw sampled occurrences and a distinct-question
+  count; one authorized representative evidence anchor carries `occurrenceCount`. The
+  UI renders one question with “asked N×”, never a padded sequence of matching message IDs.
+- The server also returns the number of sampled questions not assigned to a reliable topic.
+  When that is a majority, the UI may make it prominent as “not grouped into a topic”; it
+  must not call the source questions irrelevant or malformed.
+- Topic cards are collapsed by default. Their visible state is title, one short
+  description, question/occurrence count, and an optional uncovered badge. Grounding
+  details and question evidence are disclosed with an accessible control. A grounding
+  strip is omitted when it communicates only one uniform outcome.
+- Operator copy uses plain language. It never exposes `contentGapEligible`, provider
+  internals, corpus-proof claims, or model/process diagnostics. Model-authored summary,
+  description, rationale, and caveat fields are limited to one direct plain-language
+  sentence with compact schema bounds.
+
 ## Existing Behavior And Feature Delta
 
 Radioso already stores workspace-scoped conversation history, per-answer grounding

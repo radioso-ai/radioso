@@ -9118,11 +9118,15 @@ components:
         question:
           type: string
           maxLength: 1200
+        occurrenceCount:
+          type: integer
+          minimum: 1
       required:
         - reference
         - conversationId
         - messageId
         - question
+        - occurrenceCount
     AudiencePulseEvidenceAnchorRequest:
       type: object
       properties:
@@ -9221,6 +9225,9 @@ components:
         sampleCount:
           type: integer
           minimum: 0
+        distinctQuestionCount:
+          type: integer
+          minimum: 0
         weeklyPulse:
           type: array
           items:
@@ -9246,6 +9253,7 @@ components:
         - title
         - description
         - sampleCount
+        - distinctQuestionCount
         - weeklyPulse
         - grounding
         - evidence
@@ -9329,6 +9337,9 @@ components:
             $ref: "#/components/schemas/AudiencePulseWeeklyVolume"
         summary:
           type: string
+        unclassifiedQuestionCount:
+          type: integer
+          minimum: 0
         themes:
           type: array
           items:
@@ -9351,6 +9362,7 @@ components:
         - coverage
         - weeklyVolume
         - summary
+        - unclassifiedQuestionCount
         - themes
         - contentGaps
         - recommendations

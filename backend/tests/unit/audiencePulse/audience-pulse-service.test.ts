@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { AudiencePulseService } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
+import { AudiencePulseService, hydrateReport } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type { AudiencePulseServiceDependencies } from "../../../src/modules/audiencePulse/services/audiencePulseService.js";
 import type {
   AudiencePulseHistorySnapshot,
   AudiencePulseSnapshotRecord,
 } from "../../../src/modules/audiencePulse/contracts.js";
+import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePulse/domain/report.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
@@ -125,6 +126,61 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
 };
 
 describe("AudiencePulseService", () => {
+  it("presents repeated normalized question text once with its occurrence count", () => {
+    const report: AudiencePulseStoredReport = {
+      period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+      weeklyVolume: [],
+      summary: "Summary",
+      themes: [{
+        id: "theme-1",
+        title: "Plans",
+        description: "Visitors ask about plans.",
+        evidenceIds: ["evidence-1", "evidence-2"],
+        sampleCount: 2,
+        weeklyPulse: [],
+        grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
+      }],
+      contentGaps: [{ themeId: "theme-1", eligibleEvidenceCount: 2, distinctConversationCount: 2 }],
+      recommendations: [],
+      caveats: [],
+    };
+
+    const hydrated = hydrateReport(report, new Map([
+      ["evidence-1", {
+        evidenceId: "evidence-1",
+        conversationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        messageId: "11111111-1111-1111-1111-111111111111",
+        question: "How do I change my plan?",
+      }],
+      ["evidence-2", {
+        evidenceId: "evidence-2",
+        conversationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        messageId: "22222222-2222-2222-2222-222222222222",
+        question: "  how do I change   my plan?  ",
+      }],
+      ["evidence-3", {
+        evidenceId: "evidence-3",
+        conversationId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        messageId: "33333333-3333-3333-3333-333333333333",
+        question: "What does the annual plan include?",
+      }],
+    ]));
+
+    expect(hydrated).toMatchObject({
+      unclassifiedQuestionCount: 1,
+      themes: [{
+        sampleCount: 2,
+        distinctQuestionCount: 1,
+        evidence: [{
+          question: "How do I change my plan?",
+          occurrenceCount: 2,
+        }],
+      }],
+    });
+  });
+
   it("delegates an evidence anchor to the Chat-owned history port without report or provider work", async () => {
     const anchor = {
       conversationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",

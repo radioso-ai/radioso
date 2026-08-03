@@ -17,6 +17,7 @@
 | Document handoff | Account/workspace-keyed `sessionStorage` intent | It maps suggestion title to `title` and questions to Markdown `content`, avoids URL exposure, and preserves Documents as the sole writer. |
 | MCP | Internal Zod/JSON read + refresh port; no MCP registration | A future Copilot can adapt only read as `audience_pulse.read`; refresh remains dashboard controlled. |
 | Queue impact | None | This is a synchronous demand-driven operation; no worker, AMQP payload, retry, or queue docs change. |
+| Readability projection | Hydrate display occurrences and ungrouped count from existing evidence references | It deduplicates identical visitor text without changing snapshot storage, preserves one authorized evidence anchor, and makes a weak grouping result visible without model-supplied counts. |
 
 ## Alternatives Rejected
 

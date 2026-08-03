@@ -100,11 +100,13 @@ export const audiencePulseReportResponseSchema = z.object({
     conversationCount: z.number().int().min(0),
   })),
   summary: z.string(),
+  unclassifiedQuestionCount: z.number().int().min(0),
   themes: z.array(z.object({
     id: z.string(),
     title: z.string(),
     description: z.string(),
     sampleCount: z.number().int().min(0),
+    distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: dateTime, count: z.number().int().min(0) })),
     grounding: groundingSchema,
     evidence: z.array(z.object({
@@ -112,6 +114,7 @@ export const audiencePulseReportResponseSchema = z.object({
       conversationId: z.string().uuid(),
       messageId: z.string().uuid(),
       question: z.string().max(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+      occurrenceCount: z.number().int().min(1),
     })),
   })),
   contentGaps: z.array(z.object({

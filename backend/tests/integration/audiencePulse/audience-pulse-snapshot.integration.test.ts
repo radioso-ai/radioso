@@ -270,6 +270,7 @@ describeIntegration("Audience Pulse snapshot persistence", () => {
       conversationId,
       messageId,
       question: sourceText.slice(0, AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS),
+      occurrenceCount: 1,
     });
   });
 });

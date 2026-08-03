@@ -73,4 +73,4 @@ export interface AudiencePulseHistorySource {
   }): Promise<AudiencePulseEvidenceAnchor | null>;
 }
 
-export type { AudiencePulseEvidence } from "../domain/report.js";
+export type { AudiencePulseEvidence, AudiencePulseWeeklyVolume } from "../domain/report.js";

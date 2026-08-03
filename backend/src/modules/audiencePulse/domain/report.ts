@@ -80,24 +80,34 @@ export interface AudiencePulseStoredReport {
   caveats: string[];
 }
 
+export const AUDIENCE_PULSE_MODEL_TEXT_LIMITS = {
+  summary: 300,
+  themeTitle: 120,
+  themeDescription: 250,
+  recommendationTitle: 160,
+  recommendationRationale: 250,
+  question: 240,
+  caveat: 160,
+} as const;
+
 const boundedText = (max: number) => z.string().trim().min(1).max(max);
 const evidenceIdsSchema = (minimum: number) => z.array(z.string().trim().min(1).max(80)).min(minimum).max(12);
 
 export const audiencePulseModelOutputSchema = z.object({
-  summary: boundedText(600),
+  summary: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.summary),
   themes: z.array(z.object({
-    title: boundedText(120),
-    description: boundedText(500),
+    title: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.themeTitle),
+    description: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.themeDescription),
     evidenceIds: evidenceIdsSchema(2),
   }).strict()).max(8),
   recommendations: z.array(z.object({
     themeIndex: z.number().int().min(0).max(7),
-    title: boundedText(160),
-    rationale: boundedText(500),
-    questions: z.array(boundedText(240)).min(1).max(8),
+    title: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationTitle),
+    rationale: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.recommendationRationale),
+    questions: z.array(boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.question)).min(1).max(8),
     evidenceIds: evidenceIdsSchema(2),
   }).strict()).max(8),
-  caveats: z.array(boundedText(320)).max(6),
+  caveats: z.array(boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.caveat)).max(6),
 }).strict();
 
 export type AudiencePulseModelOutput = z.infer<typeof audiencePulseModelOutputSchema>;

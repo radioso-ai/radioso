@@ -13473,13 +13473,18 @@
           "question": {
             "type": "string",
             "maxLength": 1200
+          },
+          "occurrenceCount": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
           "reference",
           "conversationId",
           "messageId",
-          "question"
+          "question",
+          "occurrenceCount"
         ]
       },
       "AudiencePulseEvidenceAnchorRequest": {
@@ -13622,6 +13627,10 @@
             "type": "integer",
             "minimum": 0
           },
+          "distinctQuestionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "weeklyPulse": {
             "type": "array",
             "items": {
@@ -13657,6 +13666,7 @@
           "title",
           "description",
           "sampleCount",
+          "distinctQuestionCount",
           "weeklyPulse",
           "grounding",
           "evidence"
@@ -13775,6 +13785,10 @@
           "summary": {
             "type": "string"
           },
+          "unclassifiedQuestionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
           "themes": {
             "type": "array",
             "items": {
@@ -13806,6 +13820,7 @@
           "coverage",
           "weeklyVolume",
           "summary",
+          "unclassifiedQuestionCount",
           "themes",
           "contentGaps",
           "recommendations",

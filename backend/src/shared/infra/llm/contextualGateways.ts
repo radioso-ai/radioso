@@ -68,6 +68,46 @@ export interface DirectiveMatchGatewayFactory {
 }
 
 /**
+ * Generic workspace-scoped structured inference seam. The caller supplies the model
+ * usage attribution; this factory only resolves the cached chat capability and binds
+ * that attribution to every execution. It intentionally knows no product operation.
+ */
+export interface ContextualInferenceFactory {
+  create(input: {
+    workspaceContext: LlmCapabilityResolveInput;
+    modelCallContext: ModelCallUsageContext;
+  }): Promise<ModelInferencePipeline>;
+}
+
+export class ContextualStructuredInferenceFactory implements ContextualInferenceFactory {
+  private readonly cache: TextGenerationClientCache;
+
+  constructor(
+    private readonly deps: ContextualGatewayDependencies,
+    private readonly usageEventRecorder?: UsageEventRecorder,
+  ) {
+    this.cache = deps.clientCache ?? new TextGenerationClientCache();
+  }
+
+  async create(input: {
+    workspaceContext: LlmCapabilityResolveInput;
+    modelCallContext: ModelCallUsageContext;
+  }): Promise<ModelInferencePipeline> {
+    const client = await resolveClient(this.cache, this.deps.resolver, "chat", input.workspaceContext);
+    const inference = toInferencePipeline(client, this.usageEventRecorder);
+    return {
+      metadata: inference.metadata,
+      complete(request) {
+        return inference.complete({ ...request, operation: input.modelCallContext });
+      },
+      stream(request) {
+        return inference.stream({ ...request, operation: input.modelCallContext });
+      },
+    };
+  }
+}
+
+/**
  * Resolves the workspace chat-tier model for the fused turn-planning call and
  * binds the `turn_planning` usage operation, mirroring
  * {@link ContextualDirectiveMatchGatewayFactory}. The `TurnPlanService` owns the

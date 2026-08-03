@@ -200,6 +200,8 @@ export interface ConversationDrawerProps {
   selectedItem: SelectedHistoryItem
   onSelectedItemChange: (item: SelectedHistoryItem) => void
   anchorMessageId?: string | null
+  /** True only for the transient Audience Pulse evidence handoff. */
+  isAudiencePulseEvidence?: boolean
   /**
    * Optional caller-owned context rendered below the drawer chrome and above
    * the scrollable detail workspace.
@@ -233,6 +235,7 @@ export function ConversationDrawer({
   selectedItem,
   onSelectedItemChange,
   anchorMessageId,
+  isAudiencePulseEvidence,
   accessory,
   onAfterClose,
   onOperatorChanged,
@@ -246,7 +249,10 @@ export function ConversationDrawer({
   }, [onAfterClose])
   const conversationTail = useConversationTail({
     conversationId: selectedChatConversationId ?? '',
-    enabled: selectedChatConversationId !== null,
+    // A no-cursor tail poll returns the newest history window. Audience Pulse
+    // intentionally opens a bounded historical source window, so merging that
+    // unrelated live window would defeat the evidence anchor.
+    enabled: selectedChatConversationId !== null && !isAudiencePulseEvidence,
     intervalMs: 1000,
   })
 
@@ -275,6 +281,7 @@ export function ConversationDrawer({
     setSelectedItem: onSelectedItemChange,
     onItemNotFound: handleItemNotFound,
     anchorMessageId,
+    isAudiencePulseEvidence,
     additionalConversationMessages: conversationTail.messages,
   })
 

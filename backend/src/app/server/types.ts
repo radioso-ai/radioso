@@ -66,6 +66,7 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { ApplicationModuleCoordinator, ApplicationRouteMount } from "../composition/applicationModule.js";
 import type { PublicChatActionAdvertiserPort, ContactHistoryProviderPort } from "../../modules/chat/contracts/index.js";
 import type { UserRepositoryPort } from "../../db/repositories/userRepository.js";
@@ -83,6 +84,7 @@ import type { WebsiteCrawlerProvider } from "../../modules/websiteCrawler/provid
 import type { WebsiteCrawlJobService } from "../../modules/websiteCrawler/jobService.js";
 import type { WebsiteCrawlWorker } from "../../modules/websiteCrawler/worker.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
+import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import type { EmailService } from "../../modules/mail/public.js";
 import type {
   EvalCaseService,
@@ -104,6 +106,7 @@ export interface AppDependencies {
   productAnalyticsService: ProductAnalyticsPort;
   capabilityPolicy: CapabilityPolicy;
   usageLimitPolicy: UsageLimitPolicy;
+  usageEventRecorder: UsageEventRecorder;
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   publicConversationEventBus: PublicConversationEventBus;
@@ -132,6 +135,7 @@ export interface AppDependencies {
   externalSkillDefinitionService: ExternalSkillDefinitionService;
   webhookDestinations: WebhookDestinationPublicAdapter;
   workspaceLlmCapabilitySettingsService: WorkspaceLlmCapabilitySettingsService;
+  llmCapabilityResolver: LlmCapabilityResolver;
   auditService: AuditService;
   mailService: EmailService;
   workspaceService: WorkspaceService;

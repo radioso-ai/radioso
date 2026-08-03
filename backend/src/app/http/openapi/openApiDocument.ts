@@ -36,6 +36,7 @@ export const createOpenApiDocument = (
       { name: "Settings" },
       { name: "Documents" },
       { name: "Connectors" },
+      { name: "Audience Pulse" },
     ],
   });
 

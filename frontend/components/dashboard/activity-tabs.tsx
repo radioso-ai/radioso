@@ -5,11 +5,12 @@ import {
 } from '@/lib/dashboard-routes'
 
 /**
- * Builds hrefs for the Activity surfaces (Needs attention / All activity / Quality),
- * which now live as nested items in the sidebar rather than in-page tabs. Quality is a
- * separate section; the other two are activity tabs.
+ * Builds hrefs for the Activity surfaces (Needs attention / All activity / Quality /
+ * Audience Pulse), which now live as nested items in the sidebar rather than in-page
+ * tabs. Quality and Audience Pulse are both variants of the `quality` section, so the
+ * rail highlight stays on Activity while the view switches.
  */
-export type ActivitySurfaceTab = ActivityTab | 'quality'
+export type ActivitySurfaceTab = ActivityTab | 'quality' | 'audience-pulse'
 
 export function buildActivityTabHref(
   accountId: string,
@@ -23,17 +24,26 @@ export function buildActivityTabHref(
   }
 
   if (targetTab === activeTab) {
+    if (targetTab === 'quality' || targetTab === 'audience-pulse') {
+      return buildDashboardHref(accountId, {
+        ...routeState,
+        section: 'quality',
+        activityTab: undefined,
+        qualityView: targetTab === 'audience-pulse' ? 'audience-pulse' : undefined,
+      })
+    }
     return buildDashboardHref(accountId, {
       ...routeState,
-      section: targetTab === 'quality' ? 'quality' : 'activity',
-      activityTab: targetTab === 'quality' ? undefined : targetTab,
+      section: 'activity',
+      activityTab: targetTab,
     })
   }
 
-  if (targetTab === 'quality') {
+  if (targetTab === 'quality' || targetTab === 'audience-pulse') {
     return buildDashboardHref(accountId, {
       section: 'quality',
       ...workspaceState,
+      qualityView: targetTab === 'audience-pulse' ? 'audience-pulse' : undefined,
     })
   }
 

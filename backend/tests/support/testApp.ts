@@ -180,6 +180,7 @@ import {
 } from "../../src/app/composition/index.js";
 import { DefaultAllowCapabilityPolicy, registeredCapabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
+import { NoopUsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   noopOrganizationCreationGuard,
   type OrganizationCreationGuard,
@@ -588,6 +589,7 @@ export const createTestDependencies = (overrides: {
     }),
   });
   const usageLimitPolicy = overrides.usageLimitPolicy ?? new NoopUsageLimitPolicy();
+  const usageEventRecorder = new NoopUsageEventRecorder();
   const organizationCreationGuard = overrides.organizationCreationGuard ?? noopOrganizationCreationGuard;
   const persistentErrorReportingService = new ErrorReportingService({
     enabled: env.OBSERVABILITY_ENABLED,
@@ -1645,6 +1647,7 @@ export const createTestDependencies = (overrides: {
     productAnalyticsService,
     capabilityPolicy,
     usageLimitPolicy,
+    usageEventRecorder,
     organizationCreationGuard,
     publicChatActionAdvertiser,
     publicConversationEventBus,
@@ -1675,6 +1678,11 @@ export const createTestDependencies = (overrides: {
     externalSkillDefinitionService,
     webhookDestinations,
     workspaceLlmCapabilitySettingsService,
+    llmCapabilityResolver: {
+      async resolve() {
+        throw new Error("Workspace LLM capability resolution is not configured in the in-memory test app");
+      },
+    },
     authService: new AuthService({
       env,
       auditService,

@@ -43,6 +43,11 @@ import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import {
+  consumeAudiencePulseDraftSeed,
+  formatDraftQuestionsAsMarkdown,
+  type AudiencePulseDraftSeed,
+} from '@/lib/audience-pulse-draft-seed'
 
 const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
@@ -99,6 +104,11 @@ export function DocumentsView({
   const previousCrawlJobsRef = useRef<Map<string, WebsiteCrawlJobSummary['status']>>(new Map())
   const recentlyDeletedRef = useRef<Set<string>>(new Set())
   const documentSearch = useDocumentSearch()
+  const audiencePulseDraftSeedRef = useRef<{
+    seed: AudiencePulseDraftSeed | null
+    consumed: boolean
+    dismissed: boolean
+  }>({ seed: null, consumed: false, dismissed: false })
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([])
   const [totalDocuments, setTotalDocuments] = useState(0)
@@ -541,9 +551,11 @@ export function DocumentsView({
   }, [onSelectedDocumentChange, resetDetailState])
 
   useEffect(() => {
+    const hasActiveAudiencePulseDraft =
+      audiencePulseDraftSeedRef.current.seed !== null && !audiencePulseDraftSeedRef.current.dismissed
     if (!selectedDocumentId) {
       justClosedDocumentIdRef.current = null
-      if (!isSaving) {
+      if (!isSaving && !hasActiveAudiencePulseDraft) {
         resetDetailState()
       }
       return
@@ -568,9 +580,63 @@ export function DocumentsView({
     selectedDocumentId,
   ])
 
+  // Audience Pulse Start-draft handoff. Runs after the selectedDocumentId effect
+  // so its resetDetailState() call cannot clobber the seeded form values on the
+  // same mount. The cached seed deliberately survives React StrictMode's effect
+  // replay and the route replacement that removes the transient marker;
+  // cancelling or saving marks the handoff dismissed and clears it so a later
+  // selectedDocumentId change cannot reopen a stale recommendation.
+  // `consumeAudiencePulseDraftSeed` clears mismatched entries too, so a
+  // cross-workspace seed cannot leak.
+  useEffect(() => {
+    const workspaceId = routeState.workspaceId
+    if (!workspaceId) return
+    if (routeState.anchor !== 'audience-pulse-draft') return
+    if (selectedDocumentId) return
+    if (audiencePulseDraftSeedRef.current.dismissed) return
+    if (!audiencePulseDraftSeedRef.current.consumed) {
+      audiencePulseDraftSeedRef.current = {
+        seed: consumeAudiencePulseDraftSeed({ accountId, workspaceId }),
+        consumed: true,
+        dismissed: false,
+      }
+    }
+    const seed = audiencePulseDraftSeedRef.current.seed
+    if (!seed) {
+      router.replace(buildDashboardHref(accountId, {
+        ...routeState,
+        anchor: undefined,
+      }))
+      return
+    }
+    justClosedDocumentIdRef.current = null
+    setEditingDocumentId(null)
+    setMetadataError(null)
+    setSaveError(null)
+    setFormValues({
+      title: seed.title,
+      content: formatDraftQuestionsAsMarkdown(seed.questions),
+      metadata: '',
+      sourceId: MANUALLY_ADDED_SOURCE_ID,
+    })
+    setCreateEnrichmentChoice('inherit')
+    setIsCreateDialogOpen(true)
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      anchor: undefined,
+    }))
+  }, [accountId, routeState, router, selectedDocumentId])
+
   const handleCreateDialogChange = (open: boolean) => {
     setIsCreateDialogOpen(open)
     if (!open && !isSaving) {
+      audiencePulseDraftSeedRef.current = { seed: null, consumed: true, dismissed: true }
+      if (routeState.anchor === 'audience-pulse-draft') {
+        router.replace(buildDashboardHref(accountId, {
+          ...routeState,
+          anchor: undefined,
+        }))
+      }
       resetCreateDialog()
     }
   }
@@ -625,6 +691,7 @@ export function DocumentsView({
         await documentsApi.createDocument(payload)
         setDocumentsPage(1)
         await loadDocuments(1, { reset: true })
+        audiencePulseDraftSeedRef.current = { seed: null, consumed: true, dismissed: true }
         setIsCreateDialogOpen(false)
         resetCreateDialog()
       }

@@ -164,6 +164,8 @@ export {
 } from "./services/actions/actionDispatchWorker.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
+// Audience Pulse receives conversation history only through this Chat-owned read port.
+export { PostgresAudiencePulseHistorySource } from "./audiencePulseHistorySource.js";
 export { ConversationForkService } from "./services/conversationForkService.js";
 export {
   ChainedPublicChatActionAdvertiser,

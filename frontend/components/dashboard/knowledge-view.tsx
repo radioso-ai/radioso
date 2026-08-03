@@ -60,6 +60,11 @@ export function KnowledgeView({
     if (!routeState.anchor) {
       return
     }
+    // This is a transient command for DocumentsView, not a scroll target. The
+    // consumer clears it only after it has captured the session-only draft.
+    if (routeState.anchor === 'audience-pulse-draft') {
+      return
+    }
 
     const element = document.getElementById(routeState.anchor)
     if (!element) {

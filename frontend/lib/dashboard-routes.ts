@@ -44,6 +44,13 @@ export type QualitySortFilter = 'turn_created_at' | 'negative_feedback_updated_a
 export type QualityTriageFilter = 'open' | 'acknowledged' | 'resolved' | 'dismissed'
 export type QualityResolutionReasonFilter = QualityResolutionBreakdownReason
 
+/**
+ * The Quality section renders one of two operator surfaces. The triage queue is
+ * the default; the audience-pulse view lives alongside it so the same rail
+ * exposes both without inventing a separate top-level section.
+ */
+export type QualityView = 'triage' | 'audience-pulse'
+
 const QUALITY_TRIAGE_VALUES: ReadonlySet<QualityTriageFilter> = new Set([
   'open',
   'acknowledged',
@@ -95,6 +102,7 @@ export interface DashboardRouteState {
   historyItemKind?: HistoryItemKind
   historyItemId?: string
   historyMessageId?: string
+  qualityView?: QualityView
   qualityPage?: number
   qualityRange?: QualityRangeFilter
   qualitySignal?: QualitySignalFilter
@@ -146,6 +154,7 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyItemKind',
   'historyItemId',
   'historyMessageId',
+  'qualityView',
   'qualityPage',
   'qualityRange',
   'qualitySignal',
@@ -279,6 +288,9 @@ const parseQualitySignal = (value: string | null): QualitySignalFilter | undefin
   value !== null && (QUALITY_SIGNAL_IDS as readonly string[]).includes(value)
     ? (value as QualitySignalFilter)
     : undefined
+
+const parseQualityView = (value: string | null): QualityView | undefined =>
+  value === 'audience-pulse' || value === 'triage' ? value : undefined
 
 const parseQualityTriageStates = (value: string | null): QualityTriageFilter[] | undefined => {
   if (!value) {
@@ -482,6 +494,9 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
   }
 
   if (state.section === 'quality') {
+    if (state.qualityView && state.qualityView !== 'triage') {
+      normalized.qualityView = state.qualityView
+    }
     if (state.qualityPage && state.qualityPage > 1) {
       normalized.qualityPage = state.qualityPage
     }
@@ -642,6 +657,9 @@ const buildQueryString = (normalized: DashboardRouteState) => {
   }
 
   if (normalized.section === 'quality') {
+    if (normalized.qualityView && normalized.qualityView !== 'triage') {
+      searchParams.set('view', normalized.qualityView)
+    }
     if (normalized.qualityPage && normalized.qualityPage > 1) {
       searchParams.set('page', String(normalized.qualityPage))
     }
@@ -972,6 +990,7 @@ export const parseDashboardRoute = (
     return normalizeState({
       section: 'quality',
       workspaceId,
+      qualityView: parseQualityView(searchParams?.get('view') ?? null),
       qualityPage: parsePositiveInt(searchParams?.get('page') ?? null),
       qualityRange: parseQualityRange(searchParams?.get('range') ?? null),
       qualitySignal: parseQualitySignal(searchParams?.get('signal') ?? null),
@@ -1071,6 +1090,14 @@ export const retargetDashboardRouteToWorkspace = (
       usageDetailsFrom: state.usageDetailsFrom,
       usageDetailsTo: state.usageDetailsTo,
       usageDetailsWorkspaceId: state.usageDetailsWorkspaceId,
+      ...workspaceState,
+    })
+  }
+
+  if (state.section === 'quality') {
+    return normalizeState({
+      section: 'quality',
+      qualityView: state.qualityView,
       ...workspaceState,
     })
   }

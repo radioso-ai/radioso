@@ -9,6 +9,7 @@ import {
   Inbox,
   MessagesSquare,
   MessageSquareWarning,
+  Radar,
 } from 'lucide-react'
 
 import { SectionNavBody, type SubNavGroup } from '@/components/dashboard/subnav-column'
@@ -31,7 +32,11 @@ function useWorkspaceRouteParts() {
 
 export function ActivitySubNav({ accountId, routeState }: { accountId: string; routeState: DashboardRouteState }) {
   const activeTab: ActivitySurfaceTab =
-    routeState.section === 'quality' ? 'quality' : routeState.activityTab === 'all' ? 'all' : 'needs-attention'
+    routeState.section === 'quality'
+      ? (routeState.qualityView === 'audience-pulse' ? 'audience-pulse' : 'quality')
+      : routeState.activityTab === 'all'
+        ? 'all'
+        : 'needs-attention'
   const href = (target: ActivitySurfaceTab) => buildActivityTabHref(accountId, routeState, activeTab, target)
 
   const groups: SubNavGroup[] = [
@@ -40,6 +45,7 @@ export function ActivitySubNav({ accountId, routeState }: { accountId: string; r
         { id: 'needs-attention', label: 'Needs attention', icon: Inbox, href: href('needs-attention'), active: activeTab === 'needs-attention' },
         { id: 'all', label: 'All activity', icon: MessagesSquare, href: href('all'), active: activeTab === 'all' },
         { id: 'quality', label: 'Quality', icon: MessageSquareWarning, href: href('quality'), active: activeTab === 'quality' },
+        { id: 'audience-pulse', label: 'Audience Pulse', icon: Radar, href: href('audience-pulse'), active: activeTab === 'audience-pulse' },
       ],
     },
   ]

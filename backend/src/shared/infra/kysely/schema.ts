@@ -204,6 +204,18 @@ export interface AssistantAnswerTriageTransitions {
   workspace_id: string;
 }
 
+export interface AudiencePulseSnapshots {
+  created_at: Generated<Timestamp>;
+  generated_at: Timestamp;
+  period_end: Timestamp;
+  period_start: Timestamp;
+  prompt_evidence_refs: Json;
+  report: Json;
+  revision: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface AuditEvents {
   account_id: string | null;
   created_at: Generated<Timestamp>;
@@ -1083,6 +1095,7 @@ export interface DB {
   assistant_answer_feedback: AssistantAnswerFeedback;
   assistant_answer_triage: AssistantAnswerTriage;
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
+  audience_pulse_snapshots: AudiencePulseSnapshots;
   audit_events: AuditEvents;
   bootstrap_greeting_cache: BootstrapGreetingCache;
   chunk_embeddings: ChunkEmbeddings;

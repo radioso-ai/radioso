@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
@@ -14,6 +14,7 @@ import { NeedsAttentionView } from './needs-attention-view'
 import { KnowledgeView } from './knowledge-view'
 import { SettingsView } from './settings-view'
 import { QualityView } from './quality-view'
+import { AudiencePulseView } from './audience-pulse-view'
 import { EvalView } from './eval-view'
 import { FirstRunExperience } from './first-run-experience'
 import {
@@ -118,7 +119,9 @@ export function DashboardShell({
     router,
   ])
 
-  const openDocument = (documentId: string | null) => {
+  // Memoized so consumers relying on identity stability (e.g. useEffect deps in
+  // documents-view's selected-document sync) do not re-run on every parent render.
+  const openDocument = useCallback((documentId: string | null) => {
     router.push(buildDashboardHref(accountId, {
       ...routeState,
       section: 'knowledge',
@@ -127,7 +130,7 @@ export function DashboardShell({
       workspaceId: activeWorkspaceId ?? undefined,
       workspacePublicRouteKey: activeWorkspacePublicRouteKey,
     }))
-  }
+  }, [accountId, activeWorkspaceId, activeWorkspacePublicRouteKey, routeState, router])
 
   if (
     isWorkspaceLoading ||
@@ -209,7 +212,11 @@ export function DashboardShell({
               <NeedsAttentionView accountId={accountId} routeState={routeState} />
             )
           ) : currentView === 'quality' ? (
-            <QualityView accountId={accountId} routeState={routeState} />
+            routeState.qualityView === 'audience-pulse' ? (
+              <AudiencePulseView accountId={accountId} routeState={routeState} />
+            ) : (
+              <QualityView accountId={accountId} routeState={routeState} />
+            )
           ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
           ) : null}

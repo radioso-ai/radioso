@@ -2631,6 +2631,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/quality/audience-pulse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the saved Audience Pulse report
+         * @description Returns the one saved workspace report without invoking an AI provider. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
+         */
+        get: operations["getAudiencePulse"];
+        put?: never;
+        /**
+         * Analyze the last 30 days of visitor questions
+         * @description Explicitly refreshes one bounded saved workspace report. This route has a dedicated durable rate limit and accepts only a browser dashboard session, never bearer/API authentication.
+         */
+        post: operations["refreshAudiencePulse"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/quality/audience-pulse/evidence-anchor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a bounded authorized source window
+         * @description Reads one workspace-authorized source message and, when it occurs before the next visitor turn, its next assistant reply. Source identifiers are supplied only in the JSON request body. Requires a browser dashboard session and workspace.history.read; bearer/API authentication is intentionally not accepted.
+         */
+        post: operations["getAudiencePulseEvidenceAnchor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -6207,6 +6251,144 @@ export interface components {
         };
         ContextVariableSigningKeyResponse: {
             signingKey: string;
+        };
+        AudiencePulseGrounding: {
+            grounded: number;
+            degraded: number;
+            noSupport: number;
+            unknown: number;
+            contentGapEligible: number;
+        };
+        AudiencePulseCoverage: {
+            populationSize: number;
+            sampleSize: number;
+            sampled: boolean;
+        };
+        AudiencePulseWeeklyVolume: {
+            /** Format: date-time */
+            weekStart: string;
+            visitorQuestionCount: number;
+            conversationCount: number;
+        };
+        AudiencePulseEvidence: {
+            reference: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            messageId: string;
+            question: string;
+            occurrenceCount: number;
+        };
+        AudiencePulseEvidenceAnchorRequest: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            messageId: string;
+        };
+        AudiencePulseEvidenceAnchorSource: {
+            /** Format: uuid */
+            messageId: string;
+            /** @enum {string} */
+            role: "user";
+            /** @enum {string} */
+            source: "customer";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AudiencePulseEvidenceAnchorNextAssistant: {
+            /** Format: uuid */
+            messageId: string;
+            /** @enum {string} */
+            role: "assistant";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        AudiencePulseEvidenceAnchorResponse: {
+            /** Format: uuid */
+            conversationId: string;
+            source: components["schemas"]["AudiencePulseEvidenceAnchorSource"];
+            nextAssistant: components["schemas"]["AudiencePulseEvidenceAnchorNextAssistant"] | null;
+        };
+        AudiencePulseTheme: {
+            id: string;
+            title: string;
+            description: string;
+            sampleCount: number;
+            distinctQuestionCount: number;
+            weeklyPulse: {
+                /** Format: date-time */
+                weekStart: string;
+                count: number;
+            }[];
+            grounding: components["schemas"]["AudiencePulseGrounding"];
+            evidence: components["schemas"]["AudiencePulseEvidence"][];
+        };
+        AudiencePulseContentGap: {
+            themeId: string;
+            eligibleEvidenceCount: number;
+            distinctConversationCount: number;
+        };
+        AudiencePulseRecommendation: {
+            id: string;
+            themeId: string;
+            title: string;
+            rationale: string;
+            questions: string[];
+            evidenceReferences: string[];
+            startDraft: {
+                title: string;
+                questions: string[];
+            };
+        };
+        AudiencePulseReport: {
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            /** Format: date-time */
+            generatedAt: string;
+            coverage: components["schemas"]["AudiencePulseCoverage"];
+            weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
+            summary: string;
+            unclassifiedQuestionCount: number;
+            themes: components["schemas"]["AudiencePulseTheme"][];
+            contentGaps: components["schemas"]["AudiencePulseContentGap"][];
+            recommendations: components["schemas"]["AudiencePulseRecommendation"][];
+            caveats: string[];
+        };
+        AudiencePulseReadResponse: {
+            /** @enum {string} */
+            kind: "not_generated";
+        } | {
+            /** @enum {string} */
+            kind: "completed";
+            report: components["schemas"]["AudiencePulseReport"];
+        };
+        AudiencePulseRefreshResponse: {
+            /** @enum {string} */
+            kind: "no_traffic";
+            period: {
+                /** Format: date-time */
+                start: string;
+                /** Format: date-time */
+                end: string;
+            };
+            weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
+        } | {
+            /** @enum {string} */
+            kind: "unavailable";
+            /** @enum {string} */
+            reason: "provider" | "validation" | "cancelled";
+        } | {
+            /** @enum {string} */
+            kind: "completed";
+            report: components["schemas"]["AudiencePulseReport"];
         };
         PendingApprovalDecisionOption: {
             id: string;
@@ -17451,6 +17633,169 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QualityTriageConflictResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved report or no saved report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseReadResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    refreshAudiencePulse: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Completed, no-traffic, or retryable inference result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseRefreshResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.quality.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description A workspace refresh is already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Refresh rate or usage capacity exceeded */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace inference capability is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAudiencePulseEvidenceAnchor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AudiencePulseEvidenceAnchorRequest"];
+            };
+        };
+        responses: {
+            /** @description Bounded source and next assistant context */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AudiencePulseEvidenceAnchorResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Browser dashboard session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Exact source was not found in the selected workspace conversation */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };

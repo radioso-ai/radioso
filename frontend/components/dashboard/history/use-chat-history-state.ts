@@ -18,6 +18,10 @@ import {
   type HistoryItem,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import {
+  audiencePulseApi,
+  type AudiencePulseEvidenceAnchorResponse,
+} from '@/lib/api-audience-pulse'
 import { getPrimaryLeaf } from '@/lib/turn-trace'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
@@ -391,17 +395,74 @@ const isNotFoundError = (error: unknown) =>
   'code' in error.error &&
   error.error.code === 'not_found'
 
+const withAudiencePulseEvidenceWindow = (
+  detail: ChatConversationDetail,
+  anchor: AudiencePulseEvidenceAnchorResponse,
+): ChatConversationDetail => {
+  const contextMessages = anchor.nextAssistant ? [anchor.source, anchor.nextAssistant] : [anchor.source]
+  const messages: ChatConversationTurn[] = contextMessages.map((message) => ({
+    id: message.messageId,
+    role: message.role,
+    source: message.source,
+    content: message.content,
+    createdAt: message.createdAt,
+  }))
+
+  return {
+    ...detail,
+    messageWindowOffset: 0,
+    messageWindowLimit: Math.max(messages.length, 1),
+    hasOlderMessages: false,
+    nextCursor: null,
+    messages,
+  }
+}
+
+/**
+ * Audience Pulse evidence is loaded through one bounded, dashboard-authorized
+ * server window. A normal history read supplies conversation metadata, while
+ * the anchor endpoint supplies only the source and its immediate answer context.
+ */
+const loadConversationDetail = async ({
+  conversationId,
+  anchorMessageId,
+  isAudiencePulseEvidence,
+  isActive,
+}: {
+  conversationId: string
+  anchorMessageId?: string | null
+  isAudiencePulseEvidence: boolean
+  isActive: () => boolean
+}): Promise<ChatConversationDetail | null> => {
+  const detailRequest = chatApi.getHistoryConversation(conversationId, {
+    limit: MESSAGE_WINDOW_SIZE,
+  })
+  if (!anchorMessageId || !isAudiencePulseEvidence) {
+    const detail = await detailRequest
+    return isActive() ? detail : null
+  }
+
+  const [detail, anchor] = await Promise.all([
+    detailRequest,
+    audiencePulseApi.getEvidenceAnchor({ conversationId, messageId: anchorMessageId }),
+  ])
+  if (!isActive()) return null
+  return withAudiencePulseEvidenceWindow(detail, anchor)
+}
+
 export function useHistoryDetailState({
   selectedItem,
   setSelectedItem,
   onItemNotFound,
   anchorMessageId,
+  isAudiencePulseEvidence = false,
   additionalConversationMessages = [],
 }: {
   selectedItem: SelectedHistoryItem
   setSelectedItem: (item: SelectedHistoryItem) => void
   onItemNotFound?: () => void
   anchorMessageId?: string | null
+  isAudiencePulseEvidence?: boolean
   additionalConversationMessages?: ChatConversationMessage[]
 }) {
   const [conversationDetail, setConversationDetail] = useState<ChatConversationDetail | null>(null)
@@ -441,15 +502,24 @@ export function useHistoryDetailState({
 
     try {
       if (selectedItem.kind === 'chat') {
-        const detail = await chatApi.getHistoryConversation(selectedItem.id, {
-          limit: MESSAGE_WINDOW_SIZE,
+        const detail = await loadConversationDetail({
+          conversationId: selectedItem.id,
+          anchorMessageId,
+          isAudiencePulseEvidence,
+          isActive,
         })
-        if (!isActive()) {
+        if (!detail || !isActive()) {
           return
         }
         setConversationDetail(detail)
         const anchoredMessage = anchorMessageId
-          ? detail.messages.find((message) => message.id === anchorMessageId && message.role === 'assistant') ?? null
+          ? detail.messages.find((message) => message.id === anchorMessageId) ?? null
+          : null
+        const anchoredMessageIndex = anchoredMessage
+          ? detail.messages.findIndex((message) => message.id === anchoredMessage.id)
+          : -1
+        const assistantAfterAnchoredMessage = anchoredMessageIndex >= 0
+          ? detail.messages.slice(anchoredMessageIndex + 1).find((message) => message.role === 'assistant') ?? null
           : null
         // Prefer the most recent assistant turn that recorded diagnostics, but
         // fall back to the latest assistant turn even when none did. Otherwise the
@@ -457,11 +527,14 @@ export function useHistoryDetailState({
         // (suspended/action-required, human-handled), making the button look dead.
         const reversedMessages = [...detail.messages].reverse()
         const traceBearingMessage =
-          anchoredMessage ??
+          (anchoredMessage?.role === 'assistant' ? anchoredMessage : assistantAfterAnchoredMessage) ??
           reversedMessages.find((message) => message.role === 'assistant' && message.debug) ??
           reversedMessages.find((message) => message.role === 'assistant') ??
           null
-        setSelectedThreadMessageId(traceBearingMessage?.id ?? null)
+        // Audience Pulse evidence points at the visitor question, not at its
+        // following answer. Keep that exact question selected so the drawer
+        // scrolls to the evidence while diagnostics continue to use its answer.
+        setSelectedThreadMessageId(anchoredMessage?.id ?? traceBearingMessage?.id ?? null)
         setSelectedAssistantMessageId(traceBearingMessage?.id ?? null)
         const trace = traceBearingMessage?.debug?.activityTrace
         setSelectedStageId(trace?.stages[0]?.stageId)
@@ -520,7 +593,7 @@ export function useHistoryDetailState({
         setIsDetailLoading(false)
       }
     }
-  }, [anchorMessageId, onItemNotFound, selectedItem, setSelectedItem])
+  }, [anchorMessageId, isAudiencePulseEvidence, onItemNotFound, selectedItem, setSelectedItem])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Detail view fetches the current drawer item after selection changes.

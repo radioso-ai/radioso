@@ -48,6 +48,7 @@ import { createWebsiteEmbedApplicationModule } from "./builtIn/websiteEmbedModul
 import { createAgentWizardApplicationModule } from "./builtIn/agentWizardModule.js";
 import { createMcpConverseApplicationModule } from "./builtIn/mcpConverseModule.js";
 import { createQualityApplicationModule } from "./builtIn/qualityModule.js";
+import { createAudiencePulseApplicationModule } from "./builtIn/audiencePulseModule.js";
 import { createUsageReportingApplicationModule } from "./builtIn/usageReportingModule.js";
 import { createAnswerDirectivesApplicationModule } from "./builtIn/answerDirectivesModule.js";
 import { createContactRoutineApplicationModule } from "./builtIn/contactRoutineModule.js";
@@ -138,6 +139,7 @@ export const createDefaultApplicationComposition = (options: {
     createMcpConverseApplicationModule(),
     createUsageReportingApplicationModule(),
     createQualityApplicationModule(),
+    createAudiencePulseApplicationModule(),
     createContactRoutineApplicationModule(),
     createWebhookSendApplicationModule(),
     createOssOrganizationCreationApplicationModule(),

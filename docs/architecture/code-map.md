@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-07-30
+last_updated: 2026-08-03
 ---
 
 # Code Map
@@ -670,6 +670,48 @@ Related docs:
 
 - `docs/human-takeover.md` (Activity tabs and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+
+## Audience Pulse
+
+Owns the saved 30-day dashboard analysis that groups recurring conversation
+topics, identifies recurring content gaps from grounding evidence, proposes
+content to write, and opens bounded evidence or a seeded document draft in the
+existing dashboard surfaces.
+
+Should not affect chat or retrieval behavior, write Knowledge Base content, or
+expose a new external MCP tool. It reads history through a narrow port, stores a
+snapshot in Postgres, and hands off only the evidence or draft seed that the
+existing activity and document views need.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/audiencePulse/contracts.ts`
+- `backend/src/modules/audiencePulse/composition.ts`
+- `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse` and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
+- `frontend/components/dashboard/audience-pulse-view.tsx`
+- `frontend/lib/api-audience-pulse.ts`
+- `frontend/lib/audience-pulse-draft-seed.ts` and `frontend/lib/audience-pulse-evidence-handoff.ts`
+
+Primary internals:
+
+- `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
+- `backend/src/modules/chat/audiencePulseHistorySource.ts`
+- `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
+- `backend/src/db/migrations/134_audience_pulse_snapshots.sql`
+- `backend/prompts/audience-pulse.md`
+
+Useful searches:
+
+- `rg "AudiencePulse|audiencePulse|audience-pulse" backend/src frontend backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/audiencePulse tests/integration/audiencePulse tests/contract/audiencePulse`
+- `cd frontend && pnpm exec playwright test tests/e2e/audience-pulse.spec.ts`
+
+Related specs:
+
+- `specs/939-continuous-content-planning/`
 
 ## Product Eval Cases And Runs
 

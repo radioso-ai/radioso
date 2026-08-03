@@ -34,6 +34,10 @@ constructing ad hoc fetches.
   tests.
 - Dashboard navigation: `dashboard-routes.ts`,
   `dashboard-workspace-sync.ts`, and dashboard components.
+- Audience Pulse: `api-audience-pulse.ts` reads saved reports, starts explicit
+  refreshes, and opens evidence; `audience-pulse-draft-seed.ts` and
+  `audience-pulse-evidence-handoff.ts` keep transient recommendations and evidence
+  out of the URL.
 - Embedded/public chat: `api-public-chat.ts`, `public-chat-session-handoff.ts`,
   `embed-widget.ts`.
 
@@ -45,5 +49,6 @@ Focused starting points:
 - `cd frontend && pnpm test -- tests/unit/auth-api.test.ts`
 - `cd frontend && pnpm test -- tests/unit/workspace-context.test.ts`
 - `cd frontend && pnpm test -- tests/unit/embed-widget.test.ts`
+- `cd frontend && pnpm test -- tests/unit/api-audience-pulse.test.ts tests/unit/audience-pulse-draft-seed.test.ts tests/unit/audience-pulse-evidence-handoff.test.ts`
 
 Use Playwright when behavior is only meaningful through a visible user journey.

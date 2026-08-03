@@ -122,13 +122,34 @@ export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
 }
 
+const directiveCoherenceInvocationContext = (
+  metadata: Record<string, unknown> | undefined,
+): { workspaceId: string; agentId: string } => {
+  const context = metadata?.invocationContext;
+  if (
+    !context
+    || typeof context !== "object"
+    || Array.isArray(context)
+    || typeof (context as Record<string, unknown>).workspaceId !== "string"
+    || typeof (context as Record<string, unknown>).agentId !== "string"
+  ) {
+    throw new Error("directive_coherence_invocation_context_required");
+  }
+  return {
+    workspaceId: (context as Record<string, string>).workspaceId,
+    agentId: (context as Record<string, string>).agentId,
+  };
+};
+
 const createConversationModelGateway = (pipeline: ModelInferencePipeline): ConversationModelGateway => ({
   async complete(input) {
+    const invocationContext = directiveCoherenceInvocationContext(input.metadata);
     const { text } = await pipeline.complete({
       prompt: input.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n"),
       systemPrompt: input.systemPrompt,
       operation: {
-        workspaceId: "directive-coherence",
+        workspaceId: invocationContext.workspaceId,
+        agentId: invocationContext.agentId,
         surface: "agents",
         operation: "directive_coherence",
         attemptKey: String(input.metadata?.candidateDirectiveName ?? "candidate"),

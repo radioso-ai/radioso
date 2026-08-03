@@ -79,6 +79,11 @@ export default function WorkspaceDashboardPage() {
       resolvedWorkspace.workspacePublicRouteKey,
     )
   }, [parsedRoute, resolvedWorkspace, workspaceKey])
+  const currentHref = `${pathname}${searchParamsString ? `?${searchParamsString}` : ''}`
+  const canonicalHref = user && resolvedRouteState
+    ? buildDashboardHref(user.accountId, resolvedRouteState)
+    : null
+  const isCanonicalizing = canonicalHref !== null && canonicalHref !== currentHref
 
   useEffect(() => {
     if (!isBootstrapping && user && !parsedRoute) {
@@ -145,16 +150,12 @@ export default function WorkspaceDashboardPage() {
   }, [isBootstrapping, login, parsedRoute, router, user, workspaceKey])
 
   useEffect(() => {
-    if (!user || !resolvedRouteState) {
+    if (!canonicalHref || !isCanonicalizing) {
       return
     }
 
-    const canonicalHref = buildDashboardHref(user.accountId, resolvedRouteState)
-    const currentHref = `${pathname}${searchParamsString ? `?${searchParamsString}` : ''}`
-    if (canonicalHref !== currentHref) {
-      router.replace(canonicalHref)
-    }
-  }, [pathname, resolvedRouteState, router, searchParamsString, user])
+    router.replace(canonicalHref)
+  }, [canonicalHref, isCanonicalizing, router])
 
   if (isBootstrapping) {
     return (
@@ -172,7 +173,8 @@ export default function WorkspaceDashboardPage() {
     !workspaceKey ||
     !parsedRoute ||
     !resolvedRouteState ||
-    resolvedRouteState.workspacePublicRouteKey !== workspaceKey
+    resolvedRouteState.workspacePublicRouteKey !== workspaceKey ||
+    isCanonicalizing
   ) {
     return (
       <div className="flex min-h-screen items-center justify-center">

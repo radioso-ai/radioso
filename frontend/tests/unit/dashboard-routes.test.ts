@@ -311,6 +311,28 @@ describe('dashboard route state', () => {
     })).toBe('/w/workspace-five-abc123/account?tab=usage')
   })
 
+  it('round-trips detailed usage filters through the canonical account usage route', () => {
+    const params = new URLSearchParams({
+      tab: 'usage',
+      usageFrom: '2026-06-01',
+      usageTo: '2026-06-30',
+      usageWorkspace: 'workspace-1',
+    })
+
+    expect(parseDashboardRoute(['account'], params)).toEqual({
+      section: 'account',
+      accountTab: 'usage',
+      usageDetailsFrom: '2026-06-01',
+      usageDetailsTo: '2026-06-30',
+      usageDetailsWorkspaceId: 'workspace-1',
+    })
+
+    expect(buildDashboardHref('account-1', {
+      ...parseDashboardRoute(['account'], params)!,
+      workspacePublicRouteKey: 'workspace-key',
+    })).toBe('/w/workspace-key/account?tab=usage&usageFrom=2026-06-01&usageTo=2026-06-30&usageWorkspace=workspace-1')
+  })
+
   it('parses legacy routes into canonical route state', () => {
     expect(parseDashboardRoute(['chat'], new URLSearchParams({ workspace: 'workspace-1' }))).toEqual({
       section: 'agents',

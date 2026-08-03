@@ -95,6 +95,60 @@ describe('accountApi.getWorkspaceToken', () => {
     )
   })
 
+  it('loads detailed message and internal AI usage with session credentials and paging filters', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          from: '2026-06-01',
+          to: '2026-06-02',
+          filters: { workspaceId: 'workspace-1' },
+          items: [],
+          nextCursor: 'next-message-page',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => 'application/json' },
+        json: async () => ({
+          from: '2026-06-01',
+          to: '2026-06-02',
+          filters: { workspaceId: 'workspace-1' },
+          items: [],
+          nextCursor: null,
+        }),
+      })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    await accountApi.getMessageUsage({
+      from: '2026-06-01',
+      to: '2026-06-02',
+      workspaceId: 'workspace-1',
+      limit: 50,
+      cursor: 'next-message-page',
+    })
+    await accountApi.getInternalUsage({
+      from: '2026-06-01',
+      to: '2026-06-02',
+      workspaceId: 'workspace-1',
+    })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      '/backend/api/v1/account/usage/messages?from=2026-06-01&to=2026-06-02&workspaceId=workspace-1&limit=50&cursor=next-message-page',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    )
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      '/backend/api/v1/account/usage/internal-operations?from=2026-06-01&to=2026-06-02&workspaceId=workspace-1',
+      expect.objectContaining({ method: 'GET', credentials: 'include' }),
+    )
+  })
+
   it('creates invitations with session credentials', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

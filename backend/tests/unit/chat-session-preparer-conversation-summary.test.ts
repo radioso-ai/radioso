@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
+import { freezePageReadOutcome } from "../../src/modules/chat/services/pageRead/pageReadSessionOutcome.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import type { ConversationSummaryStore } from "../../src/modules/chat/contracts/conversationSummary.js";
@@ -82,6 +83,35 @@ const preparerWith = async (store?: Pick<ConversationSummaryStore, "load">) => {
 };
 
 describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
+  it("persists the first entry page even when page reading is not required and preserves it later", async () => {
+    const { preparer, agent, conversationRepository } = await preparerWith();
+    const firstPageUrl = "https://it.ananda.eu/pricing?source=chat";
+
+    const first = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      query: "What does this page cover?",
+      pageContext: { pageUrl: firstPageUrl },
+    });
+    freezePageReadOutcome(first, {
+      planner: null,
+      routineCandidates: [],
+      directiveCandidates: [],
+      fallbackRequest: "",
+    });
+    const followUp = await preparer.prepare({
+      workspaceId: "ws-1",
+      agentId: agent.id,
+      conversationId: first.conversation.id,
+      query: "What about the next page?",
+      pageContext: { pageUrl: "https://it.ananda.eu/contact" },
+    });
+
+    expect(first.pageReadOutcome?.gate).toEqual({ kind: "not_required" });
+    expect(conversationRepository.items.get(first.conversation.id)?.entryPageUrl).toBe(firstPageUrl);
+    expect(followUp.conversation.entryPageUrl).toBe(firstPageUrl);
+  });
+
   it("loads the stored summary onto the prepared session for an existing conversation", async () => {
     const load = vi.fn(async () => ({
       summary: "The user booked the June retreat and paid the deposit.",

@@ -134,6 +134,7 @@ export interface LowQualityTurn {
   conversationId: string
   agentId: string | null
   agentName: string | null
+  agentInternalName: string | null
   channel: string | null
   question: string | null
   answerPreview: string

@@ -24,14 +24,29 @@ export const SOURCE_BADGES: Record<string, ConversationSourceBadge> = {
   },
 }
 
-type ConversationSourceInput = Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin' | 'channelContext'>
+type ConversationSourceInput = Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'> & {
+  channelContext?: ConversationChannelContext | null
+}
+
+type ConversationLocationInput = ConversationSourceInput & {
+  entryPageUrl?: string | null
+}
+
+export interface ConversationLocation {
+  /** Text for the Source cell. */
+  text: string
+  /** Absolute URL when the location is a real page the operator can open, else null. */
+  href: string | null
+  /** Full untruncated value for the title attribute, when text is elided. */
+  title: string | null
+}
 
 const isConversationSourceInput = (
   input: ConversationSourceInput | string | null,
 ): input is ConversationSourceInput =>
   typeof input === 'object' && input !== null && 'sourceChannel' in input && 'sourceOrigin' in input
 
-const trimToValue = (value: string | undefined) => {
+const trimToValue = (value: string | null | undefined) => {
   const trimmed = value?.trim()
   return trimmed && trimmed.length > 0 ? trimmed : null
 }
@@ -71,36 +86,78 @@ export const formatConversationChannelContextDetails = (
   return details
 }
 
-const formatSlackConversationSource = (
+const formatSlackConversationDetails = (
   context: Extract<ConversationChannelContext, { provider: 'slack' }>,
 ) => {
-  const suffix = context.channel.type === 'im'
+  return context.channel.type === 'im'
     ? `Direct message with ${slackUserLabel(context)}`
     : `Channel ${context.channel.id}${context.threadTs ? ' · thread' : ''} · ${slackUserLabel(context)}`
+}
 
-  return `Slack · ${suffix}`
+const formatSlackConversationSource = (
+  context: Extract<ConversationChannelContext, { provider: 'slack' }>,
+) => `Slack · ${formatSlackConversationDetails(context)}`
+
+const formatSlackConversationLocation = formatSlackConversationDetails
+
+const formatPagePath = (url: URL): string => {
+  const path = url.pathname.replace(/\/+$/u, '')
+  return `${url.host}${path}`
+}
+
+/** Turns conversation provenance into the one location shown to operators. */
+export const formatConversationLocation = (
+  conversation: ConversationLocationInput,
+): ConversationLocation => {
+  if (conversation.channelContext?.provider === 'slack') {
+    return { text: formatSlackConversationLocation(conversation.channelContext), href: null, title: null }
+  }
+
+  const entryPageUrl = trimToValue(conversation.entryPageUrl)
+  if (entryPageUrl) {
+    try {
+      const url = new URL(entryPageUrl)
+      return { text: formatPagePath(url), href: url.toString(), title: url.toString() }
+    } catch {
+      // Fall through to the stable origin/channel description.
+    }
+  }
+
+  const sourceOrigin = trimToValue(conversation.sourceOrigin)
+  if (sourceOrigin) {
+    try {
+      const url = new URL(sourceOrigin)
+      return { text: url.host, href: url.origin, title: url.origin }
+    } catch {
+      // Fall through to the channel description.
+    }
+  }
+
+  switch (conversation.sourceChannel) {
+    case 'website_embed':
+      return { text: 'No page recorded', href: null, title: null }
+    case 'anonymous':
+      return { text: 'No page recorded', href: null, title: null }
+    case 'mcp':
+      return { text: 'No page recorded', href: null, title: null }
+    case 'authenticated_chat':
+    case null:
+      return { text: 'Dashboard chat', href: null, title: null }
+    default:
+      return { text: conversation.sourceChannel, href: null, title: null }
+  }
 }
 
 export function formatConversationSource(conversation: ConversationSourceInput): string | null
-export function formatConversationSource(sourceChannel: string | null, sourceOrigin: string | null): string | null
+export function formatConversationSource(sourceChannel: string | null): string | null
 export function formatConversationSource(
   input: ConversationSourceInput | string | null,
-  sourceOrigin?: string | null,
 ) {
   if (isConversationSourceInput(input) && input.channelContext?.provider === 'slack') {
     return formatSlackConversationSource(input.channelContext)
   }
 
   const sourceChannel = isConversationSourceInput(input) ? input.sourceChannel : input
-  const origin = isConversationSourceInput(input) ? input.sourceOrigin : sourceOrigin ?? null
-
-  if (sourceChannel === 'website_embed' && origin) {
-    try {
-      return `Embedded from ${new URL(origin).host}`
-    } catch {
-      return `Embedded from ${origin}`
-    }
-  }
 
   if (sourceChannel === 'website_embed') {
     return 'Embedded chat'

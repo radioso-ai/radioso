@@ -27,6 +27,7 @@ import {
   type Workspace,
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import {
   defaultUsageTrendQuery,
   formatUsageTrendBucketLabel,
@@ -300,7 +301,7 @@ export function UsageTrendsView() {
                 <SelectContent>
                   <SelectItem value={ALL_FILTER_VALUE}>All agents</SelectItem>
                   {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>{agent.name || 'Untitled agent'}</SelectItem>
+                    <SelectItem key={agent.id} value={agent.id}>{getAgentOperatorLabel(agent, 'Untitled agent')}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

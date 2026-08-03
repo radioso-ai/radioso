@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label'
 import { type AgentSectionId } from '@/lib/dashboard-areas'
 import { SectionNavBody, SubNavRow, type SubNavGroup } from '@/components/dashboard/subnav-column'
 
@@ -140,8 +141,8 @@ export function AgentSwitcher({
       {open ? (
         <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-border bg-popover text-popover-foreground shadow-md">
           {agents.map((agent) => {
-            const internalLabel = agent.internalName?.trim()
-            const primaryLabel = internalLabel || agent.name || 'Agent'
+            const primaryLabel = getAgentOperatorLabel(agent)
+            const publicNameHint = getAgentPublicNameHint(agent)
             return (
               <Link
                 key={agent.id}
@@ -153,8 +154,8 @@ export function AgentSwitcher({
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate">{primaryLabel}</span>
                   {/* Show the visitor-facing name underneath when an internal label is overriding it. */}
-                  {internalLabel ? (
-                    <span className="truncate text-xs text-muted-foreground">{agent.name || 'Agent'}</span>
+                  {publicNameHint ? (
+                    <span className="truncate text-xs text-muted-foreground">{publicNameHint}</span>
                   ) : null}
                 </span>
               </Link>

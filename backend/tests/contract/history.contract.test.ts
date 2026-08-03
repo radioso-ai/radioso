@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
+import type { ContactHistoryDetail, ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 describe("history contract", () => {
@@ -116,6 +117,79 @@ describe("history contract", () => {
     expect(response.status).toBe(400);
   });
 
+  it("keeps contact detail on the same dashboard projection as chat detail", async () => {
+    const contact: ContactHistoryDetail = {
+      id: "66666666-6666-4666-8666-666666666666",
+      sortAt: "2026-04-22T10:00:00.000Z",
+      workspaceId: "workspace-placeholder",
+      conversationId: "77777777-7777-4777-8777-777777777777",
+      assistantMessageId: null,
+      sourceChannel: "website_embed",
+      sourceOrigin: "https://example.com/help",
+      userEmail: "customer@example.com",
+      messagePreview: "Please contact me about billing.",
+      message: "Please contact me about billing.",
+      triggerSource: "manual",
+      triggerReason: null,
+      status: "pending",
+      attempts: 0,
+      finalDeliveryError: null,
+      createdAt: "2026-04-22T10:00:00.000Z",
+      updatedAt: "2026-04-22T10:00:00.000Z",
+    };
+    const contactHistoryProvider: ContactHistoryProviderPort = {
+      async listPageByWorkspaceId(workspaceId, input) {
+        const contacts = contact.workspaceId === workspaceId ? [contact].slice(input.offset ?? 0, (input.offset ?? 0) + input.limit) : [];
+        return {
+          contacts,
+          total: contact.workspaceId === workspaceId ? 1 : 0,
+          nextCursor: null,
+          hasMore: false,
+        };
+      },
+      async getById(workspaceId, requestId) {
+        return contact.workspaceId === workspaceId && contact.id === requestId ? contact : null;
+      },
+    };
+    const { app, repositories } = createTestApp({ contactHistoryProvider });
+    const session = await issueTestSession(app, "history-contact-detail@example.com");
+    contact.workspaceId = session.workspaceId;
+
+    const conversation = await repositories.conversationRepository.create(
+      session.workspaceId,
+      "88888888-8888-4888-8888-888888888888",
+      "website_embed",
+      null,
+      "https://example.com/help",
+      null,
+      null,
+      { entryPageUrl: "https://example.com/pricing" },
+    );
+    conversation.agentName = "Public support";
+    conversation.agentInternalName = "Billing support";
+    contact.conversationId = conversation.id;
+
+    const chatDetail = await request(app)
+      .get(`/api/v1/history/chat/${conversation.id}`)
+      .set(adminSessionHeaders(session));
+    const contactDetail = await request(app)
+      .get(`/api/v1/history/contact/${contact.id}`)
+      .set(adminSessionHeaders(session));
+
+    expect(chatDetail.status).toBe(200);
+    expect(contactDetail.status).toBe(200);
+    expect(chatDetail.body).toMatchObject({
+      agentInternalName: "Billing support",
+      entryPageUrl: "https://example.com/pricing",
+    });
+    expect(contactDetail.body.conversation).toMatchObject({
+      conversationId: conversation.id,
+      agentName: "Public support",
+      agentInternalName: "Billing support",
+      entryPageUrl: "https://example.com/pricing",
+    });
+  });
+
   it("filters chat history to human-owned conversations and returns the filtered total", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "history-human-owned@example.com");
@@ -137,4 +211,5 @@ describe("history contract", () => {
       conversations: [expect.objectContaining({ id: humanOwned.id })],
     });
   });
+
 });

@@ -222,6 +222,7 @@ export class ModelDirectiveCoherenceChecker implements DirectiveCoherenceChecker
         capability: "directive_coherence",
         candidateDirectiveName: input.candidate.name,
         candidateDirectiveCondition: directiveConditionText(input.candidate),
+        ...(input.invocationContext ? { invocationContext: input.invocationContext } : {}),
       },
     });
     return parseModelVerdict(text, input.existingDirectives) ?? fallbackInvalidVerdict();

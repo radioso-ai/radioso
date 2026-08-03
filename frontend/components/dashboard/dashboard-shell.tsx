@@ -185,7 +185,7 @@ export function DashboardShell({
   ) : area === 'settings' ? (
     <SettingsView accountId={accountId} routeState={routeState} />
   ) : (
-    <AccountView routeState={routeState} />
+    <AccountView accountId={accountId} routeState={routeState} />
   )
 
   return (

@@ -1,7 +1,9 @@
 import {
+  UsageDetailsService,
   UsageTrendsService,
-  createUsageTrendsRoutes,
+  createUsageReportingRoutes,
 } from "../../../modules/reporting/composition.js";
+import { UsageDetailsReportingRepository } from "../../../db/repositories/usageDetailsReportingRepository.js";
 import type { ApplicationModule } from "../applicationModule.js";
 
 export const createUsageReportingApplicationModule = (): ApplicationModule => ({
@@ -11,8 +13,12 @@ export const createUsageReportingApplicationModule = (): ApplicationModule => ({
     context.registerRouteMount({
       path: "/api/v1/account",
       createRouter(dependencies) {
-        const service = new UsageTrendsService(dependencies.connectorDb.kysely, dependencies.accountAccessService);
-        return createUsageTrendsRoutes(dependencies, service);
+        const trendsService = new UsageTrendsService(dependencies.connectorDb.kysely, dependencies.accountAccessService);
+        const detailsService = new UsageDetailsService(
+          new UsageDetailsReportingRepository(dependencies.connectorDb.kysely),
+          dependencies.accountAccessService,
+        );
+        return createUsageReportingRoutes(dependencies, trendsService, detailsService);
       },
     });
   },

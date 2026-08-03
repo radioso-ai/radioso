@@ -49,6 +49,60 @@ export const registerAccountManagementPaths = (
   });
 
   registry.registerPath({
+    method: "get",
+    path: "/api/v1/account/usage/messages",
+    tags: ["Account"],
+    summary: "Get detailed message AI usage",
+    description:
+      "Returns one aggregated row for each end-user message in the active account. Model, embedding, and unknown-historical usage remain separate. " +
+      "The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.",
+    operationId: "getAccountUsageMessages",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: { query: schemas.UsageDetailsQuerySchema },
+    responses: {
+      200: {
+        description: "Detailed message usage returned",
+        content: { "application/json": { schema: schemas.MessageUsageResponseSchema } },
+      },
+      400: {
+        description: "Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      401: {
+        description: "Authentication required",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/account/usage/internal-operations",
+    tags: ["Account"],
+    summary: "Get detailed internal AI usage",
+    description:
+      "Returns individual internal model, embedding, and unknown-historical usage attempts for the active account. " +
+      "The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.",
+    operationId: "getAccountInternalUsage",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: { query: schemas.UsageDetailsQuerySchema },
+    responses: {
+      200: {
+        description: "Detailed internal usage returned",
+        content: { "application/json": { schema: schemas.InternalUsageResponseSchema } },
+      },
+      400: {
+        description: "Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      401: {
+        description: "Authentication required",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/account/accounts",
     tags: ["Account"],

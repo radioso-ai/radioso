@@ -8,6 +8,7 @@ import {
   type QualitySignalId,
   type QualityStatsRange,
 } from './api-quality'
+import { parseUsageDetailsQuery } from './usage-details'
 
 export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
@@ -89,6 +90,9 @@ export interface DashboardRouteState {
   knowledgeTab?: KnowledgeTab
   settingsTab?: SettingsTab
   accountTab?: AccountTab
+  usageDetailsFrom?: string
+  usageDetailsTo?: string
+  usageDetailsWorkspaceId?: string
   documentId?: string
   documentsPage?: number
   documentSourceFilter?: string
@@ -138,6 +142,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'knowledgeTab',
   'settingsTab',
   'accountTab',
+  'usageDetailsFrom',
+  'usageDetailsTo',
+  'usageDetailsWorkspaceId',
   'documentId',
   'documentsPage',
   'documentSourceFilter',
@@ -476,6 +483,13 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     if (state.accountTab && state.accountTab !== DEFAULT_ACCOUNT_TAB) {
       normalized.accountTab = state.accountTab
     }
+    if (state.accountTab === 'usage' && state.usageDetailsFrom && state.usageDetailsTo) {
+      normalized.usageDetailsFrom = state.usageDetailsFrom
+      normalized.usageDetailsTo = state.usageDetailsTo
+      if (state.usageDetailsWorkspaceId) {
+        normalized.usageDetailsWorkspaceId = state.usageDetailsWorkspaceId
+      }
+    }
     return normalized
   }
 
@@ -632,6 +646,13 @@ const buildQueryString = (normalized: DashboardRouteState) => {
   if (normalized.section === 'account') {
     if (normalized.accountTab) {
       searchParams.set('tab', normalized.accountTab)
+    }
+    if (normalized.accountTab === 'usage' && normalized.usageDetailsFrom && normalized.usageDetailsTo) {
+      searchParams.set('usageFrom', normalized.usageDetailsFrom)
+      searchParams.set('usageTo', normalized.usageDetailsTo)
+      if (normalized.usageDetailsWorkspaceId) {
+        searchParams.set('usageWorkspace', normalized.usageDetailsWorkspaceId)
+      }
     }
   }
 
@@ -927,10 +948,18 @@ export const parseDashboardRoute = (
     if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
+    const usageDetails = parseUsageDetailsQuery(searchParams ?? undefined)
     return normalizeState({
       section: 'account',
       accountTab: 'usage',
       workspaceId,
+      ...(usageDetails
+        ? {
+            usageDetailsFrom: usageDetails.from,
+            usageDetailsTo: usageDetails.to,
+            usageDetailsWorkspaceId: usageDetails.workspaceId,
+          }
+        : {}),
     })
   }
 
@@ -938,10 +967,19 @@ export const parseDashboardRoute = (
     if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
       return null
     }
+    const accountTab = parseAccountTab(searchParams?.get('tab') ?? null)
+    const usageDetails = accountTab === 'usage' ? parseUsageDetailsQuery(searchParams ?? undefined) : undefined
     return normalizeState({
       section: 'account',
       workspaceId,
-      accountTab: parseAccountTab(searchParams?.get('tab') ?? null),
+      accountTab,
+      ...(usageDetails
+        ? {
+            usageDetailsFrom: usageDetails.from,
+            usageDetailsTo: usageDetails.to,
+            usageDetailsWorkspaceId: usageDetails.workspaceId,
+          }
+        : {}),
     })
   }
 
@@ -1049,6 +1087,9 @@ export const retargetDashboardRouteToWorkspace = (
     return normalizeState({
       section: 'account',
       accountTab: state.accountTab,
+      usageDetailsFrom: state.usageDetailsFrom,
+      usageDetailsTo: state.usageDetailsTo,
+      usageDetailsWorkspaceId: state.usageDetailsWorkspaceId,
       ...workspaceState,
     })
   }

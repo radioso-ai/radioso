@@ -214,6 +214,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/usage/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed message AI usage
+         * @description Returns one aggregated row for each end-user message in the active account. Model, embedding, and unknown-historical usage remain separate. The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.
+         */
+        get: operations["getAccountUsageMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/usage/internal-operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get detailed internal AI usage
+         * @description Returns individual internal model, embedding, and unknown-historical usage attempts for the active account. The response excludes message content, prompts, completions, provider request IDs, idempotency keys, and error detail.
+         */
+        get: operations["getAccountInternalUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/account/accounts": {
         parameters: {
             query?: never;
@@ -5988,6 +6028,109 @@ export interface components {
             };
             buckets: components["schemas"]["UsageTrendBucket"][];
         };
+        /** @enum {string} */
+        UsageEventKind: "model" | "embedding" | "unknown";
+        /** @enum {string} */
+        ReasoningCoverage: "complete" | "partial" | "unavailable";
+        UsageOperation: {
+            surface: string;
+            name: string;
+            label: string;
+        };
+        UsageAttempts: {
+            total: number;
+            succeeded: number;
+            failed: number;
+        };
+        UsageQualityCounts: {
+            actual: number;
+            estimated: number;
+        };
+        MessageModelTokens: {
+            input: number;
+            completion: number;
+            reasoning: {
+                tokens: number | null;
+                coverage: components["schemas"]["ReasoningCoverage"];
+            };
+            visibleOutput: number | null;
+            total: number;
+        };
+        MessageEmbeddingTokens: {
+            input: number;
+            total: number;
+            vectors: number;
+            attempts: number;
+        };
+        UnknownHistoricalTokens: {
+            total: number;
+            attempts: number;
+        };
+        MessageUsageSummary: {
+            /** Format: uuid */
+            messageId: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            /** Format: date-time */
+            lastOccurredAt: string;
+            providers: string[];
+            models: string[];
+            operations: components["schemas"]["UsageOperation"][];
+            attempts: components["schemas"]["UsageAttempts"];
+            quality: components["schemas"]["UsageQualityCounts"];
+            modelTokens: components["schemas"]["MessageModelTokens"];
+            embeddingTokens: components["schemas"]["MessageEmbeddingTokens"];
+            unknownHistorical: components["schemas"]["UnknownHistoricalTokens"];
+        };
+        InternalUsageTokens: {
+            input: number | null;
+            completion: number | null;
+            reasoning: number | null;
+            visibleOutput: number | null;
+            total: number;
+        };
+        InternalUsageEvent: {
+            /** Format: uuid */
+            eventId: string;
+            /** Format: uuid */
+            workspaceId: string | null;
+            /** Format: uuid */
+            agentId: string | null;
+            /** Format: date-time */
+            occurredAt: string;
+            kind: components["schemas"]["UsageEventKind"];
+            operation: components["schemas"]["UsageOperation"];
+            provider: string;
+            model: string;
+            /** @enum {string} */
+            status: "succeeded" | "failed";
+            /** @enum {string} */
+            usageQuality: "actual" | "estimated";
+            tokens: components["schemas"]["InternalUsageTokens"];
+            vectorCount: number | null;
+        };
+        UsageDetailsFilters: {
+            /** Format: uuid */
+            workspaceId: string | null;
+        };
+        MessageUsageResponse: {
+            from: string;
+            to: string;
+            filters: components["schemas"]["UsageDetailsFilters"];
+            items: components["schemas"]["MessageUsageSummary"][];
+            nextCursor: string | null;
+        };
+        InternalUsageResponse: {
+            from: string;
+            to: string;
+            filters: components["schemas"]["UsageDetailsFilters"];
+            items: components["schemas"]["InternalUsageEvent"][];
+            nextCursor: string | null;
+        };
         ContextVariable: {
             /** Format: uuid */
             id: string;
@@ -6848,6 +6991,94 @@ export interface operations {
                 };
             };
             /** @description Invalid date range, bucket count, or account-scoped filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountUsageMessages: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                workspaceId?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed message usage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageUsageResponse"];
+                };
+            };
+            /** @description Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAccountInternalUsage: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+                workspaceId?: string;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Detailed internal usage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalUsageResponse"];
+                };
+            };
+            /** @description Invalid detailed-usage range, cursor, limit, or account-scoped workspace filter */
             400: {
                 headers: {
                     [name: string]: unknown;

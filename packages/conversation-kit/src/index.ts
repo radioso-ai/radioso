@@ -45,6 +45,7 @@ export type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
   DirectiveCoherenceConflict,
+  DirectiveCoherenceInvocationContext,
   DirectiveCoherenceGate,
   DirectiveCoherenceGateOptions,
   DirectiveCoherenceMode,

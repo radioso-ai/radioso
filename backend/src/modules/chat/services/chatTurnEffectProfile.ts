@@ -34,11 +34,13 @@ const ephemeralConversation = (
     workspaceId,
     agentId,
     agentName: null,
+    agentInternalName: null,
     sourceChannel: "workbench_replay",
     sourceOrigin: null,
     channelContext: null,
     anonymousSessionId: null,
     verifiedCustomerId: null,
+    entryPageUrl: null,
     createdAt: now,
     updatedAt: now,
   };

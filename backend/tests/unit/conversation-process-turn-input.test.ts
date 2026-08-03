@@ -47,11 +47,13 @@ const conversation = (): ConversationRecord => ({
   workspaceId: "workspace_1",
   agentId: "agent_1",
   agentName: "Support",
+  agentInternalName: null,
   sourceChannel: null,
   anonymousSessionId: null,
   sourceOrigin: null,
   channelContext: null,
   verifiedCustomerId: null,
+  entryPageUrl: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 });

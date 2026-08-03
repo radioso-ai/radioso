@@ -133,6 +133,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
       conversationId: z.string().uuid(),
       agentId: z.string().uuid().nullable(),
       agentName: z.string().nullable(),
+      agentInternalName: z.string().nullable(),
       channel: z.string().nullable(),
       question: z.string().nullable(),
       answerPreview: z.string(),

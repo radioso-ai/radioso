@@ -16,9 +16,10 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { editionController } from '@/lib/edition-controller'
-import type { ChatConversationSummary, ContactHistorySummary, DocumentSearchHistoryEntry } from '@/lib/api'
+import { type ChatConversationSummary, type ContactHistorySummary, type DocumentSearchHistoryEntry } from '@/lib/api'
+import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
-import { formatConversationSource, getConversationSourceBadge } from '@/lib/history-source'
+import { formatConversationLocation, getConversationSourceBadge } from '@/lib/history-source'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
 const formatter = new Intl.DateTimeFormat(undefined, {
@@ -39,83 +40,8 @@ export type HistoryListItem =
 
 const formatTimestamp = (value: string) => formatter.format(new Date(value))
 
-const formatHost = (origin: string | null) => {
-  if (!origin) {
-    return null
-  }
-
-  try {
-    return new URL(origin).host
-  } catch {
-    return origin
-  }
-}
-
-const getConversationAuthLabel = (conversation: Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin' | 'channelContext'>) => {
-  const badge = getConversationSourceBadge(conversation)
-  if (badge) {
-    return badge.label
-  }
-
-  const { sourceChannel } = conversation
-  if (sourceChannel === 'anonymous') {
-    return 'Anonymous'
-  }
-
-  if (sourceChannel === 'website_embed') {
-    return 'Embedded'
-  }
-
-  if (sourceChannel === 'mcp') {
-    return 'MCP'
-  }
-
-  return 'Authenticated'
-}
-
-type ConversationSourceSummary = Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'>
-  & Partial<Pick<ChatConversationSummary, 'channelContext'>>
-
-const getConversationSourceLabel = (conversation: ConversationSourceSummary) => {
-  const channelContextLabel = formatConversationSource({
-    ...conversation,
-    channelContext: conversation.channelContext ?? null,
-  })
-  if (channelContextLabel) {
-    return channelContextLabel
-  }
-
-  const host = formatHost(conversation.sourceOrigin)
-  if (host) {
-    return host
-  }
-
-  if (conversation.sourceChannel === 'anonymous') {
-    return 'Public chat'
-  }
-
-  if (conversation.sourceChannel === 'website_embed') {
-    return 'Website embed'
-  }
-
-  if (conversation.sourceChannel === 'mcp') {
-    return 'MCP'
-  }
-
-  return 'Dashboard chat'
-}
-
 const formatMessageCount = (messageCount: number) =>
   `${messageCount} message${messageCount === 1 ? '' : 's'}`
-
-const getConversationAgentLabel = (conversation: Pick<ChatConversationSummary, 'agentName' | 'agentId'>) => {
-  const name = conversation.agentName?.trim()
-  if (name) {
-    return name
-  }
-
-  return conversation.agentId ? 'Unknown agent' : 'No agent'
-}
 
 const emptyAgentLabel = '—'
 
@@ -198,14 +124,22 @@ function ConversationRow({
   conversation: ChatConversationSummary
   onSelect: (item: SelectedHistoryItem) => void
 }) {
-  const sourceLabel = getConversationSourceLabel(conversation)
+  const location = formatConversationLocation(conversation)
   const sourceBadge = getConversationSourceBadge(conversation)
-  const authLabel = sourceBadge ? null : getConversationAuthLabel(conversation)
+  const publicNameHint = getAgentPublicNameHint({
+    internalName: conversation.agentInternalName,
+    name: conversation.agentName,
+  })
 
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-36">
-        <span className="block truncate text-sm text-muted-foreground">{getConversationAgentLabel(conversation)}</span>
+      <DashboardTableCell className="w-40">
+        <span
+          className="block truncate text-sm text-muted-foreground"
+          title={publicNameHint ?? undefined}
+        >
+          {getAgentOperatorLabel({ internalName: conversation.agentInternalName, name: conversation.agentName }, conversation.agentId ? 'Unknown agent' : 'No agent')}
+        </span>
       </DashboardTableCell>
       <DashboardTableCell>
         <button
@@ -216,20 +150,31 @@ function ConversationRow({
           <span className="block truncate">{conversation.preview || 'Untitled conversation'}</span>
         </button>
       </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
-        <span className="block truncate">{sourceLabel}</span>
-      </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-56 text-sm text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2">
-          {sourceBadge ? (
-            <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span>
-          ) : null}
-          <span className="block truncate">
-            {authLabel ? `${authLabel} - ` : ''}{formatMessageCount(conversation.messageCount)}
-          </span>
+          {sourceBadge ? <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span> : null}
+          {location.href ? (
+            <a
+              href={location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={location.title ?? undefined}
+              onClick={(event) => event.stopPropagation()}
+              className="block min-w-0 truncate hover:text-primary"
+            >
+              {location.text}
+            </a>
+          ) : (
+            <span className="block min-w-0 truncate" title={location.title ?? undefined}>{location.text}</span>
+          )}
         </span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
+        <span className="block truncate">
+          {formatMessageCount(conversation.messageCount)}
+        </span>
+      </DashboardTableCell>
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
         {formatTimestamp(conversation.updatedAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -247,7 +192,7 @@ function SearchRow({
 
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-36">
+      <DashboardTableCell className="w-40">
         <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
       </DashboardTableCell>
       <DashboardTableCell>
@@ -264,14 +209,14 @@ function SearchRow({
           </p>
         ) : null}
       </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">Document search</DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-56 text-sm text-muted-foreground">Document search</DashboardTableCell>
+      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
         <span className="block truncate">
           Authenticated - {resultLabel}
           {search.activityTraceAvailable ? ' - trace available' : ''}
         </span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
         {formatTimestamp(search.createdAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -285,9 +230,12 @@ function ContactRow({
   contact: ContactHistorySummary
   onSelect: (item: SelectedHistoryItem) => void
 }) {
+  const location = formatConversationLocation(contact)
+  const sourceBadge = getConversationSourceBadge(contact)
+
   return (
     <DashboardTableRow>
-      <DashboardTableCell className="w-36">
+      <DashboardTableCell className="w-40">
         <span className="block truncate text-sm text-muted-foreground">{emptyAgentLabel}</span>
       </DashboardTableCell>
       <DashboardTableCell>
@@ -300,13 +248,29 @@ function ContactRow({
         </button>
         <p className="mt-1 truncate text-xs text-muted-foreground">{contact.messagePreview}</p>
       </DashboardTableCell>
-      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
-        <span className="block truncate">{getConversationSourceLabel(contact)}</span>
+      <DashboardTableCell className="w-56 text-sm text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-2">
+          {sourceBadge ? <span className={`${sourceBadge.className} shrink-0 text-xs font-medium`}>{sourceBadge.label}</span> : null}
+          {location.href ? (
+            <a
+              href={location.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={location.title ?? undefined}
+              onClick={(event) => event.stopPropagation()}
+              className="block min-w-0 truncate hover:text-primary"
+            >
+              {location.text}
+            </a>
+          ) : (
+            <span className="block min-w-0 truncate" title={location.title ?? undefined}>{location.text}</span>
+          )}
+        </span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-36 text-sm text-muted-foreground">
         <span className="block truncate">{contact.userEmail} - {contact.status}</span>
       </DashboardTableCell>
-      <DashboardTableCell className="w-48 text-sm text-muted-foreground">
+      <DashboardTableCell className="w-44 text-sm text-muted-foreground">
         {formatTimestamp(contact.createdAt)}
       </DashboardTableCell>
     </DashboardTableRow>
@@ -331,13 +295,13 @@ function HistoryTable({
   }
 
   return (
-    <DashboardTable aria-label="Activity" minWidth="min-w-[880px]">
+    <DashboardTable aria-label="Activity" minWidth="min-w-[980px]">
       <DashboardTableHead>
-        <DashboardTableHeader className="w-36">Agent</DashboardTableHeader>
+        <DashboardTableHeader className="w-40">Agent</DashboardTableHeader>
         <DashboardTableHeader>Title</DashboardTableHeader>
-        <DashboardTableHeader className="w-44">Source</DashboardTableHeader>
-        <DashboardTableHeader className="w-48">Details</DashboardTableHeader>
-        <DashboardTableHeader className="w-48">Updated</DashboardTableHeader>
+        <DashboardTableHeader className="w-56">Source</DashboardTableHeader>
+        <DashboardTableHeader className="w-36">Details</DashboardTableHeader>
+        <DashboardTableHeader className="w-44">Updated</DashboardTableHeader>
       </DashboardTableHead>
       <DashboardTableBody>
         {items.map((item) =>

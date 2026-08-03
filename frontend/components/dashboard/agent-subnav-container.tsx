@@ -26,6 +26,7 @@ import {
 import { editionController } from '@/lib/edition-controller'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
+import { getAgentOperatorLabel } from '@/lib/agent-label'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -83,7 +84,7 @@ export function AgentSubNavContainer({
   const selectedAgentId = selectedAgent?.id ?? null
   // Prefer the operator-only internal label so two same-named agents (e.g. an EN
   // and an IT "Claudio") are distinguishable in the dashboard. Visitors never see it.
-  const agentName = selectedAgent?.internalName?.trim() || selectedAgent?.name?.trim() || 'Agent'
+  const agentName = getAgentOperatorLabel(selectedAgent)
   const activeSection = agentSectionFromRoute(routeState)
 
   const agentCreationActions = useMemo(

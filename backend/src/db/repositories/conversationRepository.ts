@@ -7,6 +7,7 @@ import {
   OPERATOR_TEST_SOURCE_CHANNELS,
   type ConversationSourceScope,
 } from "../../shared/domain/conversationSource.js";
+import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { ConversationOwnershipScope } from "../../modules/handoff/ownershipState.js";
 import {
   currentTimestamp,
@@ -20,11 +21,13 @@ export interface ConversationRecord {
   workspaceId: string;
   agentId: string | null;
   agentName: string | null;
+  agentInternalName: string | null;
   sourceChannel: string | null;
   sourceOrigin: string | null;
   channelContext: ConversationChannelContext | null;
   anonymousSessionId: string | null;
   verifiedCustomerId: string | null;
+  entryPageUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +50,7 @@ export interface ConversationRepositoryPort {
     sourceOrigin?: string | null,
     channelContext?: ConversationChannelContext | null,
     verifiedCustomerId?: string | null,
+    options?: { entryPageUrl?: string | null },
   ): Promise<ConversationRecord>;
   createWithInitialAssistantMessage(input: {
     workspaceId: string;
@@ -56,6 +60,7 @@ export interface ConversationRepositoryPort {
     sourceOrigin?: string | null;
     channelContext?: ConversationChannelContext | null;
     verifiedCustomerId?: string | null;
+    entryPageUrl?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }>;
   listPageByWorkspaceId(
@@ -91,11 +96,13 @@ interface ConversationRow {
   workspace_id: string;
   agent_id: string | null;
   agent_name?: string | null;
+  agent_internal_name?: string | null;
   source_channel: string | null;
   source_origin: string | null;
   channel_context?: ConversationChannelContext | null;
   anonymous_session_id: string | null;
   verified_customer_id: string | null;
+  entry_page_url: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -118,6 +125,7 @@ const conversationColumns = [
   "channel_context",
   "anonymous_session_id",
   "verified_customer_id",
+  "entry_page_url",
   "created_at",
   "updated_at",
 ] as const;
@@ -127,11 +135,13 @@ const conversationSelectColumns = [
   "c.workspace_id as workspace_id",
   "c.agent_id as agent_id",
   "a.name as agent_name",
+  "a.internal_name as agent_internal_name",
   "c.source_channel as source_channel",
   "c.source_origin as source_origin",
   "c.channel_context as channel_context",
   "c.anonymous_session_id as anonymous_session_id",
   "c.verified_customer_id as verified_customer_id",
+  "c.entry_page_url as entry_page_url",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
 ] as const;
@@ -155,11 +165,13 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   workspaceId: row.workspace_id,
   agentId: row.agent_id ?? null,
   agentName: row.agent_name ?? null,
+  agentInternalName: normalizeNullableText(row.agent_internal_name),
   sourceChannel: row.source_channel,
   sourceOrigin: row.source_origin ?? null,
   channelContext: (row.channel_context as ConversationChannelContext | null) ?? null,
   anonymousSessionId: row.anonymous_session_id ?? null,
   verifiedCustomerId: row.verified_customer_id ?? null,
+  entryPageUrl: row.entry_page_url ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -223,6 +235,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceOrigin: string | null = null,
     channelContext: ConversationChannelContext | null = null,
     verifiedCustomerId: string | null = null,
+    options?: { entryPageUrl?: string | null },
   ): Promise<ConversationRecord> {
     const row = await this.db
       .insertInto("conversations")
@@ -235,6 +248,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
         channel_context: channelContext ? toJsonb(channelContext) : null,
         anonymous_session_id: anonymousSessionId,
         verified_customer_id: verifiedCustomerId,
+        entry_page_url: options?.entryPageUrl ?? null,
       })
       .returning(conversationColumns)
       .executeTakeFirstOrThrow();
@@ -250,6 +264,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
     sourceOrigin?: string | null;
     channelContext?: ConversationChannelContext | null;
     verifiedCustomerId?: string | null;
+    entryPageUrl?: string | null;
     content: string;
   }): Promise<{ conversation: ConversationRecord; assistantMessage: MessageRecord }> {
     return this.db.transaction().execute(async (trx) => {
@@ -266,6 +281,7 @@ export class ConversationRepository implements ConversationRepositoryPort {
           channel_context: input.channelContext ? toJsonb(input.channelContext) : null,
           anonymous_session_id: input.anonymousSessionId ?? null,
           verified_customer_id: input.verifiedCustomerId ?? null,
+          entry_page_url: input.entryPageUrl ?? null,
         })
         .returning(conversationColumns)
         .executeTakeFirstOrThrow();

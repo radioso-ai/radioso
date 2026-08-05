@@ -30,9 +30,12 @@ import { DocumentSourceRepository } from "../../db/repositories/documentSourceRe
 import { EmbeddingProfileRepository } from "../../db/repositories/embeddingProfileRepository.js";
 import { VectorIndexWorkRepository } from "../../db/repositories/vectorIndexWorkRepository.js";
 import { EmailVerificationTokenRepository } from "../../db/repositories/emailVerificationTokenRepository.js";
+import { FacetExtractionJobRepository } from "../../db/repositories/facetExtractionJobRepository.js";
+import type { FacetExtractionJobStore } from "../../modules/facets/contracts.js";
 import { HistoryItemsRepository } from "../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../db/repositories/ingestionSettingsRepository.js";
 import { MessageRepository } from "../../db/repositories/messageRepository.js";
+import { MessageFacetRepository } from "../../db/repositories/messageFacetRepository.js";
 import { PasswordResetTokenRepository } from "../../db/repositories/passwordResetTokenRepository.js";
 import { RetrievalSettingsRepository } from "../../db/repositories/retrievalSettingsRepository.js";
 import { SessionRepository } from "../../db/repositories/sessionRepository.js";
@@ -411,9 +414,11 @@ export const buildRepositories = (
   embeddingProfileJobRepository: new EmbeddingProfileJobRepository(database.kysely),
   embeddingProfileCleanupRepository: new EmbeddingProfileCleanupRepository(database.kysely),
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
+  facetExtractionJobRepository: new FacetExtractionJobRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database.kysely),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
   messageRepository: new MessageRepository(database.kysely),
+  messageFacetRepository: new MessageFacetRepository(database.kysely),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),
   routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
@@ -1114,6 +1119,8 @@ export const buildChatServices = (input: {
   llmCapabilityResolver: LlmCapabilityResolver;
   logger: AppLogger;
   messageRepository: MessageRepository;
+  /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
+  facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   metricsRegistry?: MetricsRegistry | null;
   telemetryService: TelemetryService;
   webhookDestinations: WebhookDestinationRuntimePort;
@@ -1810,6 +1817,7 @@ export const buildChatServices = (input: {
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
+    facetExtractionJobs: input.facetExtractionJobs,
     // 066 slice 3: chat reaches retrieval only through a narrow turn port —
     // interpret via the controller, execute via the dispatched retrieval.answer
     // skill. ChatService carries no RetrievalPipelineService reference.

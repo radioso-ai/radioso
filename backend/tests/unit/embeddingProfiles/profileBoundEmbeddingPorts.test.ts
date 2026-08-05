@@ -133,6 +133,7 @@ describe("ProfileBoundEmbeddingPorts", () => {
     expect(clustering).toEqual({
       vectors: [[1, 0]],
       usage: { inputTokens: 4, quality: "actual" },
+      space: { id: "space-gemini", dimensions: 2, distanceMetric: "cosine" },
     });
   });
 });

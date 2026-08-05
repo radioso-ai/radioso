@@ -4,14 +4,12 @@ import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 
 import {
   PostgresAudiencePulseHistorySource,
-  audiencePulseCandidateQueryLimit,
   buildAudiencePulseAggregateQuery,
-  buildAudiencePulseBoundedCandidateQuery,
+  buildAudiencePulseEligibleQuestionContentQuery,
   buildAudiencePulseEvidenceAnchorNextAssistantQuery,
   buildAudiencePulseEvidenceAnchorTargetQuery,
   buildAudiencePulseQuestionAnswerQuery,
 } from "../../../src/modules/chat/audiencePulseHistorySource.js";
-import { DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY } from "../../../src/modules/audiencePulse/contracts.js";
 import { Database } from "../../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "../support/integrationDatabase.js";
 
@@ -95,23 +93,14 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
     await database.close().catch(() => undefined);
   });
 
-  it("uses bounded metadata candidates and one-message answer windows", () => {
+  it("keeps aggregates metadata-only and fetches capped content for the full eligible set", () => {
     const analysisInput = {
       workspaceId,
       analysisStart: new Date("2026-07-01T00:00:00.000Z"),
       analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
     };
-    const policy = {
-      ...DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
-      maxQuestions: 3,
-      maxConversations: 3,
-      maxQuestionsPerConversation: 1,
-    };
     const aggregateSql = buildAudiencePulseAggregateQuery(database.kysely, analysisInput).compile().sql;
-    const candidateSql = buildAudiencePulseBoundedCandidateQuery(database.kysely, {
-      ...analysisInput,
-      samplePolicy: policy,
-    }).compile().sql;
+    const contentSql = buildAudiencePulseEligibleQuestionContentQuery(database.kysely, analysisInput).compile().sql;
     const answerSql = buildAudiencePulseQuestionAnswerQuery(database.kysely, {
       workspaceId,
       analysisEnd: analysisInput.analysisEnd,
@@ -124,13 +113,11 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
 
     expect(aggregateSql).toContain("count(");
     expect(aggregateSql).not.toContain("content");
-    expect(candidateSql).toContain("row_number()");
-    expect(candidateSql).not.toContain("content");
-    expect(candidateSql).toMatch(/limit \$\d+/i);
+    expect(contentSql).toContain("left(m.content");
+    expect(contentSql).not.toContain("limit");
     expect(answerSql).not.toContain("content");
     expect(answerSql).toContain('"m"."role" in');
     expect(answerSql).toMatch(/limit \$\d+/i);
-    expect(audiencePulseCandidateQueryLimit(policy)).toBe(9);
   });
 
   it("counts the UTC end-user population and pairs only the first eligible AI answer before the next user turn", async () => {
@@ -296,7 +283,6 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       workspaceId,
       analysisStart: new Date("2026-07-01T00:00:00.000Z"),
       analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
-      samplePolicy: DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
     });
     const evidenceByMessageId = new Map(snapshot.evidence.map((item) => [item.reference.messageId, item]));
 
@@ -308,6 +294,9 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
       { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 1, conversationCount: 1 },
     ]);
+    // The evidence id doubles as the message id -- the census's own membership is
+    // keyed by message id, so no separate translation table is needed.
+    expect(snapshot.evidence.every((item) => item.id === item.reference.messageId)).toBe(true);
     expect(evidenceByMessageId.get(legacyQuestionId)).toMatchObject({
       grounding: "no_support",
       contentGapEligible: true,
@@ -339,7 +328,67 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
     });
   });
 
-  it("keeps exact large-population aggregates while the evidence sample remains bounded", async () => {
+  it("listEligibleQuestionIds returns every eligible id in the window, unbounded by any sample policy", async () => {
+    const customerConversation = await createConversation();
+    const operatorConversation = await createConversation("authenticated_chat");
+
+    const eligibleIds = await Promise.all(
+      Array.from({ length: 5 }, (_unused, index) => createMessage({
+        conversationId: customerConversation,
+        role: "user",
+        content: `Eligible question ${index}`,
+        createdAt: `2026-07-0${index + 1}T00:00:00.000Z`,
+        source: index % 2 === 0 ? null : "customer",
+      })),
+    );
+    await createMessage({
+      conversationId: customerConversation,
+      role: "assistant",
+      content: "Assistant reply is not a question",
+      createdAt: "2026-07-01T00:00:01.000Z",
+      source: "ai_agent",
+    });
+    await createMessage({
+      conversationId: customerConversation,
+      role: "user",
+      content: "Non-customer source must be excluded",
+      createdAt: "2026-07-06T00:00:00.000Z",
+      source: "ai_agent",
+    });
+    await createMessage({
+      conversationId: operatorConversation,
+      role: "user",
+      content: "Operator test channel must be excluded",
+      createdAt: "2026-07-06T00:00:00.000Z",
+      source: "customer",
+    });
+    await createMessage({
+      conversationId: customerConversation,
+      role: "user",
+      content: "Outside the window",
+      createdAt: "2026-08-01T00:00:00.000Z",
+      source: "customer",
+    });
+
+    const ids = await source.listEligibleQuestionIds({
+      workspaceId,
+      analysisStart: new Date("2026-07-01T00:00:00.000Z"),
+      analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
+    });
+
+    expect(ids.sort()).toEqual([...eligibleIds].sort());
+  });
+
+  it("listEligibleQuestionIds returns an empty array when nothing is eligible", async () => {
+    const ids = await source.listEligibleQuestionIds({
+      workspaceId,
+      analysisStart: new Date("2026-07-01T00:00:00.000Z"),
+      analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it("reads every eligible question in a large population, with per-item content still capped", async () => {
     const populationSize = 90;
     const sourceText = "x".repeat(4_000);
     await Promise.all(Array.from({ length: populationSize }, async (_, index) => {
@@ -353,29 +402,15 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       });
     }));
 
-    const samplePolicy = {
-      ...DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
-      maxQuestions: 3,
-      maxConversations: 3,
-      maxQuestionsPerConversation: 1,
-      maxExcerptCharacters: 3_600,
-    };
-    const candidates = await buildAudiencePulseBoundedCandidateQuery(database.kysely, {
-      workspaceId,
-      analysisStart: new Date("2026-07-01T00:00:00.000Z"),
-      analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
-      samplePolicy,
-    }).execute();
-    expect(candidates).toHaveLength(audiencePulseCandidateQueryLimit(samplePolicy));
-
     const snapshot = await source.read({
       workspaceId,
       analysisStart: new Date("2026-07-01T00:00:00.000Z"),
       analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
-      samplePolicy,
     });
 
-    expect(snapshot.coverage).toEqual({ populationSize, sampleSize: 3, sampled: true });
+    // Spec 956 FR-003/FR-005: no sample cap. Every eligible question is read, and
+    // `sampleSize` -- kept in the contract for the dashboard -- always equals it.
+    expect(snapshot.coverage).toEqual({ populationSize, sampleSize: populationSize, sampled: false });
     expect(snapshot.weeklyVolume).toEqual([
       { weekStart: "2026-06-29T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
       { weekStart: "2026-07-06T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
@@ -383,11 +418,12 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: populationSize, conversationCount: populationSize },
       { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
     ]);
-    expect(snapshot.evidence).toHaveLength(3);
+    expect(snapshot.evidence).toHaveLength(populationSize);
+    expect(new Set(snapshot.evidence.map((item) => item.id)).size).toBe(populationSize);
     expect(snapshot.evidence.every((item) => item.question.length <= 1_200)).toBe(true);
   });
 
-  it("pairs a selected question through a bounded answer window in a long-lived conversation", async () => {
+  it("pairs a question through a bounded answer window in a long-lived conversation", async () => {
     const conversationId = await createConversation();
     const questionId = await createMessage({
       conversationId,
@@ -418,16 +454,11 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       workspaceId,
       analysisStart: new Date("2026-07-01T00:00:00.000Z"),
       analysisEnd: new Date("2026-07-31T00:00:00.000Z"),
-      samplePolicy: {
-        ...DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
-        maxQuestions: 1,
-        maxConversations: 1,
-        maxQuestionsPerConversation: 1,
-      },
     });
 
     expect(snapshot.coverage).toEqual({ populationSize: 1, sampleSize: 1, sampled: false });
     expect(snapshot.evidence[0]).toMatchObject({
+      id: questionId,
       reference: { messageId: questionId, conversationId },
       grounding: "no_support",
       contentGapEligible: true,

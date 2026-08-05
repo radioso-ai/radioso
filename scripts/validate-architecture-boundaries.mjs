@@ -55,6 +55,11 @@ export const validateImportRecords = (
       errors.push(mcpServerError);
     }
 
+    const censusError = validateCensusImport(record);
+    if (censusError) {
+      errors.push(censusError);
+    }
+
     if (options.checkPrivateCrossModuleImports !== false) {
       const crossModuleError = validateCrossModuleImport(record);
       if (crossModuleError) {
@@ -186,6 +191,36 @@ const validateConversationEngineImport = (record) => {
     resolved.startsWith("packages/")
   ) {
     return `Conversation engine must not import Radioso product implementation code: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  return null;
+};
+
+const validateCensusImport = (record) => {
+  const filePath = normalizePath(record.filePath);
+  if (!filePath.startsWith("packages/census/")) {
+    return null;
+  }
+  // The rule guards the SHIPPED library (src/). Test files and build tooling are not part of the
+  // published graph and legitimately import dev tooling such as vitest. The runtime guarantee they
+  // exist to protect is enforced separately, and more strictly, by the entry-point import budget in
+  // packages/census/tests/entryPoints.test.ts, which traces what the built dist actually loads.
+  if (/^packages\/census\/(tests\/|[^/]+\.config\.ts$)/.test(filePath)) {
+    return null;
+  }
+
+  const specifier = record.specifier;
+  const isBare = !specifier.startsWith(".") && !specifier.startsWith("/");
+  if (isBare) {
+    if (specifier.startsWith("node:")) {
+      return null;
+    }
+    return `Census must have zero runtime dependencies and can only import Node built-ins or its own relative modules: ${record.filePath} -> ${record.specifier}`;
+  }
+
+  const resolved = resolveImportPath(record.filePath, record.specifier);
+  if (!resolved || !resolved.startsWith("packages/census/")) {
+    return `Census must have zero runtime dependencies and can only import Node built-ins or its own relative modules: ${record.filePath} -> ${record.specifier}`;
   }
 
   return null;

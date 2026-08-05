@@ -15,6 +15,13 @@ export interface AudiencePulseCoverage {
   populationSize: number
   sampleSize: number
   sampled: boolean
+  /**
+   * How many of `populationSize` had a current, embedded facet the census could cluster.
+   * Zero means topic analysis has not run over this window yet — a different statement
+   * from a computed window that found no recurring pattern, which is why the view
+   * branches on this rather than on `unclassifiedQuestionCount === populationSize`.
+   */
+  facetReadyQuestionCount: number
 }
 
 export interface AudiencePulseGroundingSummary {
@@ -37,7 +44,10 @@ export interface AudiencePulseTheme {
   id: string
   title: string
   description: string
-  sampleCount: number
+  /** Exact count of population questions in this topic -- a census, never a sample. */
+  memberCount: number
+  /** `memberCount` divided by the window population size. */
+  share: number
   distinctQuestionCount: number
   weeklyPulse: Array<{ weekStart: string; count: number }>
   grounding: AudiencePulseGroundingSummary
@@ -65,7 +75,8 @@ export interface AudiencePulseHydratedReport {
   generatedAt: string
   coverage: AudiencePulseCoverage
   weeklyVolume: AudiencePulseWeeklyVolume[]
-  summary: string
+  /** Absent when no narrative call ran because nothing in the window was facet-ready. */
+  summary?: string
   themes: AudiencePulseTheme[]
   contentGaps: AudiencePulseContentGap[]
   recommendations: AudiencePulseRecommendation[]

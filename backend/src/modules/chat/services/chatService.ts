@@ -35,6 +35,7 @@ import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspace
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { PendingDecisionRecord } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
+import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type { AgentService } from "../../agents/public.js";
 import type { ResumeRunner } from "../../approvals/public.js";
@@ -375,6 +376,8 @@ export interface ChatServiceOptions {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   logger?: Pick<AppLogger, "warn">;
+  /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
+  facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   conversationOwnershipRepository?: ConversationOwnershipRepository;
   /** Optional: durable per-session routine state store (with {@link routineProvider}). */
   routineStore?: ConversationRoutineStore;
@@ -476,6 +479,7 @@ export class ChatService {
       actionCapabilities,
       capabilityPolicy,
       logger,
+      facetExtractionJobs,
       conversationOwnershipRepository,
       routineStore,
       suspendedRoutineReader,
@@ -553,6 +557,7 @@ export class ChatService {
       contextVariableRepository,
       conversationSummaryStore,
       logger,
+      facetExtractionJobs,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

@@ -2,6 +2,7 @@ import type {
   ClarificationCandidate,
   ConversationChannelContext,
   ConversationTrace,
+  MessageSource,
   StagedContext,
 } from "@radioso/conversation-contract";
 
@@ -9,7 +10,14 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { toConversationTrace, toPreparedStagedContext } from "./conversationContractMappers.js";
 import type { ConversationRecord, ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRecord, MessageRepositoryPort, UserMessageInputMetadata } from "../../../db/repositories/messageRepository.js";
+import type {
+  MessageRecord,
+  MessageRepositoryPort,
+  MessageRole,
+  UserMessageInputMetadata,
+} from "../../../db/repositories/messageRepository.js";
+import { isAudiencePulseCustomerSource, isAudiencePulseEndUserChannel } from "../audiencePulseHistorySource.js";
+import type { FacetExtractionJobStore } from "../../facets/public.js";
 import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
@@ -53,6 +61,23 @@ interface ChatAnswerAuditMetadata {
 const defaultTurnFraming = (): TurnRouting["framing"] => ({
   isIdentityQuestion: false,
 });
+
+/**
+ * The same eligibility rule Audience Pulse reads history with
+ * ({@link isAudiencePulseCustomerSource}, {@link isAudiencePulseEndUserChannel}),
+ * restated as a write-time predicate so a facet extraction job is enqueued for the
+ * same population the census will later read. `role` is checked here too even though
+ * this module only ever writes `"user"` messages: the rule is reused, not restated,
+ * so it stays correct if that ever changes.
+ */
+export const isEligibleForFacetExtraction = (input: {
+  role: MessageRole;
+  source: MessageSource | null | undefined;
+  sourceChannel: string | null;
+}): boolean =>
+  input.role === "user"
+  && isAudiencePulseCustomerSource(input.source ?? null)
+  && isAudiencePulseEndUserChannel(input.sourceChannel);
 
 export interface PreparedSession {
   agent: AgentRecord;
@@ -186,6 +211,8 @@ export class ChatSessionPreparer {
     private readonly contextVariableRepository?: Pick<ContextVariableRepositoryPort, "resolveForAgent">,
     private readonly conversationSummaryStore?: Pick<ConversationSummaryStore, "load">,
     private readonly logger?: Pick<AppLogger, "warn">,
+    /** Optional: when wired, an eligible visitor message enqueues a facet extraction job. */
+    private readonly facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">,
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -252,6 +279,7 @@ export class ChatSessionPreparer {
       content: input.query,
       inputMetadata: input.inputMetadata,
     });
+    this.enqueueFacetExtraction(userMessage, persistedConversation);
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
     // skipped, otherwise as the throwaway base `prepareRetrieval` recomputes from.
     const hostVariables = await this.resolveHostVariables(input, agent, effectiveVerifiedCustomerId, chatSessionId);
@@ -297,6 +325,35 @@ export class ChatSessionPreparer {
       previewRoutineIds: input.previewRoutineIds,
       ...this.stagedSpineFor(retrieval, null, hostVariables),
     };
+  }
+
+  /**
+   * Fire-and-forget: a queue outage must never fail the turn that triggered it, so the
+   * enqueue promise is never awaited by the caller and its rejection is caught here.
+   */
+  private enqueueFacetExtraction(userMessage: MessageRecord, conversation: ConversationRecord): void {
+    if (!this.facetExtractionJobs) {
+      return;
+    }
+    if (!isEligibleForFacetExtraction({
+      role: userMessage.role,
+      source: userMessage.source,
+      sourceChannel: conversation.sourceChannel,
+    })) {
+      return;
+    }
+    void this.facetExtractionJobs
+      .enqueue({ messageId: userMessage.id, workspaceId: userMessage.workspaceId })
+      .catch((error: unknown) => {
+        this.logger?.warn(
+          {
+            err: error instanceof Error ? error.message : String(error),
+            workspaceId: userMessage.workspaceId,
+            messageId: userMessage.id,
+          },
+          "Facet extraction enqueue failed",
+        );
+      });
   }
 
   private async promoteBootstrapGreeting(

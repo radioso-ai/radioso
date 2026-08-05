@@ -30,7 +30,6 @@ import { adjustedRandIndex, normalizedMutualInformation } from "../../support/pa
 
 interface RecordedEntry {
   id: string;
-  facet: string;
   facetVector: number[];
   questionVector: number[];
 }

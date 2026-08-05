@@ -38,6 +38,7 @@ import OpenAI from "openai";
 
 import { normalizeOpenAIReasoningEffort } from "../../src/shared/infra/llm/knownModels.js";
 import { facetQualityQuestions } from "../../tests/fixtures/facet-quality/questions.js";
+import { loadSourceText } from "./facetQualitySourceCorpus.js";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(scriptDirectory, "../..");
@@ -241,10 +242,9 @@ const classifyOne = async (topics: readonly Topic[], question: string): Promise<
 };
 
 const main = async (): Promise<void> => {
-  const shuffledQuestions = shuffled(
-    facetQualityQuestions.map((entry) => entry.question),
-    SHUFFLE_SEED,
-  );
+  const ids = facetQualityQuestions.map((entry) => entry.id);
+  const questions = loadSourceText(ids);
+  const shuffledQuestions = shuffled(questions, SHUFFLE_SEED);
 
   process.stdout.write(`Proposing taxonomy from ${shuffledQuestions.length} shuffled questions with ${LABEL_MODEL}\n`);
   const topics = await proposeTaxonomy(shuffledQuestions);
@@ -253,11 +253,11 @@ const main = async (): Promise<void> => {
     process.stdout.write(`  ${topic.slug}: ${topic.label}\n`);
   }
 
-  process.stdout.write(`Classifying ${facetQualityQuestions.length} questions in isolation (concurrency ${CONCURRENCY})\n`);
-  const assignments = await mapWithConcurrency(facetQualityQuestions, CONCURRENCY, async (entry, index) => {
-    const topic = await classifyOne(topics, entry.question);
-    process.stdout.write(`  [${index + 1}/${facetQualityQuestions.length}] ${entry.id}: ${topic ?? "(none)"}\n`);
-    return { id: entry.id, topic };
+  process.stdout.write(`Classifying ${ids.length} questions in isolation (concurrency ${CONCURRENCY})\n`);
+  const assignments = await mapWithConcurrency(questions, CONCURRENCY, async (question, index) => {
+    const topic = await classifyOne(topics, question);
+    process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]!}: ${topic ?? "(none)"}\n`);
+    return { id: ids[index]!, topic };
   });
 
   const counts = new Map<string, number>();

@@ -11,6 +11,11 @@
  * against raw-question clustering, so the control has to come from the same
  * run and the same embedding model.
  *
+ * The committed recording holds ids and vectors only. Question text and the
+ * extracted facets are customer traffic, so they stay in the out-of-tree corpus
+ * described in `facetQualitySourceCorpus.ts`; running this script requires that
+ * corpus to be present.
+ *
  * Usage:
  *   cd backend && pnpm exec tsx scripts/dev/recordFacetQualityFixture.ts
  *
@@ -20,13 +25,13 @@
  *   --dimensions <n>    embedding dimensions, default 256
  *   --concurrency <n>   parallel extraction calls, default 8
  *   --out <path>        output file, default the committed fixture
- *   --reuse <path>      take facets from an earlier recording and only re-embed
+ *   --reuse <path>      take facets from an earlier facet sidecar and only re-embed
  *
  * Env vars required:
  *   OPENAI_API_KEY
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,6 +44,7 @@ import {
 } from "../../src/modules/facets/services/prompt.js";
 import { normalizeOpenAIReasoningEffort } from "../../src/shared/infra/llm/knownModels.js";
 import { facetQualityQuestions } from "../../tests/fixtures/facet-quality/questions.js";
+import { loadRecordedFacets, loadSourceText, writeRecordedFacets } from "./facetQualitySourceCorpus.js";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const backendRoot = path.resolve(scriptDirectory, "../..");
@@ -133,40 +139,29 @@ const mapWithConcurrency = async <Input, Output>(
   return results;
 };
 
-/** Reuses recorded facets so an embedding experiment does not re-pay for extraction. */
-const reuseFacets = (): string[] => {
-  const previous = JSON.parse(readFileSync(reusePath, "utf8")) as {
-    entries: Array<{ id: string; facet: string }>;
-  };
-  const byId = new Map(previous.entries.map((entry) => [entry.id, entry.facet]));
-  return facetQualityQuestions.map((entry) => {
-    const facet = byId.get(entry.id);
-    if (!facet) {
-      throw new Error(`Reused recording has no facet for ${entry.id}`);
-    }
-    return facet;
-  });
-};
-
 const main = async (): Promise<void> => {
+  const ids = facetQualityQuestions.map((entry) => entry.id);
+  const questions = loadSourceText(ids);
+
   let facets: string[];
   if (reusePath) {
     process.stdout.write(`Reusing facets from ${reusePath}\n`);
-    facets = reuseFacets();
+    facets = loadRecordedFacets(ids, reusePath);
   } else {
     process.stdout.write(
-      `Extracting ${facetQualityQuestions.length} facets with ${extractionModel} (concurrency ${concurrency})\n`,
+      `Extracting ${ids.length} facets with ${extractionModel} (concurrency ${concurrency})\n`,
     );
-    facets = await mapWithConcurrency(facetQualityQuestions, concurrency, async (entry, index) => {
-      const facet = await extractFacet(entry.question);
-      process.stdout.write(`  [${index + 1}/${facetQualityQuestions.length}] ${entry.id}: ${facet}\n`);
+    facets = await mapWithConcurrency(questions, concurrency, async (question, index) => {
+      const facet = await extractFacet(question);
+      process.stdout.write(`  [${index + 1}/${ids.length}] ${ids[index]!}: ${facet}\n`);
       return facet;
     });
+    process.stdout.write(`Wrote facet sidecar to ${writeRecordedFacets(ids, facets)}\n`);
   }
 
   process.stdout.write(`Embedding facets and raw questions with ${embeddingModel} @ ${embeddingDimensions}d\n`);
   const facetVectors = await embedAll(facets);
-  const questionVectors = await embedAll(facetQualityQuestions.map((entry) => entry.question));
+  const questionVectors = await embedAll(questions);
 
   const payload = {
     promptVersion: FACET_EXTRACTION_PROMPT_VERSION,
@@ -174,9 +169,8 @@ const main = async (): Promise<void> => {
     embeddingModel,
     embeddingDimensions,
     recordedAt: new Date().toISOString(),
-    entries: facetQualityQuestions.map((entry, index) => ({
-      id: entry.id,
-      facet: facets[index]!,
+    entries: ids.map((id, index) => ({
+      id,
       facetVector: facetVectors[index]!,
       questionVector: questionVectors[index]!,
     })),

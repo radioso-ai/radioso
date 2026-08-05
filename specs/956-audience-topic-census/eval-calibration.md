@@ -12,6 +12,13 @@ topics even are.
 This does not change the test, its fixture, or its thresholds. It only
 measures.
 
+The numbers below were produced against the real question text. That text is
+customer traffic and is not committed — `questions.ts` carries the labels,
+`recorded.json` carries the embeddings, and the source corpus lives outside
+version control (see `backend/scripts/dev/facetQualitySourceCorpus.ts`).
+Reproducing the labelling passes therefore needs that corpus; reproducing the
+gate itself does not.
+
 ## Method
 
 **Reference A** (committed): `taxonomy.json` + the `topic` field in

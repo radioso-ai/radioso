@@ -2,6 +2,7 @@
   "purpose": "Reference topic taxonomy for backend/tests/fixtures/facet-quality/questions.ts, so the topic labels in that fixture are auditable rather than opaque.",
   "labellingModel": "gpt-5.2",
   "generatedAt": "2026-08-04",
+  "redaction": "Topic labels and descriptions are as generated, except that the customer organization's name was replaced with 'the organization' after the fact. No slug, assignment or count was changed. The source questions themselves are not committed; see questions.ts.",
   "methodology": [
     "Pass 1 (this file): gpt-5.2 was given the full cleaned, deduplicated, PII-scrubbed set of real visitor questions (question text only) and asked to propose 8-12 mutually distinguishable topics covering meaningful chunks of the traffic.",
     "Pass 2 (questions.ts): gpt-5.2 was given each question in isolation, question text only, and asked to assign exactly one topic slug from this taxonomy or null, plus a detected language and a short language-neutral intent slug used to find genuine cross-lingual paraphrase groups. The labeller never saw a facet, so labels are not biased toward the facet representation the eval scores against.",
@@ -31,12 +32,12 @@
     {
       "slug": "locations_local_groups_sangha",
       "label": "Locations, local groups & sangha connections",
-      "description": "Finding Ananda centers/groups by geography (cities/countries), UK/Portugal listings, local contacts, and how to connect with a nearby sangha/meditation group."
+      "description": "Finding the organization’s centers/groups by geography (cities/countries), UK/Portugal listings, local contacts, and how to connect with a nearby sangha/meditation group."
     },
     {
       "slug": "volunteering_seva_work_exchange_jobs",
-      "label": "Volunteering (seva) & working at Ananda",
-      "description": "How to do seva/volunteer, how service is structured, proposals for service projects, and practical questions about working roles (e.g., cook) at Ananda."
+      "label": "Volunteering (seva) & working at the organization",
+      "description": "How to do seva/volunteer, how service is structured, proposals for service projects, and practical questions about working roles (e.g., cook) at the organization."
     },
     {
       "slug": "travel_pilgrimages_assisi_logistics",
@@ -56,7 +57,7 @@
     {
       "slug": "teachings_philosophy_spiritual_questions",
       "label": "Teachings & spiritual philosophy",
-      "description": "Questions about Self-realization, ego vs Self, karma, grace/faith, Raja Yoga, why yoga, and interpretation of Ananda/Yogananda/Kriyananda teachings beyond scheduling or logistics."
+      "description": "Questions about Self-realization, ego vs Self, karma, grace/faith, Raja Yoga, why yoga, and interpretation of the organization’s and wider Yogananda/Kriyananda teachings beyond scheduling or logistics."
     },
     {
       "slug": "people_lineage_and_controversies",

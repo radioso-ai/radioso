@@ -205,7 +205,7 @@ imports from `services/`.
   replaces the staged routine-activation, turn-interpretation,
   response-language, and directive-match calls; a bypassed or invalid plan
   sends every consumer back to its staged call, all-or-nothing. This is standard
-  behavior with no rollout configuration. Composition (`dependencyBuilders.ts`)
+  behavior with no rollout configuration. The chat builder (`builders/chat.ts`)
   wires the same coordinator into `ChatService` and
   `workbenchReplayRunner.ts`; their shared
   `chatTurnAssembly.ts` consumes the plan so replay executes the identical
@@ -228,7 +228,7 @@ imports from `services/`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
   `chatTurnAssembly.ts`, and
-  application composition in `src/app/server/dependencyBuilders.ts`.
+  application composition in `src/app/server/builders/chat.ts`.
   Application composition creates one `ChatTurnAssemblyFactory` for production
   chat and workbench replay. Production supplies durable state ports; replay
   supplies the in-memory ports from `chatTurnEffectProfile.ts`. This keeps engine

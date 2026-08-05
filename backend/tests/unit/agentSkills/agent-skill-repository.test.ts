@@ -75,4 +75,20 @@ describe("AgentSkillRepository facade", () => {
       },
     });
   });
+
+  it("finds a skill by agent without requiring the workspace at routine compile time", async () => {
+    const repository = new InMemoryAgentSkillRepository();
+    const agentId = randomUUID();
+    const skill = await repository.create({
+      workspaceId: randomUUID(),
+      agentId,
+      skillName: "completion_export",
+      kind: "webhook",
+      targetId: randomUUID(),
+      invocationMode: "routine_named",
+    });
+
+    await expect(repository.findByAgentAndName(agentId, "completion_export")).resolves.toEqual(skill);
+    await expect(repository.findByAgentAndName(randomUUID(), "completion_export")).resolves.toBeNull();
+  });
 });

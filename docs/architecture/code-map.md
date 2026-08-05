@@ -114,12 +114,12 @@ Primary paths:
 - `backend/src/shared/infra/kysely/` — `kyselyDatabase.ts` (builds Kysely on the pool),
   generated `schema.ts` (the `DB` type), and `sqlHelpers.ts` (the only home for
   Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)
-- `backend/src/app/server/dependencyBuilders.ts` — where repositories are wired (`database.kysely`)
+- `backend/src/app/server/builders/infra.ts` — where repositories are wired (`database.kysely`)
 
 Useful searches:
 
 - `rg "implements .*RepositoryPort" backend/src/db/repositories`
-- `rg "new .*Repository\(database.kysely" backend/src/app/server/dependencyBuilders.ts`
+- `rg "new .*Repository\(database.kysely" backend/src/app/server/builders/infra.ts`
 
 Focused checks:
 

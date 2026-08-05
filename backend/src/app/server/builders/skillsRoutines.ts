@@ -1,19 +1,20 @@
 import type { ConversationModelGateway } from "@radioso/conversation-contract";
-import {
-  createDirectiveCoherenceChecker,
-  scopeTag,
-} from "@radioso/conversation-defaults";
-
+import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
 import type { ApplicationComposition } from "../../composition/index.js";
 import { bindSkillCapabilityExecutors } from "../../composition/skillCapabilityRegistry.js";
 import { AgentService, AuthoredDirectiveService, DirectiveAuthorService } from "../../../modules/agents/public.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import type { AccessGrantService } from "../../../modules/accessGrants/public.js";
-import type { AuditService } from "../../../modules/audit/composition.js";
-import { RoutineDefinitionService, RoutineDraftAssistService, RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
+import {
+  RoutineDefinitionService,
+  RoutineDraftAssistService,
+  RoutineTriggerEmbeddingService,
+} from "../../../modules/routines/public.js";
 import { PlatformSettingsService } from "../../../modules/settings/composition.js";
 import type { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
-import type { ExternalSkillDefinitionService } from "../../../modules/externalSkills/services/externalSkillDefinitionService.js";
+import type {
+  ExternalSkillDefinitionService,
+} from "../../../modules/externalSkills/services/externalSkillDefinitionService.js";
 import type { SkillAuthoringCatalog } from "../../../modules/skills/public.js";
 import {
   SkillAuthoringCatalogService,
@@ -27,6 +28,8 @@ import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInfe
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { registeredCapabilityNames } from "../../../shared/domain/capabilityPolicy.js";
 import type { buildInfrastructure, buildRepositories } from "./infra.js";
+
+
 
 const directiveCoherenceInvocationContext = (
   metadata: Record<string, unknown> | undefined,

@@ -358,8 +358,9 @@ directory graduates to `docs/architecture/` describing what exists.
 - The workspace embedding profile is available for embedding short facet
   text through `ClusteringEmbeddingPort`.
 - Facet extraction runs on the cheap `"rewrite"` tier. This was the primary
-  technical risk and has been measured against 318 real questions from the
-  Ananda Europe workspace; see `eval-calibration.md`. The result is narrower
+  technical risk and has been measured against 318 real questions from a
+  pre-production customer workspace; see `eval-calibration.md`. The result is
+  narrower
   than the original assumption:
 
   Facets make one intent land in one cluster regardless of the language it

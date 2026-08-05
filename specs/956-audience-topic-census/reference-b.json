@@ -2,6 +2,7 @@
   "purpose": "Independent second reference labelling ('reference B') of backend/tests/fixtures/facet-quality/questions.ts, produced without access to taxonomy.json or the topic field in questions.ts, for spec 956 eval-gate calibration.",
   "labellingModel": "gpt-5.2",
   "generatedAt": "2026-08-04T15:33:57.876Z",
+  "redaction": "Topic labels and descriptions are as generated, except that the customer organization's name was replaced with 'the organization' after the fact. No slug, label assignment or count was changed.",
   "shuffleSeed": "facet-quality/956/reference-b/shuffle",
   "methodology": [
     "Pass 1: gpt-5.2 was given all 318 questions (text only), presented in an order shuffled with a fixed seed distinct from any other seed in this repo, and asked in its own wording to propose 8-12 mutually exclusive topics — its own choice of count within that range, not steered to 12.",
@@ -11,7 +12,7 @@
     {
       "slug": "local_centers_and_groups",
       "label": "Local centers & meditation groups",
-      "description": "Questions about whether Ananda has a center/group in a specific city/region/country, which location is closest, and how to connect with a local sangha (including contact details for a local group)."
+      "description": "Questions about whether the organization has a center/group in a specific city/region/country, which location is closest, and how to connect with a local sangha (including contact details for a local group)."
     },
     {
       "slug": "retreats_events_and_visits",
@@ -46,7 +47,7 @@
     {
       "slug": "seva_volunteering_and_jobs",
       "label": "Seva, volunteering, and work opportunities",
-      "description": "Requests about volunteering/service (seva) structure and how to join, plus employment/work opportunities (e.g., cook) at Ananda."
+      "description": "Requests about volunteering/service (seva) structure and how to join, plus employment/work opportunities (e.g., cook) at the organization."
     },
     {
       "slug": "teachers_lineage_and_biographies",
@@ -61,7 +62,7 @@
     {
       "slug": "organizational_controversy_and_safeguarding",
       "label": "Controversy, allegations, and trust/safety concerns",
-      "description": "Concerns or accusations about Ananda/SRF/legal disputes, sexual misconduct or other serious allegations, “disturbing facts,” and questions challenging credibility or ethics of the organization/teachers."
+      "description": "Concerns or accusations about the organization or peer organizations, legal disputes, sexual misconduct or other serious allegations, “disturbing facts,” and questions challenging credibility or ethics of the organization/teachers."
     },
     {
       "slug": "personal_emotional_support",

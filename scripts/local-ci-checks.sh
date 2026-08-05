@@ -47,6 +47,7 @@ docs=false
 typescript_sdk=false
 mcp_server=false
 crawler=false
+census=false
 ee=false
 
 mark_all() {
@@ -56,6 +57,7 @@ mark_all() {
   typescript_sdk=true
   mcp_server=true
   crawler=true
+  census=true
   ee=true
 }
 
@@ -108,6 +110,9 @@ else
         backend=true
         crawler=true
         ;;
+      packages/census/*)
+        census=true
+        ;;
       packages/document-parser/*|packages/connector-api/*)
         backend=true
         ;;
@@ -121,7 +126,7 @@ else
   done < <(git diff --name-only "$BASE_REF...HEAD")
 fi
 
-if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$ee" = "falsefalsefalsefalsefalsefalsefalse" ]; then
+if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee" = "falsefalsefalsefalsefalsefalsefalsefalse" ]; then
   echo "No CI-relevant changes detected against $BASE_REF."
   exit 0
 fi
@@ -220,6 +225,7 @@ echo "  docs=$docs"
 echo "  typescript_sdk=$typescript_sdk"
 echo "  mcp_server=$mcp_server"
 echo "  crawler=$crawler"
+echo "  census=$census"
 echo "  ee=$ee"
 
 if [ "$backend" = true ]; then
@@ -274,6 +280,12 @@ if [ "$crawler" = true ]; then
   run pnpm install --frozen-lockfile --filter @radioso/crawler...
   run_sh "cd packages/crawler && pnpm run build"
   run_sh "cd packages/crawler && pnpm test"
+fi
+
+if [ "$census" = true ]; then
+  run pnpm install --frozen-lockfile --filter @radioso/census...
+  run_sh "cd packages/census && pnpm run build"
+  run_sh "cd packages/census && pnpm test"
 fi
 
 if [ "$ee" = true ]; then

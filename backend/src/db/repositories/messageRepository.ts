@@ -420,6 +420,23 @@ export class MessageRepository implements MessageRepositoryPort {
     return summaries;
   }
 
+  /**
+   * Narrow read used by facet extraction: the content of one message, or `null` when
+   * it no longer exists (deleted conversation, workspace mismatch). Not part of
+   * {@link MessageRepositoryPort} — that interface is a much larger surface than a
+   * per-message background job should depend on; this satisfies the facets module's
+   * own `FacetSourceMessagePort` structurally.
+   */
+  async getContentById(input: { workspaceId: string; messageId: string }): Promise<string | null> {
+    const row = await this.db
+      .selectFrom("messages")
+      .select("content")
+      .where("workspace_id", "=", input.workspaceId)
+      .where("id", "=", input.messageId)
+      .executeTakeFirst();
+    return row?.content ?? null;
+  }
+
   async create(input: {
     id?: string;
     conversationId: string;

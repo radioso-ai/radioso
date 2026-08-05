@@ -6269,6 +6269,7 @@ export interface components {
             populationSize: number;
             sampleSize: number;
             sampled: boolean;
+            facetReadyQuestionCount: number;
         };
         AudiencePulseWeeklyVolume: {
             /** Format: date-time */
@@ -6323,7 +6324,8 @@ export interface components {
             id: string;
             title: string;
             description: string;
-            sampleCount: number;
+            memberCount: number;
+            share: number;
             distinctQuestionCount: number;
             weeklyPulse: {
                 /** Format: date-time */
@@ -6361,7 +6363,7 @@ export interface components {
             generatedAt: string;
             coverage: components["schemas"]["AudiencePulseCoverage"];
             weeklyVolume: components["schemas"]["AudiencePulseWeeklyVolume"][];
-            summary: string;
+            summary?: string;
             unclassifiedQuestionCount: number;
             themes: components["schemas"]["AudiencePulseTheme"][];
             contentGaps: components["schemas"]["AudiencePulseContentGap"][];

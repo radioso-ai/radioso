@@ -20,6 +20,7 @@ import type {
   DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
+import type { FacetExtractionWorker } from "../../modules/facets/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
@@ -96,6 +97,7 @@ import type {
 import type { ApprovalDecisionService } from "../../modules/approvals/public.js";
 import type { OperatorReplyService } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
+import type { EmbeddingBindingResolverPort } from "../../modules/embeddingProfiles/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -149,9 +151,13 @@ export interface AppDependencies {
   documentSearchService: DocumentSearchService;
   documentSearchHistoryService: DocumentSearchHistoryService;
   workspaceIngestionReprocessService: WorkspaceIngestionReprocessService;
+  embeddingBindingResolver: EmbeddingBindingResolverPort;
   documentSourceReprocessService: DocumentSourceReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: JobConsumerPort;
+  // Worker-process poll loop for per-message facet extraction. Absent until an
+  // extraction implementation is registered through application composition.
+  facetExtractionWorker?: FacetExtractionWorker;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
   websiteCrawlWorker: WebsiteCrawlWorker;

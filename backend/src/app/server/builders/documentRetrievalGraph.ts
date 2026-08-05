@@ -148,13 +148,14 @@ export const buildDocumentRetrievalGraph = (input: {
       );
     },
   );
+  const embeddingBindingResolver = new WorkspaceEmbeddingBindingResolver({
+    profiles: repositories.embeddingProfileRepository,
+    settings: settings.ingestionSettingsService,
+    identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
+  });
   const embeddingPorts = new ProfileBoundEmbeddingPorts(
     llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder),
-    new WorkspaceEmbeddingBindingResolver({
-      profiles: repositories.embeddingProfileRepository,
-      settings: settings.ingestionSettingsService,
-      identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
-    }),
+    embeddingBindingResolver,
   );
   const chunkHydrator = new PostgresChunkCandidateHydrator(infrastructure.database.kysely);
   const vectorSearch = new VectorCandidateSearchRolloutAdapter({
@@ -232,6 +233,7 @@ export const buildDocumentRetrievalGraph = (input: {
   return {
     documentJobDispatcher,
     documents,
+    embeddingBindingResolver,
     embeddingPorts,
     llmCapabilityResolver,
     llmRegistry,

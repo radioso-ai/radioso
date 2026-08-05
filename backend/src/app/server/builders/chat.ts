@@ -109,6 +109,7 @@ import {
 } from "../../../modules/slackSkills/public.js";
 import { NotifyExecutor, NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
 import { createRoutineTurnProvider, type RoutineTriggerEmbeddingService } from "../../../modules/routines/public.js";
+import type { FacetExtractionJobStore } from "../../../modules/facets/contracts.js";
 import type { RetrievalDefaultsProvider, SkillSettingsResolver } from "../../../modules/retrieval/public.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
@@ -182,6 +183,8 @@ export const buildChatServices = (input: {
   llmCapabilityResolver: LlmCapabilityResolver;
   logger: AppLogger;
   messageRepository: MessageRepository;
+  /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
+  facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   metricsRegistry?: MetricsRegistry | null;
   telemetryService: TelemetryService;
   webhookDestinations: WebhookDestinationRuntimePort;
@@ -657,6 +660,7 @@ export const buildChatServices = (input: {
   const chatService = new ChatService({
     conversationRepository: input.conversationRepository,
     messageRepository: input.messageRepository,
+    facetExtractionJobs: input.facetExtractionJobs,
     // 066 slice 3: chat reaches retrieval only through a narrow turn port —
     // interpret via the controller, execute via the dispatched retrieval.answer
     // skill. ChatService carries no RetrievalPipelineService reference.

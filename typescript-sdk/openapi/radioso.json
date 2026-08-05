@@ -13911,12 +13911,17 @@
           },
           "sampled": {
             "type": "boolean"
+          },
+          "facetReadyQuestionCount": {
+            "type": "integer",
+            "minimum": 0
           }
         },
         "required": [
           "populationSize",
           "sampleSize",
-          "sampled"
+          "sampled",
+          "facetReadyQuestionCount"
         ]
       },
       "AudiencePulseWeeklyVolume": {
@@ -14108,9 +14113,14 @@
           "description": {
             "type": "string"
           },
-          "sampleCount": {
+          "memberCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "share": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           },
           "distinctQuestionCount": {
             "type": "integer",
@@ -14150,7 +14160,8 @@
           "id",
           "title",
           "description",
-          "sampleCount",
+          "memberCount",
+          "share",
           "distinctQuestionCount",
           "weeklyPulse",
           "grounding",
@@ -14304,7 +14315,6 @@
           "generatedAt",
           "coverage",
           "weeklyVolume",
-          "summary",
           "unclassifiedQuestionCount",
           "themes",
           "contentGaps",

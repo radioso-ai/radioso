@@ -4,11 +4,11 @@ import { detectDocumentType, DocumentParserError } from "@radioso/document-parse
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
-  DocumentProcessingJobOptions,
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { DocumentProcessingJobOptions } from "../contracts/documentContracts.js";
 import { buildDocumentProcessingOptions, type DocumentRepositoryPort } from "./documentIngestionService.js";
 import type { DocumentStoragePort } from "../contracts/storage.js";
 import { badRequest } from "../../../shared/domain/errors.js";

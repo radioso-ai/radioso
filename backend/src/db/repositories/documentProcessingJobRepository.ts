@@ -4,6 +4,10 @@ import type { QueryResultRow } from "pg";
 
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type {
+  DocumentProcessingJobEnrichmentOverride,
+  DocumentProcessingJobOptions,
+} from "../../modules/documents/contracts/documentContracts.js";
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
 // Vectorize jobs make a document queryable (chunk + embed + publish). Enrich jobs
@@ -16,12 +20,6 @@ type RevisionProcessingJobKind = Exclude<
   DocumentProcessingJobKind,
   "embedding_profile"
 >;
-export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
-
-export interface DocumentProcessingJobOptions {
-  documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
-}
-
 export interface DocumentProcessingJobRecord {
   id: string;
   documentId: string;

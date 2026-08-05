@@ -1,8 +1,8 @@
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type {
-  DocumentProcessingJobOptions,
   DocumentProcessingJobRepositoryPort,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
+import type { DocumentProcessingJobOptions } from "../contracts/documentContracts.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { notFound } from "../../../shared/domain/errors.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";

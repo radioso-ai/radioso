@@ -6,9 +6,10 @@ import type {
 } from "../../modules/documents/domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentRecord,
+  DocumentSourceSummary,
   DocumentSummaryRecord,
 } from "../../modules/documents/contracts/index.js";
-import type { DocumentOriginKind, DocumentSourceSummary } from "./documentSourceRepository.js";
+import type { DocumentOriginKind } from "./documentSourceRepository.js";
 import {
   inferMetadataValueType,
   type MetadataValueType,

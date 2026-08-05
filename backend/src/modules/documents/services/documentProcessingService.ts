@@ -31,7 +31,7 @@ import type {
   ChunkRecord,
   ChunkRepositoryPort,
   DocumentRepositoryPort,
-} from "./documentIngestionService.js";
+} from "../contracts/documentContracts.js";
 import type {
   DocumentEnrichmentStagePort,
   DocumentEnrichmentStageResult,

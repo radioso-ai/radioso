@@ -73,7 +73,7 @@ export interface WidgetRepositoryPort {
 ```
 
 (In this repo, `DocumentRepositoryPort` lives in
-`modules/documents/services/documentIngestionService.ts` and is re-exported from
+`modules/documents/contracts/documentContracts.ts` and is re-exported from
 `modules/documents/contracts/index.ts`.)
 
 ### 3. Row + mapper — keep DB shape out of the domain

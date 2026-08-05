@@ -5,7 +5,6 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingJobRepositoryPort,
   DocumentProcessingQueueSnapshot,
-  DocumentProcessingJobOptions,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
@@ -13,8 +12,11 @@ import {
   toDocumentSourceSummary,
   type DocumentSourceRecord as DocumentOriginRecord,
   type DocumentSourceRepositoryPort,
-  type DocumentSourceSummary,
 } from "../../../db/repositories/documentSourceRepository.js";
+import type {
+  DocumentProcessingJobOptions,
+  DocumentSourceSummary,
+} from "../contracts/documentContracts.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,

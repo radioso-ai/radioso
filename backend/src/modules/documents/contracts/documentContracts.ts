@@ -1,9 +1,20 @@
 import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
-import type { DocumentProcessingJobOptions } from "../../../db/repositories/documentProcessingJobRepository.js";
-import type { DocumentSourceSummary } from "../../../db/repositories/documentSourceRepository.js";
 
 export type DocumentSourceKind = "inline_text" | "uploaded_file";
+
+export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
+
+export interface DocumentProcessingJobOptions {
+  documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
+}
+
+export interface DocumentSourceSummary {
+  id: string;
+  kind: "website" | "api" | "connector" | "upload";
+  name: string;
+  externalId: string | null;
+}
 
 export type DocumentSourceResolverInput =
   | { id: string }

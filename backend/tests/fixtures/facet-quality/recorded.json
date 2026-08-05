@@ -7,7 +7,6 @@
   "entries": [
     {
       "id": "bok-01",
-      "facet": "asking location of the course calendar at the center",
       "facetVector": [
         -0.12299,
         0.01264,
@@ -527,7 +526,6 @@
     },
     {
       "id": "bok-02",
-      "facet": "asking information about upcoming events",
       "facetVector": [
         -0.0264,
         -0.05957,
@@ -1047,7 +1045,6 @@
     },
     {
       "id": "bok-03",
-      "facet": "asking whether experience is offered in a given month",
       "facetVector": [
         -0.13208,
         0.06171,
@@ -1567,7 +1564,6 @@
     },
     {
       "id": "bok-04",
-      "facet": "asking location of a person this weekend",
       "facetVector": [
         -0.04681,
         -0.0311,
@@ -2087,7 +2083,6 @@
     },
     {
       "id": "bok-05",
-      "facet": "asking whether Tuesday is available",
       "facetVector": [
         -0.10175,
         -0.10345,
@@ -2607,7 +2602,6 @@
     },
     {
       "id": "bok-06",
-      "facet": "asking what else is included in a tour",
       "facetVector": [
         -0.02995,
         -0.07574,
@@ -3127,7 +3121,6 @@
     },
     {
       "id": "bok-07",
-      "facet": "asking information about healing courses or Yogananda healing information from now until October",
       "facetVector": [
         -0.0105,
         0.05563,
@@ -3647,7 +3640,6 @@
     },
     {
       "id": "bok-08",
-      "facet": "asking what is included in the retreat programme",
       "facetVector": [
         -0.0318,
         0.07953,
@@ -4167,7 +4159,6 @@
     },
     {
       "id": "bok-09",
-      "facet": "asking course information for the specified date range",
       "facetVector": [
         -0.15173,
         0.01161,
@@ -4687,7 +4678,6 @@
     },
     {
       "id": "bok-10",
-      "facet": "asking which courses are closest to October",
       "facetVector": [
         -0.12378,
         0.03065,
@@ -5207,7 +5197,6 @@
     },
     {
       "id": "bok-11",
-      "facet": "asking whether retreats are available in English in Europe",
       "facetVector": [
         -0.15027,
         0.0592,
@@ -5727,7 +5716,6 @@
     },
     {
       "id": "bok-12",
-      "facet": "asking the schedule for a teacher at a location",
       "facetVector": [
         -0.06799,
         -0.0838,
@@ -6247,7 +6235,6 @@
     },
     {
       "id": "bok-13",
-      "facet": "asking for a schedule for a person",
       "facetVector": [
         0.00145,
         -0.10303,
@@ -6767,7 +6754,6 @@
     },
     {
       "id": "bok-14",
-      "facet": "asking what programs are offered",
       "facetVector": [
         -0.11444,
         -0.05624,
@@ -7287,7 +7273,6 @@
     },
     {
       "id": "bok-15",
-      "facet": "asking available retreats in Assisi",
       "facetVector": [
         -0.1333,
         -0.08124,
@@ -7807,7 +7792,6 @@
     },
     {
       "id": "bok-16",
-      "facet": "asking whether beginner courses are available",
       "facetVector": [
         -0.10645,
         -0.00926,
@@ -8327,7 +8311,6 @@
     },
     {
       "id": "bok-17",
-      "facet": "asking available retreats or courses at this year",
       "facetVector": [
         -0.14307,
         0.0347,
@@ -8847,7 +8830,6 @@
     },
     {
       "id": "bok-18",
-      "facet": "asking information about upcoming international events",
       "facetVector": [
         -0.03256,
         -0.0397,
@@ -9367,7 +9349,6 @@
     },
     {
       "id": "bok-19",
-      "facet": "asking the date of the kriyaban retreat",
       "facetVector": [
         -0.06238,
         0.04114,
@@ -9887,7 +9868,6 @@
     },
     {
       "id": "bok-20",
-      "facet": "asking dates for July 2026",
       "facetVector": [
         -0.03662,
         -0.06757,
@@ -10407,7 +10387,6 @@
     },
     {
       "id": "bok-21",
-      "facet": "reporting a date range",
       "facetVector": [
         -0.05835,
         -0.00425,
@@ -10927,7 +10906,6 @@
     },
     {
       "id": "bok-22",
-      "facet": "asking whether yoga classes are available",
       "facetVector": [
         -0.09625,
         0.04535,
@@ -11447,7 +11425,6 @@
     },
     {
       "id": "bok-23",
-      "facet": "asking date range for availability",
       "facetVector": [
         -0.1073,
         -0.00145,
@@ -11967,7 +11944,6 @@
     },
     {
       "id": "bok-24",
-      "facet": "asking scheduled yoga activities for 4-10 August",
       "facetVector": [
         -0.07184,
         0.09332,
@@ -12487,7 +12463,6 @@
     },
     {
       "id": "bok-25",
-      "facet": "asking where to find the full schedule for August 4-10",
       "facetVector": [
         -0.02827,
         0.03629,
@@ -13007,7 +12982,6 @@
     },
     {
       "id": "bok-26",
-      "facet": "asking which courses are suitable for beginners",
       "facetVector": [
         -0.03519,
         0.01266,
@@ -13527,7 +13501,6 @@
     },
     {
       "id": "bok-27",
-      "facet": "asking whether introductory courses are available online",
       "facetVector": [
         -0.0954,
         -0.02914,
@@ -14047,7 +14020,6 @@
     },
     {
       "id": "bok-28",
-      "facet": "asking whether accommodation includes meals and lodging",
       "facetVector": [
         -0.04236,
         -0.12927,
@@ -14567,7 +14539,6 @@
     },
     {
       "id": "bok-29",
-      "facet": "asking a price",
       "facetVector": [
         -0.04684,
         -0.11908,
@@ -15087,7 +15058,6 @@
     },
     {
       "id": "bok-30",
-      "facet": "asking for information about upcoming courses",
       "facetVector": [
         -0.04428,
         -0.03381,
@@ -15607,7 +15577,6 @@
     },
     {
       "id": "bok-31",
-      "facet": "asking the next retreat",
       "facetVector": [
         -0.02539,
         0.02728,
@@ -16127,7 +16096,6 @@
     },
     {
       "id": "bok-32",
-      "facet": "asking available dates in August or September",
       "facetVector": [
         -0.11108,
         -0.00095,
@@ -16647,7 +16615,6 @@
     },
     {
       "id": "bok-33",
-      "facet": "asking whether silent meditation is available for a one-day stay",
       "facetVector": [
         -0.04922,
         0.01434,
@@ -17167,7 +17134,6 @@
     },
     {
       "id": "bok-34",
-      "facet": "asking whether a holiday is available",
       "facetVector": [
         -0.12659,
         0.0183,
@@ -17687,7 +17653,6 @@
     },
     {
       "id": "bok-35",
-      "facet": "stating tentative rescheduling for a date",
       "facetVector": [
         -0.11029,
         -0.01884,
@@ -18207,7 +18172,6 @@
     },
     {
       "id": "bok-36",
-      "facet": "asking location of event or retreat with a person",
       "facetVector": [
         -0.12024,
         -0.00267,
@@ -18727,7 +18691,6 @@
     },
     {
       "id": "bok-37",
-      "facet": "asking whether a weekend stay is available",
       "facetVector": [
         -0.06561,
         0.01707,
@@ -19247,7 +19210,6 @@
     },
     {
       "id": "bok-38",
-      "facet": "asking daily price information",
       "facetVector": [
         -0.02629,
         -0.09412,
@@ -19767,7 +19729,6 @@
     },
     {
       "id": "bok-39",
-      "facet": "asking whether a visit is permitted at the center",
       "facetVector": [
         -0.01447,
         -0.01257,
@@ -20287,7 +20248,6 @@
     },
     {
       "id": "bok-40",
-      "facet": "asking whether a course is available this summer",
       "facetVector": [
         -0.12274,
         0.05637,
@@ -20807,7 +20767,6 @@
     },
     {
       "id": "bok-41",
-      "facet": "requesting a recommendation for a yoga course",
       "facetVector": [
         -0.06305,
         0.01193,
@@ -21327,7 +21286,6 @@
     },
     {
       "id": "bok-42",
-      "facet": "asking which course suits beginners in August",
       "facetVector": [
         -0.05823,
         0.04211,
@@ -21847,7 +21805,6 @@
     },
     {
       "id": "bok-43",
-      "facet": "requesting information about next courses",
       "facetVector": [
         -0.07745,
         0.02017,
@@ -22367,7 +22324,6 @@
     },
     {
       "id": "bok-44",
-      "facet": "asking for the programme for July 2026",
       "facetVector": [
         -0.0074,
         0.00929,
@@ -22887,7 +22843,6 @@
     },
     {
       "id": "bok-45",
-      "facet": "requesting daily programme details",
       "facetVector": [
         -0.0672,
         -0.00284,
@@ -23407,7 +23362,6 @@
     },
     {
       "id": "bok-46",
-      "facet": "asking whether joining a course is permitted",
       "facetVector": [
         -0.01988,
         0.02991,
@@ -23927,7 +23881,6 @@
     },
     {
       "id": "kry-01",
-      "facet": "asking which course to follow for initiation preparation",
       "facetVector": [
         -0.02574,
         0.01682,
@@ -24447,7 +24400,6 @@
     },
     {
       "id": "kry-02",
-      "facet": "asking techniques prepared at level 1",
       "facetVector": [
         -0.0157,
         0.00204,
@@ -24967,7 +24919,6 @@
     },
     {
       "id": "kry-03",
-      "facet": "asking for a definition of a technique",
       "facetVector": [
         -0.0294,
         -0.01109,
@@ -25487,7 +25438,6 @@
     },
     {
       "id": "kry-04",
-      "facet": "asking directions to the initiation",
       "facetVector": [
         0.02037,
         -0.0195,
@@ -26007,7 +25957,6 @@
     },
     {
       "id": "kry-05",
-      "facet": "asking a definition of kriya",
       "facetVector": [
         -0.05545,
         0.05246,
@@ -26527,7 +26476,6 @@
     },
     {
       "id": "kry-06",
-      "facet": "asking whether initiation is permitted without meditation",
       "facetVector": [
         -0.00439,
         0.03564,
@@ -27047,7 +26995,6 @@
     },
     {
       "id": "kry-07",
-      "facet": "asking for the next retreat date",
       "facetVector": [
         -0.07635,
         0.02342,
@@ -27567,7 +27514,6 @@
     },
     {
       "id": "kry-08",
-      "facet": "asking schedule for Kriya Yoga in August",
       "facetVector": [
         -0.05057,
         0.1521,
@@ -28087,7 +28033,6 @@
     },
     {
       "id": "kry-09",
-      "facet": "asking when kriya yoga can be done in August",
       "facetVector": [
         -0.01088,
         0.11755,
@@ -28607,7 +28552,6 @@
     },
     {
       "id": "kry-10",
-      "facet": "asking information about Kriya Yoga",
       "facetVector": [
         -0.03629,
         0.05341,
@@ -29127,7 +29071,6 @@
     },
     {
       "id": "kry-11",
-      "facet": "asking whether lessons or a course and price are available for yoga",
       "facetVector": [
         -0.15637,
         -0.02495,
@@ -29647,7 +29590,6 @@
     },
     {
       "id": "kry-12",
-      "facet": "asking whether yoga is offered",
       "facetVector": [
         -0.11145,
         0.01593,
@@ -30167,7 +30109,6 @@
     },
     {
       "id": "kry-13",
-      "facet": "asking information about affordable weekday yoga classes",
       "facetVector": [
         -0.08984,
         0.00248,
@@ -30687,7 +30628,6 @@
     },
     {
       "id": "kry-14",
-      "facet": "requesting a self-paced at-home yoga course",
       "facetVector": [
         -0.03918,
         0.02196,
@@ -31207,7 +31147,6 @@
     },
     {
       "id": "kry-15",
-      "facet": "requesting contact information about the organization",
       "facetVector": [
         -0.00449,
         -0.0816,
@@ -31727,7 +31666,6 @@
     },
     {
       "id": "kry-16",
-      "facet": "asking the difference between initiation and withdrawal ceremony",
       "facetVector": [
         0.02452,
         -0.01539,
@@ -32247,7 +32185,6 @@
     },
     {
       "id": "kry-17",
-      "facet": "reporting inability to access section",
       "facetVector": [
         0.02739,
         0.02596,
@@ -32767,7 +32704,6 @@
     },
     {
       "id": "kry-18",
-      "facet": "requesting information about Swami Kriyananda's kriya yoga",
       "facetVector": [
         -0.04224,
         0.03497,
@@ -33287,7 +33223,6 @@
     },
     {
       "id": "kry-19",
-      "facet": "asking whether entry to a video section is permitted",
       "facetVector": [
         0.09314,
         -0.00358,
@@ -33807,7 +33742,6 @@
     },
     {
       "id": "kry-20",
-      "facet": "asking instructions for learning Kriya Yoga",
       "facetVector": [
         -0.05356,
         0.07123,
@@ -34327,7 +34261,6 @@
     },
     {
       "id": "kry-21",
-      "facet": "asking how to improve the technique of doing kriya yoga alone",
       "facetVector": [
         -0.02693,
         0.06384,
@@ -34847,7 +34780,6 @@
     },
     {
       "id": "kry-22",
-      "facet": "asking meaning of registering as a category",
       "facetVector": [
         0.02586,
         -0.03946,
@@ -35367,7 +35299,6 @@
     },
     {
       "id": "kry-23",
-      "facet": "reporting non-initiation of krya practice",
       "facetVector": [
         -0.07202,
         0.17554,
@@ -35887,7 +35818,6 @@
     },
     {
       "id": "kry-24",
-      "facet": "requesting access to resources without initiation",
       "facetVector": [
         -0.01113,
         0.07819,
@@ -36407,7 +36337,6 @@
     },
     {
       "id": "kry-25",
-      "facet": "asking dates of the next initiation sessions",
       "facetVector": [
         -0.06616,
         0.04434,
@@ -36927,7 +36856,6 @@
     },
     {
       "id": "kry-26",
-      "facet": "asking exact date of the first kriya",
       "facetVector": [
         -0.07422,
         0.05371,
@@ -37447,7 +37375,6 @@
     },
     {
       "id": "kry-27",
-      "facet": "asking opening time for first Kriya initiation",
       "facetVector": [
         -0.0672,
         0.11652,
@@ -37967,7 +37894,6 @@
     },
     {
       "id": "kry-28",
-      "facet": "asking opening hours for first Kriya retreat",
       "facetVector": [
         -0.1416,
         0.15051,
@@ -38487,7 +38413,6 @@
     },
     {
       "id": "kry-29",
-      "facet": "asking the precise time of the initiation",
       "facetVector": [
         -0.00418,
         -0.00066,
@@ -39007,7 +38932,6 @@
     },
     {
       "id": "kry-30",
-      "facet": "asking whether initiation is available in August",
       "facetVector": [
         -0.06256,
         0.05981,
@@ -39527,7 +39451,6 @@
     },
     {
       "id": "kry-31",
-      "facet": "asking whether online initiations are available",
       "facetVector": [
         -0.03452,
         0.00493,
@@ -40047,7 +39970,6 @@
     },
     {
       "id": "kry-32",
-      "facet": "asking when the next initiation after November will be",
       "facetVector": [
         -0.05722,
         0.07379,
@@ -40567,7 +40489,6 @@
     },
     {
       "id": "kry-33",
-      "facet": "asking whether first kriya initiation is online or residential",
       "facetVector": [
         -0.11047,
         0.0527,
@@ -41087,7 +41008,6 @@
     },
     {
       "id": "kry-34",
-      "facet": "asking which solution is best",
       "facetVector": [
         0.01945,
         -0.07288,
@@ -41607,7 +41527,6 @@
     },
     {
       "id": "kry-35",
-      "facet": "asking whether in-person or online initiation is better",
       "facetVector": [
         -0.04541,
         -0.00028,
@@ -42127,7 +42046,6 @@
     },
     {
       "id": "kry-36",
-      "facet": "asking difference between residence and online experience",
       "facetVector": [
         -0.00996,
         -0.07336,
@@ -42647,7 +42565,6 @@
     },
     {
       "id": "kry-37",
-      "facet": "reporting readiness for taking a Kriya practice",
       "facetVector": [
         -0.01912,
         0.1637,
@@ -43167,7 +43084,6 @@
     },
     {
       "id": "kry-38",
-      "facet": "requesting preference for twenty parts",
       "facetVector": [
         -0.00604,
         -0.04553,
@@ -43687,7 +43603,6 @@
     },
     {
       "id": "kry-39",
-      "facet": "reporting difficulty memorizing charging exercises",
       "facetVector": [
         0.03568,
         -0.10358,
@@ -44207,7 +44122,6 @@
     },
     {
       "id": "kry-40",
-      "facet": "asking continuity requirements for access to the first level",
       "facetVector": [
         0.00032,
         0.05807,
@@ -44727,7 +44641,6 @@
     },
     {
       "id": "kry-41",
-      "facet": "asking meaning of daily meditation",
       "facetVector": [
         0.04517,
         -0.04483,
@@ -45247,7 +45160,6 @@
     },
     {
       "id": "kry-42",
-      "facet": "asking effects of daily meditation with other practice omitted",
       "facetVector": [
         0.03607,
         0.00131,
@@ -45767,7 +45679,6 @@
     },
     {
       "id": "kry-43",
-      "facet": "asking how important recharge exercises are",
       "facetVector": [
         0.07391,
         0.02646,
@@ -46287,7 +46198,6 @@
     },
     {
       "id": "kry-44",
-      "facet": "asking the purpose of recharge exercises",
       "facetVector": [
         0.01994,
         -0.01782,
@@ -46807,7 +46717,6 @@
     },
     {
       "id": "kry-45",
-      "facet": "asking exact preparation procedure for Kriya",
       "facetVector": [
         -0.00938,
         0.07959,
@@ -47327,7 +47236,6 @@
     },
     {
       "id": "kry-46",
-      "facet": "asking initiation preparation instructions",
       "facetVector": [
         0.05777,
         -0.05814,
@@ -47847,7 +47755,6 @@
     },
     {
       "id": "kry-47",
-      "facet": "asking personal walk information",
       "facetVector": [
         0.0332,
         -0.04544,
@@ -48367,7 +48274,6 @@
     },
     {
       "id": "kry-48",
-      "facet": "describing a personal journey before initiation",
       "facetVector": [
         0.01654,
         -0.00298,
@@ -48887,7 +48793,6 @@
     },
     {
       "id": "kry-49",
-      "facet": "asking available dates for initiation",
       "facetVector": [
         -0.05936,
         0.00217,
@@ -49407,7 +49312,6 @@
     },
     {
       "id": "kry-50",
-      "facet": "asking requirements and courses in line",
       "facetVector": [
         -0.11731,
         0.05719,
@@ -49927,7 +49831,6 @@
     },
     {
       "id": "kry-51",
-      "facet": "asking where to find resources for disciples",
       "facetVector": [
         0.0289,
         0.05084,
@@ -50447,7 +50350,6 @@
     },
     {
       "id": "kry-52",
-      "facet": "asking whether access is permitted without krya initiation",
       "facetVector": [
         -0.01089,
         0.1015,
@@ -50967,7 +50869,6 @@
     },
     {
       "id": "kry-53",
-      "facet": "asking for an explanation of Kriyaban",
       "facetVector": [
         0.03525,
         0.05997,
@@ -51487,7 +51388,6 @@
     },
     {
       "id": "kry-54",
-      "facet": "asking effect of Kriya on attention and silence",
       "facetVector": [
         0.0195,
         0.06519,
@@ -52007,7 +51907,6 @@
     },
     {
       "id": "kry-55",
-      "facet": "asking schedule for the next course for Kriyabans",
       "facetVector": [
         -0.05103,
         0.10236,
@@ -52527,7 +52426,6 @@
     },
     {
       "id": "kry-56",
-      "facet": "asking how initiation works",
       "facetVector": [
         -0.03738,
         0.0347,
@@ -53047,7 +52945,6 @@
     },
     {
       "id": "mdt-01",
-      "facet": "reporting a broken registration link for free online meditation",
       "facetVector": [
         -0.05457,
         0.06125,
@@ -53567,7 +53464,6 @@
     },
     {
       "id": "mdt-02",
-      "facet": "asking which meditation course to choose",
       "facetVector": [
         -0.0459,
         -0.0209,
@@ -54087,7 +53983,6 @@
     },
     {
       "id": "mdt-03",
-      "facet": "asking whether prayer healing instruction is available",
       "facetVector": [
         -0.07941,
         0.02167,
@@ -54607,7 +54502,6 @@
     },
     {
       "id": "mdt-04",
-      "facet": "requesting a guided meditation",
       "facetVector": [
         -0.0788,
         -0.03967,
@@ -55127,7 +55021,6 @@
     },
     {
       "id": "mdt-05",
-      "facet": "asking whether live meditations are available today",
       "facetVector": [
         -0.05963,
         0.04456,
@@ -55647,7 +55540,6 @@
     },
     {
       "id": "mdt-06",
-      "facet": "reporting missing information about YouTube live streams",
       "facetVector": [
         0.03842,
         0.00822,
@@ -56167,7 +56059,6 @@
     },
     {
       "id": "mdt-07",
-      "facet": "asking what services are available",
       "facetVector": [
         -0.05551,
         -0.04431,
@@ -56687,7 +56578,6 @@
     },
     {
       "id": "mdt-08",
-      "facet": "asking whether live meditations are available",
       "facetVector": [
         -0.08228,
         0.01874,
@@ -57207,7 +57097,6 @@
     },
     {
       "id": "mdt-09",
-      "facet": "requesting link to current live stream for Thursday purification ceremony",
       "facetVector": [
         0.02879,
         0.04422,
@@ -57727,7 +57616,6 @@
     },
     {
       "id": "mdt-10",
-      "facet": "asking for the access link to the live ceremony",
       "facetVector": [
         0.07379,
         -0.02596,
@@ -58247,7 +58135,6 @@
     },
     {
       "id": "mdt-11",
-      "facet": "asking whether Thursday meditation is available",
       "facetVector": [
         -0.12311,
         -0.04767,
@@ -58767,7 +58654,6 @@
     },
     {
       "id": "mdt-12",
-      "facet": "asking how to participate in the meditations",
       "facetVector": [
         -0.02116,
         0.00434,
@@ -59287,7 +59173,6 @@
     },
     {
       "id": "mdt-13",
-      "facet": "asking how to participate in Thursday meditation",
       "facetVector": [
         -0.05136,
         -0.03119,
@@ -59807,7 +59692,6 @@
     },
     {
       "id": "mdt-14",
-      "facet": "asking whether meditation with the organization is possible",
       "facetVector": [
         -0.0237,
         -0.02104,
@@ -60327,7 +60211,6 @@
     },
     {
       "id": "mdt-15",
-      "facet": "asking whether meditation is permitted",
       "facetVector": [
         0.02679,
         -0.00731,
@@ -60847,7 +60730,6 @@
     },
     {
       "id": "mdt-16",
-      "facet": "asking the time of the next online meditation event",
       "facetVector": [
         -0.08026,
         0.01398,
@@ -61367,7 +61249,6 @@
     },
     {
       "id": "mdt-17",
-      "facet": "asking whether a knowledgeable person is available for meditation problems",
       "facetVector": [
         -0.06229,
         -0.01669,
@@ -61887,7 +61768,6 @@
     },
     {
       "id": "mdt-18",
-      "facet": "requesting help with restlessness and itching for meditation",
       "facetVector": [
         0.0118,
         -0.01663,
@@ -62407,7 +62287,6 @@
     },
     {
       "id": "mdt-19",
-      "facet": "asking opening hours for Ananda activities",
       "facetVector": [
         -0.08105,
         0.08197,
@@ -62927,7 +62806,6 @@
     },
     {
       "id": "mdt-20",
-      "facet": "expressing interest in kirtan",
       "facetVector": [
         -0.09485,
         0.02713,
@@ -63447,7 +63325,6 @@
     },
     {
       "id": "mdt-21",
-      "facet": "requesting instruction for calming the mind and reducing stress",
       "facetVector": [
         0.03323,
         -0.00599,
@@ -63967,7 +63844,6 @@
     },
     {
       "id": "mdt-22",
-      "facet": "reporting inner restlessness",
       "facetVector": [
         -0.01066,
         0.02171,
@@ -64487,7 +64363,6 @@
     },
     {
       "id": "mdt-23",
-      "facet": "asking for healing meditation using the word effata",
       "facetVector": [
         0.05551,
         -0.05112,
@@ -65007,7 +64882,6 @@
     },
     {
       "id": "mdt-24",
-      "facet": "requesting a prayer for peace harmony and climate",
       "facetVector": [
         0.03989,
         -0.04077,
@@ -65527,7 +65401,6 @@
     },
     {
       "id": "mdt-25",
-      "facet": "requesting Italian live stream audio from Ananda",
       "facetVector": [
         -0.0733,
         -0.043,
@@ -66047,7 +65920,6 @@
     },
     {
       "id": "yga-01",
-      "facet": "asking where to find exercises for learning these phrases",
       "facetVector": [
         -0.07385,
         0.01015,
@@ -66567,7 +66439,6 @@
     },
     {
       "id": "yga-02",
-      "facet": "asking whether different types of Ananda yoga are available",
       "facetVector": [
         -0.06299,
         -0.00066,
@@ -67087,7 +66958,6 @@
     },
     {
       "id": "yga-03",
-      "facet": "asking whether guided sun salutation videos are available",
       "facetVector": [
         -0.05627,
         -0.02196,
@@ -67607,7 +67477,6 @@
     },
     {
       "id": "yga-04",
-      "facet": "requesting guided instruction video",
       "facetVector": [
         -0.06409,
         -0.03467,
@@ -68127,7 +67996,6 @@
     },
     {
       "id": "yga-05",
-      "facet": "requesting instructions for videos",
       "facetVector": [
         0.01631,
         -0.01588,
@@ -68647,7 +68515,6 @@
     },
     {
       "id": "yga-06",
-      "facet": "asking for guided practice videos",
       "facetVector": [
         -0.04324,
         -0.05826,
@@ -69167,7 +69034,6 @@
     },
     {
       "id": "yga-07",
-      "facet": "requesting an asana practice",
       "facetVector": [
         -0.00236,
         -0.05594,
@@ -69687,7 +69553,6 @@
     },
     {
       "id": "yga-08",
-      "facet": "asking short sequences for the routine",
       "facetVector": [
         0.01843,
         -0.01927,
@@ -70207,7 +70072,6 @@
     },
     {
       "id": "yga-09",
-      "facet": "reporting wrong link destination for routines page",
       "facetVector": [
         -0.04733,
         -0.01199,
@@ -70727,7 +70591,6 @@
     },
     {
       "id": "yga-10",
-      "facet": "asking instructions for finding the three sequences on the website",
       "facetVector": [
         -0.03134,
         -0.09045,
@@ -71247,7 +71110,6 @@
     },
     {
       "id": "yga-11",
-      "facet": "asking whether free yoga routine videos are available",
       "facetVector": [
         -0.05118,
         0.01924,
@@ -71767,7 +71629,6 @@
     },
     {
       "id": "loc-01",
-      "facet": "asking whether centers are available near a specified area",
       "facetVector": [
         -0.14111,
         -0.03357,
@@ -72287,7 +72148,6 @@
     },
     {
       "id": "loc-02",
-      "facet": "asking which UK locations are listed",
       "facetVector": [
         -0.05981,
         0.01331,
@@ -72807,7 +72667,6 @@
     },
     {
       "id": "loc-03",
-      "facet": "asking which UK location is the main one",
       "facetVector": [
         -0.03024,
         0.00356,
@@ -73327,7 +73186,6 @@
     },
     {
       "id": "loc-04",
-      "facet": "requesting a list of centers in the UK",
       "facetVector": [
         -0.13818,
         -0.01889,
@@ -73847,7 +73705,6 @@
     },
     {
       "id": "loc-05",
-      "facet": "asking whether a meditation centre is available in a city",
       "facetVector": [
         -0.14124,
         0.01241,
@@ -74367,7 +74224,6 @@
     },
     {
       "id": "loc-06",
-      "facet": "asking whether other UK locations are available",
       "facetVector": [
         -0.12225,
         0.03287,
@@ -74887,7 +74743,6 @@
     },
     {
       "id": "loc-07",
-      "facet": "asking physical location of the organization",
       "facetVector": [
         -0.07324,
         0.02408,
@@ -75407,7 +75262,6 @@
     },
     {
       "id": "loc-08",
-      "facet": "asking whether a meditation group is available nearby",
       "facetVector": [
         -0.16626,
         -0.0108,
@@ -75927,7 +75781,6 @@
     },
     {
       "id": "loc-09",
-      "facet": "asking whether something is available in Estonia",
       "facetVector": [
         -0.14868,
         -0.06793,
@@ -76447,7 +76300,6 @@
     },
     {
       "id": "loc-10",
-      "facet": "stating city of origin",
       "facetVector": [
         -0.09778,
         -0.08258,
@@ -76967,7 +76819,6 @@
     },
     {
       "id": "loc-11",
-      "facet": "asking instruction for learning meditation groups",
       "facetVector": [
         -0.10797,
         -0.01144,
@@ -77487,7 +77338,6 @@
     },
     {
       "id": "loc-12",
-      "facet": "asking whether a meditation center is available near a city",
       "facetVector": [
         -0.15649,
         -0.01639,
@@ -78007,7 +77857,6 @@
     },
     {
       "id": "loc-13",
-      "facet": "asking contact details for a group",
       "facetVector": [
         -0.00866,
         -0.04745,
@@ -78527,7 +78376,6 @@
     },
     {
       "id": "loc-14",
-      "facet": "asking for advice about a location",
       "facetVector": [
         -0.01958,
         -0.05515,
@@ -79047,7 +78895,6 @@
     },
     {
       "id": "loc-15",
-      "facet": "asking nearest location of ananda",
       "facetVector": [
         -0.08929,
         -0.05737,
@@ -79567,7 +79414,6 @@
     },
     {
       "id": "loc-16",
-      "facet": "asking nearby meditation center locations",
       "facetVector": [
         -0.1134,
         -0.03857,
@@ -80087,7 +79933,6 @@
     },
     {
       "id": "loc-17",
-      "facet": "asking whether an event or organization is available in Belgium",
       "facetVector": [
         -0.11731,
         0.00939,
@@ -80607,7 +80452,6 @@
     },
     {
       "id": "loc-18",
-      "facet": "offering a name",
       "facetVector": [
         0.00754,
         -0.08441,
@@ -81127,7 +80971,6 @@
     },
     {
       "id": "loc-19",
-      "facet": "requesting contact information for Portugal",
       "facetVector": [
         -0.02954,
         -0.04199,
@@ -81647,7 +81490,6 @@
     },
     {
       "id": "loc-20",
-      "facet": "asking what meditation groups are available in a region",
       "facetVector": [
         -0.12952,
         -0.02483,
@@ -82167,7 +82009,6 @@
     },
     {
       "id": "loc-21",
-      "facet": "asking availability in the Genoa area",
       "facetVector": [
         -0.09082,
         0.0264,
@@ -82687,7 +82528,6 @@
     },
     {
       "id": "loc-22",
-      "facet": "stating inability to travel otherwise",
       "facetVector": [
         -0.01575,
         0.04199,
@@ -83207,7 +83047,6 @@
     },
     {
       "id": "loc-23",
-      "facet": "asking who they are and where they operate",
       "facetVector": [
         -0.02194,
         -0.04007,
@@ -83727,7 +83566,6 @@
     },
     {
       "id": "loc-24",
-      "facet": "asking how to connect with a local sangha",
       "facetVector": [
         -0.06842,
         -0.00996,
@@ -84247,7 +84085,6 @@
     },
     {
       "id": "loc-25",
-      "facet": "asking whether Ananda is available",
       "facetVector": [
         -0.06488,
         -0.04041,
@@ -84767,7 +84604,6 @@
     },
     {
       "id": "sev-01",
-      "facet": "asking instruction for doing seva",
       "facetVector": [
         -0.05673,
         -0.0007,
@@ -85287,7 +85123,6 @@
     },
     {
       "id": "sev-02",
-      "facet": "asking whether volunteering is permitted",
       "facetVector": [
         -0.02296,
         0.04642,
@@ -85807,7 +85642,6 @@
     },
     {
       "id": "sev-03",
-      "facet": "requesting a sanctuary for abandoned dogs",
       "facetVector": [
         0.01993,
         -0.04538,
@@ -86327,7 +86161,6 @@
     },
     {
       "id": "sev-04",
-      "facet": "asking how voluntary service is structured",
       "facetVector": [
         -0.11591,
         0.06665,
@@ -86847,7 +86680,6 @@
     },
     {
       "id": "sev-05",
-      "facet": "asking whether working as a cook at the organization is permitted",
       "facetVector": [
         -0.0239,
         -0.03641,
@@ -87367,7 +87199,6 @@
     },
     {
       "id": "sev-06",
-      "facet": "asking whether volunteering is permitted",
       "facetVector": [
         -0.02301,
         0.04651,
@@ -87887,7 +87718,6 @@
     },
     {
       "id": "trv-01",
-      "facet": "asking travel information about India",
       "facetVector": [
         0.021,
         -0.07434,
@@ -88407,7 +88237,6 @@
     },
     {
       "id": "trv-02",
-      "facet": "asking where it usually takes place in India",
       "facetVector": [
         0.005,
         -0.01023,
@@ -88927,7 +88756,6 @@
     },
     {
       "id": "trv-03",
-      "facet": "asking dates for pilgrimages in India",
       "facetVector": [
         -0.00883,
         -0.00111,
@@ -89447,7 +89275,6 @@
     },
     {
       "id": "trv-04",
-      "facet": "asking available pilgrimages in India",
       "facetVector": [
         -0.03491,
         0.01947,
@@ -89967,7 +89794,6 @@
     },
     {
       "id": "trv-05",
-      "facet": "asking whether organized trips are available for 2027",
       "facetVector": [
         -0.09875,
         -0.06683,
@@ -90487,7 +90313,6 @@
     },
     {
       "id": "trv-06",
-      "facet": "asking directions to a place",
       "facetVector": [
         0.00872,
         -0.09003,
@@ -91007,7 +90832,6 @@
     },
     {
       "id": "trv-07",
-      "facet": "asking physical description of the pilgrimage to Assisi",
       "facetVector": [
         -0.01933,
         -0.0419,
@@ -91527,7 +91351,6 @@
     },
     {
       "id": "trv-08",
-      "facet": "asking where pilgrimages are available",
       "facetVector": [
         -0.04446,
         -0.01912,
@@ -92047,7 +91870,6 @@
     },
     {
       "id": "trv-09",
-      "facet": "asking whether reservation is required for Thursday meditation",
       "facetVector": [
         -0.04477,
         -0.00124,
@@ -92567,7 +92389,6 @@
     },
     {
       "id": "trv-10",
-      "facet": "asking the location of the magic house",
       "facetVector": [
         -0.05112,
         -0.04434,
@@ -93087,7 +92908,6 @@
     },
     {
       "id": "trv-11",
-      "facet": "asking driving directions there",
       "facetVector": [
         -0.05405,
         -0.12115,
@@ -93607,7 +93427,6 @@
     },
     {
       "id": "trv-12",
-      "facet": "asking what kind of cuisine is served",
       "facetVector": [
         -0.01241,
         -0.11017,
@@ -94127,7 +93946,6 @@
     },
     {
       "id": "trv-13",
-      "facet": "stating a schedule constraint about being in Umbria in the first week of August",
       "facetVector": [
         -0.06927,
         0.08209,
@@ -94647,7 +94465,6 @@
     },
     {
       "id": "trv-14",
-      "facet": "asking how to organize a visit",
       "facetVector": [
         0.01299,
         -0.12415,
@@ -95167,7 +94984,6 @@
     },
     {
       "id": "trv-15",
-      "facet": "asking route information about airplaine",
       "facetVector": [
         -0.05688,
         -0.06268,
@@ -95687,7 +95503,6 @@
     },
     {
       "id": "onl-01",
-      "facet": "asking course content for the beginner course",
       "facetVector": [
         0.01118,
         0.03001,
@@ -96207,7 +96022,6 @@
     },
     {
       "id": "onl-02",
-      "facet": "asking procedure for moving from part one to part two online",
       "facetVector": [
         -0.04224,
         0.01353,
@@ -96727,7 +96541,6 @@
     },
     {
       "id": "onl-03",
-      "facet": "asking how online phases are organized",
       "facetVector": [
         -0.0086,
         -0.07056,
@@ -97247,7 +97060,6 @@
     },
     {
       "id": "onl-04",
-      "facet": "requesting instructions for removing an Italian voice connection",
       "facetVector": [
         -0.0639,
         -0.0321,
@@ -97767,7 +97579,6 @@
     },
     {
       "id": "onl-05",
-      "facet": "asking an English translation of platform",
       "facetVector": [
         0.02429,
         -0.07501,
@@ -98287,7 +98098,6 @@
     },
     {
       "id": "onl-06",
-      "facet": "asking how to purchase an online course",
       "facetVector": [
         -0.02275,
         -0.08868,
@@ -98807,7 +98617,6 @@
     },
     {
       "id": "onl-07",
-      "facet": "asking the location of my courses",
       "facetVector": [
         -0.12354,
         -0.02202,
@@ -99327,7 +99136,6 @@
     },
     {
       "id": "onl-08",
-      "facet": "asking access instructions for online courses after registration",
       "facetVector": [
         -0.00917,
         -0.02106,
@@ -99847,7 +99655,6 @@
     },
     {
       "id": "onl-09",
-      "facet": "asking differences between live courses and others",
       "facetVector": [
         -0.04593,
         -0.0273,
@@ -100367,7 +100174,6 @@
     },
     {
       "id": "onl-10",
-      "facet": "asking whether courses have an expiration date",
       "facetVector": [
         -0.08142,
         0.03339,
@@ -100887,7 +100693,6 @@
     },
     {
       "id": "onl-11",
-      "facet": "asking availability of all editions of these two courses",
       "facetVector": [
         -0.06573,
         0.01619,
@@ -101407,7 +101212,6 @@
     },
     {
       "id": "onl-12",
-      "facet": "asking why login credentials are not working",
       "facetVector": [
         -0.01756,
         0.02509,
@@ -101927,7 +101731,6 @@
     },
     {
       "id": "onl-13",
-      "facet": "asking who to write to for help",
       "facetVector": [
         0.05533,
         -0.07629,
@@ -102447,7 +102250,6 @@
     },
     {
       "id": "onl-14",
-      "facet": "asking the website for online courses",
       "facetVector": [
         -0.05435,
         -0.07672,
@@ -102967,7 +102769,6 @@
     },
     {
       "id": "onl-15",
-      "facet": "asking whether installment payments are permitted",
       "facetVector": [
         0.04266,
         -0.10706,
@@ -103487,7 +103288,6 @@
     },
     {
       "id": "onl-16",
-      "facet": "asking contact information for technical support",
       "facetVector": [
         0.01634,
         -0.09045,
@@ -104007,7 +103807,6 @@
     },
     {
       "id": "onl-17",
-      "facet": "asking whether online courses are available",
       "facetVector": [
         -0.10846,
         -0.00852,
@@ -104527,7 +104326,6 @@
     },
     {
       "id": "cmm-01",
-      "facet": "requesting information about autobiography of one yogi",
       "facetVector": [
         0.01994,
         0.02492,
@@ -105047,7 +104845,6 @@
     },
     {
       "id": "cmm-02",
-      "facet": "asking the location of a comment",
       "facetVector": [
         -0.05298,
         -0.01999,
@@ -105567,7 +105364,6 @@
     },
     {
       "id": "cmm-03",
-      "facet": "asking where to view videos or other content",
       "facetVector": [
         0.04639,
         -0.06155,
@@ -106087,7 +105883,6 @@
     },
     {
       "id": "cmm-04",
-      "facet": "asking where to watch a named thing",
       "facetVector": [
         -0.04788,
         0.0201,
@@ -106607,7 +106402,6 @@
     },
     {
       "id": "cmm-05",
-      "facet": "asking what other talks a person has given",
       "facetVector": [
         -0.0131,
         -0.11859,
@@ -107127,7 +106921,6 @@
     },
     {
       "id": "cmm-06",
-      "facet": "asking what the current page is about",
       "facetVector": [
         -0.0061,
         -0.00628,
@@ -107647,7 +107440,6 @@
     },
     {
       "id": "cmm-07",
-      "facet": "requesting a summary of the current page",
       "facetVector": [
         -0.01543,
         0.01886,
@@ -108167,7 +107959,6 @@
     },
     {
       "id": "cmm-08",
-      "facet": "asking whether links are available on the page",
       "facetVector": [
         -0.0788,
         -0.03741,
@@ -108687,7 +108478,6 @@
     },
     {
       "id": "cmm-09",
-      "facet": "requesting a summary of the page",
       "facetVector": [
         0.00903,
         0.02672,
@@ -109207,7 +108997,6 @@
     },
     {
       "id": "cmm-10",
-      "facet": "requesting the current page",
       "facetVector": [
         0.01639,
         -0.01794,
@@ -109727,7 +109516,6 @@
     },
     {
       "id": "cmm-11",
-      "facet": "asking the most remarkable item on this page",
       "facetVector": [
         0.0585,
         -0.00838,
@@ -110247,7 +110035,6 @@
     },
     {
       "id": "cmm-12",
-      "facet": "asking whether newsletters include information about activities",
       "facetVector": [
         0.01482,
         -0.02814,
@@ -110767,7 +110554,6 @@
     },
     {
       "id": "cmm-13",
-      "facet": "asking which announced activities arrive by newsletter",
       "facetVector": [
         0.02824,
         -0.02486,
@@ -111287,7 +111073,6 @@
     },
     {
       "id": "cmm-14",
-      "facet": "asking whether social media profiles are available",
       "facetVector": [
         0.01704,
         -0.05826,
@@ -111807,7 +111592,6 @@
     },
     {
       "id": "cmm-15",
-      "facet": "asking whether an Instagram profile is available",
       "facetVector": [
         -0.02963,
         -0.02068,
@@ -112327,7 +112111,6 @@
     },
     {
       "id": "cmm-16",
-      "facet": "asking whether social media profiles are available",
       "facetVector": [
         0.01704,
         -0.05826,
@@ -112847,7 +112630,6 @@
     },
     {
       "id": "cmm-17",
-      "facet": "asking whether a YouTube channel is available",
       "facetVector": [
         0.01227,
         -0.03653,
@@ -113367,7 +113149,6 @@
     },
     {
       "id": "cmm-18",
-      "facet": "asking what content is on the channel",
       "facetVector": [
         0.11169,
         -0.02759,
@@ -113887,7 +113668,6 @@
     },
     {
       "id": "cmm-19",
-      "facet": "asking available Italian videos",
       "facetVector": [
         -0.09216,
         -0.05746,
@@ -114407,7 +114187,6 @@
     },
     {
       "id": "cmm-20",
-      "facet": "asking social media profiles",
       "facetVector": [
         0.04276,
         -0.11597,
@@ -114927,7 +114706,6 @@
     },
     {
       "id": "cmm-21",
-      "facet": "asking whether blogs by a person are available",
       "facetVector": [
         0.06445,
         -0.03339,
@@ -115447,7 +115225,6 @@
     },
     {
       "id": "cmm-22",
-      "facet": "asking new information about Ananda Assisi",
       "facetVector": [
         0.03,
         -0.17798,
@@ -115967,7 +115744,6 @@
     },
     {
       "id": "cmm-23",
-      "facet": "asking what is new at a place",
       "facetVector": [
         -0.03879,
         -0.02928,
@@ -116487,7 +116263,6 @@
     },
     {
       "id": "cmm-24",
-      "facet": "asking what videos are available about meditation",
       "facetVector": [
         -0.03094,
         -0.0321,
@@ -117007,7 +116782,6 @@
     },
     {
       "id": "cmm-25",
-      "facet": "asking contact information",
       "facetVector": [
         0.01889,
         -0.08398,
@@ -117527,7 +117301,6 @@
     },
     {
       "id": "cmm-26",
-      "facet": "asking which videos are included for a program",
       "facetVector": [
         0.00671,
         -0.03879,
@@ -118047,7 +117820,6 @@
     },
     {
       "id": "cmm-27",
-      "facet": "asking latest blog post on a website",
       "facetVector": [
         -0.00599,
         -0.05518,
@@ -118567,7 +118339,6 @@
     },
     {
       "id": "cmm-28",
-      "facet": "requesting newsletter subscription for the sangha",
       "facetVector": [
         0.00618,
         -0.00628,
@@ -119087,7 +118858,6 @@
     },
     {
       "id": "cmm-29",
-      "facet": "asking what happens on the page",
       "facetVector": [
         0.01649,
         0.0101,
@@ -119607,7 +119377,6 @@
     },
     {
       "id": "cmm-30",
-      "facet": "asking for the most recent blog",
       "facetVector": [
         0.04388,
         -0.02357,
@@ -120127,7 +119896,6 @@
     },
     {
       "id": "cmm-31",
-      "facet": "asking for a list of blogs",
       "facetVector": [
         0.0282,
         -0.04208,
@@ -120647,7 +120415,6 @@
     },
     {
       "id": "cmm-32",
-      "facet": "asking which blogs are newest right now",
       "facetVector": [
         0.04044,
         -0.03918,
@@ -121167,7 +120934,6 @@
     },
     {
       "id": "cmm-33",
-      "facet": "asking for advice about yoga inspiration materials",
       "facetVector": [
         0.04901,
         -0.00783,
@@ -121687,7 +121453,6 @@
     },
     {
       "id": "cmm-34",
-      "facet": "asking whether a social media profile is available",
       "facetVector": [
         -0.00305,
         -0.03824,
@@ -122207,7 +121972,6 @@
     },
     {
       "id": "cmm-35",
-      "facet": "asking for help navigating the website content",
       "facetVector": [
         0.00358,
         -0.06586,
@@ -122727,7 +122491,6 @@
     },
     {
       "id": "cmm-36",
-      "facet": "asking what this page is about",
       "facetVector": [
         0.02426,
         -0.0073,
@@ -123247,7 +123010,6 @@
     },
     {
       "id": "cmm-37",
-      "facet": "reporting live on YouTube",
       "facetVector": [
         0.06091,
         0.02885,
@@ -123767,7 +123529,6 @@
     },
     {
       "id": "cmm-38",
-      "facet": "asking whether a YouTube livestream is available in Italian",
       "facetVector": [
         -0.04977,
         -0.05618,
@@ -124287,7 +124048,6 @@
     },
     {
       "id": "tch-01",
-      "facet": "asking whether exercises can help a right-leg health problem",
       "facetVector": [
         -0.00732,
         0.00361,
@@ -124807,7 +124567,6 @@
     },
     {
       "id": "tch-02",
-      "facet": "asking what teachings the book contains",
       "facetVector": [
         0.02855,
         -0.00787,
@@ -125327,7 +125086,6 @@
     },
     {
       "id": "tch-03",
-      "facet": "asking relationship to self-realization",
       "facetVector": [
         -0.03894,
         -0.09863,
@@ -125847,7 +125605,6 @@
     },
     {
       "id": "tch-04",
-      "facet": "asking how it helps daily life",
       "facetVector": [
         0.02898,
         -0.05847,
@@ -126367,7 +126124,6 @@
     },
     {
       "id": "tch-05",
-      "facet": "asking information about line raja yoga",
       "facetVector": [
         -0.07782,
         0.0069,
@@ -126887,7 +126643,6 @@
     },
     {
       "id": "tch-06",
-      "facet": "asking physical description of self-realization",
       "facetVector": [
         0.00673,
         -0.0155,
@@ -127407,7 +127162,6 @@
     },
     {
       "id": "tch-07",
-      "facet": "asking difference between ego and true Self",
       "facetVector": [
         0.03375,
         -0.06366,
@@ -127927,7 +127681,6 @@
     },
     {
       "id": "tch-08",
-      "facet": "asking explanation of how ego creates suffering",
       "facetVector": [
         0.03455,
         0.0596,
@@ -128447,7 +128200,6 @@
     },
     {
       "id": "tch-09",
-      "facet": "asking what a meeting consists of",
       "facetVector": [
         -0.09204,
         -0.0054,
@@ -128967,7 +128719,6 @@
     },
     {
       "id": "tch-10",
-      "facet": "asking instructions for applying lighting and display at home",
       "facetVector": [
         0.02438,
         -0.02997,
@@ -129487,7 +129238,6 @@
     },
     {
       "id": "tch-11",
-      "facet": "asking how quiet is used",
       "facetVector": [
         0.04092,
         0.00266,
@@ -130007,7 +129757,6 @@
     },
     {
       "id": "tch-12",
-      "facet": "asking who the organization is",
       "facetVector": [
         -0.00961,
         -0.08954,
@@ -130527,7 +130276,6 @@
     },
     {
       "id": "tch-13",
-      "facet": "asking purpose of practice for yoga",
       "facetVector": [
         -0.01671,
         0.02449,
@@ -131047,7 +130795,6 @@
     },
     {
       "id": "tch-14",
-      "facet": "requesting proof of omnipresence",
       "facetVector": [
         0.028,
         0.01019,
@@ -131567,7 +131314,6 @@
     },
     {
       "id": "tch-15",
-      "facet": "reporting evidence that de-identifying makes emotions worse",
       "facetVector": [
         0.06812,
         -0.01009,
@@ -132087,7 +131833,6 @@
     },
     {
       "id": "tch-16",
-      "facet": "asking how long interior change will take and affect outer circumstances",
       "facetVector": [
         -0.03235,
         -0.01078,
@@ -132607,7 +132352,6 @@
     },
     {
       "id": "tch-17",
-      "facet": "reporting a hostile statement about a god",
       "facetVector": [
         -0.00851,
         0.01756,
@@ -133127,7 +132871,6 @@
     },
     {
       "id": "tch-18",
-      "facet": "reporting a recurring pattern of nearby animal deaths and household conflict",
       "facetVector": [
         0.04108,
         0.14124,
@@ -133647,7 +133390,6 @@
     },
     {
       "id": "tch-19",
-      "facet": "asking whether God is a separate person or an impersonal force",
       "facetVector": [
         0.00021,
         -0.05106,
@@ -134167,7 +133909,6 @@
     },
     {
       "id": "tch-20",
-      "facet": "asking distinction between restlessness and anxiety",
       "facetVector": [
         -0.04065,
         -0.05954,
@@ -134687,7 +134428,6 @@
     },
     {
       "id": "tch-21",
-      "facet": "asking for advice about handling anger and disrespect in class",
       "facetVector": [
         -0.01738,
         0.00748,
@@ -135207,7 +134947,6 @@
     },
     {
       "id": "tch-22",
-      "facet": "reporting a feeling of sadness",
       "facetVector": [
         -0.00648,
         0.03549,
@@ -135727,7 +135466,6 @@
     },
     {
       "id": "tch-23",
-      "facet": "asking how to do something properly",
       "facetVector": [
         0.05026,
         -0.03217,
@@ -136247,7 +135985,6 @@
     },
     {
       "id": "tch-24",
-      "facet": "asking advice for controlling anger",
       "facetVector": [
         -0.03017,
         -0.02571,
@@ -136767,7 +136504,6 @@
     },
     {
       "id": "tch-25",
-      "facet": "asking for more information about yoga",
       "facetVector": [
         -0.03119,
         -0.01778,
@@ -137287,7 +137023,6 @@
     },
     {
       "id": "tch-26",
-      "facet": "asking purpose of yoga",
       "facetVector": [
         -0.03232,
         0.01474,
@@ -137807,7 +137542,6 @@
     },
     {
       "id": "tch-27",
-      "facet": "asking whether a spiritual practice",
       "facetVector": [
         -0.1001,
         -0.02357,
@@ -138327,7 +138061,6 @@
     },
     {
       "id": "tch-28",
-      "facet": "asking route information about airplane travel",
       "facetVector": [
         -0.07904,
         -0.07935,
@@ -138847,7 +138580,6 @@
     },
     {
       "id": "tch-29",
-      "facet": "asking the meaning of grace here",
       "facetVector": [
         0.06927,
         -0.02078,
@@ -139367,7 +139099,6 @@
     },
     {
       "id": "tch-30",
-      "facet": "asking how faith relates to grace",
       "facetVector": [
         -0.04602,
         -0.0386,
@@ -139887,7 +139618,6 @@
     },
     {
       "id": "ppl-01",
-      "facet": "asking for information about the lawsuit",
       "facetVector": [
         -0.0129,
         -0.08691,
@@ -140407,7 +140137,6 @@
     },
     {
       "id": "ppl-02",
-      "facet": "asking timing of astral ascension",
       "facetVector": [
         -0.048,
         0.03839,
@@ -140927,7 +140656,6 @@
     },
     {
       "id": "ppl-03",
-      "facet": "asking information about a teacher",
       "facetVector": [
         -0.00442,
         -0.14502,
@@ -141447,7 +141175,6 @@
     },
     {
       "id": "ppl-04",
-      "facet": "asking which books a person wrote",
       "facetVector": [
         0.06824,
         -0.07745,
@@ -141967,7 +141694,6 @@
     },
     {
       "id": "ppl-05",
-      "facet": "asking current roles for a woman",
       "facetVector": [
         0.03976,
         0.01776,
@@ -142487,7 +142213,6 @@
     },
     {
       "id": "ppl-06",
-      "facet": "asking meaning of assistant minister",
       "facetVector": [
         0.00771,
         -0.09015,
@@ -143007,7 +142732,6 @@
     },
     {
       "id": "ppl-07",
-      "facet": "asking which monk came to a teacher",
       "facetVector": [
         -0.04678,
         -0.07806,
@@ -143527,7 +143251,6 @@
     },
     {
       "id": "ppl-08",
-      "facet": "asking who a person is",
       "facetVector": [
         0.047,
         -0.17395,
@@ -144047,7 +143770,6 @@
     },
     {
       "id": "ppl-09",
-      "facet": "providing a personal name",
       "facetVector": [
         0.07202,
         -0.02406,
@@ -144567,7 +144289,6 @@
     },
     {
       "id": "ppl-10",
-      "facet": "asking a person’s identity",
       "facetVector": [
         0.06009,
         -0.14221,
@@ -145087,7 +144808,6 @@
     },
     {
       "id": "ppl-11",
-      "facet": "asking who a person is",
       "facetVector": [
         0.047,
         -0.17407,
@@ -145607,7 +145327,6 @@
     },
     {
       "id": "ppl-12",
-      "facet": "asking who a person is",
       "facetVector": [
         0.047,
         -0.17395,
@@ -146127,7 +145846,6 @@
     },
     {
       "id": "ppl-13",
-      "facet": "asking information about Swami Kriyananda",
       "facetVector": [
         -0.01532,
         -0.00142,
@@ -146647,7 +146365,6 @@
     },
     {
       "id": "ppl-14",
-      "facet": "reporting sexual misconduct",
       "facetVector": [
         -0.03027,
         0.02841,
@@ -147167,7 +146884,6 @@
     },
     {
       "id": "ppl-15",
-      "facet": "asking why a person is not Italian",
       "facetVector": [
         -0.09729,
         -0.09497,
@@ -147687,7 +147403,6 @@
     },
     {
       "id": "ppl-16",
-      "facet": "reporting a claim about a founder of an organization",
       "facetVector": [
         0.01138,
         -0.05048,
@@ -148207,7 +147922,6 @@
     },
     {
       "id": "wel-01",
-      "facet": "asking product recommendation for a peace spray",
       "facetVector": [
         0.08545,
         0.00737,
@@ -148727,7 +148441,6 @@
     },
     {
       "id": "wel-02",
-      "facet": "asking what flower sprays are and which spray to recommend",
       "facetVector": [
         0.08258,
         -0.02106,
@@ -149247,7 +148960,6 @@
     },
     {
       "id": "wel-03",
-      "facet": "asking what flowers are",
       "facetVector": [
         0.05225,
         -0.07227,
@@ -149767,7 +149479,6 @@
     },
     {
       "id": "wel-04",
-      "facet": "asking what sprays are available in the line",
       "facetVector": [
         0.03683,
         0.02034,
@@ -150287,7 +149998,6 @@
     },
     {
       "id": "wel-05",
-      "facet": "asking where to buy holy flowers",
       "facetVector": [
         0.02872,
         -0.034,
@@ -150807,7 +150517,6 @@
     },
     {
       "id": "wel-06",
-      "facet": "asking whether scented sprays for aura and protection are available",
       "facetVector": [
         0.08386,
         0.01688,
@@ -151327,7 +151036,6 @@
     },
     {
       "id": "wel-07",
-      "facet": "asking information about home and personal protection",
       "facetVector": [
         0.09344,
         -0.01563,
@@ -151847,7 +151555,6 @@
     },
     {
       "id": "wel-08",
-      "facet": "requesting information about Sri Yukteswar floral sprays",
       "facetVector": [
         0.05887,
         -0.01424,
@@ -152367,7 +152074,6 @@
     },
     {
       "id": "wel-09",
-      "facet": "asking physical description of spray gesu terra santa",
       "facetVector": [
         -0.00964,
         -0.0029,
@@ -152887,7 +152593,6 @@
     },
     {
       "id": "out-01",
-      "facet": "asking a reason for tinkering with shoes",
       "facetVector": [
         0.06494,
         0.00023,
@@ -153407,7 +153112,6 @@
     },
     {
       "id": "out-02",
-      "facet": "reporting an insult",
       "facetVector": [
         -0.04709,
         0,
@@ -153927,7 +153631,6 @@
     },
     {
       "id": "out-03",
-      "facet": "stating a test message",
       "facetVector": [
         -0.01698,
         -0.13,
@@ -154447,7 +154150,6 @@
     },
     {
       "id": "out-04",
-      "facet": "requesting information about participating tomorrow in the n",
       "facetVector": [
         -0.00105,
         0.01837,
@@ -154967,7 +154669,6 @@
     },
     {
       "id": "out-05",
-      "facet": "asking whether a house is a specific location",
       "facetVector": [
         -0.05536,
         -0.02013,
@@ -155487,7 +155188,6 @@
     },
     {
       "id": "out-06",
-      "facet": "stating that messages were already sent earlier",
       "facetVector": [
         0.03613,
         -0.07916,
@@ -156007,7 +155707,6 @@
     },
     {
       "id": "out-07",
-      "facet": "reporting rejection of teachings",
       "facetVector": [
         0.02516,
         0.01405,
@@ -156527,7 +156226,6 @@
     },
     {
       "id": "out-08",
-      "facet": "reporting objection to unwanted de-identifying",
       "facetVector": [
         0.04517,
         -0.02145,
@@ -157047,7 +156745,6 @@
     },
     {
       "id": "out-09",
-      "facet": "reporting a request to resend the answer",
       "facetVector": [
         0.0621,
         -0.04688,
@@ -157567,7 +157264,6 @@
     },
     {
       "id": "out-10",
-      "facet": "reporting dissatisfaction with the service experience",
       "facetVector": [
         -0.02966,
         0.08148,
@@ -158087,7 +157783,6 @@
     },
     {
       "id": "out-11",
-      "facet": "stating atheistic belief about God and spirits",
       "facetVector": [
         0.00321,
         -0.04584,
@@ -158607,7 +158302,6 @@
     },
     {
       "id": "out-12",
-      "facet": "offering thanks for religious transformation and farewell",
       "facetVector": [
         0.03714,
         -0.0128,
@@ -159127,7 +158821,6 @@
     },
     {
       "id": "out-13",
-      "facet": "greeting",
       "facetVector": [
         -0.00134,
         -0.07513,
@@ -159647,7 +159340,6 @@
     },
     {
       "id": "out-14",
-      "facet": "asking clarification of an answer",
       "facetVector": [
         -0.01678,
         -0.07349,
@@ -160167,7 +159859,6 @@
     },
     {
       "id": "out-15",
-      "facet": "requesting human assistance",
       "facetVector": [
         0.01519,
         -0.00321,
@@ -160687,7 +160378,6 @@
     },
     {
       "id": "out-16",
-      "facet": "asking what ingrained memory says",
       "facetVector": [
         0.00173,
         -0.01314,
@@ -161207,7 +160897,6 @@
     },
     {
       "id": "out-17",
-      "facet": "requesting broader truth and dharma information beyond one organization",
       "facetVector": [
         0.01235,
         -0.04724,
@@ -161727,7 +161416,6 @@
     },
     {
       "id": "out-18",
-      "facet": "reporting missing duration and translation information",
       "facetVector": [
         -0.10138,
         0.0827,
@@ -162247,7 +161935,6 @@
     },
     {
       "id": "out-19",
-      "facet": "asking a general impression from daily experience",
       "facetVector": [
         -0.00557,
         -0.04395,
@@ -162767,7 +162454,6 @@
     },
     {
       "id": "out-20",
-      "facet": "offering a tentative update about a vacation plan",
       "facetVector": [
         -0.07672,
         -0.02834,
@@ -163287,7 +162973,6 @@
     },
     {
       "id": "out-21",
-      "facet": "stating infrequent email checking",
       "facetVector": [
         -0.05505,
         0.04575,
@@ -163807,7 +163492,6 @@
     },
     {
       "id": "out-22",
-      "facet": "asking which platform is being used for viewing",
       "facetVector": [
         -0.03293,
         -0.0124,
@@ -164327,7 +164011,6 @@
     },
     {
       "id": "out-23",
-      "facet": "asking square root of 50 and requesting a person",
       "facetVector": [
         -0.00242,
         -0.13452,
@@ -164847,7 +164530,6 @@
     },
     {
       "id": "out-24",
-      "facet": "reporting course access expiration after completion deadline",
       "facetVector": [
         -0.0204,
         0.1142,

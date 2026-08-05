@@ -1,4 +1,4 @@
-import type { DocumentSourceResolverInput } from "../services/documentIngestionService.js";
+import type { DocumentSourceResolverInput } from "./documentContracts.js";
 
 export type {
   ChunkDetail,
@@ -24,7 +24,7 @@ export type {
   DocumentSummaryRecord,
   DocumentUpdateInput,
   DocumentWorkspaceSummaryRecord,
-} from "../services/documentIngestionService.js";
+} from "./documentContracts.js";
 export type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "./historyTypes.js";
 export type { DocumentJobConsumerPort } from "../services/documentJobConsumer.js";
 export type { DocumentJobDispatchRequest, DocumentJobDispatcherPort } from "../services/documentJobDispatcher.js";

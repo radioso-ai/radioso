@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-import type { EmbeddingSpaceRef } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type {
   DocumentProcessingJobRecord,
@@ -8,7 +7,6 @@ import type {
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobOptions,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
-import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import { normalizeMarkdown, renderMetadataSearchText } from "../../retrieval/public.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
 import {
@@ -29,373 +27,43 @@ import {
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
+import type {
+  DocumentDetails,
+  DocumentListPage,
+  DocumentRecord,
+  DocumentRepositoryPort,
+  DocumentSourceResolverInput,
+  DocumentSummary,
+  DocumentSummaryRecord,
+  EmbeddingCoverageReconciliationPort,
+} from "../contracts/documentContracts.js";
 
-export type DocumentSourceKind = "inline_text" | "uploaded_file";
-export type DocumentSourceResolverInput =
-  | { id: string }
-  | {
-      kind: "website";
-      url: string;
-      config?: Record<string, unknown>;
-      metadata?: Record<string, unknown>;
-    }
-  | {
-      kind: "connector";
-      externalId: string;
-      name: string;
-      config?: Record<string, unknown>;
-      metadata?: Record<string, unknown>;
-    };
-
-export interface DocumentSourceRecord {
-  sourceKind: DocumentSourceKind;
-  sourceFilename?: string | null;
-  sourceMimeType?: string | null;
-  sourceStorageBucket?: string | null;
-  sourceStorageObject?: string | null;
-  sourceStorageGeneration?: string | null;
-  sourceSizeBytes?: number | null;
-  // Inline documents meter normalized markdown bytes. Uploaded files meter the
-  // stored object bytes because the original object is the durable storage unit.
-  contentSizeBytes?: number | null;
-  contentHash?: string | null;
-}
-
-export interface DocumentSourceInput {
-  sourceKind?: DocumentSourceKind;
-  sourceFilename?: string | null;
-  sourceMimeType?: string | null;
-  sourceStorageBucket?: string | null;
-  sourceStorageObject?: string | null;
-  sourceStorageGeneration?: string | null;
-  sourceSizeBytes?: number | null;
-  contentSizeBytes?: number | null;
-  contentHash?: string | null;
-}
-
-export interface DocumentRecord extends DocumentSourceRecord {
-  id: string;
-  workspaceId: string;
-  title: string;
-  sourceContent: string;
-  markdownContent: string;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  externalDocumentId?: string | null;
-  status: string;
-  revision: number;
-  failureReason?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  metadata: Record<string, unknown>;
-  enrichment?: DocumentEnrichmentProvenance | null;
-  // Retrieval eligibility, orthogonal to processing `status`. Disabled or
-  // expired documents stay 'ready' and visible; they are only kept out of
-  // retrieval. See DocumentRetrievalEligibilityInput and the retrieval filter
-  // in modules/retrieval/infra/documentRetrievalEligibility.ts.
-  retrievalEnabled: boolean;
-  retrievalExpiresAt: Date | null;
-}
-
-export interface DocumentCreateInput extends DocumentSourceInput {
-  workspaceId: string;
-  title: string;
-  sourceContent: string;
-  markdownContent: string;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  metadata?: Record<string, unknown>;
-  externalDocumentId?: string | null;
-}
-
-export interface DocumentUpdateInput extends DocumentSourceInput {
-  documentId: string;
-  workspaceId: string;
-  title: string;
-  sourceContent: string;
-  markdownContent: string;
-  status: string;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  metadata?: Record<string, unknown>;
-  externalDocumentId?: string | null;
-}
-
-export interface DocumentQueueUpdateInput extends DocumentSourceInput {
-  documentId: string;
-  workspaceId: string;
-  title: string;
-  sourceContent: string;
-  markdownContent: string;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  metadata?: Record<string, unknown>;
-  externalDocumentId?: string | null;
-}
-
-export interface DocumentDerivedContentUpdateInput {
-  documentId: string;
-  workspaceId: string;
-  revision: number;
-  sourceContent: string;
-  markdownContent: string;
-}
-
-// Absolute retrieval-eligibility state written to a document without re-queuing
-// or re-processing it. The service resolves partial API input into these
-// explicit values (see DocumentIngestionService.updateRetrievalEligibility).
-export interface DocumentRetrievalEligibilityInput {
-  documentId: string;
-  workspaceId: string;
-  retrievalEnabled: boolean;
-  retrievalExpiresAt: Date | null;
-}
-
-export interface ChunkRecord {
-  id: string;
-  documentId: string;
-  workspaceId: string;
-  chunkIndex: number;
-  content: string;
-  searchText?: string | null;
-  embedding: number[];
-  embeddingModel?: string | null;
-  startOffset: number;
-  endOffset: number;
-  metadata?: Record<string, unknown>;
-  createdAt: Date;
-}
-
-export interface DocumentEnrichmentMetadataUpdateInput {
-  documentId: string;
-  workspaceId: string;
-  revision: number;
-  metadata: Record<string, unknown>;
-  // Extraction provenance lives in its own column so document metadata stays a
-  // flat user-owned contract; null clears provenance from a prior run.
-  enrichment?: Record<string, unknown> | null;
-}
-
-export interface DocumentRepositoryPort {
-  createAndQueue(input: DocumentCreateInput, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
-  create(input: DocumentCreateInput & { status: string }): Promise<DocumentRecord>;
-  summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord>;
-  setStatus(input: {
-    documentId: string;
-    workspaceId: string;
-    status: string;
-    failureReason?: string | null;
-  }): Promise<DocumentRecord>;
-  setStatusIfRevisionMatches(input: {
-    documentId: string;
-    workspaceId: string;
-    revision: number;
-    status: string;
-    failureReason?: string | null;
-  }): Promise<DocumentRecord | null>;
-  findByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<DocumentRecord | null>;
-  listByWorkspaceId(workspaceId: string): Promise<DocumentRecord[]>;
-  findByExternalDocumentId(
-    workspaceId: string,
-    externalDocumentId: string,
-  ): Promise<DocumentRecord | null>;
-  findBySourceAndExternalDocumentId(
-    workspaceId: string,
-    sourceId: string,
-    externalDocumentId: string,
-  ): Promise<DocumentRecord | null>;
-  listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
-  listSummaryPageByWorkspaceId(
-    workspaceId: string,
-    input: { limit: number; offset?: number; cursor?: string },
-  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
-  update(input: DocumentUpdateInput): Promise<DocumentRecord>;
-  updateAndQueue(input: DocumentQueueUpdateInput): Promise<DocumentRecord>;
-  updateDerivedContentForRevision(input: DocumentDerivedContentUpdateInput): Promise<DocumentRecord | null>;
-  updateMetadataForRevision(input: DocumentEnrichmentMetadataUpdateInput): Promise<DocumentRecord | null>;
-  // Targeted retrieval-eligibility write that does not touch content, status, or
-  // revision and does not re-queue processing. Returns null when no row matches.
-  setRetrievalEligibility(input: DocumentRetrievalEligibilityInput): Promise<DocumentRecord | null>;
-  requeue(documentId: string, workspaceId: string): Promise<DocumentRecord>;
-  requeueAndQueue(documentId: string, workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<DocumentRecord>;
-  requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
-    queuedDocumentCount: number;
-    skippedDocumentCount: number;
-    queuedDocuments: Array<{ documentId: string; revision: number }>;
-  }>;
-  requeueSourceEligibleAndQueue(input: {
-    workspaceId: string;
-    sourceId: string;
-    options?: DocumentProcessingJobOptions | null;
-  }): Promise<{
-    queuedDocumentCount: number;
-    skippedDocumentCount: number;
-    queuedDocuments: Array<{ documentId: string; revision: number }>;
-  }>;
-  deleteByIdAndWorkspaceId(documentId: string, workspaceId: string): Promise<boolean>;
-  listSummaryPageBySourceId(
-    workspaceId: string,
-    sourceId: string | null,
-    input: { limit: number; offset?: number; cursor?: string },
-  ): Promise<{ documents: DocumentSummaryRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
-  deleteBySourceIdAndWorkspaceId(sourceId: string, workspaceId: string): Promise<{
-    count: number;
-    storageRefs: Array<{ bucket: string; objectPath: string; generation: string | null }>;
-  }>;
-  findActivePageState(input: {
-    workspaceId: string;
-    sourceId?: string | null;
-    externalDocumentId: string;
-  }): Promise<{
-    documentId: string;
-    revision: number;
-    contentSizeBytes: number | null;
-    contentHash: string | null;
-  } | null>;
-  deleteMissingPagesBySourceAndExternalIds(input: {
-    workspaceId: string;
-    sourceId: string;
-    keepExternalDocumentIds: string[];
-  }): Promise<{ deletedCount: number; deletedContentBytes: number }>;
-}
-
-export interface DocumentWorkspaceSummaryRecord {
-  documentCount: number;
-  readyDocumentCount: number;
-  pendingDocumentCount: number;
-  sampleDocumentCount: number;
-  sampleDocumentSlugs: string[];
-}
-
-export interface ChunkSummary {
-  id: string;
-  chunkIndex: number;
-  contentPreview: string;
-  contentLength: number;
-  startOffset: number;
-  endOffset: number;
-  dateFrom: string | null;
-  dateTo: string | null;
-}
-
-export interface ChunkDetail {
-  id: string;
-  documentId: string;
-  workspaceId: string;
-  chunkIndex: number;
-  content: string;
-  searchText: string | null;
-  startOffset: number;
-  endOffset: number;
-  metadata: Record<string, unknown>;
-  dateFrom?: string | null;
-  dateTo?: string | null;
-  createdAt: Date;
-  embeddingDimensions: number | null;
-}
-
-export interface PublishedChunkRecord {
-  chunkIndex: number;
-  content: string;
-  startOffset: number;
-  endOffset: number;
-  metadata: Record<string, unknown>;
-}
-
-export interface ChunkMetadataRevisionPatch {
-  chunkIndex: number;
-  metadata: Record<string, unknown>;
-}
-
-export interface ChunkRepositoryPort {
-  replaceForDocument(documentId: string, chunks: ChunkRecord[]): Promise<void>;
-  publishForDocumentRevision(input: {
-    documentId: string;
-    workspaceId: string;
-    revision: number;
-    chunks: ChunkRecord[];
-    embeddingSpace: EmbeddingSpaceRef;
-    canonicalVersion: string;
-  }): Promise<boolean>;
-  // Reads the published chunks for a document so a later, out-of-band stage
-  // (async enrichment) can re-derive per-chunk metadata without re-chunking.
-  listForDocumentRevision(input: { documentId: string; workspaceId: string }): Promise<PublishedChunkRecord[]>;
-  // Patches per-chunk metadata in place, guarded by revision so a superseded
-  // enrich job cannot clobber a newer vectorization. Returns false when the
-  // document revision no longer matches (skip, do not error). The stored
-  // date_from/date_to columns recompute from metadata automatically —
-  // no re-embed is performed.
-  updateMetadataForDocumentRevision(input: {
-    documentId: string;
-    workspaceId: string;
-    revision: number;
-    patches: ChunkMetadataRevisionPatch[];
-  }): Promise<boolean>;
-  listSummariesForDocument(input: { documentId: string; workspaceId: string }): Promise<ChunkSummary[]>;
-  findByIdForDocument(input: {
-    chunkId: string;
-    documentId: string;
-    workspaceId: string;
-  }): Promise<ChunkDetail | null>;
-}
-
-export interface DocumentSummary {
-  id: string;
-  title: string;
-  status: string;
-  ragStatus: "processed" | "pending";
-  failureReason?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  metadata: Record<string, unknown>;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  externalDocumentId?: string | null;
-  sourceKind: DocumentSourceKind;
-  sourceFilename?: string | null;
-  sourceMimeType?: string | null;
-  contentSize?: number | null;
-  contentSizeBytes?: number | null;
-  enrichment?: DocumentEnrichmentProvenance | null;
-  retrievalEnabled: boolean;
-  retrievalExpiresAt: Date | null;
-}
-
-export interface DocumentListPage {
-  documents: DocumentSummary[];
-  total: number;
-  nextCursor: string | null;
-  hasMore: boolean;
-}
-
-export interface EmbeddingCoverageReconciliationPort {
-  reconcileWorkspace(
-    workspaceId: string,
-  ): Promise<{ enqueued: number; skipped: number }>;
-}
-
-export interface DocumentDetails extends DocumentSummary {
-  content: string;
-}
-
-export interface DocumentSummaryRecord extends DocumentSourceRecord {
-  id: string;
-  workspaceId: string;
-  title: string;
-  status: string;
-  failureReason?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  metadata: Record<string, unknown>;
-  sourceId?: string | null;
-  source?: DocumentSourceSummary | null;
-  externalDocumentId?: string | null;
-  contentSize?: number | null;
-  contentSizeBytes?: number | null;
-  enrichment?: DocumentEnrichmentProvenance | null;
-  retrievalEnabled: boolean;
-  retrievalExpiresAt: Date | null;
-}
+export type {
+  ChunkDetail,
+  ChunkMetadataRevisionPatch,
+  ChunkRecord,
+  ChunkRepositoryPort,
+  ChunkSummary,
+  DocumentCreateInput,
+  DocumentDerivedContentUpdateInput,
+  DocumentDetails,
+  DocumentEnrichmentMetadataUpdateInput,
+  DocumentListPage,
+  DocumentQueueUpdateInput,
+  DocumentRecord,
+  DocumentRepositoryPort,
+  DocumentRetrievalEligibilityInput,
+  DocumentSourceInput,
+  DocumentSourceKind,
+  DocumentSourceResolverInput,
+  DocumentSourceRecord,
+  DocumentSummary,
+  DocumentSummaryRecord,
+  DocumentUpdateInput,
+  DocumentWorkspaceSummaryRecord,
+  EmbeddingCoverageReconciliationPort,
+  PublishedChunkRecord,
+} from "../contracts/documentContracts.js";
 
 export class DocumentIngestionService {
   constructor(

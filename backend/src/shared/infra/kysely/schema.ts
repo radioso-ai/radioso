@@ -587,6 +587,19 @@ export interface EvalSnapshots {
   workspace_id: string;
 }
 
+export interface FacetExtractionJobs {
+  attempt_count: Generated<number>;
+  claimed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  last_error: string | null;
+  message_id: string;
+  scheduled_at: Generated<Timestamp>;
+  status: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface IngestionSettings {
   chunking_strategy: Generated<string>;
   created_at: Generated<Timestamp>;
@@ -649,6 +662,18 @@ export interface McpConnections {
   server_url: string;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
+}
+
+export interface MessageFacets {
+  created_at: Generated<Timestamp>;
+  dimensions: number | null;
+  embedding: string | null;
+  embedding_profile_id: string | null;
+  facet_text: string;
+  message_id: string;
+  prompt_version: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
 }
 
 export interface Messages {
@@ -885,6 +910,52 @@ export interface SlackInstallations {
   team_id: string;
   team_name: string | null;
   updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface TopicCensusRuns {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  params_json: Json;
+  question_count: number;
+  seed: string;
+  unclassified_count: Generated<number>;
+  window_end: Timestamp;
+  window_start: Timestamp;
+  workspace_id: string;
+}
+
+export interface TopicMemberships {
+  distance: number;
+  message_id: string;
+  run_id: string;
+  topic_id: string;
+  workspace_id: string;
+}
+
+export interface Topics {
+  centroid: string;
+  created_at: Generated<Timestamp>;
+  created_run_id: string;
+  description: string;
+  dimensions: number;
+  dissolved_at: Timestamp | null;
+  id: Generated<string>;
+  last_seen_run_id: string;
+  radius: number;
+  title: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface TopicTransitions {
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  kind: string;
+  parent_topic_ids: Generated<string[]>;
+  run_id: string;
+  topic_id: string;
+  via_centroid_fallback: Generated<boolean>;
   workspace_id: string;
 }
 
@@ -1125,10 +1196,12 @@ export interface DB {
   eval_message_case_associations: EvalMessageCaseAssociations;
   eval_runs: EvalRuns;
   eval_snapshots: EvalSnapshots;
+  facet_extraction_jobs: FacetExtractionJobs;
   ingestion_settings: IngestionSettings;
   integration_connections: IntegrationConnections;
   integration_oauth_connections: IntegrationOauthConnections;
   mcp_connections: McpConnections;
+  message_facets: MessageFacets;
   messages: Messages;
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
@@ -1147,6 +1220,10 @@ export interface DB {
   slack_conversation_links: SlackConversationLinks;
   slack_inbound_events: SlackInboundEvents;
   slack_installations: SlackInstallations;
+  topic_census_runs: TopicCensusRuns;
+  topic_memberships: TopicMemberships;
+  topic_transitions: TopicTransitions;
+  topics: Topics;
   usage_daily_rollups: UsageDailyRollups;
   usage_events: UsageEvents;
   users: Users;

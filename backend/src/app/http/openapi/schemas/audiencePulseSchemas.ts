@@ -19,6 +19,10 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),
     sampled: z.boolean(),
+    // How many of populationSize had a current, embedded facet the census could cluster.
+    // Zero means topic analysis has not run over this window yet, which is a different
+    // statement from a computed window that found no recurring pattern.
+    facetReadyQuestionCount: z.number().int().min(0),
   }));
   const AudiencePulseWeeklyVolumeSchema = registry.register("AudiencePulseWeeklyVolume", z.object({
     weekStart: z.string().datetime(),
@@ -60,7 +64,8 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     id: z.string(),
     title: z.string(),
     description: z.string(),
-    sampleCount: z.number().int().min(0),
+    memberCount: z.number().int().min(0),
+    share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: z.string().datetime(), count: z.number().int().min(0) })),
     grounding: AudiencePulseGroundingSchema,
@@ -85,7 +90,7 @@ export const registerAudiencePulseSchemas = (registry: OpenAPIRegistry, schemas:
     generatedAt: z.string().datetime(),
     coverage: AudiencePulseCoverageSchema,
     weeklyVolume: z.array(AudiencePulseWeeklyVolumeSchema),
-    summary: z.string(),
+    summary: z.string().optional(),
     unclassifiedQuestionCount: z.number().int().min(0),
     themes: z.array(AudiencePulseThemeSchema),
     contentGaps: z.array(AudiencePulseContentGapSchema),

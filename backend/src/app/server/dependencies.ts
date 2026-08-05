@@ -6,8 +6,10 @@ import {
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
+import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -104,6 +106,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   const {
     documents,
+    embeddingBindingResolver,
     embeddingPorts,
     llmCapabilityResolver,
     llmRegistry,
@@ -166,6 +169,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     mailService: infrastructure.mailService,
     messageRepository: repositories.messageRepository,
+    facetExtractionJobs: repositories.facetExtractionJobRepository,
     metricsRegistry: infrastructure.metricsRegistry,
     telemetryService: infrastructure.telemetryService,
     webhookDestinations,
@@ -305,6 +309,29 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteService,
     operatorReplyService,
   } = evalServices;
+  // Per-message facet extraction (topic census). `composition.facetExtraction` lets a
+  // host override the extractor entirely (mirroring `chunkingProvider` /
+  // `websiteCrawlerProvider`); the OSS default below uses the cheap `"rewrite"` model
+  // tier and the workspace's clustering embedding profile, the same ports the census
+  // read path will consume.
+  const facetExtractionWorker = createFacetExtractionWorker({
+    jobs: repositories.facetExtractionJobRepository,
+    extraction: composition.facetExtraction ?? new FacetExtractionService({
+      messages: repositories.messageRepository,
+      facets: repositories.messageFacetRepository,
+      embeddings: embeddingPorts,
+      inferenceFactory: createRewriteTierStructuredInferenceFactory(
+        { resolver: llmCapabilityResolver },
+        infrastructure.usageEventRecorder,
+      ),
+    }),
+    logger,
+    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
+    batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
+    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
+    telemetryService: infrastructure.telemetryService,
+    errorReporter: infrastructure.errorReportingService,
+  });
   return {
     env,
     logger,
@@ -357,9 +384,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSearchService: retrieval.documentSearchService,
     documentSearchHistoryService: documents.documentSearchHistoryService,
     workspaceIngestionReprocessService: documents.workspaceIngestionReprocessService,
+    embeddingBindingResolver,
     documentSourceReprocessService: documents.documentSourceReprocessService,
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
+    facetExtractionWorker,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
     websiteCrawlJobService: documents.websiteCrawlJobService,
     websiteCrawlWorker: documents.websiteCrawlWorker,

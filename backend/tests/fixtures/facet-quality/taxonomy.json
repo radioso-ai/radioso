@@ -1,0 +1,72 @@
+{
+  "purpose": "Reference topic taxonomy for backend/tests/fixtures/facet-quality/questions.ts, so the topic labels in that fixture are auditable rather than opaque.",
+  "labellingModel": "gpt-5.2",
+  "generatedAt": "2026-08-04",
+  "methodology": [
+    "Pass 1 (this file): gpt-5.2 was given the full cleaned, deduplicated, PII-scrubbed set of real visitor questions (question text only) and asked to propose 8-12 mutually distinguishable topics covering meaningful chunks of the traffic.",
+    "Pass 2 (questions.ts): gpt-5.2 was given each question in isolation, question text only, and asked to assign exactly one topic slug from this taxonomy or null, plus a detected language and a short language-neutral intent slug used to find genuine cross-lingual paraphrase groups. The labeller never saw a facet, so labels are not biased toward the facet representation the eval scores against.",
+    "A first taxonomy draft (10 topics) was checked against the labelled set for recurring themes left as outliers; an 8-item real cluster about flower-essence/aura sprays was found under-represented, so 'wellness_products_sprays' was added and the labelling pass was rerun against the corrected 11-topic taxonomy."
+  ],
+  "topics": [
+    {
+      "slug": "retreats_courses_calendar_booking",
+      "label": "Retreats/courses schedule & booking",
+      "description": "Requests for upcoming retreats/courses/events, specific date ranges, daily programmes, what's on at a center, and how to join/register or plan a visit/weekend stay."
+    },
+    {
+      "slug": "kriya_yoga_initiation_path",
+      "label": "Kriya Yoga path & initiation",
+      "description": "Questions about what Kriya Yoga is, how to prepare, requirements/steps, initiation formats (online vs residential), Kriyaban retreats, access to Kriyaban sections, and improving one's Kriya practice."
+    },
+    {
+      "slug": "meditation_guidance_live_sessions",
+      "label": "Meditation guidance & live meditations",
+      "description": "Requests for guided meditations, help with meditation practice, which meditation offerings exist today, and participation in live/streamed meditations or ceremonies."
+    },
+    {
+      "slug": "yoga_practice_videos_routines",
+      "label": "Yoga practice content (asanas, routines, videos)",
+      "description": "Finding or requesting yoga/asana instructions, short routines, Salutation to the Sun videos, free practice material, and navigation issues specific to yoga content pages."
+    },
+    {
+      "slug": "locations_local_groups_sangha",
+      "label": "Locations, local groups & sangha connections",
+      "description": "Finding Ananda centers/groups by geography (cities/countries), UK/Portugal listings, local contacts, and how to connect with a nearby sangha/meditation group."
+    },
+    {
+      "slug": "volunteering_seva_work_exchange_jobs",
+      "label": "Volunteering (seva) & working at Ananda",
+      "description": "How to do seva/volunteer, how service is structured, proposals for service projects, and practical questions about working roles (e.g., cook) at Ananda."
+    },
+    {
+      "slug": "travel_pilgrimages_assisi_logistics",
+      "label": "Pilgrimages/travel & on-site logistics (esp. Assisi/India)",
+      "description": "Questions about organized trips/pilgrimages (notably India/Assisi), dates for pilgrimages, how to get there by car, and practical visit planning while in the area."
+    },
+    {
+      "slug": "online_courses_platform_access_payments",
+      "label": "Online courses platform, access & payments",
+      "description": "Buying online courses, login/credentials issues, where to find \"My courses\", course availability/expiry, technical support requests, and payment-by-instalments questions."
+    },
+    {
+      "slug": "community_media_newsletter_social",
+      "label": "Media, social channels, newsletters & site navigation",
+      "description": "Requests for YouTube/social profiles, what content is on channels, newsletters and what they announce, blog lists/latest posts, and 'what is this page about'/site-content navigation help."
+    },
+    {
+      "slug": "teachings_philosophy_spiritual_questions",
+      "label": "Teachings & spiritual philosophy",
+      "description": "Questions about Self-realization, ego vs Self, karma, grace/faith, Raja Yoga, why yoga, and interpretation of Ananda/Yogananda/Kriyananda teachings beyond scheduling or logistics."
+    },
+    {
+      "slug": "people_lineage_and_controversies",
+      "label": "Teachers/lineage info & controversies",
+      "description": "Who key figures are (Yogananda, Swami Kriyananda, Asha, Jayadev, etc.), their roles/books/tours, and reputation/controversy questions (e.g., lawsuits, misconduct allegations). Every name in the fixture referring to this topic is a public figure or the organization's own teacher/author, never a private visitor."
+    },
+    {
+      "slug": "wellness_products_sprays",
+      "label": "Wellness products (flower-essence sprays etc.)",
+      "description": "Questions about buying or choosing flower-essence/aura sprays and similar wellness products the organization sells, what they are, and which ones exist in the product line."
+    }
+  ]
+}

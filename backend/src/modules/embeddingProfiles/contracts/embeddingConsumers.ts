@@ -91,4 +91,12 @@ export interface ClusteringEmbeddingPort {
 export interface ClusteringEmbeddingResult {
   readonly vectors: readonly number[][];
   readonly usage?: EmbeddingUsageSummary;
+  /**
+   * The space the vectors were embedded into. Optional so existing zero-knowledge
+   * consumers (e.g. semantic chunking) are unaffected; a consumer that must persist
+   * which embedding profile produced a vector — the topic census facet store — reads
+   * this instead of resolving the workspace's active profile a second time, which
+   * would race a profile transition running between the two lookups.
+   */
+  readonly space?: EmbeddingSpaceRef;
 }

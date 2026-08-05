@@ -10,7 +10,6 @@ import { AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS } from "./contracts/hist
 import type {
   AudiencePulseEvidenceAnchor,
   AudiencePulsePromptEvidenceReference,
-  AudiencePulseSamplePolicy,
 } from "./contracts/history.js";
 
 export type { AudiencePulseEvidence } from "./domain/report.js";
@@ -21,21 +20,28 @@ export {
   type AudiencePulseEvidenceAnchor,
   type AudiencePulseHydratedEvidence,
   type AudiencePulsePromptEvidenceReference,
-  type AudiencePulseSamplePolicy,
 } from "./contracts/history.js";
+export {
+  type ActiveTopicRecord,
+  type CreateTopicCensusRunInput,
+  type SaveTopicCensusRunInput,
+  type TopicCensusRunDetail,
+  type TopicCensusRunTopicSummary,
+  type TopicMembershipInput,
+  type TopicRepositoryPort,
+  type TopicSaveInput,
+  type TopicTransitionInput,
+  type TopicTransitionKind,
+} from "./contracts/topicCensus.js";
+export {
+  type TopicLabel,
+  type TopicLabelPrivacyAuditPort,
+  type TopicLabelPrivacyAuditResult,
+  type TopicNamingExemplars,
+  type TopicNamingPort,
+} from "./contracts/topicLabel.js";
 
 export const AUDIENCE_PULSE_ANALYSIS_DAYS = 30;
-export const AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS = 80;
-export const AUDIENCE_PULSE_SAMPLE_MAX_CONVERSATIONS = 60;
-export const AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS_PER_CONVERSATION = 3;
-export const AUDIENCE_PULSE_SAMPLE_MAX_EXCERPT_CHARACTERS = 32_000;
-
-export const DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY: AudiencePulseSamplePolicy = {
-  maxQuestions: AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS,
-  maxConversations: AUDIENCE_PULSE_SAMPLE_MAX_CONVERSATIONS,
-  maxQuestionsPerConversation: AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS_PER_CONVERSATION,
-  maxExcerptCharacters: AUDIENCE_PULSE_SAMPLE_MAX_EXCERPT_CHARACTERS,
-};
 
 export interface AudiencePulseSnapshotRecord {
   workspaceId: string;
@@ -97,19 +103,24 @@ export const audiencePulseReportResponseSchema = z.object({
     populationSize: z.number().int().min(0),
     sampleSize: z.number().int().min(0),
     sampled: z.boolean(),
+    facetReadyQuestionCount: z.number().int().min(0),
   }),
   weeklyVolume: z.array(z.object({
     weekStart: dateTime,
     visitorQuestionCount: z.number().int().min(0),
     conversationCount: z.number().int().min(0),
   })),
-  summary: z.string(),
+  // Absent when no narrative call ran, which happens when nothing in the window has a
+  // current embedded facet yet. Clients read `coverage.facetReadyQuestionCount` to tell
+  // that state apart from a computed window that simply found no recurring pattern.
+  summary: z.string().optional(),
   unclassifiedQuestionCount: z.number().int().min(0),
   themes: z.array(z.object({
     id: z.string(),
     title: z.string(),
     description: z.string(),
-    sampleCount: z.number().int().min(0),
+    memberCount: z.number().int().min(0),
+    share: z.number().min(0).max(1),
     distinctQuestionCount: z.number().int().min(0),
     weeklyPulse: z.array(z.object({ weekStart: dateTime, count: z.number().int().min(0) })),
     grounding: groundingSchema,

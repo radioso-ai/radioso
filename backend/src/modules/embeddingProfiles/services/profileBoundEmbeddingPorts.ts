@@ -136,10 +136,11 @@ ClusteringEmbeddingPort {
       workspaceId: request.workspaceId,
       purpose: "clustering",
     });
-    return this.generate(binding, request.texts, {
+    const result = await this.generate(binding, request.texts, {
       purpose: "clustering",
       usageContext: request.usageContext,
     });
+    return { ...result, space: binding.space };
   }
 
   private generate(

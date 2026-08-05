@@ -19,7 +19,7 @@ const evidenceMessageTwo = "bbbbbbbb-bbbb-4bbb-8bbb-000000000002";
 const completedReport = {
   period,
   generatedAt: nowIso,
-  coverage: { populationSize: 240, sampleSize: 80, sampled: true },
+  coverage: { populationSize: 240, sampleSize: 240, sampled: false, facetReadyQuestionCount: 240 },
   weeklyVolume: [
     { weekStart: "2026-04-01T00:00:00.000Z", visitorQuestionCount: 40, conversationCount: 22 },
     { weekStart: "2026-04-08T00:00:00.000Z", visitorQuestionCount: 55, conversationCount: 30 },
@@ -32,7 +32,8 @@ const completedReport = {
       id: "theme-1",
       title: "Refund timing",
       description: "Repeat questions about how long refunds take after a return is accepted.",
-      sampleCount: 12,
+      memberCount: 30,
+      share: 0.125,
       distinctQuestionCount: 2,
       weeklyPulse: [
         { weekStart: "2026-04-01T00:00:00.000Z", count: 2 },
@@ -192,8 +193,10 @@ test.describe("Audience Pulse dashboard", () => {
     const topicsSection = page.locator('section[aria-labelledby="audience-pulse-topics"]');
     await expect(topicsSection.getByText("Refund timing", { exact: true })).toBeVisible();
     await expect(page.getByText("Explain refund timelines end-to-end")).toBeVisible();
-    // Canonical sampling caveat rendered by the view appears exactly once — no duplicate from model caveats.
-    await expect(page.getByText(/questions we read, not total demand/i)).toHaveCount(1);
+    // Census coverage line states plainly that every question in the window was read.
+    await expect(page.getByText("Read all 240 questions.")).toBeVisible();
+    // The sampling caveat is specific to the legacy sampled path and must not appear for a census report.
+    await expect(page.getByText(/questions we read, not total demand/i)).toHaveCount(0);
     expect(mocks.state.postCount).toBe(1);
   });
 
@@ -498,7 +501,7 @@ test.describe("Audience Pulse dashboard", () => {
       .toBeNull();
   });
 
-  test("collapsed topic card shows distinct questions and occurrence multiplier when deduplicated", async ({ page }) => {
+  test("collapsed topic card shows the exact member count and its share of the window when it exceeds distinct questions", async ({ page }) => {
     await seedDashboardStorage(page);
     await installDashboardApiMocks(page);
 
@@ -506,7 +509,8 @@ test.describe("Audience Pulse dashboard", () => {
       ...completedReport,
       themes: [{
         ...completedReport.themes[0],
-        sampleCount: 9,
+        memberCount: 24,
+        share: 0.1,
         distinctQuestionCount: 3,
         evidence: [
           { ...completedReport.themes[0].evidence[0], occurrenceCount: 3 },
@@ -525,8 +529,8 @@ test.describe("Audience Pulse dashboard", () => {
 
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
-    // Collapsed card shows both distinct question count and raw occurrence total.
-    await expect(page.getByText(/3 questions · asked 9×/)).toBeVisible();
+    // Collapsed card shows the distinct question count plus the exact census member count and its share.
+    await expect(page.getByText(/3 questions · asked 24× \(10% of window\)/)).toBeVisible();
 
     // Expanding reveals per-evidence occurrence count.
     await page.getByRole("button", { name: "Show questions" }).first().click();
@@ -539,7 +543,7 @@ test.describe("Audience Pulse dashboard", () => {
 
     const highUnclassifiedReport = {
       ...completedReport,
-      unclassifiedQuestionCount: 50, // 50 > 80 / 2 = 40
+      unclassifiedQuestionCount: 150, // 150 > 240 / 2 = 120
     };
 
     await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
@@ -553,7 +557,90 @@ test.describe("Audience Pulse dashboard", () => {
     await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
 
     await expect(page.getByText(/Most questions weren/)).toBeVisible();
-    await expect(page.getByText(/50 of 80/)).toBeVisible();
+    await expect(page.getByText(/150 of 240/)).toBeVisible();
+  });
+
+  test("a period with nothing processed yet says so instead of claiming there are no themes", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    // Every question counted, none facet-ready: historical traffic predating extraction, or a
+    // backfill still draining. Reporting "no recurring themes" here would describe the audience
+    // when the truth is that nothing has been computed.
+    const awaitingReport = {
+      ...completedReport,
+      coverage: { populationSize: 104, sampleSize: 104, sampled: false, facetReadyQuestionCount: 0 },
+      summary: undefined,
+      themes: [],
+      recommendations: [],
+      contentGaps: [],
+      unclassifiedQuestionCount: 104,
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: awaitingReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/Topic analysis is still being prepared/)).toBeVisible();
+    await expect(page.getByText(/Topics appear here once the questions/)).toBeVisible();
+    // The counts are final even though topics are not, and the ungrouped warning must not fire:
+    // 104 of 104 unclassified is a progress state here, not a finding about the audience.
+    await expect(page.getByText(/Read all 104 questions\./)).toBeVisible();
+    await expect(page.getByText(/Most questions weren/)).toHaveCount(0);
+    await expect(page.getByText(/did not identify any recurring themes/)).toHaveCount(0);
+  });
+
+  test("partially processed period says how much of it the topics cover", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const partialReport = {
+      ...completedReport,
+      coverage: { populationSize: 240, sampleSize: 240, sampled: false, facetReadyQuestionCount: 90 },
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: partialReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/90 of 240 questions have been processed so far/)).toBeVisible();
+  });
+
+  test("legacy sampled reports do not render as in-progress facet processing", async ({ page }) => {
+    await seedDashboardStorage(page);
+    await installDashboardApiMocks(page);
+
+    const sampledReport = {
+      ...completedReport,
+      coverage: { populationSize: 240, sampleSize: 80, sampled: true, facetReadyQuestionCount: 80 },
+      unclassifiedQuestionCount: 150,
+    };
+
+    await page.route("**/backend/api/v1/quality/audience-pulse", async (route) => {
+      if (route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ kind: "completed", report: sampledReport }) });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.goto(`/w/${workspaceKey}/quality?view=audience-pulse`);
+
+    await expect(page.getByText(/Read 80 of 240 questions\./)).toBeVisible();
+    await expect(page.getByText(/questions have been processed so far/)).toHaveCount(0);
+    await expect(page.getByText(/Most questions weren/)).toBeVisible();
   });
 
   test("expanding a topic whose grounding is entirely unknown does not render the grounding-summary strip", async ({ page }) => {

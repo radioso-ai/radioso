@@ -311,6 +311,9 @@ export const createTestEnv = (): Env => ({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWL_JOB_LEASE_MS: 900_000,
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: 5_000,
+  FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS: 5_000,
+  FACET_EXTRACTION_WORKER_BATCH_SIZE: 10,
+  FACET_EXTRACTION_JOB_LEASE_MS: 300_000,
   WEBSITE_CRAWLER_ENABLED: true,
   APP_BASE_URL: undefined,
   SLACK_OAUTH_CLIENT_ID: undefined,
@@ -1732,6 +1735,14 @@ export const createTestDependencies = (overrides: {
     documentSearchService,
     documentSearchHistoryService,
     workspaceIngestionReprocessService,
+    embeddingBindingResolver: {
+      async resolveBinding() {
+        throw new Error("Embedding binding resolution is not configured in the in-memory test app");
+      },
+      async resolveBindingForSpace() {
+        throw new Error("Embedding binding resolution is not configured in the in-memory test app");
+      },
+    },
     documentSourceReprocessService,
     documentProcessingWorker,
     websiteCrawlJobService: {

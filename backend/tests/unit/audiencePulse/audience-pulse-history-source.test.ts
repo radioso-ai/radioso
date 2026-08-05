@@ -2,14 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   audiencePulseWeekStartUtc,
-  boundAudiencePulseQuestionExcerpts,
   classifyAudiencePulseQuestion,
   completeAudiencePulseWeeklyVolume,
   isAudiencePulseCustomerSource,
   isAudiencePulseEndUserChannel,
-  selectAudiencePulseSample,
   type AudiencePulseConversationMessageRow,
-  type AudiencePulseEligibleQuestionMetadataRow,
   type AudiencePulseEligibleQuestionRow,
 } from "../../../src/modules/chat/audiencePulseHistorySource.js";
 
@@ -21,13 +18,6 @@ const question = (overrides: Partial<AudiencePulseEligibleQuestionRow> = {}): Au
   source_channel: null,
   ...overrides,
 });
-
-const metadataQuestion = (
-  overrides: Partial<AudiencePulseEligibleQuestionMetadataRow> = {},
-): AudiencePulseEligibleQuestionMetadataRow => {
-  const { content: _content, ...metadata } = question(overrides);
-  return metadata;
-};
 
 const assistant = (
   overrides: Partial<AudiencePulseConversationMessageRow> = {},
@@ -92,42 +82,6 @@ describe("Audience Pulse history source helpers", () => {
       { weekStart: "2026-07-20T00:00:00.000Z", visitorQuestionCount: 0, conversationCount: 0 },
       { weekStart: "2026-07-27T00:00:00.000Z", visitorQuestionCount: 2, conversationCount: 2 },
     ]);
-  });
-
-  it("round-robins deterministic week/channel strata from metadata while respecting conversation caps", () => {
-    const selected = selectAudiencePulseSample([
-      metadataQuestion({ id: "q-1", conversation_id: "conversation-a" }),
-      metadataQuestion({ id: "q-2", conversation_id: "conversation-a" }),
-      metadataQuestion({ id: "q-3", conversation_id: "conversation-a" }),
-      metadataQuestion({
-        id: "q-4",
-        conversation_id: "conversation-b",
-        source_channel: "email",
-      }),
-      metadataQuestion({
-        id: "q-5",
-        conversation_id: "conversation-c",
-        created_at: new Date("2026-07-08T12:00:00.000Z"),
-      }),
-    ], {
-      maxQuestions: 4,
-      maxConversations: 3,
-      maxQuestionsPerConversation: 2,
-      maxExcerptCharacters: 10_000,
-    });
-
-    expect(selected.map((item) => item.id)).toEqual(["q-1", "q-4", "q-5", "q-2"]);
-    expect(selected.filter((item) => item.conversation_id === "conversation-a")).toHaveLength(2);
-  });
-
-  it("bounds only the selected text after metadata sampling", () => {
-    const excerpts = boundAudiencePulseQuestionExcerpts([
-      question({ id: "long-1", content: "a".repeat(1_200) }),
-      question({ id: "long-2", conversation_id: "conversation-b", content: "b".repeat(1_200) }),
-    ], 1_201);
-
-    expect(excerpts.map((item) => item.id)).toEqual(["long-1", "long-2"]);
-    expect(excerpts.map((item) => item.content.length)).toEqual([1_200, 1]);
   });
 
   it("pairs only the first AI assistant answer before the next user turn and classifies typed outcomes", () => {

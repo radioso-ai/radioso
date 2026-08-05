@@ -3,12 +3,28 @@ export { PostgresAudiencePulseRunGate } from "./infra/postgresAudiencePulseRunGa
 export { AudiencePulseRefreshRateLimiter } from "./infra/audiencePulseRefreshRateLimiter.js";
 export { createAudiencePulseRoutes, type AudiencePulseRouteDependencies } from "./routes.js";
 export {
+  CensusService,
+  type CensusFacetRecord,
+  type CensusFacetSource,
+  type CensusRunResult,
+  type CensusRunTopicResult,
+  type CensusServiceDependencies,
+} from "./services/censusService.js";
+export {
+  ContextualCensusServiceFactory,
+  type CensusServiceFactory,
+  type ContextualCensusServiceFactoryDependencies,
+} from "./infra/censusServiceFactory.js";
+export {
+  ModelTopicNamingGateway,
+  type TopicNamingInferenceFactory,
+} from "./infra/modelTopicNamingGateway.js";
+export {
+  ModelTopicLabelPrivacyAuditGateway,
+  type TopicLabelPrivacyAuditInferenceFactory,
+} from "./infra/modelTopicLabelPrivacyAuditGateway.js";
+export {
   AUDIENCE_PULSE_ANALYSIS_DAYS,
-  AUDIENCE_PULSE_SAMPLE_MAX_CONVERSATIONS,
-  AUDIENCE_PULSE_SAMPLE_MAX_EXCERPT_CHARACTERS,
-  AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS,
-  AUDIENCE_PULSE_SAMPLE_MAX_QUESTIONS_PER_CONVERSATION,
-  DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
   type AudiencePulsePort,
   type AudiencePulseReadResult,
   type AudiencePulseRefreshResult,

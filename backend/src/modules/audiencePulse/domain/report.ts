@@ -37,6 +37,21 @@ export interface AudiencePulseCoverage {
   sampled: boolean;
 }
 
+/**
+ * `AudiencePulseCoverage` plus the census's facet-readiness split (spec 956
+ * follow-up): `facetReadyQuestionCount` is `CensusRunResult.facetReadyQuestionCount`,
+ * how many of `populationSize` questions had a current, embedded facet clustering
+ * could actually use. Distinct from `unclassifiedQuestionCount`: a population can be
+ * fully facet-ready and still classify into zero topics (every cluster below the
+ * size floor), so this is the only field that tells "topic analysis has not run on
+ * this window yet" apart from "it ran and found no recurring pattern." Kept apart
+ * from `AudiencePulseCoverage` itself because the history source that produces the
+ * base coverage has no notion of facets; the report layer is where the two combine.
+ */
+export interface AudiencePulseReportCoverage extends AudiencePulseCoverage {
+  facetReadyQuestionCount: number;
+}
+
 export interface AudiencePulseGroundingSummary {
   grounded: number;
   degraded: number;
@@ -50,9 +65,26 @@ export interface AudiencePulseStoredTheme {
   title: string;
   description: string;
   evidenceIds: string[];
-  sampleCount: number;
+  /** Exact count of population questions assigned to this topic -- never a sample. */
+  memberCount: number;
+  /** `memberCount / populationSize`, computed in code from the same membership. */
+  share: number;
   weeklyPulse: Array<{ weekStart: string; count: number }>;
   grounding: AudiencePulseGroundingSummary;
+}
+
+/**
+ * One topic as the census names and populates it (spec 956): a stable identity, an
+ * operator-visible label, and its exact member evidence ids -- every population
+ * question the clustering step assigned to it, not a model-picked subset. `buildAudiencePulseReport`
+ * derives `memberCount`/`share`/`weeklyPulse` from `evidenceIds` resolved against the
+ * full window population; it never trusts a pre-computed count.
+ */
+export interface AudiencePulseCensusTopic {
+  id: string;
+  title: string;
+  description: string;
+  evidenceIds: string[];
 }
 
 export interface AudiencePulseStoredRecommendation {
@@ -67,9 +99,17 @@ export interface AudiencePulseStoredRecommendation {
 export interface AudiencePulseStoredReport {
   period: { start: string; end: string };
   generatedAt: string;
-  coverage: AudiencePulseCoverage;
+  coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
-  summary: string;
+  /**
+   * Absent when no narrative call ran (`buildAudiencePulseComputingReport`, spec 956
+   * follow-up: `coverage.facetReadyQuestionCount === 0`) -- there is nothing computed
+   * yet for the model to summarize, so this stays unset rather than holding an
+   * invented audience conclusion or a hardcoded stand-in string.
+   */
+  summary?: string;
+  /** Population questions claimed by no topic, measured against the population -- never the sample. */
+  unclassifiedQuestionCount: number;
   themes: AudiencePulseStoredTheme[];
   contentGaps: Array<{
     themeId: string;
@@ -93,6 +133,17 @@ export const AUDIENCE_PULSE_MODEL_TEXT_LIMITS = {
 const boundedText = (max: number) => z.string().trim().min(1).max(max);
 const evidenceIdsSchema = (minimum: number) => z.array(z.string().trim().min(1).max(80)).min(minimum).max(12);
 
+/**
+ * Raw shape of the sampled-report model call (`services/prompt.ts`). `themes` is
+ * validated here for compatibility with that call's still-unchanged response format,
+ * but `buildAudiencePulseReport` no longer reads it: topic identity and membership
+ * come from the census (`AudiencePulseCensusTopic`), never from the model. Callers
+ * migrating off the sampled call construct `AudiencePulseCensusTopic[]` themselves --
+ * `services/audiencePulseService.ts` bridges the two by mapping `model.themes` onto it
+ * until the narrative call described in `topicNamingPrompt.ts` replaces this schema.
+ * `recommendations[].themeIndex` resolves against the caller-supplied topics, not
+ * `model.themes`, so the field name is a carryover, not a live reference.
+ */
 export const audiencePulseModelOutputSchema = z.object({
   summary: boundedText(AUDIENCE_PULSE_MODEL_TEXT_LIMITS.summary),
   themes: z.array(z.object({
@@ -146,6 +197,12 @@ const groundingSummary = (items: AudiencePulseEvidence[]): AudiencePulseGroundin
   return result;
 };
 
+/**
+ * Buckets a topic's exact member evidence by real week. Correct by construction as
+ * soon as `items` is a topic's real population membership rather than a
+ * stratified-equal sample: a topic concentrated in one high-volume week reports that
+ * concentration, because every member's true `weekStart` is counted once.
+ */
 const createWeeklyPulse = (
   evidence: AudiencePulseEvidence[],
   weeklyVolume: AudiencePulseWeeklyVolume[],
@@ -160,7 +217,30 @@ const createWeeklyPulse = (
   }));
 };
 
-const recurringGap = (items: AudiencePulseEvidence[]): {
+/**
+ * Content-gap eligibility scales against a topic's real member count (spec 956
+ * FR-012): a flat floor of `CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE` for small topics, rising
+ * to `CONTENT_GAP_MIN_ELIGIBLE_SHARE` of the topic's exact membership once that share
+ * exceeds the floor. A handful of ungrounded mentions was a strong signal against a
+ * sample capped at a dozen evidence ids; the same handful is noise against a
+ * census-sized topic with hundreds of real members.
+ */
+const CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE = 2;
+const CONTENT_GAP_MIN_ELIGIBLE_SHARE = 0.1;
+const CONTENT_GAP_MIN_DISTINCT_CONVERSATIONS = 2;
+const AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX = 12;
+
+const requiredEligibleCount = (topicMemberCount: number): number =>
+  Math.max(CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE, Math.ceil(topicMemberCount * CONTENT_GAP_MIN_ELIGIBLE_SHARE));
+
+/**
+ * `requiredEligible` is the caller's scale basis: the theme-level content-gap check
+ * (`contentGaps`) scales it to the topic's real size via {@link requiredEligibleCount};
+ * the recommendation-level check evaluates a small, bounded citation set the model
+ * chose and keeps the flat floor, since that check is about the citation's own
+ * internal quality, not the topic's overall size.
+ */
+const recurringGap = (items: AudiencePulseEvidence[], requiredEligible: number): {
   eligibleEvidenceCount: number;
   distinctConversationCount: number;
   qualifies: boolean;
@@ -170,22 +250,22 @@ const recurringGap = (items: AudiencePulseEvidence[]): {
   return {
     eligibleEvidenceCount: eligible.length,
     distinctConversationCount,
-    qualifies: eligible.length >= 2 && distinctConversationCount >= 2,
+    qualifies: eligible.length >= requiredEligible && distinctConversationCount >= CONTENT_GAP_MIN_DISTINCT_CONVERSATIONS,
   };
 };
 
 const pickRecurringContentGapEvidenceIds = (
-  theme: AudiencePulseStoredTheme,
+  evidenceIds: readonly string[],
   evidenceById: Map<string, AudiencePulseEvidence>,
 ): string[] => {
   const conversationIds = new Set<string>();
-  const evidenceIds: string[] = [];
-  for (const evidenceId of theme.evidenceIds) {
+  const selected: string[] = [];
+  for (const evidenceId of evidenceIds) {
     const item = evidenceById.get(evidenceId);
     if (!item?.contentGapEligible || conversationIds.has(item.reference.conversationId)) continue;
-    evidenceIds.push(evidenceId);
+    selected.push(evidenceId);
     conversationIds.add(item.reference.conversationId);
-    if (evidenceIds.length === 2) return evidenceIds;
+    if (selected.length === 2) return selected;
   }
   return [];
 };
@@ -205,45 +285,67 @@ const resolveEvidence = (
   });
 };
 
+/**
+ * Builds the stored report from a topic census (spec 956): `topics` carries each
+ * topic's exact real membership (`AudiencePulseCensusTopic.evidenceIds`), and
+ * `population` is every eligible question in the window, not a sample. Every count,
+ * share, weekly bucket, and content-gap decision below is computed here from that
+ * membership -- never trusted from the model and never scaled from a subset. `model`
+ * still supplies the narrative (summary, recommendations, caveats); its `themes`
+ * field is validated but unused (see `audiencePulseModelOutputSchema`).
+ */
 export const buildAudiencePulseReport = (input: {
   period: { start: Date; end: Date };
   generatedAt: Date;
-  coverage: AudiencePulseCoverage;
+  coverage: AudiencePulseReportCoverage;
   weeklyVolume: AudiencePulseWeeklyVolume[];
-  evidence: AudiencePulseEvidence[];
+  population: AudiencePulseEvidence[];
+  topics: AudiencePulseCensusTopic[];
   model: AudiencePulseModelOutput;
 }): AudiencePulseStoredReport => {
   const model = audiencePulseModelOutputSchema.parse(input.model);
-  const evidenceById = new Map(input.evidence.map((item) => [item.id, item]));
-  if (evidenceById.size !== input.evidence.length) {
-    throw new AudiencePulseReportValidationError("Submitted evidence ids must be unique");
+  const evidenceById = new Map(input.population.map((item) => [item.id, item]));
+  if (evidenceById.size !== input.population.length) {
+    throw new AudiencePulseReportValidationError("Submitted population evidence ids must be unique");
   }
+  const populationSize = input.population.length;
 
-  const claimedThemeEvidence = new Set<string>();
-  const themes = model.themes.map((theme, themeIndex): AudiencePulseStoredTheme => {
-    if (theme.evidenceIds.length < 2) {
-      throw new AudiencePulseReportValidationError("A discussion theme must contain at least two evidence items");
+  const claimedTopicEvidence = new Set<string>();
+  const memberEvidenceIdsByTopicId = new Map<string, string[]>();
+  const themes = input.topics.map((topic): AudiencePulseStoredTheme => {
+    if (topic.evidenceIds.length < 2) {
+      throw new AudiencePulseReportValidationError("A topic must contain at least two member questions");
     }
-    const items = resolveEvidence(theme.evidenceIds, evidenceById, "Theme");
-    for (const id of theme.evidenceIds) {
-      if (claimedThemeEvidence.has(id)) {
-        throw new AudiencePulseReportValidationError("Evidence may not belong to more than one theme");
+    const items = resolveEvidence(topic.evidenceIds, evidenceById, "Topic");
+    for (const id of topic.evidenceIds) {
+      if (claimedTopicEvidence.has(id)) {
+        throw new AudiencePulseReportValidationError("A question may not belong to more than one topic");
       }
-      claimedThemeEvidence.add(id);
+      claimedTopicEvidence.add(id);
     }
+    const memberCount = items.length;
+    const memberEvidenceIds = [...topic.evidenceIds];
+    memberEvidenceIdsByTopicId.set(topic.id, memberEvidenceIds);
     return {
-      id: `theme-${themeIndex + 1}`,
-      title: theme.title,
-      description: theme.description,
-      evidenceIds: [...theme.evidenceIds],
-      sampleCount: items.length,
+      id: topic.id,
+      title: topic.title,
+      description: topic.description,
+      evidenceIds: memberEvidenceIds.slice(0, AUDIENCE_PULSE_THEME_DISPLAY_EVIDENCE_MAX),
+      memberCount,
+      share: populationSize === 0 ? 0 : memberCount / populationSize,
       weeklyPulse: createWeeklyPulse(items, input.weeklyVolume),
       grounding: groundingSummary(items),
     };
   });
 
+  const unclassifiedQuestionCount = populationSize - claimedTopicEvidence.size;
+
   const contentGaps = themes.flatMap((theme) => {
-    const gap = recurringGap(resolveEvidence(theme.evidenceIds, evidenceById, "Theme"));
+    const memberEvidenceIds = memberEvidenceIdsByTopicId.get(theme.id) ?? [];
+    const gap = recurringGap(
+      resolveEvidence(memberEvidenceIds, evidenceById, "Topic"),
+      requiredEligibleCount(theme.memberCount),
+    );
     return gap.qualifies ? [{
       themeId: theme.id,
       eligibleEvidenceCount: gap.eligibleEvidenceCount,
@@ -254,17 +356,18 @@ export const buildAudiencePulseReport = (input: {
   const recommendations = model.recommendations.flatMap((recommendation, recommendationIndex): AudiencePulseStoredRecommendation[] => {
     const parentTheme = themes[recommendation.themeIndex];
     if (!parentTheme) {
-      throw new AudiencePulseReportValidationError("Recommendation references an unknown theme");
+      throw new AudiencePulseReportValidationError("Recommendation references an unknown topic");
     }
-    const parentEvidence = new Set(parentTheme.evidenceIds);
+    const parentMemberEvidenceIds = memberEvidenceIdsByTopicId.get(parentTheme.id) ?? [];
+    const parentEvidence = new Set(parentMemberEvidenceIds);
     const items = resolveEvidence(recommendation.evidenceIds, evidenceById, "Recommendation");
     if (!recommendation.evidenceIds.every((id) => parentEvidence.has(id))) {
-      throw new AudiencePulseReportValidationError("Recommendation evidence must be a subset of its parent theme");
+      throw new AudiencePulseReportValidationError("Recommendation evidence must be a subset of its parent topic");
     }
-    const gap = recurringGap(items);
+    const gap = recurringGap(items, CONTENT_GAP_MIN_ELIGIBLE_ABSOLUTE);
     const evidenceIds = gap.qualifies
       ? [...recommendation.evidenceIds]
-      : pickRecurringContentGapEvidenceIds(parentTheme, evidenceById);
+      : pickRecurringContentGapEvidenceIds(parentMemberEvidenceIds, evidenceById);
     if (evidenceIds.length === 0) return [];
     return [{
       id: `recommendation-${recommendationIndex + 1}`,
@@ -285,12 +388,43 @@ export const buildAudiencePulseReport = (input: {
     coverage: input.coverage,
     weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
     summary: model.summary,
+    unclassifiedQuestionCount,
     themes,
     contentGaps,
     recommendations,
     caveats: [...model.caveats],
   };
 };
+
+/**
+ * Builds the stored report for a window whose population has no facet-ready question
+ * yet (spec 956 follow-up, `coverage.facetReadyQuestionCount === 0`): every eligible
+ * question is real, but none has cleared extraction and embedding, so the census could
+ * not cluster anything and there is nothing for a narrative call to summarize. Callers
+ * skip the model call entirely for this case -- the same precedent an empty population
+ * already sets for `no_traffic` -- so `summary` stays absent rather than inventing an
+ * audience conclusion from zero computed data. The dashboard renders this state from
+ * `coverage.facetReadyQuestionCount`, never from a hardcoded string standing in here.
+ */
+export const buildAudiencePulseComputingReport = (input: {
+  period: { start: Date; end: Date };
+  generatedAt: Date;
+  coverage: AudiencePulseReportCoverage;
+  weeklyVolume: AudiencePulseWeeklyVolume[];
+}): AudiencePulseStoredReport => ({
+  period: {
+    start: input.period.start.toISOString(),
+    end: input.period.end.toISOString(),
+  },
+  generatedAt: input.generatedAt.toISOString(),
+  coverage: input.coverage,
+  weeklyVolume: input.weeklyVolume.map((week) => ({ ...week })),
+  unclassifiedQuestionCount: input.coverage.populationSize,
+  themes: [],
+  contentGaps: [],
+  recommendations: [],
+  caveats: [],
+});
 
 export const parseAudiencePulseModelOutput = (value: unknown): AudiencePulseModelOutput =>
   audiencePulseModelOutputSchema.parse(value);

@@ -19,6 +19,7 @@ import type { OrganizationCreationGuard } from "../../shared/domain/organization
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type { UsageEventRecorder } from "../../shared/domain/usageEventRecorder.js";
 import type { WebsiteEmbedIntegrationProvider } from "../../modules/settings/contracts/websiteEmbedIntegration.js";
+import type { FacetExtractionPort } from "../../modules/facets/contracts.js";
 import type {
   ChatGateway,
   PublicChatActionAdvertiserPort,
@@ -205,6 +206,9 @@ export interface ApplicationExtensionRegistry {
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   chunkingProvider?: TextChunkingProviderPort;
   websiteEmbedIntegration?: WebsiteEmbedIntegrationProvider;
+  // Unregistered by default: with no extractor the facet worker is not built at all, so
+  // queued jobs stay durable instead of being drained into nothing.
+  facetExtraction?: FacetExtractionPort;
   publicChatActionAdvertiserRegistrations: ApplicationPublicChatActionAdvertiserRegistration[];
   routineRegistrations: RoutineRegistration[];
   publishedRoutineRegistrationSource?: PublishedRoutineRegistrationSource;
@@ -248,6 +252,7 @@ export interface ApplicationModuleRegistrationContext {
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;
   registerChunkingProvider(provider: TextChunkingProviderPort): void;
   registerWebsiteEmbedIntegration(provider: WebsiteEmbedIntegrationProvider): void;
+  registerFacetExtraction(port: FacetExtractionPort): void;
   registerPublicChatActionAdvertiser(provider: ApplicationPublicChatActionAdvertiserRegistration): void;
   registerRoutine(registration: RoutineRegistration): void;
   registerPublishedRoutineSource(source: PublishedRoutineRegistrationSource): void;
@@ -345,6 +350,9 @@ const createRegistrationContext = (registry: ApplicationExtensionRegistry): Appl
   },
   registerWebsiteEmbedIntegration(provider) {
     registry.websiteEmbedIntegration = provider;
+  },
+  registerFacetExtraction(port) {
+    registry.facetExtraction = port;
   },
   registerPublicChatActionAdvertiser(provider) {
     registry.publicChatActionAdvertiserRegistrations.push(provider);

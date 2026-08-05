@@ -9433,10 +9433,14 @@ components:
           minimum: 0
         sampled:
           type: boolean
+        facetReadyQuestionCount:
+          type: integer
+          minimum: 0
       required:
         - populationSize
         - sampleSize
         - sampled
+        - facetReadyQuestionCount
     AudiencePulseWeeklyVolume:
       type: object
       properties:
@@ -9571,9 +9575,13 @@ components:
           type: string
         description:
           type: string
-        sampleCount:
+        memberCount:
           type: integer
           minimum: 0
+        share:
+          type: number
+          minimum: 0
+          maximum: 1
         distinctQuestionCount:
           type: integer
           minimum: 0
@@ -9601,7 +9609,8 @@ components:
         - id
         - title
         - description
-        - sampleCount
+        - memberCount
+        - share
         - distinctQuestionCount
         - weeklyPulse
         - grounding
@@ -9710,7 +9719,6 @@ components:
         - generatedAt
         - coverage
         - weeklyVolume
-        - summary
         - unclassifiedQuestionCount
         - themes
         - contentGaps

@@ -31,6 +31,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
   dependencies.vectorIndexReconciler?.start();
   await dependencies.documentProcessingWorker.start();
   await dependencies.documentJobConsumer?.start();
+  // Drain per-message facet extraction for the topic census. Batch analytics: the poll
+  // loop is the whole transport, and it is absent unless an extractor is registered.
+  dependencies.facetExtractionWorker?.start();
   // Drain the async conversation-action outbox (spec 070) out of band from the turn.
   dependencies.actionDispatchWorker.start();
 
@@ -47,6 +50,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
       dependencies.logger.info({ role: "worker", signal }, "Radioso document worker shutting down");
       try {
         await dependencies.actionDispatchWorker.stop();
+        await dependencies.facetExtractionWorker?.stop();
         await dependencies.documentJobConsumer?.stop();
         await dependencies.documentProcessingWorker.stop();
         await dependencies.vectorIndexReconciler?.stop();

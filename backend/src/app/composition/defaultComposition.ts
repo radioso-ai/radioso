@@ -87,6 +87,7 @@ export interface ApplicationComposition {
   websiteCrawlerProvider?: ReturnType<typeof createApplicationExtensionRegistry>["websiteCrawlerProvider"];
   chunkingProvider?: ReturnType<typeof createApplicationExtensionRegistry>["chunkingProvider"];
   websiteEmbedIntegration?: ReturnType<typeof createApplicationExtensionRegistry>["websiteEmbedIntegration"];
+  facetExtraction?: ReturnType<typeof createApplicationExtensionRegistry>["facetExtraction"];
   usageLimitPolicyRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageLimitPolicyRegistration"];
   organizationCreationGuardRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["organizationCreationGuardRegistration"];
   usageEventRecorderRegistration?: ReturnType<typeof createApplicationExtensionRegistry>["usageEventRecorderRegistration"];
@@ -163,6 +164,7 @@ export const createDefaultApplicationComposition = (options: {
     websiteCrawlerProvider: registry.websiteCrawlerProvider,
     chunkingProvider: registry.chunkingProvider,
     websiteEmbedIntegration: registry.websiteEmbedIntegration,
+    facetExtraction: registry.facetExtraction,
     usageLimitPolicyRegistration: registry.usageLimitPolicyRegistration,
     organizationCreationGuardRegistration: registry.organizationCreationGuardRegistration,
     usageEventRecorderRegistration: registry.usageEventRecorderRegistration,

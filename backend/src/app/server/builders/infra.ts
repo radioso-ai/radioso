@@ -16,10 +16,12 @@ import { EmbeddingProfileCleanupRepository } from "../../../db/repositories/embe
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../../db/repositories/documentSourceRepository.js";
 import { EmbeddingProfileRepository } from "../../../db/repositories/embeddingProfileRepository.js";
+import { FacetExtractionJobRepository } from "../../../db/repositories/facetExtractionJobRepository.js";
 import { VectorIndexWorkRepository } from "../../../db/repositories/vectorIndexWorkRepository.js";
 import { EmailVerificationTokenRepository } from "../../../db/repositories/emailVerificationTokenRepository.js";
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../../db/repositories/ingestionSettingsRepository.js";
+import { MessageFacetRepository } from "../../../db/repositories/messageFacetRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import { PasswordResetTokenRepository } from "../../../db/repositories/passwordResetTokenRepository.js";
 import { RetrievalSettingsRepository } from "../../../db/repositories/retrievalSettingsRepository.js";
@@ -162,12 +164,14 @@ export const buildRepositories = (
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
   embeddingProfileRepository: new EmbeddingProfileRepository(database.kysely),
+  facetExtractionJobRepository: new FacetExtractionJobRepository(database.kysely),
   vectorIndexWorkRepository: new VectorIndexWorkRepository(database.kysely),
   embeddingProfileJobRepository: new EmbeddingProfileJobRepository(database.kysely),
   embeddingProfileCleanupRepository: new EmbeddingProfileCleanupRepository(database.kysely),
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database.kysely),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
+  messageFacetRepository: new MessageFacetRepository(database.kysely),
   messageRepository: new MessageRepository(database.kysely),
   passwordResetTokenRepository: new PasswordResetTokenRepository(database.kysely),
   retrievalSettingsRepository: new RetrievalSettingsRepository(database.kysely),

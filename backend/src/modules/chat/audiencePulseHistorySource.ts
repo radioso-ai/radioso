@@ -9,7 +9,6 @@ import {
   AudiencePulseHistorySource,
   AudiencePulseHydratedEvidence,
   AudiencePulsePromptEvidenceReference,
-  AudiencePulseSamplePolicy,
   type AudiencePulseWeeklyVolume,
 } from "../audiencePulse/contracts/history.js";
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
@@ -111,49 +110,6 @@ const hasCompleteGrounding = (row: AudiencePulseConversationMessageRow): boolean
     && row.grounding_unsourced_claim_count !== null
     && row.grounding_invalid_source_count !== null;
 
-export const selectAudiencePulseSample = (
-  rows: AudiencePulseEligibleQuestionMetadataRow[],
-  policy: AudiencePulseSamplePolicy,
-): AudiencePulseEligibleQuestionMetadataRow[] => {
-  const queues = new Map<string, AudiencePulseEligibleQuestionMetadataRow[]>();
-  for (const row of rows) {
-    const key = `${audiencePulseWeekStartUtc(row.created_at)}:${row.source_channel ?? ""}`;
-    const queue = queues.get(key) ?? [];
-    queue.push(row);
-    queues.set(key, queue);
-  }
-  const keys = [...queues.keys()].sort();
-  const queueIndices = new Map(keys.map((key) => [key, 0]));
-  const perConversation = new Map<string, number>();
-  const conversations = new Set<string>();
-  const selected: AudiencePulseEligibleQuestionMetadataRow[] = [];
-
-  let progressed = true;
-  while (selected.length < policy.maxQuestions && progressed) {
-    progressed = false;
-    for (const key of keys) {
-      if (selected.length >= policy.maxQuestions) break;
-      const queue = queues.get(key)!;
-      let index = queueIndices.get(key) ?? 0;
-      while (index < queue.length) {
-        const candidate = queue[index]!;
-        index += 1;
-        queueIndices.set(key, index);
-        const currentConversationCount = perConversation.get(candidate.conversation_id) ?? 0;
-        const addsConversation = !conversations.has(candidate.conversation_id);
-        if (currentConversationCount >= policy.maxQuestionsPerConversation) continue;
-        if (addsConversation && conversations.size >= policy.maxConversations) continue;
-        selected.push(candidate);
-        conversations.add(candidate.conversation_id);
-        perConversation.set(candidate.conversation_id, currentConversationCount + 1);
-        progressed = true;
-        break;
-      }
-    }
-  }
-  return selected;
-};
-
 export const classifyAudiencePulseAnswerWindow = (messages: AudiencePulseConversationMessageRow[]): {
   grounding: AudiencePulseGroundingSignal;
   contentGapEligible: boolean;
@@ -194,7 +150,6 @@ export const classifyAudiencePulseQuestion = (
 };
 
 const audiencePulseWeekStartExpression = sql<Date>`date_trunc('week', m.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`;
-const audiencePulseChannelKeyExpression = sql<string>`coalesce(c.source_channel, '')`;
 
 /** Shared authorization/period predicate. Callers must choose a bounded projection. */
 const buildAudiencePulseEligibleQuestionQuery = (
@@ -237,73 +192,13 @@ export const buildAudiencePulseAggregateQuery = (
   .orderBy(audiencePulseWeekStartExpression, "asc");
 
 /**
- * A bounded metadata reserve for the sampler. It gives the deterministic selector
- * fallbacks after conversation caps without materializing an unbounded history.
+ * Every eligible question's content and metadata in one pass (spec 956 FR-003): no
+ * candidate reserve, no stratified rank, no cap. The census clusters this exact set,
+ * so `read()` fetches it directly instead of narrowing to a sample first.
  */
-export const audiencePulseCandidateQueryLimit = (policy: AudiencePulseSamplePolicy): number =>
-  policy.maxQuestions * policy.maxConversations;
-
-/**
- * Metadata-only candidates are globally conversation-capped, then interleaved by UTC
- * week/channel rank. The result cap is strict regardless of population size.
- */
-export const buildAudiencePulseBoundedCandidateQuery = (
+export const buildAudiencePulseEligibleQuestionContentQuery = (
   db: Db,
-  input: {
-    workspaceId: string;
-    analysisStart: Date;
-    analysisEnd: Date;
-    samplePolicy: AudiencePulseSamplePolicy;
-  },
-) => db
-  .with("audience_pulse_eligible", () => buildAudiencePulseEligibleQuestionQuery(db, input)
-    .select((eb) => [
-      "m.id as id",
-      "m.conversation_id as conversation_id",
-      "m.created_at as created_at",
-      "c.source_channel as source_channel",
-      audiencePulseWeekStartExpression.as("week_start"),
-      audiencePulseChannelKeyExpression.as("source_channel_key"),
-      eb.fn.agg<number>("row_number").over((ob) => ob
-        .partitionBy("m.conversation_id")
-        .orderBy("m.created_at", "asc")
-        .orderBy("m.id", "asc"))
-        .as("conversation_rank"),
-    ]))
-  .with("audience_pulse_stratified", (qb) => qb
-    .selectFrom("audience_pulse_eligible")
-    .select((eb) => [
-      "id",
-      "conversation_id",
-      "created_at",
-      "source_channel",
-      "week_start",
-      "source_channel_key",
-      eb.fn.agg<number>("row_number").over((ob) => ob
-        .partitionBy(["week_start", "source_channel_key"])
-        .orderBy("created_at", "asc")
-        .orderBy("id", "asc"))
-        .as("stratum_rank"),
-    ])
-    .where("conversation_rank", "<=", input.samplePolicy.maxQuestionsPerConversation))
-  .selectFrom("audience_pulse_stratified")
-  .select([
-    "id",
-    "conversation_id",
-    "created_at",
-    "source_channel",
-  ])
-  .orderBy("stratum_rank", "asc")
-  .orderBy("week_start", "asc")
-  .orderBy("source_channel_key", "asc")
-  .orderBy("created_at", "asc")
-  .orderBy("id", "asc")
-  .limit(audiencePulseCandidateQueryLimit(input.samplePolicy));
-
-/** Fetches visitor text only after deterministic metadata sampling has bounded ids. */
-export const buildAudiencePulseSelectedQuestionQuery = (
-  db: Db,
-  input: { workspaceId: string; analysisStart: Date; analysisEnd: Date; messageIds: string[] },
+  input: { workspaceId: string; analysisStart: Date; analysisEnd: Date },
 ) => buildAudiencePulseEligibleQuestionQuery(db, input)
   .select([
     "m.id as id",
@@ -311,9 +206,10 @@ export const buildAudiencePulseSelectedQuestionQuery = (
     "m.created_at as created_at",
     "c.source_channel as source_channel",
   ])
-  // Keep transport and memory bounded even when a selected visitor message is very large.
+  // Keep transport and memory bounded even when a visitor message is very large.
   .select(sql<string>`left(m.content, ${AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS})`.as("content"))
-  .where("m.id", "in", input.messageIds);
+  .orderBy("m.created_at", "asc")
+  .orderBy("m.id", "asc");
 
 /** One selected question gets at most its first relevant response boundary. */
 export const buildAudiencePulseQuestionAnswerQuery = (
@@ -415,22 +311,6 @@ export const buildAudiencePulseEvidenceAnchorNextAssistantQuery = (
   .orderBy("m.id", "asc")
   .limit(1);
 
-export const boundAudiencePulseQuestionExcerpts = (
-  rows: AudiencePulseEligibleQuestionRow[],
-  maxExcerptCharacters: number,
-): AudiencePulseEligibleQuestionRow[] => {
-  const selected: AudiencePulseEligibleQuestionRow[] = [];
-  let usedCharacters = 0;
-  for (const row of rows) {
-    if (usedCharacters >= maxExcerptCharacters) break;
-    const remaining = maxExcerptCharacters - usedCharacters;
-    const content = row.content.slice(0, Math.min(AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS, remaining));
-    selected.push({ ...row, content });
-    usedCharacters += content.length;
-  }
-  return selected;
-};
-
 const AUDIENCE_PULSE_ANSWER_WINDOW_QUERY_CONCURRENCY = 8;
 
 const readAudiencePulseAnswerWindows = async (
@@ -482,14 +362,28 @@ const presentAudiencePulseAnchorSource = (
 export class PostgresAudiencePulseHistorySource implements AudiencePulseHistorySource {
   constructor(private readonly db: Db) {}
 
+  /** Reuses the eligible-question predicate this file already owns; adds no new rule. */
+  async listEligibleQuestionIds(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+  }): Promise<string[]> {
+    const rows = await buildAudiencePulseEligibleQuestionQuery(this.db, input)
+      .select(["m.id as id"])
+      .orderBy("m.created_at", "asc")
+      .orderBy("m.id", "asc")
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
   async read(input: {
     workspaceId: string;
     analysisStart: Date;
     analysisEnd: Date;
-    samplePolicy: AudiencePulseSamplePolicy;
   }): Promise<AudiencePulseHistorySnapshot> {
-    // Aggregates remain exact in SQL. Node only receives a strict metadata reserve for
-    // sampling, then text and answer windows for the final evidence set.
+    // Aggregates remain exact in SQL either way; the evidence read below now covers
+    // every eligible question in the window rather than a bounded sample of it
+    // (spec 956 FR-003).
     const aggregateRows = await buildAudiencePulseAggregateQuery(this.db, input)
       .execute() as AudiencePulseAggregateRow[];
     const populationSize = Number(aggregateRows[0]?.population_size ?? "0");
@@ -512,34 +406,21 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
       };
     }
 
-    const candidates = await buildAudiencePulseBoundedCandidateQuery(this.db, input)
-      .execute() as AudiencePulseEligibleQuestionMetadataRow[];
-    const selectedMetadata = selectAudiencePulseSample(candidates, input.samplePolicy);
-    const selectedRows = selectedMetadata.length === 0
-      ? []
-      : await buildAudiencePulseSelectedQuestionQuery(this.db, {
-        ...input,
-        messageIds: selectedMetadata.map((row) => row.id),
-      }).execute() as AudiencePulseEligibleQuestionRow[];
-    const selectedById = new Map(selectedRows.map((row) => [row.id, row]));
-    // Preserve the sampler's round-robin order after the database IN query.
-    const selected = boundAudiencePulseQuestionExcerpts(
-      selectedMetadata.flatMap((row) => {
-        const selectedRow = selectedById.get(row.id);
-        return selectedRow ? [selectedRow] : [];
-      }),
-      input.samplePolicy.maxExcerptCharacters,
-    );
+    const rows = await buildAudiencePulseEligibleQuestionContentQuery(this.db, input)
+      .execute() as AudiencePulseEligibleQuestionRow[];
     const answerWindows = await readAudiencePulseAnswerWindows(this.db, {
       workspaceId: input.workspaceId,
       analysisEnd: input.analysisEnd,
-      questions: selected,
+      questions: rows,
     });
 
-    const evidence: AudiencePulseEvidence[] = selected.map((question, index) => {
+    // The message id doubles as the evidence id: the census's own membership is
+    // keyed by message id, so a topic's member ids resolve directly against this
+    // population with no separate translation table.
+    const evidence: AudiencePulseEvidence[] = rows.map((question) => {
       const answer = classifyAudiencePulseAnswerWindow(answerWindows.get(question.id) ?? []);
       return {
-        id: `evidence-${index + 1}`,
+        id: question.id,
         reference: { messageId: question.id, conversationId: question.conversation_id },
         question: question.content,
         weekStart: audiencePulseWeekStartUtc(question.created_at),
@@ -554,7 +435,7 @@ export class PostgresAudiencePulseHistorySource implements AudiencePulseHistoryS
       coverage: {
         populationSize,
         sampleSize: evidence.length,
-        sampled: evidence.length < populationSize,
+        sampled: false,
       },
       weeklyVolume,
       evidence,

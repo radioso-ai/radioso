@@ -139,6 +139,11 @@ const envSchema = z.object({
   DOCUMENT_PROCESSING_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWL_JOB_LEASE_MS: z.coerce.number().int().positive().default(900_000),
   WEBSITE_CRAWL_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  // Per-message facet extraction is batch analytics drained by a polling claim loop:
+  // nothing user-facing waits on it, so the poll interval can be generous.
+  FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS: z.coerce.number().int().positive().default(5_000),
+  FACET_EXTRACTION_WORKER_BATCH_SIZE: z.coerce.number().int().positive().max(500).default(10),
+  FACET_EXTRACTION_JOB_LEASE_MS: z.coerce.number().int().positive().default(300_000),
   WEBSITE_CRAWLER_ENABLED: booleanish(true),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   GOOGLE_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),

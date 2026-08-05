@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-03
+last_updated: 2026-08-05
 ---
 
 # Code Map
@@ -676,16 +676,24 @@ Related docs:
 Owns the saved 30-day dashboard analysis that groups recurring conversation
 topics, identifies recurring content gaps from grounding evidence, proposes
 content to write, and opens bounded evidence or a seeded document draft in the
-existing dashboard surfaces.
+existing dashboard surfaces. It also owns the topic census: an exact
+clustering of every eligible visitor question in an analysis window into
+topics, with topic identity (survived, split, merged, emerged, dissolved)
+tracked across analyses so growth and decline are attributable rather than
+guessed. See [Topic Census](./topic-census.md) for the full pipeline.
 
-Should not affect chat or retrieval behavior, write Knowledge Base content, or
-expose a new external MCP tool. It reads history through a narrow port, stores a
-snapshot in Postgres, and hands off only the evidence or draft seed that the
-existing activity and document views need.
+Should not affect chat or retrieval behavior, write Knowledge Base content,
+expose a new external MCP tool, or restate the eligibility and facet-storage
+rules the Chat and Facet Extraction Jobs modules already own. It reads
+history and facets through narrow ports, clusters and names topics with
+`@radioso/census` and the workspace's model tiers, and stores a snapshot and
+census runs in Postgres.
 
 Public surfaces and contracts:
 
 - `backend/src/modules/audiencePulse/contracts.ts`
+- `backend/src/modules/audiencePulse/contracts/topicCensus.ts` (`TopicRepositoryPort` and the run/topic/membership/transition input shapes)
+- `backend/src/modules/audiencePulse/contracts/topicLabel.ts` (`TopicNamingPort`, `TopicLabelPrivacyAuditPort`)
 - `backend/src/modules/audiencePulse/composition.ts`
 - `backend/src/modules/audiencePulse/routes.ts` (`GET|POST /api/v1/quality/audience-pulse` and `POST /api/v1/quality/audience-pulse/evidence-anchor`)
 - `frontend/components/dashboard/audience-pulse-view.tsx`
@@ -695,15 +703,20 @@ Public surfaces and contracts:
 Primary internals:
 
 - `backend/src/modules/audiencePulse/services/audiencePulseService.ts`
+- `backend/src/modules/audiencePulse/services/censusService.ts` (orchestrates one census run: population, facets, clustering, naming, identity matching, persistence)
+- `backend/src/modules/audiencePulse/infra/censusServiceFactory.ts`, `modelTopicNamingGateway.ts`, `modelTopicLabelPrivacyAuditGateway.ts`
+- `backend/src/modules/audiencePulse/services/topicLabelPrivacyAudit.ts` (regenerate-once-then-neutral-fallback privacy pass over a generated label)
+- `backend/src/modules/audiencePulse/domain/censusSeed.ts`, `topicVector.ts`
 - `backend/src/modules/audiencePulse/infra/audiencePulseRefreshRateLimiter.ts`
 - `backend/src/modules/chat/audiencePulseHistorySource.ts`
 - `backend/src/db/repositories/audiencePulseSnapshotRepository.ts`
-- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`
-- `backend/prompts/audience-pulse.md`
+- `backend/src/db/repositories/topicRepository.ts` (`topics`, `topic_census_runs`, `topic_memberships`, `topic_transitions`)
+- `backend/src/db/migrations/135_audience_pulse_snapshots.sql`, `137_topic_census.sql`, `138_topic_transition_centroid_fallback.sql`
+- `backend/prompts/audience-pulse.md`, `audience-pulse-topic-naming.md`, `audience-pulse-topic-fallback.md`, `audience-pulse-topic-audit.md`
 
 Useful searches:
 
-- `rg "AudiencePulse|audiencePulse|audience-pulse" backend/src frontend backend/tests`
+- `rg "AudiencePulse|audiencePulse|audience-pulse|TopicCensus|topic_census" backend/src frontend backend/tests`
 
 Focused checks:
 
@@ -713,6 +726,89 @@ Focused checks:
 Related specs:
 
 - `specs/939-continuous-content-planning/`
+- `specs/956-audience-topic-census/`
+
+## Facet Extraction Jobs
+
+Owns the async job spine that turns individual messages into stored facets for
+the topic census: one durable job per message, a polling claim loop in the
+worker process, the retry policy around it, and the `message_facets` store the
+census reads from.
+
+Facet extraction is batch analytics — no turn, request, or user-visible surface
+waits on it — so the poll loop is the whole transport and there is no queue
+dispatcher. The spine knows nothing about what a facet is: extraction arrives as
+an injected port, registered through application composition. With no extractor
+registered the worker is not built, so queued jobs stay durable rather than
+being drained into a no-op. Eligibility for a job is decided once, at enqueue
+time, by `isEligibleForFacetExtraction` in the Chat module
+(`chatSessionPreparer.ts`) — the same predicate Audience Pulse reads history
+with, restated as a write-time check rather than duplicated.
+
+Public surfaces and contracts:
+
+- `backend/src/modules/facets/contracts.ts` (`FacetExtractionPort`, `FacetExtractionJobStore`, `MessageFacetRepositoryPort`)
+- `backend/src/modules/facets/composition.ts` (`createFacetExtractionWorker`)
+- `registerFacetExtraction` on the application module registration context
+
+Primary internals:
+
+- `backend/src/modules/facets/services/facetExtractionWorker.ts`
+- `backend/src/modules/facets/services/facetExtractionService.ts` (extraction on the `"rewrite"` model tier plus embedding through `ClusteringEmbeddingPort`)
+- `backend/src/db/repositories/facetExtractionJobRepository.ts` (`facet_extraction_jobs`)
+- `backend/src/db/repositories/messageFacetRepository.ts` (`message_facets`)
+- `backend/src/db/migrations/137_topic_census.sql` (`facet_extraction_jobs`, `message_facets`)
+- `backend/src/runtime/startWorkerRuntime.ts` (start/stop registration)
+- `backend/scripts/dev/backfillFacetExtractionJobs.ts` (dev tool: enqueue jobs for eligible messages that predate this feature)
+
+Operator configuration:
+
+- `FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS`, `FACET_EXTRACTION_WORKER_BATCH_SIZE`,
+  `FACET_EXTRACTION_JOB_LEASE_MS`
+
+Useful searches:
+
+- `rg "FacetExtraction|facet_extraction|message_facets" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/facets`
+- `cd backend && INTEGRATION_DATABASE_URL=... pnpm exec vitest run tests/integration/facets --no-file-parallelism`
+
+Related specs:
+
+- `specs/956-audience-topic-census/`
+
+## Topic Census Clustering (`@radioso/census`)
+
+Owns the pure clustering algorithms the topic census runs on: seeded k-means
+over normalized vectors with a two-level base/topic hierarchy, and identity
+matching that classifies each new cluster against the prior run's topics as
+survived, split, merged, emerged, or dissolved.
+
+Should not read a database, call a network, embed text, or name a cluster. It
+takes `(id, text, vector)` items and prior topic memberships in, and returns
+clusters, unclassified ids, and transitions out; embedding and naming are
+always the caller's job (`backend/src/modules/audiencePulse`).
+
+Public surfaces and contracts:
+
+- `packages/census/src/index.ts` (`computeCensus`, `matchTopicIdentities`, `DEFAULT_CENSUS_OPTIONS`, `DEFAULT_TOPIC_IDENTITY_OPTIONS`)
+
+Useful searches:
+
+- `rg "computeCensus|matchTopicIdentities|CensusCluster|TopicTransition" packages/census backend/src`
+- `rg "@radioso/census" .`
+
+Focused checks:
+
+- `pnpm --filter @radioso/census run typecheck`
+- `pnpm --filter @radioso/census run test`
+
+Related docs and specs:
+
+- `docs/architecture/topic-census.md`
+- `specs/956-audience-topic-census/`
 
 ## Product Eval Cases And Runs
 

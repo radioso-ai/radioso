@@ -44,10 +44,13 @@ interface ContextualGatewayDependencies {
 const requireWorkspaceContext = (input: { workspaceContext?: LlmCapabilityResolveInput }): LlmCapabilityResolveInput | undefined =>
   input.workspaceContext;
 
+/** Capabilities that resolve to a {@link TextGenerationClient}; excludes `embeddings`. */
+type TextGenerationCapability = "chat" | "rewrite" | "rerank";
+
 const resolveClient = async (
   cache: TextGenerationClientCache,
   resolver: LlmCapabilityResolver,
-  capability: "chat" | "rewrite" | "rerank",
+  capability: TextGenerationCapability,
   context: LlmCapabilityResolveInput,
 ): Promise<TextGenerationClient> => {
   const config = await resolver.resolve(capability, context);
@@ -69,8 +72,9 @@ export interface DirectiveMatchGatewayFactory {
 
 /**
  * Generic workspace-scoped structured inference seam. The caller supplies the model
- * usage attribution; this factory only resolves the cached chat capability and binds
- * that attribution to every execution. It intentionally knows no product operation.
+ * usage attribution; this factory only resolves the cached capability for its
+ * configured tier and binds that attribution to every execution. It intentionally
+ * knows no product operation.
  */
 export interface ContextualInferenceFactory {
   create(input: {
@@ -79,12 +83,20 @@ export interface ContextualInferenceFactory {
   }): Promise<ModelInferencePipeline>;
 }
 
+/**
+ * Resolves the workspace client for a single text-generation capability and binds
+ * per-call usage attribution. Defaults to the `chat` (answer-tier) capability so
+ * existing callers are unaffected; pass `"rewrite"` for high-volume, cheap-tier
+ * structured extraction that does not need answer-tier quality — see
+ * {@link createRewriteTierStructuredInferenceFactory}.
+ */
 export class ContextualStructuredInferenceFactory implements ContextualInferenceFactory {
   private readonly cache: TextGenerationClientCache;
 
   constructor(
     private readonly deps: ContextualGatewayDependencies,
     private readonly usageEventRecorder?: UsageEventRecorder,
+    private readonly capability: TextGenerationCapability = "chat",
   ) {
     this.cache = deps.clientCache ?? new TextGenerationClientCache();
   }
@@ -93,7 +105,7 @@ export class ContextualStructuredInferenceFactory implements ContextualInference
     workspaceContext: LlmCapabilityResolveInput;
     modelCallContext: ModelCallUsageContext;
   }): Promise<ModelInferencePipeline> {
-    const client = await resolveClient(this.cache, this.deps.resolver, "chat", input.workspaceContext);
+    const client = await resolveClient(this.cache, this.deps.resolver, this.capability, input.workspaceContext);
     const inference = toInferencePipeline(client, this.usageEventRecorder);
     return {
       metadata: inference.metadata,
@@ -106,6 +118,18 @@ export class ContextualStructuredInferenceFactory implements ContextualInference
     };
   }
 }
+
+/**
+ * Cheap-tier construction path for {@link ContextualStructuredInferenceFactory}:
+ * resolves the `rewrite` capability (the same classifier tier the turn router
+ * uses) instead of `chat`. Intended for high-volume, per-message structured
+ * extraction jobs where answer-tier cost is not justified. Usage is recorded
+ * through the same `usageEventRecorder` path as the chat-tier factory.
+ */
+export const createRewriteTierStructuredInferenceFactory = (
+  deps: ContextualGatewayDependencies,
+  usageEventRecorder?: UsageEventRecorder,
+): ContextualInferenceFactory => new ContextualStructuredInferenceFactory(deps, usageEventRecorder, "rewrite");
 
 /**
  * Resolves the workspace chat-tier model for the fused turn-planning call and

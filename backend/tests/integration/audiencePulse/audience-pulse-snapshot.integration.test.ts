@@ -6,17 +6,13 @@ import { AudiencePulseSnapshotRepository } from "../../../src/db/repositories/au
 import {
   PostgresAudiencePulseHistorySource,
   buildAudiencePulseAggregateQuery,
-  buildAudiencePulseBoundedCandidateQuery,
-  buildAudiencePulseSelectedQuestionQuery,
+  buildAudiencePulseEligibleQuestionContentQuery,
 } from "../../../src/modules/chat/audiencePulseHistorySource.js";
 import type {
   AudiencePulseHistorySource,
   AudiencePulsePromptEvidenceReference,
 } from "../../../src/modules/audiencePulse/contracts.js";
-import {
-  AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS,
-  DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
-} from "../../../src/modules/audiencePulse/contracts.js";
+import { AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS } from "../../../src/modules/audiencePulse/contracts.js";
 import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePulse/domain/report.js";
 import {
   AudiencePulseService,
@@ -35,13 +31,14 @@ const period = {
 const report = (summary: string): AudiencePulseStoredReport => ({
   period: { start: period.start.toISOString(), end: period.end.toISOString() },
   generatedAt: "2026-08-01T00:00:00.000Z",
-  coverage: { populationSize: 2, sampleSize: 2, sampled: false },
+  coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
   weeklyVolume: [{
     weekStart: "2026-06-29T00:00:00.000Z",
     visitorQuestionCount: 2,
     conversationCount: 2,
   }],
   summary,
+  unclassifiedQuestionCount: 0,
   themes: [],
   contentGaps: [],
   recommendations: [],
@@ -50,12 +47,14 @@ const report = (summary: string): AudiencePulseStoredReport => ({
 
 const reportWithEvidence = (summary: string, evidenceId: string): AudiencePulseStoredReport => ({
   ...report(summary),
+  unclassifiedQuestionCount: 1,
   themes: [{
     id: "theme-1",
     title: "Theme",
     description: "Evidence-backed discussion theme.",
     evidenceIds: [evidenceId],
-    sampleCount: 1,
+    memberCount: 1,
+    share: 0.5,
     weeklyPulse: [],
     grounding: { grounded: 0, degraded: 0, noSupport: 0, unknown: 1, contentGapEligible: 0 },
   }],
@@ -76,6 +75,7 @@ const unreachableReadDependencies = (input: {
   runGate: { async tryAcquire() { throw new Error("read does not acquire a refresh lease"); } },
   refreshRateLimit: { async enforce() { throw new Error("read does not enforce a refresh rate limit"); } },
   inferenceFactory: { async create() { throw new Error("read does not create inference"); } },
+  censusServiceFactory: { create() { throw new Error("read does not build a census service"); } },
   usageLimitPolicy: {
     async reserveAnswer() { throw new Error("read does not reserve usage"); },
     async reserveDocument() { throw new Error("not used"); },
@@ -142,26 +142,14 @@ describeIntegration("Audience Pulse snapshot persistence", () => {
     });
   });
 
-  it("keeps aggregate and candidate reads metadata-only and fetches capped text only for selected ids", () => {
+  it("keeps aggregate reads metadata-only and caps per-item content on the full eligible read", () => {
     const analysisInput = { workspaceId, analysisStart: period.start, analysisEnd: period.end };
-    const selectedIds = Array.from({ length: 80 }, () => randomUUID());
 
     const aggregateSql = buildAudiencePulseAggregateQuery(database.kysely, analysisInput).compile().sql;
-    const candidateSql = buildAudiencePulseBoundedCandidateQuery(database.kysely, {
-      ...analysisInput,
-      samplePolicy: DEFAULT_AUDIENCE_PULSE_SAMPLE_POLICY,
-    }).compile().sql;
-    const selectedSql = buildAudiencePulseSelectedQuestionQuery(database.kysely, {
-      ...analysisInput,
-      messageIds: selectedIds,
-    }).compile().sql;
+    const contentSql = buildAudiencePulseEligibleQuestionContentQuery(database.kysely, analysisInput).compile().sql;
 
     expect(aggregateSql).not.toContain("content");
-    expect(candidateSql).not.toContain("content");
-    expect(candidateSql).toMatch(/limit \$\d+/i);
-    expect(selectedSql).toContain("left(m.content");
-    expect(selectedSql).toContain(" in ");
-    expect(selectedSql.match(/\$/g)?.length).toBeGreaterThanOrEqual(selectedIds.length);
+    expect(contentSql).toContain("left(m.content");
   });
 
   it("re-reads a replacement after a stale read loses its revision-conditional delete", async () => {
@@ -180,6 +168,7 @@ describeIntegration("Audience Pulse snapshot persistence", () => {
     let replacementRevision: string | null = null;
     const historySource: AudiencePulseHistorySource = {
       async read() { throw new Error("not used by saved reads"); },
+      async listEligibleQuestionIds() { throw new Error("not used by saved reads"); },
       async rehydrate(input) {
         if (input.references[0]?.evidenceId === "old-evidence") {
           const replacement = await repository.replace({

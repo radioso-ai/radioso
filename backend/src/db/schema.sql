@@ -1619,6 +1619,25 @@ CREATE TABLE public.eval_snapshots (
 
 
 --
+-- Name: facet_extraction_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.facet_extraction_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    message_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    status text NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    claimed_at timestamp with time zone,
+    scheduled_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT facet_extraction_jobs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'processing'::text, 'completed'::text, 'failed'::text, 'skipped'::text])))
+);
+
+
+--
 -- Name: ingestion_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1704,6 +1723,24 @@ CREATE TABLE public.mcp_connections (
     oauth_flow_ciphertext text,
     CONSTRAINT mcp_connections_auth_method_check CHECK ((auth_method = ANY (ARRAY['access_token'::text, 'oauth'::text]))),
     CONSTRAINT mcp_connections_status_check CHECK ((status = ANY (ARRAY['unconfigured'::text, 'authorized'::text, 'needs_reauth'::text, 'error'::text])))
+);
+
+
+--
+-- Name: message_facets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.message_facets (
+    message_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    facet_text text NOT NULL,
+    embedding public.vector,
+    dimensions integer,
+    prompt_version text NOT NULL,
+    embedding_profile_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT message_facets_check CHECK (((embedding IS NULL) OR (public.vector_dims(embedding) = dimensions)))
 );
 
 
@@ -2065,6 +2102,74 @@ CREATE TABLE public.slack_installations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     account_id uuid NOT NULL
+);
+
+
+--
+-- Name: topic_census_runs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.topic_census_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    window_start timestamp with time zone NOT NULL,
+    window_end timestamp with time zone NOT NULL,
+    question_count integer NOT NULL,
+    unclassified_count integer DEFAULT 0 NOT NULL,
+    seed text NOT NULL,
+    params_json jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: topic_memberships; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.topic_memberships (
+    workspace_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    message_id uuid NOT NULL,
+    distance double precision NOT NULL
+);
+
+
+--
+-- Name: topic_transitions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.topic_transitions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    run_id uuid NOT NULL,
+    topic_id uuid NOT NULL,
+    kind text NOT NULL,
+    parent_topic_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    via_centroid_fallback boolean DEFAULT false NOT NULL,
+    CONSTRAINT topic_transitions_kind_check CHECK ((kind = ANY (ARRAY['survived'::text, 'split'::text, 'merged'::text, 'emerged'::text, 'dissolved'::text])))
+);
+
+
+--
+-- Name: topics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.topics (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    centroid public.vector NOT NULL,
+    dimensions integer NOT NULL,
+    radius double precision NOT NULL,
+    title text NOT NULL,
+    description text NOT NULL,
+    created_run_id uuid NOT NULL,
+    last_seen_run_id uuid NOT NULL,
+    dissolved_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT topics_check CHECK ((public.vector_dims(centroid) = dimensions))
 );
 
 
@@ -3213,6 +3318,22 @@ ALTER TABLE ONLY public.eval_snapshots
 
 
 --
+-- Name: facet_extraction_jobs facet_extraction_jobs_message_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facet_extraction_jobs
+    ADD CONSTRAINT facet_extraction_jobs_message_id_key UNIQUE (message_id);
+
+
+--
+-- Name: facet_extraction_jobs facet_extraction_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facet_extraction_jobs
+    ADD CONSTRAINT facet_extraction_jobs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: ingestion_settings ingestion_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3242,6 +3363,14 @@ ALTER TABLE ONLY public.integration_oauth_connections
 
 ALTER TABLE ONLY public.mcp_connections
     ADD CONSTRAINT mcp_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: message_facets message_facets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.message_facets
+    ADD CONSTRAINT message_facets_pkey PRIMARY KEY (message_id);
 
 
 --
@@ -3458,6 +3587,54 @@ ALTER TABLE ONLY public.slack_installations
 
 ALTER TABLE ONLY public.slack_installations
     ADD CONSTRAINT slack_installations_team_id_key UNIQUE (team_id);
+
+
+--
+-- Name: topic_census_runs topic_census_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_census_runs
+    ADD CONSTRAINT topic_census_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: topic_census_runs topic_census_runs_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_census_runs
+    ADD CONSTRAINT topic_census_runs_workspace_id_id_key UNIQUE (workspace_id, id);
+
+
+--
+-- Name: topic_memberships topic_memberships_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_pkey PRIMARY KEY (run_id, message_id);
+
+
+--
+-- Name: topic_transitions topic_transitions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: topics topics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: topics topics_workspace_id_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_workspace_id_id_key UNIQUE (workspace_id, id);
 
 
 --
@@ -4749,6 +4926,13 @@ CREATE INDEX idx_eval_snapshots_workspace_captured_at ON public.eval_snapshots U
 
 
 --
+-- Name: idx_facet_extraction_jobs_claim; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_facet_extraction_jobs_claim ON public.facet_extraction_jobs USING btree (status, scheduled_at);
+
+
+--
 -- Name: idx_integration_connections_account; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4795,6 +4979,13 @@ CREATE INDEX idx_integration_oauth_connections_workspace_provider ON public.inte
 --
 
 CREATE INDEX idx_mcp_connections_agent ON public.mcp_connections USING btree (agent_id);
+
+
+--
+-- Name: idx_message_facets_workspace_prompt_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_message_facets_workspace_prompt_version ON public.message_facets USING btree (workspace_id, prompt_version);
 
 
 --
@@ -4942,6 +5133,34 @@ CREATE INDEX idx_slack_installations_connection ON public.slack_installations US
 --
 
 CREATE INDEX idx_slack_installations_workspace ON public.slack_installations USING btree (workspace_id);
+
+
+--
+-- Name: idx_topic_census_runs_workspace_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_topic_census_runs_workspace_created ON public.topic_census_runs USING btree (workspace_id, created_at DESC);
+
+
+--
+-- Name: idx_topic_memberships_run_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_topic_memberships_run_topic ON public.topic_memberships USING btree (run_id, topic_id);
+
+
+--
+-- Name: idx_topic_transitions_run; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_topic_transitions_run ON public.topic_transitions USING btree (run_id);
+
+
+--
+-- Name: idx_topics_workspace_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_topics_workspace_active ON public.topics USING btree (workspace_id) WHERE (dissolved_at IS NULL);
 
 
 --
@@ -6611,6 +6830,30 @@ ALTER TABLE ONLY public.eval_snapshots
 
 
 --
+-- Name: facet_extraction_jobs facet_extraction_jobs_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facet_extraction_jobs
+    ADD CONSTRAINT facet_extraction_jobs_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: facet_extraction_jobs facet_extraction_jobs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facet_extraction_jobs
+    ADD CONSTRAINT facet_extraction_jobs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: facet_extraction_jobs facet_extraction_jobs_workspace_id_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.facet_extraction_jobs
+    ADD CONSTRAINT facet_extraction_jobs_workspace_id_message_id_fkey FOREIGN KEY (workspace_id, message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
 -- Name: ingestion_settings ingestion_settings_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6656,6 +6899,38 @@ ALTER TABLE ONLY public.integration_oauth_connections
 
 ALTER TABLE ONLY public.mcp_connections
     ADD CONSTRAINT mcp_connections_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: message_facets message_facets_embedding_profile_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.message_facets
+    ADD CONSTRAINT message_facets_embedding_profile_id_fkey FOREIGN KEY (embedding_profile_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: message_facets message_facets_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.message_facets
+    ADD CONSTRAINT message_facets_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: message_facets message_facets_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.message_facets
+    ADD CONSTRAINT message_facets_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: message_facets message_facets_workspace_id_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.message_facets
+    ADD CONSTRAINT message_facets_workspace_id_message_id_fkey FOREIGN KEY (workspace_id, message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
 
 
 --
@@ -6840,6 +7115,150 @@ ALTER TABLE ONLY public.slack_installations
 
 ALTER TABLE ONLY public.slack_installations
     ADD CONSTRAINT slack_installations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_census_runs topic_census_runs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_census_runs
+    ADD CONSTRAINT topic_census_runs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.topic_census_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_topic_id_fkey FOREIGN KEY (topic_id) REFERENCES public.topics(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_workspace_id_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_workspace_id_message_id_fkey FOREIGN KEY (workspace_id, message_id) REFERENCES public.messages(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_workspace_id_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_workspace_id_run_id_fkey FOREIGN KEY (workspace_id, run_id) REFERENCES public.topic_census_runs(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_memberships topic_memberships_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_memberships
+    ADD CONSTRAINT topic_memberships_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_transitions topic_transitions_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.topic_census_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_transitions topic_transitions_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_topic_id_fkey FOREIGN KEY (topic_id) REFERENCES public.topics(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_transitions topic_transitions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_transitions topic_transitions_workspace_id_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_workspace_id_run_id_fkey FOREIGN KEY (workspace_id, run_id) REFERENCES public.topic_census_runs(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: topic_transitions topic_transitions_workspace_id_topic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_transitions
+    ADD CONSTRAINT topic_transitions_workspace_id_topic_id_fkey FOREIGN KEY (workspace_id, topic_id) REFERENCES public.topics(workspace_id, id) ON DELETE CASCADE;
+
+
+--
+-- Name: topics topics_created_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_created_run_id_fkey FOREIGN KEY (created_run_id) REFERENCES public.topic_census_runs(id);
+
+
+--
+-- Name: topics topics_workspace_id_created_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_workspace_id_created_run_id_fkey FOREIGN KEY (workspace_id, created_run_id) REFERENCES public.topic_census_runs(workspace_id, id);
+
+
+--
+-- Name: topics topics_workspace_id_last_seen_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_workspace_id_last_seen_run_id_fkey FOREIGN KEY (workspace_id, last_seen_run_id) REFERENCES public.topic_census_runs(workspace_id, id);
+
+
+--
+-- Name: topics topics_last_seen_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_last_seen_run_id_fkey FOREIGN KEY (last_seen_run_id) REFERENCES public.topic_census_runs(id);
+
+
+--
+-- Name: topics topics_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

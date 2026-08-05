@@ -19,6 +19,8 @@ import {
   ContextualDirectiveMatchGatewayFactory,
   ContextualQueryRewriteGateway,
   ContextualRerankGateway,
+  ContextualStructuredInferenceFactory,
+  createRewriteTierStructuredInferenceFactory,
 } from "../../src/shared/infra/llm/contextualGateways.js";
 import { TextGenerationClientCache } from "../../src/shared/infra/llm/textClientFactory.js";
 import type { ChatGateway } from "../../src/modules/chat/services/chatService.js";
@@ -161,6 +163,105 @@ describe("ContextualQueryRewriteGateway", () => {
     await gateway.rewrite({ query: "q", contextMessages: [], usageContext });
 
     expect(fallback.calls).toBe(1);
+  });
+});
+
+describe("ContextualStructuredInferenceFactory", () => {
+  const config: LlmCapabilityConfig = {
+    capability: "chat",
+    provider: "openai",
+    model: "gpt-test",
+    apiKey: "ws-key-1",
+  };
+
+  // Tracks which capability each factory actually asked the resolver for,
+  // independent of what config the stub resolver happens to return.
+  const buildCapabilityTrackingResolver = (): {
+    resolver: LlmCapabilityResolver;
+    capabilities: LlmCapabilityName[];
+  } => {
+    const capabilities: LlmCapabilityName[] = [];
+    return {
+      capabilities,
+      resolver: {
+        async resolve(capability) {
+          capabilities.push(capability);
+          return config;
+        },
+      },
+    };
+  };
+
+  const stubClientCache = (): TextGenerationClientCache => {
+    const cache = new TextGenerationClientCache();
+    cache.getOrCreate = ((cfg) => ({
+      metadata: { capability: cfg.capability, provider: cfg.provider, model: cfg.model },
+      async complete() {
+        return textResult("ok", {
+          inputTokens: 5,
+          outputTokens: 2,
+          totalTokens: 7,
+          quality: "actual",
+        });
+      },
+      stream() {
+        return streamResult(["ok"]);
+      },
+    })) as TextGenerationClientCache["getOrCreate"];
+    return cache;
+  };
+
+  it("resolves the chat capability by default", async () => {
+    const { resolver, capabilities } = buildCapabilityTrackingResolver();
+    const factory = new ContextualStructuredInferenceFactory({ resolver, clientCache: stubClientCache() });
+
+    await factory.create({
+      workspaceContext: { workspaceId: "ws-1" },
+      modelCallContext: usageContext,
+    });
+
+    expect(capabilities).toEqual(["chat"]);
+  });
+
+  it("resolves the rewrite (cheap-tier) capability via createRewriteTierStructuredInferenceFactory", async () => {
+    const { resolver, capabilities } = buildCapabilityTrackingResolver();
+    const factory = createRewriteTierStructuredInferenceFactory({ resolver, clientCache: stubClientCache() });
+
+    await factory.create({
+      workspaceContext: { workspaceId: "ws-1" },
+      modelCallContext: usageContext,
+    });
+
+    expect(capabilities).toEqual(["rewrite"]);
+  });
+
+  it("records usage events through the cheap-tier factory the same way as the default factory", async () => {
+    const usageEvents: ModelUsageEvent[] = [];
+    const recorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) {
+        usageEvents.push(event);
+      },
+    };
+    const { resolver } = buildCapabilityTrackingResolver();
+    const factory = createRewriteTierStructuredInferenceFactory({ resolver, clientCache: stubClientCache() }, recorder);
+
+    const pipeline = await factory.create({
+      workspaceContext: { workspaceId: "ws-1" },
+      modelCallContext: usageContext,
+    });
+    await pipeline.complete({ prompt: "p", operation: usageContext });
+
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      workspaceId: "ws-1",
+      surface: "test",
+      operation: "test_operation",
+      inputTokens: 5,
+      outputTokens: 2,
+      totalTokens: 7,
+      status: "succeeded",
+    });
   });
 });
 

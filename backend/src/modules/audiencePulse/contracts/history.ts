@@ -10,13 +10,6 @@ import type {
 /** Maximum source text exposed in either a refresh or saved-report response. */
 export const AUDIENCE_PULSE_EVIDENCE_EXCERPT_MAX_CHARACTERS = 1_200;
 
-export interface AudiencePulseSamplePolicy {
-  maxQuestions: number;
-  maxConversations: number;
-  maxQuestionsPerConversation: number;
-  maxExcerptCharacters: number;
-}
-
 export interface AudiencePulseHistorySnapshot {
   period: { start: Date; end: Date };
   coverage: AudiencePulseCoverage;
@@ -56,12 +49,30 @@ export interface AudiencePulseEvidenceAnchor {
 
 /** Chat owns eligibility, answer pairing, and reauthorization behind this read port. */
 export interface AudiencePulseHistorySource {
+  /**
+   * Every eligible question in the window (spec 956 FR-003): no sample policy, no
+   * cap. `evidence.length` always equals `coverage.populationSize`, and
+   * `coverage.sampled` is always `false` -- the census clusters the full window, not
+   * a sample of it.
+   */
   read(input: {
     workspaceId: string;
     analysisStart: Date;
     analysisEnd: Date;
-    samplePolicy: AudiencePulseSamplePolicy;
   }): Promise<AudiencePulseHistorySnapshot>;
+  /**
+   * Every eligible question id in the window. Applies the same eligibility rule
+   * `read()` uses (visitor-role, customer/null source, excluding operator test
+   * channels) but returns ids only, no content or grounding classification -- the
+   * topic census (`censusService.ts`) reads this directly rather than through
+   * `read()`'s heavier evidence hydration. `messageIds.length` is the exact,
+   * SQL-computed population count — the denominator the dashboard shows.
+   */
+  listEligibleQuestionIds(input: {
+    workspaceId: string;
+    analysisStart: Date;
+    analysisEnd: Date;
+  }): Promise<string[]>;
   rehydrate(input: {
     workspaceId: string;
     references: AudiencePulsePromptEvidenceReference[];

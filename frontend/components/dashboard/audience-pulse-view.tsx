@@ -53,6 +53,7 @@ type RefreshState =
   | { kind: 'error'; message: string }
 
 const numberFormat = new Intl.NumberFormat()
+const percentFormat = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 })
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' })
 const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
 
@@ -441,7 +442,13 @@ function ReportContent({
     return map
   }, [report.contentGaps])
 
-  const { sampled, sampleSize, populationSize } = report.coverage
+  const { sampled, sampleSize, populationSize, facetReadyQuestionCount } = report.coverage
+  const unclassifiedDenominator = sampled ? sampleSize : populationSize
+  // Nothing in this window has been prepared for topic analysis yet — historical questions
+  // that predate extraction, or a backfill still draining. Saying "no recurring themes"
+  // here would describe the audience when the truth is that nothing has been computed.
+  const awaitingTopicAnalysis = populationSize > 0 && facetReadyQuestionCount === 0
+  const partiallyAnalysed = !sampled && facetReadyQuestionCount > 0 && facetReadyQuestionCount < populationSize
 
   return (
     <div className="flex flex-col gap-4">
@@ -457,19 +464,39 @@ function ReportContent({
             Saved {formatDateTime(report.generatedAt)}.{' '}
             {sampled
               ? `Read ${numberFormat.format(sampleSize)} of ${numberFormat.format(populationSize)} questions.`
-              : `Read ${numberFormat.format(populationSize)} questions.`}
+              : `Read all ${numberFormat.format(populationSize)} questions.`}
           </p>
-          <p className="text-sm text-muted-foreground">{report.summary}</p>
+          {awaitingTopicAnalysis ? (
+            <p className="text-sm text-muted-foreground">
+              Topic analysis is still being prepared for this period. The question counts above
+              are final; topics appear once these questions have been processed.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">{report.summary}</p>
+          )}
         </CardContent>
       </Card>
 
-      {report.unclassifiedQuestionCount > report.coverage.sampleSize / 2 ? (
+      {partiallyAnalysed ? (
+        <div className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <p>
+            {numberFormat.format(facetReadyQuestionCount)} of{' '}
+            {numberFormat.format(populationSize)} questions have been processed so far, so
+            topics below cover part of this period.
+          </p>
+        </div>
+      ) : null}
+
+      {!awaitingTopicAnalysis
+        && !partiallyAnalysed
+        && report.unclassifiedQuestionCount > unclassifiedDenominator / 2 ? (
         <div className="flex items-start gap-3 rounded-md border px-3 py-2 text-sm text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
           <p>
             Most questions weren&apos;t grouped into a topic (
             {numberFormat.format(report.unclassifiedQuestionCount)} of{' '}
-            {numberFormat.format(report.coverage.sampleSize)}).
+            {numberFormat.format(unclassifiedDenominator)}).
           </p>
         </div>
       ) : null}
@@ -547,7 +574,11 @@ function ReportContent({
           Topics
         </h2>
         {report.themes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">The analysis did not identify any recurring themes.</p>
+          <p className="text-sm text-muted-foreground">
+            {awaitingTopicAnalysis
+              ? 'Topics appear here once the questions in this period have been processed.'
+              : 'The analysis did not identify any recurring themes.'}
+          </p>
         ) : (
           <div className="flex flex-col gap-3">
             {report.themes.map((theme) => (
@@ -616,7 +647,9 @@ function ThemeCard({
         <div className="flex items-center justify-between">
           <p className="text-xs text-muted-foreground">
             {numberFormat.format(questionCount)} {questionCount === 1 ? 'question' : 'questions'}
-            {theme.sampleCount > questionCount ? ` · asked ${numberFormat.format(theme.sampleCount)}×` : null}
+            {theme.memberCount > questionCount
+              ? ` · asked ${numberFormat.format(theme.memberCount)}× (${percentFormat.format(theme.share)} of window)`
+              : null}
           </p>
           <button
             type="button"

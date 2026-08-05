@@ -7,6 +7,8 @@ import type {
   AudiencePulseSnapshotRecord,
 } from "../../../src/modules/audiencePulse/contracts.js";
 import type { AudiencePulseStoredReport } from "../../../src/modules/audiencePulse/domain/report.js";
+import type { CensusRunResult, CensusService } from "../../../src/modules/audiencePulse/services/censusService.js";
+import type { CensusServiceFactory } from "../../../src/modules/audiencePulse/infra/censusServiceFactory.js";
 
 const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
 const USER_ID = "33333333-3333-3333-3333-333333333333";
@@ -38,13 +40,25 @@ const history = (): AudiencePulseHistorySnapshot => ({
   ],
 });
 
-const modelResponse = JSON.stringify({
-  summary: "Visitors ask about subscription changes.",
-  themes: [{
+/** Census result matching `history()`: one topic claiming both evidence items, nothing unclassified. */
+const censusResult = (): CensusRunResult => ({
+  runId: "run-1",
+  populationSize: 2,
+  unclassifiedCount: 0,
+  facetReadyQuestionCount: 2,
+  topics: [{
+    topicId: "topic-1",
     title: "Subscription changes",
     description: "Repeated questions about changing a plan.",
-    evidenceIds: ["evidence-1", "evidence-2"],
+    memberIds: ["evidence-1", "evidence-2"],
+    memberCount: 2,
+    share: 1,
   }],
+});
+
+const modelResponse = JSON.stringify({
+  summary: "Visitors ask about subscription changes.",
+  themes: [],
   recommendations: [{
     themeIndex: 0,
     title: "Document subscription changes",
@@ -65,12 +79,15 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
     rate: 0,
     replace: 0,
     invalidate: 0,
+    censusRun: 0,
+    censusWindows: [] as Array<{ windowStart: Date; windowEnd: Date }>,
     lifecycle: [] as string[],
     auditEvents: [] as Array<{ eventType: string; eventStatus: string; metadata?: Record<string, unknown> }>,
   };
   const dependencies: AudiencePulseServiceDependencies = {
     historySource: {
       async read() { return history(); },
+      async listEligibleQuestionIds() { return []; },
       async rehydrate(input) {
         return new Map(input.references.map((reference) => [reference.evidenceId, {
           evidenceId: reference.evidenceId,
@@ -107,9 +124,23 @@ const createService = (overrides: Partial<AudiencePulseServiceDependencies> = {}
         };
       },
     },
+    censusServiceFactory: {
+      // `CensusService` is a class with private state a test double cannot satisfy
+      // structurally; this fake only ever needs to honor `run()`, the one method
+      // `refresh()` calls, so it stands in for the whole class through `unknown`.
+      create: () => ({
+        run: async (input: { workspaceId: string; windowStart: Date; windowEnd: Date; signal?: AbortSignal }) => {
+          calls.censusRun += 1;
+          calls.lifecycle.push("census");
+          calls.censusWindows.push({ windowStart: input.windowStart, windowEnd: input.windowEnd });
+          return censusResult();
+        },
+      } as unknown as CensusService),
+    } satisfies CensusServiceFactory,
     usageLimitPolicy: {
       async reserveAnswer() {
         calls.reserve += 1;
+        calls.lifecycle.push("reserve");
         return {
           async commit() {
             calls.commit += 1;
@@ -139,15 +170,17 @@ describe("AudiencePulseService", () => {
     const report: AudiencePulseStoredReport = {
       period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
       generatedAt: "2026-08-01T00:00:00.000Z",
-      coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+      coverage: { populationSize: 3, sampleSize: 3, sampled: false, facetReadyQuestionCount: 3 },
       weeklyVolume: [],
       summary: "Summary",
+      unclassifiedQuestionCount: 1,
       themes: [{
         id: "theme-1",
         title: "Plans",
         description: "Visitors ask about plans.",
         evidenceIds: ["evidence-1", "evidence-2"],
-        sampleCount: 2,
+        memberCount: 2,
+        share: 2 / 3,
         weeklyPulse: [],
         grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
       }],
@@ -180,7 +213,8 @@ describe("AudiencePulseService", () => {
     expect(hydrated).toMatchObject({
       unclassifiedQuestionCount: 1,
       themes: [{
-        sampleCount: 2,
+        memberCount: 2,
+        share: 2 / 3,
         distinctQuestionCount: 1,
         evidence: [{
           question: "How do I change my plan?",
@@ -188,6 +222,53 @@ describe("AudiencePulseService", () => {
         }],
       }],
     });
+  });
+
+  it("normalizes legacy saved reports that predate census coverage fields", () => {
+    const legacyReport = {
+      period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
+      generatedAt: "2026-08-01T00:00:00.000Z",
+      coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+      weeklyVolume: [],
+      summary: "Legacy summary",
+      themes: [{
+        id: "theme-1",
+        title: "Plans",
+        description: "Visitors ask about plans.",
+        evidenceIds: ["evidence-1", "evidence-2"],
+        sampleCount: 2,
+        weeklyPulse: [],
+        grounding: { grounded: 0, degraded: 0, noSupport: 2, unknown: 0, contentGapEligible: 2 },
+      }],
+      contentGaps: [],
+      recommendations: [],
+      caveats: [],
+    } as unknown as AudiencePulseStoredReport;
+
+    const hydrated = hydrateReport(legacyReport, new Map([
+      ["evidence-1", {
+        evidenceId: "evidence-1",
+        conversationId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        messageId: "11111111-1111-1111-1111-111111111111",
+        question: "How do I change my plan?",
+      }],
+      ["evidence-2", {
+        evidenceId: "evidence-2",
+        conversationId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        messageId: "22222222-2222-2222-2222-222222222222",
+        question: "Can I upgrade?",
+      }],
+      ["evidence-3", {
+        evidenceId: "evidence-3",
+        conversationId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        messageId: "33333333-3333-3333-3333-333333333333",
+        question: "What does annual include?",
+      }],
+    ]));
+
+    expect(hydrated.coverage.facetReadyQuestionCount).toBe(3);
+    expect(hydrated.unclassifiedQuestionCount).toBe(1);
+    expect(hydrated.themes[0]).toMatchObject({ memberCount: 2, share: 2 / 3 });
   });
 
   it("delegates an evidence anchor to the Chat-owned history port without report or provider work", async () => {
@@ -206,6 +287,7 @@ describe("AudiencePulseService", () => {
     const { service, calls } = createService({
       historySource: {
         async read() { return history(); },
+        async listEligibleQuestionIds() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor(input) {
           historyCalls.push(input);
@@ -236,6 +318,7 @@ describe("AudiencePulseService", () => {
         async read() {
           return { ...history(), coverage: { populationSize: 0, sampleSize: 0, sampled: false }, evidence: [] };
         },
+        async listEligibleQuestionIds() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -264,6 +347,7 @@ describe("AudiencePulseService", () => {
           lifecycle.push("history");
           return history();
         },
+        async listEligibleQuestionIds() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -300,8 +384,183 @@ describe("AudiencePulseService", () => {
     const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
 
     expect(result.kind).toBe("completed");
-    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1 });
-    expect(calls.lifecycle).toEqual(["commit", "snapshot"]);
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, replace: 1, commit: 1, release: 0, rate: 1, leaseRelease: 1, censusRun: 1 });
+    expect(calls.lifecycle).toEqual(["reserve", "census", "commit", "snapshot"]);
+  });
+
+  it("runs the census over the same fixed window as the history read and builds the report from its real membership", async () => {
+    const { service, calls } = createService();
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    expect(calls.censusWindows).toEqual([{
+      windowStart: new Date("2026-07-02T00:00:00.000Z"),
+      windowEnd: new Date("2026-08-01T00:00:00.000Z"),
+    }]);
+    // The invariant the whole feature exists for (spec 956 FR-005): every eligible
+    // question is a member of exactly one topic or unclassified, and the two sum to
+    // the population -- with no sampling code path reachable to bias either number.
+    const classified = result.report.themes.reduce((sum, theme) => sum + theme.memberCount, 0);
+    expect(classified + result.report.unclassifiedQuestionCount).toBe(result.report.coverage.populationSize);
+    expect(result.report.coverage).toEqual({ populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 });
+    expect(result.report.themes).toMatchObject([{
+      title: "Subscription changes",
+      description: "Repeated questions about changing a plan.",
+      memberCount: 2,
+      share: 1,
+    }]);
+  });
+
+  it("rejects a refresh when the census and the history read disagree on the population", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({ ...censusResult(), populationSize: 3 }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toThrow(/census population .* does not match/);
+    expect(calls).toMatchObject({ inference: 0, replace: 0, leaseRelease: 1 });
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_failed",
+      metadata: { outcome: "internal" },
+    });
+  });
+
+  it("builds report membership from the census result", async () => {
+    const { service } = createService();
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .resolves.toMatchObject({ kind: "completed" });
+  });
+
+  it("rejects a refresh when the report's derived unclassified count disagrees with the census", async () => {
+    const { service } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            unclassifiedCount: 1,
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await expect(service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
+      .rejects.toThrow(/unclassified count .* does not match/);
+  });
+
+  it("persists prompt evidence refs only for evidence a topic actually claimed, not the whole population", async () => {
+    let savedRefs: Array<{ evidenceId: string }> | undefined;
+    const captureDeps = createService({
+      historySource: {
+        async read() {
+          const base = history();
+          return {
+            ...base,
+            coverage: { populationSize: 3, sampleSize: 3, sampled: false },
+            evidence: [...base.evidence, {
+              id: "evidence-unclassified",
+              reference: { messageId: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", conversationId: "ffffffff-ffff-ffff-ffff-ffffffffffff" },
+              question: "An unrelated one-off question",
+              weekStart: "2026-06-29T00:00:00.000Z",
+              channel: null,
+              grounding: "unknown",
+              contentGapEligible: false,
+            }],
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({ ...censusResult(), populationSize: 3, unclassifiedCount: 1 }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedRefs = input.promptEvidenceRefs;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    const result = await captureDeps.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    expect(savedRefs?.map((ref) => ref.evidenceId).sort()).toEqual(["evidence-1", "evidence-2"]);
+  });
+
+  it("bounds saved display evidence while preserving exact topic member counts", async () => {
+    const topicEvidence = Array.from({ length: 20 }, (_unused, index) => {
+      const ordinal = index + 1;
+      return {
+        id: `evidence-${ordinal}`,
+        reference: {
+          messageId: `aaaaaaaa-aaaa-aaaa-aaaa-${String(ordinal).padStart(12, "0")}`,
+          conversationId: `bbbbbbbb-bbbb-bbbb-bbbb-${String(ordinal).padStart(12, "0")}`,
+        },
+        question: `Question ${ordinal}`,
+        weekStart: "2026-06-29T00:00:00.000Z",
+        channel: null,
+        grounding: "unknown" as const,
+        contentGapEligible: false,
+      };
+    });
+    let savedRefs: Array<{ evidenceId: string }> | undefined;
+    const { service } = createService({
+      historySource: {
+        async read() {
+          return {
+            ...history(),
+            coverage: { populationSize: topicEvidence.length, sampleSize: topicEvidence.length, sampled: false },
+            evidence: topicEvidence,
+          };
+        },
+        async listEligibleQuestionIds() { return []; },
+        async rehydrate() { return new Map(); },
+        async readEvidenceAnchor() { return null; },
+      },
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            populationSize: topicEvidence.length,
+            facetReadyQuestionCount: topicEvidence.length,
+            topics: [{
+              ...censusResult().topics[0]!,
+              memberIds: topicEvidence.map((item) => item.id),
+              memberCount: topicEvidence.length,
+              share: 1,
+            }],
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+      snapshotStore: {
+        async find() { return null; },
+        async replace(input) {
+          savedRefs = input.promptEvidenceRefs;
+          return { ...input, revision: "revision-1" };
+        },
+        async invalidate() { return true; },
+      },
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    expect(result.report.themes[0]).toMatchObject({ memberCount: 20, share: 1 });
+    expect(result.report.themes[0]!.evidence).toHaveLength(12);
+    expect(savedRefs).toHaveLength(12);
+    expect(savedRefs?.map((ref) => ref.evidenceId)).not.toContain("evidence-20");
   });
 
   it("rethrows persistence and accounting failures after completed model work", async () => {
@@ -356,6 +615,7 @@ describe("AudiencePulseService", () => {
     const historyRead = createService({
       historySource: {
         async read() { throw historyFailure; },
+        async listEligibleQuestionIds() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -444,9 +704,10 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
-        coverage: { populationSize: 2, sampleSize: 2, sampled: false },
+        coverage: { populationSize: 2, sampleSize: 2, sampled: false, facetReadyQuestionCount: 2 },
         weeklyVolume: [],
         summary: "Summary",
+        unclassifiedQuestionCount: 0,
         themes: [],
         contentGaps: [],
         recommendations: [],
@@ -466,6 +727,7 @@ describe("AudiencePulseService", () => {
       },
       historySource: {
         async read() { return history(); },
+        async listEligibleQuestionIds() { return []; },
         async rehydrate() { return new Map(); },
         async readEvidenceAnchor() { return null; },
       },
@@ -485,9 +747,10 @@ describe("AudiencePulseService", () => {
       report: {
         period: { start: "2026-07-01T00:00:00.000Z", end: "2026-07-31T00:00:00.000Z" },
         generatedAt: "2026-08-01T00:00:00.000Z",
-        coverage: { populationSize: 1, sampleSize: 1, sampled: false },
+        coverage: { populationSize: 1, sampleSize: 1, sampled: false, facetReadyQuestionCount: 1 },
         weeklyVolume: [],
         summary: "Saved summary",
+        unclassifiedQuestionCount: 0,
         themes: [],
         contentGaps: [],
         recommendations: [],
@@ -595,11 +858,87 @@ describe("AudiencePulseService", () => {
     });
     await expect(usageLimited.service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID }))
       .resolves.toEqual({ kind: "usage_limited" });
-    expect(usageLimited.calls).toMatchObject({ inference: 0, commit: 0, release: 0, leaseRelease: 1 });
+    expect(usageLimited.calls).toMatchObject({ inference: 0, censusRun: 0, commit: 0, release: 0, leaseRelease: 1 });
     expect(usageLimited.calls.auditEvents.at(-1)).toMatchObject({
       eventType: "audience_pulse.refresh_failed",
       eventStatus: "failure",
       metadata: { outcome: "usage_limited", populationSize: 2, sampleSize: 2 },
     });
+  });
+});
+
+describe("AudiencePulseService facet readiness (spec 956 follow-up)", () => {
+  it("skips the narrative model call and commits no usage when nothing has been computed for the window yet", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            facetReadyQuestionCount: 0,
+            unclassifiedCount: 2,
+            topics: [],
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    // No narrative call ran; the early reservation is released without being committed.
+    expect(calls).toMatchObject({ inference: 0, reserve: 1, commit: 0, release: 1, replace: 1, leaseRelease: 1 });
+    expect(result.report.summary).toBeUndefined();
+    expect(result.report.themes).toEqual([]);
+    expect(result.report.recommendations).toEqual([]);
+    // Every population question is still unclassified, but the report says so
+    // through `coverage.facetReadyQuestionCount`, not by pretending clustering ran.
+    expect(result.report.unclassifiedQuestionCount).toBe(2);
+    expect(result.report.coverage).toEqual({
+      populationSize: 2,
+      sampleSize: 2,
+      sampled: false,
+      facetReadyQuestionCount: 0,
+    });
+  });
+
+  it("records a completed outcome carrying facetReadyQuestionCount when nothing has been computed yet", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({
+            ...censusResult(),
+            facetReadyQuestionCount: 0,
+            unclassifiedCount: 2,
+            topics: [],
+          }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(calls.auditEvents.at(-1)).toMatchObject({
+      eventType: "audience_pulse.refresh_completed",
+      eventStatus: "success",
+      metadata: { outcome: "completed", facetReadyQuestionCount: 0, topicCount: 0 },
+    });
+  });
+
+  it("still calls the model and commits usage when the window is partially facet-ready", async () => {
+    const { service, calls } = createService({
+      censusServiceFactory: {
+        create: () => ({
+          run: async () => ({ ...censusResult(), facetReadyQuestionCount: 1 }),
+        } as unknown as CensusService),
+      } satisfies CensusServiceFactory,
+    });
+
+    const result = await service.refresh({ accountId: ACCOUNT_ID, userId: USER_ID, workspaceId: WORKSPACE_ID });
+
+    expect(result.kind).toBe("completed");
+    expect(calls).toMatchObject({ inference: 1, reserve: 1, commit: 1, release: 0, replace: 1 });
+    if (result.kind !== "completed") throw new Error("expected a completed refresh");
+    expect(result.report.coverage).toMatchObject({ facetReadyQuestionCount: 1 });
   });
 });

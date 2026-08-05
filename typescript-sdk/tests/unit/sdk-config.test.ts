@@ -1,8 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createRadiosoClient } from "../../src/index.js";
+import { DEFAULT_BASE_URL, createRadiosoClient } from "../../src/index.js";
 
 describe("sdk config", () => {
+  it("defaults to the hosted instance when no base url is given", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ workspaceId: "w1" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const client = createRadiosoClient({
+      apiToken: "token-123",
+      fetch: fetchMock as typeof fetch,
+    });
+
+    await client.settings.getGeneral();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.radioso.ai/api/v1/settings/general",
+      expect.anything(),
+    );
+  });
+
+  it("exports the default base url for callers that need to compare against it", () => {
+    expect(DEFAULT_BASE_URL).toBe("https://api.radioso.ai");
+  });
+
+  it("rejects an empty base url when one is explicitly provided", () => {
+    expect(() => createRadiosoClient({
+      baseUrl: "   ",
+      apiToken: "token-123",
+    })).toThrow("baseUrl");
+  });
+
   it("rejects an empty api token", () => {
     expect(() => createRadiosoClient({
       baseUrl: "https://api.example.com",

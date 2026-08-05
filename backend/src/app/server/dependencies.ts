@@ -1,172 +1,47 @@
 import { getEnv, type Env } from "../config/env.js";
-import { McpConnectionService } from "../../modules/externalSkills/services/mcpConnectionService.js";
-import { ExternalSkillDefinitionService } from "../../modules/externalSkills/services/externalSkillDefinitionService.js";
-import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
-import { RoutineStateRepository } from "../../db/repositories/routineStateRepository.js";
-import { ConversationSummaryRepository } from "../../db/repositories/conversationSummaryRepository.js";
-import { OauthConnectionRepository } from "../../db/repositories/oauthConnectionRepository.js";
-import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
-import { createMcpToolServiceFactory } from "../../modules/externalSkills/composition.js";
-import { MCP_OAUTH_CALLBACK_PATH } from "../../modules/externalSkills/domain.js";
 import {
-  createDefaultApplicationComposition,
   createDefaultAgentSkillSettingsRegistry,
-  createRetrievalSkillSettingsResolver,
-  createSystemRetrievalDefaultsProvider,
-  createDefaultDocumentJobDispatcher,
-  EmbeddingProfileJobFailureAdapter,
-  EmbeddingModelTransitionAdapter,
-  LegacyVectorCandidateSearchAdapter,
-  PgVectorTransitionIndexPreparation,
-  PgVectorTransitionMaintenance,
-  RegistryFixedInputEmbeddingValidation,
-  VectorCandidateSearchRolloutAdapter,
-  WorkspaceEmbeddingBindingResolver,
+  createDefaultApplicationComposition,
   type ApplicationModule,
 } from "../composition/index.js";
-import { AgentService, AgentSurfaceExtensionRegistry, AuthoredDirectiveService, DirectiveAuthorService } from "../../modules/agents/public.js";
+import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
 import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
 import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
-import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
-import { RoutineDefinitionService, RoutineDraftAssistService, RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
-import { createDirectiveCoherenceChecker, scopeTag } from "@radioso/conversation-defaults";
+import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { PlatformSettingsService } from "../../modules/settings/composition.js";
+import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "./types.js";
+import {
+  buildInfrastructure,
+  buildLogger,
+  buildRepositories,
+} from "./builders/infra.js";
 import {
   buildAccessServices,
   buildAuthService,
-  buildChatServices,
-  buildConnectorRegistry,
-  buildDocumentServices,
   buildEmailVerificationService,
-  buildInfrastructure,
-  buildLlmRegistry,
-  buildLogger,
   buildPasswordResetService,
-  buildRepositories,
-  buildRetrievalServices,
-  buildLlmCapabilityResolver,
-  buildSettingsServices,
-  buildWorkspaceIngestionReprocessService,
-  buildWorkspaceLlmCapabilitySettingsService,
   buildWorkspaceProviderCredentialsService,
-  buildWebhookDestinationAdapter,
-  buildWorkspaceServices,
-  listSupportedEmbeddingModels,
-} from "./dependencyBuilders.js";
-import { resolveLlmConfig } from "../../shared/infra/llm/providerConfig.js";
-import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
+} from "./builders/accessAuth.js";
+import { buildChatServices } from "./builders/chat.js";
+import { buildConnectorRegistry } from "./builders/integrations.js";
+import { buildIntegrationServices } from "./builders/integrations.js";
+import { buildDocumentRetrievalGraph } from "./builders/documentRetrievalGraph.js";
+import {
+  buildRoutineAuthoringServices,
+  buildSkillCatalogServices,
+} from "./builders/skillsRoutines.js";
+import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
-import {
-  EmbeddingCoverageReconciler,
-  EmbeddingTransitionCoordinator,
-  ProfileBoundEmbeddingPorts,
-} from "../../modules/embeddingProfiles/public.js";
-import {
-  PostgresChunkCandidateHydrator,
-  PgVectorAdapter,
-  PgVectorIndex,
-  VectorIndexReconciler,
-} from "../../modules/retrieval/composition.js";
+import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
+import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import {
-  RoutineInvocableSkillNamesService,
-  SkillAuthoringCatalogService,
-  SkillCatalogService,
-  routineAuthoringBuiltInSkills,
-} from "../../modules/skills/public.js";
-import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
-import {
-  ChatGatewayLlmJudge,
-  EvalCaseService,
-  EvalMessageCaseRepository,
-  EvalMessageCaseService,
-  EvalRepository,
-  EvalRunService,
-  EvalSnapshotService,
-  EvalSuiteService,
-  RetrievalPipelineEvalRunner,
-} from "../../modules/eval/composition.js";
-import type { ConversationModelGateway } from "@radioso/conversation-contract";
-import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
-import { OauthConnectionService, StaticOauthProviderRegistry } from "../../modules/integrationOauth/public.js";
-import {
-  PostgresSlackConversationLinkLookup,
-  PostgresWorkspaceAccountLookup,
-  SlackInstallationService,
-  SlackWebApiClient,
-  type SlackOauthMetadata,
-} from "../../modules/slack/public.js";
-import {
-  CustomerEmailConnectionService,
-  CustomerEmailOAuthService,
-  EmailSkillDefinitionService,
-  MockCustomerEmailProviderAdapter,
-  StaticCustomerEmailProviderRegistry,
-  customerEmailOauthProviderIds,
-} from "../../modules/customerEmail/public.js";
-import { WebhookSkillDefinitionService } from "../../modules/webhookSkills/public.js";
-import { SlackSkillDefinitionService } from "../../modules/slackSkills/public.js";
-import { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
-import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
-import { CustomerReplyDeliveryDispatcher } from "../../modules/customerReplyDelivery/public.js";
-import { OperatorReplyService } from "../../modules/handoff/public.js";
-import { SlackCustomerReplyDeliverer } from "../../modules/slack/public.js";
-import { AgentSkillRepository, AgentSkillsService } from "../../modules/agentSkills/public.js";
-import { createDefaultSkillCapabilityRegistry } from "../../modules/skills/public.js";
-import { bindSkillCapabilityExecutors } from "../composition/skillCapabilityRegistry.js";
-import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../modules/documents/contracts/index.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
 }
-
-const directiveCoherenceInvocationContext = (
-  metadata: Record<string, unknown> | undefined,
-): { workspaceId: string; agentId: string } => {
-  const context = metadata?.invocationContext;
-  if (
-    !context
-    || typeof context !== "object"
-    || Array.isArray(context)
-    || typeof (context as Record<string, unknown>).workspaceId !== "string"
-    || typeof (context as Record<string, unknown>).agentId !== "string"
-  ) {
-    throw new Error("directive_coherence_invocation_context_required");
-  }
-  return {
-    workspaceId: (context as Record<string, string>).workspaceId,
-    agentId: (context as Record<string, string>).agentId,
-  };
-};
-
-const createConversationModelGateway = (pipeline: ModelInferencePipeline): ConversationModelGateway => ({
-  async complete(input) {
-    const invocationContext = directiveCoherenceInvocationContext(input.metadata);
-    const { text } = await pipeline.complete({
-      prompt: input.messages.map((message) => `${message.role}: ${message.content}`).join("\n\n"),
-      systemPrompt: input.systemPrompt,
-      operation: {
-        workspaceId: invocationContext.workspaceId,
-        agentId: invocationContext.agentId,
-        surface: "agents",
-        operation: "directive_coherence",
-        attemptKey: String(input.metadata?.candidateDirectiveName ?? "candidate"),
-      },
-    });
-    return {
-      text,
-      metadata: {
-        capability: pipeline.metadata.capability,
-        provider: pipeline.metadata.provider,
-        model: pipeline.metadata.model,
-      },
-    };
-  },
-});
 
 export const buildDependencies = (env: Env = getEnv(), options: BuildDependenciesOptions = {}): AppDependencies => {
   const logger = buildLogger();
@@ -195,358 +70,55 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  const slackInstallationService = new SlackInstallationService({
-    oauthConnections: new OauthConnectionRepository(infrastructure.database.kysely),
-    integrationConnections: repositories.integrationConnectionRepository,
-    installations: repositories.slackInstallationRepository,
-    bindings: repositories.slackChannelBindingRepository,
-    workspaceAccounts: new PostgresWorkspaceAccountLookup(infrastructure.database.kysely),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
-  });
-  const oauthConnectionService = new OauthConnectionService({
-    repository: new OauthConnectionRepository(infrastructure.database.kysely),
-    providers: new StaticOauthProviderRegistry(composition.oauthProviders),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
-    appBaseUrl: env.APP_BASE_URL,
-    apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
+  const integrations = buildIntegrationServices({
     assertPublicUrl: assertPublicWebsiteUrl,
-    logger,
-    onAuthorized: async ({ connection, tokens, metadata }) => {
-      if (connection.provider !== "slack") {
-        return;
-      }
-      const slackMetadata = metadata as Partial<SlackOauthMetadata>;
-      if (!slackMetadata.teamId || !slackMetadata.botUserId) {
-        throw new Error("Slack OAuth metadata was missing team or bot identity");
-      }
-      await slackInstallationService.saveInstallation({
-        workspaceId: connection.workspaceId,
-        oauthConnectionId: connection.id,
-        teamId: slackMetadata.teamId,
-        teamName: slackMetadata.teamName ?? null,
-        botUserId: slackMetadata.botUserId,
-        botAccessToken: tokens.accessToken,
-        grantedScopes: connection.grantedScopes,
-      });
-    },
-  });
-  const customerEmailOAuthService = new CustomerEmailOAuthService(oauthConnectionService);
-  const customerEmailConnectionService = new CustomerEmailConnectionService({
-    repository: repositories.customerEmailConnectionRepository,
-    oauthConnections: oauthConnectionService,
-    providers: new StaticCustomerEmailProviderRegistry(
-      customerEmailOauthProviderIds.map((provider) => new MockCustomerEmailProviderAdapter(provider)),
-    ),
-  });
-  const mcpConnectionRepository = new McpConnectionRepository(infrastructure.database.kysely);
-  const externalSkillDefinitionRepository = new ExternalSkillDefinitionRepository(infrastructure.database.kysely);
-  const mcpConnectionService = new McpConnectionService({
-    repository: mcpConnectionRepository,
-    toolServiceFactory: createMcpToolServiceFactory(assertPublicWebsiteUrl),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
-    assertPublicUrl: assertPublicWebsiteUrl,
-    oauthRedirectUri: env.APP_BASE_URL ? `${env.APP_BASE_URL.replace(/\/$/, "")}${MCP_OAUTH_CALLBACK_PATH}` : undefined,
-    logger,
-  });
-  const externalSkillDefinitionService = new ExternalSkillDefinitionService(
-    externalSkillDefinitionRepository,
-    mcpConnectionService,
-  );
-  const emailSkillDefinitionService = new EmailSkillDefinitionService({
-    repository: repositories.emailSkillDefinitionRepository,
-    connections: repositories.customerEmailConnectionRepository,
-  });
-  const webhookDestinations = buildWebhookDestinationAdapter({
-    auditService: infrastructure.auditService,
-    env,
-    logger,
-    repositories,
-    assertPublicUrl: assertPublicWebsiteUrl,
-  });
-  const webhookSkillDefinitionService = new WebhookSkillDefinitionService({
-    repository: repositories.webhookSkillDefinitionRepository,
-    destinations: webhookDestinations,
-  });
-  const slackSkillDefinitionService = new SlackSkillDefinitionService({
-    repository: repositories.slackSkillDefinitionRepository,
-    installations: repositories.slackInstallationRepository,
-  });
-  const skillCapabilityRegistry = createDefaultSkillCapabilityRegistry({
-    mcp_tool: async ({ agentId }) =>
-      (await mcpConnectionService.list(agentId)).map((connection) => ({
-        id: connection.id,
-        label: connection.displayName,
-        status: connection.status,
-      })),
-    email: async ({ workspaceId }) =>
-      (await customerEmailConnectionService.list(workspaceId)).map((connection) => ({
-        id: connection.id,
-        label: connection.displayName,
-        status: connection.status,
-      })),
-    slack_post: async ({ workspaceId }) => {
-      const status = await slackInstallationService.getStatus(workspaceId);
-      return status.installationId
-        ? [{
-            id: status.installationId,
-            label: status.teamName ?? "Slack",
-            status: status.status,
-          }]
-        : [];
-    },
-    webhook_call: async ({ workspaceId }) =>
-      (await webhookDestinations.list(workspaceId)).map((destination) => ({
-        id: destination.id,
-        label: destination.name,
-        status: destination.lastDeliveryStatus ?? undefined,
-      })),
-    retrieve: async ({ workspaceId }) => {
-      const [sources, manualDocumentCount] = await Promise.all([
-        repositories.documentSourceRepository.listByWorkspaceIdWithDocumentCounts(workspaceId),
-        repositories.documentSourceRepository.countDocumentsWithoutSource(workspaceId),
-      ]);
-      return [
-        ...sources.map((source) => ({
-          id: source.id,
-          label: source.name,
-          status: source.lastSyncStatus ?? undefined,
-        })),
-        ...(manualDocumentCount > 0
-          ? [{
-              id: MANUALLY_ADDED_DOCUMENTS_SOURCE_ID,
-              label: "Manually added documents",
-              status: "available",
-            }]
-          : []),
-      ];
-    },
-  });
-  const agentSkillRepository = new AgentSkillRepository(infrastructure.database.kysely);
-  // The single derivation of "skill names a routine may invoke that the authoring catalog
-  // does not list". Publish validation and the runtime resolver chain previously derived
-  // this separately and had already diverged: the validation copy omitted Slack, so an
-  // enabled agent_selectable Slack skill was routable at runtime yet rejected at publish.
-  const routineInvocableSkillNames = new RoutineInvocableSkillNamesService({
-    agentSkills: agentSkillRepository,
-  });
-  const agentSkillsService = new AgentSkillsService({
-    repository: agentSkillRepository,
-    capabilities: skillCapabilityRegistry,
-    logger,
-  });
-  // Build the registry first (no resolver yet) so we can compute supported embedding
-  // models; embedding stays env-default and doesn't need the workspace-aware resolver.
-  const llmRegistry = buildLlmRegistry(env, logger);
-  const documentJobDispatcher = composition.documentJobDispatcher ?? createDefaultDocumentJobDispatcher(env, logger);
-  const workspaceIngestionReprocessService = buildWorkspaceIngestionReprocessService({
-    auditService: infrastructure.auditService,
-    documentJobDispatcher,
-    repositories,
-  });
-  const embeddingCoverage = new EmbeddingCoverageReconciler(
-    repositories.documentProcessingJobRepository,
-    documentJobDispatcher,
-  );
-  const pgVectorAdapter = new PgVectorAdapter(infrastructure.database);
-  const embeddingTransitionCoordinator = new EmbeddingTransitionCoordinator(
-    repositories.embeddingProfileRepository,
-    new RegistryFixedInputEmbeddingValidation(
-      repositories.embeddingProfileRepository,
-      llmRegistry,
-    ),
-    embeddingCoverage,
-    {
-      backendKey: "pgvector",
-      onTransitionBlocked: (input) => {
-        logger.warn(
-          {
-            event: "embedding.transition.blocked",
-            backend: input.backendKey,
-            workspaceId: input.workspaceId,
-            embeddingTransitionId: input.transitionId,
-            embeddingSpaceId: input.targetEmbeddingSpaceId,
-            failureReason: input.failureReason,
-          },
-          "Embedding transition blocked after vector index retry exhaustion",
-        );
-      },
-    },
-  );
-  const embeddingTransitions = new EmbeddingModelTransitionAdapter(
-    repositories.embeddingProfileRepository,
-    (model) => llmRegistry.resolveEmbeddingModelBinding(model),
-    embeddingTransitionCoordinator,
-    new PgVectorTransitionIndexPreparation(
-      pgVectorAdapter,
-      repositories.vectorIndexWorkRepository,
-    ),
-  );
-  const embeddingProfileJobFailures = new EmbeddingProfileJobFailureAdapter(
-    repositories.embeddingProfileRepository,
-    embeddingTransitionCoordinator,
-  );
-  const supportedEmbeddingModels = listSupportedEmbeddingModels(llmRegistry);
-  const settings = buildSettingsServices({
-    auditService: infrastructure.auditService,
-    ingestionSettingsRepository: repositories.ingestionSettingsRepository,
-    supportedEmbeddingModels,
-    embeddingTransitions,
-  });
-  let vectorTransitionMaintenance: PgVectorTransitionMaintenance;
-  const vectorIndexReconciler = new VectorIndexReconciler({
-    adapter: pgVectorAdapter,
-    backendKey: "pgvector",
-    repository: repositories.vectorIndexWorkRepository,
-    spaces: repositories.embeddingProfileRepository,
-    batchSize: 100,
-    leaseMs: 60_000,
-    maxAttempts: 5,
-    retryDelayMs: 5_000,
-    pollIntervalMs: 1_000,
-    resolveCaughtUpReadiness: async () => "exact_fallback",
-    onCheckpointAdvanced: async ({ workspaceId }) => {
-      await settings.ingestionSettingsService
-        .promotePendingEmbeddingModelIfReady?.(workspaceId);
-    },
-    onIdle: () =>
-      vectorTransitionMaintenance.reconcileBuildingTransitions(),
-    onLoopError: (error) => {
-      logger.error(
-        {
-          backend: "pgvector",
-          err: error instanceof Error ? error.message : String(error),
-        },
-        "Vector index reconciliation tick failed",
-      );
-      void infrastructure.errorReportingService.report({
-        errorType: "vector.index.reconciliation_tick_failed",
-        error,
-        severity: "error",
-      }).catch((reportError) => {
-        logger.error(
-          {
-            err: reportError instanceof Error
-              ? reportError.message
-              : String(reportError),
-          },
-          "Vector index reconciliation error report failed",
-        );
-      });
-    },
-  });
-  vectorTransitionMaintenance = new PgVectorTransitionMaintenance(
-    vectorIndexReconciler,
-    repositories.embeddingProfileRepository,
-    {
-      reconcileBackfills: (input) =>
-        embeddingTransitionCoordinator.reconcileBackfills(input),
-      promotePendingEmbeddingModelIfReady: (workspaceId) =>
-        settings.ingestionSettingsService
-          .promotePendingEmbeddingModelIfReady!(workspaceId),
-    },
-    (outcome) => {
-      logger.warn(
-        {
-          role: "worker",
-          embeddingTransitionsDiscovered: outcome.discovered,
-          embeddingTransitionBackfillHandoffsFailed: outcome.failed,
-        },
-        "Embedding transition backfill reconciliation incomplete",
-      );
-    },
-  );
-  const embeddingBindingResolver = new WorkspaceEmbeddingBindingResolver({
-    profiles: repositories.embeddingProfileRepository,
-    settings: settings.ingestionSettingsService,
-    identifyModel: (model) => llmRegistry.resolveEmbeddingModelBinding(model),
-  });
-  const embeddingPorts = new ProfileBoundEmbeddingPorts(
-    llmRegistry.createEmbeddingGateway(infrastructure.usageEventRecorder),
-    embeddingBindingResolver,
-  );
-  const chunkHydrator = new PostgresChunkCandidateHydrator(
-    infrastructure.database.kysely,
-  );
-  const legacyVectorSearch = new LegacyVectorCandidateSearchAdapter({
-    legacy: new PgVectorIndex(infrastructure.database),
-    profiles: repositories.embeddingProfileRepository,
-  });
-  const vectorSearch = new VectorCandidateSearchRolloutAdapter({
-    canonical: pgVectorAdapter.search,
-    legacy: legacyVectorSearch,
-    legacyDimensions: [1536, 3072],
-  });
-  // Now that settings are available, build the capability service (backed by the
-  // retrieval_settings row through the repository) and the resolver, then attach
-  // the resolver to the registry before any chat/rewrite/rerank gateways are
-  // constructed downstream.
-  const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
-    auditService: infrastructure.auditService,
-    capabilityRepository: repositories.retrievalSettingsRepository,
-    logger,
-  });
-  const llmCapabilityResolver = buildLlmCapabilityResolver({
-    env,
-    defaults: resolveLlmConfig(env),
-    settings: workspaceLlmCapabilitySettingsService,
-    credentials: workspaceProviderCredentialsService,
-  });
-  llmRegistry.setResolver(llmCapabilityResolver);
-  const documents = buildDocumentServices({
-    auditEventRepository: infrastructure.auditEventRepository,
-    auditService: infrastructure.auditService,
     composition,
-    documentJobDispatcher,
-    documentSourceRepository: repositories.documentSourceRepository,
-    documentEmbeddings: embeddingPorts,
-    pinnedDocumentEmbeddings: embeddingPorts,
-    clusteringEmbeddings: embeddingPorts,
     env,
+    infrastructure,
     logger,
-    productAnalyticsService: infrastructure.productAnalyticsService,
-    postJobMaintenance: vectorTransitionMaintenance,
     repositories,
-    settings,
-    telemetryService: infrastructure.telemetryService,
-    usageLimitPolicy: infrastructure.usageLimitPolicy,
-    usageEventRecorder: infrastructure.usageEventRecorder,
-    llmRegistry,
-    workspaceIngestionReprocessService,
-    embeddingCoverage,
-    errorReporter: infrastructure.errorReportingService,
-    embeddingProfileTerminalFailures: embeddingProfileJobFailures,
-    embeddingProfileProjectionCleanup: {
-      resetWorkspaceSpace: ({ workspaceId, embeddingSpaceId }) =>
-        pgVectorAdapter.admin.resetSpace({
-          workspaceId,
-          spaceId: embeddingSpaceId,
-        }),
-    },
   });
-  const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();
-  const skillSettingsResolver = createRetrievalSkillSettingsResolver();
-  const retrieval = buildRetrievalServices({
-    auditService: infrastructure.auditService,
-    database: infrastructure.database,
-    documentRepository: repositories.documentRepository,
-    queryEmbeddings: embeddingPorts,
-    vectorSearch,
-    chunkHydrator,
-    llmRegistry,
-    logger,
-    retrievalDefaultsProvider,
-    skillSettingsResolver,
-    telemetryService: infrastructure.telemetryService,
-    usageEventRecorder: infrastructure.usageEventRecorder,
-  });
-  const workspace = buildWorkspaceServices({
-    accountMembershipRepository: repositories.accountMembershipRepository,
-    auditService: infrastructure.auditService,
-    conversationRepository: repositories.conversationRepository,
-    documentRepository: repositories.documentRepository,
+  const {
+    agentSkillRepository,
+    agentSkillsService,
+    customerEmailConnectionService,
+    customerEmailOAuthService,
+    emailSkillDefinitionService,
+    externalSkillDefinitionRepository,
+    externalSkillDefinitionService,
+    mcpConnectionRepository,
+    mcpConnectionService,
+    oauthConnectionService,
+    slackInstallationService,
+    slackSkillDefinitionService,
+    skillCapabilityRegistry,
+    routineInvocableSkillNames,
+    webhookDestinations,
+    webhookSkillDefinitionService,
+  } = integrations;
+  const documentRetrievalGraph = buildDocumentRetrievalGraph({
+    composition,
     env,
-    workspaceRepository: repositories.workspaceRepository,
+    infrastructure,
+    logger,
+    repositories,
+    workspaceProviderCredentialsService,
   });
+  const {
+    documents,
+    embeddingBindingResolver,
+    embeddingPorts,
+    llmCapabilityResolver,
+    llmRegistry,
+    retrieval,
+    retrievalDefaultsProvider,
+    settings,
+    skillSettingsResolver,
+    vectorIndexReconciler,
+    workspace,
+    workspaceIngestionReprocessService,
+    workspaceLlmCapabilitySettingsService,
+  } = documentRetrievalGraph;
   const agentService = new AgentService(
     repositories.agentRepository,
     repositories.workspaceRepository,
@@ -581,6 +153,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentService,
+    agentSkillRepository,
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
@@ -620,47 +193,23 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ingestionSettingsService: settings.ingestionSettingsService,
     routineTriggerEmbeddingService,
   });
-  const skillCapabilityBindings = bindSkillCapabilityExecutors({
-    capabilities: skillCapabilityRegistry,
-    executors: composition.skillExecutorRegistry,
-  });
-  const unboundCapabilities = skillCapabilityBindings.filter((binding) => !binding.bound);
-  if (unboundCapabilities.length > 0) {
-    // A capability with no resolvable executor still advertises as available via
-    // GET /skill-capabilities, so an author can create+enable a skill that only
-    // fails at routine-dispatch time. This is a legitimate degraded mode (e.g.
-    // email/external skipped when CONNECTOR_ENCRYPTION_KEY is unset), so warn
-    // rather than fail boot — but make it observable instead of silent.
-    logger.warn(
-      {
-        event: "skill_capability_executor_unbound",
-        capabilities: unboundCapabilities.map((binding) => ({
-          capability: binding.capabilityId,
-          executorAdapter: binding.executorAdapter,
-        })),
-      },
-      "One or more skill capabilities have no bound executor; skills using them will fail at dispatch",
-    );
-  }
-  const platformSettingsService = new PlatformSettingsService({
-    workspaceRepository: repositories.workspaceRepository,
-    agentService,
+  const skillCatalog = buildSkillCatalogServices({
     accessGrantService: access.accessGrantService,
-    auditService: infrastructure.auditService,
-    publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
-    websiteEmbedIntegration: composition.websiteEmbedIntegration,
-  });
-  const skillCatalogService = new SkillCatalogService({
-    capabilityPolicy: composition.capabilityPolicy,
-    registry: composition.skillCatalogRegistry,
-  });
-  const skillAuthoringCatalog = new SkillAuthoringCatalogService({
-    skillCatalog: skillCatalogService,
-    externalSkills: externalSkillDefinitionService,
-    agentSkills: agentSkillRepository,
-    capabilities: skillCapabilityRegistry,
+    agentService,
+    agentSkillRepository,
+    composition,
+    externalSkillDefinitionService,
+    infrastructure,
     logger,
+    publicChatBaseUrl: env.PUBLIC_CHAT_BASE_URL,
+    repositories,
+    skillCapabilityRegistry,
   });
+  const {
+    platformSettingsService,
+    skillAuthoringCatalog,
+    skillCatalogService,
+  } = skillCatalog;
   const onAccountCreated = composition.accountCreatedHooks.length === 0
     ? undefined
     : async ({ accountId }: { accountId: string }) => {
@@ -721,128 +270,45 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
 
   const chatInferencePipeline = llmRegistry.createChatInferencePipeline(infrastructure.usageEventRecorder);
-  const authoredDirectiveService = new AuthoredDirectiveService({
-    repository: repositories.agentRepository,
-    coherenceChecker: createDirectiveCoherenceChecker({
-      modelGateway: createConversationModelGateway(chatInferencePipeline),
-    }),
-    registeredCapabilityNames,
-    agentSkills: agentSkillRepository,
-  });
-  const routineDefinitionService = new RoutineDefinitionService({
-    agentRepository: repositories.agentRepository,
-    repository: repositories.routineDefinitionRepository,
-    actionCapabilities: composition.actionCapabilityMap,
-    capabilityPolicy: composition.capabilityPolicy,
-    skillAuthoringCatalog,
-    contextVariableReader: contextVariableRepository,
-    // Mirror the runtime routine-skill resolver's name set (enabled webhook +
-    // customer-email skills) so publish validation accepts what runtime routes.
-    additionalRoutineSkillNames: (context) => routineInvocableSkillNames.listForAgent(context),
-    webhookDestinations: {
-      existsByIdAndWorkspace: async (inputWorkspaceId, destinationId) =>
-        webhookDestinations.existsByIdAndWorkspace(inputWorkspaceId, destinationId),
-    },
-    auditService: infrastructure.auditService,
-    directiveScopeTags: repositories.agentRepository,
-    triggerEmbeddingService: routineTriggerEmbeddingService,
-  });
-  const routineDraftAssistService = new RoutineDraftAssistService({
-    repository: repositories.agentRepository,
-    textGenerationClient: {
-      complete: async ({ signal: _signal, ...input }) =>
-        (await chatInferencePipeline.complete(input)).text,
-    },
-    actionCatalog: [
-      ...routineAuthoringBuiltInSkills.map((skill) => ({
-        type: skill.name,
-        kind: "tool" as const,
-        label: skill.displayName,
-        description: skill.description,
-        outcomeStatuses: skill.outcomes?.map((outcome) => outcome.name),
-      })),
-      ...composition.actionHandlerRegistrations.map((registration) => ({
-        type: registration.type,
-        kind: "action" as const,
-      })),
-    ],
-    skillAuthoringCatalog,
+  const routineAuthoring = buildRoutineAuthoringServices({
+    agentSkillRepository,
+    chatInferencePipeline,
+    composition,
+    contextVariableRepository,
+    infrastructure,
     logger,
-    telemetryService: infrastructure.telemetryService,
+    repositories,
+    routineInvocableSkillNames,
+    routineTriggerEmbeddingService,
+    skillAuthoringCatalog,
+    webhookDestinations,
   });
-  const directiveAuthorService = new DirectiveAuthorService({
-    repository: repositories.agentRepository,
-    textGenerationClient: {
-      complete: async ({ signal: _signal, ...input }) =>
-        (await chatInferencePipeline.complete(input)).text,
-    },
+  const {
+    authoredDirectiveService,
+    directiveAuthorService,
+    routineDefinitionService,
+    routineDraftAssistService,
+  } = routineAuthoring;
+  const evalServices = buildEvalServices({
+    chat,
+    infrastructure,
+    integrations,
+    llmCapabilityResolver,
     logger,
-    telemetryService: infrastructure.telemetryService,
-    buildStepScopeTag: scopeTag.step,
-  });
-
-  const evalRepository = new EvalRepository(infrastructure.database.kysely);
-  const evalSnapshotService = new EvalSnapshotService(
-    repositories.conversationRepository,
-    repositories.messageRepository,
-    repositories.agentRepository,
+    publicConversationEventBus,
+    repositories,
+    retrieval,
     retrievalDefaultsProvider,
     skillSettingsResolver,
-    evalRepository,
-    {
-      connections: mcpConnectionRepository,
-      skillDefinitions: externalSkillDefinitionRepository,
-    },
-    // Freeze the active routine position at capture time for faithful mid-routine replay.
-    new RoutineStateRepository(infrastructure.database.kysely),
-    // Freeze the rolling conversation summary (#866) at capture time so replay/eval
-    // runs inject the same pre-window context a live turn would.
-    new ConversationSummaryRepository(infrastructure.database.kysely),
-  );
-  const evalCaseService = new EvalCaseService(evalRepository);
-  const evalMessageCaseRepository = new EvalMessageCaseRepository(
-    infrastructure.database.kysely,
-  );
-  const evalMessageCaseService = new EvalMessageCaseService(
-    evalMessageCaseRepository,
+  });
+  const {
+    evalCaseService,
+    evalMessageCaseService,
+    evalRunService,
     evalSnapshotService,
-    logger,
-  );
-  const evalRunService = new EvalRunService(
-    evalRepository,
-    new RetrievalPipelineEvalRunner(
-      retrieval.retrievalPipeline,
-      chat.chatGateway,
-      llmCapabilityResolver,
-      retrievalDefaultsProvider,
-      chat.answerPresentation,
-      skillSettingsResolver,
-    ),
-    new ChatGatewayLlmJudge(chat.chatGateway),
-    chat.workbenchReplayRunner,
-    logger,
-  );
-  const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, logger);
-  const customerReplyDelivery = new CustomerReplyDeliveryDispatcher({
-    slack: new SlackCustomerReplyDeliverer({
-      installations: repositories.slackInstallationRepository,
-      installationService: slackInstallationService,
-      persistence: new PostgresSlackConversationLinkLookup(infrastructure.database.kysely),
-      slack: {
-        conversationsOpen: async ({ users, botToken }) =>
-          new SlackWebApiClient({ botToken }).conversationsOpen({ users }),
-      },
-      outbox: new ActionRequestRepository(infrastructure.database.kysely),
-      logger,
-    }),
-  });
-  const operatorReplyService = new OperatorReplyService({
-    conversationRepository: repositories.conversationRepository,
-    messageRepository: repositories.messageRepository,
-    auditService: infrastructure.auditService,
-    publicConversationEventBus,
-    customerReplyDelivery,
-  });
+    evalSuiteService,
+    operatorReplyService,
+  } = evalServices;
   // Per-message facet extraction (topic census). `composition.facetExtraction` lets a
   // host override the extractor entirely (mirroring `chunkingProvider` /
   // `websiteCrawlerProvider`); the OSS default below uses the cheap `"rewrite"` model
@@ -866,7 +332,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     telemetryService: infrastructure.telemetryService,
     errorReporter: infrastructure.errorReportingService,
   });
-
   return {
     env,
     logger,

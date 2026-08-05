@@ -13,7 +13,7 @@ modules/<area>/...            ← domain logic, depends on a PORT (an interface)
 db/repositories/fooRepository.ts   ← ADAPTER: implements the port, owns the SQL
 db/repositories/fooRowMapper.ts    ← maps DB rows (snake_case) → domain records (camelCase)
 db/migrations/NNN_*.sql            ← the schema; system of record
-app/server/dependencyBuilders.ts   ← COMPOSITION: wires the concrete repo to the port
+app/server/builders/infra.ts       ← COMPOSITION: wires the concrete repo to the port
 ```
 
 Rules that keep this clean:
@@ -73,7 +73,7 @@ export interface WidgetRepositoryPort {
 ```
 
 (In this repo, `DocumentRepositoryPort` lives in
-`modules/documents/services/documentIngestionService.ts` and is re-exported from
+`modules/documents/contracts/documentContracts.ts` and is re-exported from
 `modules/documents/contracts/index.ts`.)
 
 ### 3. Row + mapper — keep DB shape out of the domain
@@ -167,7 +167,7 @@ where raw SQL belongs. Don't inline `sql` tags in repositories; add a helper.
 
 ### 5. Composition — wire it once
 
-In `app/server/dependencyBuilders.ts`, alongside the other repositories:
+In `app/server/builders/infra.ts`, alongside the other repositories:
 
 ```ts
 widgetRepository: new WidgetRepository(database.kysely),

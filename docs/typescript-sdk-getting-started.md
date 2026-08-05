@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
 description: "Installation and client setup guide for the Radioso TypeScript SDK with workspace API token authentication and a first request example."
-last_updated: 2026-07-02
+last_updated: 2026-08-04
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -18,7 +18,11 @@ The SDK uses workspace API tokens. These are secret bearer credentials bound to 
 
 ## Install
 
-If you are working in this repo:
+```bash
+npm install @radioso/typescript-sdk
+```
+
+To work on the SDK itself in this repo instead of installing the published package:
 
 ```bash
 cd typescript-sdk
@@ -26,18 +30,23 @@ pnpm install --filter @radioso/typescript-sdk...
 pnpm run build
 ```
 
-If you are consuming the built package from another project, point your package manager at the SDK package output or local package path.
-
 ## Create a Client
 
 ```ts
 import { createRadiosoClient } from "@radioso/typescript-sdk";
 
 const client = createRadiosoClient({
-  baseUrl: "https://your-radioso-instance.example.com",
   apiToken: process.env.RADIOSO_API_TOKEN!,
 });
 ```
+
+`createRadiosoClient` talks to `https://api.radioso.ai` by default, exported as `DEFAULT_BASE_URL`. Set `baseUrl` when your workspace lives somewhere else:
+
+- `https://api.radioso.ai` — the default, EU-hosted instance
+- `https://api-us.radioso.ai` — the US-hosted instance
+- your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
+
+A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## First Request
 

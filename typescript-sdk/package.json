@@ -1,7 +1,20 @@
 {
   "name": "@radioso/typescript-sdk",
   "version": "0.2.0",
-  "private": true,
+  "description": "First-party TypeScript SDK for the Radioso context platform.",
+  "license": "Apache-2.0",
+  "homepage": "https://docs.radioso.ai/sdk/typescript-getting-started",
+  "keywords": [
+    "radioso",
+    "sdk",
+    "agents",
+    "retrieval",
+    "rag",
+    "assistant"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
@@ -16,12 +29,14 @@
   },
   "files": [
     "dist",
-    "openapi",
+    "openapi/radioso.json",
+    "LICENSE",
     "README.md"
   ],
   "scripts": {
     "sync": "node ./scripts/sync-openapi.mjs",
-    "build": "pnpm run sync && node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
     "test": "vitest run"
   },
   "devDependencies": {

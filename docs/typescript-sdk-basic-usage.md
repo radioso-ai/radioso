@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-07-19
+last_updated: 2026-08-04
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -18,7 +18,6 @@ Version 0.2.0 changes assistant, retrieval search, retrieval answer, and documen
 import { createRadiosoClient, RadiosoError } from "@radioso/typescript-sdk";
 
 const client = createRadiosoClient({
-  baseUrl: "https://your-radioso-instance.example.com",
   apiToken: process.env.RADIOSO_API_TOKEN!,
 });
 ```
@@ -462,7 +461,7 @@ try {
 
 ## Notes
 
-- `baseUrl` should be the Radioso server origin, without a trailing slash.
+- `baseUrl` defaults to `https://api.radioso.ai`, exported as `DEFAULT_BASE_URL`. Set it to `https://api-us.radioso.ai` or your own origin for a self-hosted deployment — a workspace API token only works against the instance that issued it.
 - The SDK sends the workspace API token as `Authorization: Bearer <token>`.
 - Public chat and website embed launch credentials are intentionally public and are not accepted as SDK API tokens.
 - Streaming chat is layered on top of the assistant chat contract, `POST /api/v1/assistant/chat`, with `stream: true`.

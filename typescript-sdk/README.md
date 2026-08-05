@@ -1,6 +1,34 @@
 # Radioso TypeScript SDK
 
-In-repo SDK package for token-based Radioso integrations.
+Talk to a Radioso workspace from TypeScript or JavaScript: documents, chat, retrieval, and agent authoring, all through one typed client authenticated with a workspace API token.
+
+## Install
+
+```bash
+npm install @radioso/typescript-sdk
+```
+
+Requires Node.js 24 or later. The package has no runtime dependencies.
+
+## Quickstart
+
+```ts
+import { createRadiosoClient } from "@radioso/typescript-sdk";
+
+const client = createRadiosoClient({
+  apiToken: process.env.RADIOSO_API_TOKEN!,
+});
+
+const documents = await client.documents.list({ limit: 10 });
+```
+
+`createRadiosoClient` talks to `https://api.radioso.ai` by default, exported as `DEFAULT_BASE_URL`. Pass `baseUrl` when your workspace lives somewhere else:
+
+- `https://api.radioso.ai` — the default, EU-hosted instance
+- `https://api-us.radioso.ai` — the US-hosted instance
+- your own origin, for a self-hosted deployment (for example `https://radioso.acme.com`)
+
+A workspace API token only works against the instance that issued it, so `baseUrl` has to match wherever that workspace's data actually lives.
 
 ## Status
 
@@ -10,7 +38,13 @@ In-repo SDK package for token-based Radioso integrations.
 - Workspace create/rename/delete stays session-authenticated and is not part of the SDK.
 - The SDK contract snapshot is synced from `../backend/openapi.json` and `../backend/openapi.yaml`.
 
+## Versioning
+
+The SDK follows semver against its own `client.*` surface, independent of the backend API version. The OpenAPI snapshot shipped in the package (`openapi/radioso.json`) records exactly which backend contract that SDK version was generated against. Releases are cut by pushing a git tag `typescript-sdk-v<version>`.
+
 ## Development
+
+These commands are for contributors working on the SDK inside this repo. `pnpm run sync` refreshes the contract snapshot from `../backend/openapi.*`; commit the result, because the published package builds from the committed snapshot.
 
 ```bash
 pnpm install --filter @radioso/typescript-sdk...

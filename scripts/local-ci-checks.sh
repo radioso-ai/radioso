@@ -262,6 +262,8 @@ fi
 
 if [ "$typescript_sdk" = true ]; then
   run pnpm install --frozen-lockfile --filter @radioso/typescript-sdk...
+  run_sh "cd typescript-sdk && pnpm run sync"
+  run_sh "git diff --quiet -- typescript-sdk/openapi typescript-sdk/src/generated || { echo 'The committed SDK contract snapshot is stale. Run: cd typescript-sdk && pnpm run sync, then commit the result.' >&2; git diff --stat -- typescript-sdk/openapi typescript-sdk/src/generated; exit 1; }"
   run_sh "cd typescript-sdk && pnpm run build"
   run_sh "cd typescript-sdk && pnpm test"
 fi

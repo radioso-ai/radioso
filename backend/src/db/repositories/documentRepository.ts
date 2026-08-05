@@ -3,12 +3,10 @@ import { randomUUID } from "node:crypto";
 import { sql } from "kysely";
 
 import type {
-  DocumentProcessingJobOptions,
-} from "./documentProcessingJobRepository.js";
-import type {
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
+  DocumentProcessingJobOptions,
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,

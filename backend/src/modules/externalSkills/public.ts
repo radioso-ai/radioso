@@ -7,3 +7,4 @@ export {
   exposedParamsSchema,
   type McpAuthMethod,
 } from "./domain.js";
+export { ExternalSkillRoutineSkillResolver, externalSkillRoutineDefinition } from "./routineSkillResolver.js";

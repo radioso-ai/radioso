@@ -36,6 +36,17 @@ export {
 } from "./domain.js";
 export { compileRoutineDefinition, legacyCompiledRoutineId } from "./compiler.js";
 export { RoutineTriggerEmbeddingService, type RoutineTriggerEmbeddingStore } from "./routineTriggerEmbeddingService.js";
+export {
+  createRoutineActivationPrefilter,
+  type RoutineActivationPrefilterDependencies,
+} from "./routineActivationPrefilter.js";
+export {
+  createRoutineTurnProvider,
+  type RoutineRegistrationSource,
+  type RoutineTurnPlanAdapters,
+  type RoutineTurnProvider,
+  type RoutineTurnProviderDependencies,
+} from "./turnProvider.js";
 export { analyzeGuaranteedVariablesOnEntry } from "./variablePopulation.js";
 export {
   RoutineSkillExecutorDispatcher,

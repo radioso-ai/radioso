@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createRoutineActivationPrefilter } from "../../src/app/server/dependencyBuilders.js";
+import { createRoutineActivationPrefilter } from "../../src/modules/routines/public.js";
 
 const turn = { sessionId: "session-1", inputEvent: { id: "message-1" } } as never;
 const triggers = [

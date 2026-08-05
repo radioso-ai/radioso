@@ -64,6 +64,13 @@ export class InMemoryAgentSkillRepository implements AgentSkillRepositoryPort {
     return record ? { ...record, config: cloneConfig(record.config) } : null;
   }
 
+  async findByAgentAndName(agentId: string, skillName: string): Promise<AgentSkillSpine | null> {
+    const record = [...this.records.values()].find((candidate) =>
+      candidate.agentId === agentId && candidate.skillName === skillName
+    );
+    return record ? { ...record, config: cloneConfig(record.config) } : null;
+  }
+
   async findDefaultAnswer(workspaceId: string, agentId: string): Promise<AgentSkillSpine | null> {
     const record = [...this.records.values()].find((candidate) =>
       candidate.workspaceId === workspaceId

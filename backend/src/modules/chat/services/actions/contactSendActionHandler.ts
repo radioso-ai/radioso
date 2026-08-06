@@ -183,6 +183,27 @@ const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
 /**
+ * A caught delivery failure's HTTP status, if the (already-stringified, see
+ * {@link ActionDispatcher}) error text ends in one — `ResendEmailDeliveryError`
+ * and the webhook client's own errors both format theirs this way. Structural,
+ * not content-based: it never echoes the surrounding text, only a 3-digit code.
+ */
+const trailingStatusCode = (message: string): number | undefined => {
+  const match = /\b([1-5]\d{2})\D*$/u.exec(message);
+  return match ? Number(match[1]) : undefined;
+};
+
+/** A bounded, non-free-text classification of a caught delivery failure — see the
+ * {@link ContactSendActionHandler.recordFailureOutcome} doc comment for why the
+ * raw caught error text must not reach {@link ErrorReporter}. */
+class ContactSendDeliveryFailureError extends Error {
+  constructor(statusCode: number | undefined) {
+    super(statusCode ? `contact.send delivery failed with status ${statusCode}` : "contact.send delivery failed");
+    this.name = "ContactSendDeliveryFailure";
+  }
+}
+
+/**
  * The reference action handler for `contact.send`: emails a gathered contact request
  * (collected by the chat-only contact routine) to the workspace's resolved recipient.
  * Generic and self-contained — it reads the routine's variables off the payload and
@@ -271,9 +292,18 @@ export class ContactSendActionHandler implements ActionHandler {
    * `retry` is expected, transient behavior the dispatcher already handles. Before
    * this, a permanently failed contact.send produced no log and no error report (the
    * gap that let the outbox drain outage go unnoticed for two months); this closes
-   * it without logging the visitor's email, name, or message — only correlation ids
-   * and the handler's own error string (already durable in the outbox's `last_error`
-   * column regardless of this call).
+   * it without logging the visitor's email, name, or message.
+   *
+   * `input.error` is the dispatcher's caught-and-stringified error text — this
+   * handler's own bounded messages today, but it flows from an injected
+   * {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient}, so a
+   * host-supplied transport could echo a provider response body, a reply-to
+   * address, or a webhook URL with a token in its query string. The error
+   * reporter is an external sink, so that raw text must never reach it — only a
+   * bounded classification (a status code, when the text ends in one) does. The
+   * full text remains available for operator debugging in the outbox's
+   * `last_error` column (see {@link ActionDispatcher.onFailure}), untouched by
+   * this call.
    */
   async recordFailureOutcome(input: {
     payload: Record<string, unknown>;
@@ -296,7 +326,7 @@ export class ContactSendActionHandler implements ActionHandler {
     try {
       await this.errorReporter?.report({
         errorType: "action.contact_send.delivery_failed",
-        error: new Error(input.error),
+        error: new ContactSendDeliveryFailureError(trailingStatusCode(input.error)),
         severity: "error",
         metadata: {
           workspaceId: input.context.workspaceId ?? undefined,

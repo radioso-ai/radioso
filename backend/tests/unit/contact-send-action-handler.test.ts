@@ -209,6 +209,51 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
     expect(serialized).not.toContain("Alex");
   });
 
+  it("reports a bounded classification, never the raw caught error text, to the external error reporter", async () => {
+    const { mailer } = recordingMailer();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { report },
+    );
+
+    // A provider or webhook error is caught-and-stringified upstream (see
+    // ActionDispatcher) before it reaches recordFailureOutcome, so the handler
+    // cannot tell a bounded internal message from one that echoes a response
+    // body, a signed webhook URL, or a reply-to address — it must never forward
+    // that text verbatim to an external sink.
+    const rawProviderError = "Webhook POST failed: https://hooks.example.com/contact?token=SUPER_SECRET_TOKEN (reply-to visitor@example.com)";
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: rawProviderError,
+    });
+
+    expect(report).toHaveBeenCalledOnce();
+    const [reportInput] = report.mock.calls[0]!;
+
+    // Neither a forwarded `error` object nor the `message`/`errorClass` fields may
+    // carry the raw text — `new Error(rawProviderError)` would leak it via
+    // `.message` (and `.stack`, whose first line embeds the message).
+    const errorMessage = reportInput.error instanceof Error ? reportInput.error.message : "";
+    const errorStack = reportInput.error instanceof Error ? (reportInput.error.stack ?? "") : "";
+    const surfaced = [errorMessage, errorStack, reportInput.message, reportInput.errorClass]
+      .filter((value): value is string => typeof value === "string")
+      .join("\n");
+
+    expect(surfaced).not.toContain("SUPER_SECRET_TOKEN");
+    expect(surfaced).not.toContain("visitor@example.com");
+    expect(surfaced).not.toContain("hooks.example.com");
+
+    // Still alertable — a bounded classification is reported, not silence.
+    expect(surfaced.trim().length).toBeGreaterThan(0);
+  });
+
   it("does not report a retryable (non-terminal) outcome — retries are expected, not alertable", async () => {
     const { mailer } = recordingMailer();
     const warn = vi.fn();

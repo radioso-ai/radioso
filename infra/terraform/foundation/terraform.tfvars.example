@@ -1,0 +1,26 @@
+project_id                  = "radioso-staging"
+project_number              = "PROJECT_NUMBER"
+environment                 = "staging"
+region                      = "us-central1"
+terraform_state_bucket_name = "radioso-staging-terraform-state"
+
+runtime_deployer_project_roles = [
+  "roles/artifactregistry.writer",
+  "roles/cloudscheduler.admin",
+  "roles/cloudsql.admin",
+  "roles/cloudtasks.admin",
+  "roles/compute.networkAdmin",
+  "roles/run.admin",
+  "roles/secretmanager.admin",
+  "roles/serviceusage.serviceUsageAdmin",
+  "roles/storage.admin",
+  "roles/vpcaccess.admin",
+]
+
+# Omit serviceUsageAdmin only when the matching runtime module sets
+# manage_project_services = false (live-eu currently does).
+#
+# Live and live-eu use project radioso-494120. Live-eu also sets both IDs below
+# to github-actions-live-eu.
+# github_actions_workload_identity_pool_id     = "github-actions-live-eu"
+# github_actions_workload_identity_provider_id = "github-actions-live-eu"

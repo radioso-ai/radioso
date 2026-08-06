@@ -23,7 +23,7 @@ resource "google_cloud_scheduler_job" "document_worker_recovery" {
       "Content-Type" = "application/json"
     }
     oidc_token {
-      service_account_email = google_service_account.worker_task_invoker.email
+      service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.document_worker_recovery_url
     }
   }
@@ -45,7 +45,7 @@ resource "google_cloud_scheduler_job" "crawler_worker_recovery" {
       "Content-Type" = "application/json"
     }
     oidc_token {
-      service_account_email = google_service_account.worker_task_invoker.email
+      service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.crawler_worker_recovery_url
     }
   }
@@ -67,7 +67,7 @@ resource "google_cloud_scheduler_job" "action_dispatch_recovery" {
       "Content-Type" = "application/json"
     }
     oidc_token {
-      service_account_email = google_service_account.worker_task_invoker.email
+      service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.action_dispatch_recovery_url
     }
   }

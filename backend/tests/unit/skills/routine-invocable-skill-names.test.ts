@@ -105,10 +105,19 @@ describe("RoutineInvocableSkillNamesService", () => {
     expect(await service.listForAgent({ workspaceId, agentId })).toEqual([]);
   });
 
-  it("excludes external MCP and notify skills, which have no name-keyed routine resolver", async () => {
+  it("excludes external MCP skills, which have no name-keyed routine resolver", async () => {
+    const { service } = build([spine({ skillName: "mcp_thing", kind: "external_mcp" })]);
+
+    expect(await service.listForAgent({ workspaceId, agentId })).toEqual([]);
+  });
+
+  it("excludes notify skills, whose runtime resolver applies the catalog's own mode filter", async () => {
+    // Adding it here would widen validation past runtime: `NotifyRoutineSkillResolver`
+    // routes only `enabled && routine_named`, which is precisely what the authoring
+    // catalog already offers.
     const { service } = build([
-      spine({ skillName: "mcp_thing", kind: "external_mcp" }),
       spine({ skillName: "notify_thing", kind: "notify" }),
+      spine({ skillName: "notify_agent_pick", kind: "notify", invocationMode: "agent_selectable" }),
     ]);
 
     expect(await service.listForAgent({ workspaceId, agentId })).toEqual([]);

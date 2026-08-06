@@ -11,6 +11,7 @@ import type { RetrievalPipelineResult } from "./retrievalPipelineService.js";
 import {
   documentScopeFromClarificationCandidate,
   type RetrievalSenseClarificationCandidate,
+  type SenseRelationship,
 } from "./senseGroupingService.js";
 import {
   clarificationStage,
@@ -79,12 +80,17 @@ export const evaluateRetrievalSenseClarification = async (input: {
     return null;
   }
 
-  // Complementary facets are not competing senses: the visitor asked one question
-  // whose answer spans several documents (e.g. "what X is" + "how to learn X").
-  // Clarifying would be over-asking, so proceed over all ranked chunks — that IS
-  // the combined answer — with no document scoping. Conservative: only when the
-  // gateway judged the whole set complementary (absent/failed ⇒ exclusive path).
-  if (candidates.every((candidate) => candidate.relationship === "complementary")) {
+  // Complementary facets and redundant (near-duplicate/versioned) sources are both
+  // non-exclusive: the visitor's question is answered correctly by combining every
+  // matched document, and clarifying which one is meant is either over-asking
+  // (complementary) or pointless (redundant). Conservative: only when the gateway
+  // judged every candidate in the set non-exclusive (absent/failed/exclusive ⇒
+  // normal ask-or-offer path below). `redundant_sources` is reported whenever any
+  // candidate is redundant, even in a set that also has complementary members,
+  // because a merged duplicate source is the more operationally interesting signal
+  // for operators than a merged complementary facet.
+  const nonExclusiveReason = reasonForNonExclusiveSet(candidates);
+  if (nonExclusiveReason) {
     return {
       kind: "proceed",
       candidates,
@@ -92,7 +98,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
         surface: "retrieval_sense",
         decision: { kind: "none" },
         consideredCandidates: candidates,
-        reason: "compatible_facets",
+        reason: nonExclusiveReason,
       }),
     };
   }
@@ -171,6 +177,29 @@ export const evaluateRetrievalSenseClarification = async (input: {
       expiresAt: input.expiresAt,
     },
   };
+};
+
+const NON_EXCLUSIVE_RELATIONSHIPS: ReadonlySet<SenseRelationship> = new Set(["complementary", "redundant"]);
+
+/**
+ * Returns the trace reason for a whole candidate set that never warrants asking,
+ * or `null` when any candidate is exclusive or missing/unparsed a relationship
+ * (the conservative default that forces the normal ask-or-offer path).
+ */
+const reasonForNonExclusiveSet = (
+  candidates: RetrievalSenseClarificationCandidate[],
+): "compatible_facets" | "redundant_sources" | null => {
+  const relationships = candidates.map((candidate) => candidate.relationship);
+  const allNonExclusive = relationships.every(
+    (relationship): relationship is SenseRelationship =>
+      relationship !== undefined && NON_EXCLUSIVE_RELATIONSHIPS.has(relationship),
+  );
+  if (!allNonExclusive) {
+    return null;
+  }
+  return relationships.some((relationship) => relationship === "redundant")
+    ? "redundant_sources"
+    : "compatible_facets";
 };
 
 const labelFallbackAutoPickCandidate = (

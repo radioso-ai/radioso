@@ -932,25 +932,32 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, turnFailureEvents] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         limit: 1,
       }),
-      options.includeTurnFailureDebug
-        ? this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id)
-        : Promise.resolve<AuditEventRecord[]>([]),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
+      .map((message) => message.id);
+    const userMessageIds = messages
+      .filter((message) => message.role === "user")
       .map((message) => message.id);
     const auditEvents = await this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
       workspaceId,
       conversation.id,
       assistantMessageIds,
     );
+    const turnFailureEvents = options.includeTurnFailureDebug
+      ? await this.auditEventRepository.listUnansweredChatAnswerEventsByUserMessageIds(
+          workspaceId,
+          conversation.id,
+          userMessageIds,
+        )
+      : [];
     const feedbackByAssistantMessageId = options.includeAnswerFeedback
       ? await this.answerFeedbackHistoryProvider.listByAssistantMessageIds(workspaceId, assistantMessageIds)
       : new Map<string, ChatAnswerFeedbackEntry[]>();

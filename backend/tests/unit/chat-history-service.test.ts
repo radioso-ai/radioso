@@ -472,6 +472,80 @@ describe("chat history service turn failure debug", () => {
     });
   });
 
+  it("loads turn-failure debug only for user messages in the current window", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const olderUserMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "older question",
+    });
+    const visibleUserMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "visible question",
+    });
+    await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "visible answer",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: olderUserMessage.id,
+        stream: false,
+        supersededStage: "routing",
+      },
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: visibleUserMessage.id,
+        stream: false,
+        supersededStage: "rendering",
+      },
+    });
+
+    const requestedUserMessageIds: string[][] = [];
+    const originalBoundedLookup = auditRepository.listUnansweredChatAnswerEventsByUserMessageIds.bind(auditRepository);
+    auditRepository.listUnansweredChatAnswerEventsByUserMessageIds = async (
+      workspaceId,
+      conversationId,
+      userMessageIds,
+    ) => {
+      requestedUserMessageIds.push(userMessageIds);
+      return originalBoundedLookup(workspaceId, conversationId, userMessageIds);
+    };
+    auditRepository.listChatAnswerEventsByConversationId = async () => {
+      throw new Error("conversation-wide chat.answer scan should not run for paginated detail");
+    };
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { limit: 2, offset: 0 }, {
+      includeTurnFailureDebug: true,
+    });
+
+    expect(requestedUserMessageIds).toEqual([[visibleUserMessage.id]]);
+    expect(detail.messages.map((message) => message.id)).toEqual([
+      visibleUserMessage.id,
+      expect.any(String),
+    ]);
+    expect(detail.messages.find((message) => message.id === visibleUserMessage.id)?.turnFailure).toMatchObject({
+      eventStatus: "cancelled",
+      stage: "rendering",
+    });
+    expect(detail.messages.some((message) => message.id === olderUserMessage.id)).toBe(false);
+  });
+
   it("omits turn-failure debug when includeTurnFailureDebug is unset (public surface)", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");

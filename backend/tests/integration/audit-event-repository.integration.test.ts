@@ -71,6 +71,55 @@ describeIntegration("AuditEventRepository (Postgres)", () => {
     expect(await repository.listChatTurnEventsByAssistantMessageIds(workspaceId, conversationId, [])).toEqual([]);
   });
 
+  it("filters unanswered chat.answer diagnostics by visible user message ids", async () => {
+    const visibleCancelled = await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: { conversationId, userMessageId: "user-visible" },
+    });
+    const visibleFailure = await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "failure",
+      metadata: { conversationId, userMessageId: "user-failed" },
+    });
+    await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: { conversationId, userMessageId: "user-visible" },
+    });
+    await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: { conversationId, userMessageId: "user-visible", assistantMessageId: "assistant-created" },
+    });
+    await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: { conversationId, userMessageId: "user-older" },
+    });
+    await repository.create({
+      workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: { conversationId: randomUUID(), userMessageId: "user-visible" },
+    });
+
+    const events = await repository.listUnansweredChatAnswerEventsByUserMessageIds(
+      workspaceId,
+      conversationId,
+      ["user-visible", "user-failed"],
+    );
+
+    expect(events.map((event) => event.id).sort()).toEqual([visibleCancelled.id, visibleFailure.id].sort());
+    expect(await repository.listUnansweredChatAnswerEventsByUserMessageIds(workspaceId, conversationId, []))
+      .toEqual([]);
+  });
+
   it("returns suspended turns too, so the debug panel resolves their turnTrace", async () => {
     const suspended = await chatSuspended("m-suspended");
 

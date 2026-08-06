@@ -166,6 +166,104 @@ describe("ContactSendActionHandler", () => {
   });
 });
 
+describe("ContactSendActionHandler.recordFailureOutcome", () => {
+  const payloadWithPii = { name: "Alex", email: "alex@example.com", message: "call me about pricing please" };
+
+  it("reports a terminal (failed) outcome to the error reporter and logs a warning, with no PII", async () => {
+    const { mailer } = recordingMailer();
+    const warn = vi.fn();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { warn },
+      undefined,
+      { report },
+    );
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "Resend API returned 500",
+    });
+
+    expect(report).toHaveBeenCalledOnce();
+    const [reportInput] = report.mock.calls[0]!;
+    expect(reportInput.errorType).toBe("action.contact_send.delivery_failed");
+    expect(reportInput.severity).toBe("error");
+    expect(reportInput.metadata).toMatchObject({
+      workspaceId: context.workspaceId,
+      conversationId: context.conversationId,
+      requestId: context.requestId,
+    });
+
+    expect(warn).toHaveBeenCalledOnce();
+    const [warnPayload] = warn.mock.calls[0]!;
+
+    // No visitor content (email/name/message) anywhere in either call.
+    const serialized = JSON.stringify([reportInput, warnPayload]);
+    expect(serialized).not.toContain("alex@example.com");
+    expect(serialized).not.toContain("call me about pricing");
+    expect(serialized).not.toContain("Alex");
+  });
+
+  it("does not report a retryable (non-terminal) outcome — retries are expected, not alertable", async () => {
+    const { mailer } = recordingMailer();
+    const warn = vi.fn();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { warn },
+      undefined,
+      { report },
+    );
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "retry",
+      error: "temporary network error",
+    });
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when no error reporter is configured", async () => {
+    const { mailer } = recordingMailer();
+    const handler = new ContactSendActionHandler(mailer, {
+      resolve: async () => ({ emails: ["owner@business.example"], webhook: null }),
+    });
+
+    await expect(handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "boom",
+    })).resolves.toBeUndefined();
+  });
+
+  it("does not throw when the error reporter itself rejects", async () => {
+    const { mailer } = recordingMailer();
+    const report = vi.fn().mockRejectedValue(new Error("sink down"));
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { report },
+    );
+
+    await expect(handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "boom",
+    })).resolves.toBeUndefined();
+  });
+});
+
 describe("FetchContactWebhookHttpClient", () => {
   const okResponse = () => new Response(null, { status: 204 });
   const redirect = (location: string) => new Response(null, { status: 307, headers: { location } });

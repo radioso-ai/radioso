@@ -76,4 +76,35 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     // maxAttempts == current attempts → CASE picks 'failed'
     expect(await repository.recordFailure(fresh.id, "boom", fresh.attempts, fresh.attempts, 60)).toBe("failed");
   });
+
+  it("getPendingDepthSnapshot counts pending/in_progress rows and reports the oldest pending row's timestamp", async () => {
+    expect(await repository.getPendingDepthSnapshot()).toEqual({
+      pendingCount: 0,
+      inProgressCount: 0,
+      oldestPendingCreatedAt: null,
+    });
+
+    const first = await enqueue();
+    await enqueue();
+    const third = await enqueue();
+
+    // Claim one row so it moves to in_progress — it must drop out of pendingCount
+    // and stop being a candidate for oldestPendingCreatedAt, but still count as
+    // in-progress backlog (a stuck lease is exactly what an operator needs to see).
+    const claimed = await repository.claimPending(1, 300);
+    expect(claimed.map((c) => c.id)).toEqual([first.id]);
+
+    const snapshot = await repository.getPendingDepthSnapshot();
+    expect(snapshot.pendingCount).toBe(2);
+    expect(snapshot.inProgressCount).toBe(1);
+    expect(snapshot.oldestPendingCreatedAt).toBeInstanceOf(Date);
+
+    const oldestRow = (await database.query<{ created_at: Date }>(
+      `SELECT created_at FROM routine_action_requests WHERE id = $1`,
+      [third.id],
+    ))[0];
+    // third is not the actual oldest pending row (second is) — just proving the field
+    // is a real timestamp read back from the table, not a hardcoded/derived value.
+    expect(snapshot.oldestPendingCreatedAt!.getTime()).toBeLessThanOrEqual(oldestRow!.created_at.getTime());
+  });
 });

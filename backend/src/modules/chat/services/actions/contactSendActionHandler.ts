@@ -1,5 +1,7 @@
 import { readNotifyContactDelivery } from "../../../agents/public.js";
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
+import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
+import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
   FetchWebhookHttpClient,
@@ -176,6 +178,8 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly recipients: ContactRecipientResolver,
     private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
     private readonly webhookClient?: ContactWebhookHttpClient,
+    // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
+    private readonly errorReporter?: ErrorReporter,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -240,5 +244,49 @@ export class ContactSendActionHandler implements ActionHandler {
       rawBody: JSON.stringify(input.payload),
       headers: { "Idempotency-Key": input.idempotencyKey },
     });
+  }
+
+  /**
+   * Only a terminal (`failed`, retry budget exhausted) outcome is alertable — a
+   * `retry` is expected, transient behavior the dispatcher already handles. Before
+   * this, a permanently failed contact.send produced no log and no error report (the
+   * gap that let the outbox drain outage go unnoticed for two months); this closes
+   * it without logging the visitor's email, name, or message — only correlation ids
+   * and the handler's own error string (already durable in the outbox's `last_error`
+   * column regardless of this call).
+   */
+  async recordFailureOutcome(input: {
+    payload: Record<string, unknown>;
+    context: ActionHandlerContext;
+    outcome: Exclude<ActionFailureOutcome, "superseded">;
+    error: string;
+  }): Promise<void> {
+    if (input.outcome !== "failed") {
+      return;
+    }
+    this.logger?.warn(
+      {
+        workspaceId: input.context.workspaceId,
+        conversationId: input.context.conversationId,
+        requestId: input.context.requestId,
+        attempt: input.context.attempt,
+      },
+      "contact.send delivery permanently failed after exhausting retries",
+    );
+    try {
+      await this.errorReporter?.report({
+        errorType: "action.contact_send.delivery_failed",
+        error: new Error(input.error),
+        severity: "error",
+        metadata: {
+          workspaceId: input.context.workspaceId ?? undefined,
+          conversationId: input.context.conversationId ?? undefined,
+          requestId: input.context.requestId,
+        },
+      });
+    } catch {
+      // The warn log above is already the durable trail; a reporting-sink outage
+      // must not surface as a second failure on top of the delivery failure itself.
+    }
   }
 }

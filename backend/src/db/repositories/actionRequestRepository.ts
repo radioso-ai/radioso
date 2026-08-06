@@ -9,6 +9,12 @@ export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "fa
  */
 export type ActionFailureOutcome = "retry" | "failed" | "superseded";
 
+export interface ActionOutboxDepthSnapshot {
+  pendingCount: number;
+  inProgressCount: number;
+  oldestPendingCreatedAt: Date | null;
+}
+
 export interface ActionRequestRecord {
   id: string;
   type: string;
@@ -178,6 +184,31 @@ export class ActionRequestRepository {
       return "superseded";
     }
     return row.status === "failed" ? "failed" : "retry";
+  }
+
+  /**
+   * A point-in-time read of outbox backlog for observability (not used by the drain
+   * path itself). Mirrors `DocumentProcessingJobRepository.getQueueSnapshot()`: counts
+   * by state plus the oldest pending row's `created_at`, so an operator can alert on
+   * both current depth and how long the oldest item has been waiting. Uses the same
+   * `routine_action_requests_claimable_idx` partial index (`created_at WHERE status IN
+   * ('pending','in_progress')`) the claim query already relies on.
+   */
+  async getPendingDepthSnapshot(): Promise<ActionOutboxDepthSnapshot> {
+    const row = await this.db
+      .selectFrom("routine_action_requests")
+      .select((eb) => [
+        eb.fn.countAll<number>().filterWhere("status", "=", "pending").as("pending_count"),
+        eb.fn.countAll<number>().filterWhere("status", "=", "in_progress").as("in_progress_count"),
+        eb.fn.min<Date>("created_at").filterWhere("status", "=", "pending").as("oldest_pending_created_at"),
+      ])
+      .executeTakeFirst();
+
+    return {
+      pendingCount: Number(row?.pending_count ?? 0),
+      inProgressCount: Number(row?.in_progress_count ?? 0),
+      oldestPendingCreatedAt: row?.oldest_pending_created_at ? new Date(row.oldest_pending_created_at) : null,
+    };
   }
 }
 

@@ -26,6 +26,7 @@ import {
   ActionDispatcher,
   ActionDispatchWorker,
   ActionHandlerRegistry,
+  DrainTriggeringActionOutbox,
   AssistantChatService,
   AssistantHistoryService,
   AnswerPresentationService,
@@ -64,6 +65,7 @@ import {
   AgentConverseService,
 } from "../../../modules/chat/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
+import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
 import { DocumentSourceContentService, AgentConverseResourceService } from "../../../modules/documents/composition.js";
 import {
   ModelSenseLabelGateway,
@@ -253,6 +255,12 @@ export const buildChatServices = (input: {
     present: answerPresentationService.present.bind(answerPresentationService),
   };
   const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
+  // Conversation-action outbox drain push (contact-outbox fix): every current
+  // producer of `routine_action_requests` rows requests a drain once its enqueue is
+  // durable. Cloud Tasks under WORKER_DISPATCH_DRIVER=cloud-tasks + a configured
+  // queue name; otherwise a no-op, so local dev and any not-yet-provisioned prod
+  // deploy keep relying on the interval-loop poller / recovery sweep unchanged.
+  const actionDrainDispatcher = createDefaultActionDrainDispatcher(input.env, input.logger);
   const publicChatActionAdvertiserContext = {
     database: input.database,
     chatGateway,
@@ -362,7 +370,11 @@ export const buildChatServices = (input: {
       adapter: SLACK_SKILLS_ADAPTER,
       executor: new SlackEscalationExecutor({
         skills: input.slackSkillDefinitionRepository,
-        outbox: new ActionRequestRepository(input.database.kysely),
+        outbox: new DrainTriggeringActionOutbox(
+          new ActionRequestRepository(input.database.kysely),
+          actionDrainDispatcher,
+          input.logger,
+        ),
       }),
     });
   }
@@ -372,7 +384,11 @@ export const buildChatServices = (input: {
       adapter: NOTIFY_SKILLS_ADAPTER,
       executor: new NotifyExecutor({
         skills: new AgentSkillRepository(input.database.kysely),
-        outbox: new ActionRequestRepository(input.database.kysely),
+        outbox: new DrainTriggeringActionOutbox(
+          new ActionRequestRepository(input.database.kysely),
+          actionDrainDispatcher,
+          input.logger,
+        ),
       }),
     });
   }
@@ -455,6 +471,9 @@ export const buildChatServices = (input: {
   // registered handler out of band (`actionDispatchWorker`). The two share one repository
   // so the same table backs the enqueue and the drain.
   const actionOutbox = new ActionRequestRepository(input.database.kysely);
+  // The fallback (non-transactional) enqueue path — see `ChatTurnLifecycle`'s
+  // `assistantTurnPersistence`-absent branch — also requests a drain once durable.
+  const pushingActionOutbox = new DrainTriggeringActionOutbox(actionOutbox, actionDrainDispatcher, input.logger);
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,
@@ -469,13 +488,23 @@ export const buildChatServices = (input: {
               webhookDestinations: input.webhookDestinations,
               mailService: input.mailService,
               assertPublicWebsiteUrl: input.assertPublicWebsiteUrl,
+              errorReporter: input.errorReporter,
             })
           : registration.handler,
     })),
   );
   const actionDispatchWorker = new ActionDispatchWorker(
     new ActionDispatcher(actionOutbox, actionHandlerRegistry),
-    { logger: input.logger, errorReporter: input.errorReporter },
+    {
+      logger: input.logger,
+      errorReporter: input.errorReporter,
+      // Outbox depth / oldest-pending-age — the operator-alertable signal for a
+      // stuck outbox (the failure mode this worker exists to catch). Reported on
+      // every drain, not just activity transitions: see the staleness note on
+      // `ActionDispatchWorkerOptions.depthSnapshot`.
+      depthSnapshot: actionOutbox,
+      telemetryService: input.telemetryService,
+    },
   );
 // Routine machinery (spec 070 / #520). The owning routines module loads the
   // per-turn catalog, applies capability gates, and assembles the runtime ports.
@@ -697,12 +726,17 @@ export const buildChatServices = (input: {
     conversationEngine,
     turnAssemblyFactory: chatTurnAssemblyFactory,
     // Turn-emitted action intents land here, persisted to the outbox and
-    // dispatched out of band by `actionDispatchWorker` in the worker process.
-    actionOutbox,
+    // dispatched out of band by `actionDispatchWorker` in the worker process. Only
+    // exercised by the `assistantTurnPersistence`-absent fallback path (tests /
+    // non-DB hosts) — production writes actions through `assistantTurnPersistence`
+    // below instead, transactionally with the rest of the turn.
+    actionOutbox: pushingActionOutbox,
     assistantTurnPersistence: new PostgresAssistantTurnPersistence(
       input.database.kysely,
       undefined,
       input.conversationOwnershipRepository,
+      actionDrainDispatcher,
+      input.logger,
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,

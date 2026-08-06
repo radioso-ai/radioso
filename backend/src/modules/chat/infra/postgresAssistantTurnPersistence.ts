@@ -16,6 +16,8 @@ import {
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
+import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -235,6 +237,13 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     private readonly db: Db,
     private readonly routineStateTtlMs: number = DEFAULT_ROUTINE_STATE_TTL_MS,
     private readonly conversationOwnershipRepository = new ConversationOwnershipRepository(db),
+    // Optional: when wired, a turn that enqueued routine actions (contact.send,
+    // handoff.notify, approval.request, ...) requests an outbox drain push once the
+    // turn's own transaction has committed (spec 070 push-per-action, see the
+    // conversation-action outbox drain fix). Absent leaves turns unchanged — the
+    // interval-loop poller and the recovery sweep still drain the row.
+    private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
+    private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
@@ -309,11 +318,36 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
 
     // When the caller supplies an open transaction (the pending-decision commit fence),
     // run on it directly so the decision flip, routine resume, and this turn commit
-    // together. Otherwise open a fresh transaction for the whole turn.
-    if (input.transaction) {
-      return run(input.transaction);
-    }
+    // together — that commit lands one frame up, in the fence's own `.transaction()`
+    // call, after this method returns. Otherwise open a fresh transaction for the
+    // whole turn, which has committed by the time `.execute()` resolves below.
+    const result = input.transaction
+      ? await run(input.transaction)
+      : await this.db.transaction().execute(async (trx) => run(trx));
 
-    return this.db.transaction().execute(async (trx) => run(trx));
+    await this.requestActionDrain(input.actions);
+    return result;
+  }
+
+  /**
+   * Best-effort push: never fails the turn that already committed. In the normal
+   * (self-managed transaction) path this fires strictly after commit. In the rarer
+   * externally-supplied-transaction path (HITL decision resume) it can fire a few
+   * microseconds before that outer transaction's own commit lands — accepted, since a
+   * Cloud Tasks round trip is far slower than the remaining in-process work before that
+   * commit, and any residual race is covered by the recovery sweep, not silently lost.
+   */
+  private async requestActionDrain(actions: CompleteAssistantTurnInput["actions"]): Promise<void> {
+    if (!actions?.length || !this.actionDrainDispatcher) {
+      return;
+    }
+    try {
+      await this.actionDrainDispatcher.requestDrain();
+    } catch (error) {
+      this.logger?.warn(
+        { err: error instanceof Error ? error.message : String(error) },
+        "Action outbox drain push failed; the interval poller or recovery sweep will pick this up",
+      );
+    }
   }
 }

@@ -110,6 +110,31 @@ class MetricsTelemetrySink implements TelemetrySink {
           value: event.metrics.durationMs,
         });
       }
+      return;
+    }
+
+    if (event.eventType === "action.dispatch.queue_state") {
+      // The operator-alertable signal for a stuck conversation-action outbox (the
+      // contact-outbox incident this exists to catch): global counts and an age, no
+      // per-workspace/per-conversation labels — low cardinality by construction.
+      if (typeof event.metrics?.pendingCount === "number") {
+        this.metricsRegistry.setGauge("action_dispatch_queue_pending", {
+          help: "Current pending conversation-action outbox rows awaiting dispatch.",
+          value: event.metrics.pendingCount,
+        });
+      }
+      if (typeof event.metrics?.inProgressCount === "number") {
+        this.metricsRegistry.setGauge("action_dispatch_queue_in_progress", {
+          help: "Current in-progress (claimed) conversation-action outbox rows.",
+          value: event.metrics.inProgressCount,
+        });
+      }
+      if (typeof event.metrics?.oldestPendingAgeMs === "number") {
+        this.metricsRegistry.setGauge("action_dispatch_oldest_pending_age_ms", {
+          help: "Age in milliseconds of the oldest pending conversation-action outbox row.",
+          value: event.metrics.oldestPendingAgeMs,
+        });
+      }
     }
   }
 }

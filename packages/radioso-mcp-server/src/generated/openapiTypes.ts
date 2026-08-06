@@ -5580,8 +5580,11 @@ export interface components {
             hasMore: boolean;
         };
         ChatConversationMessageDebug: {
-            /** @enum {string} */
-            eventStatus: "success" | "failure";
+            /**
+             * @description "cancelled" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error.
+             * @enum {string}
+             */
+            eventStatus: "success" | "failure" | "cancelled";
             /** Format: date-time */
             recordedAt: string;
             stream: boolean;
@@ -5596,6 +5599,24 @@ export interface components {
             activitySummary?: components["schemas"]["ActivitySummary"];
             activityTrace?: components["schemas"]["ActivityTrace"];
             turnTrace?: components["schemas"]["TurnTraceEnvelope"];
+            errorMessage?: string | null;
+        };
+        /** @description Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it. */
+        ChatConversationTurnFailure: {
+            /**
+             * @description "failure" is a genuine error; "cancelled" means a newer message superseded this turn before it could answer.
+             * @enum {string}
+             */
+            eventStatus: "failure" | "cancelled";
+            /** Format: date-time */
+            recordedAt: string;
+            stream: boolean;
+            /**
+             * @description Present for a "cancelled" turn: the pipeline stage the newer message interrupted.
+             * @enum {string}
+             */
+            stage?: "waiting" | "preparing" | "routing" | "rendering" | "persisting";
+            /** @description Present only for a genuine "failure"; a "cancelled" turn has no error to show. */
             errorMessage?: string | null;
         };
         AnswerFeedbackEntry: {
@@ -5669,6 +5690,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
+            turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
             operatorDisplayName?: string;
         };
         ConversationOwnershipResponse: {

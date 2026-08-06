@@ -23,6 +23,7 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
   const sessionId = randomUUID();
   const expiredSessionId = randomUUID();
   const recentSessionId = randomUUID();
+  const truncatedSessionId = randomUUID();
 
   const candidate = {
     id: "cand-1",
@@ -38,7 +39,7 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
   afterAll(async () => {
     await database
       .query(`DELETE FROM clarification_states WHERE session_id = ANY($1::uuid[])`, [
-        [sessionId, expiredSessionId, recentSessionId],
+        [sessionId, expiredSessionId, recentSessionId, truncatedSessionId],
       ])
       .catch(() => undefined);
     await database.close().catch(() => undefined);
@@ -92,10 +93,11 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
     expect(count[0]?.count).toBe("1");
   });
 
-  it("loadPending returns null and expires the row when past expiry", async () => {
+  it("loadPending expires the row when past expiry, preserving the original query for debugging", async () => {
     await repository.save({
       sessionId: expiredSessionId,
       source: "retrieval",
+      originalQuery: "why did this go stale?",
       candidates: [candidate],
       status: "pending",
       expiresAt: new Date(Date.now() - 1000),
@@ -109,7 +111,30 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
       [expiredSessionId],
     );
     expect(rows[0]?.status).toBe("expired");
-    expect(rows[0]?.original_query).toBeNull();
+    // Retained (not nulled) so an expired clarification stays debuggable; a
+    // future turn could recover it via loadRecent within the TTL window.
+    expect(rows[0]?.original_query).toBe("why did this go stale?");
+  });
+
+  it("loadPending fails closed when a stored candidate is malformed, rather than matching against a shifted position", async () => {
+    // Simulate corruption `save()` itself would never produce: a candidate
+    // missing a required field sits between two well-formed ones. Written via
+    // raw SQL because the typed `save()` API cannot express a malformed entry.
+    await database.query(
+      `INSERT INTO clarification_states (session_id, source, mode, candidates, status, expires_at)
+       VALUES ($1, 'retrieval', 'ask', $2::jsonb, 'pending', $3)`,
+      [
+        truncatedSessionId,
+        JSON.stringify([
+          { id: "doc-a", label: "Doc A", confidence: 0.8, payload: {} },
+          { id: "doc-b", label: "Doc B" }, // missing confidence/payload -> not a candidate
+          { id: "doc-c", label: "Doc C", confidence: 0.7, payload: {} },
+        ]),
+        new Date(Date.now() + 60 * 60 * 1000),
+      ],
+    );
+
+    expect(await repository.loadPending({ sessionId: truncatedSessionId })).toBeNull();
   });
 
   it("loadRecent returns terminal-status rows within TTL and ignores pending", async () => {
@@ -140,7 +165,7 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
     expect(await repository.loadRecent({ sessionId: recentSessionId })).toBeNull();
   });
 
-  it("clear sets the outcome status and nulls the original query", async () => {
+  it("clear sets the outcome status and preserves the original query for a declined outcome", async () => {
     await repository.save({
       sessionId,
       source: "retrieval",
@@ -157,23 +182,31 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
       [sessionId],
     );
     expect(rows[0]?.status).toBe("declined");
-    expect(rows[0]?.original_query).toBeNull();
+    // Retained so a failed mapping stays debuggable and a later turn could
+    // recover the question; loadPending correctly still reports no pending
+    // row (status is no longer "pending"), so this does not change routing.
+    expect(rows[0]?.original_query).toBe("again?");
     expect(await repository.loadPending({ sessionId })).toBeNull();
   });
 
-  it("clear defaults the outcome to resolved", async () => {
+  it("clear defaults the outcome to resolved and nulls the original query", async () => {
     await repository.save({
       sessionId,
       source: "retrieval",
+      originalQuery: "one more time?",
       candidates: [candidate],
       status: "pending",
       expiresAt: new Date(Date.now() + 60 * 60 * 1000),
     });
     await repository.clear({ sessionId });
-    const rows = await database.query<{ status: string }>(
-      `SELECT status FROM clarification_states WHERE session_id = $1`,
+    const rows = await database.query<{ status: string; original_query: string | null }>(
+      `SELECT status, original_query FROM clarification_states WHERE session_id = $1`,
       [sessionId],
     );
     expect(rows[0]?.status).toBe("resolved");
+    // A resolved clarification already surfaced its original query to the
+    // caller before clearing (resolvePendingClarification reads
+    // pending.originalQuery first), so there is nothing left to retain.
+    expect(rows[0]?.original_query).toBeNull();
   });
 });

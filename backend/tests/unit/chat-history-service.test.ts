@@ -402,6 +402,139 @@ describe("chat history service ownership read surface", () => {
   });
 });
 
+describe("chat history service turn failure debug", () => {
+  const detailInput = { limit: 50, offset: 0 };
+
+  it("attaches turn-failure debug to the user message when includeTurnFailureDebug is set (dashboard)", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const userMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "first question",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        stream: false,
+        supersededStage: "routing",
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeTurnFailureDebug: true,
+    });
+
+    const turn = detail.messages.find((message) => message.id === userMessage.id);
+    expect(turn?.turnFailure).toEqual({
+      eventStatus: "cancelled",
+      recordedAt: expect.any(String),
+      stream: false,
+      stage: "routing",
+      errorMessage: null,
+    });
+  });
+
+  it("surfaces a genuine failure's error text the same way", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const userMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "second question",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "failure",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        stream: false,
+        errorMessage: "Provider request timed out",
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeTurnFailureDebug: true,
+    });
+
+    const turn = detail.messages.find((message) => message.id === userMessage.id);
+    expect(turn?.turnFailure).toMatchObject({
+      eventStatus: "failure",
+      errorMessage: "Provider request timed out",
+    });
+  });
+
+  it("omits turn-failure debug when includeTurnFailureDebug is unset (public surface)", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const userMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "first question",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        stream: false,
+        supersededStage: "routing",
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput);
+
+    const turn = detail.messages.find((message) => message.id === userMessage.id);
+    expect(turn?.turnFailure).toBeUndefined();
+  });
+
+  it("does not attach turn-failure debug once the turn produced an assistant message", async () => {
+    const { conversationRepository, messageRepository, auditRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    const userMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "user",
+      content: "third question",
+    });
+    const assistantMessage = await messageRepository.create({
+      conversationId: conversation.id,
+      workspaceId: "workspace-1",
+      role: "assistant",
+      content: "answer",
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "chat.answer",
+      eventStatus: "success",
+      metadata: {
+        conversationId: conversation.id,
+        userMessageId: userMessage.id,
+        assistantMessageId: assistantMessage.id,
+        stream: false,
+      },
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeTurnFailureDebug: true,
+    });
+
+    const turn = detail.messages.find((message) => message.id === userMessage.id);
+    expect(turn?.turnFailure).toBeUndefined();
+  });
+});
+
 describe("chat history service", () => {
   it("replays activity trace metadata for assistant turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();

@@ -5,6 +5,7 @@ import type { ConversationTrace } from "@radioso/conversation-contract";
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
+import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import {
   buildTurnTraceForPresentation,
   ChatTurnLifecycle,
@@ -62,7 +63,7 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
     undefined,
     metrics,
   );
-  return { lifecycle, records, messageRepository };
+  return { lifecycle, records, messageRepository, conversationRepository };
 };
 
 const session = (): PreparedSession =>
@@ -1524,5 +1525,78 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     // The raw spine now lives only in the envelope; the dead audit key is gone.
     expect(metadata.conversationEngine).toBeUndefined();
     expect(metadata.turnTrace?.spine?.traceId).toBe("conversation-turn-1");
+  });
+
+  describe("recordSupersession", () => {
+    it("records an accountable chat.answer event keyed to the user message, distinct from a failure", async () => {
+      const { lifecycle, records, conversationRepository } = harness();
+      const supersededBy = new ChatTurnSupersededError("conv_1", "routing");
+
+      await lifecycle.recordSupersession(
+        { workspaceId: "workspace_1", accountId: "account_1", stream: false },
+        session(),
+        undefined,
+        supersededBy,
+      );
+
+      expect(records).toHaveLength(1);
+      const [event] = records;
+      expect(event.eventType).toBe("chat.answer");
+      // A supersession is a normal user interruption, not an error: it must never be
+      // recorded as "failure", or Activity/health surfaces reading eventStatus would
+      // count a user typing a follow-up as an assistant error.
+      expect(event.eventStatus).toBe("cancelled");
+      expect(event.eventStatus).not.toBe("failure");
+      expect(event.metadata).toMatchObject({
+        conversationId: "conv_1",
+        userMessageId: "msg_1",
+        stream: false,
+        supersededStage: "routing",
+      });
+      expect(event.metadata.assistantMessageId).toBeUndefined();
+      // No error text: this event records an interruption, not a diagnostic.
+      expect(event.metadata.errorMessage).toBeUndefined();
+      // No assistant message exists yet for this turn, so the conversation's
+      // updated_at is left alone (mirrors recordFailure's touch guard).
+      expect(conversationRepository.touch).not.toHaveBeenCalled();
+    });
+
+    it("touches the conversation when an assistant message already exists for the superseded turn", async () => {
+      const { lifecycle, records, conversationRepository } = harness();
+      const supersededBy = new ChatTurnSupersededError("conv_1", "persisting");
+
+      await lifecycle.recordSupersession(
+        { workspaceId: "workspace_1", stream: true },
+        session(),
+        "assistant_msg_partial",
+        supersededBy,
+      );
+
+      expect(conversationRepository.touch).toHaveBeenCalledWith("conv_1", "workspace_1");
+      expect(records[0].metadata).toMatchObject({
+        assistantMessageId: "assistant_msg_partial",
+        supersededStage: "persisting",
+        stream: true,
+      });
+    });
+
+    it("falls back to the input conversationId when no turn was prepared yet", async () => {
+      const { lifecycle, records, conversationRepository } = harness();
+      const supersededBy = new ChatTurnSupersededError("conv_pending", "waiting");
+
+      await lifecycle.recordSupersession(
+        { workspaceId: "workspace_1", conversationId: "conv_pending", stream: false },
+        null,
+        undefined,
+        supersededBy,
+      );
+
+      expect(records[0].metadata).toMatchObject({
+        conversationId: "conv_pending",
+        supersededStage: "waiting",
+      });
+      expect(records[0].metadata.userMessageId).toBeUndefined();
+      expect(conversationRepository.touch).not.toHaveBeenCalled();
+    });
   });
 });

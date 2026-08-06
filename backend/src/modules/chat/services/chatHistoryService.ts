@@ -1,6 +1,7 @@
 import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
+import type { ConversationTurnStage } from "../contracts/interruption.js";
 import type { ConversationOwnershipScope } from "../../handoff/public.js";
 import type { AuditEventRecord, AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type {
@@ -114,7 +115,10 @@ export interface ChatConversationSummary {
 }
 
 export interface ChatConversationTurnDebug {
-  eventStatus: "success" | "failure";
+  // "cancelled" covers a turn that had already produced an assistant message (a
+  // suspended/durable turn) before a newer message superseded it. Kept distinct from
+  // "failure" so this never reads as an assistant error.
+  eventStatus: "success" | "failure" | "cancelled";
   recordedAt: string;
   stream: boolean;
   citationCount: number;
@@ -136,6 +140,24 @@ export interface ChatConversationTurnDebug {
   };
 }
 
+/**
+ * Debug fact for a user turn that never got a reply: a genuine failure, or a turn a
+ * newer message superseded before it could answer. Both leave no assistant message
+ * behind, so the fact is attached to the user's own message instead — the turn's only
+ * other trace is a `chat_turn_cancelled`/error log line an operator cannot query by
+ * conversation. Deliberately a separate, smaller shape than `ChatConversationTurnDebug`:
+ * there is no retrieval/activity/turn trace to show for a turn that never finished.
+ */
+export interface ChatConversationTurnFailure {
+  eventStatus: "failure" | "cancelled";
+  recordedAt: string;
+  stream: boolean;
+  /** Present for a "cancelled" event: the pipeline stage the newer message interrupted. */
+  stage?: ConversationTurnStage;
+  /** Present only for a genuine "failure"; a "cancelled" turn has no error to show. */
+  errorMessage?: string | null;
+}
+
 export interface ChatConversationTurn {
   id: string;
   role: MessageRecord["role"];
@@ -148,6 +170,13 @@ export interface ChatConversationTurn {
   suggestions?: ChatSuggestion[];
   answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
   debug?: ChatConversationTurnDebug;
+  /**
+   * Set only when the conversation is read with `includeTurnFailureDebug` (the
+   * dashboard surface). A DASHBOARD-only operator diagnostic: it can carry raw error
+   * text, so it must never reach the public/embed visitor surface, which shares this
+   * read path.
+   */
+  turnFailure?: ChatConversationTurnFailure;
   /**
    * Display name of the human operator who authored this turn (a takeover reply),
    * so the visitor can see who is answering. Only the name is exposed — never the
@@ -255,6 +284,7 @@ interface ChatAuditMetadata {
   answerOutcome?: AssistantTurnOutcome;
   skillTurn?: unknown;
   skillIntake?: unknown;
+  userMessageId?: string;
   assistantMessageId?: string;
   stream?: boolean;
   citationCount?: number;
@@ -265,6 +295,9 @@ interface ChatAuditMetadata {
   activityTrace?: ActivityTrace;
   turnTrace?: TurnTraceEnvelope;
   errorMessage?: string;
+  // Present on a "cancelled" chat.answer event: the pipeline stage a newer message
+  // interrupted (see ConversationTurnStage / ChatTurnSupersededError).
+  supersededStage?: ConversationTurnStage;
   route?: {
     generator?: unknown;
     routeType?: unknown;
@@ -887,6 +920,10 @@ export class ChatHistoryService {
       // The internal agent label is an operator-only presentation fact. It must never reach
       // the public/embed visitor surface, which shares this read method.
       includeAgentInternalName?: boolean;
+      // OFF by default: this can carry raw error text for a failed turn and is a
+      // DASHBOARD-only operator diagnostic. The public/embed visitor path calls this
+      // method directly and must never set it.
+      includeTurnFailureDebug?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -895,13 +932,16 @@ export class ChatHistoryService {
       throw notFound("Conversation not found");
     }
 
-    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline] = await Promise.all([
+    const [{ messages, total, nextCursor, hasMore }, messageSummaries, ownershipRecord, tailBaseline, turnFailureEvents] = await Promise.all([
       this.messageRepository.listWindowByConversationId(workspaceId, conversation.id, input),
       this.messageRepository.summarizeByConversationIds(workspaceId, [conversation.id]),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         limit: 1,
       }),
+      options.includeTurnFailureDebug
+        ? this.auditEventRepository.listChatAnswerEventsByConversationId(workspaceId, conversation.id)
+        : Promise.resolve<AuditEventRecord[]>([]),
     ]);
     const assistantMessageIds = messages
       .filter((message) => message.role === "assistant")
@@ -917,6 +957,9 @@ export class ChatHistoryService {
 
     const artifactsByAssistantMessageId = this.buildArtifactsIndex(auditEvents);
     const debugByAssistantMessageId = this.buildDebugIndex(auditEvents, messages);
+    const turnFailureByUserMessageId = options.includeTurnFailureDebug
+      ? this.buildTurnFailureIndex(turnFailureEvents)
+      : new Map<string, ChatConversationTurnFailure>();
     const messageSummary = messageSummaries.get(conversation.id);
 
     return {
@@ -953,6 +996,7 @@ export class ChatHistoryService {
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
+        turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
       })),
       ...(ownershipRecord?.state === "human_owned"
@@ -1052,7 +1096,14 @@ export class ChatHistoryService {
           startedAt: toIsoString(event.createdAt),
         });
       index.set(metadata.assistantMessageId, {
-        eventStatus: event.eventStatus === "failure" ? "failure" : "success",
+        // Preserve all three states: collapsing "cancelled" into "success" would show a
+        // superseded turn as a completed answer; collapsing it into "failure" would show
+        // a routine interruption as an assistant error.
+        eventStatus: event.eventStatus === "success"
+          ? "success"
+          : event.eventStatus === "cancelled"
+            ? "cancelled"
+            : "failure",
         recordedAt: toIsoString(event.createdAt),
         stream: Boolean(metadata.stream),
         citationCount: typeof metadata.citationCount === "number" ? metadata.citationCount : 0,
@@ -1069,6 +1120,38 @@ export class ChatHistoryService {
         turnTrace,
         errorMessage: metadata.errorMessage ?? null,
         route,
+      });
+    }
+
+    return index;
+  }
+
+  /**
+   * Indexes `chat.answer` events that never produced an assistant message — a genuine
+   * failure or a superseded turn — by the user message they belong to. These are the
+   * only turns `buildDebugIndex` cannot reach: it keys strictly by `assistantMessageId`,
+   * which is exactly what a turn with no reply never has.
+   */
+  private buildTurnFailureIndex(
+    auditEvents: AuditEventRecord[],
+  ): Map<string, ChatConversationTurnFailure> {
+    const index = new Map<string, ChatConversationTurnFailure>();
+
+    for (const event of auditEvents) {
+      const metadata = event.metadata as ChatAuditMetadata;
+      if (metadata.assistantMessageId || typeof metadata.userMessageId !== "string") {
+        continue;
+      }
+      if (event.eventStatus !== "failure" && event.eventStatus !== "cancelled") {
+        continue;
+      }
+
+      index.set(metadata.userMessageId, {
+        eventStatus: event.eventStatus,
+        recordedAt: toIsoString(event.createdAt),
+        stream: Boolean(metadata.stream),
+        stage: metadata.supersededStage,
+        errorMessage: metadata.errorMessage ?? null,
       });
     }
 

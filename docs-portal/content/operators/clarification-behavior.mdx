@@ -93,8 +93,30 @@ the same turn as `not_clarified` (see "Measuring ask-rate"), so the trace value
 and the metric value differ by design. This judgment is made by the model in the
 conversation language, so it works the same in any language.
 
-When the model is unsure, or the judgment is missing, Radioso treats the groups as
-competing readings and falls back to the normal ask-or-offer behavior.
+The same answer-without-clarifying path also covers duplicate sources. Sites
+accumulate these: a published page and a leftover staging draft of it, or a page
+that was copied and lightly edited. Both copies get ingested, so the same content
+matches a query twice. Asking which copy the visitor meant is a question with no
+useful answer, so Radioso answers once over every matched group instead. The trace
+records this as reason `redundant_sources` — a distinct value from
+`compatible_facets` so you can tell "the model merged duplicate sources" from "the
+model merged complementary facets" at a glance. A candidate set can mix
+complementary and redundant groups; when it does, the trace still records
+`redundant_sources`, since spotting a duplicate-content merge is more useful to an
+operator than a complementary one.
+
+To make this call, the model reads a short passage from each group alongside the
+titles and metadata. Titles alone are not enough to recognise a duplicate: a
+published page and a draft copy of it, whose titles differ only by a word such as
+"new" or a leading marker, read as different subjects until you can see that they
+say the same thing. Passages are used only for this judgment, never to write the
+option labels the visitor sees. Groups that share nothing but boilerplate — a
+footer, a contact block, a pricing notice — are not treated as duplicates.
+
+When the model is unsure, or the judgment is missing on any group in the set,
+Radioso treats the whole set as competing readings and falls back to the normal
+ask-or-offer behavior — even if every other group in that set was judged
+complementary or redundant.
 
 For active routines, clarification asks are suppressed. This keeps the active
 routine as the only state waiting on the visitor's next message.
@@ -124,7 +146,7 @@ The detail panel shows:
   `not_clarified`
 - `reason` — why the turn resolved the way it did, such as `clear_margin`,
   `priority`, `suppressed`, `loop_guard`, `label_fallback`, `phrasing_fallback`,
-  or `compatible_facets`
+  `compatible_facets`, or `redundant_sources`
 - `candidates` — candidate ids, labels, and confidence values; the chosen winner
   and offered alternatives are labels only
 - `offerOutcome` — whether an inline offer was accepted as an alternative or
@@ -162,7 +184,8 @@ sum(rate(radioso_clarification_decisions_total{surface="retrieval_sense",decisio
 
 The denominator is the fresh ambiguity decisions on that surface: `asked`,
 `offered`, `auto_picked`, `suppressed`, and `not_clarified` (reason
-`compatible_facets`). It deliberately excludes the reply-resolution decisions
+`compatible_facets` or `redundant_sources`). It deliberately excludes the
+reply-resolution decisions
 recorded on a later turn when a visitor answers a prior ask or offer — `mapped`,
 `declined`, `expired`, `offer_accepted_alternative`, and `offer_ignored`. Those
 are second increments for an ask that was already counted, so including them would

@@ -13,6 +13,7 @@ describe("clarification metrics", () => {
     recordClarificationDecision(registry, { surface: "retrieval_sense", decision: "auto_picked", reason: "label_fallback" });
     recordClarificationDecision(registry, { surface: "retrieval_sense", decision: "not_clarified", reason: "compatible_facets" });
     recordClarificationDecision(registry, { surface: "retrieval_sense", decision: "auto_picked", reason: "phrasing_fallback" });
+    recordClarificationDecision(registry, { surface: "retrieval_sense", decision: "not_clarified", reason: "redundant_sources" });
 
     const rendered = registry.renderPrometheus();
     expect(rendered).toContain(
@@ -29,6 +30,9 @@ describe("clarification metrics", () => {
     );
     expect(rendered).toContain(
       'radioso_clarification_decisions_total{decision="auto_picked",reason="phrasing_fallback",surface="retrieval_sense"} 1',
+    );
+    expect(rendered).toContain(
+      'radioso_clarification_decisions_total{decision="not_clarified",reason="redundant_sources",surface="retrieval_sense"} 1',
     );
   });
 

@@ -156,6 +156,40 @@ const mapExactReplyChoice = (
   return null;
 };
 
+// ASCII digits only: ordinal words ("first", "option two", ...) stay the LLM
+// mapper's job, which keeps this structural rather than an English keyword
+// list. No multilingual digit-script normalization convention (e.g. for
+// full-width or Eastern Arabic numerals) exists elsewhere in this codebase to
+// follow, so this reads plain ASCII "0-9" only.
+const ORDINAL_REPLY_PATTERN = /^[0-9]+$/;
+
+/**
+ * Resolves a bare-number reply ("2") to the candidate at that 1-based position
+ * — the exact numbering {@link userFacingOptionsList} rendered to the visitor.
+ * This is a fast, deterministic sibling to {@link mapExactReplyChoice} for the
+ * overwhelmingly common case where the visitor just types the option number,
+ * saving a model round-trip. Callers must only pass this the candidate list
+ * that was actually rendered to the visitor in that order; see call site.
+ *
+ * Out-of-range numbers ("7" against 2 candidates) return null so the reply
+ * falls through to the LLM mapper rather than being silently swallowed.
+ */
+const mapOrdinalReplyChoice = (
+  reply: string,
+  candidates: ClarificationCandidate[],
+): ClarificationReplyMapping | null => {
+  const trimmed = reply.trim();
+  if (!ORDINAL_REPLY_PATTERN.test(trimmed)) {
+    return null;
+  }
+  const position = Number.parseInt(trimmed, 10);
+  if (position < 1 || position > candidates.length) {
+    return null;
+  }
+  const candidate = candidates[position - 1];
+  return candidate ? { kind: "chosen", id: candidate.id } : null;
+};
+
 const extractJsonObject = (raw: string): string | null => {
   const start = raw.indexOf("{");
   if (start < 0) {
@@ -253,6 +287,30 @@ export class DefaultClarifier implements ConversationClarifier {
     const exactChoice = mapExactReplyChoice(input.turn.inputEvent.content, input.candidates);
     if (exactChoice) {
       return exactChoice;
+    }
+
+    // Ordinal fast-path is "ask" mode only. That mode's candidates are stored in
+    // the exact order rendered to the visitor as a numbered list, so position N
+    // reliably means candidate N. "offer" mode never renders a code-guaranteed
+    // numbered list — the model free-writes the alternative(s) into prose (see
+    // chat/retrieval-sense-offer.md) and the stored candidates include the
+    // already-answered top pick ahead of the offered alternatives, so a bare
+    // number there cannot be trusted to mean the same thing the visitor read.
+    // Positional offer replies ("the second one") stay the LLM mapper's job.
+    if (input.mode !== "offer") {
+      // Match against the same filtered list `userFacingOptionsList` numbers, not
+      // the raw input: rendering drops non-presentable candidates before numbering,
+      // so indexing the unfiltered list would resolve position N to a different
+      // option than the visitor read. Filtering here keeps the numbering the kit
+      // renders and the numbering it resolves derived from one expression, rather
+      // than relying on a caller in another module to have pre-filtered identically.
+      const ordinalChoice = mapOrdinalReplyChoice(
+        input.turn.inputEvent.content,
+        input.candidates.filter(isPresentableCandidate),
+      );
+      if (ordinalChoice) {
+        return ordinalChoice;
+      }
     }
 
     const promptName = input.mode === "offer"

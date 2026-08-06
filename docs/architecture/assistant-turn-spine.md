@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, and routing."
-last_updated: 2026-07-22
+last_updated: 2026-08-05
 ---
 
 # Assistant Turn Spine
@@ -209,6 +209,14 @@ of three outcomes:
 - "none of these"
 - an unrelated message
 
+A blocking `ask` clarification numbers its options in the order shown to the
+visitor; a reply that repeats an option's id or label exactly, or is that
+option's plain number ("2"), resolves to a chosen candidate without a model
+call. Anything else — a paraphrase, a positional phrase like "the second one",
+or a reply after a lenient `offer` — goes to the reply-mapping model, since an
+`offer`'s alternatives are woven into prose rather than rendered as a numbered
+list the visitor can point a bare number at.
+
 If the user chooses a routine-activation candidate, the stored candidate payload
 is converted back into a forced routine activation. The routine starts as if it
 had been activated directly, including activation variables captured from the
@@ -225,8 +233,10 @@ If the visitor ignores the offer, the pending offer is cleared silently and the
 latest message proceeds as a normal turn. Blocking `ask` clarifications keep the
 stricter rule: a turn that resolves one does not create a new clarification in
 the same turn. The same candidate set is not asked or offered twice in a row. The
-stored original question is nulled whenever the pending row becomes resolved,
-declined, or expired.
+stored original question is nulled once a pending row is resolved; a declined or
+expired row keeps its original question for the rest of the loop-guard window,
+so a mapping failure stays debuggable and a later turn reading the same row can
+still see what was asked.
 
 ## Routines run before selection
 

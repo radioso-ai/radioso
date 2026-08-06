@@ -6,6 +6,7 @@ const dashboardConversationDetailOptions = {
   includeAnswerFeedback: true,
   includeOwnership: true,
   includeAgentInternalName: true,
+  includeTurnFailureDebug: true,
 };
 
 export class AssistantHistoryService {

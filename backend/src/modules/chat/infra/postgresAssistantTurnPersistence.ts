@@ -206,9 +206,24 @@ const applyClarificationTransition = async (
     await saveClarificationState(db, transition.pending);
     return;
   }
+  const outcome = transition.outcome ?? "resolved";
+  // Mirrors `ClarificationStateRepository.clear`: `original_query` is retained on a
+  // `declined`/`expired` clear so a failed reply mapping stays debuggable and a later
+  // turn can recover the question, and is nulled only on `resolved`, where the caller
+  // already received it. This transactional path is the one production runs (the
+  // deferred store applies transitions inside the assistant-turn transaction), so it
+  // must not diverge from the repository.
+  if (outcome === "resolved") {
+    await sql`
+      UPDATE clarification_states
+         SET status = ${outcome}, original_query = NULL, updated_at = now()
+       WHERE session_id = ${transition.sessionId}
+    `.execute(db);
+    return;
+  }
   await sql`
     UPDATE clarification_states
-       SET status = ${transition.outcome ?? "resolved"}, original_query = NULL, updated_at = now()
+       SET status = ${outcome}, updated_at = now()
      WHERE session_id = ${transition.sessionId}
   `.execute(db);
 };

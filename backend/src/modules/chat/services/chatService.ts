@@ -1039,6 +1039,7 @@ export class ChatService {
         conversationId: session?.conversation.id ?? input.conversationId,
       });
       if (preferredError instanceof ChatTurnSupersededError) {
+        await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         throw preferredError;
       }
       const normalizedError = normalizeProviderCredentialError(preferredError);
@@ -1538,6 +1539,7 @@ export class ChatService {
       }
       await releaseUsageReservation();
       if (preferredError instanceof ChatTurnSupersededError) {
+        await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         yield {
           type: "cancelled",
           conversationId: preferredError.conversationId,

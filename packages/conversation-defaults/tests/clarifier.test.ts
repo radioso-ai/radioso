@@ -227,4 +227,114 @@ describe("DefaultClarifier", () => {
     await expect(malformed.mapReply({ candidates, turn: turn() })).resolves.toEqual({ kind: "unrelated" });
     await expect(unknownId.mapReply({ candidates, turn: turn() })).resolves.toEqual({ kind: "unrelated" });
   });
+
+  describe("ordinal replies", () => {
+    it("maps a bare-number reply to the candidate at that 1-based position without asking the model", async () => {
+      const modelGateway = gateway('{"kind":"unrelated"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+
+      await expect(clarifier.mapReply({ candidates, turn: turn("2") }))
+        .resolves.toEqual({ kind: "chosen", id: "support" });
+      expect(modelGateway.complete).not.toHaveBeenCalled();
+    });
+
+    it("tolerates surrounding whitespace around the bare number", async () => {
+      const modelGateway = gateway('{"kind":"unrelated"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+
+      await expect(clarifier.mapReply({ candidates, turn: turn("  1  ") }))
+        .resolves.toEqual({ kind: "chosen", id: "billing" });
+    });
+
+    it("numbers ordinals over the rendered options, skipping candidates the question never showed", async () => {
+      // A non-presentable candidate (degenerate label equal to its own id) is
+      // dropped by `userFacingOptionsList` before numbering, so the visitor reads
+      // billing as 1 and support as 2. Resolving against the raw list instead
+      // would silently shift every choice by one.
+      const withHiddenCandidate = [
+        { id: "hidden", label: "hidden", confidence: 0.9 },
+        ...candidates,
+      ];
+      const modelGateway = gateway('{"kind":"unrelated"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+
+      const question = await clarifier.phraseQuestion({
+        candidates: withHiddenCandidate,
+        turn: turn("Necesito ayuda"),
+      });
+      expect(question).toContain("1. Facturacion");
+      expect(question).toContain("2. Soporte tecnico");
+      expect(question).not.toContain("hidden");
+
+      const callsAfterPhrasing = vi.mocked(modelGateway.complete).mock.calls.length;
+      await expect(clarifier.mapReply({ candidates: withHiddenCandidate, turn: turn("2") }))
+        .resolves.toEqual({ kind: "chosen", id: "support" });
+      // Resolved deterministically: no additional reply-mapping round-trip.
+      expect(modelGateway.complete).toHaveBeenCalledTimes(callsAfterPhrasing);
+    });
+
+    it("falls through to the LLM mapper when the ordinal is out of range", async () => {
+      const modelGateway = gateway('{"kind":"declined"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+
+      await expect(clarifier.mapReply({ candidates, turn: turn("7") }))
+        .resolves.toEqual({ kind: "declined" });
+      expect(modelGateway.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls through to the LLM mapper for a non-positive or zero ordinal", async () => {
+      const modelGateway = gateway('{"kind":"declined"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+
+      await expect(clarifier.mapReply({ candidates, turn: turn("0") }))
+        .resolves.toEqual({ kind: "declined" });
+      expect(modelGateway.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it("prefers an exact id/label match over ordinal position when a candidate's own label is a number", async () => {
+      const modelGateway = gateway('{"kind":"unrelated"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        replyMapPromptTemplate: "unused",
+      });
+      const numericLabelCandidates: ClarificationCandidate[] = [
+        { id: "doc-a", label: "2", confidence: 0.8, payload: {} },
+        { id: "doc-b", label: "Something else", confidence: 0.75, payload: {} },
+      ];
+
+      // Read as an ordinal, "2" would resolve to the second candidate
+      // ("doc-b"). But the first candidate's own label is the literal string
+      // "2", so the exact label match must win and resolve to "doc-a" instead.
+      await expect(clarifier.mapReply({ candidates: numericLabelCandidates, turn: turn("2") }))
+        .resolves.toEqual({ kind: "chosen", id: "doc-a" });
+      expect(modelGateway.complete).not.toHaveBeenCalled();
+    });
+
+    it("does not apply ordinal matching to offer-mode replies, since the offered list is not code-rendered", async () => {
+      const modelGateway = gateway('{"kind":"declined"}');
+      const clarifier = new DefaultClarifier(modelGateway, {
+        questionPromptTemplate: "unused",
+        offerReplyMapPromptTemplate: "offer {{latestReply}} {{options}}",
+      });
+
+      await expect(clarifier.mapReply({ candidates, turn: turn("2"), mode: "offer" }))
+        .resolves.toEqual({ kind: "declined" });
+      expect(modelGateway.complete).toHaveBeenCalledTimes(1);
+    });
+  });
 });

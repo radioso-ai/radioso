@@ -11,7 +11,9 @@ export interface AuditEventInput {
   accountId?: string | null;
   workspaceId?: string | null;
   eventType: string;
-  eventStatus: "success" | "failure";
+  // "cancelled" records a turn a newer message superseded: the turn never produced an
+  // error, so it must not be conflated with "failure" in error-rate reporting.
+  eventStatus: "success" | "failure" | "cancelled";
   metadata?: AuditEventMetadata;
 }
 

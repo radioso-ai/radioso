@@ -48,6 +48,18 @@ const isCandidate = (value: unknown): value is ClarificationCandidate => {
 const mapCandidates = (value: unknown): ClarificationCandidate[] =>
   Array.isArray(value) ? value.filter(isCandidate) : [];
 
+/**
+ * True when `mapCandidates` silently dropped one or more malformed entries.
+ * `save()` only ever persists well-formed candidates, so this indicates the
+ * stored row is corrupt relative to what the visitor was shown — the
+ * surviving candidates would otherwise renumber and no longer line up with
+ * the position the visitor saw. Detected only for `loadPending`, where reply
+ * matching depends on that position; `loadRecent` only ever compares
+ * candidate id *sets* for the loop guard, which a drop cannot mis-order.
+ */
+const candidatesWereTruncatedOnRead = (raw: unknown, mapped: ClarificationCandidate[]): boolean =>
+  Array.isArray(raw) && raw.length !== mapped.length;
+
 const mapStatus = (status: string): PendingClarificationStatus =>
   status === "resolved" || status === "declined" || status === "expired"
     ? status
@@ -63,6 +75,18 @@ const mapRow = (row: ClarificationStateRow): PendingClarification => ({
   status: mapStatus(row.status),
   expiresAt: row.expires_at,
 });
+
+/**
+ * `original_query` is retained on a `declined`/`expired` clear so a failed
+ * mapping stays debuggable and a later turn could recover the question; only
+ * a `resolved` clear nulls it, since `resolvePendingClarification` already
+ * reads `pending.originalQuery` and hands it to the caller before clearing,
+ * so nothing is left to recover for that outcome. This only changes what is
+ * retained in storage — it does not change what gets retried or retrieved on
+ * a failed mapping, which stays a separate behavioral decision.
+ */
+const clearedFields = (outcome: ClarificationClearOutcome): { original_query: null } | Record<string, never> =>
+  outcome === "resolved" ? { original_query: null } : {};
 
 export class ClarificationStateRepository implements ConversationClarificationStore, RecentClarificationReader {
   constructor(
@@ -85,12 +109,18 @@ export class ClarificationStateRepository implements ConversationClarificationSt
     if (row.expires_at.getTime() <= Date.now()) {
       await this.db
         .updateTable("clarification_states")
-        .set({ status: "expired", original_query: null, updated_at: currentTimestamp() })
+        .set({ status: "expired", ...clearedFields("expired"), updated_at: currentTimestamp() })
         .where("session_id", "=", input.sessionId)
         .execute();
       return null;
     }
-    return mapRow(row);
+    const pending = mapRow(row);
+    if (candidatesWereTruncatedOnRead(row.candidates, pending.candidates)) {
+      // Fail closed rather than matching (deterministically or via the LLM
+      // mapper) against a row whose candidate order can no longer be trusted.
+      return null;
+    }
+    return pending;
   }
 
   async loadRecent(input: { sessionId: string }): Promise<PendingClarification | null> {
@@ -141,9 +171,10 @@ export class ClarificationStateRepository implements ConversationClarificationSt
   }
 
   async clear(input: { sessionId: string; outcome?: ClarificationClearOutcome }): Promise<void> {
+    const outcome = input.outcome ?? "resolved";
     await this.db
       .updateTable("clarification_states")
-      .set({ status: input.outcome ?? "resolved", original_query: null, updated_at: currentTimestamp() })
+      .set({ status: outcome, ...clearedFields(outcome), updated_at: currentTimestamp() })
       .where("session_id", "=", input.sessionId)
       .execute();
   }

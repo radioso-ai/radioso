@@ -3834,6 +3834,13 @@ CREATE INDEX audit_events_chat_answer_conversation_lookup_idx ON public.audit_ev
 
 
 --
+-- Name: audit_events_chat_answer_user_message_unanswered_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_chat_answer_user_message_unanswered_idx ON public.audit_events USING btree (workspace_id, ((metadata_json ->> 'conversationId'::text)), ((metadata_json ->> 'userMessageId'::text)), created_at DESC, id DESC) WHERE ((event_type = 'chat.answer'::text) AND (event_status = ANY (ARRAY['failure'::text, 'cancelled'::text])) AND ((metadata_json ->> 'assistantMessageId'::text) IS NULL));
+
+
+--
 -- Name: audit_events_document_search_search_id_lookup_idx; Type: INDEX; Schema: public; Owner: -
 --
 

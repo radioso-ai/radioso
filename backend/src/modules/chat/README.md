@@ -135,7 +135,11 @@ imports from `services/`.
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or
   the first assistant chunk. The default registry is process-local; strict
-  multi-instance behavior requires conversation-affine routing.
+  multi-instance behavior requires conversation-affine routing. A superseded turn
+  is still accountable: `chatTurnLifecycle.recordSupersession` records a
+  `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —
+  a user typing a follow-up is not an assistant error) keyed to the turn's
+  `userMessageId`, since no assistant message exists yet for it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
@@ -146,6 +150,16 @@ imports from `services/`.
   operator's own testing never pollutes Activity, Quality, or Needs-Attention.
   The same NULL-safe exclusion lives in `historyItemsRepository`,
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
+  `chatHistoryService.getConversation` is shared by the dashboard and the
+  public/embed visitor surface; every operator-only fact (`includeOwnership`,
+  `includeAgentInternalName`, `includeTurnFailureDebug`) is an explicit,
+  default-off option, and `AssistantHistoryService` is the only place that turns
+  them on (`dashboardConversationDetailOptions`) — the public routes call
+  `chatHistoryService.getConversation` directly and never set them.
+  `includeTurnFailureDebug` attaches a `turnFailure` fact (failed or superseded,
+  never both classified as the same) to the user message of a turn that never
+  produced an assistant reply — the read-side counterpart to
+  `recordSupersession`/`recordFailure`, both of which record `userMessageId`.
 - Conversation summary: `services/summary/conversationSummaryService.ts` maintains
   a bounded, regenerated-per-update rolling summary per conversation (#866). State
   lives in `conversation_summaries` (`db/repositories/conversationSummaryRepository.ts`,
@@ -264,6 +278,7 @@ Focused starting points:
 
 - `cd backend && pnpm test -- tests/unit/chat-service-streaming.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-history-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/chat-turn-lifecycle.test.ts tests/unit/assistant-history-service.test.ts`
 - `cd backend && pnpm test -- tests/unit/chat-presenter.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/conversation-turn-registry.test.ts tests/integration/chat-interruption.integration.test.ts tests/contract/chat-interruption.contract.test.ts`
 - `cd backend && pnpm run test:integration` for chat route behavior.

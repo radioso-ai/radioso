@@ -26,6 +26,7 @@ export type ClarificationMetricReason =
   | "suppressed"
   | "label_fallback"
   | "compatible_facets"
+  | "redundant_sources"
   | "phrasing_fallback";
 
 const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
@@ -37,6 +38,7 @@ const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
   "suppressed",
   "label_fallback",
   "compatible_facets",
+  "redundant_sources",
   "phrasing_fallback",
 ]);
 
@@ -68,8 +70,8 @@ export const clarificationDecisionMetric = (
     case "suppressed":
       return { decision: "suppressed", reason: "suppressed" };
     case "none":
-      return reason === "compatible_facets"
-        ? { decision: "not_clarified", reason: "compatible_facets" }
+      return reason === "compatible_facets" || reason === "redundant_sources"
+        ? { decision: "not_clarified", reason }
         : null;
     default:
       return null;

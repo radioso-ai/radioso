@@ -140,6 +140,92 @@ describe("chat interruption", () => {
     ]);
   });
 
+  it("records a superseded turn as an accountable, non-error event visible only to the dashboard surface", async () => {
+    const firstPreparationStarted = deferred();
+    const releaseFirstPreparation = deferred();
+    const turnRouter: TurnRouter = {
+      async classify(input) {
+        if (input.query === "first question") {
+          firstPreparationStarted.resolve();
+          await releaseFirstPreparation.promise;
+        }
+        return directRouting();
+      },
+    };
+    const chatGateway: ChatGateway = {
+      async answer(input) {
+        return `latest=${input.query}`;
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const ctx = await createChatContext({ chatGateway, turnRouter });
+    const { agent, workspaceId } = ctx;
+    const conversation = await ctx.repositories.conversationRepository.create(
+      workspaceId,
+      agent.id,
+      "authenticated_chat",
+    );
+
+    const first = ctx.dependencies.assistantChatService.answer({
+      workspaceId,
+      agentId: agent.id,
+      conversationId: conversation.id,
+      message: "first question",
+      stream: false,
+    });
+    await firstPreparationStarted.promise;
+    const latest = ctx.dependencies.assistantChatService.answer({
+      workspaceId,
+      agentId: agent.id,
+      conversationId: conversation.id,
+      message: "latest question",
+      stream: false,
+    });
+    releaseFirstPreparation.resolve();
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: "latest=latest question" });
+
+    const messages = await ctx.repositories.messageRepository.listByConversationId(workspaceId, conversation.id);
+    const firstUserMessage = messages.find((message) => message.content === "first question");
+    expect(firstUserMessage).toBeDefined();
+
+    // The superseded turn's only trace is this audit event: no assistant message was
+    // ever created for it. It must be recorded, and never as a "failure" — the visitor
+    // just kept typing.
+    const chatAnswerEvents = ctx.repositories.auditEventRepository.items.filter(
+      (event) => event.eventType === "chat.answer" && event.metadata.userMessageId === firstUserMessage!.id,
+    );
+    expect(chatAnswerEvents).toHaveLength(1);
+    expect(chatAnswerEvents[0].eventStatus).toBe("cancelled");
+    expect(chatAnswerEvents[0].eventStatus).not.toBe("failure");
+    expect(chatAnswerEvents[0].metadata).not.toHaveProperty("errorMessage");
+
+    // Dashboard surface: the interrupted user message carries the turn-failure debug.
+    const dashboardDetail = await ctx.dependencies.assistantHistoryService.getConversation(
+      workspaceId,
+      conversation.id,
+      { limit: 50 },
+    );
+    const dashboardFirstMessage = dashboardDetail.messages.find((message) => message.content === "first question");
+    expect(dashboardFirstMessage?.turnFailure).toMatchObject({
+      eventStatus: "cancelled",
+      stage: "routing",
+    });
+
+    // Public/embed surface: the SAME conversation read through the method the public
+    // route calls directly (no dashboard options) must never see it.
+    const publicDetail = await ctx.dependencies.chatHistoryService.getConversation(
+      workspaceId,
+      conversation.id,
+      { limit: 50 },
+    );
+    const publicFirstMessage = publicDetail.messages.find((message) => message.content === "first question");
+    expect(publicFirstMessage?.turnFailure).toBeUndefined();
+  });
+
   it("terminates a superseded pre-emission stream without a chunk or done event", async () => {
     const firstPreparationStarted = deferred();
     const releaseFirstPreparation = deferred();

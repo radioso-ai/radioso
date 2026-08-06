@@ -5689,8 +5689,34 @@ export interface components {
             answerSegments?: components["schemas"]["AnswerSegment"][];
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
+            operatorDisplayName?: string;
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
+        };
+        PublicChatConversationMessage: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "system";
+            /** @enum {string} */
+            source: "customer" | "ai_agent" | "human_agent" | "human_agent_on_behalf_of_ai_agent" | "system";
+            content: string;
+            /** Format: date-time */
+            createdAt: string;
+            inputMetadata?: {
+                /** @enum {string} */
+                method: "typed" | "suggestion_click" | "intent_click";
+                /** Format: uuid */
+                suggestionSourceMessageId?: string;
+                intent?: {
+                    skillName: string;
+                    intentName?: string;
+                };
+            };
+            citations?: components["schemas"]["Citation"][];
+            answerSegments?: components["schemas"]["AnswerSegment"][];
+            suggestions?: components["schemas"]["ChatSuggestion"][];
+            answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
         };
         ConversationOwnershipResponse: {
@@ -5766,8 +5792,35 @@ export interface components {
             ownership?: components["schemas"]["ConversationOwnership"];
         };
         PublicChatConversationTail: {
-            messages: components["schemas"]["ChatConversationMessage"][];
+            messages: components["schemas"]["PublicChatConversationMessage"][];
             cursor: string | null;
+        };
+        PublicChatConversationDetail: {
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            agentId: string | null;
+            agentName?: string | null;
+            sourceChannel: string | null;
+            sourceOrigin: string | null;
+            channelContext: components["schemas"]["ConversationChannelContext"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            messageCount: number;
+            userMessageCount: number;
+            assistantMessageCount: number;
+            messagesTotal: number;
+            messageWindowOffset: number;
+            messageWindowLimit: number;
+            hasOlderMessages: boolean;
+            nextCursor: string | null;
+            /** @description Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced. */
+            tailCursor: string | null;
+            messages: components["schemas"]["PublicChatConversationMessage"][];
         };
         PublicConversationSummary: {
             /** Format: uuid */
@@ -18633,7 +18686,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChatConversationDetail"];
+                    "application/json": components["schemas"]["PublicChatConversationDetail"];
                 };
             };
             /** @description Request validation failed */

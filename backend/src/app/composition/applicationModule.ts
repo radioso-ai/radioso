@@ -4,6 +4,7 @@ import type { QueryResultRow } from "pg";
 
 import type { ProductAnalyticsSink } from "../../shared/analytics/productAnalyticsSink.js";
 import type { ErrorSink } from "../../shared/errors/errorSink.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
 import type { TelemetrySink } from "../../shared/observability/telemetry/telemetrySink.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -179,6 +180,9 @@ export interface ApplicationActionHandlerRegistration {
         webhookDestinations: WebhookDestinationRuntimePort;
         mailService: MailTransportPort;
         assertPublicWebsiteUrl: (url: string) => Promise<void>;
+        // Terminal (non-retryable) action-dispatch failures are alertable — a handler
+        // that wants that signal (e.g. ContactSendActionHandler) reports through this.
+        errorReporter: ErrorReporter;
       }) => ActionHandler);
 }
 

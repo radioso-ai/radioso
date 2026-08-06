@@ -240,6 +240,46 @@ variable "worker_recovery_max_jobs" {
   }
 }
 
+# --- Conversation-action outbox drain (routine_action_requests) ---
+# Pushed per action-emitting turn from the backend, drained on the same worker task
+# Cloud Run service that handles document-processing pushes; the recovery sweep below
+# is the safety net for pushes that were never sent or were lost.
+
+variable "action_dispatch_task_queue_name" {
+  description = "Cloud Tasks queue name used to push conversation-action outbox drain requests."
+  type        = string
+  default     = "radioso-conversation-actions"
+}
+
+variable "action_dispatch_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for conversation-action drain pushes."
+  type        = number
+  default     = 10
+}
+
+variable "action_dispatch_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for conversation-action drain pushes."
+  type        = number
+  default     = 20
+}
+
+variable "action_dispatch_recovery_schedule" {
+  description = "Optional cron schedule for the conversation-action outbox recovery sweep, covering drain pushes that were never sent or were lost. Defaults tighter than document recovery: a stuck outbox silently drops customer-facing leads (e.g. contact requests) rather than just delaying document indexing."
+  type        = string
+  default     = null
+}
+
+variable "action_dispatch_recovery_max_jobs" {
+  description = "Maximum drain batches each scheduled action-dispatch recovery request may process. A batch is up to the worker's configured action-dispatch batch size (rows), not a single row."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.action_dispatch_recovery_max_jobs >= 1 && var.action_dispatch_recovery_max_jobs <= 50
+    error_message = "action_dispatch_recovery_max_jobs must be between 1 and 50."
+  }
+}
+
 # --- Document storage ---
 
 variable "document_storage_bucket_name" {

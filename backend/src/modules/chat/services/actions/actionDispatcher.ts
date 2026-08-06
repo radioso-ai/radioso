@@ -11,6 +11,8 @@ export interface ActionHandlerContext {
   conversationId: string | null;
   idempotencyKey: string | null;
   attempt: number;
+  /** The named skill that fired this action (see `EnqueueActionRequestInput.skillName`), or null. */
+  skillName: string | null;
 }
 
 /**
@@ -133,6 +135,7 @@ export class ActionDispatcher {
         conversationId: request.conversationId,
         idempotencyKey: request.idempotencyKey,
         attempt: request.attempts,
+        skillName: request.skillName,
       };
       try {
         await handler.handle({

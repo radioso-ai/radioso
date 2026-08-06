@@ -54,6 +54,10 @@ export {
   type RoutineSkillResolver,
 } from "./skillDispatcher.js";
 export {
+  createRoutineSkillResolverChain,
+  type RoutineSkillResolverChainInputs,
+} from "./routineSkillResolverChain.js";
+export {
   routineValidationCodes,
   validateRoutineDefinition,
   type RoutineValidationCode,

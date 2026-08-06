@@ -9,6 +9,7 @@ const context = {
   conversationId: "conv_1",
   idempotencyKey: "routine-action:conv_1:approval.request",
   attempt: 1,
+  skillName: null,
 };
 
 describe("ApprovalRequestActionHandler", () => {

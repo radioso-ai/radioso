@@ -34,7 +34,13 @@ import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
-import { DefaultTurnSelectionStrategy, type TurnSelectionStrategy } from "../../modules/chat/composition.js";
+import {
+  DefaultTurnSelectionStrategy,
+  NoopActionDrainDispatcher,
+  type ActionDrainDispatcherPort,
+  type TurnSelectionStrategy,
+} from "../../modules/chat/composition.js";
+import { CloudTasksActionDrainDispatcher } from "../../modules/chat/infra/cloudTasksActionDrainDispatcher.js";
 import type { DirectiveMatcherPort } from "../../modules/directives/public.js";
 import type { DirectiveMatchGatewayFactory } from "../../shared/infra/llm/contextualGateways.js";
 import {
@@ -267,6 +273,37 @@ export const createDefaultDocumentJobDispatcher = (
           logger,
         })
     : new NoopDocumentJobDispatcher();
+
+/**
+ * Selects how a turn that just emitted a conversation action (spec 070's outbox)
+ * pushes a drain hint. Mirrors `createDefaultDocumentJobDispatcher`'s cloud-tasks
+ * gate, but with no AMQP branch (not needed: the interval-loop poller already
+ * drains locally) and no requiredness coupling to `WORKER_DISPATCH_DRIVER` in
+ * `env.ts` — `ACTION_DISPATCH_TASK_QUEUE_NAME` unset degrades to the no-op
+ * dispatcher rather than failing startup, so a backend deploy is never blocked on
+ * the Terraform queue/scheduler that provisions the push path landing first.
+ */
+export const createDefaultActionDrainDispatcher = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "GOOGLE_CLOUD_PROJECT"
+    | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_SERVICE_URL"
+    | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "ACTION_DISPATCH_TASK_QUEUE_NAME"
+  >,
+  logger: AppLogger,
+): ActionDrainDispatcherPort =>
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.ACTION_DISPATCH_TASK_QUEUE_NAME
+    ? new CloudTasksActionDrainDispatcher({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: env.ACTION_DISPATCH_TASK_QUEUE_NAME,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        logger,
+      })
+    : new NoopActionDrainDispatcher();
 
 export const createDefaultDocumentJobConsumer = (
   env: Pick<Env,

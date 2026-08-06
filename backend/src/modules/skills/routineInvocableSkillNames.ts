@@ -12,16 +12,17 @@ import type { AgentSkillKind, AgentSkillRepositoryPort, AgentSkillSpine } from "
  * routable at runtime and absent from the catalog. That difference is the entire reason
  * this supplement exists.
  *
- * Two kinds are deliberately absent, and both exclusions are the direction that keeps
+ * Three kinds are deliberately absent, and each exclusion is the direction that keeps
  * validation from accepting a name runtime will not route:
  *
- * - **`retrieve`.** `RetrieveRoutineSkillResolver` applies its own
+ * - **`retrieve` and `notify`.** `RetrieveRoutineSkillResolver` and
+ *   `NotifyRoutineSkillResolver` each apply their own
  *   `enabled && invocationMode === "routine_named"` filter — exactly the filter the
- *   authoring catalog already applies. Listing retrieve skills here would widen
- *   validation past runtime, admitting an `agent_selectable` retrieve skill that no
- *   routine step can actually dispatch.
- * - **`external_mcp` and `notify`.** Neither has a name-keyed routine resolver. External
- *   MCP skills reach the catalog through their own enabled-only source, and the tail
+ *   authoring catalog already applies for that kind. Listing either kind here would
+ *   widen validation past runtime, admitting an `agent_selectable` retrieve or notify
+ *   skill that no routine step can actually dispatch.
+ * - **`external_mcp`.** It has no name-keyed routine resolver. External MCP skills
+ *   reach the catalog through their own enabled-only source, and the tail
  *   `ExternalSkillRoutineSkillResolver` resolves *any* string, deferring the real
  *   allow-list to the executor. A resolver that accepts everything states nothing about
  *   what is legal, so it must not be mirrored into a validation allow-list.

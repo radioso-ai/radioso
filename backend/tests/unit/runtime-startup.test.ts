@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
@@ -69,6 +72,7 @@ const createEnv = (): Env => ({
   WORKER_TASKS_QUEUE_LOCATION: undefined,
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
+  ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
@@ -453,5 +457,98 @@ describe("runtime startup", () => {
     });
 
     await dependencies.connectorDb.close();
+  });
+
+  describe("worker runtime parity guard", () => {
+    // The contact-outbox incident: `actionDispatchWorker.start()` was wired into
+    // startWorkerRuntime (docker-compose) but the production entrypoint,
+    // startWorkerTaskRuntime, never got an equivalent push/route — and nothing
+    // failed loudly, so it silently drained nothing in prod for two months while
+    // local dev looked completely healthy.
+    //
+    // This guard is structural, not behavioral: it (1) dynamically enumerates every
+    // AppDependencies key with a poll-loop-worker shape (`{start, stop}`) from a
+    // REAL `buildDependencies()` build (so a newly added worker is picked up
+    // automatically, not just entries someone remembered to add here), (2) reads
+    // startWorkerRuntime.ts's own source to see which of those it actually calls
+    // `.start()` on (also dynamic — no hand-copied list to fall out of date), and
+    // (3) requires every one of those to have an entry in WORKER_TASK_RUNTIME_COVERAGE
+    // below, either naming the worker-task route that drains it or explicitly
+    // documenting why no push counterpart exists.
+    //
+    // What this does NOT catch: whether the named route actually calls into the
+    // right dependency correctly (that's the route's own unit test), or a worker
+    // wired into startWorkerTaskRuntime but forgotten in startWorkerRuntime (the
+    // reverse direction — less dangerous, since local dev would visibly not drain
+    // it and a developer would notice). It also trusts the `noPushCounterpart`
+    // reasons as asserted, not independently verified against product intent.
+    const WORKER_TASK_RUNTIME_COVERAGE: Record<
+      string,
+      { route: string } | { noPushCounterpart: string }
+    > = {
+      documentProcessingWorker: { route: "POST /internal/tasks/document-processing (and /recover)" },
+      actionDispatchWorker: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      vectorIndexReconciler: {
+        noPushCounterpart:
+          "runs embedding-space reconciliation ticks alongside document processing in the same " +
+          "process; not triggered by a discrete turn/job event, so there is nothing to push per-item",
+      },
+      documentJobConsumer: {
+        noPushCounterpart:
+          "the AMQP alternative to Cloud Tasks push (WORKER_DISPATCH_DRIVER=amqp) — a message-queue " +
+          "puller, not something an HTTP push targets; mutually exclusive with the task-runtime push model",
+      },
+      facetExtractionWorker: {
+        noPushCounterpart:
+          "batch analytics drain for the topic census; the poll loop is its only transport by design " +
+          "(pre-existing, documented at its startWorkerRuntime.ts call site)",
+      },
+    };
+
+    it("accounts for every poll-loop worker startWorkerRuntime starts, in the worker-task runtime coverage map", async () => {
+      const dependencies = buildDependencies(createEnv());
+      try {
+        const workerLikeKeys = Object.keys(dependencies).filter((key) => {
+          const value = (dependencies as unknown as Record<string, unknown>)[key];
+          return (
+            Boolean(value) &&
+            typeof value === "object" &&
+            typeof (value as { start?: unknown }).start === "function" &&
+            typeof (value as { stop?: unknown }).stop === "function"
+          );
+        });
+        // Sanity check on the extraction itself — if this ever comes back empty the
+        // regex/property-shape check below has silently stopped matching anything,
+        // which would make the rest of this test vacuously pass.
+        expect(workerLikeKeys.length).toBeGreaterThan(0);
+
+        const runtimeSource = await readFile(
+          fileURLToPath(new URL("../../src/runtime/startWorkerRuntime.ts", import.meta.url)),
+          "utf8",
+        );
+        const startedKeys = new Set(
+          [...runtimeSource.matchAll(/dependencies\.(\w+)\??\.start\(/g)].map((match) => match[1]!),
+        );
+        expect(startedKeys.size).toBeGreaterThan(0);
+
+        const uncoveredKeys = [...startedKeys].filter((key) => !(key in WORKER_TASK_RUNTIME_COVERAGE));
+        expect(
+          uncoveredKeys,
+          `startWorkerRuntime.ts starts ${JSON.stringify(uncoveredKeys)} with no entry in ` +
+            "WORKER_TASK_RUNTIME_COVERAGE — add a { route } or { noPushCounterpart } entry so the " +
+            "worker-task (Cloud Run) runtime is not silently missing this background responsibility.",
+        ).toEqual([]);
+
+        // Every key startWorkerRuntime starts must also actually exist as an
+        // AppDependencies property (catches a renamed/removed field going stale in
+        // startWorkerRuntime.ts's own source). Some optional workers — e.g.
+        // documentJobConsumer, only built under WORKER_DISPATCH_DRIVER=amqp — are
+        // `undefined` under this test's env, so this checks key presence, not shape.
+        const staleCoverageKeys = [...startedKeys].filter((key) => !(key in dependencies));
+        expect(staleCoverageKeys).toEqual([]);
+      } finally {
+        await dependencies.connectorDb.close();
+      }
+    });
   });
 });

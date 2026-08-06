@@ -27,6 +27,7 @@ const context = {
   conversationId: "44444444-4444-4444-4444-444444444444",
   idempotencyKey: "slack:gap_escalation:turn-1",
   attempt: 1,
+  skillName: null,
 };
 
 describe("SlackPostActionHandler", () => {

@@ -127,6 +127,13 @@ const envSchema = z.object({
   WORKER_TASKS_QUEUE_LOCATION: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  // Deliberately independent of the WORKER_DISPATCH_DRIVER=cloud-tasks requiredness
+  // check below: unlike document/crawl dispatch, action-outbox push is an optional
+  // low-latency accelerant, not the only drain path (the interval-loop poller and the
+  // recovery sweep both drain without it). Leaving this unset degrades to
+  // NoopActionDrainDispatcher rather than failing startup, so the backend can deploy
+  // ahead of the Terraform queue/scheduler that provisions it.
+  ACTION_DISPATCH_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_CRAWL_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: emptyStringToUndefined(z.string().email()),

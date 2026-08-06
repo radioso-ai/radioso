@@ -118,6 +118,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
     await client.query(await readFile(path.join(testMigrationsPath, "117_integration_connections_account_owner.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "118_slack_installation_account_authoritative.sql"), "utf8"));
     await client.query(await readFile(path.join(testMigrationsPath, "072_routine_action_requests.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "139_routine_action_requests_skill_name.sql"), "utf8"));
     await client.query(`INSERT INTO accounts (id) VALUES ($1)`, [accountId]);
     await client.query(`INSERT INTO workspaces (id, account_id) VALUES ($1, $2)`, [workspaceId, accountId]);
     await client.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Slack Agent')`, [agentId, workspaceId]);

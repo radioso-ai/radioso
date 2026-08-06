@@ -23,6 +23,13 @@ locals {
     var.worker_recovery_schedule,
     "0 3 * * *",
   )
+  # Every 5 minutes by default: tighter than document recovery (hourly) because a
+  # missed/lost push here means a customer-facing lead (e.g. a contact request) sits
+  # undelivered, not just a document reindex running late.
+  action_dispatch_recovery_schedule = coalesce(
+    var.action_dispatch_recovery_schedule,
+    "*/5 * * * *",
+  )
   public_chat_base_url = (
     var.public_chat_base_url_override != null
     ? var.public_chat_base_url_override

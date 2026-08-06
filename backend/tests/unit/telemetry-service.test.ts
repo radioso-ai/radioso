@@ -109,4 +109,31 @@ describe("TelemetryService", () => {
     expect(metrics).not.toContain("workspace-1");
     expect(metrics).not.toContain("33333333-3333-4333-8333-333333333333");
   });
+
+  it("exposes action-outbox depth and oldest-pending-age as gauges an operator can alert on", async () => {
+    const { metricsRegistry, sinks } = buildTelemetrySinks({ METRICS_ENABLED: true });
+    const service = new TelemetryService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-worker",
+      sinks,
+    });
+
+    await service.emit({
+      eventType: "action.dispatch.queue_state",
+      metrics: { pendingCount: 4, inProgressCount: 1, oldestPendingAgeMs: 125_000 },
+    });
+
+    const metrics = metricsRegistry?.renderPrometheus() ?? "";
+    expect(metrics).toContain("radioso_action_dispatch_queue_pending");
+    expect(metrics).toContain("radioso_action_dispatch_queue_pending 4");
+    expect(metrics).toContain("radioso_action_dispatch_queue_in_progress 1");
+    expect(metrics).toContain("radioso_action_dispatch_oldest_pending_age_ms 125000");
+    // Global counts only — no per-workspace/per-conversation label dimensions (no
+    // `{...}` label block on any of the three series).
+    expect(metrics).toMatch(/radioso_action_dispatch_queue_pending 4\b/);
+    expect(metrics).toMatch(/radioso_action_dispatch_queue_in_progress 1\b/);
+    expect(metrics).toMatch(/radioso_action_dispatch_oldest_pending_age_ms 125000\b/);
+  });
 });

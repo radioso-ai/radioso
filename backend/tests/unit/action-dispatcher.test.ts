@@ -22,6 +22,7 @@ const request = (overrides: Partial<ActionRequestRecord> = {}): ActionRequestRec
   // A claimed row, as claimPending returns it: in_progress with its attempt version.
   status: "in_progress",
   attempts: 1,
+  skillName: null,
   ...overrides,
 });
 
@@ -71,11 +72,27 @@ describe("ActionDispatcher", () => {
         conversationId: "conv_1",
         idempotencyKey: "k1",
         attempt: 1,
+        skillName: null,
       },
     });
     expect(store.markDispatched).toHaveBeenCalledWith("r1", 1);
     expect(store.recordFailure).not.toHaveBeenCalled();
     expect(result).toEqual({ dispatched: 1, retried: 0, failed: 0 });
+  });
+
+  it("carries the row's skill_name through to the handler context", async () => {
+    const handle = vi.fn(async () => {});
+    const store = outbox([request({ skillName: "contact_sales" })]);
+    const dispatcher = new ActionDispatcher(
+      store,
+      new ActionHandlerRegistry([{ type: "contact.send", handler: { handle } }]),
+    );
+
+    await dispatcher.dispatchPending();
+
+    expect(handle).toHaveBeenCalledWith(
+      expect.objectContaining({ context: expect.objectContaining({ skillName: "contact_sales" }) }),
+    );
   });
 
   it("records a failure (never dropped) when no handler is registered for its type", async () => {
@@ -119,6 +136,7 @@ describe("ActionDispatcher", () => {
         conversationId: "conv_1",
         idempotencyKey: "k1",
         attempt: 1,
+        skillName: null,
       },
       outcome: "retry",
       error: "smtp down",

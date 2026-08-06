@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createDefaultActionDrainDispatcher,
   createDefaultApplicationComposition,
   createDefaultConnectorRegistry,
   createDefaultDocumentJobConsumer,
@@ -12,8 +13,10 @@ import {
   CONTACT_SEND_ACTION_TYPE,
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
+  NoopActionDrainDispatcher,
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
+import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { DirectiveMatcherPort } from "../../src/modules/directives/public.js";
 import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
@@ -681,5 +684,44 @@ describe("default application composition", () => {
 
     expect(dispatcher).toBeInstanceOf(AmqpWebsiteCrawlJobDispatcher);
     expect(consumer).toBeInstanceOf(AmqpWebsiteCrawlJobConsumer);
+  });
+
+  it("selects the no-op action drain dispatcher by default (local dev interval loop still drains)", () => {
+    const dispatcher = createDefaultActionDrainDispatcher({
+      WORKER_DISPATCH_DRIVER: "noop",
+      GOOGLE_CLOUD_PROJECT: undefined,
+      WORKER_TASKS_QUEUE_LOCATION: undefined,
+      WORKER_TASKS_SERVICE_URL: undefined,
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+    }, createLogger() as any);
+
+    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+  });
+
+  it("stays no-op under cloud-tasks dispatch until ACTION_DISPATCH_TASK_QUEUE_NAME is configured (rollout-safe)", () => {
+    const dispatcher = createDefaultActionDrainDispatcher({
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-prod",
+      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+      WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "invoker@example.com",
+      ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+    }, createLogger() as any);
+
+    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+  });
+
+  it("selects the Cloud Tasks action drain dispatcher once the action queue name is configured", () => {
+    const dispatcher = createDefaultActionDrainDispatcher({
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-prod",
+      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+      WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "invoker@example.com",
+      ACTION_DISPATCH_TASK_QUEUE_NAME: "radioso-conversation-actions",
+    }, createLogger() as any);
+
+    expect(dispatcher).toBeInstanceOf(CloudTasksActionDrainDispatcher);
   });
 });

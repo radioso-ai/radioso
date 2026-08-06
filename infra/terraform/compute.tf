@@ -207,6 +207,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_cloud_tasks_queue.website_crawls[0].name
       }
       env {
+        name  = "ACTION_DISPATCH_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.conversation_actions[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -703,6 +707,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = google_cloud_tasks_queue.website_crawls[0].name
       }
       env {
+        name  = "ACTION_DISPATCH_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.conversation_actions[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -1033,6 +1041,10 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       env {
         name  = "WORKER_TASKS_CRAWL_QUEUE_NAME"
         value = google_cloud_tasks_queue.website_crawls[0].name
+      }
+      env {
+        name  = "ACTION_DISPATCH_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.conversation_actions[0].name
       }
       env {
         name  = "WORKER_TASKS_SERVICE_URL"

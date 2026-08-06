@@ -135,7 +135,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
     context.registerActionHandler({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
-      handler: ({ database, logger, mailService, assertPublicWebsiteUrl }) => {
+      handler: ({ database, logger, mailService, assertPublicWebsiteUrl, errorReporter }) => {
         const ownerFallback = new WorkspaceOwnerContactRecipientResolver(
           new WorkspaceRepository(database.kysely),
           new AccountMembershipRepository(database.kysely),
@@ -152,6 +152,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           // SSRF guard: every webhook hop is re-validated against the public-host
           // policy before the worker sends visitor data outbound.
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl),
+          errorReporter,
         );
       },
     });

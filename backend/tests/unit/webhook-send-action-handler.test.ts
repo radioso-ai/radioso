@@ -17,6 +17,7 @@ const context: ActionHandlerContext = {
   conversationId: "conv_1",
   idempotencyKey: "routine-action:conv_1:webhook.send:hash",
   attempt: 1,
+  skillName: null,
 };
 
 const payload = {

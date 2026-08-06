@@ -162,6 +162,14 @@ export {
   type ActionDispatchPort,
   type ActionDispatchWorkerOptions,
 } from "./services/actions/actionDispatchWorker.js";
+export {
+  NoopActionDrainDispatcher,
+  type ActionDrainDispatcherPort,
+} from "./services/actions/actionDrainDispatcher.js";
+export {
+  DrainTriggeringActionOutbox,
+  type EnqueueingActionOutboxPort,
+} from "./services/actions/drainTriggeringActionOutbox.js";
 export type { ChatGateway, ChatStreamEvent } from "./contracts/index.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 // Audience Pulse receives conversation history only through this Chat-owned read port.

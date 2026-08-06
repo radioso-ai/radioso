@@ -9,6 +9,12 @@ export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "fa
  */
 export type ActionFailureOutcome = "retry" | "failed" | "superseded";
 
+export interface ActionOutboxDepthSnapshot {
+  pendingCount: number;
+  inProgressCount: number;
+  oldestPendingCreatedAt: Date | null;
+}
+
 export interface ActionRequestRecord {
   id: string;
   type: string;
@@ -19,6 +25,8 @@ export interface ActionRequestRecord {
   idempotencyKey: string | null;
   status: ActionRequestStatus;
   attempts: number;
+  /** The named skill that fired this action, when it was invoked through one (see enqueue). */
+  skillName: string | null;
 }
 
 export interface EnqueueActionRequestInput {
@@ -28,6 +36,13 @@ export interface EnqueueActionRequestInput {
   accountId?: string | null;
   conversationId?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * The name of the skill that fired this action, when a routine invoked one by
+   * name (e.g. a `notify` skill). Routing provenance, not domain data — kept out
+   * of `payload` so a delivery resolver can key off it without parsing payload
+   * shape. Actions a routine step emits directly (no named skill) leave this null.
+   */
+  skillName?: string | null;
 }
 
 interface ActionRequestRow {
@@ -40,6 +55,7 @@ interface ActionRequestRow {
   idempotency_key: string | null;
   status: string;
   attempts: number;
+  skill_name: string | null;
 }
 
 const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
@@ -52,6 +68,7 @@ const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
   idempotencyKey: row.idempotency_key,
   status: row.status as ActionRequestStatus,
   attempts: row.attempts,
+  skillName: row.skill_name,
 });
 
 /**
@@ -74,6 +91,7 @@ export class ActionRequestRepository {
         account_id: input.accountId ?? null,
         conversation_id: input.conversationId ?? null,
         idempotency_key: input.idempotencyKey ?? null,
+        skill_name: input.skillName ?? null,
       })
       .onConflict((oc) => oc.column("idempotency_key").where("idempotency_key", "is not", null).doNothing())
       .returning("id")
@@ -179,6 +197,32 @@ export class ActionRequestRepository {
     }
     return row.status === "failed" ? "failed" : "retry";
   }
+
+  /**
+   * A point-in-time read of outbox backlog for observability (not used by the drain
+   * path itself). Mirrors `DocumentProcessingJobRepository.getQueueSnapshot()`: counts
+   * by state plus the oldest pending row's `created_at`, so an operator can alert on
+   * both current depth and how long the oldest item has been waiting. Uses the same
+   * `routine_action_requests_claimable_idx` partial index (`created_at WHERE status IN
+   * ('pending','in_progress')`) the claim query already relies on.
+   */
+  async getPendingDepthSnapshot(): Promise<ActionOutboxDepthSnapshot> {
+    const row = await this.db
+      .selectFrom("routine_action_requests")
+      .select((eb) => [
+        eb.fn.countAll<number>().filterWhere("status", "=", "pending").as("pending_count"),
+        eb.fn.countAll<number>().filterWhere("status", "=", "in_progress").as("in_progress_count"),
+        eb.fn.min<Date>("created_at").filterWhere("status", "=", "pending").as("oldest_pending_created_at"),
+      ])
+      .where("status", "in", ["pending", "in_progress"])
+      .executeTakeFirst();
+
+    return {
+      pendingCount: Number(row?.pending_count ?? 0),
+      inProgressCount: Number(row?.in_progress_count ?? 0),
+      oldestPendingCreatedAt: row?.oldest_pending_created_at ? new Date(row.oldest_pending_created_at) : null,
+    };
+  }
 }
 
 const actionRequestColumns = [
@@ -191,4 +235,5 @@ const actionRequestColumns = [
   "idempotency_key",
   "status",
   "attempts",
+  "skill_name",
 ] as const;

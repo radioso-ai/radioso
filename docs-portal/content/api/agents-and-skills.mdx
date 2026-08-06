@@ -178,6 +178,8 @@ Configure delivery in the notify skill config:
 - `recipientEmails`: up to 5 email addresses. Each is emailed a copy of the request. When the list is empty, Radioso falls back to the workspace owner.
 - `webhook`: an optional `{ "url": "https://..." }`. When set, Radioso also POSTs the request to that URL. Email and webhook both fire when both are configured.
 
+An agent can have more than one `notify` skill — for example `contact_sales` and `contact_support`, each with its own `delivery` config. A routine step that calls a specific skill by name (`#contact_sales`) delivers through that skill's own recipients and webhook. A routine step that reaches the chat-only contact flow without naming a skill, or names a skill that turns out to be disabled or missing, delivers through the `contact_human` skill when one is configured, then through the agent's own delivery setting, then through the workspace owner.
+
 Example notify skill config fragment:
 
 ```json

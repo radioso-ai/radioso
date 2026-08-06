@@ -7,6 +7,7 @@ import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import type { AppDependencies } from "../server/types.js";
 import { createDocumentWorkerTaskRoutes } from "./documentWorkerTaskRoutes.js";
+import { createActionDispatchWorkerTaskRoutes } from "./actionDispatchWorkerTaskRoutes.js";
 
 export const createWorkerTaskApp = (dependencies: AppDependencies) => {
   const app = express();
@@ -28,6 +29,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
     next();
   });
   app.use(createDocumentWorkerTaskRoutes(dependencies));
+  app.use(createActionDispatchWorkerTaskRoutes(dependencies));
   app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;

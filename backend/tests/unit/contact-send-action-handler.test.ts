@@ -16,6 +16,7 @@ const context = {
   conversationId: "conv_1",
   idempotencyKey: "routine-action:conv_1:contact.send:hash",
   attempt: 1,
+  skillName: null,
 };
 
 type SentMessage = Parameters<ContactNotificationMailer["send"]>[0];
@@ -163,6 +164,149 @@ describe("ContactSendActionHandler", () => {
 
     expect(sent).toHaveLength(1);
     expect(sent[0]!.replyTo).toBeNull();
+  });
+});
+
+describe("ContactSendActionHandler.recordFailureOutcome", () => {
+  const payloadWithPii = { name: "Alex", email: "alex@example.com", message: "call me about pricing please" };
+
+  it("reports a terminal (failed) outcome to the error reporter and logs a warning, with no PII", async () => {
+    const { mailer } = recordingMailer();
+    const warn = vi.fn();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { warn },
+      undefined,
+      { report },
+    );
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "Resend API returned 500",
+    });
+
+    expect(report).toHaveBeenCalledOnce();
+    const [reportInput] = report.mock.calls[0]!;
+    expect(reportInput.errorType).toBe("action.contact_send.delivery_failed");
+    expect(reportInput.severity).toBe("error");
+    expect(reportInput.metadata).toMatchObject({
+      workspaceId: context.workspaceId,
+      conversationId: context.conversationId,
+      requestId: context.requestId,
+    });
+
+    expect(warn).toHaveBeenCalledOnce();
+    const [warnPayload] = warn.mock.calls[0]!;
+
+    // No visitor content (email/name/message) anywhere in either call.
+    const serialized = JSON.stringify([reportInput, warnPayload]);
+    expect(serialized).not.toContain("alex@example.com");
+    expect(serialized).not.toContain("call me about pricing");
+    expect(serialized).not.toContain("Alex");
+  });
+
+  it("reports a bounded classification, never the raw caught error text, to the external error reporter", async () => {
+    const { mailer } = recordingMailer();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { report },
+    );
+
+    // A provider or webhook error is caught-and-stringified upstream (see
+    // ActionDispatcher) before it reaches recordFailureOutcome, so the handler
+    // cannot tell a bounded internal message from one that echoes a response
+    // body, a signed webhook URL, or a reply-to address — it must never forward
+    // that text verbatim to an external sink.
+    const rawProviderError = "Webhook POST failed: https://hooks.example.com/contact?token=SUPER_SECRET_TOKEN (reply-to visitor@example.com)";
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: rawProviderError,
+    });
+
+    expect(report).toHaveBeenCalledOnce();
+    const [reportInput] = report.mock.calls[0]!;
+
+    // Neither a forwarded `error` object nor the `message`/`errorClass` fields may
+    // carry the raw text — `new Error(rawProviderError)` would leak it via
+    // `.message` (and `.stack`, whose first line embeds the message).
+    const errorMessage = reportInput.error instanceof Error ? reportInput.error.message : "";
+    const errorStack = reportInput.error instanceof Error ? (reportInput.error.stack ?? "") : "";
+    const surfaced = [errorMessage, errorStack, reportInput.message, reportInput.errorClass]
+      .filter((value): value is string => typeof value === "string")
+      .join("\n");
+
+    expect(surfaced).not.toContain("SUPER_SECRET_TOKEN");
+    expect(surfaced).not.toContain("visitor@example.com");
+    expect(surfaced).not.toContain("hooks.example.com");
+
+    // Still alertable — a bounded classification is reported, not silence.
+    expect(surfaced.trim().length).toBeGreaterThan(0);
+  });
+
+  it("does not report a retryable (non-terminal) outcome — retries are expected, not alertable", async () => {
+    const { mailer } = recordingMailer();
+    const warn = vi.fn();
+    const report = vi.fn().mockResolvedValue(undefined);
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      { warn },
+      undefined,
+      { report },
+    );
+
+    await handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "retry",
+      error: "temporary network error",
+    });
+
+    expect(report).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when no error reporter is configured", async () => {
+    const { mailer } = recordingMailer();
+    const handler = new ContactSendActionHandler(mailer, {
+      resolve: async () => ({ emails: ["owner@business.example"], webhook: null }),
+    });
+
+    await expect(handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "boom",
+    })).resolves.toBeUndefined();
+  });
+
+  it("does not throw when the error reporter itself rejects", async () => {
+    const { mailer } = recordingMailer();
+    const report = vi.fn().mockRejectedValue(new Error("sink down"));
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["owner@business.example"], webhook: null }) },
+      undefined,
+      undefined,
+      { report },
+    );
+
+    await expect(handler.recordFailureOutcome({
+      payload: payloadWithPii,
+      context,
+      outcome: "failed",
+      error: "boom",
+    })).resolves.toBeUndefined();
   });
 });
 
@@ -382,5 +526,145 @@ describe("ConfiguredContactDeliveryResolver", () => {
     );
 
     await expect(resolver.resolve(context)).resolves.toEqual({ emails: [], webhook: null });
+  });
+
+  it("prefers the outbox row's named skill delivery over both the hardcoded contact_human skill and legacy agent delivery", async () => {
+    const findByName = vi.fn(async (_ws: string, _agentId: string, skillName: string) => {
+      if (skillName === "contact_sales") {
+        return {
+          kind: "notify",
+          enabled: true,
+          config: {
+            delivery: {
+              recipientEmails: ["sales@example.com"],
+              webhook: { url: "https://hooks.example.com/sales" },
+            },
+          },
+        };
+      }
+      // A distinct contact_human skill also exists and is enabled — the named
+      // skill on the outbox row must still win.
+      return {
+        kind: "notify",
+        enabled: true,
+        config: { delivery: { recipientEmails: ["generic@example.com"], webhook: null } },
+      };
+    });
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: { recipientEmails: ["legacy@example.com"], webhook: null },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      { findByName },
+    );
+
+    await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
+      emails: ["sales@example.com"],
+      webhook: { url: "https://hooks.example.com/sales" },
+    });
+  });
+
+  it("falls back to the owner's email when the named skill's webhook is configured but recipients are empty", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: { recipientEmails: ["legacy@example.com"], webhook: null },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      {
+        findByName: async (_ws, _agentId, skillName) =>
+          skillName === "contact_sales"
+            ? {
+                kind: "notify",
+                enabled: true,
+                config: { delivery: { recipientEmails: [], webhook: { url: "https://hooks.example.com/sales" } } },
+              }
+            : null,
+      },
+    );
+
+    await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
+      emails: ["owner@example.com"],
+      webhook: { url: "https://hooks.example.com/sales" },
+    });
+  });
+
+  it("falls back to today's behaviour (not black-holing) when the named skill is disabled", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: { recipientEmails: ["legacy@example.com"], webhook: null },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      {
+        // The named skill exists but is disabled; there is no separate contact_human
+        // skill configured for this agent (findByName returns null for it).
+        findByName: async (_ws, _agentId, skillName) =>
+          skillName === "contact_sales"
+            ? {
+                kind: "notify",
+                enabled: false,
+                config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } },
+              }
+            : null,
+      },
+    );
+
+    // Unlike the hardcoded contact_human branch (which short-circuits to no
+    // recipient), a disabled *named* skill must not black-hole the request — it
+    // falls through to the legacy agent-level delivery below.
+    await expect(resolver.resolve({ ...context, skillName: "contact_sales" })).resolves.toEqual({
+      emails: ["legacy@example.com"],
+      webhook: null,
+    });
+  });
+
+  it("falls back to today's behaviour (not black-holing) when the named skill no longer exists", async () => {
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      {
+        findByIdAndWorkspaceId: async () => ({
+          contactRequestDelivery: { recipientEmails: ["legacy@example.com"], webhook: null },
+        }),
+      },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      // The skill named on the row was deleted or renamed — every lookup misses.
+      { findByName: async () => null },
+    );
+
+    await expect(resolver.resolve({ ...context, skillName: "renamed_or_deleted_skill" })).resolves.toEqual({
+      emails: ["legacy@example.com"],
+      webhook: null,
+    });
+  });
+
+  it("behaves exactly as today when the row names no skill, even when other named notify skills exist", async () => {
+    const findByName = vi.fn(async (_ws: string, _agentId: string, skillName: string) =>
+      skillName === "contact_human"
+        ? { kind: "notify", enabled: true, config: { delivery: { recipientEmails: ["generic@example.com"], webhook: null } } }
+        : { kind: "notify", enabled: true, config: { delivery: { recipientEmails: ["sales@example.com"], webhook: null } } },
+    );
+    const resolver = new ConfiguredContactDeliveryResolver(
+      { findByIdAndWorkspaceId: async () => ({ agentId: "agent_1" }) },
+      { findByIdAndWorkspaceId: async () => ({ contactRequestDelivery: { recipientEmails: [], webhook: null } }) },
+      { resolve: async () => ({ emails: ["owner@example.com"], webhook: null }) },
+      { findByName },
+    );
+
+    await expect(resolver.resolve({ ...context, skillName: null })).resolves.toEqual({
+      emails: ["generic@example.com"],
+      webhook: null,
+    });
+    // The named-skill branch never runs without a skill name on the row — only the
+    // hardcoded contact_human lookup fires, same as before this change.
+    expect(findByName).toHaveBeenCalledOnce();
+    expect(findByName).toHaveBeenCalledWith(context.workspaceId, "agent_1", "contact_human");
   });
 });

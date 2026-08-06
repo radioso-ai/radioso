@@ -24,22 +24,9 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { registeredCapabilityNames } from "../../shared/domain/capabilityPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { SkillExecutorRegistry } from "../skills/public.js";
-import {
-  routineDispatchableBuiltInSkills,
-  type RoutineInvocableSkillNames,
-} from "../skills/public.js";
-import { RetrieveRoutineSkillResolver } from "../retrieval/public.js";
-import { ExternalSkillRoutineSkillResolver } from "../externalSkills/public.js";
-import {
-  CustomerEmailRoutineSkillResolver,
-} from "../customerEmail/public.js";
-import { SlackRoutineSkillResolver } from "../slackSkills/public.js";
-import { WebhookRoutineSkillResolver } from "../webhookSkills/public.js";
-import {
-  RoutineSkillExecutorDispatcher,
-  StaticRoutineSkillResolver,
-} from "./skillDispatcher.js";
+import type { RoutineInvocableSkillNames, SkillExecutorRegistry } from "../skills/public.js";
+import { RoutineSkillExecutorDispatcher } from "./skillDispatcher.js";
+import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
@@ -226,6 +213,7 @@ export const createRoutineTurnProvider = (
       invocationMode: string;
       config?: Record<string, unknown>;
     }> = [];
+    let notifySkills: Array<{ skillName: string; enabled: boolean; invocationMode: string }> = [];
     try {
       if (workspaceId) {
         const byKind = await dependencies.routineInvocableSkillNames.listByKindForAgent({ workspaceId, agentId });
@@ -241,7 +229,11 @@ export const createRoutineTurnProvider = (
     }
     try {
       if (workspaceId) {
-        retrieveSkills = (await dependencies.agentSkillRepository.listByAgent(workspaceId, agentId))
+        // One read serves both retrieve and notify: each applies its own
+        // enabled && routine_named filter (matching the authoring catalog),
+        // so both can be derived from the same agent-skill spine.
+        const agentSkills = await dependencies.agentSkillRepository.listByAgent(workspaceId, agentId);
+        retrieveSkills = agentSkills
           .filter((skill) => skill.kind === "retrieve")
           .map((skill) => ({
             skillName: skill.skillName,
@@ -249,11 +241,18 @@ export const createRoutineTurnProvider = (
             invocationMode: skill.invocationMode,
             config: skill.config,
           }));
+        notifySkills = agentSkills
+          .filter((skill) => skill.kind === "notify")
+          .map((skill) => ({
+            skillName: skill.skillName,
+            enabled: skill.enabled,
+            invocationMode: skill.invocationMode,
+          }));
       }
     } catch (error) {
       dependencies.logger.warn(
         { agentId, err: error instanceof Error ? error.message : String(error) },
-        "Retrieve skill definitions failed to load for routine routing; continuing without retrieve skills",
+        "Retrieve and notify skill definitions failed to load for routine routing; continuing without them",
       );
     }
 
@@ -293,19 +292,13 @@ export const createRoutineTurnProvider = (
           groundedAnswerRenderer,
         }),
         new RoutineSkillExecutorDispatcher(
-          new StaticRoutineSkillResolver(
-            routineDispatchableBuiltInSkills,
-            new WebhookRoutineSkillResolver(
-              webhookSkillNames,
-              new CustomerEmailRoutineSkillResolver(
-                emailSkillNames,
-                new SlackRoutineSkillResolver(
-                  slackSkillNames,
-                  new RetrieveRoutineSkillResolver(retrieveSkills, new ExternalSkillRoutineSkillResolver()),
-                ),
-              ),
-            ),
-          ),
+          createRoutineSkillResolverChain({
+            webhookSkillNames,
+            emailSkillNames,
+            slackSkillNames,
+            retrieveSkills,
+            notifySkills,
+          }),
           dependencies.skillExecutorRegistry,
           {
             workspaceId,

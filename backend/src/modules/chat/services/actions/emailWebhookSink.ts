@@ -33,6 +33,9 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       conversationId: context.conversationId ?? notification.conversationId,
       idempotencyKey: context.idempotencyKey ?? null,
       attempt: context.attempt ?? 1,
+      // Handoff/approval notifications are emitted by a routine action step, not a
+      // named skill invocation, so there is no firing skill to prefer here.
+      skillName: null,
     };
     const target = await this.recipients.resolve(recipientContext);
     if (target.emails.length === 0 && !target.webhook) {

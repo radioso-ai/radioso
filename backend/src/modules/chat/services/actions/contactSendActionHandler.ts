@@ -1,5 +1,7 @@
 import { readNotifyContactDelivery } from "../../../agents/public.js";
 import type { AgentContactRequestDelivery, AgentContactWebhook } from "../../../agents/public.js";
+import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
+import type { ErrorReporter } from "../../../../shared/errors/errorReporter.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
   FetchWebhookHttpClient,
@@ -113,6 +115,30 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
     if (!conversation?.agentId) {
       return this.fallback.resolve(context);
     }
+
+    // The outbox row names the skill that actually fired this request (set by
+    // NotifyExecutor at enqueue time — see EnqueueActionRequestInput.skillName).
+    // Prefer THAT skill's own delivery config over the hardcoded `contact_human`
+    // lookup below: two differently-named notify skills on the same agent must be
+    // able to deliver to different recipients, not collide on one shared config.
+    //
+    // A disabled or deleted named skill falls through to the lookup below instead
+    // of short-circuiting to no recipient (unlike the `contact_human` branch just
+    // below, which does short-circuit). `contact_human` is one well-known skill an
+    // operator disables deliberately, expecting contact requests to stop; an
+    // arbitrary named skill going away is more likely a rename or a routine
+    // authoring change, and a request that used to route through it must still
+    // reach somewhere rather than being silently dropped.
+    if (context.skillName) {
+      const namedSkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, context.skillName);
+      if (namedSkill?.kind === "notify" && namedSkill.enabled) {
+        const delivery = readNotifyContactDelivery(namedSkill.config);
+        if (delivery) {
+          return this.resolveConfiguredDelivery(delivery, context);
+        }
+      }
+    }
+
     const notifySkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, "contact_human");
     if (notifySkill?.kind === "notify") {
       if (!notifySkill.enabled) {
@@ -120,17 +146,7 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
       }
       const delivery = readNotifyContactDelivery(notifySkill.config);
       if (delivery) {
-        if (delivery.recipientEmails.length > 0) {
-          return {
-            emails: delivery.recipientEmails,
-            webhook: delivery.webhook,
-          };
-        }
-        const fallback = await this.fallback.resolve(context);
-        return {
-          emails: fallback.emails,
-          webhook: delivery.webhook,
-        };
+        return this.resolveConfiguredDelivery(delivery, context);
       }
     }
     const agent = await this.agents.findByIdAndWorkspaceId(conversation.agentId, context.workspaceId);
@@ -138,18 +154,24 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
       return this.fallback.resolve(context);
     }
 
-    const configured = agent.contactRequestDelivery;
-    if (configured.recipientEmails.length > 0) {
+    return this.resolveConfiguredDelivery(agent.contactRequestDelivery, context);
+  }
+
+  /** Configured recipients win; empty recipients fall back to the owner while keeping the configured webhook. */
+  private async resolveConfiguredDelivery(
+    delivery: AgentContactRequestDelivery,
+    context: ActionHandlerContext,
+  ): Promise<ContactDeliveryTarget> {
+    if (delivery.recipientEmails.length > 0) {
       return {
-        emails: configured.recipientEmails,
-        webhook: configured.webhook,
+        emails: delivery.recipientEmails,
+        webhook: delivery.webhook,
       };
     }
-
     const fallback = await this.fallback.resolve(context);
     return {
       emails: fallback.emails,
-      webhook: configured.webhook,
+      webhook: delivery.webhook,
     };
   }
 }
@@ -159,6 +181,27 @@ export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
 const asString = (value: unknown): string | null =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+/**
+ * A caught delivery failure's HTTP status, if the (already-stringified, see
+ * {@link ActionDispatcher}) error text ends in one — `ResendEmailDeliveryError`
+ * and the webhook client's own errors both format theirs this way. Structural,
+ * not content-based: it never echoes the surrounding text, only a 3-digit code.
+ */
+const trailingStatusCode = (message: string): number | undefined => {
+  const match = /\b([1-5]\d{2})\D*$/u.exec(message);
+  return match ? Number(match[1]) : undefined;
+};
+
+/** A bounded, non-free-text classification of a caught delivery failure — see the
+ * {@link ContactSendActionHandler.recordFailureOutcome} doc comment for why the
+ * raw caught error text must not reach {@link ErrorReporter}. */
+class ContactSendDeliveryFailureError extends Error {
+  constructor(statusCode: number | undefined) {
+    super(statusCode ? `contact.send delivery failed with status ${statusCode}` : "contact.send delivery failed");
+    this.name = "ContactSendDeliveryFailure";
+  }
+}
 
 /**
  * The reference action handler for `contact.send`: emails a gathered contact request
@@ -176,6 +219,8 @@ export class ContactSendActionHandler implements ActionHandler {
     private readonly recipients: ContactRecipientResolver,
     private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
     private readonly webhookClient?: ContactWebhookHttpClient,
+    // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
+    private readonly errorReporter?: ErrorReporter,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -240,5 +285,58 @@ export class ContactSendActionHandler implements ActionHandler {
       rawBody: JSON.stringify(input.payload),
       headers: { "Idempotency-Key": input.idempotencyKey },
     });
+  }
+
+  /**
+   * Only a terminal (`failed`, retry budget exhausted) outcome is alertable — a
+   * `retry` is expected, transient behavior the dispatcher already handles. Before
+   * this, a permanently failed contact.send produced no log and no error report (the
+   * gap that let the outbox drain outage go unnoticed for two months); this closes
+   * it without logging the visitor's email, name, or message.
+   *
+   * `input.error` is the dispatcher's caught-and-stringified error text — this
+   * handler's own bounded messages today, but it flows from an injected
+   * {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient}, so a
+   * host-supplied transport could echo a provider response body, a reply-to
+   * address, or a webhook URL with a token in its query string. The error
+   * reporter is an external sink, so that raw text must never reach it — only a
+   * bounded classification (a status code, when the text ends in one) does. The
+   * full text remains available for operator debugging in the outbox's
+   * `last_error` column (see {@link ActionDispatcher.onFailure}), untouched by
+   * this call.
+   */
+  async recordFailureOutcome(input: {
+    payload: Record<string, unknown>;
+    context: ActionHandlerContext;
+    outcome: Exclude<ActionFailureOutcome, "superseded">;
+    error: string;
+  }): Promise<void> {
+    if (input.outcome !== "failed") {
+      return;
+    }
+    this.logger?.warn(
+      {
+        workspaceId: input.context.workspaceId,
+        conversationId: input.context.conversationId,
+        requestId: input.context.requestId,
+        attempt: input.context.attempt,
+      },
+      "contact.send delivery permanently failed after exhausting retries",
+    );
+    try {
+      await this.errorReporter?.report({
+        errorType: "action.contact_send.delivery_failed",
+        error: new ContactSendDeliveryFailureError(trailingStatusCode(input.error)),
+        severity: "error",
+        metadata: {
+          workspaceId: input.context.workspaceId ?? undefined,
+          conversationId: input.context.conversationId ?? undefined,
+          requestId: input.context.requestId,
+        },
+      });
+    } catch {
+      // The warn log above is already the durable trail; a reporting-sink outage
+      // must not surface as a second failure on top of the delivery failure itself.
+    }
   }
 }

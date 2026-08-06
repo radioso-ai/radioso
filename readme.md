@@ -368,6 +368,8 @@ WORKER_AMQP_PREFETCH=1
 
 AMQP messages contain job ids and trace metadata only. PostgreSQL remains the source of truth for job state, retries, leases, and recovery if broker dispatch is unavailable after a job has already been queued. Document processing and website crawling use separate queues so long-running crawls do not block document work. AMQP mode is an eventing plus polling hybrid: broker messages wake workers quickly, and the worker polling loop stays active for recovery and scheduled retry eligibility. Delayed retries are governed by the job table's `available_at` value, not by broker-delayed delivery.
 
+A routine's fire-and-forget actions — a contact request, a handoff notification, an approval request — go through a separate durable outbox (`routine_action_requests`) with the same durable-first, dispatch-second shape: a worker process drains it on a five-second poll loop by default. On Google Cloud, set `ACTION_DISPATCH_TASK_QUEUE_NAME` alongside the worker dispatch settings above so a turn that enqueues an action pushes a Cloud Task immediately, reaching the worker in seconds rather than on the next poll. A scheduled recovery sweep drains anything a push loses or never sends.
+
 ### Website crawler
 
 Radioso exposes an OSS website crawler provider port at `POST /api/v1/document/crawl`. The route accepts a website URL, calls the bundled `radioso-crawler` provider by default, and publishes returned pages through the normal document ingestion pipeline.

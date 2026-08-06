@@ -376,4 +376,119 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     );
     expect(stored.total_latency_ms).toBeNull();
   });
+
+  // The action-outbox drain push (contact-outbox fix): the push must fire only after
+  // the turn's own transaction has actually committed, never before or instead of it.
+  it("requests an action drain push only after the turn transaction that enqueued the action commits", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    const calls: string[] = [];
+    const actionDrainDispatcher = {
+      requestDrain: async () => {
+        // At push time the enqueued row must already be visible to a fresh read —
+        // proof the push happened after commit, not merely after the in-process
+        // await resolved.
+        const row = await database.queryOne<{ status: string }>(
+          "SELECT status FROM routine_action_requests WHERE conversation_id = $1",
+          [conversation.id],
+        );
+        calls.push(`requestDrain:${row.status}`);
+      },
+    };
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+
+    await persistenceWithPush.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      actions: [{ type: "contact.send", payload: { email: "visitor@example.com", message: "hi" } }],
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Sent.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    expect(calls).toEqual(["requestDrain:pending"]);
+
+    const enqueued = await database.queryOne<{ type: string; workspace_id: string }>(
+      "SELECT type, workspace_id FROM routine_action_requests WHERE conversation_id = $1",
+      [conversation.id],
+    );
+    expect(enqueued).toMatchObject({ type: "contact.send", workspace_id: workspace.id });
+  });
+
+  it("does not request an action drain push when the turn enqueued no actions", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    const requestDrain = { called: 0 };
+    const actionDrainDispatcher = { requestDrain: async () => { requestDrain.called += 1; } };
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+
+    await persistenceWithPush.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "No action this turn.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    expect(requestDrain.called).toBe(0);
+  });
+
+  it("still returns the completed turn when the push itself fails (best-effort, never fails the turn)", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const assistantMessageId = randomUUID();
+    const actionDrainDispatcher = {
+      requestDrain: async () => {
+        throw new Error("cloud tasks unreachable");
+      },
+    };
+    const persistenceWithPush = new PostgresAssistantTurnPersistence(database.kysely, 60_000, undefined, actionDrainDispatcher);
+
+    const message = await persistenceWithPush.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],
+      assistantMessage: {
+        id: assistantMessageId,
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "Sent.",
+      },
+      auditEvent: {
+        eventType: "chat.answer",
+        eventStatus: "success",
+        workspaceId: workspace.id,
+        metadata: {},
+      },
+    });
+
+    expect(message.id).toBe(assistantMessageId);
+    // The row is still durable even though the push failed — the interval poller /
+    // recovery sweep remain the safety net.
+    const enqueued = await database.queryOne<{ status: string }>(
+      "SELECT status FROM routine_action_requests WHERE conversation_id = $1",
+      [conversation.id],
+    );
+    expect(enqueued.status).toBe("pending");
+  });
 });

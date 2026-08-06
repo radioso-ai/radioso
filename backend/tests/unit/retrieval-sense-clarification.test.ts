@@ -295,10 +295,11 @@ describe("retrieval sense clarification", () => {
     expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
       .toEqual(["tell me about yoga", "tell me about yoga"]);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
-    // Only the offered alternative is persisted. The answer above is grounded in
+    // Only the offered alternative is persisted — a single-element array, so this also
+    // asserts the already-answered doc-hatha is absent. The answer above is grounded in
     // doc-hatha and the prompt offers doc-raja alone, so doc-raja is the first (and
-    // only) option the visitor sees. Persisting the already-answered doc-hatha at
-    // position 0 made a positional reply resolve to the wrong document.
+    // only) option the visitor sees; storing doc-hatha at position 0 made a positional
+    // reply resolve to the document the visitor was never offered.
     expect(saved).toMatchObject({
       source: "retrieval_sense",
       originalQuery: "tell me about yoga",
@@ -308,8 +309,6 @@ describe("retrieval sense clarification", () => {
       ],
       status: "pending",
     });
-    expect((saved as { candidates: Array<{ id: string }> }).candidates.map((candidate) => candidate.id))
-      .not.toContain("doc-hatha");
     expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "clarification",

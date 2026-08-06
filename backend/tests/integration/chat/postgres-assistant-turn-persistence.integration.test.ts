@@ -201,6 +201,62 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(savedMessage.id).toBe(assistantMessageId);
   });
 
+  // This transactional path — not `ClarificationStateRepository.clear` — is what
+  // production runs, because the deferred store applies clarification transitions
+  // inside the assistant-turn transaction. The two must agree on retention.
+  it.each([
+    { outcome: "declined" as const, retained: true },
+    { outcome: "expired" as const, retained: true },
+    { outcome: "resolved" as const, retained: false },
+  ])("a $outcome clear leaves the original query retained=$retained", async ({ outcome, retained }) => {
+    const { workspace, conversation } = await seedConversation();
+    const sessionId = conversation.id;
+    const originalQuery = "How do I upload a document via the REST API?";
+
+    const completeTurn = (transition: unknown) =>
+      persistence.completeAssistantTurn({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage: {
+          id: randomUUID(),
+          conversationId: conversation.id,
+          workspaceId: workspace.id,
+          role: "assistant",
+          content: "...",
+        },
+        auditEvent: {
+          eventType: "chat.answer",
+          eventStatus: "success",
+          workspaceId: workspace.id,
+          metadata: {},
+        },
+        clarificationTransition: transition as never,
+      });
+
+    await completeTurn({
+      kind: "save",
+      pending: {
+        sessionId,
+        source: "retrieval_sense",
+        originalQuery,
+        mode: "ask",
+        candidates: [{ id: "a", label: "Alpha", confidence: 0.8, payload: {} }],
+        askedEventId: randomUUID(),
+        status: "pending",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+    });
+
+    await completeTurn({ kind: "clear", sessionId, outcome });
+
+    const row = await database.queryOne<{ status: string; original_query: string | null }>(
+      "SELECT status, original_query FROM clarification_states WHERE session_id = $1",
+      [sessionId],
+    );
+    expect(row.status).toBe(outcome);
+    expect(row.original_query).toBe(retained ? originalQuery : null);
+  });
+
   it("requests ownership handoff and records ownership audit inside the assistant turn transaction", async () => {
     const { workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();

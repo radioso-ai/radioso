@@ -479,7 +479,7 @@ export const registerAssistantPublicChatPaths = (
         description: "Historical conversation detail",
         content: {
           "application/json": {
-            schema: schemas.ChatConversationDetailSchema,
+            schema: schemas.PublicChatConversationDetailSchema,
           },
         },
       },

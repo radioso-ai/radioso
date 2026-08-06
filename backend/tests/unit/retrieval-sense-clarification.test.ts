@@ -295,12 +295,16 @@ describe("retrieval sense clarification", () => {
     expect(capturedRequests.filter((request) => request.documentScope?.includes("doc-hatha")).map((request) => request.query))
       .toEqual(["tell me about yoga", "tell me about yoga"]);
     expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    // Only the offered alternative is persisted — a single-element array, so this also
+    // asserts the already-answered doc-hatha is absent. The answer above is grounded in
+    // doc-hatha and the prompt offers doc-raja alone, so doc-raja is the first (and
+    // only) option the visitor sees; storing doc-hatha at position 0 made a positional
+    // reply resolve to the document the visitor was never offered.
     expect(saved).toMatchObject({
       source: "retrieval_sense",
       originalQuery: "tell me about yoga",
       mode: "offer",
       candidates: [
-        expect.objectContaining({ id: "doc-hatha", payload: { documentIds: ["doc-hatha"] } }),
         expect.objectContaining({ id: "doc-raja", payload: { documentIds: ["doc-raja"] } }),
       ],
       status: "pending",
@@ -625,6 +629,50 @@ describe("retrieval sense clarification", () => {
           surface: "retrieval_sense",
           decision: "none",
           reason: "compatible_facets",
+        }),
+      }),
+    ]));
+  });
+
+  it("answers duplicate WordPress sources in one grounded turn without a menu, recording redundant_sources", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "A general overview of Ananda Yoga", labelStatus: "generated", relationship: "redundant", confidence: 0.727256, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "A newer or updated Ananda Yoga page", labelStatus: "generated", relationship: "redundant", confidence: 0.719315, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "what ananda yoga types exist?",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(saved).toBeNull();
+    expect(answerInputs).toHaveLength(1);
+    // No document scoping: near-duplicate sources are answered as one merged group.
+    expect(capturedRequests.every((request) => request.documentScope === undefined)).toBe(true);
+    expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: "clarification",
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          decision: "none",
+          reason: "redundant_sources",
         }),
       }),
     ]));

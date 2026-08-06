@@ -70,6 +70,8 @@ Use `GET /api/v1/history/chat/{conversationId}` to retrieve one conversation and
 
 That second route is the one to use when you need to inspect how a specific answer was produced.
 
+A turn without a reply still shows up here. If the visitor sent another message before the assistant answered, or the answer attempt failed outright, the interrupted user message carries a `turnFailure` object: `eventStatus` of `cancelled` for the first case (with the pipeline `stage` it was interrupted at) or `failure` for the second (with `errorMessage`). `turnFailure` is dashboard-only — it never appears on the public or embed conversation reads.
+
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 
 ## Endpoint reference

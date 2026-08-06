@@ -11061,8 +11061,10 @@
             "type": "string",
             "enum": [
               "success",
-              "failure"
-            ]
+              "failure",
+              "cancelled"
+            ],
+            "description": "\"cancelled\" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error."
           },
           "recordedAt": {
             "type": "string",
@@ -11127,6 +11129,50 @@
           "stream",
           "citationCount"
         ]
+      },
+      "ChatConversationTurnFailure": {
+        "type": "object",
+        "properties": {
+          "eventStatus": {
+            "type": "string",
+            "enum": [
+              "failure",
+              "cancelled"
+            ],
+            "description": "\"failure\" is a genuine error; \"cancelled\" means a newer message superseded this turn before it could answer."
+          },
+          "recordedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "waiting",
+              "preparing",
+              "routing",
+              "rendering",
+              "persisting"
+            ],
+            "description": "Present for a \"cancelled\" turn: the pipeline stage the newer message interrupted."
+          },
+          "errorMessage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Present only for a genuine \"failure\"; a \"cancelled\" turn has no error to show."
+          }
+        },
+        "required": [
+          "eventStatus",
+          "recordedAt",
+          "stream"
+        ],
+        "description": "Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it."
       },
       "AnswerFeedbackEntry": {
         "type": "object",
@@ -11397,8 +11443,113 @@
               "$ref": "#/components/schemas/AnswerFeedbackEntry"
             }
           },
+          "operatorDisplayName": {
+            "type": "string"
+          },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
+          },
+          "turnFailure": {
+            "$ref": "#/components/schemas/ChatConversationTurnFailure"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "source",
+          "content",
+          "createdAt"
+        ]
+      },
+      "PublicChatConversationMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "ai_agent",
+              "human_agent",
+              "human_agent_on_behalf_of_ai_agent",
+              "system"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "inputMetadata": {
+            "type": "object",
+            "properties": {
+              "method": {
+                "type": "string",
+                "enum": [
+                  "typed",
+                  "suggestion_click",
+                  "intent_click"
+                ]
+              },
+              "suggestionSourceMessageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "intent": {
+                "type": "object",
+                "properties": {
+                  "skillName": {
+                    "type": "string"
+                  },
+                  "intentName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "skillName"
+                ]
+              }
+            },
+            "required": [
+              "method"
+            ]
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            }
+          },
+          "answerSegments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerSegment"
+            }
+          },
+          "suggestions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatSuggestion"
+            }
+          },
+          "answerFeedbackEntries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnswerFeedbackEntry"
+            }
           },
           "operatorDisplayName": {
             "type": "string"
@@ -11701,7 +11852,7 @@
           "messages": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/ChatConversationMessage"
+              "$ref": "#/components/schemas/PublicChatConversationMessage"
             }
           },
           "cursor": {
@@ -11714,6 +11865,131 @@
         "required": [
           "messages",
           "cursor"
+        ]
+      },
+      "PublicChatConversationDetail": {
+        "type": "object",
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceChannel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sourceOrigin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "channelContext": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationChannelContext"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "userMessageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "assistantMessageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messagesTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageWindowOffset": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageWindowLimit": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hasOlderMessages": {
+            "type": "boolean"
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Cursor for subsequent tail requests. It marks the newest message included when this detail response was produced."
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicChatConversationMessage"
+            }
+          }
+        },
+        "required": [
+          "conversationId",
+          "workspaceId",
+          "agentId",
+          "sourceChannel",
+          "sourceOrigin",
+          "channelContext",
+          "createdAt",
+          "updatedAt",
+          "messageCount",
+          "userMessageCount",
+          "assistantMessageCount",
+          "messagesTotal",
+          "messageWindowOffset",
+          "messageWindowLimit",
+          "hasOlderMessages",
+          "nextCursor",
+          "tailCursor",
+          "messages"
         ]
       },
       "PublicConversationSummary": {
@@ -35079,7 +35355,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ChatConversationDetail"
+                  "$ref": "#/components/schemas/PublicChatConversationDetail"
                 }
               }
             }

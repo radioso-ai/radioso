@@ -23,17 +23,41 @@ export interface SenseLabelGroup {
   id: string;
   documentIds: string[];
   documents: SenseGroupDocument[];
+  /**
+   * Short passages of the group's own retrieved chunks, supplied solely as
+   * evidence for the `relationship` judgment. Titles and metadata cannot reveal
+   * that two documents *state the same content* — a live page and a leftover
+   * draft of it read as unrelated by title alone — so the judgment is blind
+   * without them. Labels and descriptions are never derived from this text.
+   */
+  excerpts?: string[];
   share: number;
   separation: number;
 }
 
 /**
- * `relationship` is an LLM-returned judgment (never an in-code keyword test): are
- * the candidate groups mutually exclusive readings of the question, or complementary
- * facets of a single intent that one combined answer should cover? Absent/unparsed
- * ⇒ treated as exclusive (conservative, preserves prior behavior).
+ * Excerpt budget. Two passages per group is enough for the model to recognise
+ * restated content, and capping each keeps the labeling prompt bounded when a
+ * group's chunks are large.
  */
-export type SenseRelationship = "exclusive" | "complementary";
+const EXCERPTS_PER_GROUP = 2;
+const EXCERPT_MAX_CHARS = 320;
+
+/**
+ * `relationship` is an LLM-returned judgment (never an in-code keyword test) of how
+ * the candidate groups relate to the visitor's question:
+ * - `exclusive` — mutually exclusive readings; worth asking which one is meant.
+ * - `complementary` — different facets of one intent that a single combined answer
+ *   should cover.
+ * - `redundant` — near-duplicate or versioned copies of the same content (for
+ *   example a live page and a leftover draft of it); answering from all of them is
+ *   correct and clarifying is pointless.
+ * Absent/unparsed ⇒ treated as exclusive (conservative, preserves prior behavior).
+ */
+export type SenseRelationship = "exclusive" | "complementary" | "redundant";
+
+/** Relationship values that never warrant a clarifying question. */
+const NON_EXCLUSIVE_RELATIONSHIPS: ReadonlySet<SenseRelationship> = new Set(["complementary", "redundant"]);
 
 export interface SenseLabelGateway {
   label(input: {
@@ -122,6 +146,7 @@ export class ModelSenseLabelGateway implements SenseLabelGateway {
         groups: JSON.stringify(input.groups.map((group) => ({
           id: group.id,
           documents: group.documents,
+          ...(group.excerpts?.length ? { excerpts: group.excerpts } : {}),
         })), null, 2),
       }),
       maxOutputTokens: 700,
@@ -178,6 +203,10 @@ export class SenseGroupingService {
         title: group.title,
         metadata: group.metadata,
       }],
+      excerpts: group.chunks
+        .slice(0, EXCERPTS_PER_GROUP)
+        .map((chunk) => chunk.content.trim().slice(0, EXCERPT_MAX_CHARS))
+        .filter((excerpt) => excerpt.length > 0),
       share: group.share,
       separation: group.separation,
     }));
@@ -189,16 +218,17 @@ export class SenseGroupingService {
       usageContext: input.usageContext,
     }).catch(() => []);
     const labels = new Map(labelResults.map((label) => [label.id, label]));
-    // The relationship is a single set-level judgment; treat the set as
-    // complementary only when *every separated group* carries a parsed
-    // complementary label. Checking the deduped map per group closes the
-    // partial-labeling gap: a dropped or duplicated label (invalid id, non-string
-    // label, omitted group) must not let an unlabeled — potentially exclusive —
-    // facet ride along as complementary. Any exclusive, missing, or unparsed value
-    // falls back to exclusive.
-    const complementary = separated.every(
-      (group) => labels.get(group.documentId)?.relationship === "complementary",
-    );
+    // Every separated group must carry a parsed non-exclusive (complementary or
+    // redundant) label before any candidate is tagged. Checking the deduped map per
+    // group closes the partial-labeling gap: a dropped or duplicated label (invalid
+    // id, non-string label, omitted group) must not let an unlabeled — potentially
+    // exclusive — facet ride along untagged. Any exclusive, missing, or unparsed
+    // value anywhere in the set forces every candidate back to untagged (exclusive
+    // fallback), even when the rest of the set is redundant or complementary.
+    const allNonExclusive = separated.every((group) => {
+      const relationship = labels.get(group.documentId)?.relationship;
+      return relationship !== undefined && NON_EXCLUSIVE_RELATIONSHIPS.has(relationship);
+    });
 
     return separated.map((group) => {
       const label = labels.get(group.documentId);
@@ -210,7 +240,10 @@ export class SenseGroupingService {
         label: generatedLabel || "",
         labelStatus: generatedLabel ? "generated" : "missing",
         ...(label?.description ? { description: label.description } : {}),
-        ...(complementary ? { relationship: "complementary" as const } : {}),
+        // Each candidate keeps its own gateway-judged value (a set can legitimately
+        // mix complementary and redundant groups); only the presence of any
+        // exclusive/missing member suppresses tagging for the whole set.
+        ...(allNonExclusive ? { relationship: label!.relationship } : {}),
         confidence: confidenceFor(group.share, group.separation, group.averageSimilarity, bestAverageSimilarity),
         payload: { documentIds: [group.documentId] },
       };
@@ -276,9 +309,18 @@ const renderInjectedPrompt = (
 ): string =>
   template.replace(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_, key: string) => variables[key] ?? "");
 
+/**
+ * Averages same-width vectors. Mixed widths have no meaningful average — summing
+ * them either grows the accumulator past the first vector's width (yielding NaN)
+ * or divides trailing dimensions by the full count — so the group is reported as
+ * unmeasurable instead of silently producing a corrupt centroid.
+ */
 const centroid = (vectors: number[][]): number[] | null => {
   const first = vectors[0];
   if (!first) {
+    return null;
+  }
+  if (vectors.some((vector) => vector.length !== first.length)) {
     return null;
   }
   const result = new Array(first.length).fill(0);
@@ -290,10 +332,18 @@ const centroid = (vectors: number[][]): number[] | null => {
   return result.map((value) => value / vectors.length);
 };
 
-const distance = (left: number[], right: number[]): number => {
-  const length = Math.min(left.length, right.length);
+/**
+ * Euclidean distance between two centroids of the same width. Vectors of
+ * different widths come from different embedding spaces and are not comparable:
+ * truncating to the shorter one reports 0 — "identical" — for unrelated content,
+ * so the pair is reported as unmeasurable instead.
+ */
+const distance = (left: number[], right: number[]): number | null => {
+  if (left.length !== right.length) {
+    return null;
+  }
   let sum = 0;
-  for (let index = 0; index < length; index += 1) {
+  for (let index = 0; index < left.length; index += 1) {
     sum += (left[index]! - right[index]!) ** 2;
   }
   return Math.sqrt(sum);
@@ -312,7 +362,10 @@ const minimumSeparation = (
     .filter((other) => other.documentId !== group.documentId)
     .map((other) => centroid(other.chunks.map((chunk) => embeddings.get(chunk.chunkId)).filter((vector): vector is number[] => !!vector)))
     .filter((vector): vector is number[] => !!vector)
-    .map((otherCentroid) => distance(groupCentroid, otherCentroid));
+    .map((otherCentroid) => distance(groupCentroid, otherCentroid))
+    .filter((value): value is number => value !== null);
+  // No measurable neighbour ⇒ 0, which falls below any positive separation
+  // threshold, so an unmeasurable group is dropped rather than clarified on.
   return distances.length > 0 ? Math.min(...distances) : 0;
 };
 
@@ -336,7 +389,7 @@ const extractJsonArray = (raw: string): string | null => {
 };
 
 const parseRelationship = (value: unknown): SenseRelationship | undefined =>
-  value === "exclusive" || value === "complementary" ? value : undefined;
+  value === "exclusive" || value === "complementary" || value === "redundant" ? value : undefined;
 
 const parseLabelResponse = (
   raw: string,

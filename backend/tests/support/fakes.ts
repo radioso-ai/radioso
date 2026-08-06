@@ -4014,6 +4014,28 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     });
   }
 
+  async listUnansweredChatAnswerEventsByUserMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    userMessageIds: string[],
+  ): Promise<AuditEventRecord[]> {
+    const ids = new Set(userMessageIds);
+    if (ids.size === 0) {
+      return [];
+    }
+    return this.items.filter((event) => {
+      return (
+        event.workspaceId === workspaceId &&
+        event.eventType === "chat.answer" &&
+        (event.eventStatus === "failure" || event.eventStatus === "cancelled") &&
+        event.metadata.conversationId === conversationId &&
+        typeof event.metadata.userMessageId === "string" &&
+        ids.has(event.metadata.userMessageId) &&
+        (event.metadata.assistantMessageId === undefined || event.metadata.assistantMessageId === null)
+      );
+    });
+  }
+
   async findLatestChatAnswerEventByConversationId(
     workspaceId: string,
     conversationId: string,

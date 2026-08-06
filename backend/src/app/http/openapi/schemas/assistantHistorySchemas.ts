@@ -357,7 +357,10 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const ChatConversationMessageDebugSchema = registry.register(
     "ChatConversationMessageDebug",
     z.object({
-      eventStatus: z.enum(["success", "failure"]),
+      eventStatus: z.enum(["success", "failure", "cancelled"]).openapi({
+        description:
+          "\"cancelled\" means a newer message superseded this turn after it had already produced an assistant message (a suspended/durable turn). It is not an error.",
+      }),
       recordedAt: z.string().datetime(),
       stream: z.boolean(),
       citationCount: z.number().int().min(0),
@@ -379,6 +382,27 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       activityTrace: schemas.ActivityTraceSchema.optional(),
       turnTrace: TurnTraceEnvelopeSchema.optional(),
       errorMessage: z.string().nullable().optional(),
+    }),
+  );
+
+  const ChatConversationTurnFailureSchema = registry.register(
+    "ChatConversationTurnFailure",
+    z.object({
+      eventStatus: z.enum(["failure", "cancelled"]).openapi({
+        description:
+          "\"failure\" is a genuine error; \"cancelled\" means a newer message superseded this turn before it could answer.",
+      }),
+      recordedAt: z.string().datetime(),
+      stream: z.boolean(),
+      stage: z.enum(["waiting", "preparing", "routing", "rendering", "persisting"]).optional().openapi({
+        description: "Present for a \"cancelled\" turn: the pipeline stage the newer message interrupted.",
+      }),
+      errorMessage: z.string().nullable().optional().openapi({
+        description: "Present only for a genuine \"failure\"; a \"cancelled\" turn has no error to show.",
+      }),
+    }).openapi({
+      description:
+        "Dashboard-only debug for a user turn that never got a reply — a genuine failure or a turn a newer message superseded. Attached to the user's message because no assistant message exists for it.",
     }),
   );
 
@@ -418,29 +442,43 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  // Shared by the operator and public message schemas. `debug` and `turnFailure` are
+  // operator-only and are added on top of this shape for the dashboard schema alone:
+  // both carry turn diagnostics (and `turnFailure` carries raw error text), and the
+  // public presenter strips them from every message it returns.
+  const chatConversationMessageShape = {
+    id: z.string().uuid(),
+    role: z.enum(["user", "assistant", "system"]),
+    source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
+    content: z.string(),
+    createdAt: z.string().datetime(),
+    inputMetadata: z.object({
+      method: z.enum(["typed", "suggestion_click", "intent_click"]),
+      suggestionSourceMessageId: z.string().uuid().optional(),
+      intent: z.object({
+        skillName: z.string(),
+        intentName: z.string().optional(),
+      }).optional(),
+    }).optional(),
+    citations: z.array(schemas.CitationSchema).optional(),
+    answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
+    suggestions: z.array(ChatSuggestionSchema).optional(),
+    answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
+    operatorDisplayName: z.string().optional(),
+  };
+
   const ChatConversationMessageSchema = registry.register(
     "ChatConversationMessage",
     z.object({
-      id: z.string().uuid(),
-      role: z.enum(["user", "assistant", "system"]),
-      source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]),
-      content: z.string(),
-      createdAt: z.string().datetime(),
-      inputMetadata: z.object({
-        method: z.enum(["typed", "suggestion_click", "intent_click"]),
-        suggestionSourceMessageId: z.string().uuid().optional(),
-        intent: z.object({
-          skillName: z.string(),
-          intentName: z.string().optional(),
-        }).optional(),
-      }).optional(),
-      citations: z.array(schemas.CitationSchema).optional(),
-      answerSegments: z.array(schemas.AnswerSegmentSchema).optional(),
-      suggestions: z.array(ChatSuggestionSchema).optional(),
-      answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
+      ...chatConversationMessageShape,
       debug: ChatConversationMessageDebugSchema.optional(),
-      operatorDisplayName: z.string().optional(),
+      turnFailure: ChatConversationTurnFailureSchema.optional(),
     }),
+  );
+
+  const PublicChatConversationMessageSchema = registry.register(
+    "PublicChatConversationMessage",
+    z.object(chatConversationMessageShape),
   );
 
   const ConversationOwnershipResponseSchema = registry.register(
@@ -528,8 +566,25 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const PublicChatConversationTailSchema = registry.register(
     "PublicChatConversationTail",
     z.object({
-      messages: z.array(ChatConversationMessageSchema),
+      messages: z.array(PublicChatConversationMessageSchema),
       cursor: z.string().nullable(),
+    }),
+  );
+
+  // The public conversation read shares `ChatHistoryService.getConversation` with the
+  // dashboard but is presented through `stripPublicConversationCitationArtifacts`,
+  // which removes ownership and the operator-only per-message diagnostics. Publishing
+  // the dashboard schema here would document visitor-facing clients as possibly
+  // receiving turn debug and raw error text they can never actually be sent.
+  const PublicChatConversationDetailSchema = registry.register(
+    "PublicChatConversationDetail",
+    ChatConversationDetailSchema.omit({
+      ownership: true,
+      agentInternalName: true,
+      entryPageUrl: true,
+      messages: true,
+    }).extend({
+      messages: z.array(PublicChatConversationMessageSchema),
     }),
   );
 
@@ -603,12 +658,15 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     HumanReplyMessageSchema,
     HumanReplyMessageResponseSchema,
     ChatConversationMessageDebugSchema,
+    ChatConversationTurnFailureSchema,
     AnswerFeedbackEntrySchema,
     AnswerFeedbackRequestSchema,
     AnswerFeedbackResponseSchema,
     ClearAnswerFeedbackResponseSchema,
     ChatConversationMessageSchema,
+    PublicChatConversationMessageSchema,
     ChatConversationDetailSchema,
+    PublicChatConversationDetailSchema,
     ChatConversationTailSchema,
     PublicChatConversationTailSchema,
     PublicConversationSummarySchema,

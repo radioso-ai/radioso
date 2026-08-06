@@ -115,6 +115,30 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
     if (!conversation?.agentId) {
       return this.fallback.resolve(context);
     }
+
+    // The outbox row names the skill that actually fired this request (set by
+    // NotifyExecutor at enqueue time — see EnqueueActionRequestInput.skillName).
+    // Prefer THAT skill's own delivery config over the hardcoded `contact_human`
+    // lookup below: two differently-named notify skills on the same agent must be
+    // able to deliver to different recipients, not collide on one shared config.
+    //
+    // A disabled or deleted named skill falls through to the lookup below instead
+    // of short-circuiting to no recipient (unlike the `contact_human` branch just
+    // below, which does short-circuit). `contact_human` is one well-known skill an
+    // operator disables deliberately, expecting contact requests to stop; an
+    // arbitrary named skill going away is more likely a rename or a routine
+    // authoring change, and a request that used to route through it must still
+    // reach somewhere rather than being silently dropped.
+    if (context.skillName) {
+      const namedSkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, context.skillName);
+      if (namedSkill?.kind === "notify" && namedSkill.enabled) {
+        const delivery = readNotifyContactDelivery(namedSkill.config);
+        if (delivery) {
+          return this.resolveConfiguredDelivery(delivery, context);
+        }
+      }
+    }
+
     const notifySkill = await this.notifySkills?.findByName(context.workspaceId, conversation.agentId, "contact_human");
     if (notifySkill?.kind === "notify") {
       if (!notifySkill.enabled) {
@@ -122,17 +146,7 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
       }
       const delivery = readNotifyContactDelivery(notifySkill.config);
       if (delivery) {
-        if (delivery.recipientEmails.length > 0) {
-          return {
-            emails: delivery.recipientEmails,
-            webhook: delivery.webhook,
-          };
-        }
-        const fallback = await this.fallback.resolve(context);
-        return {
-          emails: fallback.emails,
-          webhook: delivery.webhook,
-        };
+        return this.resolveConfiguredDelivery(delivery, context);
       }
     }
     const agent = await this.agents.findByIdAndWorkspaceId(conversation.agentId, context.workspaceId);
@@ -140,18 +154,24 @@ export class ConfiguredContactDeliveryResolver implements ContactRecipientResolv
       return this.fallback.resolve(context);
     }
 
-    const configured = agent.contactRequestDelivery;
-    if (configured.recipientEmails.length > 0) {
+    return this.resolveConfiguredDelivery(agent.contactRequestDelivery, context);
+  }
+
+  /** Configured recipients win; empty recipients fall back to the owner while keeping the configured webhook. */
+  private async resolveConfiguredDelivery(
+    delivery: AgentContactRequestDelivery,
+    context: ActionHandlerContext,
+  ): Promise<ContactDeliveryTarget> {
+    if (delivery.recipientEmails.length > 0) {
       return {
-        emails: configured.recipientEmails,
-        webhook: configured.webhook,
+        emails: delivery.recipientEmails,
+        webhook: delivery.webhook,
       };
     }
-
     const fallback = await this.fallback.resolve(context);
     return {
       emails: fallback.emails,
-      webhook: configured.webhook,
+      webhook: delivery.webhook,
     };
   }
 }

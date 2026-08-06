@@ -12,6 +12,7 @@ export interface EnqueueingActionOutboxPort {
     accountId?: string | null;
     conversationId?: string | null;
     idempotencyKey?: string | null;
+    skillName?: string | null;
   }): Promise<{ id: string; duplicate: boolean }>;
 }
 

@@ -25,6 +25,8 @@ export interface ActionRequestRecord {
   idempotencyKey: string | null;
   status: ActionRequestStatus;
   attempts: number;
+  /** The named skill that fired this action, when it was invoked through one (see enqueue). */
+  skillName: string | null;
 }
 
 export interface EnqueueActionRequestInput {
@@ -34,6 +36,13 @@ export interface EnqueueActionRequestInput {
   accountId?: string | null;
   conversationId?: string | null;
   idempotencyKey?: string | null;
+  /**
+   * The name of the skill that fired this action, when a routine invoked one by
+   * name (e.g. a `notify` skill). Routing provenance, not domain data — kept out
+   * of `payload` so a delivery resolver can key off it without parsing payload
+   * shape. Actions a routine step emits directly (no named skill) leave this null.
+   */
+  skillName?: string | null;
 }
 
 interface ActionRequestRow {
@@ -46,6 +55,7 @@ interface ActionRequestRow {
   idempotency_key: string | null;
   status: string;
   attempts: number;
+  skill_name: string | null;
 }
 
 const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
@@ -58,6 +68,7 @@ const mapRecord = (row: ActionRequestRow): ActionRequestRecord => ({
   idempotencyKey: row.idempotency_key,
   status: row.status as ActionRequestStatus,
   attempts: row.attempts,
+  skillName: row.skill_name,
 });
 
 /**
@@ -80,6 +91,7 @@ export class ActionRequestRepository {
         account_id: input.accountId ?? null,
         conversation_id: input.conversationId ?? null,
         idempotency_key: input.idempotencyKey ?? null,
+        skill_name: input.skillName ?? null,
       })
       .onConflict((oc) => oc.column("idempotency_key").where("idempotency_key", "is not", null).doNothing())
       .returning("id")
@@ -223,4 +235,5 @@ const actionRequestColumns = [
   "idempotency_key",
   "status",
   "attempts",
+  "skill_name",
 ] as const;

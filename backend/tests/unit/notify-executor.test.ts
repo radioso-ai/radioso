@@ -60,7 +60,32 @@ describe("NotifyExecutor", () => {
       workspaceId: "ws_1",
       conversationId: "conv_1",
       idempotencyKey: `notify:conv_1:contact_human:${hash(payload)}`,
+      skillName: "contact_human",
     });
+  });
+
+  it("records the firing skill's name on the enqueued action, distinct from the payload", async () => {
+    const enqueue = vi.fn(async (_input: {
+      payload: Record<string, unknown>;
+      skillName?: string | null;
+    }) => ({ id: "action_1", duplicate: false }));
+    const namedSkill = { ...skill, skillName: "contact_sales" };
+    const executor = new NotifyExecutor({
+      skills: { findByName: async () => namedSkill },
+      outbox: { enqueue },
+    });
+
+    await executor.dispatch({
+      skill: { name: "contact_sales" },
+      collected: { message: "Please call me" },
+      context: dispatcherContext("conv_1"),
+      emit: { emitStatus: async () => undefined, emitCustom: async () => undefined },
+    });
+
+    const [[enqueued]] = enqueue.mock.calls;
+    expect(enqueued.skillName).toBe("contact_sales");
+    // Routing provenance, not domain data — the payload stays message/email-shaped.
+    expect(enqueued.payload).not.toHaveProperty("skillName");
   });
 
   it("does not collapse distinct contact requests across conversations or messages", async () => {

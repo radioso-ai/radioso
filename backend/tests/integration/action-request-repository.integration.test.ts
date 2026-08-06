@@ -39,6 +39,22 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
     expect(second.id).toBe(first.id);
   });
 
+  it("round-trips skill_name through enqueue and claimPending, defaulting to null when omitted", async () => {
+    const named = await repository.enqueue({
+      type: "contact.send",
+      payload: { message: "call me" },
+      skillName: "contact_sales",
+    });
+    created.push(named.id);
+    const unnamed = await enqueue();
+
+    const claimed = await repository.claimPending(10, 300);
+    const namedRow = claimed.find((row) => row.id === named.id);
+    const unnamedRow = claimed.find((row) => row.id === unnamed.id);
+    expect(namedRow?.skillName).toBe("contact_sales");
+    expect(unnamedRow?.skillName).toBeNull();
+  });
+
   it("claimPending moves pending → in_progress exactly once and increments attempts", async () => {
     const a = await enqueue();
     const b = await enqueue();

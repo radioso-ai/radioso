@@ -71,6 +71,10 @@ export class NotifyExecutor implements SkillExecutorPort {
       workspaceId,
       conversationId,
       idempotencyKey: `notify:${idempotencyScope}:${invocation.skill.name}:${payloadHash(payload)}`,
+      // Routing provenance, not domain data — kept off the payload so the drain-time
+      // delivery resolver can prefer this named skill's own config (see
+      // ConfiguredContactDeliveryResolver) without inferring it from an idempotency key.
+      skillName: invocation.skill.name,
     });
 
     return settled("delivered", {

@@ -752,6 +752,7 @@ export interface RoutineActionRequests {
   last_error: string | null;
   next_attempt_at: Timestamp | null;
   payload: Generated<Json>;
+  skill_name: string | null;
   status: Generated<string>;
   type: string;
   updated_at: Generated<Timestamp>;

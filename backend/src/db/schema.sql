@@ -1856,7 +1856,8 @@ CREATE TABLE public.routine_action_requests (
     last_error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    next_attempt_at timestamp with time zone
+    next_attempt_at timestamp with time zone,
+    skill_name text
 );
 
 
@@ -7222,14 +7223,6 @@ ALTER TABLE ONLY public.topic_transitions
 
 
 --
--- Name: topics topics_created_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.topics
-    ADD CONSTRAINT topics_created_run_id_fkey FOREIGN KEY (created_run_id) REFERENCES public.topic_census_runs(id);
-
-
---
 -- Name: topics topics_workspace_id_created_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7238,27 +7231,19 @@ ALTER TABLE ONLY public.topics
 
 
 --
--- Name: topics topics_workspace_id_last_seen_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.topics
-    ADD CONSTRAINT topics_workspace_id_last_seen_run_id_fkey FOREIGN KEY (workspace_id, last_seen_run_id) REFERENCES public.topic_census_runs(workspace_id, id);
-
-
---
--- Name: topics topics_last_seen_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.topics
-    ADD CONSTRAINT topics_last_seen_run_id_fkey FOREIGN KEY (last_seen_run_id) REFERENCES public.topic_census_runs(id);
-
-
---
 -- Name: topics topics_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.topics
     ADD CONSTRAINT topics_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: topics topics_workspace_id_last_seen_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topics
+    ADD CONSTRAINT topics_workspace_id_last_seen_run_id_fkey FOREIGN KEY (workspace_id, last_seen_run_id) REFERENCES public.topic_census_runs(workspace_id, id);
 
 
 --

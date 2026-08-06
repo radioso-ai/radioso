@@ -202,6 +202,7 @@ export class ActionRequestRepository {
         eb.fn.countAll<number>().filterWhere("status", "=", "in_progress").as("in_progress_count"),
         eb.fn.min<Date>("created_at").filterWhere("status", "=", "pending").as("oldest_pending_created_at"),
       ])
+      .where("status", "in", ["pending", "in_progress"])
       .executeTakeFirst();
 
     return {

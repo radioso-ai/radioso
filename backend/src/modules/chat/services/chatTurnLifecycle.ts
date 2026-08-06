@@ -10,6 +10,7 @@ import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositor
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { groundingDiagnosticFromSummary } from "./groundingDiagnostic.js";
+import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
 import type {
   ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
@@ -816,6 +817,52 @@ export class ChatTurnLifecycle {
     } catch {
       // Analytics fan-out must not change failure behavior.
     }
+  }
+
+  /**
+   * Records a turn a newer message superseded before it could answer. This is a normal
+   * user interruption (the visitor kept typing), not an error, so it is recorded with
+   * `eventStatus: "cancelled"` rather than `"failure"` — reusing "failure" here would let
+   * Activity/health surfaces that read `eventStatus` count routine interruptions as
+   * assistant errors. The user's message otherwise leaves no trace: no assistant message
+   * is ever created for a turn superseded this early, so this event is the only record
+   * that the turn happened at all, keyed to `userMessageId` for the read side to find.
+   *
+   * Kept deliberately lean next to `recordFailure`: a superseded turn never finished
+   * enough of the pipeline to have a meaningful retrieval/activity trace to attach.
+   */
+  async recordSupersession(
+    input: {
+      workspaceId: string;
+      accountId?: string;
+      conversationId?: string;
+      stream: boolean;
+    },
+    session: PreparedSession | null,
+    existingAssistantMessageId: string | undefined,
+    supersededBy: ChatTurnSupersededError,
+    workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
+  ) {
+    if (session && existingAssistantMessageId) {
+      await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
+    }
+
+    await this.auditService.record({
+      accountId: input.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "chat.answer",
+      eventStatus: "cancelled",
+      metadata: {
+        stage: "chat.answer",
+        workflow: workflowPolicy.workflow,
+        executionClass: workflowPolicy.executionClass,
+        conversationId: session?.conversation.id ?? input.conversationId,
+        userMessageId: session?.userMessage.id,
+        assistantMessageId: existingAssistantMessageId,
+        stream: input.stream,
+        supersededStage: supersededBy.stage,
+      },
+    });
   }
 
   private buildAssistantTurnSuccessAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {

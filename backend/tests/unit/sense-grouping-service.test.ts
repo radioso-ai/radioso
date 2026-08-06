@@ -149,7 +149,10 @@ describe("SenseGroupingService", () => {
         }),
       ],
     }));
-    expect(JSON.stringify(labelGateway.label.mock.calls[0]?.[0])).not.toContain("Fixture content");
+    // Excerpts are sent so the relationship judgment can see whether two groups
+    // state the same content; the visitor-facing label still comes only from the
+    // gateway, never from chunk text (asserted below).
+    expect(candidates.map((item) => item.label)).not.toContain("Fixture content");
     expect(candidates).toEqual([
       expect.objectContaining({
         id: "doc-hatha",
@@ -164,6 +167,163 @@ describe("SenseGroupingService", () => {
         payload: { documentIds: ["doc-raja"] },
       }),
     ]);
+  });
+
+  it("sends bounded content excerpts so the relationship judgment can see duplicate content", async () => {
+    // Titles and metadata alone cannot reveal that two documents SAY the same
+    // thing, which is exactly why the production duplicate was judged exclusive.
+    // A bounded excerpt per group is the evidence that judgment needs.
+    const longChunk = "A".repeat(5000);
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: `Reading represented by ${group.id}`,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const rankedCandidates = sameShapeCandidates({
+      leftTitle: "Ananda Yoga",
+      leftSimilarities: [0.82, 0.8],
+      rightTitle: "_ New Ananda Yoga",
+      rightSimilarities: [0.8, 0.78],
+    }).map((item) => ({ ...item, content: longChunk }));
+
+    await service.detect({
+      workspaceId: "workspace-1",
+      question: "what ananda yoga types exist?",
+      rankedCandidates,
+      conversationLanguage: "en",
+    });
+
+    const sentGroups = labelGateway.label.mock.calls[0]?.[0]?.groups ?? [];
+    expect(sentGroups).toHaveLength(2);
+    for (const group of sentGroups) {
+      expect(group.excerpts).toBeDefined();
+      // Bounded on both axes so a large document cannot blow the prompt budget.
+      expect(group.excerpts!.length).toBeGreaterThan(0);
+      expect(group.excerpts!.length).toBeLessThanOrEqual(2);
+      expect(group.excerpts!.every((excerpt) => excerpt.length <= 320)).toBe(true);
+    }
+  });
+
+  it("keeps excerpt text out of the visitor-facing label when the gateway returns no label", async () => {
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => []),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "what ananda yoga types exist?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Ananda Yoga",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "_ New Ananda Yoga",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates.map((item) => item.label)).toEqual(["", ""]);
+    expect(candidates.every((item) => item.labelStatus === "missing")).toBe(true);
+  });
+
+  it("renders group excerpts into the model sense-label prompt", async () => {
+    const completions: Array<{ prompt: string }> = [];
+    const gateway = new ModelSenseLabelGateway({
+      async complete(input: { prompt: string }) {
+        completions.push({ prompt: input.prompt });
+        return { text: JSON.stringify([{ id: "doc-a", label: "An overview", relationship: "redundant" }]) };
+      },
+    } as never, "Groups:\n{{groups}}");
+
+    await gateway.label({
+      question: "what ananda yoga types exist?",
+      groups: [{
+        id: "doc-a",
+        documentIds: ["doc-a"],
+        documents: [{ documentId: "doc-a", title: "Ananda Yoga" }],
+        excerpts: ["Ananda Yoga is a system of hatha yoga postures."],
+        share: 0.5,
+        separation: 0.6,
+      }],
+    });
+
+    expect(completions[0]?.prompt).toContain("Ananda Yoga is a system of hatha yoga postures.");
+  });
+
+  it("treats groups whose embeddings have different widths as unmeasurable rather than identical", async () => {
+    // Cross-width Euclidean distance truncates to the shorter vector and reports
+    // 0 — "identical" — for vectors from entirely different embedding spaces.
+    // Refusing the comparison keeps a width transition from silently fabricating
+    // a separation value.
+    const labelGateway = { label: vi.fn<(input: LabelInput) => LabelOutput>() };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: {
+        readChunkEmbeddings: vi.fn(async () => new Map([
+          ["left-1", [1, 0]],
+          ["left-2", [1, 0.1]],
+          ["right-1", [0, 1, 0.5, 0.5]],
+          ["right-2", [0.1, 1, 0.5, 0.5]],
+        ])),
+      },
+      labelGateway,
+    });
+
+    await expect(service.detect({
+      workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Hatha Yoga Foundations",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Raja Yoga Meditation",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    })).resolves.toEqual([]);
+    expect(labelGateway.label).not.toHaveBeenCalled();
+  });
+
+  it("does not corrupt a group centroid when its own chunk embeddings have mixed widths", async () => {
+    // Averaging mixed-width vectors either grows the accumulator past the first
+    // width (producing NaN) or divides trailing dimensions by the full chunk
+    // count. Either way the centroid is meaningless, so the group is unmeasurable.
+    const labelGateway = { label: vi.fn<(input: LabelInput) => LabelOutput>() };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: {
+        readChunkEmbeddings: vi.fn(async () => new Map([
+          ["left-1", [1, 0]],
+          ["left-2", [1, 0.1, 9, 9]],
+          ["right-1", [0, 1]],
+          ["right-2", [0.1, 1]],
+        ])),
+      },
+      labelGateway,
+    });
+
+    await expect(service.detect({
+      workspaceId: "workspace-1",
+      question: "Tell me about yoga.",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Hatha Yoga Foundations",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Raja Yoga Meditation",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    })).resolves.toEqual([]);
+    expect(labelGateway.label).not.toHaveBeenCalled();
   });
 
   it("renders the visitor question into the model sense-label prompt", async () => {
@@ -485,6 +645,154 @@ describe("SenseGroupingService", () => {
     ]);
   });
 
+  it("tags candidates redundant when the label gateway judges the groups near-duplicate copies", async () => {
+    // Reproduces the production repro: a live WordPress page and a leftover
+    // staging draft of the same page, ingested as two documents.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async (input) => input.groups.map((group) => ({
+        id: group.id,
+        label: group.id === "doc-left" ? "A general overview of Ananda Yoga" : "A newer or updated Ananda Yoga page",
+        relationship: "redundant" as const,
+      }))),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "what ananda yoga types exist?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Ananda Yoga",
+        leftSimilarities: [0.727, 0.72],
+        rightTitle: "_ New Ananda Yoga",
+        rightSimilarities: [0.719, 0.71],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates.map((candidate) => candidate.relationship)).toEqual([
+      "redundant",
+      "redundant",
+    ]);
+  });
+
+  it("tags a mixed complementary/redundant set with each candidate's own relationship", async () => {
+    // Neither value is a competing reading of the question, so the whole set is
+    // still safe to merge; each candidate keeps the value the gateway actually
+    // returned for it rather than being forced to a single shared value.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
+        { id: "doc-left", label: "A general overview of Ananda Yoga", relationship: "redundant" as const },
+        { id: "doc-right", label: "How to begin an Ananda Yoga practice", relationship: "complementary" as const },
+      ]),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: { readChunkEmbeddings: vi.fn(async () => separatedEmbeddings()) },
+      labelGateway,
+    });
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "what ananda yoga types exist, and how do I begin?",
+      rankedCandidates: sameShapeCandidates({
+        leftTitle: "Ananda Yoga",
+        leftSimilarities: [0.82, 0.8],
+        rightTitle: "Learning Ananda Yoga",
+        rightSimilarities: [0.8, 0.78],
+      }),
+      conversationLanguage: "en",
+    });
+
+    expect(candidates.map((candidate) => candidate.relationship)).toEqual([
+      "redundant",
+      "complementary",
+    ]);
+  });
+
+  it("does not tag the set redundant when a separated group is left unlabeled", async () => {
+    // Three separated groups; the gateway judges only two of them redundant and
+    // omits the third. Partial redundant labeling must not suppress the ask for
+    // the whole set — the unlabeled (potentially exclusive) facet gets no clarity.
+    const labelGateway = {
+      label: vi.fn<(input: LabelInput) => LabelOutput>(async () => [
+        { id: "doc-a", label: "A general overview of Ananda Yoga", relationship: "redundant" as const },
+        { id: "doc-b", label: "A newer or updated Ananda Yoga page", relationship: "redundant" as const },
+      ]),
+    };
+    const service = new SenseGroupingService({
+      policy,
+      embeddingReader: {
+        readChunkEmbeddings: vi.fn(async () => new Map([
+          ["a-1", [1, 0, 0]],
+          ["a-2", [1, 0.1, 0]],
+          ["b-1", [0, 1, 0]],
+          ["b-2", [0.1, 1, 0]],
+          ["c-1", [0, 0, 1]],
+          ["c-2", [0, 0.1, 1]],
+        ])),
+      },
+      labelGateway,
+    });
+
+    const rankedCandidates: RetrievedCandidate[] = [
+      candidate({ chunkId: "a-1", documentId: "doc-a", title: "Ananda Yoga", similarity: 0.86 }),
+      candidate({ chunkId: "a-2", documentId: "doc-a", title: "Ananda Yoga", similarity: 0.84 }),
+      candidate({ chunkId: "b-1", documentId: "doc-b", title: "_ New Ananda Yoga", similarity: 0.82 }),
+      candidate({ chunkId: "b-2", documentId: "doc-b", title: "_ New Ananda Yoga", similarity: 0.8 }),
+      candidate({ chunkId: "c-1", documentId: "doc-c", title: "Refund Policy", similarity: 0.78 }),
+      candidate({ chunkId: "c-2", documentId: "doc-c", title: "Refund Policy", similarity: 0.76 }),
+    ];
+
+    const candidates = await service.detect({
+      workspaceId: "workspace-1",
+      question: "what ananda yoga types exist, and what is your refund policy?",
+      rankedCandidates,
+      conversationLanguage: "en",
+    });
+
+    expect(candidates).toHaveLength(3);
+    expect(candidates.every((item) => item.relationship === undefined)).toBe(true);
+  });
+
+  it("parses a redundant relationship judgment from the raw model response", async () => {
+    const gateway = new ModelSenseLabelGateway({
+      async complete() {
+        return {
+          text: JSON.stringify([
+            { id: "doc-a", label: "A newer or updated Ananda Yoga page", relationship: "redundant" },
+            { id: "doc-b", label: "A general overview of Ananda Yoga", relationship: "redundant" },
+          ]),
+        };
+      },
+    } as never, "{{groups}}");
+
+    const result = await gateway.label({
+      question: "what ananda yoga types exist?",
+      groups: [
+        {
+          id: "doc-a",
+          documentIds: ["doc-a"],
+          documents: [{ documentId: "doc-a", title: "_ New Ananda Yoga" }],
+          share: 0.5,
+          separation: 0.6,
+        },
+        {
+          id: "doc-b",
+          documentIds: ["doc-b"],
+          documents: [{ documentId: "doc-b", title: "Ananda Yoga" }],
+          share: 0.5,
+          separation: 0.6,
+        },
+      ],
+    });
+
+    expect(result.map((item) => item.relationship)).toEqual(["redundant", "redundant"]);
+  });
+
   it("does not tag the set complementary when a separated group is left unlabeled", async () => {
     // Three separated groups; the gateway judges only two of them complementary and
     // omits the third. Partial complementary labeling must not suppress the ask for
@@ -621,6 +929,130 @@ describe("evaluateRetrievalSenseClarification complementary facets", () => {
       conversationId: "conversation-1",
       messageId: "message-1",
       originalQuery: "Do you mean posture or meditation?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect?.kind).toBe("ask");
+  });
+});
+
+const redundantCandidate = (
+  id: string,
+  confidence: number,
+): RetrievalSenseClarificationCandidate => ({
+  id,
+  label: id === "doc-live" ? "A general overview of Ananda Yoga" : "A newer or updated Ananda Yoga page",
+  labelStatus: "generated",
+  confidence,
+  relationship: "redundant",
+  payload: { documentIds: [id] },
+});
+
+describe("evaluateRetrievalSenseClarification redundant sources", () => {
+  const basePolicy = { floor: 0, margin: 0.15, askMargin: 0.03, maxOptions: 4 };
+
+  it("proceeds without clarification, without document scoping, and records redundant_sources for near-duplicate documents", async () => {
+    // The production repro: gap 0.727256 - 0.719315 = 0.0079, well inside the
+    // ask margin, so without the redundant judgment this would still ask.
+    const candidates = [
+      redundantCandidate("doc-live", 0.727256),
+      redundantCandidate("doc-draft", 0.719315),
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "what ananda yoga types exist?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect).toMatchObject({
+      kind: "proceed",
+      stage: expect.objectContaining({
+        outputs: expect.objectContaining({
+          surface: "retrieval_sense",
+          reason: "redundant_sources",
+        }),
+      }),
+    });
+    expect(effect && "documentScope" in effect ? effect.documentScope : undefined).toBeUndefined();
+  });
+
+  it("proceeds and records redundant_sources for a set that mixes redundant and complementary groups", async () => {
+    // Neither value is a competing reading of the question, so a mixed
+    // non-exclusive set still proceeds. redundant is surfaced in the reason
+    // because a merged duplicate source is the more operationally interesting
+    // signal for operators than a merged complementary facet.
+    const candidates = [
+      redundantCandidate("doc-draft", 0.72),
+      complementaryCandidate("doc-left", 0.7),
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "what ananda yoga types exist?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect).toMatchObject({
+      kind: "proceed",
+      stage: expect.objectContaining({
+        outputs: expect.objectContaining({ reason: "redundant_sources" }),
+      }),
+    });
+  });
+
+  it("still asks when one candidate in an otherwise-redundant set is judged an exclusive reading", async () => {
+    const candidates = [
+      redundantCandidate("doc-draft", 0.72),
+      { ...redundantCandidate("doc-other", 0.7), relationship: "exclusive" as const },
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "what ananda yoga types exist?",
+      conversationLanguage: "en",
+      policy: basePolicy,
+      suppressAsk: false,
+      expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    expect(effect?.kind).toBe("ask");
+  });
+
+  it("still asks when one candidate's relationship is missing even though the rest are judged redundant", async () => {
+    const candidates = [
+      redundantCandidate("doc-draft", 0.72),
+      { ...redundantCandidate("doc-other", 0.7), relationship: undefined },
+    ];
+
+    const effect = await evaluateRetrievalSenseClarification({
+      detector: { detect: vi.fn(async () => candidates) },
+      workspaceId: "workspace-1",
+      rankedCandidates: [],
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      originalQuery: "what ananda yoga types exist?",
       conversationLanguage: "en",
       policy: basePolicy,
       suppressAsk: false,

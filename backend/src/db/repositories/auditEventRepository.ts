@@ -23,6 +23,11 @@ export interface AuditEventRepositoryPort {
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
   listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]>;
+  listUnansweredChatAnswerEventsByUserMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    userMessageIds: string[],
+  ): Promise<AuditEventRecord[]>;
   listChatTurnEventsByAssistantMessageIds(
     workspaceId: string,
     conversationId: string,
@@ -109,6 +114,30 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       .where("workspace_id", "=", workspaceId)
       .where("event_type", "=", "chat.answer")
       .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
+      .orderBy("created_at", "asc")
+      .execute();
+
+    return rows.map((row) => mapAuditEvent(row as AuditEventRow));
+  }
+
+  async listUnansweredChatAnswerEventsByUserMessageIds(
+    workspaceId: string,
+    conversationId: string,
+    userMessageIds: string[],
+  ): Promise<AuditEventRecord[]> {
+    if (userMessageIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom("audit_events")
+      .select(auditEventColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("event_type", "=", "chat.answer")
+      .where("event_status", "in", ["failure", "cancelled"])
+      .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "conversationId"), "=", conversationId))
+      .where((eb) => eb(jsonbKeyText(eb.ref("metadata_json"), "assistantMessageId"), "is", null))
+      .where((eb) => anyOf(jsonbKeyText(eb.ref("metadata_json"), "userMessageId"), userMessageIds, "text[]"))
       .orderBy("created_at", "asc")
       .execute();
 

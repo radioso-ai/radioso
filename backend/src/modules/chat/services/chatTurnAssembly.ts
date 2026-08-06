@@ -13,6 +13,7 @@ import type {
   ConversationTurnInterpreter,
   ClarificationCandidate,
   ClarificationPolicy,
+  PendingClarification,
   RoutineActionRequest,
   Routine,
   RoutineAwaitingDecision,
@@ -68,6 +69,7 @@ import type { PendingClarificationResolution } from "./clarification/pendingClar
 import {
   evaluateRetrievalSenseClarification,
   phraseRetrievalSenseAsk,
+  presentableSenseCandidates,
   type AgenticRetrievalToolFactory,
   type RetrievalExecutionDiagnostics,
   type RetrievalSenseDetectorPort,
@@ -195,6 +197,29 @@ const buildApprovalRequestAction = (input: {
     stepId: input.stepId,
     dashboardPath: `/conversations/${input.conversationId}`,
   },
+});
+
+/**
+ * Aligns an "offer" clarification's persisted candidates with what the visitor was
+ * actually offered, mirroring the "ask" path's use of `phrased.presented` (below).
+ *
+ * The "offer" effect carries `[topPick, ...alternatives]` (`retrievalSenseClarification.ts`),
+ * but only the alternatives are ever shown: the answer prompt renders `{{alternatives}}`,
+ * and the top pick is the interpretation already answered rather than a choice on
+ * offer. Persisting the top pick at position 0 made a positional reply ("the first
+ * one") resolve to the already-answered document, because the reply mapper numbers
+ * the stored list and its prompt states that numbering is the offered order. Storing
+ * only the presentable alternatives, in the order offered, makes that claim true.
+ *
+ * Pure and exported so it is unit-testable without constructing the full
+ * {@link ChatTurnAssembly}.
+ */
+export const alignOfferPendingCandidates = (
+  pending: Omit<PendingClarification, "askedEventId">,
+  offeredAlternatives: ClarificationCandidate[],
+): Omit<PendingClarification, "askedEventId"> => ({
+  ...pending,
+  candidates: presentableSenseCandidates(offeredAlternatives),
 });
 
 export const buildChatTurnContext = (session: PreparedSession): TurnContext => ({
@@ -1007,7 +1032,9 @@ export class ChatTurnAssembly {
         this.recordTraceClarificationDecisions(engineTrace);
       }
       if (effect.kind === "offer") {
-        await input.clarification.store.save(effect.pending);
+        await input.clarification.store.save(
+          alignOfferPendingCandidates(effect.pending, effect.alternatives),
+        );
       }
       return {
         kind: "continue",

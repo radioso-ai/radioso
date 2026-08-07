@@ -138,11 +138,3 @@ output "cloud_sql_connection_name" {
 output "app_base_url" {
   value = module.radioso.app_base_url
 }
-
-output "github_actions_workload_identity_provider" {
-  value = module.radioso.github_actions_workload_identity_provider
-}
-
-output "github_actions_service_account_email" {
-  value = module.radioso.github_actions_service_account_email
-}

@@ -10,7 +10,9 @@ module.exports = {
         pathNot: [
           "^src/app/composition/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
           "composition\\.ts$",
+          "^src/modules/routines/turnProvider\\.ts$",
           "^src/shared/infra/",
           "^src/modules/directives/(domain|public)\\.ts$",
           "^src/modules/routines/domain\\.ts$",
@@ -152,6 +154,7 @@ module.exports = {
         pathNot: [
           "^src/modules/retrieval/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
           "^src/app/composition/defaultComposition\\.ts$",
         ],
       },
@@ -202,6 +205,7 @@ module.exports = {
         pathNot: [
           "^src/modules/documents/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
           "^src/app/composition/defaultComposition\\.ts$",
         ],
       },
@@ -234,6 +238,7 @@ module.exports = {
         path: "^src/",
         pathNot: [
           "^src/modules/chat/",
+          "^src/app/server/builders/",
         ],
       },
       to: {
@@ -269,6 +274,7 @@ module.exports = {
           "^src/modules/chat/",
           "^src/app/composition/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
         ],
       },
       to: {
@@ -432,6 +438,7 @@ module.exports = {
           "^src/modules/settings/",
           "^src/app/composition/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
         ],
       },
       to: {
@@ -481,6 +488,7 @@ module.exports = {
         pathNot: [
           "^src/modules/audit/",
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
+          "^src/app/server/builders/",
         ],
       },
       to: {

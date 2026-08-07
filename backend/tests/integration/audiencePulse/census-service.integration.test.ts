@@ -134,10 +134,10 @@ describeIntegration("CensusService (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  it("persists a full census run (run + topics + memberships) over seeded data and reads it back consistently", async () => {
+  it("records a partial census run without publishing incomplete topics or memberships", async () => {
     const { conversationId, messageIds: clusterableIds } = await seedClusterablePopulation();
 
-    const missingFacetId = await createMessage({ conversationId, createdAt: "2026-07-10T00:00:00.000Z" });
+    await createMessage({ conversationId, createdAt: "2026-07-10T00:00:00.000Z" });
 
     const staleId = await createMessage({ conversationId, createdAt: "2026-07-11T00:00:00.000Z" });
     await facetSource.upsertFacet({ messageId: staleId, workspaceId, facetText: "stale facet text", promptVersion: "old-version" });
@@ -160,21 +160,13 @@ describeIntegration("CensusService (Postgres)", () => {
     expect(persisted).not.toBeNull();
     expect(persisted?.questionCount).toBe(result.populationSize);
     expect(persisted?.unclassifiedCount).toBe(result.unclassifiedCount);
-    expect(persisted?.topics).toHaveLength(result.topics.length);
-    const persistedTotalMembers = persisted!.topics.reduce((sum, topic) => sum + topic.memberCount, 0);
-    expect(persistedTotalMembers).toBe(totalTopicMembers);
+    expect(persisted?.topics).toEqual([]);
 
     const membershipRows = await database.query<{ message_id: string }>(
       "SELECT message_id FROM topic_memberships WHERE run_id = $1",
       [result.runId],
     );
-    const memberIds = membershipRows.map((row) => row.message_id);
-    expect(memberIds).not.toContain(missingFacetId);
-    expect(memberIds).not.toContain(staleId);
-    expect(memberIds).not.toContain(noEmbeddingId);
-    for (const clusterableId of clusterableIds) {
-      expect(memberIds).toContain(clusterableId);
-    }
+    expect(membershipRows).toEqual([]);
   });
 
   it("produces identical topic membership across two runs over identical input", async () => {

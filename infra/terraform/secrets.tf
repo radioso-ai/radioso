@@ -116,12 +116,12 @@ resource "google_secret_manager_secret_iam_member" "backend_access" {
   for_each  = local.secret_names
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.backend.email}"
+  member    = "serviceAccount:${data.google_service_account.backend.email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "worker_access" {
   for_each  = local.secret_names
   secret_id = google_secret_manager_secret.secrets[each.key].secret_id
   role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.worker.email}"
+  member    = "serviceAccount:${data.google_service_account.worker.email}"
 }

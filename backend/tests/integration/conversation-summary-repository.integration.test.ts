@@ -25,6 +25,7 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
 
 const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
 const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
+const expiredSummaryTtlMs = -60_000;
 
 describeIfDatabase("conversation summary persistence (#866)", () => {
   let database: Database;
@@ -111,7 +112,7 @@ describeIfDatabase("conversation summary persistence (#866)", () => {
 
   it("does not return an expired summary", async () => {
     const sessionId = await createConversation();
-    const expired = new ConversationSummaryRepository(database.kysely, -1);
+    const expired = new ConversationSummaryRepository(database.kysely, expiredSummaryTtlMs);
     await expired.save({
       sessionId,
       summary: { summary: "Stale.", coveredMessageCount: 10, coveredThrough: new Date() },
@@ -121,7 +122,7 @@ describeIfDatabase("conversation summary persistence (#866)", () => {
 
   it("lets a fresh save overwrite an expired row regardless of its watermark", async () => {
     const sessionId = await createConversation();
-    const expired = new ConversationSummaryRepository(database.kysely, -1);
+    const expired = new ConversationSummaryRepository(database.kysely, expiredSummaryTtlMs);
     // Expired row with a HIGHER watermark must never block future saves: load()
     // hides it, so leaving it in place would silently black-hole every write.
     await expired.save({

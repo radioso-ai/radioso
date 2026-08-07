@@ -1,18 +1,15 @@
 # --- Service accounts ---
 
-resource "google_service_account" "backend" {
-  account_id   = "${local.resource_name_prefix}-backend"
-  display_name = "Radioso ${var.environment} backend Cloud Run"
+data "google_service_account" "backend" {
+  account_id = "${local.resource_name_prefix}-backend"
 }
 
-resource "google_service_account" "frontend" {
-  account_id   = "${local.resource_name_prefix}-frontend"
-  display_name = "Radioso ${var.environment} frontend Cloud Run"
+data "google_service_account" "frontend" {
+  account_id = "${local.resource_name_prefix}-frontend"
 }
 
-resource "google_service_account" "worker" {
-  account_id   = "${local.resource_name_prefix}-worker"
-  display_name = "Radioso ${var.environment} document worker"
+data "google_service_account" "worker" {
+  account_id = "${local.resource_name_prefix}-worker"
 }
 
 # --- Backend Cloud Run service ---
@@ -23,7 +20,7 @@ resource "google_cloud_run_v2_service" "backend" {
   location = var.region
 
   template {
-    service_account = google_service_account.backend.email
+    service_account = data.google_service_account.backend.email
 
     scaling {
       min_instance_count = var.backend_min_instances
@@ -220,7 +217,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
-        value = google_service_account.worker_task_invoker.email
+        value = data.google_service_account.worker_task_invoker.email
       }
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
@@ -475,7 +472,7 @@ resource "google_cloud_run_v2_service" "frontend" {
   location = var.region
 
   template {
-    service_account = google_service_account.frontend.email
+    service_account = data.google_service_account.frontend.email
 
     scaling {
       min_instance_count = var.frontend_min_instances
@@ -532,7 +529,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
   location = var.region
 
   template {
-    service_account = google_service_account.worker.email
+    service_account = data.google_service_account.worker.email
 
     scaling {
       min_instance_count = var.worker_min_instances
@@ -720,7 +717,7 @@ resource "google_cloud_run_v2_service" "document_worker" {
       }
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
-        value = google_service_account.worker_task_invoker.email
+        value = data.google_service_account.worker_task_invoker.email
       }
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
@@ -854,7 +851,7 @@ resource "google_cloud_run_v2_service_iam_member" "document_worker_invoker" {
   name     = google_cloud_run_v2_service.document_worker[0].name
   location = var.region
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.worker_task_invoker.email}"
+  member   = "serviceAccount:${data.google_service_account.worker_task_invoker.email}"
 }
 
 # --- Crawler worker Cloud Run service ---
@@ -868,7 +865,7 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
   location = var.region
 
   template {
-    service_account = google_service_account.worker.email
+    service_account = data.google_service_account.worker.email
 
     scaling {
       min_instance_count = var.crawler_worker_min_instances
@@ -1057,7 +1054,7 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       # crawler_worker resource.
       env {
         name  = "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
-        value = google_service_account.worker_task_invoker.email
+        value = data.google_service_account.worker_task_invoker.email
       }
       env {
         name  = "DOCUMENT_PROCESSING_JOB_LEASE_MS"
@@ -1165,5 +1162,5 @@ resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker" {
   name     = google_cloud_run_v2_service.crawler_worker[0].name
   location = var.region
   role     = "roles/run.invoker"
-  member   = "serviceAccount:${google_service_account.worker_task_invoker.email}"
+  member   = "serviceAccount:${data.google_service_account.worker_task_invoker.email}"
 }

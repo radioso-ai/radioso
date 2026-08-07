@@ -20,6 +20,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+const claimableNow = () => new Date(Date.now() + 1_000);
 
 describeIntegration("embedding profile repositories (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
@@ -414,7 +415,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     });
     await expect(vectorIndexWorkRepository.claimBatch({
       limit: 1,
-      now: new Date(),
+      now: claimableNow(),
       leaseMs: 1_000,
     })).resolves.toMatchObject([{ id: projection.work.id }]);
     await expect(vectorIndexWorkRepository.markFailed({
@@ -490,7 +491,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     });
     await expect(vectorIndexWorkRepository.claimBatch({
       limit: 1,
-      now: new Date(),
+      now: claimableNow(),
       leaseMs: 1_000,
     })).resolves.toMatchObject([{ id: activeProjection.work.id }]);
     await vectorIndexWorkRepository.markFailed({
@@ -561,7 +562,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
     });
     await vectorIndexWorkRepository.claimBatch({
       limit: 1,
-      now: new Date(),
+      now: claimableNow(),
       leaseMs: 1_000,
     });
     await vectorIndexWorkRepository.markFailed({
@@ -627,7 +628,7 @@ describeIntegration("embedding profile repositories (Postgres)", () => {
 
     await expect(vectorIndexWorkRepository.claimBatch({
       limit: 1,
-      now: new Date(),
+      now: claimableNow(),
       leaseMs: 1_000,
     })).resolves.toMatchObject([{ id: replacementProjection.work.id }]);
     await vectorIndexWorkRepository.markCompletedAndAdvanceCheckpoint({

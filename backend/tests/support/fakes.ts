@@ -100,9 +100,9 @@ import type {
 import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
-  DocumentProcessingJobOptions,
   DocumentProcessingJobRepositoryPort,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import type { DocumentProcessingJobOptions } from "../../src/modules/documents/contracts/documentContracts.js";
 import type {
   ConversationRecord,
   ConversationRepositoryPort,

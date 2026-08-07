@@ -212,6 +212,138 @@ describe("route-scoped directive steering", () => {
     expect(systemPrompt).not.toContain("Use refund support tone.");
   });
 
+  // Production regression: a contextual classification 400 propagated out of the
+  // matcher and failed the whole turn. Because the failing turn was in
+  // `pendingClarification`, the state never cleared and every later message died
+  // on the same path. Contextual matching is additive — the turn must survive it.
+  it("keeps the turn alive on deterministic directives when the contextual gateway throws", async () => {
+    const contextualDirective: Directive = {
+      name: "refund-tone",
+      condition: { kind: "contextual", description: "when the customer asks for a refund" },
+      action: "Use refund support tone.",
+    };
+    const failure = new Error("400 Unsupported parameter");
+    const gatewayFactory = {
+      create: vi.fn(async () => ({ match: vi.fn(async () => { throw failure; }) })),
+    };
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: directive("always-on", "Always apply.") },
+        { directive: contextualDirective },
+      ],
+      directiveMatchGatewayFactory: gatewayFactory,
+      logger,
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", query: "Can I get a refund?" },
+      usageContext: {
+        workspaceId: "w1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg-1:directive_match",
+      },
+    });
+
+    expect(result.matches.map((match) => match.directive.name)).toEqual(["always-on"]);
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Always apply."]);
+    const { systemPrompt } = composeGroundedAnswerSystemPrompt({
+      ...basePromptInput,
+      steering: result.rules,
+    });
+    expect(systemPrompt).toContain("Always apply.");
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [payload] = logger.warn.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      event: "directive_contextual_match_unavailable",
+      workspaceId: "w1",
+      errorType: "Error",
+      errorMessage: "400 Unsupported parameter",
+    });
+    // Observability constraint: the directive turn context never reaches the log.
+    expect(JSON.stringify(payload)).not.toContain("Can I get a refund?");
+  });
+
+  // Same incident class as above, one step earlier: building the gateway resolves
+  // workspace LLM capability config, so it can fail on its own. An unguarded
+  // construction failure kills the turn exactly like an unguarded classification
+  // failure, and strands a `pendingClarification` conversation the same way.
+  it("keeps the turn alive on deterministic directives when the gateway factory throws", async () => {
+    const contextualDirective: Directive = {
+      name: "refund-tone",
+      condition: { kind: "contextual", description: "when the customer asks for a refund" },
+      action: "Use refund support tone.",
+    };
+    const gatewayFactory = {
+      create: vi.fn(async () => {
+        throw new Error("no chat capability configured for workspace");
+      }),
+    };
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [
+        { directive: directive("always-on", "Always apply.") },
+        { directive: contextualDirective },
+      ],
+      directiveMatchGatewayFactory: gatewayFactory,
+      logger,
+    });
+
+    const result = await steering.steer({
+      workspaceId: "w1",
+      turnContext: { route: "retrieval", query: "Can I get a refund?" },
+      usageContext: {
+        workspaceId: "w1",
+        conversationId: "conv-1",
+        messageId: "msg-1",
+        surface: "chat",
+        operation: "directive_match",
+        attemptKey: "msg-1:directive_match",
+      },
+    });
+
+    expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
+    expect(result.matches.map((match) => match.directive.name)).toEqual(["always-on"]);
+    expect(result.rules.map((rule) => rule.action)).toEqual(["Always apply."]);
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [payload] = logger.warn.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      event: "directive_contextual_match_unavailable",
+      workspaceId: "w1",
+      source: "gateway_construction",
+      errorType: "Error",
+      errorMessage: "no chat capability configured for workspace",
+    });
+    expect(JSON.stringify(payload)).not.toContain("Can I get a refund?");
+  });
+
+  // The guard covers gateway construction only; a resolution defect must not be
+  // absorbed by it.
+  it("surfaces a failure from the resolved matcher instead of swallowing it", async () => {
+    const failing = {
+      async match(): Promise<never> {
+        throw new Error("matcher resolution defect");
+      },
+    };
+    const steering = createRouteScopedDirectiveSteering({
+      capabilityPolicy: allowAllCapabilities,
+      registrations: [{ directive: directive("always-on", "Always apply.") }],
+      matcher: failing,
+    });
+
+    await expect(
+      steering.steer({ workspaceId: "w1", turnContext: { route: "retrieval" } }),
+    ).rejects.toThrow("matcher resolution defect");
+  });
+
   it("does not apply built-in route policy to unrelated directives with the same name", async () => {
     const customRepresentOrganization = directive(
       representOrganizationDirective.name,

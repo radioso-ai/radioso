@@ -14,6 +14,7 @@ import {
   type Directive,
   type DirectiveMatch,
   type DirectiveMatchGateway,
+  type DirectiveMatcherPort,
 } from "../src/index.js";
 
 const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "action">): Directive => ({
@@ -91,6 +92,64 @@ describe("directive defaults", () => {
     });
 
     expect(matches.map((candidate) => candidate.directive.name).sort()).toEqual(["ctx", "standing"]);
+  });
+
+  it("does not notify the unavailability observer on the normal contextual path", async () => {
+    const gateway: DirectiveMatchGateway = { match: vi.fn().mockResolvedValue([{ name: "ctx", confidence: 0.9 }]) };
+    const onMatchUnavailable = vi.fn();
+    const matches = await new ProbabilisticDirectiveMatcher({
+      gateway,
+      confidenceThreshold: 0.5,
+      onMatchUnavailable,
+    }).match({ turnContext: {}, directives: [contextual("ctx", "when X")] });
+
+    expect(matches.map((candidate) => candidate.directive.name)).toEqual(["ctx"]);
+    expect(onMatchUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("degrades to zero contextual matches when the classification gateway throws", async () => {
+    const failure = new Error("model gateway rejected the request");
+    const gateway: DirectiveMatchGateway = { match: vi.fn().mockRejectedValue(failure) };
+    const onMatchUnavailable = vi.fn();
+    const matcher = new ProbabilisticDirectiveMatcher({
+      gateway,
+      confidenceThreshold: 0.5,
+      onMatchUnavailable,
+    });
+
+    await expect(
+      matcher.match({ turnContext: { query: "hi" }, directives: [contextual("ctx", "when X")] }),
+    ).resolves.toEqual([]);
+    expect(onMatchUnavailable).toHaveBeenCalledTimes(1);
+    expect(onMatchUnavailable).toHaveBeenCalledWith(failure);
+  });
+
+  it("keeps deterministic always matches when the contextual gateway throws", async () => {
+    const gateway: DirectiveMatchGateway = { match: vi.fn().mockRejectedValue(new Error("400 bad request")) };
+    const matches = await new CompositeDirectiveMatcher([
+      new AlwaysMatchDirectiveMatcher(),
+      new ProbabilisticDirectiveMatcher({ gateway, confidenceThreshold: 0.5 }),
+    ]).match({
+      turnContext: {},
+      directives: [directive({ name: "standing", action: "x" }), contextual("ctx", "when X")],
+    });
+
+    expect(matches.map((candidate) => candidate.directive.name)).toEqual(["standing"]);
+  });
+
+  it("still propagates failures from a deterministic delegate through the composite", async () => {
+    const failing: DirectiveMatcherPort = {
+      async match(): Promise<DirectiveMatch[]> {
+        throw new Error("deterministic matcher is not optional");
+      },
+    };
+
+    await expect(
+      new CompositeDirectiveMatcher([failing]).match({
+        turnContext: {},
+        directives: [directive({ name: "standing", action: "x" })],
+      }),
+    ).rejects.toThrow("deterministic matcher is not optional");
   });
 
   it("renders the model gateway prompt and parses the structured response", async () => {

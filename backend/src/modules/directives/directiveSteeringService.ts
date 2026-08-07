@@ -18,9 +18,10 @@ import {
 } from "./steeringBound.js";
 import type { DirectiveLifecycleSuppression } from "./directiveLifecycle.js";
 
-/** Structural debug sink; a Pino logger satisfies it without an import. */
+/** Structural log sink; a Pino logger satisfies it without an import. */
 export interface DirectiveSteeringLogger {
   debug(payload: Record<string, unknown>, message: string): void;
+  warn(payload: Record<string, unknown>, message: string): void;
 }
 
 export interface DirectiveSteerInput {

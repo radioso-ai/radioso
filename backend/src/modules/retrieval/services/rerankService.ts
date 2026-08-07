@@ -9,7 +9,7 @@ import {
   isReasoningEffortKnownUnsupported,
   isUnsupportedReasoningEffortError,
   markReasoningEffortUnsupported,
-} from "../../../shared/infra/llm/reasoningEffortSupport.js";
+} from "../../../shared/infra/llm/samplingParamSupport.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";

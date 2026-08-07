@@ -86,6 +86,36 @@ describe("ProbabilisticDirectiveMatcher", () => {
       expect.objectContaining({ directives: [expect.objectContaining({ name: "ctx" })] }),
     );
   });
+
+  it("resolves to no matches and notifies the observer when the gateway throws", async () => {
+    const failure = new Error("400 Unsupported value");
+    const gateway: DirectiveMatchGateway = { match: vi.fn().mockRejectedValue(failure) };
+    const onMatchUnavailable = vi.fn();
+    const matcher = new ProbabilisticDirectiveMatcher({
+      gateway,
+      confidenceThreshold: 0.5,
+      onMatchUnavailable,
+    });
+
+    await expect(
+      matcher.match({ turnContext: { query: "hi" }, directives: [contextual("ctx", "when X")] }),
+    ).resolves.toEqual([]);
+    expect(onMatchUnavailable).toHaveBeenCalledTimes(1);
+    expect(onMatchUnavailable).toHaveBeenCalledWith(failure);
+  });
+
+  it("does not notify the observer when the gateway succeeds", async () => {
+    const gateway = stubGateway([{ name: "ctx", confidence: 0.9 }]);
+    const onMatchUnavailable = vi.fn();
+    const matches = await new ProbabilisticDirectiveMatcher({
+      gateway,
+      confidenceThreshold: 0.5,
+      onMatchUnavailable,
+    }).match({ turnContext: {}, directives: [contextual("ctx", "when X")] });
+
+    expect(matches.map((match) => match.directive.name)).toEqual(["ctx"]);
+    expect(onMatchUnavailable).not.toHaveBeenCalled();
+  });
 });
 
 describe("CompositeDirectiveMatcher", () => {
@@ -102,6 +132,20 @@ describe("CompositeDirectiveMatcher", () => {
     expect(matches.map((m) => m.directive.name).sort()).toEqual(["ctx", "standing"]);
     expect(matches.find((m) => m.directive.name === "standing")!.selectionMode).toBe("deterministic");
     expect(matches.find((m) => m.directive.name === "ctx")!.selectionMode).toBe("probabilistic");
+  });
+
+  it("keeps the deterministic always matches when the contextual gateway throws", async () => {
+    const gateway: DirectiveMatchGateway = { match: vi.fn().mockRejectedValue(new Error("400 Bad Request")) };
+    const matcher = new CompositeDirectiveMatcher([
+      new AlwaysMatchDirectiveMatcher(),
+      new ProbabilisticDirectiveMatcher({ gateway, confidenceThreshold: 0.5 }),
+    ]);
+    const matches = await matcher.match({
+      turnContext: {},
+      directives: [directive({ name: "standing", action: "x" }), contextual("ctx", "when X")],
+    });
+
+    expect(matches.map((m) => m.directive.name)).toEqual(["standing"]);
   });
 });
 
@@ -146,5 +190,34 @@ describe("createDirectiveMatcher", () => {
     });
 
     expect(complete.mock.calls[0]![0].systemPrompt).toBe(loadPromptTemplate("chat/directive-match.md"));
+  });
+
+  it("logs a warning and keeps always directives when the contextual model call fails", async () => {
+    const complete = vi.fn().mockRejectedValue(new Error("400 Unsupported parameter"));
+    const client: TextGenerationClient = {
+      metadata,
+      complete,
+      stream: () => ({ textStream: (async function* () {})(), usage: Promise.resolve(undefined) }),
+    };
+    const logger = { debug: vi.fn(), warn: vi.fn() };
+
+    const matches = await createDirectiveMatcher({
+      textGenerationClient: client,
+      confidenceThreshold: 0.5,
+      logger,
+    }).match({
+      turnContext: { query: "I want a refund now" },
+      directives: [directive({ name: "standing", action: "x" }), contextual("escalate", "customer demands a refund")],
+    });
+
+    expect(matches.map((match) => match.directive.name)).toEqual(["standing"]);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    const [payload] = logger.warn.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      event: "directive_contextual_match_unavailable",
+      errorType: "Error",
+      errorMessage: "400 Unsupported parameter",
+    });
+    expect(JSON.stringify(payload)).not.toContain("I want a refund now");
   });
 });

@@ -150,7 +150,10 @@ describe("DirectiveSteeringService", () => {
       matcher: new AlwaysMatchDirectiveMatcher(),
       capabilityPolicy: new StubCapabilityPolicy(),
       steeringBound: { maxRenderedDirectives: 2, renderedTokenBudget: 1_000_000 },
-      logger: { debug: (payload, message) => debug.push({ payload, message }) },
+      logger: {
+        debug: (payload, message) => debug.push({ payload, message }),
+        warn: () => {},
+      },
     });
 
     const result = await service.steer({ workspaceId: "w1" });
@@ -202,7 +205,7 @@ describe("DirectiveSteeringService", () => {
       registry: new DirectiveCatalogRegistry([directive({ name: "only", action: "only" })]),
       matcher: new AlwaysMatchDirectiveMatcher(),
       capabilityPolicy: new StubCapabilityPolicy(),
-      logger: { debug: () => debug.push(1) },
+      logger: { debug: () => debug.push(1), warn: () => {} },
     });
     const result = await service.steer({ workspaceId: "w1" });
     expect(result.bounded).toEqual([]);

@@ -21,8 +21,13 @@ export {
   type DirectiveMatchGateway,
   type DirectiveMatcherPort,
   type DirectiveMatchInput,
+  type DirectiveMatchUnavailableObserver,
   type DirectiveTextGenerationClient,
 } from "@radioso/conversation-defaults";
+export {
+  reportContextualMatchUnavailable,
+  type ContextualClassificationSource,
+} from "./contextualMatchLogging.js";
 export {
   DirectiveSteeringService,
   noopDirectiveSteering,

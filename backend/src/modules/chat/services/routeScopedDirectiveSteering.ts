@@ -9,6 +9,8 @@ import {
   type DirectiveMatch,
   type DirectiveMatchGateway,
   type DirectiveSteeringLogger,
+  reportContextualMatchUnavailable,
+  type ContextualClassificationSource,
   ProbabilisticDirectiveMatcher,
   type DirectiveMatcherPort,
   type DirectiveSteerInput,
@@ -129,6 +131,21 @@ export const createRouteScopedDirectiveSteering = (input: {
     }
   };
 
+  // Contextual matching is additive, so the matcher degrades to zero contextual
+  // matches when its classification call fails and the turn continues on the
+  // deterministic `always` directives. That degradation is silent by default, so
+  // surface it here: an operator needs to see that a turn answered without its
+  // conditional steering, and why.
+  const onContextualMatchUnavailable = (
+    steerInput: DirectiveSteerInput,
+    source: ContextualClassificationSource,
+  ): ((error: unknown) => void) =>
+    reportContextualMatchUnavailable({
+      ...(input.logger ? { logger: input.logger } : {}),
+      source,
+      workspaceId: steerInput.workspaceId,
+    });
+
   // Single resolution body shared by both entry points. The contextual gateway is
   // an injectable classification source: when `precomputedClassifications` is
   // supplied the fused planner already ran the classification, so no gateway is
@@ -150,6 +167,7 @@ export const createRouteScopedDirectiveSteering = (input: {
           new ProbabilisticDirectiveMatcher({
             gateway: staticClassificationGateway(precomputedClassifications),
             confidenceThreshold: DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
+            onMatchUnavailable: onContextualMatchUnavailable(steerInput, "precomputed_classifications"),
           }),
         ]);
       }
@@ -158,17 +176,30 @@ export const createRouteScopedDirectiveSteering = (input: {
       steerInput.usageContext &&
       hasContextual
     ) {
-      const gateway = await input.directiveMatchGatewayFactory.create({
-        workspaceContext: { workspaceId: steerInput.workspaceId },
-        usageContext: steerInput.usageContext,
-      });
-      turnMatcher = new CompositeDirectiveMatcher([
-        matcher,
-        new ProbabilisticDirectiveMatcher({
-          gateway,
-          confidenceThreshold: DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
-        }),
-      ]);
+      // Building the gateway resolves workspace LLM capability config, so it can
+      // fail on its own, before any classification call happens. Contextual
+      // matching is optional at this step too: fall back to the deterministic
+      // matcher rather than failing the turn. The guard covers construction only —
+      // a defect in matching or resolution below must still surface.
+      let gateway: DirectiveMatchGateway | undefined;
+      try {
+        gateway = await input.directiveMatchGatewayFactory.create({
+          workspaceContext: { workspaceId: steerInput.workspaceId },
+          usageContext: steerInput.usageContext,
+        });
+      } catch (error) {
+        onContextualMatchUnavailable(steerInput, "gateway_construction")(error);
+      }
+      if (gateway) {
+        turnMatcher = new CompositeDirectiveMatcher([
+          matcher,
+          new ProbabilisticDirectiveMatcher({
+            gateway,
+            confidenceThreshold: DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
+            onMatchUnavailable: onContextualMatchUnavailable(steerInput, "model_gateway"),
+          }),
+        ]);
+      }
     }
     const matches = await turnMatcher.match({
       turnContext,

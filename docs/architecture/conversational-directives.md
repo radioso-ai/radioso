@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-07-18
+last_updated: 2026-08-07
 ---
 
 # Conversational Directives
@@ -63,6 +63,15 @@ judges a condition by meaning, in any language.
 
 The matcher never sees bindings. It receives directive names and conditions, so
 a binding cannot make a directive more or less likely to match.
+
+Contextual matching is an enhancement on top of the deterministic set, and a turn
+answers without it. Whether the workspace model configuration fails to resolve or
+the classification call itself fails, the turn yields no contextual matches and is
+steered by its `always` directives alone. The backend logs
+`directive_contextual_match_unavailable` at warn level with the workspace id, the
+classification source that gave up, and the error type and message. Watch that
+event when an agent answers in a tone or format one of its conditional directives
+should have set.
 
 ## Skill binding behavior
 

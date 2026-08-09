@@ -34,7 +34,7 @@ context-variable enablements — so a complete agent cannot round-trip.
 
 This feature promotes the existing grammar to a shared engine contract, completes the
 agent bundle so a whole agent is portable data, and closes the SDK gap. Positioning:
-comparable system's answer is "agents are code"; Radioso's is "agents are data with a
+Radioso's answer is "agents are data with a
 human-writable syntax" — the same definition renders as dashboard chips, lives as a
 file in a repo, travels through the API and SDK, and (as a follow-up) loads into the
 standalone kit.

@@ -19,8 +19,10 @@ Agents own assistant identity, instructions, greeting settings, retrieval partic
 
 ## Ask a grounded question
 
+This calls the hosted EU API; use `https://api-us.radioso.ai` or your own self-hosted origin instead, matching wherever `$RADIOSO_API_TOKEN` was issued — see [Workspaces and tokens](/api/workspaces-and-tokens).
+
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \
+curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"message":"What does the FAQ say about uploaded content?","stream":false}'
@@ -75,8 +77,6 @@ A turn without a reply still shows up here. If the visitor sent another message 
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
 
 ## Endpoint reference
-
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET  /api/v1/agents

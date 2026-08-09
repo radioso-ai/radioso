@@ -1,6 +1,7 @@
 ---
 title: API first success
 description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking an agent a grounded question.
+last_updated: 2026-08-07
 ---
 
 import { Steps } from 'nextra/components'
@@ -9,9 +10,15 @@ import { Steps } from 'nextra/components'
 
 You can reach a grounded answer without opening the web app once. This path is for teams that already know they want agent behavior but want it behind their own scripts, jobs, or UI. The assistant chat API is how you talk to an agent from that code.
 
+## Before you start
+
+Every call below needs a Radioso host to talk to. Use the hosted EU API at `https://api.radioso.ai`, the hosted US API at `https://api-us.radioso.ai`, or your own origin if you're self-hosting — start the stack first with [Run locally in 5 minutes](/quickstarts/run-locally), then swap in `http://localhost:8080`. Pick one host and stay on it for every step below: a workspace token only works against the instance that issued it.
+
+The examples on this page call `https://api.radioso.ai`.
+
 ## The happy path
 
-The shortest route to first success is:
+From nothing to a grounded answer takes six calls:
 
 1. check whether registration is available
 2. create or access an account
@@ -59,7 +66,7 @@ If the system is working, the answer comes back grounded in that document rather
 ## Register
 
 ```bash
-curl -sS http://localhost:8080/api/v1/auth/registration
+curl -sS https://api.radioso.ai/api/v1/auth/registration
 ```
 
 The response is `{ "available": true }` or `{ "available": false }`. Open-source registration is available only until the first organization has been created. Later users join that organization by invitation. Enterprise Edition keeps registration available.
@@ -70,7 +77,7 @@ When registration is available:
 curl -sS \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/register
+  https://api.radioso.ai/api/v1/auth/register
 ```
 
 Registration returns bootstrap data such as `workspaceId`, sends a verification email, and does not establish a session. Verify the email address before logging in.
@@ -81,21 +88,21 @@ If the user already exists, log in and save the session cookie:
 curl -sS -c cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/login
+  https://api.radioso.ai/api/v1/auth/login
 ```
 
 ## Reveal the workspace token
 
 ```bash
 curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token
 ```
 
 If you need to list workspaces first:
 
 ```bash
 curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/workspace
+  https://api.radioso.ai/api/v1/workspace
 ```
 
 The token response looks like:
@@ -118,8 +125,9 @@ You can use the SDK:
 import { createRadiosoClient } from '@radioso/typescript-sdk'
 
 const client = createRadiosoClient({
-  baseUrl: 'http://localhost:8080',
   apiToken: process.env.RADIOSO_API_TOKEN!,
+  // baseUrl defaults to https://api.radioso.ai; set it explicitly for
+  // https://api-us.radioso.ai or a self-hosted origin like http://localhost:8080
 })
 
 await client.documents.create({
@@ -148,6 +156,15 @@ You can also use the raw HTTP document routes directly, including the multipart 
 
 ## Ask one question that should have an obvious answer
 
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"What is the refund window?","stream":false}'
+```
+
+`client.chat.create` wraps the same route:
+
 ```ts
 const response = await client.chat.create({
   message: 'What is the refund window?',
@@ -156,6 +173,35 @@ const response = await client.chat.create({
 
 console.log(response.answer)
 ```
+
+Either way, the response is the grounded answer plus the citations that support it — here is the exact shape:
+
+```json
+{
+  "conversationId": "5b1b6e9e-2b0a-4f1d-9c4a-7e8f2a6c9d31",
+  "assistantMessageId": "8f2c5a3e-9d1b-4a7c-b6e2-1f4d8c0a5b93",
+  "agentId": "3a9d7c5e-1b2f-4e8a-9c6d-5f0e3a7b2c14",
+  "agentName": "Support",
+  "answer": "Refunds are available within 14 days of purchase with proof of payment.",
+  "citations": [
+    {
+      "documentId": "c1d2e3f4-5678-4abc-9def-0123456789ab",
+      "chunkId": "d2e3f4a5-6789-4bcd-8ef0-123456789abc",
+      "title": "Refund policy",
+      "sourceUrl": "https://example.com/docs"
+    }
+  ],
+  "answerSegments": [
+    {
+      "text": "Refunds are available within 14 days of purchase with proof of payment.",
+      "citationIndices": [0]
+    }
+  ],
+  "suggestions": []
+}
+```
+
+`citations[].sourceUrl` only shows up when the source document carries one — the document you uploaded above does, because you passed `source: { kind: "website", url: "https://example.com/docs" }`. A plain inline document without a `source` still cites `documentId` and `title`. (The full response can also carry `ownership` and `debug` fields; see the [API Reference](/api-reference) for the complete schema.)
 
 ## What success looks like
 

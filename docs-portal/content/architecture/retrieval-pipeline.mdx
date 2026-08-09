@@ -7,9 +7,9 @@ import { Callout, Steps } from 'nextra/components'
 
 # Retrieval pipeline
 
-Radioso is not a retrieval platform, but retrieval is one of the core pipelines that agents can use. It is not treated as a single search call. Radioso runs a staged pipeline that turns a user message into evidence, assembles a prompt, and presents an answer with citations.
+Retrieval is one of the core pipelines an agent can use. Behind a single question sits a staged pipeline that turns a user message into evidence, assembles a prompt, and presents an answer with citations.
 
-The key point is simple: if answer quality is off, you need to know which stage is failing before you change agent skill settings, ingestion settings, or prompts.
+The stages matter because they are where quality goes wrong. When an answer is off, find the stage that failed before you start changing agent skill settings, ingestion settings, or prompts.
 
 ## Stages
 

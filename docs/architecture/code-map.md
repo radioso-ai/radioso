@@ -478,8 +478,10 @@ Related docs and specs:
 
 Owns authored, standing behavioral steering: `condition → action` rules the
 assistant matches per turn and injects into answer composition. Directives steer,
-they never act — no executor, no dispatch, no outputs. Distinct from Skills,
-which act.
+they never act: a match contributes its action text to that turn's instructions,
+plus an optional `binding` naming a skill — staged as a tool for the agentic
+loop, or selected as the turn's acting skill when that skill is turn-capable.
+Skills act.
 
 Should not depend on any other domain module (not chat, skills, or retrieval).
 Chat answer turns pass route-scoped directive candidates and the configured

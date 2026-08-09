@@ -1,17 +1,18 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
+last_updated: 2026-08-07
 ---
 
 import { Callout, Steps } from 'nextra/components'
 
 # Embed on your website
 
-This walks you through putting the hosted Radioso website widget on a public site and proving it's locked to the site you meant. The idea worth holding onto: Radioso doesn't trust a site just because it has the embed token. By default, the launch also has to come from an origin you've approved.
+This walks you through putting the hosted Radioso website widget on a public site and proving it's locked to the site you meant. Holding the embed token isn't enough on its own — by default the launch also has to come from an origin you've approved, which is what most of this page is about.
 
 ## The happy path
 
-The shortest route to first success is:
+Four steps get you there:
 
 1. enable anonymous chat and website embed for the workspace
 2. allow exactly one site origin
@@ -30,7 +31,7 @@ The origin setting is a single list. An explicit list admits only matching origi
 
 ## What you're trying to prove
 
-You're not only trying to make the launcher appear. You're proving that:
+Getting the launcher to appear is the easy half. Before you call this done, confirm all three:
 
 - the right website can launch the assistant
 - the wrong website can't impersonate it
@@ -51,6 +52,8 @@ Then open:
 
 Those two URLs differ only by host, on purpose. That single difference is enough to prove that origin matching is exact.
 
+Opening either URL loads a config form, not a working widget yet: it asks for your Radioso app origin (`http://localhost:3000` by default) and an embed token, and it refuses to mount anything until you paste one in. That token doesn't exist until you create it in the dashboard — see the first step under [One concrete test flow](#one-concrete-test-flow) below.
+
 ## Example launcher snippet
 
 In production, the Enterprise launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings — the agent's **Identity & appearance** screen previews them live as you edit.
@@ -58,14 +61,16 @@ In production, the Enterprise launcher is a normal script include with the embed
 ![The Identity & appearance settings with assistant name, brand color, and surface style beside a live preview of the chat widget answering a question.](/screenshots/dashboard-agent-behavior.png)
 
 ```html
+<!-- data-radioso-token below is a placeholder. Copy the real value from the
+     agent's Channels → Website widget settings in the dashboard. -->
 <script
   async
   src="https://your-frontend.example.com/radioso-embed.js"
-  data-radioso-token="wksp_embed_example"
+  data-radioso-token="wksp_embed_REPLACE_WITH_YOUR_TOKEN"
 ></script>
 ```
 
-You can generate the exact snippet from workspace settings. The detail that trips people up: the script origin and the allowed website origin are different concerns. The script can be hosted in one place while only approved customer-facing origins are allowed to bootstrap sessions.
+The detail that trips people up: the script origin and the allowed website origin are different concerns. The script can be hosted in one place while only approved customer-facing origins are allowed to bootstrap sessions.
 
 ## Analytics tracking
 
@@ -162,13 +167,14 @@ Open the blocked origin and confirm the launcher cannot establish a valid embedd
 
 ## One concrete test flow
 
-1. Add `http://127.0.0.1:4321` to the allowed-origin list.
-2. Enable anonymous chat and website embed.
-3. Load `http://127.0.0.1:4321` and open the launcher.
-4. Confirm the widget opens and a chat session is established.
-5. Ask a question that your workspace documents should answer.
-6. Load `http://localhost:4321`.
-7. Confirm that bootstrap is rejected there.
+1. In the dashboard, open the agent's **Channels** section, enable the **Website widget**, and copy its embed token.
+2. Add `http://127.0.0.1:4321` to the allowed-origin list.
+3. Enable anonymous chat and website embed.
+4. Load `http://127.0.0.1:4321`, paste the copied token into the harness form's **Embed token** field, and click **Reload with widget**.
+5. Confirm the widget opens and a chat session is established.
+6. Ask a question that your workspace documents should answer.
+7. Load `http://localhost:4321`.
+8. Confirm that bootstrap is rejected there.
 
 ## What to verify on an approved origin
 

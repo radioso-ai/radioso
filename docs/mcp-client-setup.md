@@ -17,7 +17,7 @@ The two surfaces do not share credentials. A converse grant is rejected by the w
 
 The converse surface lets an external client hold a conversation with one agent. The client never sees other agents, workspace settings, or document management. It can do three things: ask the agent, request a grounded answer using the agent's retrieval settings, and read the agent's documents as resources.
 
-The key point: a converse credential authorizes exactly one agent and nothing else.
+A converse credential authorizes exactly one agent, and its reach ends there.
 
 ### Mint a converse grant
 
@@ -184,7 +184,7 @@ In practice:
 
 The retrieval answer endpoint accepts optional `conversationContext` hints for rewrite continuity. The caller owns those hints. Radioso retrieval uses them to improve the search query, but retrieval does not become the owner of assistant chat history.
 
-Migration note: direct REST and SDK clients no longer receive retrieval diagnostics at the response top level by default. Use `includeDebug: true` and read `debug.activitySummary`, `debug.activityTrace`, and, for grounded answers, `debug.evidence`. The MCP server intentionally opts into debug responses for retrieval tools so operators can inspect grounded-answer traces from MCP clients.
+Direct REST and SDK clients receive retrieval diagnostics only on request. Set `includeDebug: true` and read `debug.activitySummary`, `debug.activityTrace`, and, for grounded answers, `debug.evidence`. The MCP server opts into debug responses for retrieval tools by default, so operators can inspect grounded-answer traces from MCP clients.
 
 For debugging, MCP grounded-answer calls request diagnostic metadata from the retrieval API and are marked as `mcp_capability` executions. This keeps them separate from direct retrieval API calls and assistant-backed chat turns.
 

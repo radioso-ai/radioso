@@ -49,11 +49,24 @@ A workspace API token only works against the instance that issued it, so `baseUr
 
 ## First request
 
-This example lists documents available to that token.
+List the documents available to that token:
 
 ```ts
 const documents = await client.documents.list({ limit: 10 })
 ```
+
+Then ask the workspace's default agent a question. If a matching document is indexed, the answer comes back grounded in it rather than as a generic guess:
+
+```ts
+const response = await client.chat.create({
+  message: 'What does our refund policy say?',
+  stream: false,
+})
+
+console.log(response.answer)
+```
+
+A request that fails throws `RadiosoError` with a `status` you can branch on — see [Error handling](/sdk/basic-usage#error-handling) in Basic usage.
 
 ## Common development commands
 
@@ -67,7 +80,7 @@ pnpm run build
 
 `pnpm run sync` updates the SDK's generated types from the backend API description.
 
-## What you can do with it right now
+## What the SDK covers
 
 ```ts
 client.settings.getIngestion(...)

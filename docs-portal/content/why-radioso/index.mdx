@@ -1,6 +1,7 @@
 ---
 title: Why Radioso
 description: Build self-hosted agents that talk, act, and stay grounded — and debug them when they are wrong.
+last_updated: 2026-08-07
 ---
 
 # Why Radioso
@@ -13,9 +14,9 @@ Most AI agents will happily answer anything — whether or not they actually kno
 
 ## Grounded by default
 
-Most AI agents will answer anything you ask them, whether or not they actually know. Radioso does not. When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
+When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
 
-This is not a marketing claim. It is the default behavior of every Radioso agent, and it works the same way across every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
+That is the default for every Radioso agent, and it holds on every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
 
 ## Debug the agent, not the framework
 
@@ -27,9 +28,9 @@ In Radioso, every answer shows you the retrieval steps that produced it: which d
 
 A bot that can only talk is a glorified search box. Radioso agents act.
 
-**Directives** are standing rules that steer how the agent behaves. *"When the customer sounds anxious, slow down and confirm before doing anything."* You write the rule once; the agent applies it whenever it fits, on every surface, in every language. A directive never acts on its own — it shapes tone and judgment.
+**Directives** are standing rules that steer how the agent behaves. *"When the customer sounds anxious, slow down and confirm before doing anything."* You write the rule once; the agent applies it whenever it fits, on every surface, in every language. Directives steer; when you want the agent to actually *do* something, that is a skill's job.
 
-**Routines** are multi-step flows the agent runs across turns. A return request, an onboarding check, a "collect these three things and file a ticket" — you write the steps in plain language, drop in a chip where the flow needs to collect a value, call a tool, or branch, and Radioso compiles it into something the engine runs and resumes turn to turn. No canvas to drag around. No redeploy. Validate, publish, done.
+**Routines** are multi-step flows the agent runs across turns. A return request, an onboarding check, a "collect these three things and file a ticket" — you write the steps in plain language, drop in a chip where the flow needs to collect a value, call a tool, or branch, and Radioso compiles it into something the engine runs and resumes turn to turn. Validate it, publish it, and it is live on every surface — writing the steps is the whole job.
 
 And when the agent should stop talking and *do* something, it does: call a tool, fire a webhook when a routine finishes, or hand the conversation to a real person. The built-in "contact a human" flow is itself just a routine — collect an email, collect a message, submit, confirm.
 
@@ -60,13 +61,13 @@ Most teams build five different integrations against five different stacks to ma
 
 We would rather lose a deal than win the wrong one. Some honest guidance:
 
-If you want your agent to know about your team's running internal conversation, such as Linear tickets, Confluence pages, or Slack threads, you probably want Confluence MCP or Linear MCP, not Radioso. We are built for curated knowledge bases, not systems of record.
+If what you need is your team's running internal conversation — ticket state, chat threads, wiki pages that change hourly — surfaced to a client as a live system of record, that's not what Radioso does. We index curated knowledge bases: documents you choose to upload, chunk, and keep current on purpose, not a live mirror of every tool your team touches.
 
-If you want to design complex multi-step AI workflows on a visual canvas with dozens of tool integrations, you probably want Dify. We are focused on grounded, action-taking agents you put in front of real people. We do not aim to be a general-purpose AI app builder.
+If what you need is a visual canvas for wiring together dozens of tools into complex multi-step AI workflows, Radioso will feel narrow. We are focused on grounded, action-taking agents you put in front of real people — directives, routines, and skills, not a general-purpose workflow builder.
 
-If you need an enterprise customer service platform with deep helpdesk integration, ticket routing, and a per-resolution pricing model, you probably want Intercom Fin or similar. We are built for teams who want to own their agent stack, not outsource it.
+If what you need is a full enterprise customer service platform — deep helpdesk integration, ticket routing, a per-resolution pricing model — Radioso is a piece of that stack, not the whole thing. We are built for teams who want to own their agent, not outsource it to a vendor's black box.
 
-If any of the above sounds wrong for you, or if you have already tried one of those tools and felt the limits, keep reading.
+If none of that sounds like you, or you've hit the edges of a tool that does, keep reading.
 
 ## Get started
 

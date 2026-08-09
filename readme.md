@@ -2,7 +2,7 @@
 # <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
 ## Self-hosted conversational agents, grounded in your data and following your rules.
 
-Run one script and you have a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
+Run one script and you have a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first. You write the flows in plain language and publish them; everything runs on your own infrastructure, against your own database.
 
 Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
 
@@ -55,11 +55,11 @@ It works through a product-independent contract. The reusable turn vocabulary li
 
 The assistant works with three kinds of unit on a turn.
 
-- A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, not a privileged step.
+- A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, reached the same way as every other capability.
 - A **directive** is a standing rule that shapes *how* the assistant behaves. It pairs a condition with an action: when the condition holds, the action is added to the turn's instructions. A directive is matched and added to the prompt; it is never dispatched and returns nothing. For example: when the customer sounds anxious, slow down and confirm before acting.
 - A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
 
-The key point: **skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
+**Skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
 
 Condition matching is never a keyword list, because Radioso is multilingual. A condition that depends on the situation is judged by the model, by meaning, in any language.
 

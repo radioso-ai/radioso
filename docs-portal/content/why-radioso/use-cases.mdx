@@ -1,22 +1,47 @@
 ---
 title: Use cases
-description: "Common Radioso use cases: customer-facing agents, internal knowledge, API workflows, and MCP clients."
+description: "How teams put Radioso to work: customer-facing agents, isolated workspaces per team or customer, API-driven automation, and MCP clients."
+last_updated: 2026-08-07
 ---
 
 # Use cases
 
+Radioso is one platform underneath all of these — the same [agent](/concepts), the same documents, the same directives and routines — reached through whichever surface fits the job.
+
 ## Customer-facing agent
 
-Use Radioso when you want a customer-facing agent that answers from controlled workspace content instead of improvising from model priors. Anonymous public chat is available as a public surface. The hosted website widget is available in Enterprise Edition.
+You want visitors or customers to get answers from content you control, not from whatever the model already knows, and you want the agent to act when talking isn't enough — collect a return request, escalate to a person — without you standing up your own chat UI.
 
-## Internal team agent
+Put the [Enterprise website widget](/quickstarts/website-embed) on your site, origin-locked so only your domain can launch it, or use the anonymous public chat link when you just need a shareable URL. Author [directives](/why-radioso/capabilities#steer-behavior-with-directives) for tone ("when the customer sounds anxious, slow down and confirm before doing anything") and [routines](/guides/authoring-routines) for the flows that end in action — a return request, a lead capture, the built-in "contact a human" handoff. Every answer carries [citations](/why-radioso/grounded-answers) back to the source document, so a visitor — or your support lead reviewing the transcript later — can check it.
 
-Use workspace-scoped agents, documents, and settings when different teams or customers need isolated behavior and content.
+Start with [Embed on your website](/quickstarts/website-embed). If chat alone is enough for now, [Run locally in 5 minutes](/quickstarts/run-locally) gets you to a working agent first.
+
+## Isolated workspaces per team or customer
+
+You run more than one knowledge base — different product lines, different customer accounts, an internal team's docs versus your support team's — and each needs its own documents, retrieval settings, and agent persona without leaking into the others.
+
+Each [workspace](/concepts) is a separate container: its own documents, connector state, and agents. One organization can hold more than one workspace, and a single workspace can run more than one agent, each with its own name, instructions, and document scope — a "Sales" agent and a "Support" agent reading from different corners of the same content, or two workspaces that don't share anything at all. Roles are organization-wide (`owner`, `admin`, `member`), so you grant a person access to the org without hand-managing per-workspace permissions.
+
+Start with [Workspaces and tokens](/api/workspaces-and-tokens) to create and switch between workspaces, and [Accounts and users](/api/accounts-and-users) to invite teammates and assign roles.
 
 ## API-driven agent workflow
 
-Use the API or SDK when you want Radioso to sit behind your own UI, workflow, or automation.
+Radioso should sit behind your own product, internal tool, or automation — your UI calls your backend, your backend calls Radioso, and the person on the other end never sees a Radioso URL.
 
-## MCP-grounded knowledge access
+A workspace API token authenticates server-side calls to document, chat, and settings routes, or use the [TypeScript SDK](/sdk/typescript-getting-started) instead of raw HTTP. Upload the content your workflow should answer from, then call the same assistant chat API the dashboard uses to ask a grounded question and get an answer with citations back. Reuse `conversationId` for multi-turn flows, or call retrieval endpoints directly when you want ranked context without agent behavior wrapped around it.
 
-Use the MCP server when an external client should search documents, ask grounded questions, or inspect workspace capabilities without owning Radioso assistant history.
+Start with [API first success](/quickstarts/api-first-success) for the shortest path from zero to a grounded answer, then [Documents and search](/api/documents-and-search) and [Chat and history](/api/chat-and-history) for the routes you'll use day to day.
+
+## MCP-grounded workflows
+
+You want an MCP client — Cursor, Claude Desktop, or your own tool — to search your documents or hold a conversation with one of your agents, without building a custom integration for it.
+
+Radioso's [MCP server](/guides/mcp-server) exposes two surfaces with different scopes. Workspace document tools (`search_documents`, `answer_grounded`, `create_document`, and the rest) authenticate with a workspace API token and work across the whole workspace, retrieval-only, with no agent persona attached. The agent converse surface binds a client to one agent — its persona, directives, and routines — through a per-agent grant, so a tool like Cursor can hold an actual conversation instead of just querying documents.
+
+Start with [MCP server](/guides/mcp-server) to pick a surface and connect a client.
+
+## Read next
+
+- [What agents can do](/why-radioso/capabilities)
+- [Grounded answers](/why-radioso/grounded-answers)
+- [Concepts](/concepts)

@@ -293,7 +293,7 @@ For the hosted SaaS, use the same instrumentation with deployment-time sinks:
 - product analytics: exporter from the internal event bus
 - errors: exporter from the internal error pipeline
 
-The key point is that the cloud deployment gets extra sinks, not a different product architecture.
+The cloud deployment adds sinks on top of that instrumentation; the product architecture underneath is the one a self-hosted install runs.
 
 ## Packaging Strategy
 

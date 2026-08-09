@@ -2,7 +2,7 @@ import type { AuthoredDirective } from "../../../src/modules/agents/authoredDire
 import { CQ_AGENT_ID } from "./routines.js";
 
 /**
- * Three seed steering directives (Parlant-style guidelines) placed on the suite agent.
+ * Three seed steering directives placed on the suite agent.
  * They are unbound (no skill binding) so they steer whatever answer the turn produces
  * without needing extra skill registrations. Their effect is semantic — tone, precision,
  * empathy — so cases assert on them mostly via `llm_judge`, with a couple of hard

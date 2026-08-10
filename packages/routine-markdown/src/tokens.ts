@@ -343,6 +343,25 @@ const STABLE_IDENTIFIER = new RegExp(`^${stableIdentifierSource}$`, 'u')
 const TARGET_END_DELIMITER = '(?=$|\\s)'
 const TARGET_ID_DELIMITER = '(?=$|\\s|\\()'
 
+// Where a mention's name ends, given the raw identifier match and the character that follows it.
+//
+// A mention is written inside a sentence, so the punctuation that ends the sentence is prose and
+// not part of the name. The identifier grammar admits `.` and `-` mid-name (`crm.lookup`), which
+// means a run of them at the tail would otherwise be swallowed: `#issue_refund.` would name
+// `issue_refund.`, a capability no catalog holds.
+//
+// A `[` reaching the raw match is the exception: that is an authored binding suffix, not the end of
+// a sentence, so the name keeps every character up to the bracket. Trimming there would leave the
+// cursor on the punctuation instead of the `[`, so the suffix would go unrecognised and its
+// contents would spill into the paragraph as stray segments — an `@slot` inside it would surface as
+// a live variable mention. The name that results is out of contract for a real skill (`[a-z][a-z0-9_]*`
+// on every write path) and so resolves to nothing, which is the honest reading of the text and
+// round-trips to the characters the author wrote.
+//
+// Applied to both mention markers so `@` and `#` read the same way.
+const mentionRef = (rawIdentifier: string, afterRawIdentifier: string | undefined): string =>
+  afterRawIdentifier === '[' ? rawIdentifier : rawIdentifier.replace(/[.,;:!?]+$/u, '')
+
 const coerceLiteral = (raw: string): RoutineFieldGuardValue => {
   const trimmed = raw.trim()
   if (trimmed === 'true') return true
@@ -621,8 +640,9 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
       // capability unambiguously (a heading is `# ` with a space, handled a level up).
       const idMatch = IDENTIFIER.exec(rest.slice(1))
       if (idMatch) {
-        const refId = idMatch[0]
+        const refId = mentionRef(idMatch[0], rest[1 + idMatch[0].length])
         const consumed = 1 + refId.length
+        if (refId === '') { buffer += line[index]; index += 1; continue }
         if (rest[consumed] === '[') {
           const close = rest.indexOf(']', consumed)
           if (close !== -1) {
@@ -648,9 +668,7 @@ const parseSegments = (line: string, resolveKind: (name: string) => ProseChipKin
     if (rest.startsWith('@')) {
       const idMatch = IDENTIFIER.exec(rest.slice(1))
       if (idMatch) {
-        // Trailing sentence punctuation isn't part of the ref — leave it as text so
-        // `record as @name.` keeps the period (mirrors the backend mention rule).
-        const refId = idMatch[0].replace(/[.,;:!?]+$/, '')
+        const refId = mentionRef(idMatch[0], rest[1 + idMatch[0].length])
         const consumed = 1 + refId.length
         if (refId === '') { buffer += line[index]; index += 1; continue }
         const kind = resolveKind(refId)

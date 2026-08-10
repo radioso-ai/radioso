@@ -128,6 +128,22 @@ const coerceLiteralValue = (input: SkillAuthoringInput, raw: string): string | n
 const cleanRecord = <T,>(record: Record<string, T>): Record<string, T> | undefined =>
   Object.keys(record).length > 0 ? record : undefined
 
+// Who the skill is: the identity every surface shows, with or without step wiring.
+function SkillCatalogIdentity({ descriptor }: { descriptor: SkillAuthoringDescriptor }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-start gap-2">
+        <Database className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">{descriptor.displayName}</p>
+          <p className="text-xs text-muted-foreground">{descriptor.skillName}</p>
+        </div>
+      </div>
+      {descriptor.description ? <p className="text-xs leading-5 text-muted-foreground">{descriptor.description}</p> : null}
+    </div>
+  )
+}
+
 function SkillCatalogDetails({
   descriptor,
   bindingState,
@@ -164,16 +180,7 @@ function SkillCatalogDetails({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <div className="flex items-start gap-2">
-          <Database className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-foreground">{descriptor.displayName}</p>
-            <p className="text-xs text-muted-foreground">{descriptor.skillName}</p>
-          </div>
-        </div>
-        {descriptor.description ? <p className="text-xs leading-5 text-muted-foreground">{descriptor.description}</p> : null}
-      </div>
+      <SkillCatalogIdentity descriptor={descriptor} />
 
       <Tabs value={mode === 'untyped' ? 'agent-decides' : 'typed'} onValueChange={(value) => setMode(value === 'agent-decides' ? 'untyped' : 'typed')}>
         <TabsList aria-label="Skill input mode" className="h-8">
@@ -336,6 +343,7 @@ export function RoutineSkillCatalogPopover({
   children,
   bindingState = {},
   availableVariables = [],
+  showStepBindings = true,
   open,
   onOpenChange,
   onBindingStateChange,
@@ -346,6 +354,8 @@ export function RoutineSkillCatalogPopover({
   children: ReactNode
   bindingState?: RoutineSkillBindingState
   availableVariables?: string[]
+  // A routine step wires the skill's inputs and outputs; a bare mention only names it.
+  showStepBindings?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onBindingStateChange?: (state: RoutineSkillBindingState) => void
@@ -369,12 +379,16 @@ export function RoutineSkillCatalogPopover({
               {error}
             </div>
           ) : descriptor ? (
-            <SkillCatalogDetails
-              descriptor={descriptor}
-              bindingState={bindingState}
-              availableVariables={availableVariables}
-              onBindingStateChange={onBindingStateChange}
-            />
+            showStepBindings ? (
+              <SkillCatalogDetails
+                descriptor={descriptor}
+                bindingState={bindingState}
+                availableVariables={availableVariables}
+                onBindingStateChange={onBindingStateChange}
+              />
+            ) : (
+              <SkillCatalogIdentity descriptor={descriptor} />
+            )
           ) : (
             <div className="space-y-1">
               <p className="text-sm font-semibold text-foreground">{label}</p>

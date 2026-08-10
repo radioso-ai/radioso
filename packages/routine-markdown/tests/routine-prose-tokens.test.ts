@@ -821,6 +821,102 @@ describe('routine prose token grammar', () => {
     ])
   })
 
+  // `.` and `-` are legal inside an identifier (`crm.lookup`), so a mention that ends a sentence
+  // would otherwise name a capability nobody registered. Both mention markers hand the trailing
+  // run back to the prose.
+  it('leaves sentence punctuation after a #mention in the text', () => {
+    for (const mark of ['.', ',', ';', ':', '!', '?']) {
+      const parsed = parseProseDoc(`Escalate using #issue_refund${mark}`, () => false)
+      expect(parsed.paragraphs[0]!.segments).toEqual([
+        { kind: 'text', text: 'Escalate using ' },
+        { kind: 'chip', chipKind: 'skill', refId: 'issue_refund', label: 'issue_refund' },
+        { kind: 'text', text: mark },
+      ])
+    }
+  })
+
+  it('keeps a dotted skill name that a sentence does not end', () => {
+    const parsed = parseProseDoc('Run #crm.lookup for the account.', () => false)
+    expect(parsed.paragraphs[0]!.segments).toEqual([
+      { kind: 'text', text: 'Run ' },
+      { kind: 'chip', chipKind: 'skill', refId: 'crm.lookup', label: 'crm.lookup' },
+      { kind: 'text', text: ' for the account.' },
+    ])
+  })
+
+  it('re-serializes a punctuated #mention to the characters it was written with', () => {
+    for (const value of [
+      'Escalate using #issue_refund.',
+      'Escalate using #issue_refund, then wait.',
+      'Escalate using #issue_refund!',
+      'Escalate using #issue_refund?',
+      '#issue_refund',
+      'Run #crm.lookup.',
+    ]) {
+      const parsed = parseProseDoc(value, () => false)
+      const text = serializeProseDoc({ name: 'x', trigger: 'y', variables: [], paragraphs: parsed.paragraphs })
+      expect(text).toContain(value)
+      // A second pass must find the same chips: seeding an editor is a fixed point, not a rewrite.
+      expect(parseProseDoc(text, () => false).paragraphs).toEqual(parsed.paragraphs)
+    }
+  })
+
+  // Trimming decides where the name ends, and the parser reads the binding suffix from that
+  // position. Get the two out of step and the suffix goes unread: its contents spill into the
+  // paragraph, where an `@slot` inside it becomes a live variable mention and reaches the `vars:`
+  // frontmatter. The bracket therefore ends the name wherever it reaches the identifier.
+  describe('a mention followed by a binding suffix', () => {
+    const bindings = {
+      inputBindings: { order: { kind: 'variableRef', ref: 'order_id' } },
+      outputAssignments: {},
+    }
+
+    it.each([
+      ['abutting the name', 'Refund with #issue_refund[in order=@order_id] today.', 'issue_refund'],
+      // `.` is the only character that is both identifier-legal and sentence punctuation, so it is
+      // the only one trimming can move the cursor past.
+      ['behind a period', 'Refund with #issue_refund.[in order=@order_id] today.', 'issue_refund.'],
+      ['behind an ellipsis', 'Refund with #issue_refund...[in order=@order_id] today.', 'issue_refund...'],
+    ])('reads the suffix %s', (_case, value, refId) => {
+      const parsed = parseProseDoc(value, () => false)
+      expect(parsed.paragraphs[0]!.segments).toEqual([
+        { kind: 'text', text: 'Refund with ' },
+        { kind: 'chip', chipKind: 'skill', refId, label: refId, ...bindings, mode: undefined },
+        { kind: 'text', text: ' today.' },
+      ])
+      // Nothing from inside the brackets reaches the paragraph: no stray `@order_id` chip, no
+      // orphaned `]`.
+      const text = serializeProseDoc({ name: 'x', trigger: 'y', variables: [], paragraphs: parsed.paragraphs })
+      expect(text).toContain(value)
+      expect(text).not.toMatch(/^vars:/mu)
+      expect(parseProseDoc(text, () => false).paragraphs).toEqual(parsed.paragraphs)
+    })
+
+    // Only a bracket that reaches the identifier is a suffix. A sentence that merely ends, or ends
+    // before a space, hands its punctuation back to the prose as before.
+    it.each([
+      ['punctuation then end of line', 'Refund with #issue_refund.', 'issue_refund', '.'],
+      ['punctuation then a space', 'Refund with #issue_refund. Then wait.', 'issue_refund', '. Then wait.'],
+      ['punctuation then a bracket behind a space', 'Refund with #issue_refund. [note]', 'issue_refund', '. [note]'],
+    ])('keeps the name short for %s', (_case, value, refId, trailing) => {
+      const parsed = parseProseDoc(value, () => false)
+      expect(parsed.paragraphs[0]!.segments).toEqual([
+        { kind: 'text', text: 'Refund with ' },
+        { kind: 'chip', chipKind: 'skill', refId, label: refId },
+        { kind: 'text', text: trailing },
+      ])
+    })
+
+    it('reads the suffix of a legacy @mention skill the same way', () => {
+      const parsed = parseProseDoc('Refund with @issue_refund.[in order=@order_id] today.', (name) => name === 'issue_refund.')
+      expect(parsed.paragraphs[0]!.segments).toEqual([
+        { kind: 'text', text: 'Refund with ' },
+        { kind: 'chip', chipKind: 'skill', refId: 'issue_refund.', label: 'issue_refund.', ...bindings, mode: undefined },
+        { kind: 'text', text: ' today.' },
+      ])
+    })
+  })
+
   it('still parses a legacy @mention skill via the catalog (back-compat)', () => {
     const parsed = parseProseDoc('Run @retrieval_context now.', (name) => name === 'retrieval_context')
     expect(parsed.paragraphs[0]!.segments[1]).toMatchObject({ kind: 'chip', chipKind: 'skill', refId: 'retrieval_context' })

@@ -11,6 +11,24 @@ export type {
   ParseSuccess,
   ParsedProseDoc,
 } from "./tokens.js";
+export type {
+  RoutineBlockBranch,
+  RoutineBlockBranchTarget,
+  RoutineBlockDiagnostic,
+  RoutineBlockDoc,
+  RoutineBlockEnding,
+  RoutineBlockGuard,
+  RoutineBlockInstructionSegment,
+  RoutineBlockSlot,
+  RoutineBlockStep,
+  RoutineToBlockDocResult,
+} from "./block-document.js";
+export {
+  blockSegmentsToInstruction,
+  draftFromBlockDoc,
+  instructionToBlockSegments,
+  routineToBlockDoc,
+} from "./block-document.js";
 export {
   branchDecisionLabel,
   createEmptyRoutineProseDraft,

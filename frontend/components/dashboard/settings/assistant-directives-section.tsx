@@ -68,6 +68,8 @@ export const DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const
 // retrieval skill staged as a lookup. Mirrors what the API accepts, so an offered skill is
 // never rejected on save.
 const BINDABLE_STORED_KINDS = new Set(['external_mcp', 'retrieve'])
+const DIRECTIVE_SKILL_EMPTY_MESSAGE = "No skills can handle a turn yet. A directive can use an MCP tool or a knowledge lookup that is set to 'agent selectable'."
+const DIRECTIVE_CAPABILITY_UNAVAILABLE_REASON = 'Not available for directives.'
 
 const isBindableSkill = (skill: AgentSkill): boolean =>
   skill.enabled
@@ -415,6 +417,7 @@ export function AssistantDirectivesSection({
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
   const [form, setForm] = useState<DirectiveFormState>(emptyForm)
   const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
+  const [skillLoadError, setSkillLoadError] = useState<string | null>(null)
   // The agent whose skills `agentSkills` holds. It stays null while a fetch is outstanding and
   // after one fails, which is what keeps a pending or failed load from reporting a valid
   // directive as invalid — and, because it is compared against the current agent rather than
@@ -441,6 +444,16 @@ export function AssistantDirectivesSection({
   )
   const bindableCapabilities = useMemo(
     () => (skillCapabilities?.agentId === agentId ? skillCapabilities.capabilities : []).filter(canAuthorBindableSkill),
+    [agentId, skillCapabilities],
+  )
+  const directiveCapabilities = useMemo(
+    () => (skillCapabilities?.agentId === agentId ? skillCapabilities.capabilities : []).map((capability) =>
+      // A kind that can never back a binding says so even when it also lacks a connection:
+      // "Needs connection" would promise that connecting unlocks it for directives.
+      canAuthorBindableSkill(capability)
+        ? capability
+        : { ...capability, available: false, unavailableReason: DIRECTIVE_CAPABILITY_UNAVAILABLE_REASON },
+    ),
     [agentId, skillCapabilities],
   )
   const supersededBuiltIns = useMemo(() => {
@@ -475,7 +488,7 @@ export function AssistantDirectivesSection({
     // name twice and means it once, so it saves.
     const mentioned = dedupeNames(form.actionSkillNames)
     if (mentioned.length > 1) {
-      return `A directive can hand off to one skill. This action names ${mentioned.join(', ')}. Remove the chips for all but one.`
+      return `A directive can draw on one skill. This action names ${mentioned.join(', ')}. Remove the chips for all but one.`
     }
     // A bound skill can be disabled, renamed, or moved out of agent-selectable after the
     // directive was written, and the API then rejects the binding. Say which skill is the
@@ -538,15 +551,18 @@ export function AssistantDirectivesSection({
     queueMicrotask(() => {
       if (!active) return
       setAgentSkills([])
+      setSkillLoadError(null)
       void agentSkillsApi.listSkills(agentId)
         .then((response) => {
           if (!active) return
           setAgentSkills(response.skills)
           setSkillsAgentId(agentId)
+          setSkillLoadError(null)
         })
-        .catch(() => {
+        .catch((loadError) => {
           if (!active) return
           setAgentSkills([])
+          setSkillLoadError(getApiErrorMessage(loadError, 'Could not load skills for this directive.'))
         })
     })
     return () => {
@@ -907,21 +923,25 @@ export function AssistantDirectivesSection({
                 key={editingDirective?.id ?? 'new-directive'}
                 id="directiveAction"
                 ariaLabel="Action"
-                placeholder="What the agent should do. Type # to hand the turn to a skill."
+                placeholder="Describe the reply. Type # to choose a skill it draws on."
                 value={form.action}
                 recognizedSkillNames={editingDirective ? recognizedMentions(editingDirective) : []}
                 skills={bindableSkills}
                 skillMenuNotice={
                   form.actionSkillNames[0]
-                    ? `Handing off to ${form.actionSkillNames[0]}. Remove that chip to choose a different skill.`
+                    ? `The reply draws on ${form.actionSkillNames[0]}. Remove that chip to choose a different skill.`
                     : null
                 }
+                skillMenuEmptyMessage={DIRECTIVE_SKILL_EMPTY_MESSAGE}
+                isSkillsLoading={!skillsLoaded && skillLoadError === null}
+                skillLoadError={skillLoadError}
                 onChange={(action) => setForm((current) => ({ ...current, action }))}
                 onSkillsChange={(skillNames) =>
                   setForm((current) => ({ ...current, actionSkillNames: skillNames }))
                 }
                 onCreateSkill={bindableCapabilities.length > 0 ? requestSkillCreation : undefined}
               />
+              {skillLoadError ? <p className="text-xs text-destructive">{skillLoadError}</p> : null}
             </div>
             {replaceCandidates.builtIns.length > 0 || replaceCandidates.authored.length > 0 ? (
               <div className="space-y-2">
@@ -997,8 +1017,8 @@ export function AssistantDirectivesSection({
           Both sit above the directive dialog and hand the created name back to the chip. */}
       <CapabilityPicker
         open={Boolean(pendingSkillCreation) && creationCapabilityId === null}
-        capabilities={bindableCapabilities}
-        description="A directive hands the turn to a skill that can answer it: an MCP tool, or a knowledge lookup."
+        capabilities={directiveCapabilities}
+        description="Choose a tool or knowledge lookup the reply draws on."
         onOpenChange={(open) => !open && cancelSkillCreation()}
         onSelect={setCreationCapabilityId}
       />

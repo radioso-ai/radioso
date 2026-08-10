@@ -33,6 +33,8 @@ import { ConditionBuilderDialog, type ConditionDraft } from '@/components/dashbo
 import { $initializeFromParagraphs, $proseParagraphToNode, $readProseParagraphs } from '@/components/dashboard/settings/routine-prose-nodes'
 import { RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVariablesProvider } from '@/components/dashboard/settings/routine-variables-context'
+import { SkillPickerMenu } from '@/components/dashboard/settings/skill-picker-menu'
+import { useInsertSkillChip } from '@/components/dashboard/settings/use-insert-skill-chip'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -45,10 +47,8 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
@@ -330,6 +330,7 @@ const groupSkillsByCategory = (skills: SkillAuthoringDescriptor[]) =>
 
 function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
   const [editor] = useLexicalComposerContext()
+  const insertSkillChip = useInsertSkillChip()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
   const [outcomeOpen, setOutcomeOpen] = useState(false)
@@ -383,20 +384,6 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         const selection = $getSelection()
         if (!$isRangeSelection(selection)) return
         const chip = $createConditionChipNode(condition.refId, condition.op, condition.label, condition.value, condition.values, condition.unit)
-        selection.insertNodes([chip])
-        const trailing = $createTextNode(' ')
-        chip.insertAfter(trailing)
-        trailing.select()
-      })
-    })
-  }
-
-  const insertSkill = (skill: SkillAuthoringDescriptor) => {
-    editor.focus(() => {
-      editor.update(() => {
-        const selection = $getSelection()
-        if (!$isRangeSelection(selection)) return
-        const chip = $createChipNode('skill', skill.skillName, skill.displayName)
         selection.insertNodes([chip])
         const trailing = $createTextNode(' ')
         chip.insertAfter(trailing)
@@ -560,36 +547,21 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
         <AtSign className="h-4 w-4" />
         Variable
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
-            <Database className="h-4 w-4" />
-            Skill
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
-          {skillCatalog.isLoading ? (
-            <DropdownMenuItem disabled>Loading skills...</DropdownMenuItem>
-          ) : skillCatalog.error ? (
-            <DropdownMenuItem disabled>{skillCatalog.error}</DropdownMenuItem>
-          ) : skillGroups.length === 0 ? (
-            <DropdownMenuItem disabled>No routine skills available.</DropdownMenuItem>
-          ) : (
-            skillGroups.map((group, index) => (
-              <DropdownMenuGroup key={group.category}>
-                {index > 0 ? <DropdownMenuSeparator /> : null}
-                <DropdownMenuLabel>{SKILL_CATEGORY_LABELS[group.category]}</DropdownMenuLabel>
-                {group.skills.map((skill) => (
-                  <DropdownMenuItem key={skill.skillName} onSelect={() => insertSkill(skill)} className="flex-col items-start gap-0.5">
-                    <span className="text-sm font-medium">{skill.displayName}</span>
-                    <span className="text-xs text-muted-foreground">{skill.skillName}</span>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuGroup>
-            ))
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <SkillPickerMenu
+        groups={skillGroups.map((group) => ({ key: group.category, label: SKILL_CATEGORY_LABELS[group.category], skills: group.skills }))}
+        emptyMessage="No routine skills available."
+        isLoading={skillCatalog.isLoading}
+        error={skillCatalog.error}
+        onSelect={(skillName) => {
+          const skill = skillCatalog.skills.find((candidate) => candidate.skillName === skillName)
+          if (skill) insertSkillChip({ skillName: skill.skillName, displayName: skill.displayName, appendWhenNoSelection: false, focusEditor: true })
+        }}
+      >
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
+          <Database className="h-4 w-4" />
+          Skill
+        </Button>
+      </SkillPickerMenu>
       <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={() => setConditionOpen(true)} disabled={variables.length === 0}>
         <BadgeCheck className="h-4 w-4" />

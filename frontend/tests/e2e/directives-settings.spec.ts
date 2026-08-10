@@ -259,6 +259,149 @@ test("agent directives bind a skill by inserting a chip in the action", async ({
   });
 });
 
+test("agent directives browse bindable skills from the action field", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directiveUpdates,
+    agentSkills: [
+      bindableSkill,
+      { ...bindableSkill, id: "66666666-6666-4666-8666-000000000002", name: "routine_only_skill", invocationMode: "routine_named" },
+    ],
+  });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("refund-handoff");
+  await fillAction(page, "Refund the order using ");
+
+  await page.getByRole("button", { name: "Browse skills" }).click();
+  await expect(page.getByRole("menuitem", { name: /issue_refund/ })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: /routine_only_skill/ })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: /issue_refund/ }).click();
+
+  await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]?.body).toMatchObject({
+    action: "Refund the order using #issue_refund",
+    binding: { kind: "skill", skillName: "issue_refund" },
+  });
+});
+
+test("agent directives explain when no skills qualify in both skill menus", async ({ page }) => {
+  const noQualifyingSkills = "No skills can handle a turn yet. A directive can use an MCP tool or a knowledge lookup that is set to 'agent selectable'.";
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentSkills: [] });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByRole("button", { name: "Browse skills" }).click();
+  await expect(page.getByRole("menuitem", { name: noQualifyingSkills })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  const action = page.getByLabel("Action");
+  await action.click();
+  await action.pressSequentially("#");
+  await expect(page.getByRole("option", { name: noQualifyingSkills })).toBeVisible();
+
+  // Typing a name puts an actionable option on offer, so the notice steps aside rather than
+  // sitting where the menu's first-option highlight is.
+  await action.pressSequentially("RefundLookup");
+  await expect(page.getByRole("option", { name: 'Create skill “RefundLookup”' })).toBeVisible();
+  await expect(page.getByRole("option", { name: noQualifyingSkills })).toHaveCount(0);
+});
+
+test("agent directives reach inline skill creation from the keyboard", async ({ page }) => {
+  const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentSkillRequests, agentSkills: [] });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("refund-handoff");
+
+  const action = page.getByLabel("Action");
+  await action.click();
+  await action.pressSequentially("Refund the order using #RefundLookup");
+  await expect(page.getByRole("option", { name: 'Create skill “RefundLookup”' })).toBeVisible();
+
+  // Enter takes the menu's highlighted option. An empty catalog must not park a dead notice
+  // there, or the keyboard path closes the menu and creation never starts.
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  await expect(page.getByLabel("Skill name")).toHaveValue("refundlookup");
+  await page.getByRole("button", { name: "Create skill", exact: true }).click();
+
+  await expect(action).toHaveText("Refund the order using refundlookup");
+  await expect.poll(() => agentSkillRequests.length).toBe(1);
+});
+
+test("agent directives author a skill from the browse menu without typing a name", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+  const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates, agentSkillRequests, agentSkills: [] });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByLabel("Name").fill("event-lookup");
+  await fillAction(page, "Answer from the events calendar ");
+
+  // An empty catalog is a starting point, not a dead end: the browse menu can author one.
+  await page.getByRole("button", { name: "Browse skills" }).click();
+  await page.getByRole("menuitem", { name: "Add a new skill..." }).click();
+
+  await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
+  await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
+  // Nothing was typed, so the form seeds its own suggested name rather than an empty one.
+  await expect(page.getByLabel("Skill name")).not.toHaveValue("");
+  const createdName = await page.getByLabel("Skill name").inputValue();
+  await page.getByRole("button", { name: "Create skill", exact: true }).click();
+
+  await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
+
+  await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await expect.poll(() => agentSkillRequests.length).toBe(1);
+  expect(agentSkillRequests[0]).toMatchObject({
+    method: "POST",
+    body: { name: createdName, capability: "retrieve", invocationMode: "agent_selectable", enabled: true },
+  });
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]?.body).toMatchObject({
+    binding: { kind: "skill", skillName: createdName },
+  });
+});
+
+test("agent directives show non-bindable capabilities as unavailable", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentSkills: [] });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  const action = page.getByLabel("Action");
+  await action.click();
+  await action.pressSequentially("#refund_lookup");
+  await page.getByRole("option", { name: 'Create skill “refund_lookup”' }).click();
+
+  const capabilityDialog = page.getByRole("dialog", { name: "Add new skill" });
+  await expect(capabilityDialog).toBeVisible();
+  for (const capability of ["Email", "Slack Post", "Webhook Call", "Notify Human"]) {
+    await expect(capabilityDialog.getByRole("button", { name: new RegExp(capability) })).toBeDisabled();
+  }
+  await expect(capabilityDialog.getByText("Not available for directives.", { exact: true })).toHaveCount(4);
+});
+
 test("agent directives create a skill inline from the action field and bind it", async ({ page }) => {
   const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
   const agentSkillRequests: Array<{ method: string; path: string; body?: unknown }> = [];

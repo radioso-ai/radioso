@@ -1,6 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, type JSX } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useRef, type JSX } from 'react'
+
+import { Database } from 'lucide-react'
 
 import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
@@ -20,6 +22,9 @@ import { ChipNode } from '@/components/dashboard/settings/routine-chip-node'
 import { ChipTypeaheadPlugin } from '@/components/dashboard/settings/routine-chip-typeahead-plugin'
 import { $initializeFromParagraphs, $readProseParagraphs } from '@/components/dashboard/settings/routine-prose-nodes'
 import { RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { SkillPickerMenu } from '@/components/dashboard/settings/skill-picker-menu'
+import { useInsertSkillChip } from '@/components/dashboard/settings/use-insert-skill-chip'
+import { Button } from '@/components/ui/button'
 import type { SkillAuthoringDescriptor } from '@/lib/api-routine-skill-catalog'
 import { parseProseDoc, tokenForChip, type ProseParagraph, type ProseSegment } from '@/lib/routine-prose'
 import { cn } from '@/lib/utils'
@@ -139,6 +144,61 @@ function SingleLinePlugin(): null {
   return null
 }
 
+function SkillMentionBrowseButton({
+  skillMenuNotice,
+  skillMenuEmptyMessage,
+  isSkillsLoading,
+  skillLoadError,
+  onCreateSkill,
+}: {
+  skillMenuNotice: string | null
+  skillMenuEmptyMessage: string | null
+  isSkillsLoading: boolean
+  skillLoadError: string | null
+  onCreateSkill?: (typedName: string) => Promise<string | null>
+}): JSX.Element {
+  const skillCatalog = useContext(RoutineSkillCatalogContext)
+  const insertSkillChip = useInsertSkillChip()
+  const groups = useMemo(
+    () => skillMenuNotice ? [] : [{
+      key: 'skills',
+      skills: skillCatalog.skills.map((skill) => ({ skillName: skill.skillName, displayName: skill.displayName })),
+    }],
+    [skillCatalog.skills, skillMenuNotice],
+  )
+
+  return (
+    <div className="absolute right-1 top-1">
+      <SkillPickerMenu
+        groups={groups}
+        emptyMessage={skillMenuNotice ?? skillMenuEmptyMessage ?? 'No skills available.'}
+        isLoading={!skillMenuNotice && isSkillsLoading}
+        error={skillMenuNotice ? null : skillLoadError}
+        // No typed name to seed from here, so the form falls back to its suggested one.
+        createAction={onCreateSkill && !skillMenuNotice
+          ? {
+            label: 'Add a new skill...',
+            onSelect: () => {
+              void onCreateSkill('').then((createdName) => {
+                if (createdName) insertSkillChip({ skillName: createdName })
+              })
+            },
+          }
+          : null}
+        onSelect={(skillName) => {
+          const skill = skillCatalog.skills.find((candidate) => candidate.skillName === skillName)
+          if (skill) insertSkillChip({ skillName: skill.skillName, displayName: skill.displayName, focusEditor: true })
+        }}
+      >
+        <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" aria-label="Browse skills">
+          <Database className="h-4 w-4" />
+          Skill
+        </Button>
+      </SkillPickerMenu>
+    </div>
+  )
+}
+
 function MentionChangePlugin({
   onChange,
   onSkillsChange,
@@ -188,6 +248,9 @@ export function SkillMentionInput({
   recognizedSkillNames = NO_RECOGNIZED_SKILLS,
   skills,
   skillMenuNotice = null,
+  skillMenuEmptyMessage = null,
+  isSkillsLoading = false,
+  skillLoadError = null,
   onChange,
   onSkillsChange,
   onCreateSkill,
@@ -206,6 +269,10 @@ export function SkillMentionInput({
   skills: SkillMentionOption[]
   // Shown in place of the skill choices when the host has already bound all it can hold.
   skillMenuNotice?: string | null
+  // Explains an empty catalog for this binding surface without changing routine editor copy.
+  skillMenuEmptyMessage?: string | null
+  isSkillsLoading?: boolean
+  skillLoadError?: string | null
   onChange: (value: string) => void
   onSkillsChange?: (skillNames: string[]) => void
   // Offers to author a name the catalog lacks. Resolves to the created skill's name, or null when
@@ -216,8 +283,8 @@ export function SkillMentionInput({
   // owns both from then on.
   const seedRef = useRef({ value, recognizedSkillNames })
   const catalog = useMemo(
-    () => ({ agentId: '', skills: skills.map(mentionDescriptor), isLoading: false, error: null }),
-    [skills],
+    () => ({ agentId: '', skills: skills.map(mentionDescriptor), isLoading: isSkillsLoading, error: skillLoadError }),
+    [isSkillsLoading, skillLoadError, skills],
   )
 
   return (
@@ -240,7 +307,7 @@ export function SkillMentionInput({
               <ContentEditable
                 id={id}
                 aria-label={ariaLabel}
-                className={cn('min-h-9 w-full px-3 py-2 text-sm outline-none [&_p]:my-0')}
+                className={cn('min-h-9 w-full px-3 py-2 pr-20 text-sm outline-none [&_p]:my-0')}
               />
             }
             placeholder={() =>
@@ -253,7 +320,19 @@ export function SkillMentionInput({
           <HistoryPlugin />
           <SingleLinePlugin />
           <MentionChangePlugin onChange={onChange} onSkillsChange={onSkillsChange} />
-          <ChipTypeaheadPlugin skillsOnly skillMenuNotice={skillMenuNotice} onCreateSkill={onCreateSkill} />
+          <ChipTypeaheadPlugin
+            skillsOnly
+            skillMenuNotice={skillMenuNotice}
+            skillMenuEmptyMessage={isSkillsLoading || skillLoadError ? null : skillMenuEmptyMessage}
+            onCreateSkill={onCreateSkill}
+          />
+          <SkillMentionBrowseButton
+            skillMenuNotice={skillMenuNotice}
+            skillMenuEmptyMessage={skillMenuEmptyMessage}
+            isSkillsLoading={isSkillsLoading}
+            skillLoadError={skillLoadError}
+            onCreateSkill={onCreateSkill}
+          />
         </div>
       </RoutineSkillCatalogContext.Provider>
     </LexicalComposer>

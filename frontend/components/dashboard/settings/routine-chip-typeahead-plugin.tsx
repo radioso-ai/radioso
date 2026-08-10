@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useContext, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
@@ -9,12 +9,9 @@ import {
   MenuOption,
 } from '@lexical/react/LexicalTypeaheadMenuPlugin'
 import {
-  $createParagraphNode,
   $createTextNode,
   $getRoot,
-  $getSelection,
   $isElementNode,
-  $isRangeSelection,
   type TextNode,
 } from 'lexical'
 
@@ -27,6 +24,7 @@ import {
   type RoutineChipKind,
 } from '@/components/dashboard/settings/routine-chip-node'
 import { findRoutineSkillDescriptor, normalizeSkillName, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
+import { useInsertSkillChip } from '@/components/dashboard/settings/use-insert-skill-chip'
 import type { RoutineFieldGuardOp } from '@/lib/api-types'
 import { slugifyVariableKey, type ApprovalDocOption } from '@/lib/routine-prose'
 
@@ -86,6 +84,7 @@ export function ChipTypeaheadPlugin({
   onCreateSkill,
   skillsOnly = false,
   skillMenuNotice = null,
+  skillMenuEmptyMessage = null,
 }: {
   // A routine surface owns slots and flow targets; a skills-only surface has neither, so
   // these narrow to nothing rather than being threaded through as empty ceremony.
@@ -97,6 +96,9 @@ export function ChipTypeaheadPlugin({
   // Shown instead of the skill choices when the host has already bound the one skill it can
   // hold, so the menu explains itself rather than looking broken.
   skillMenuNotice?: string | null
+  // A binding surface can explain why its catalog is empty. Routine authoring intentionally
+  // keeps its existing silent typeahead behavior.
+  skillMenuEmptyMessage?: string | null
   // Authors a skill the catalog does not have yet. The host owns the form and the constraints —
   // this plugin only knows a name went out and a name may come back. Resolving to the created
   // name (not the typed one) is load-bearing: skill names are lowercase identifiers, so what the
@@ -105,6 +107,7 @@ export function ChipTypeaheadPlugin({
 }) {
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
+  const insertSkillChip = useInsertSkillChip()
   const [query, setQuery] = useState<string | null>(null)
   // Which prefix opened the menu: `@` inserts a variable or a flow target, `#` inserts a skill.
   const [trigger, setTrigger] = useState<'@' | '#'>('@')
@@ -181,6 +184,20 @@ export function ChipTypeaheadPlugin({
           isNew: true,
           refId: slugifyVariableKey(raw),
           name: raw,
+        }))
+      }
+      // Only when nothing actionable is on offer. The notice selects to nothing, and the menu
+      // highlights its first option, so leading with it would make Enter close the menu instead
+      // of taking the create action sitting behind it. It also needs the catalog to be genuinely
+      // empty: with skills present but none matching the query, "no skills qualify" is false.
+      if (skillsOnly && skills.length === 0 && skillCatalog.skills.length === 0 && skillMenuEmptyMessage) {
+        skills.push(new ChipMenuOption('skill-empty', {
+          display: skillMenuEmptyMessage,
+          kind: 'skill',
+          isNew: false,
+          refId: '',
+          name: '',
+          notice: true,
         }))
       }
       return skills.slice(0, 8)
@@ -274,43 +291,7 @@ export function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger, skillsOnly, skillMenuNotice, onCreateSkill])
-
-  // Inline creation hands control to a host dialog, so the chip is inserted long after the menu
-  // closed. Skip the write if this editor has gone away in the meantime.
-  const mountedRef = useRef(true)
-  useEffect(() => {
-    mountedRef.current = true
-    return () => {
-      mountedRef.current = false
-    }
-  }, [])
-
-  const insertSkillChip = useCallback((skillName: string) => {
-    if (!mountedRef.current) return
-    editor.update(() => {
-      const chip = $createChipNode('skill', skillName, skillName)
-      const trailing = $createTextNode(' ')
-      const selection = $getSelection()
-      if ($isRangeSelection(selection)) {
-        selection.insertNodes([chip, trailing])
-        trailing.select()
-        return
-      }
-      // The dialog took focus and the caret with it: the trigger text was removed from the end of
-      // the value, so appending puts the chip back where it was being typed.
-      const root = $getRoot()
-      const last = root.getLastChild()
-      if ($isElementNode(last)) {
-        last.append(chip, trailing)
-      } else {
-        const paragraph = $createParagraphNode()
-        paragraph.append(chip, trailing)
-        root.append(paragraph)
-      }
-      trailing.select()
-    })
-  }, [editor])
+  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger, skillsOnly, skillMenuNotice, skillMenuEmptyMessage, onCreateSkill])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -326,8 +307,17 @@ export function ChipTypeaheadPlugin({
         })
         closeMenu()
         void onCreateSkill(option.name).then((createdName) => {
-          if (createdName) insertSkillChip(createdName)
+          if (createdName) insertSkillChip({ skillName: createdName })
         })
+        return
+      }
+      if (option.kind === 'skill') {
+        insertSkillChip({
+          skillName: option.refId,
+          displayName: option.name,
+          nodeToReplace,
+        })
+        closeMenu()
         return
       }
       editor.update(() => {

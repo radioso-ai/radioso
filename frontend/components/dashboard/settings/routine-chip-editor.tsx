@@ -371,7 +371,7 @@ const groupSkillsByCategory = (skills: SkillAuthoringDescriptor[]) =>
     }))
     .filter((group) => group.skills.length > 0)
 
-function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void }) {
+function EditorToolbar({ variables, onSetVariableType, instructionOnly = false }: { variables: ChipDocVariable[]; onSetVariableType: (refId: string, type: RoutineSlotType) => void; instructionOnly?: boolean }) {
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
   const [conditionOpen, setConditionOpen] = useState(false)
@@ -592,17 +592,20 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
 
   return (
     <div className="flex flex-wrap items-center gap-x-0.5 gap-y-1 border-b border-input px-1.5 py-1">
-      <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
-        <Bold className="h-4 w-4" />
-      </Button>
-      <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.italic && ACTIVE_TOOLBAR_BUTTON)} aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
-        <Italic className="h-4 w-4" />
-      </Button>
-      <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
+      {!instructionOnly ? <>
+        <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.bold && ACTIVE_TOOLBAR_BUTTON)} aria-label="Bold" aria-pressed={formats.bold} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'bold')}>
+          <Bold className="h-4 w-4" />
+        </Button>
+        <Button type="button" variant="ghost" size="sm" className={cn('h-7 w-7 p-0', formats.italic && ACTIVE_TOOLBAR_BUTTON)} aria-label="Italic" aria-pressed={formats.italic} onClick={() => editor.dispatchCommand(FORMAT_TEXT_COMMAND, 'italic')}>
+          <Italic className="h-4 w-4" />
+        </Button>
+        <Separator orientation="vertical" className="mx-2.5 h-5 bg-border" />
+      </> : null}
       <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2" onClick={insertVariableTrigger}>
         <AtSign className="h-4 w-4" />
         Variable
       </Button>
+      {!instructionOnly ? <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2">
@@ -687,6 +690,7 @@ function EditorToolbar({ variables, onSetVariableType }: { variables: ChipDocVar
       <ActionDialog open={actionOpen} onOpenChange={setActionOpen} onConfirm={insertAction} />
       <JumpDialog open={jumpOpen} onOpenChange={setJumpOpen} targets={jumpTargets} onConfirm={insertJump} />
       <ApprovalChipDialog open={approvalOpen} onOpenChange={setApprovalOpen} targets={approvalTargets} initial={{ captureKey: '', options: [] }} onConfirm={insertApproval} />
+      </> : null}
     </div>
   )
 }
@@ -695,10 +699,12 @@ function ChipTypeaheadPlugin({
   variables,
   reservedRefKinds,
   onCreateVariable,
+  instructionOnly = false,
 }: {
   variables: RoutineEditorVariable[]
   reservedRefKinds: Record<string, RoutineChipKind>
   onCreateVariable: (variable: RoutineEditorVariable) => void
+  instructionOnly?: boolean
 }) {
   const [editor] = useLexicalComposerContext()
   const skillCatalog = useContext(RoutineSkillCatalogContext)
@@ -781,6 +787,7 @@ function ChipTypeaheadPlugin({
           name: raw,
         }))
       }
+      if (instructionOnly) return result.slice(0, 8)
       if (canCreate('handoff')) {
         result.push(new ChipMenuOption(`new-handoff-${lowered}`, {
           display: `Handoff: ${raw}`,
@@ -845,7 +852,7 @@ function ChipTypeaheadPlugin({
       }))
     }
     return result.slice(0, 8)
-  }, [editor, skillCatalog.skills, variables, reservedRefKinds, query, trigger])
+  }, [editor, instructionOnly, skillCatalog.skills, variables, reservedRefKinds, query, trigger])
 
   const onSelectOption = useCallback(
     (option: ChipMenuOption, nodeToReplace: TextNode | null, closeMenu: () => void) => {
@@ -1224,14 +1231,20 @@ function BranchDecisionDecorationPlugin() {
   return null
 }
 
-function OnDocChangePlugin({ onDocChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void }) {
+function OnDocChangePlugin({ onDocChange, onParagraphChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void; onParagraphChange?: (paragraphs: ProseParagraph[]) => void }) {
   const [editor] = useLexicalComposerContext()
   // Emit the initial (possibly loaded) document once so the host seeds its draft from
   // exactly what the editor parsed — Lexical's change handler ignores the initial state.
   useEffect(() => {
-    editor.getEditorState().read(() => onDocChange($serializeBlocks()))
-  }, [editor, onDocChange])
-  return <OnChangePlugin onChange={(editorState: EditorState) => editorState.read(() => onDocChange($serializeBlocks()))} />
+    editor.getEditorState().read(() => {
+      onDocChange($serializeBlocks())
+      onParagraphChange?.($readProseParagraphs())
+    })
+  }, [editor, onDocChange, onParagraphChange])
+  return <OnChangePlugin onChange={(editorState: EditorState) => editorState.read(() => {
+    onDocChange($serializeBlocks())
+    onParagraphChange?.($readProseParagraphs())
+  })} />
 }
 
 export function RoutineChipEditor({
@@ -1247,6 +1260,8 @@ export function RoutineChipEditor({
   onSetVariableRequired,
   onSetVariableMutable,
   onPasteFrontmatter,
+  instructionOnly = false,
+  onParagraphChange,
 }: {
   variables: ChipDocVariable[]
   reservedRefKinds: Record<string, RoutineChipKind>
@@ -1262,6 +1277,8 @@ export function RoutineChipEditor({
   onSetVariableRequired?: (refId: string, required: boolean) => void
   onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null; terminals?: ProseTerminalConfig }) => void
+  instructionOnly?: boolean
+  onParagraphChange?: (paragraphs: ProseParagraph[]) => void
 }): JSX.Element {
   const variablesContext = useMemo(
     () => ({
@@ -1292,7 +1309,7 @@ export function RoutineChipEditor({
     >
       <RoutineVariablesProvider value={variablesContext}>
         <div className="routine-prose-surface rounded-md border border-input bg-transparent focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
-          <EditorToolbar variables={variables} onSetVariableType={onSetVariableType} />
+          <EditorToolbar variables={variables} onSetVariableType={onSetVariableType} instructionOnly={instructionOnly} />
           <div className="relative">
             <RichTextPlugin
               contentEditable={
@@ -1310,10 +1327,10 @@ export function RoutineChipEditor({
             />
           </div>
           <HistoryPlugin />
-          <OnDocChangePlugin onDocChange={onDocChange} />
-          <BranchDecisionDecorationPlugin />
-          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} />
-          <ClipboardRoundTripPlugin
+          <OnDocChangePlugin onDocChange={onDocChange} onParagraphChange={onParagraphChange} />
+          {!instructionOnly ? <BranchDecisionDecorationPlugin /> : null}
+          <ChipTypeaheadPlugin variables={variables} reservedRefKinds={reservedRefKinds} onCreateVariable={onCreateVariable} instructionOnly={instructionOnly} />
+          {!instructionOnly ? <ClipboardRoundTripPlugin
             name={name}
             trigger={trigger}
             terminals={terminals}
@@ -1323,9 +1340,37 @@ export function RoutineChipEditor({
             onSetVariableRequired={onSetVariableRequired}
             onSetVariableMutable={onSetVariableMutable}
             onPasteFrontmatter={onPasteFrontmatter}
-          />
+          /> : null}
         </div>
       </RoutineVariablesProvider>
     </LexicalComposer>
+  )
+}
+
+// A constrained reuse of the routine chip editor for a single instruction block. Its
+// toolbar and typeahead expose only text and variable chips; document structure remains
+// in the surrounding Document-tab controls.
+export function RoutineInstructionEditor({
+  initialContent,
+  variables,
+  onCreateVariable,
+  onChange,
+}: {
+  initialContent: ProseParagraph[]
+  variables: ChipDocVariable[]
+  onCreateVariable: (variable: RoutineEditorVariable) => void
+  onChange: (segments: ProseSegment[]) => void
+}): JSX.Element {
+  return (
+    <RoutineChipEditor
+      initialContent={initialContent}
+      variables={variables}
+      reservedRefKinds={Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind]))}
+      onCreateVariable={onCreateVariable}
+      onDocChange={() => undefined}
+      onSetVariableType={() => undefined}
+      instructionOnly
+      onParagraphChange={(paragraphs) => onChange(paragraphs[0]?.segments ?? [{ kind: 'text', text: '' }])}
+    />
   )
 }

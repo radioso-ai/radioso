@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Eye,
+  FileText,
   FlaskConical,
   FormInput,
   History,
@@ -27,6 +28,7 @@ import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workb
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
+import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
@@ -223,7 +225,7 @@ const currentBrowserUrlMatches = (href: string) => {
 type NewRoutineRecovery = {
   draft: RoutineDefinitionDraft
   header: RoutineDraftHeader
-  viewMode: 'prose' | 'form'
+  viewMode: 'prose' | 'document' | 'form'
 }
 
 const newRoutineRecoveryKey = (agentId: string) => `radioso:routine-new-draft:${agentId}`
@@ -234,7 +236,7 @@ const readNewRoutineRecovery = (agentId: string): NewRoutineRecovery | null => {
   if (!value) return null
   try {
     const parsed = JSON.parse(value) as Partial<NewRoutineRecovery>
-    if (!parsed.draft || !parsed.header || (parsed.viewMode !== 'prose' && parsed.viewMode !== 'form')) return null
+    if (!parsed.draft || !parsed.header || (parsed.viewMode !== 'prose' && parsed.viewMode !== 'document' && parsed.viewMode !== 'form')) return null
     return {
       draft: parsed.draft,
       header: parsed.header,
@@ -523,9 +525,13 @@ function RoutineEditorScreen({
   const [form, setForm] = useState<RoutineFormState | null>(null)
   const [proseSource, setProseSource] = useState<RoutineDefinitionDraft | null>(null)
   const [proseDraft, setProseDraft] = useState<RoutineDefinitionDraft | null>(null)
+  // The Document tab owns a block document locally, then projects each edit back through
+  // draftFromBlockDoc. Keeping that projection here makes save/validate/publish use the
+  // same shared draft path as the Form and Prose tabs.
+  const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
   const [proseKey, setProseKey] = useState(0)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
-  const [viewMode, setViewMode] = useState<'prose' | 'form'>('prose')
+  const [viewMode, setViewMode] = useState<'prose' | 'document' | 'form'>('prose')
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
   const [proseLocalValidationError, setProseLocalValidationError] = useState<string | null>(null)
@@ -589,8 +595,9 @@ function RoutineEditorScreen({
   )
   const activeRoutineDraft = useMemo(() => {
     if (viewMode === 'prose' && proseDraft) return proseDraft
+    if (viewMode === 'document' && documentDraft) return documentDraft
     return form ? formToRoutineDraft(form, { header: draftHeader }) : null
-  }, [draftHeader, form, proseDraft, viewMode])
+  }, [documentDraft, draftHeader, form, proseDraft, viewMode])
   const activeRoutineDraftSignature = useMemo(
     () => activeRoutineDraft ? JSON.stringify(activeRoutineDraft) : null,
     [activeRoutineDraft],
@@ -712,6 +719,7 @@ function RoutineEditorScreen({
         setForm(routineToForm(draftAsRoutine(nextDraft)))
         setProseSource(isBlankFormDraft(nextDraft) ? emptyProseDraftFromHeader(nextHeader) : nextDraft)
         setProseDraft(null)
+        setDocumentDraft(null)
         setProseLocalValidationError(null)
         setProseKey((key) => key + 1)
         setViewMode(recovered?.viewMode ?? 'prose')
@@ -725,6 +733,7 @@ function RoutineEditorScreen({
       setEditingRoutine(null)
       setForm(null)
       setProseSource(null)
+      setDocumentDraft(null)
       setProseLocalValidationError(null)
       setIsLoading(true)
       void Promise.all([
@@ -741,6 +750,7 @@ function RoutineEditorScreen({
           setForm(routineToForm(response.routine))
           setProseSource(response.routine)
           setProseDraft(null)
+          setDocumentDraft(null)
           setProseLocalValidationError(null)
           setProseKey((key) => key + 1)
           setValidatedDraftSignature(null)
@@ -764,10 +774,14 @@ function RoutineEditorScreen({
     }
   }, [agentId, routineRouteId])
 
-  const synchronizeView = (nextView: 'prose' | 'form') => {
+  const synchronizeView = (nextView: 'prose' | 'document' | 'form') => {
     if (nextView === viewMode) return
-    if (nextView === 'form' && proseDraft && proseDraft.steps.length > 0) {
+    if (nextView !== 'prose' && proseDraft && proseDraft.steps.length > 0) {
       setForm(routineToForm(draftAsRoutine(proseDraft, editingRoutine)))
+      if (nextView === 'document') setDocumentDraft(proseDraft)
+    }
+    if (nextView === 'document' && form) {
+      setDocumentDraft(formToRoutineDraft(form, { header: draftHeader }))
     }
     if (nextView === 'prose' && form) {
       // Re-seed prose from the current form draft; routineToChipDoc inside the prose tab
@@ -809,6 +823,7 @@ function RoutineEditorScreen({
         setForm(routineToForm(response.routine))
         setProseSource(response.routine)
         setProseDraft(null)
+        setDocumentDraft(null)
         setProseLocalValidationError(null)
         setProseKey((key) => key + 1)
       }
@@ -928,6 +943,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setDocumentDraft(null)
       setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
       setValidation(null)
@@ -967,6 +983,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setDocumentDraft(null)
       setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (archiveError) {
@@ -1005,6 +1022,7 @@ function RoutineEditorScreen({
       setForm(routineToForm(response.routine))
       setProseSource(response.routine)
       setProseDraft(null)
+      setDocumentDraft(null)
       setProseLocalValidationError(null)
       setProseKey((key) => key + 1)
     } catch (restoreError) {
@@ -1316,13 +1334,17 @@ function RoutineEditorScreen({
             </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
-            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'form')}>
+            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'document' | 'form')}>
               <TabsList aria-label="Routine editor view">
-                {/* The chip editor has no read-only mode; a published/archived routine
-                    is viewed in the (disabled) Form tab rather than an editable prose surface. */}
+                {/* The chip editor has no read-only mode; the Document tab is the reader
+                    surface for published and archived routines. */}
                 <TabsTrigger value="prose" disabled={isReadOnly}>
                   <Sparkles className="h-4 w-4" />
                   Prose
+                </TabsTrigger>
+                <TabsTrigger value="document">
+                  <FileText className="h-4 w-4" />
+                  Document
                 </TabsTrigger>
                 <TabsTrigger value="form">
                   <FormInput className="h-4 w-4" />
@@ -1356,6 +1378,19 @@ function RoutineEditorScreen({
                 webhookDestinationsError={webhookDestinationsError}
                 emailSkills={emailSkills}
                 onChange={updateForm}
+              />
+            ) : null}
+
+            {viewMode === 'document' && activeRoutineDraft ? (
+              <RoutineDocumentTab
+                draft={activeRoutineDraft}
+                isReadOnly={isReadOnly}
+                onDraftChange={(nextDraft) => {
+                  routineEditorDirtyRef.current = true
+                  setDocumentDraft(nextDraft)
+                  setForm(routineToForm(draftAsRoutine(nextDraft, editingRoutine)))
+                  setDraftHeader(headerFromDraft(nextDraft))
+                }}
               />
             ) : null}
 

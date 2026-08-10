@@ -243,6 +243,7 @@ function MentionChangePlugin({
 export function SkillMentionInput({
   id,
   ariaLabel,
+  ariaInvalid = false,
   placeholder,
   value,
   recognizedSkillNames = NO_RECOGNIZED_SKILLS,
@@ -257,6 +258,9 @@ export function SkillMentionInput({
 }: {
   id?: string
   ariaLabel: string
+  // The editable surface is the control, so a host reporting a validation error has to mark it
+  // here rather than on the bordered wrapper around it.
+  ariaInvalid?: boolean
   placeholder?: string
   // Seeds the editor on mount; the editor owns the text from then on and reports it back.
   value: string
@@ -307,6 +311,7 @@ export function SkillMentionInput({
               <ContentEditable
                 id={id}
                 aria-label={ariaLabel}
+                aria-invalid={ariaInvalid}
                 className={cn('min-h-9 w-full px-3 py-2 pr-20 text-sm outline-none [&_p]:my-0')}
               />
             }

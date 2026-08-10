@@ -28,19 +28,19 @@ const openDirectives = async (page: Page) => {
   await expect(page.getByRole("heading", { name: "Directives", level: 1 })).toBeVisible();
 };
 
-// The create/edit/delete journey reloads the page three times and drives the Action editor a
+// The create/edit/delete journey reloads the page three times and drives the Instruction editor a
 // keystroke at a time, which runs past the default 30s budget on a loaded machine.
 test.describe.configure({ timeout: 60_000 });
 
-// Action is a chip-capable editor (typing `#` inserts a skill chip), so it is driven by
+// Instruction is a chip-capable editor (typing `#` inserts a skill chip), so it is driven by
 // keystrokes rather than a value assignment.
-const fillAction = async (page: Page, text: string) => {
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.press("ControlOrMeta+a");
-  await action.press("Backspace");
-  await action.pressSequentially(text);
-  await expect(action).toHaveText(text);
+const fillInstruction = async (page: Page, text: string) => {
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.press("ControlOrMeta+a");
+  await instruction.press("Backspace");
+  await instruction.pressSequentially(text);
+  await expect(instruction).toHaveText(text);
 };
 
 test("agent directives settings create, edit, delete, and persist", async ({ page }) => {
@@ -57,7 +57,7 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("handoff-tone");
-  await fillAction(page, "When handing off to support, be calm and specific.");
+  await fillInstruction(page, "When handing off to support, be calm and specific.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   // Wait out the dialog close: a directive name also appears as a Replaces option,
@@ -80,7 +80,7 @@ test("agent directives settings create, edit, delete, and persist", async ({ pag
 
   await page.getByRole("button", { name: "Edit handoff-tone" }).click();
   await page.getByLabel("Name").fill("conflict-tone");
-  await fillAction(page, "Always be verbose, expansive, and include long explanations.");
+  await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -122,14 +122,14 @@ test("agent directives settings can replace and restore a built-in directive", a
   // The Override button is a shortcut into the normal create dialog with the
   // built-in pre-selected in Replaces, the priority field exposed, everything editable.
   await page.getByRole("button", { name: "Replace inline-supported-links for this agent" }).click();
-  await expect(page.getByRole("heading", { name: "Create directive" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "New directive" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("Override: inline-supported-links");
-  await expect(page.getByRole("switch", { name: "Replace inline-supported-links" })).toBeChecked();
-  await page.getByRole("combobox", { name: "Condition" }).click();
-  await page.getByRole("option", { name: "Contextual" }).click();
-  await page.getByLabel("Condition description").fill("answering legal policy questions");
-  await fillAction(page, "Use the agent's legal-source link policy instead of the default link style.");
-  await page.getByLabel("Priority (optional)").fill("95");
+  // The preselection reads back as a pill, without opening the candidate picker.
+  await expect(page.getByRole("button", { name: "Stop replacing inline-supported-links" })).toBeVisible();
+  await page.getByRole("radio", { name: /In a specific situation/ }).click();
+  await page.getByLabel("Situation").fill("answering legal policy questions");
+  await fillInstruction(page, "Use the agent's legal-source link policy instead of the default link style.");
+  await page.getByLabel("Priority").fill("95");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   // The override is contextual, so the built-in is only superseded when the
@@ -172,12 +172,12 @@ test("agent directives settings can resolve a conflict by superseding another di
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("brief-tone");
-  await fillAction(page, "Keep replies short and direct.");
+  await fillInstruction(page, "Keep replies short and direct.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("conflict-tone");
-  await fillAction(page, "Always be verbose, expansive, and include long explanations.");
+  await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await expect(page.getByText("Potential directive conflicts")).toBeVisible();
@@ -208,20 +208,20 @@ test("agent directives settings can open a conflicting directive as contextual",
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("brief-tone");
-  await fillAction(page, "Keep replies short and direct.");
+  await fillInstruction(page, "Keep replies short and direct.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("conflict-tone");
-  await fillAction(page, "Always be verbose, expansive, and include long explanations.");
+  await fillInstruction(page, "Always be verbose, expansive, and include long explanations.");
   await page.getByRole("button", { name: "Save directive" }).click();
 
   await page.getByRole("button", { name: "Make conflict-tone apply only conditionally" }).click();
 
   await expect(page.getByRole("heading", { name: "Edit directive" })).toBeVisible();
   await expect(page.getByLabel("Name")).toHaveValue("conflict-tone");
-  await expect(page.getByRole("combobox", { name: "Condition" })).toContainText("Contextual");
-  await expect(page.getByLabel("Condition description")).toBeVisible();
+  await expect(page.getByRole("radio", { name: /In a specific situation/ })).toBeChecked();
+  await expect(page.getByLabel("Situation")).toBeVisible();
 });
 
 test("agent directives bind a skill by inserting a chip in the action", async ({ page }) => {
@@ -240,9 +240,9 @@ test("agent directives bind a skill by inserting a chip in the action", async ({
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("refund-handoff");
 
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.pressSequentially("Refund the order using #");
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Refund the order using #");
 
   // Only skills the API will accept as a binding are offered.
   await expect(page.getByText("issue_refund").first()).toBeVisible();
@@ -274,7 +274,7 @@ test("agent directives browse bindable skills from the action field", async ({ p
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("refund-handoff");
-  await fillAction(page, "Refund the order using ");
+  await fillInstruction(page, "Refund the order using ");
 
   await page.getByRole("button", { name: "Browse skills" }).click();
   await expect(page.getByRole("menuitem", { name: /issue_refund/ })).toBeVisible();
@@ -292,7 +292,7 @@ test("agent directives browse bindable skills from the action field", async ({ p
 });
 
 test("agent directives explain when no skills qualify in both skill menus", async ({ page }) => {
-  const noQualifyingSkills = "No skills can handle a turn yet. A directive can use an MCP tool or a knowledge lookup that is set to 'agent selectable'.";
+  const noQualifyingSkills = "No skill can answer a turn yet. A directive can draw on an MCP tool, or a knowledge lookup the agent is allowed to pick.";
 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { agentSkills: [] });
@@ -303,14 +303,14 @@ test("agent directives explain when no skills qualify in both skill menus", asyn
   await expect(page.getByRole("menuitem", { name: noQualifyingSkills })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.pressSequentially("#");
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("#");
   await expect(page.getByRole("option", { name: noQualifyingSkills })).toBeVisible();
 
   // Typing a name puts an actionable option on offer, so the notice steps aside rather than
   // sitting where the menu's first-option highlight is.
-  await action.pressSequentially("RefundLookup");
+  await instruction.pressSequentially("RefundLookup");
   await expect(page.getByRole("option", { name: 'Create skill “RefundLookup”' })).toBeVisible();
   await expect(page.getByRole("option", { name: noQualifyingSkills })).toHaveCount(0);
 });
@@ -325,9 +325,9 @@ test("agent directives reach inline skill creation from the keyboard", async ({ 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("refund-handoff");
 
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.pressSequentially("Refund the order using #RefundLookup");
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Refund the order using #RefundLookup");
   await expect(page.getByRole("option", { name: 'Create skill “RefundLookup”' })).toBeVisible();
 
   // Enter takes the menu's highlighted option. An empty catalog must not park a dead notice
@@ -339,7 +339,10 @@ test("agent directives reach inline skill creation from the keyboard", async ({ 
   await expect(page.getByLabel("Skill name")).toHaveValue("refundlookup");
   await page.getByRole("button", { name: "Create skill", exact: true }).click();
 
-  await expect(action).toHaveText("Refund the order using refundlookup");
+  // The retrieve skill form carries its own "Instruction" setting, so the directive's field is
+  // only unambiguous once that dialog has gone.
+  await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
+  await expect(instruction).toHaveText("Refund the order using refundlookup");
   await expect.poll(() => agentSkillRequests.length).toBe(1);
 });
 
@@ -353,7 +356,7 @@ test("agent directives author a skill from the browse menu without typing a name
 
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("event-lookup");
-  await fillAction(page, "Answer from the events calendar ");
+  await fillInstruction(page, "Answer from the events calendar ");
 
   // An empty catalog is a starting point, not a dead end: the browse menu can author one.
   await page.getByRole("button", { name: "Browse skills" }).click();
@@ -383,15 +386,17 @@ test("agent directives author a skill from the browse menu without typing a name
   });
 });
 
-test("agent directives show non-bindable capabilities as unavailable", async ({ page }) => {
+// Refusing without a destination is a dead end: these four capabilities are how routine steps act,
+// so the directive picker has to name that surface rather than only say no.
+test("agent directives point acting capabilities at routine steps", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { agentSkills: [] });
   await openDirectives(page);
 
   await page.getByRole("button", { name: "New directive" }).click();
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.pressSequentially("#refund_lookup");
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("#refund_lookup");
   await page.getByRole("option", { name: 'Create skill “refund_lookup”' }).click();
 
   const capabilityDialog = page.getByRole("dialog", { name: "Add new skill" });
@@ -399,7 +404,10 @@ test("agent directives show non-bindable capabilities as unavailable", async ({ 
   for (const capability of ["Email", "Slack Post", "Webhook Call", "Notify Human"]) {
     await expect(capabilityDialog.getByRole("button", { name: new RegExp(capability) })).toBeDisabled();
   }
-  await expect(capabilityDialog.getByText("Not available for directives.", { exact: true })).toHaveCount(4);
+  await expect(
+    capabilityDialog.getByText("Acts instead of replying. Use it in a routine step.", { exact: true }),
+  ).toHaveCount(4);
+  await expect(capabilityDialog.getByText("Not available for directives.", { exact: true })).toHaveCount(0);
 });
 
 test("agent directives create a skill inline from the action field and bind it", async ({ page }) => {
@@ -413,10 +421,10 @@ test("agent directives create a skill inline from the action field and bind it",
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("refund-handoff");
 
-  const action = page.getByLabel("Action");
-  await action.click();
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
   // A name the agent has no skill for used to dead-end; now it offers to author one.
-  await action.pressSequentially("Refund the order using #RefundLookup");
+  await instruction.pressSequentially("Refund the order using #RefundLookup");
   await page.getByRole("option", { name: 'Create skill “RefundLookup”' }).click();
 
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeVisible();
@@ -427,7 +435,7 @@ test("agent directives create a skill inline from the action field and bind it",
   await page.getByRole("button", { name: "Create skill", exact: true }).click();
 
   await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
-  await expect(action).toHaveText("Refund the order using refundlookup");
+  await expect(instruction).toHaveText("Refund the order using refundlookup");
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -460,9 +468,9 @@ test("agent directives leave no chip when inline skill creation is abandoned", a
   await page.getByRole("button", { name: "New directive" }).click();
   await page.getByLabel("Name").fill("refund-handoff");
 
-  const action = page.getByLabel("Action");
-  await action.click();
-  await action.pressSequentially("Refund the order using #refund_lookup");
+  const instruction = page.getByLabel("Instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Refund the order using #refund_lookup");
   await page.getByRole("option", { name: 'Create skill “refund_lookup”' }).click();
 
   // Backing out at the capability step, on a dialog stacked over the directive dialog.
@@ -470,18 +478,18 @@ test("agent directives leave no chip when inline skill creation is abandoned", a
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "Add new skill" })).toBeHidden();
   // The trigger text went with the menu, so the field holds prose and no binding.
-  await expect(action).toHaveText("Refund the order using");
+  await expect(instruction).toHaveText("Refund the order using");
 
   // And backing out one dialog deeper, from the skill form itself.
-  await action.click();
-  await action.pressSequentially(" #refund_lookup");
+  await instruction.click();
+  await instruction.pressSequentially(" #refund_lookup");
   await page.getByRole("option", { name: 'Create skill “refund_lookup”' }).click();
   await page.getByRole("button", { name: /Knowledge Retrieval/i }).click();
   await expect(page.getByLabel("Skill name")).toHaveValue("refund_lookup");
   await page.getByRole("button", { name: "Cancel" }).last().click();
 
   await expect(page.getByRole("dialog", { name: /Configure Knowledge Retrieval/ })).toBeHidden();
-  await expect(action).toHaveText("Refund the order using");
+  await expect(instruction).toHaveText("Refund the order using");
 
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -520,7 +528,7 @@ test("agent directives keep a prose #word out of the binding", async ({ page }) 
 
   await page.getByRole("button", { name: "Edit policy-pointer" }).click();
   // Text, not a chip: a chip renders its bare name, prose keeps the `#`.
-  await expect(page.getByLabel("Action")).toHaveText(proseAction);
+  await expect(page.getByLabel("Instruction")).toHaveText(proseAction);
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save directive" }).click();
@@ -558,10 +566,10 @@ test("agent directives keep a prose #word out of the binding even when a skill h
   await openDirectives(page);
 
   await page.getByRole("button", { name: "Edit policy-pointer" }).click();
-  await expect(page.getByLabel("Action")).toHaveText(proseAction);
+  await expect(page.getByLabel("Instruction")).toHaveText(proseAction);
 
   // Edit something unrelated: the binding must not arrive as a side effect of saving.
-  await page.getByLabel("Priority (optional)").fill("70");
+  await page.getByLabel("Priority").fill("70");
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
 
@@ -595,7 +603,11 @@ test("agent directives refuse a binding whose skill has been disabled", async ({
 
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   await expect(page.getByText(/No skill named issue_refund is available to bind/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save directive" })).toBeDisabled();
+  // Save stays clickable and simply refuses: a dead button would state no reason of its own.
+  const save = page.getByRole("button", { name: "Save directive" });
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
   expect(directiveUpdates).toHaveLength(0);
 });
 
@@ -627,10 +639,10 @@ test("agent directives reopen and resave a bound action that ends a sentence", a
 
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   // A chip renders its bare name; the period stayed in the prose beside it.
-  await expect(page.getByLabel("Action")).toHaveText("Escalate using issue_refund.");
+  await expect(page.getByLabel("Instruction")).toHaveText("Escalate using issue_refund.");
   await expect(page.getByText(/is available to bind/)).toHaveCount(0);
 
-  await page.getByLabel("Priority (optional)").fill("70");
+  await page.getByLabel("Priority").fill("70");
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
 
@@ -671,7 +683,7 @@ test("agent directives keep a binding when the action names a longer skill", asy
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   // The stored characters are untouched and the bound skill is now visible as a chip the author
   // can remove, rather than an invisible rule that a no-op save would drop.
-  await expect(page.getByLabel("Action")).toHaveText(`${storedAction} issue_refund`);
+  await expect(page.getByLabel("Instruction")).toHaveText(`${storedAction} issue_refund`);
 
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -711,7 +723,7 @@ test("agent directives resave an action naming both its bound skill and a longer
   await openDirectives(page);
 
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
-  await expect(page.getByLabel("Action")).toHaveText("Try #issue_refund-tier2, then fall back to issue_refund.");
+  await expect(page.getByLabel("Instruction")).toHaveText("Try #issue_refund-tier2, then fall back to issue_refund.");
 
   await page.getByRole("button", { name: "Save directive" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
@@ -800,5 +812,102 @@ test("agent directives validate a binding again after the skills list fails to l
   failSkillList = false;
   await page.getByRole("button", { name: "Edit refund-handoff" }).click();
   await expect(page.getByText(/No skill named issue_refund is available to bind/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save directive" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save directive" })).toBeEnabled();
+});
+
+// An agent accumulates directives, so the candidate list has to stay usable well past the handful
+// a fresh agent has.
+test("agent directives filter the replaces candidates down to one", async ({ page }) => {
+  const manyDirectives = Array.from({ length: 12 }, (_, index) => ({
+    id: `88888888-8888-4888-8888-0000000000${String(index + 10)}`,
+    name: `escalation-tone-${index + 1}`,
+    condition: { kind: "always" } as const,
+    action: "Escalate calmly.",
+  }));
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    directives: [
+      ...manyDirectives,
+      {
+        id: "88888888-8888-4888-8888-000000000099",
+        name: "late-window-note",
+        condition: { kind: "always" },
+        action: "Explain the policy.",
+        description: "How to answer refund questions after the window closes.",
+      },
+    ],
+  });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+  await page.getByRole("button", { name: "Choose directives" }).click();
+
+  await expect(page.getByText("Built-in behaviors")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Replace escalation-tone-1", exact: true })).toBeVisible();
+
+  // Matching runs over name and description, so a directive can be found by what it does.
+  await page.getByLabel("Filter directives").fill("refund");
+  await expect(page.getByRole("checkbox", { name: "Replace late-window-note" })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Replace escalation-tone-1", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Built-in behaviors")).toHaveCount(0);
+
+  await page.getByLabel("Filter directives").fill("nothing-matches-this");
+  await expect(page.getByText('No directives match "nothing-matches-this".')).toBeVisible();
+
+  await page.getByLabel("Filter directives").fill("refund");
+  await page.getByRole("checkbox", { name: "Replace late-window-note" }).click();
+  await expect(page.getByRole("button", { name: "Stop replacing late-window-note" })).toBeVisible();
+});
+
+test("agent directives drop a selected replacement from its pill", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+  await openDirectives(page);
+
+  // The Override shortcut preselects the built-in, so this starts from a selection nobody typed.
+  await page.getByRole("button", { name: "Replace inline-supported-links for this agent" }).click();
+  await page.getByRole("button", { name: "Stop replacing inline-supported-links" }).click();
+
+  await expect(page.getByRole("button", { name: "Stop replacing inline-supported-links" })).toHaveCount(0);
+  await expect(page.getByText("Nothing yet — this directive applies alongside the others.")).toBeVisible();
+
+  await fillInstruction(page, "Link to sources the way the agent normally does.");
+  await page.getByRole("button", { name: "Save directive" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+
+  await expect.poll(() => directiveUpdates.length).toBe(1);
+  expect(directiveUpdates[0]?.body).not.toHaveProperty("excludes");
+});
+
+test("agent directives stay quiet until the operator asks to save", async ({ page }) => {
+  const directiveUpdates: Array<{ method: "POST" | "PATCH" | "DELETE"; directiveId?: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { directiveUpdates });
+  await openDirectives(page);
+
+  await page.getByRole("button", { name: "New directive" }).click();
+
+  // Nothing has been written, so there is nothing to report yet.
+  await expect(page.getByText("Name is required.")).toHaveCount(0);
+  const save = page.getByRole("button", { name: "Save directive" });
+  await expect(save).toBeEnabled();
+
+  await save.click();
+  await expect(page.getByText("Name is required.")).toBeVisible();
+  expect(directiveUpdates).toHaveLength(0);
+
+  await page.getByLabel("Name").fill("handoff-tone");
+  await expect(page.getByText("Name is required.")).toHaveCount(0);
+  await expect(page.getByText("Instruction is required.")).toBeVisible();
+
+  await fillInstruction(page, "Hand off calmly and say what happens next.");
+  await expect(page.getByText("Instruction is required.")).toHaveCount(0);
+
+  await save.click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect.poll(() => directiveUpdates.length).toBe(1);
 });

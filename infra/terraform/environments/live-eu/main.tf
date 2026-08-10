@@ -51,9 +51,7 @@ module "radioso" {
   db_tier                = var.db_tier
   db_deletion_protection = true
 
-  secret_replication_locations                 = [var.region]
-  github_actions_workload_identity_pool_id     = "github-actions-live-eu"
-  github_actions_workload_identity_provider_id = "github-actions-live-eu"
+  secret_replication_locations = [var.region]
 
   worker_task_queue_name                = "radioso-${var.environment}-document-processing"
   worker_crawl_task_queue_name          = "radioso-${var.environment}-website-crawls"
@@ -140,12 +138,4 @@ output "cloud_sql_connection_name" {
 
 output "app_base_url" {
   value = module.radioso.app_base_url
-}
-
-output "github_actions_workload_identity_provider" {
-  value = module.radioso.github_actions_workload_identity_provider
-}
-
-output "github_actions_service_account_email" {
-  value = module.radioso.github_actions_service_account_email
 }

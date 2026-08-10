@@ -52,6 +52,7 @@ export {
 export {
   ModelDirectiveMatchGateway,
   ProbabilisticDirectiveMatcher,
+  type DirectiveMatchUnavailableObserver,
   type DirectiveTextGenerationClient,
 } from "./probabilisticDirectiveMatcher.js";
 export type { DirectiveClassification, DirectiveMatchGateway } from "@radioso/conversation-contract";

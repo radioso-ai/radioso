@@ -12,6 +12,7 @@ import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
+const claimableNow = () => new Date(Date.now() + 1_000);
 
 describeIntegration("document job queue embedding profiles (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl as string);
@@ -222,8 +223,8 @@ describeIntegration("document job queue embedding profiles (Postgres)", () => {
     ))[0]!;
 
     const [first, second] = await Promise.all([
-      jobs.claimById(row.id),
-      jobs.claimById(row.id),
+      jobs.claimById(row.id, claimableNow()),
+      jobs.claimById(row.id, claimableNow()),
     ]);
     expect([first, second].filter(Boolean)).toHaveLength(1);
   });

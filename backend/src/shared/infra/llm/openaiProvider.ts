@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import OpenAI from "openai";
 
 import {
@@ -18,9 +20,12 @@ import { EMBEDDING_REQUEST_TIMEOUT_MS, runProviderRequestWithTimeout } from "./p
 import { normalizeOpenAIReasoningEffort } from "./knownModels.js";
 import {
   isReasoningEffortKnownUnsupported,
+  isTemperatureKnownUnsupported,
   isUnsupportedReasoningEffortError,
+  isUnsupportedTemperatureError,
   markReasoningEffortUnsupported,
-} from "./reasoningEffortSupport.js";
+  markTemperatureUnsupported,
+} from "./samplingParamSupport.js";
 import type { AppLogger } from "../../observability/logger.js";
 
 interface OpenAIUsagePayload {
@@ -188,6 +193,57 @@ const buildResponseFormat = (
 
 const withoutReasoningEffort = ({ reasoning_effort: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
 
+const withoutTemperature = ({ temperature: _omit, ...rest }: ChatSamplingParams): ChatSamplingParams => rest;
+
+const hashSamplingApiKey = (apiKey: string): string =>
+  createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
+
+const samplingSupportCacheKey = (config: LlmCapabilityConfig): string =>
+  `${config.provider}:${config.model}:${hashSamplingApiKey(config.apiKey)}:${config.baseUrl ?? ""}`;
+
+/**
+ * One sampling param the API may reject, described by how to spot the rejection,
+ * remember it for the support scope, and drop it. Every entry must be safe to strip:
+ * reasoning effort is only a latency hint, and a model that rejects a temperature
+ * accepts nothing but its own default, so sending no temperature is the only
+ * behavior that can succeed at all.
+ */
+interface StrippableSamplingParam {
+  readonly isPresent: (sampling: ChatSamplingParams) => boolean;
+  readonly isKnownUnsupported: (supportScope: string, sampling: ChatSamplingParams) => boolean;
+  readonly remember: (supportScope: string, sampling: ChatSamplingParams) => void;
+  readonly wasRejected: (error: unknown) => boolean;
+  readonly strip: (sampling: ChatSamplingParams) => ChatSamplingParams;
+}
+
+const STRIPPABLE_SAMPLING_PARAMS: readonly StrippableSamplingParam[] = [
+  {
+    isPresent: (sampling) => sampling.reasoning_effort !== undefined,
+    isKnownUnsupported: (supportScope, sampling) =>
+      sampling.reasoning_effort !== undefined
+      && isReasoningEffortKnownUnsupported(supportScope, sampling.reasoning_effort),
+    remember: (supportScope, sampling) => {
+      if (sampling.reasoning_effort !== undefined) {
+        markReasoningEffortUnsupported(supportScope, sampling.reasoning_effort);
+      }
+    },
+    wasRejected: isUnsupportedReasoningEffortError,
+    strip: withoutReasoningEffort,
+  },
+  // Dropping a temperature is deliberately not surfaced to operators. Temperature
+  // is not configurable: it has no settings UI, API field, or SDK surface, and is
+  // only ever set by internal call sites. So a silent strip cannot contradict a
+  // value anyone chose, and reporting it would be noise about an internal default.
+  // Revisit if temperature ever becomes operator-settable.
+  {
+    isPresent: (sampling) => sampling.temperature !== undefined,
+    isKnownUnsupported: (supportScope) => isTemperatureKnownUnsupported(supportScope),
+    remember: (supportScope) => markTemperatureUnsupported(supportScope),
+    wasRejected: isUnsupportedTemperatureError,
+    strip: withoutTemperature,
+  },
+];
+
 const withLowReasoningEffort = (model: string, sampling: ChatSamplingParams): ChatSamplingParams => ({
   ...sampling,
   reasoning_effort: normalizeOpenAIReasoningEffort(model, "low"),
@@ -232,29 +288,47 @@ const readCompletionStream = async function* (
   return { usage, sawText, finishReason };
 };
 
-// Runs a chat.completions create, retrying once without reasoning_effort if the
-// model rejects the normalized value. The (model, effort) pair is remembered so
-// the failed round-trip is paid at most once — and so a rejected effort never
-// strips a different, supported effort on a later call to the same model.
-const createChatCompletionWithReasoningFallback = async <T>(
-  model: string,
+/**
+ * Runs a chat.completions create, reconciling the requested sampling params with
+ * what the configured endpoint actually accepts. Any param already known-rejected
+ * for this endpoint/model/key scope is dropped before the first attempt, so the
+ * wasted round-trip is paid at most once per scope; a rejection seen at runtime is
+ * remembered and the call retried without that param.
+ *
+ * Support is learned from the API's own response rather than inferred from the
+ * model id, and the support scope includes `openai-compatible` endpoint identity
+ * so one backend cannot suppress params for another backend using the same model
+ * string.
+ *
+ * A single request can be rejected for more than one param, so the retry budget is
+ * one attempt per strippable param — bounded by that count, never a loop that runs
+ * while the API keeps complaining. Anything not attributable to a param we sent is
+ * rethrown untouched.
+ */
+export const createChatCompletionWithSamplingFallback = async <T>(
+  supportCacheKey: string,
   sampling: ChatSamplingParams,
   create: (sampling: ChatSamplingParams) => Promise<T>,
 ): Promise<T> => {
-  const effort = sampling.reasoning_effort;
-  const initial =
-    effort !== undefined && isReasoningEffortKnownUnsupported(model, effort)
-      ? withoutReasoningEffort(sampling)
-      : sampling;
-  try {
-    return await create(initial);
-  } catch (error) {
-    if (initial.reasoning_effort === undefined || !isUnsupportedReasoningEffortError(error)) {
-      throw error;
+  let attempted = STRIPPABLE_SAMPLING_PARAMS.reduce(
+    (current, param) => (param.isKnownUnsupported(supportCacheKey, current) ? param.strip(current) : current),
+    sampling,
+  );
+  for (let retriesLeft = STRIPPABLE_SAMPLING_PARAMS.length; retriesLeft > 0; retriesLeft -= 1) {
+    try {
+      return await create(attempted);
+    } catch (error) {
+      const rejected = STRIPPABLE_SAMPLING_PARAMS.find(
+        (param) => param.isPresent(attempted) && param.wasRejected(error),
+      );
+      if (!rejected) {
+        throw error;
+      }
+      rejected.remember(supportCacheKey, attempted);
+      attempted = rejected.strip(attempted);
     }
-    markReasoningEffortUnsupported(model, initial.reasoning_effort);
-    return create(withoutReasoningEffort(initial));
   }
+  return create(attempted);
 };
 
 export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
@@ -290,8 +364,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         ? this.client.chat.completions.create(request, { signal: input.signal })
         : this.client.chat.completions.create(request)) as Promise<OpenAIChatCompletionResponse>;
     };
-    let response = await createChatCompletionWithReasoningFallback(
-      this.config.model,
+    let response = await createChatCompletionWithSamplingFallback(
+      samplingSupportCacheKey(this.config),
       sampling,
       createCompletion,
     );
@@ -300,8 +374,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
       ? lowReasoningRetrySampling(this.config.model, sampling)
       : null;
     if (retrySampling) {
-      response = await createChatCompletionWithReasoningFallback(
-        this.config.model,
+      response = await createChatCompletionWithSamplingFallback(
+        samplingSupportCacheKey(this.config),
         retrySampling,
         createCompletion,
       );
@@ -334,8 +408,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
         : client.chat.completions.create(request)) as Promise<AsyncIterable<OpenAIChatCompletionChunk>>;
     };
     return streamWithUsage(async function* () {
-      const stream = await createChatCompletionWithReasoningFallback(
-        config.model,
+      const stream = await createChatCompletionWithSamplingFallback(
+        samplingSupportCacheKey(config),
         sampling,
         createStream,
       );
@@ -346,8 +420,8 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
           : null;
       if (retrySampling) {
         const firstUsage = result.usage;
-        const retryStream = await createChatCompletionWithReasoningFallback(
-          config.model,
+        const retryStream = await createChatCompletionWithSamplingFallback(
+          samplingSupportCacheKey(config),
           retrySampling,
           createStream,
         );

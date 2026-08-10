@@ -11,7 +11,12 @@ import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import type { TextGenerationClient } from "../../shared/infra/llm/providerTypes.js";
 
-import { DirectiveSteeringService, type DirectiveSteeringPort } from "./directiveSteeringService.js";
+import { reportContextualMatchUnavailable } from "./contextualMatchLogging.js";
+import {
+  DirectiveSteeringService,
+  type DirectiveSteeringLogger,
+  type DirectiveSteeringPort,
+} from "./directiveSteeringService.js";
 import type { Directive } from "./domain.js";
 
 /**
@@ -19,10 +24,17 @@ import type { Directive } from "./domain.js";
  * matcher; adds the probabilistic contextual matcher when a text-generation
  * client is supplied. When the standing set has no contextual directives, the
  * probabilistic matcher makes no model call.
+ *
+ * The contextual half is optional at runtime as well as at construction: when its
+ * model call fails the matcher yields no contextual matches and the turn proceeds
+ * on the deterministic ones. The matcher carries no turn identity, so only the
+ * failure itself is logged here; workspace-scoped reporting belongs to the
+ * per-turn construction sites.
  */
 export const createDirectiveMatcher = (input: {
   textGenerationClient?: TextGenerationClient;
   confidenceThreshold?: number;
+  logger?: DirectiveSteeringLogger;
 }): DirectiveMatcherPort => {
   const alwaysMatch = new AlwaysMatchDirectiveMatcher();
   if (!input.textGenerationClient) {
@@ -35,6 +47,10 @@ export const createDirectiveMatcher = (input: {
         systemPrompt: loadPromptTemplate("chat/directive-match.md"),
       }),
       confidenceThreshold: input.confidenceThreshold ?? DIRECTIVES_BEHAVIOR.contextualMatchConfidenceThreshold,
+      onMatchUnavailable: reportContextualMatchUnavailable({
+        ...(input.logger ? { logger: input.logger } : {}),
+        source: "model_gateway",
+      }),
     }),
   ]);
 };

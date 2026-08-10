@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useContext, useMemo, useState } from 'react'
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
@@ -111,6 +111,32 @@ export function ChipTypeaheadPlugin({
   const [query, setQuery] = useState<string | null>(null)
   // Which prefix opened the menu: `@` inserts a variable or a flow target, `#` inserts a skill.
   const [trigger, setTrigger] = useState<'@' | '#'>('@')
+
+  // The menu's DOM host, in the document only while the menu is open.
+  //
+  // That lifecycle is load-bearing rather than housekeeping. A modal surface freezes the
+  // accessibility tree when it opens: it stamps `aria-hidden="true"` once on every `document.body`
+  // child outside itself, and watches for nothing that arrives later. Lexical builds its menu
+  // anchor during this plugin's first render and re-attaches it only while it is disconnected, so
+  // an anchor already sitting in the body when a modal opens carries that stamp for the life of
+  // the modal — the menu draws and clicks, yet no assistive technology (or role-based query) can
+  // see it. Entering the document on open puts the anchor in after the sweep, so nothing stamps
+  // it. Keeping the host a `body` child is equally deliberate: Lexical places the anchor with
+  // `position: absolute` in document coordinates, which only lands correctly while its containing
+  // block is the initial one, so the host must stay outside any positioned or transformed subtree.
+  const [menuHost] = useState<HTMLDivElement | null>(() =>
+    typeof document === 'undefined' ? null : document.createElement('div'),
+  )
+  const attachMenuHost = useCallback(() => {
+    if (menuHost && !menuHost.isConnected) {
+      document.body.append(menuHost)
+    }
+  }, [menuHost])
+  const detachMenuHost = useCallback(() => {
+    menuHost?.remove()
+  }, [menuHost])
+  // A menu still open at unmount would otherwise leave its host behind.
+  useEffect(() => detachMenuHost, [detachMenuHost])
   // Custom trigger so names with underscores keep the menu open (the default matcher treats "_"
   // as a word boundary and cancels the popover), and so both `@` and `#` open it.
   const triggerFn = useCallback((text: string) => {
@@ -354,11 +380,16 @@ export function ChipTypeaheadPlugin({
       onSelectOption={onSelectOption}
       triggerFn={triggerFn}
       options={options}
+      // Naming a host is what keeps Lexical from appending the anchor to `document.body` on its
+      // own during the first render, which is the moment the menu cannot afford to be there.
+      parent={menuHost ?? undefined}
+      onOpen={attachMenuHost}
+      onClose={detachMenuHost}
       menuRenderFn={(anchorElementRef, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) =>
         anchorElementRef.current && options.length > 0
           ? createPortal(
               <ul
-                // The menu is portalled to the document body, so inside a modal dialog it has to
+                // The menu is portalled into a host at the document body, so inside a modal dialog it has to
                 // opt back into pointer events and out-stack the dialog's layer. `relative` is
                 // load-bearing: z-index only applies to a positioned element.
                 className="pointer-events-auto relative z-[60] max-h-60 min-w-52 overflow-auto rounded-md border border-border bg-popover p-1 text-sm text-popover-foreground shadow-md"

@@ -22,8 +22,8 @@ const HOW_IT_WORKS = [
   },
   {
     icon: MessageCircle,
-    title: "Start chatting",
-    description: "Your assistant is ready to answer questions in minutes.",
+    title: "Put it in front of people",
+    description: "Your agent answers from your site in minutes. Add rules and routines when you want it to act.",
   },
 ];
 

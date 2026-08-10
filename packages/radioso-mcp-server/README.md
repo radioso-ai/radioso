@@ -1,18 +1,18 @@
 # Radioso MCP Server
 
-MCP server package for the per-agent converse surface and workspace-scoped Radioso reads and writes.
+MCP server package that lets an MCP client talk to a Radioso agent through its turn loop, and read or write the workspace documents that agent answers from.
 
 ## What It Does
 
 The package connects to an existing Radioso deployment over its public HTTP API and exposes two surfaces.
 
-**Agent converse surface.** A client talks to one agent through that agent's turn loop, using a per-agent converse grant. Tools:
+**Agent converse surface.** A client talks to one agent through that agent's turn loop, using a per-agent converse grant. The agent applies its own persona, the directives that steer it, and any routine carrying the conversation across turns, so an MCP client reaches it through the same loop as every other channel. Tools:
 
 - `ask_agent` for a full agent reply (persona, directives, routines, history)
 - `answer_grounded` over the bound agent's retrieval settings
 - the agent's documents as read-only MCP resources
 
-**Workspace document tools.** Retrieval-first tools scoped to a whole workspace, using a workspace API token:
+**Workspace document tools.** Tools scoped to a whole workspace rather than to one agent, using a workspace API token. These manage and query the material an agent answers from:
 
 - grounded answers with citations
 - document listing, lookup, and search
@@ -234,6 +234,8 @@ If `RADIOSO_MCP_SIGNING_SECRET` is omitted in stdio mode, the package uses the r
 If you want stdio-originated `answer_grounded` traffic to be labeled as `MCP` in Radioso history, explicitly set `RADIOSO_MCP_SIGNING_SECRET` in stdio mode to the same non-default secret the backend is using.
 
 ## Available Tools
+
+A converse grant carries `ask_agent`, `answer_grounded`, and the agent's documents as read-only resources. A workspace API token carries the catalog below.
 
 - `describe_capabilities`
 - `list_documents`

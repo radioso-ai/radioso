@@ -24,6 +24,8 @@ After the app opens, sign in or create an account. Radioso creates your first wo
 
 To add content, open Documents and either import a file or add inline markdown. Once processing finishes, open Chat and ask a question about the material you loaded.
 
+Answering is the first thing an agent does, not the last. Once the first answer looks right, open the agent's settings to add a directive that steers how it behaves, a skill it can act with, or a routine that carries a request across several turns.
+
 For the fastest first run, use the built-in sample docs, wait for them to finish processing, and ask one of the suggested questions.`,
   },
   {

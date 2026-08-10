@@ -77,7 +77,7 @@ export function ApiChannelCard({ workspaceId }: { workspaceId: string | null | u
       id="api-channel"
       icon={<Code2 className="h-5 w-5 text-primary" />}
       title="API"
-      description="Upload documents and ask questions from server-side code or scripts."
+      description="Talk to this agent, manage its documents, and author its routines from server-side code or scripts."
     >
       <div className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">

@@ -1,8 +1,9 @@
 # @radioso/docs-importer
 
-Imports the documentation portal into a Radioso workspace so an agent can answer
-questions about Radioso itself. Reads the repo's own sources — no deployed docs
-site required — and upserts them through the public REST API.
+Imports the documentation portal into a Radioso workspace, so an agent working on
+Radioso has the product's own documentation as grounding. Reads the repo's own
+sources — no deployed docs site required — and upserts them through the public
+REST API.
 
 ## Sources
 

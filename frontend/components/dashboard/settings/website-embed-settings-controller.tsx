@@ -39,9 +39,9 @@ type WebsiteEmbedSettingsControllerProps = {
 }
 
 const COPY_FIELDS = [
-  ['publicChatSubtitle', 'Header subtitle', 'Ask questions and get AI-powered answers'],
+  ['publicChatSubtitle', 'Header subtitle', 'Answers, actions, and a person when you need one'],
   ['publicChatEmptyTitle', 'Empty-state title', 'Start a conversation'],
-  ['publicChatEmptyMessage', 'Empty-state message', 'Ask a question and get an AI-powered answer.'],
+  ['publicChatEmptyMessage', 'Empty-state message', 'Tell me how I can help.'],
   ['startPrompt', 'Composer placeholder', 'Ask a question...'],
   ['publicChatNewChatLabel', 'New chat button', 'Clear chat'],
   ['publicChatContactHumanLabel', 'Contact-human button', 'Talk to a human'],

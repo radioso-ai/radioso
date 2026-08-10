@@ -23,6 +23,8 @@ const navigation: NavSection[] = [
     title: 'Why Radioso',
     items: [
       { title: 'Overview', href: '/why-radioso' },
+      { title: 'Guided autonomy', href: '/why-radioso/guided-autonomy' },
+      { title: 'What agents can do', href: '/why-radioso/capabilities' },
       { title: 'Grounded answers', href: '/why-radioso/grounded-answers' },
       { title: 'Use cases', href: '/why-radioso/use-cases' },
     ],

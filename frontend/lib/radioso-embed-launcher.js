@@ -57,7 +57,7 @@
       embeddedChatLauncherRequiredMessage: 'Este chat debe abrirse desde el script del botón.',
       embeddedChatStartingMessage: 'Invocando a {name}...',
       publicChatEmptyTitle: 'Inicia una conversación',
-      publicChatEmptyMessage: 'Haz una pregunta y obtén una respuesta con IA.',
+      publicChatEmptyMessage: 'Dime en qué puedo ayudarte.',
       startPrompt: 'Haz una pregunta...',
       publicChatUnavailableTitle: 'Chat no disponible',
       publicChatUnavailableMessage:
@@ -84,7 +84,7 @@
       embeddedChatLauncherRequiredMessage: 'Ce chat doit être ouvert depuis le script du bouton.',
       embeddedChatStartingMessage: 'Connexion à {name}...',
       publicChatEmptyTitle: 'Commencer une conversation',
-      publicChatEmptyMessage: "Posez une question et obtenez une réponse alimentée par l'IA.",
+      publicChatEmptyMessage: 'Dites-moi comment je peux vous aider.',
       startPrompt: 'Posez une question...',
       publicChatUnavailableTitle: 'Chat indisponible',
       publicChatUnavailableMessage:
@@ -111,7 +111,7 @@
       embeddedChatLauncherRequiredMessage: 'Dieser Chat muss über das Schaltflächen-Skript geöffnet werden.',
       embeddedChatStartingMessage: 'Verbinde mit {name}...',
       publicChatEmptyTitle: 'Gespräch beginnen',
-      publicChatEmptyMessage: 'Stellen Sie eine Frage und erhalten Sie eine KI-Antwort.',
+      publicChatEmptyMessage: 'Sagen Sie mir, wie ich Ihnen helfen kann.',
       startPrompt: 'Frage stellen...',
       publicChatUnavailableTitle: 'Chat nicht verfügbar',
       publicChatUnavailableMessage:
@@ -138,7 +138,7 @@
       embeddedChatLauncherRequiredMessage: 'Questa chat deve essere aperta dallo script del pulsante.',
       embeddedChatStartingMessage: 'Connessione a {name}...',
       publicChatEmptyTitle: 'Inizia una conversazione',
-      publicChatEmptyMessage: "Fai una domanda e ottieni una risposta basata sull'IA.",
+      publicChatEmptyMessage: 'Dimmi come posso aiutarti.',
       startPrompt: 'Fai una domanda...',
       publicChatUnavailableTitle: 'Chat non disponibile',
       publicChatUnavailableMessage:
@@ -165,7 +165,7 @@
       embeddedChatLauncherRequiredMessage: 'Este chat deve ser aberto pelo script do botão.',
       embeddedChatStartingMessage: 'Conectando a {name}...',
       publicChatEmptyTitle: 'Iniciar uma conversa',
-      publicChatEmptyMessage: 'Faça uma pergunta e receba uma resposta com IA.',
+      publicChatEmptyMessage: 'Diga-me como posso ajudar.',
       startPrompt: 'Faça uma pergunta...',
       publicChatUnavailableTitle: 'Chat indisponível',
       publicChatUnavailableMessage:
@@ -192,7 +192,7 @@
       embeddedChatLauncherRequiredMessage: 'Deze chat moet worden geopend via het knopscript.',
       embeddedChatStartingMessage: 'Verbinding maken met {name}...',
       publicChatEmptyTitle: 'Een gesprek starten',
-      publicChatEmptyMessage: 'Stel een vraag en krijg een AI-antwoord.',
+      publicChatEmptyMessage: 'Vertel me waarmee ik je kan helpen.',
       startPrompt: 'Stel een vraag...',
       publicChatUnavailableTitle: 'Chat niet beschikbaar',
       publicChatUnavailableMessage:
@@ -219,7 +219,7 @@
       embeddedChatLauncherRequiredMessage: 'Ten czat musi zostać otwarty ze skryptu przycisku.',
       embeddedChatStartingMessage: 'Łączenie z {name}...',
       publicChatEmptyTitle: 'Rozpocznij rozmowę',
-      publicChatEmptyMessage: 'Zadaj pytanie i uzyskaj odpowiedź z AI.',
+      publicChatEmptyMessage: 'Powiedz, jak mogę pomóc.',
       startPrompt: 'Zadaj pytanie...',
       publicChatUnavailableTitle: 'Czat niedostępny',
       publicChatUnavailableMessage:
@@ -246,7 +246,7 @@
       embeddedChatLauncherRequiredMessage: '必须通过按钮脚本打开此聊天。',
       embeddedChatStartingMessage: '正在召唤 {name}...',
       publicChatEmptyTitle: '开始对话',
-      publicChatEmptyMessage: '提出问题，获取 AI 答案。',
+      publicChatEmptyMessage: '告诉我可以为您做些什么。',
       startPrompt: '提出问题...',
       publicChatUnavailableTitle: '聊天不可用',
       publicChatUnavailableMessage: '此聊天链接已失效。请联系工作区管理员获取访问权限。',
@@ -272,7 +272,7 @@
       embeddedChatLauncherRequiredMessage: 'このチャットはボタンのスクリプトから開く必要があります。',
       embeddedChatStartingMessage: '{name} に接続中...',
       publicChatEmptyTitle: '会話を始める',
-      publicChatEmptyMessage: '質問してAIの回答を受け取りましょう。',
+      publicChatEmptyMessage: 'ご用件をお聞かせください。',
       startPrompt: '質問を入力...',
       publicChatUnavailableTitle: 'チャットを利用できません',
       publicChatUnavailableMessage:
@@ -299,7 +299,7 @@
       embeddedChatLauncherRequiredMessage: 'Этот чат должен открываться скриптом кнопки.',
       embeddedChatStartingMessage: 'Подключение к {name}...',
       publicChatEmptyTitle: 'Начать разговор',
-      publicChatEmptyMessage: 'Задайте вопрос и получите ответ ИИ.',
+      publicChatEmptyMessage: 'Расскажите, чем я могу помочь.',
       startPrompt: 'Задайте вопрос...',
       publicChatUnavailableTitle: 'Чат недоступен',
       publicChatUnavailableMessage:

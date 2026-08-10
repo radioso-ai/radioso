@@ -1,7 +1,7 @@
 {
   "name": "@radioso/typescript-sdk",
   "version": "0.2.1",
-  "description": "First-party TypeScript SDK for the Radioso context platform.",
+  "description": "First-party TypeScript SDK for Radioso agents: chat, directives, routines, skills, and the documents they answer from.",
   "license": "Apache-2.0",
   "homepage": "https://docs.radioso.ai/sdk/typescript-getting-started",
   "keywords": [

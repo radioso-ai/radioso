@@ -89,7 +89,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   embeddedChatStartingMessage: 'Summoning {name}...',
   publicChatSubtitle: '',
   publicChatEmptyTitle: 'Start a conversation',
-  publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
+  publicChatEmptyMessage: 'Tell me how I can help.',
   startPrompt: 'Ask a question...',
   publicChatUnavailableTitle: 'Chat Unavailable',
   publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',

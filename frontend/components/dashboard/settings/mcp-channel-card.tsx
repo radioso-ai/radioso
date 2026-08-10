@@ -186,8 +186,9 @@ export function McpChannelCard({ workspaceId }: { workspaceId: string | null | u
     >
       <div className="space-y-5">
         <p className="text-sm text-muted-foreground">
-          MCP (Model Context Protocol) is an open standard. Compatible AI clients can search your documents and
-          ask grounded questions through a single connection — no custom integration code on your side.
+          MCP (Model Context Protocol) is an open standard. Compatible AI clients can talk to this agent through its
+          full turn loop — persona, directives, and routines included — or query its documents directly, through a
+          single connection with no custom integration code on your side.
         </p>
 
         <div className="flex items-center">

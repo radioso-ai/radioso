@@ -1005,7 +1005,7 @@ export function WorkspaceAssistantChannelsTab({
               <SettingsRow
                 icon={<Globe className="h-5 w-5 text-primary" />}
                 title={CHANNEL_TITLES['website-embed']}
-                description="Add a chat button to your website so visitors can ask questions."
+                description="Add a chat button to your website so visitors can talk to your agent from any page."
                 status={anonSettings?.websiteEmbedEnabled ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'muted' }}
                 onClick={() => setSelectedChannel('website-embed')}
               />

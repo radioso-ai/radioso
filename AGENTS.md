@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Radioso is a self-hosted context platform for grounded assistants. It provides document ingestion, retrieval, assistant chat, website embed, a REST API, a first-party TypeScript SDK, and an MCP server.
+Radioso is a self-hosted platform for conversational agents that answer, act, and hand off — inside rules the operator authors. An agent answers grounded in the workspace's own documents, dispatches skills and runs multi-turn routines to carry a request end to end, and escalates to a person when a turn calls for one. You reach an agent through the web app, a website embed, the REST API, a first-party TypeScript SDK, or an MCP server; document ingestion and retrieval run behind those surfaces.
 
 This file is hand-maintained. Do not regenerate it from Speckit plans, append "recent changes", paste run logs, or add feature-specific scratch notes here. Use `specs/`, `docs/`, or `.context/` for work-in-progress context.
 

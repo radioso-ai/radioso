@@ -56,8 +56,8 @@ required fields are missing (`webhookSkillExecutor` returns `missing_input`).
 Skill **selection** stays authored and deterministic. A matched directive's binding picks
 the skill; explicit host metadata overrides it. The model never chooses, vetoes, or
 substitutes a skill. It gets one job: given one already-selected skill's declared fields,
-produce values. Applicability can be folded into the same generation, with the model answering
-`should_run`; applicability is excluded here because selection is already settled.
+produce values. Parlant folds applicability into the same generation and lets the model
+answer `should_run`; applicability is excluded here because selection is already settled.
 
 Routine `skill` steps keep `inputBindings` as their argument source.
 

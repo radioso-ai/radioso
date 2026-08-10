@@ -35,6 +35,10 @@ const stableIdArb = fc
   )
   .map(([first, rest]) => `${first}${rest.join('')}`)
   .filter((value) => !['ctx', 'in', 'out', 'mode', 'done', 'handoff'].includes(value))
+// A skill refId written without a binding suffix, where the sentence around it is what ends the
+// token. A trailing `.` is sentence punctuation there, not a name — the grammar hands it back to
+// the prose — so it is not a shape this arbitrary should claim round-trips.
+const skillRefIdArb = stableIdArb.filter((value) => !/[.,;:!?]$/u.test(value))
 const textArb = fc
   .array(fc.constantFrom(...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '.split('')), { minLength: 1, maxLength: 30 })
   .map((chars) => chars.join('').replace(/\s+/g, ' ').trim())
@@ -280,6 +284,61 @@ describe('routine markdown properties', () => {
         },
       ),
       { seed, numRuns: 75 },
+    )
+  })
+
+  // Skill refIds carry the same `.`/`-` punctuation as route ids, and the mention branch has to
+  // decide where the name ends before it can find a `[bindings]` suffix. Fuzzing the refId is what
+  // catches the two ends of that decision disagreeing.
+  it('round-trips a #mention with a punctuated refId', () => {
+    fc.assert(
+      fc.property(skillRefIdArb, textArb, (refId, trailing) => {
+        const paragraphs: ProseParagraph[] = [{
+          segments: [
+            { kind: 'text', text: 'Refund with ' },
+            { kind: 'chip', chipKind: 'skill', refId, label: refId },
+            { kind: 'text', text: ` ${trailing}.` },
+          ],
+        }]
+        const serialized = serializeProseDoc({ name: 'Mentions', trigger: 'mention', variables: [], paragraphs })
+
+        const parsed = parse(serialized)
+        expect(parsed.ok).toBe(true)
+        if (!parsed.ok) return
+        expect(structuralShape(parsed.doc.paragraphs)).toEqual(structuralShape(paragraphs))
+      }),
+      { seed, numRuns: 200 },
+    )
+  })
+
+  // With a suffix the bracket ends the name, so every stable id survives — including the trailing
+  // punctuation the bare form gives back to the prose. Nothing inside the brackets may escape into
+  // the paragraph, so the slot stays a binding and never becomes a variable mention.
+  it('round-trips a #mention whose refId is followed by a binding suffix', () => {
+    fc.assert(
+      fc.property(stableIdArb, keyArb, keyArb, (refId, inputKey, slotKey) => {
+        const paragraphs: ProseParagraph[] = [{
+          segments: [
+            { kind: 'text', text: 'Refund with ' },
+            {
+              kind: 'chip',
+              chipKind: 'skill',
+              refId,
+              label: refId,
+              inputBindings: { [inputKey]: { kind: 'variableRef', ref: slotKey } },
+              outputAssignments: {},
+            },
+            { kind: 'text', text: ' today.' },
+          ],
+        }]
+        const serialized = serializeProseDoc({ name: 'Mentions', trigger: 'mention', variables: [], paragraphs })
+
+        const parsed = parse(serialized)
+        expect(parsed.ok).toBe(true)
+        if (!parsed.ok) return
+        expect(structuralShape(parsed.doc.paragraphs)).toEqual(structuralShape(paragraphs))
+      }),
+      { seed, numRuns: 200 },
     )
   })
 

@@ -21,6 +21,7 @@ export {
   serializeProseDoc,
   SLOT_FILLED_GUARD_REF,
   slugifyVariableKey,
+  tokenForChip,
 } from '@radioso/routine-markdown'
 
 export type {

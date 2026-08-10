@@ -1,9 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { Pencil, Plus, ScrollText, Trash2 } from 'lucide-react'
 
+import { DirectiveReplacesField } from '@/components/dashboard/settings/directive-replaces-field'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
+import { mentionsSkill, SkillMentionInput, type SkillMentionOption } from '@/components/dashboard/settings/skill-mention-input'
+import { CapabilityPicker } from '@/components/dashboard/settings/skills/CapabilityPicker'
+import { SkillForm } from '@/components/dashboard/settings/skills/SkillForm'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,15 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import {
@@ -36,32 +32,127 @@ import {
   type DirectiveCreateRequest,
   type DirectiveUpdateRequest,
 } from '@/lib/api'
+import {
+  agentSkillsApi,
+  type AgentSkill,
+  type AgentSkillCapabilityId,
+  type AgentSkillCreateInput,
+  type SkillCapabilityDescriptor,
+} from '@/lib/api-skills'
+import { normalizeSkillName } from '@/lib/external-skills'
+import { cn } from '@/lib/utils'
 
 type DirectiveFormState = {
   name: string
   conditionKind: DirectiveCondition['kind']
   conditionDescription: string
+  // Named `action` because that is the API field; the dialog labels it Instruction.
   action: string
+  // The skills the Instruction field carries as chips, exactly as the editor reports them. The chip
+  // is the binding, not a second control beside it — and nothing re-reads the action text for
+  // mentions, so a `#word` the author merely wrote stays prose. A directive hands off to one
+  // skill, so a second chip is an authoring error the form reports rather than silently drops.
+  actionSkillNames: string[]
   priority: string
   replaces: string[]
 }
 
-export const DIRECTIVE_PRIORITY = { min: 0, max: 100 } as const
+// `default` mirrors AUTHORED_DIRECTIVE_STEERING_DEFAULT_PRIORITY in
+// backend/src/modules/agents/authoredDirectiveMapper.ts. The directives API does not report it, so
+// the priority scale would have to invent a number without this copy.
+export const DIRECTIVE_PRIORITY = { min: 0, max: 100, default: 50 } as const
+
+// A directive binds a skill that can answer the turn it claims: an external MCP tool, or a
+// retrieval skill staged as a lookup. Mirrors what the API accepts, so an offered skill is
+// never rejected on save.
+const BINDABLE_STORED_KINDS = new Set(['external_mcp', 'retrieve'])
+const DIRECTIVE_SKILL_EMPTY_MESSAGE = 'No skill can answer a turn yet. A directive can draw on an MCP tool, or a knowledge lookup the agent is allowed to pick.'
+const DIRECTIVE_CAPABILITY_UNAVAILABLE_REASON = 'Not available for directives.'
+// A capability that settles with outputs instead of reply text cannot back a directive, but it is
+// not useless — it is how routine steps act. Point at the surface that accepts it rather than
+// refusing without a destination.
+const DIRECTIVE_CAPABILITY_ROUTINE_REASON = 'Acts instead of replying. Use it in a routine step.'
+const DIRECTIVE_CAPABILITY_PICKER_DESCRIPTION =
+  'Choose a tool or knowledge lookup the reply draws on. Skills that send or post a message belong in a routine step instead.'
+
+const CONDITION_CHOICES = [
+  {
+    kind: 'always',
+    title: 'Always',
+    description: 'On every turn. Use this to shape how the agent always replies.',
+  },
+  {
+    kind: 'contextual',
+    title: 'In a specific situation',
+    description: 'Only on turns where a situation you describe is true.',
+  },
+] as const satisfies ReadonlyArray<{ kind: DirectiveCondition['kind']; title: string; description: string }>
+
+const isBindableSkill = (skill: AgentSkill): boolean =>
+  skill.enabled
+  && skill.invocationMode === 'agent_selectable'
+  && BINDABLE_STORED_KINDS.has(skill.storedKind)
+
+// The capabilities that can produce a bindable skill. Same rule as `isBindableSkill`, read one
+// step earlier: a capability that cannot be agent-selectable would author a skill this surface
+// then refuses.
+const canAuthorBindableSkill = (capability: SkillCapabilityDescriptor): boolean =>
+  BINDABLE_STORED_KINDS.has(capability.storedKind)
+  && capability.supportedInvocationModes.includes('agent_selectable')
+
+// Read structurally rather than from a list of capability names, so a capability added later gets
+// the right answer without this file learning about it.
+const directiveUnavailableReason = (capability: SkillCapabilityDescriptor): string =>
+  capability.supportedInvocationModes.includes('routine_named')
+    ? DIRECTIVE_CAPABILITY_ROUTINE_REASON
+    : DIRECTIVE_CAPABILITY_UNAVAILABLE_REASON
+
+// Which control an error belongs to, so the dialog can mark that control invalid and stay quiet
+// until the operator has either written the field or asked to save.
+type DirectiveFormField = 'name' | 'situation' | 'instruction' | 'priority'
+type DirectiveFormError = { field: DirectiveFormField; message: string }
+
+// The directive is mid-authoring while its skill is created: the chip is only inserted once the
+// promise resolves with the name the API actually assigned.
+type PendingSkillCreation = {
+  typedName: string
+  resolve: (skillName: string | null) => void
+}
 
 const emptyForm: DirectiveFormState = {
   name: '',
   conditionKind: 'always',
   conditionDescription: '',
   action: '',
+  actionSkillNames: [],
   priority: '',
   replaces: [],
+}
+
+// The binding names the one mention the stored action is known to carry. Everything else in the
+// text — including any other `#word` the author wrote — is prose.
+const recognizedMentions = (directive: Directive): string[] =>
+  directive.binding?.skillName ? [directive.binding.skillName] : []
+
+// A binding written through the API can name a skill the action text never mentions. Surface
+// it as a chip so the author can see and remove it, instead of editing around an invisible rule.
+//
+// The "is it already there?" question goes to the same reader that decides which mentions seed as
+// chips, so the two cannot disagree. The action is the instruction the model reads, so appending a
+// second copy of a mention the author already wrote corrupts it; skipping the append when the text
+// carries no mention loses the binding on the next save. Both failures land on a save the operator
+// sees as a no-op, and only one reader of the text can rule out both.
+const actionWithBinding = (action: string, skillName: string): string => {
+  if (!skillName || mentionsSkill(action, skillName)) return action
+  return `${action.trimEnd()} #${skillName}`.trim()
 }
 
 const directiveToForm = (directive: Directive): DirectiveFormState => ({
   name: directive.name,
   conditionKind: directive.condition.kind,
   conditionDescription: directive.condition.kind === 'contextual' ? directive.condition.description : '',
-  action: directive.action,
+  action: actionWithBinding(directive.action, directive.binding?.skillName ?? ''),
+  actionSkillNames: recognizedMentions(directive),
   priority: directive.priority == null ? '' : String(directive.priority),
   replaces: directive.excludes ?? [],
 })
@@ -82,10 +173,13 @@ const formToPayload = (form: DirectiveFormState): DirectiveCreateRequest => {
       : { kind: 'always' }
 
   const replaces = dedupeNames(form.replaces.map((name) => name.trim()).filter(Boolean))
+  const bindingSkillName = (form.actionSkillNames[0] ?? '').trim()
   const payload: DirectiveCreateRequest = {
     name: form.name.trim(),
     condition,
     action: form.action.trim(),
+    // Explicitly null when the chip is gone: an omitted binding keeps the stored one.
+    binding: bindingSkillName ? { kind: 'skill', skillName: bindingSkillName } : null,
     priority: parsePriority(form.priority),
   }
   if (replaces.length > 0) {
@@ -101,6 +195,7 @@ const directiveToPayload = (
   name: directive.name,
   condition: directive.condition,
   action: directive.action,
+  binding: directive.binding,
   priority: directive.priority,
   requiredCapabilities: directive.requiredCapabilities,
   dependsOn: directive.dependsOn,
@@ -200,33 +295,28 @@ function CoherenceResolver({
   )
 }
 
-function ReplaceToggle({
-  candidate,
-  checked,
-  onToggle,
-}: {
-  candidate: { name: string; description: string | null }
-  checked: boolean
-  onToggle: (checked: boolean) => void
-}) {
-  const switchId = `directive-replace-${candidate.name}`
+// What the numbers actually mean on this agent, read off the built-ins the API returned rather
+// than a hard-coded ladder that would drift the moment a built-in is re-ranked.
+function PriorityScale({ builtIns }: { builtIns: BuiltInDirective[] }) {
+  const rows = useMemo(() => {
+    const ranked = builtIns
+      .filter((directive): directive is BuiltInDirective & { priority: number } => directive.priority != null)
+      .map((directive) => ({ priority: directive.priority, label: directive.name }))
+    return [...ranked, { priority: DIRECTIVE_PRIORITY.default, label: 'default for your directives' }]
+      .sort((first, second) => second.priority - first.priority)
+  }, [builtIns])
+
+  if (builtIns.length === 0) return null
+
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 space-y-0.5">
-        <Label htmlFor={switchId} className="text-sm font-medium text-foreground">
-          {candidate.name}
-        </Label>
-        {candidate.description ? (
-          <p className="text-xs text-muted-foreground">{candidate.description}</p>
-        ) : null}
-      </div>
-      <Switch
-        id={switchId}
-        checked={checked}
-        onCheckedChange={onToggle}
-        aria-label={`Replace ${candidate.name}`}
-      />
-    </div>
+    <dl className="grid grid-cols-[2.5rem_1fr] gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+      {rows.map((row) => (
+        <Fragment key={`${row.priority}-${row.label}`}>
+          <dt className="tabular-nums">{row.priority}</dt>
+          <dd className="truncate">{row.label}</dd>
+        </Fragment>
+      ))}
+    </dl>
   )
 }
 
@@ -350,8 +440,50 @@ export function AssistantDirectivesSection({
   const [editingDirective, setEditingDirective] = useState<Directive | null>(null)
   const [deletingDirective, setDeletingDirective] = useState<Directive | null>(null)
   const [form, setForm] = useState<DirectiveFormState>(emptyForm)
+  // A dialog that reports "Name is required." before the operator has typed anything is scolding
+  // them for not having started. Errors wait for the field to be written or for a save attempt.
+  const [touchedFields, setTouchedFields] = useState<Partial<Record<DirectiveFormField, boolean>>>({})
+  const [hasAttemptedSave, setHasAttemptedSave] = useState(false)
+  const [agentSkills, setAgentSkills] = useState<AgentSkill[]>([])
+  const [skillLoadError, setSkillLoadError] = useState<string | null>(null)
+  // The agent whose skills `agentSkills` holds. It stays null while a fetch is outstanding and
+  // after one fails, which is what keeps a pending or failed load from reporting a valid
+  // directive as invalid — and, because it is compared against the current agent rather than
+  // latched, a later attempt can still succeed.
+  const [skillsAgentId, setSkillsAgentId] = useState<string | null>(null)
+  const skillsLoaded = skillsAgentId === agentId
+  // Null until the capability catalog is read; it is only needed to author a skill inline. It
+  // carries the agent it was read for, because this section is not remounted when the dashboard
+  // switches agents — an untagged catalog would keep offering the previous agent's capabilities.
+  const [skillCapabilities, setSkillCapabilities] = useState<
+    { agentId: string; capabilities: SkillCapabilityDescriptor[] } | null
+  >(null)
+  const [pendingSkillCreation, setPendingSkillCreation] = useState<PendingSkillCreation | null>(null)
+  const [creationCapabilityId, setCreationCapabilityId] = useState<AgentSkillCapabilityId | null>(null)
+  const [skillFormError, setSkillFormError] = useState<string | null>(null)
+  const [isCreatingSkill, setIsCreatingSkill] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const bindableSkills = useMemo<SkillMentionOption[]>(
+    () => agentSkills
+      .filter(isBindableSkill)
+      .map((skill) => ({ skillName: skill.name, displayName: skill.name })),
+    [agentSkills],
+  )
+  const bindableCapabilities = useMemo(
+    () => (skillCapabilities?.agentId === agentId ? skillCapabilities.capabilities : []).filter(canAuthorBindableSkill),
+    [agentId, skillCapabilities],
+  )
+  const directiveCapabilities = useMemo(
+    () => (skillCapabilities?.agentId === agentId ? skillCapabilities.capabilities : []).map((capability) =>
+      // A kind that can never back a binding says so even when it also lacks a connection:
+      // "Needs connection" would promise that connecting unlocks it for directives.
+      canAuthorBindableSkill(capability)
+        ? capability
+        : { ...capability, available: false, unavailableReason: directiveUnavailableReason(capability) },
+    ),
+    [agentId, skillCapabilities],
+  )
   const supersededBuiltIns = useMemo(() => {
     const replacements = new Map<string, Directive>()
     for (const directive of directives) {
@@ -372,21 +504,70 @@ export function AssistantDirectivesSection({
     return { builtIns: builtInTargets, authored }
   }, [builtIns, directives, editingDirective])
 
-  const formError = useMemo(() => {
-    if (!form.name.trim()) return 'Name is required.'
-    if (!form.action.trim()) return 'Action is required.'
+  const formError = useMemo<DirectiveFormError | null>(() => {
+    if (!form.name.trim()) return { field: 'name', message: 'Name is required.' }
+    if (!form.action.trim()) return { field: 'instruction', message: 'Instruction is required.' }
     if (form.conditionKind === 'contextual' && !form.conditionDescription.trim()) {
-      return 'Contextual directives need a condition description.'
+      return { field: 'situation', message: 'Describe the situation this applies to.' }
+    }
+    // A directive hands the turn to one skill, so chips naming two different skills would leave
+    // the second one looking wired when only the first is. Repeating the same skill is one
+    // unambiguous binding — a sentence like "use it, and if that fails use it again" says the
+    // name twice and means it once, so it saves.
+    const mentioned = dedupeNames(form.actionSkillNames)
+    if (mentioned.length > 1) {
+      return {
+        field: 'instruction',
+        message: `A directive can draw on one skill. This instruction names ${mentioned.join(', ')}. Remove the chips for all but one.`,
+      }
+    }
+    // A bound skill can be disabled, renamed, or moved out of agent-selectable after the
+    // directive was written, and the API then rejects the binding. Say which skill is the
+    // problem here rather than surface a request failure. Skipped until the list loads: an
+    // unread or failed fetch must not block a directive that is fine.
+    if (skillsLoaded) {
+      const unbindable = mentioned.find((name) => !bindableSkills.some((skill) => skill.skillName === name))
+      if (unbindable) {
+        return {
+          field: 'instruction',
+          message: `No skill named ${unbindable} is available to bind. Remove the chip, or enable the skill and make it agent-selectable.`,
+        }
+      }
     }
     const trimmedPriority = form.priority.trim()
     if (trimmedPriority !== '') {
       const value = Number(trimmedPriority)
       if (!Number.isInteger(value) || value < DIRECTIVE_PRIORITY.min || value > DIRECTIVE_PRIORITY.max) {
-        return `Priority must be a whole number between ${DIRECTIVE_PRIORITY.min} and ${DIRECTIVE_PRIORITY.max}.`
+        return {
+          field: 'priority',
+          message: `Priority must be a whole number between ${DIRECTIVE_PRIORITY.min} and ${DIRECTIVE_PRIORITY.max}.`,
+        }
       }
     }
     return null
-  }, [form])
+  }, [form, bindableSkills, skillsLoaded])
+
+  // A field that already carries content is not being scolded before it is written: every error
+  // left on it is about what is there. That is what makes a reopened directive report a broken
+  // binding at once, while a blank new one stays quiet.
+  const fieldHasContent = (field: DirectiveFormField): boolean => {
+    switch (field) {
+      case 'name': return form.name.trim() !== ''
+      case 'situation': return form.conditionDescription.trim() !== ''
+      case 'instruction': return form.action.trim() !== '' || form.actionSkillNames.length > 0
+      case 'priority': return form.priority.trim() !== ''
+    }
+  }
+
+  const visibleFormError =
+    formError && (hasAttemptedSave || touchedFields[formError.field] || fieldHasContent(formError.field))
+      ? formError
+      : null
+  const invalidField = visibleFormError?.field ?? null
+
+  const markTouched = (field: DirectiveFormField) => {
+    setTouchedFields((current) => (current[field] ? current : { ...current, [field]: true }))
+  }
 
   useEffect(() => {
     let active = true
@@ -419,43 +600,118 @@ export function AssistantDirectivesSection({
     }
   }, [agentId])
 
-  const openCreateDialog = () => {
-    setEditingDirective(null)
-    setForm(emptyForm)
-    setError(null)
-    setDialogOpen(true)
-  }
-
-  const openEditDialog = (directive: Directive) => {
-    setEditingDirective(directive)
-    setForm(directiveToForm(directive))
-    setError(null)
-    setDialogOpen(true)
-  }
-
-  const openConditionalEditDialog = (directive: Directive) => {
-    setEditingDirective(directive)
-    setForm({
-      ...directiveToForm(directive),
-      conditionKind: 'contextual',
+  // The skills the Action field can offer. A failure here leaves the field working as plain
+  // text — a directive that only steers wording needs no skill at all. Opening or closing the
+  // editor re-attempts a fetch that has not landed, because the editor is where the answer is
+  // needed and one bad request must not disable binding validation for the rest of the session.
+  useEffect(() => {
+    if (skillsLoaded) return
+    let active = true
+    queueMicrotask(() => {
+      if (!active) return
+      setAgentSkills([])
+      setSkillLoadError(null)
+      void agentSkillsApi.listSkills(agentId)
+        .then((response) => {
+          if (!active) return
+          setAgentSkills(response.skills)
+          setSkillsAgentId(agentId)
+          setSkillLoadError(null)
+        })
+        .catch((loadError) => {
+          if (!active) return
+          setAgentSkills([])
+          setSkillLoadError(getApiErrorMessage(loadError, 'Could not load skills for this directive.'))
+        })
     })
+    return () => {
+      active = false
+    }
+  }, [agentId, dialogOpen, skillsLoaded])
+
+  // Authoring a skill inline needs the capability catalog, which nothing else on this section
+  // reads. It loads with the editing dialog so the section's own load stays one request, and
+  // reloads whenever it holds another agent's answer.
+  useEffect(() => {
+    if (!dialogOpen || skillCapabilities?.agentId === agentId) return
+    let active = true
+    void agentSkillsApi.getSkillCapabilities(agentId)
+      .then((response) => {
+        if (active) setSkillCapabilities({ agentId, capabilities: response.capabilities })
+      })
+      .catch(() => {
+        // No catalog means no inline authoring; the field still binds catalogued skills.
+        if (active) setSkillCapabilities({ agentId, capabilities: [] })
+      })
+    return () => {
+      active = false
+    }
+  }, [agentId, dialogOpen, skillCapabilities])
+
+  // Identity has to be stable: the mention menu rebuilds its options whenever this changes.
+  const requestSkillCreation = useCallback(
+    (typedName: string) =>
+      new Promise<string | null>((resolve) => {
+        setCreationCapabilityId(null)
+        setSkillFormError(null)
+        setPendingSkillCreation({ typedName, resolve })
+      }),
+    [],
+  )
+
+  const cancelSkillCreation = () => {
+    if (isCreatingSkill) return
+    pendingSkillCreation?.resolve(null)
+    setPendingSkillCreation(null)
+    setCreationCapabilityId(null)
+    setSkillFormError(null)
+  }
+
+  const createBoundSkill = async (input: AgentSkillCreateInput) => {
+    const pending = pendingSkillCreation
+    if (!pending) return
+    setIsCreatingSkill(true)
+    setSkillFormError(null)
+    try {
+      // Authored for a binding, so it is created bindable. The form's defaults are tuned for
+      // routine use, and a skill saved that way would go amber in the chip it was created for.
+      const { skill } = await agentSkillsApi.createSkill(agentId, {
+        ...input,
+        enabled: true,
+        invocationMode: 'agent_selectable',
+      })
+      setAgentSkills((current) => [skill, ...current])
+      setPendingSkillCreation(null)
+      setCreationCapabilityId(null)
+      pending.resolve(skill.name)
+    } catch (createError) {
+      setSkillFormError(getApiErrorMessage(createError, 'Failed to create skill.'))
+    } finally {
+      setIsCreatingSkill(false)
+    }
+  }
+
+  const openDialogWith = (nextForm: DirectiveFormState, directive: Directive | null) => {
+    setEditingDirective(directive)
+    setForm(nextForm)
     setError(null)
+    setTouchedFields({})
+    setHasAttemptedSave(false)
     setDialogOpen(true)
   }
+
+  const openCreateDialog = () => openDialogWith(emptyForm, null)
+
+  const openEditDialog = (directive: Directive) => openDialogWith(directiveToForm(directive), directive)
+
+  const openConditionalEditDialog = (directive: Directive) =>
+    openDialogWith({ ...directiveToForm(directive), conditionKind: 'contextual' }, directive)
 
   // The per-built-in "Override" button is a shortcut into the normal create
   // dialog with the built-in pre-selected in Replaces, so it reads as
   // "cancel this built-in and run mine instead" with everything else editable.
-  const openOverrideDialog = (directive: BuiltInDirective) => {
-    setEditingDirective(null)
-    setForm({
-      ...emptyForm,
-      name: overrideNameFor(directive.name),
-      replaces: [directive.name],
-    })
-    setError(null)
-    setDialogOpen(true)
-  }
+  const openOverrideDialog = (directive: BuiltInDirective) =>
+    openDialogWith({ ...emptyForm, name: overrideNameFor(directive.name), replaces: [directive.name] }, null)
 
   const toggleReplace = (name: string, checked: boolean) => {
     setForm((current) => ({
@@ -474,9 +730,14 @@ export function AssistantDirectivesSection({
 
   const closeDialog = () => {
     if (isSaving) return
+    pendingSkillCreation?.resolve(null)
+    setPendingSkillCreation(null)
+    setCreationCapabilityId(null)
     setDialogOpen(false)
     setEditingDirective(null)
     setForm(emptyForm)
+    setTouchedFields({})
+    setHasAttemptedSave(false)
   }
 
   const mergeSavedDirective = (savedDirective: Directive) => {
@@ -516,7 +777,12 @@ export function AssistantDirectivesSection({
   }
 
   const handleSubmit = async () => {
-    if (formError) return
+    // Save stays enabled while the form is invalid: a dead button with no stated reason leaves the
+    // operator guessing. Asking to save is what reveals the message.
+    if (formError) {
+      setHasAttemptedSave(true)
+      return
+    }
     const payload = formToPayload(form)
     const saveId = beginSave()
     setIsSaving(true)
@@ -532,6 +798,8 @@ export function AssistantDirectivesSection({
       setDialogOpen(false)
       setEditingDirective(null)
       setForm(emptyForm)
+      setTouchedFields({})
+      setHasAttemptedSave(false)
       markSaved()
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return
@@ -653,102 +921,117 @@ export function AssistantDirectivesSection({
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {editingDirective ? 'Edit directive' : 'Create directive'}
+              {editingDirective ? 'Edit directive' : 'New directive'}
             </DialogTitle>
             <DialogDescription>
-              Add a standing rule for this agent. Coherence checks are advisory and do not block saving.
+              A standing rule for this agent: when the conversation matches, the agent replies this way.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
+          <div className="space-y-5">
+            <div className="space-y-1.5">
               <Label htmlFor="directiveName">Name</Label>
               <Input
                 id="directiveName"
                 value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                aria-invalid={invalidField === 'name'}
+                onChange={(event) => {
+                  markTouched('name')
+                  setForm((current) => ({ ...current, name: event.target.value }))
+                }}
                 maxLength={120}
               />
             </div>
-            <div className="space-y-2">
-              <div className="space-y-2">
-                <Label htmlFor="directiveConditionKind">Condition</Label>
-                <Select
-                  value={form.conditionKind}
-                  onValueChange={(value) =>
-                    setForm((current) => ({ ...current, conditionKind: value as DirectiveCondition['kind'] }))
-                  }
-                >
-                  <SelectTrigger id="directiveConditionKind">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="always">Always</SelectItem>
-                    <SelectItem value="contextual">Contextual</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-1.5">
+              <Label>When this applies</Label>
+              <div role="radiogroup" aria-label="When this applies" className="grid gap-2 sm:grid-cols-2">
+                {CONDITION_CHOICES.map((choice) => {
+                  const isSelected = form.conditionKind === choice.kind
+                  return (
+                    <button
+                      key={choice.kind}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      onClick={() => setForm((current) => ({ ...current, conditionKind: choice.kind }))}
+                      className={cn(
+                        'rounded-md border p-3 text-left transition-colors',
+                        isSelected
+                          ? 'border-primary bg-muted/40'
+                          : 'border-border hover:border-primary/60 hover:bg-muted/30',
+                      )}
+                    >
+                      <span className="block text-sm font-medium text-foreground">{choice.title}</span>
+                      <span className="mt-1 block text-xs text-muted-foreground">{choice.description}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
             {form.conditionKind === 'contextual' ? (
-              <div className="space-y-2">
-                <Label htmlFor="directiveConditionDescription">Condition description</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="directiveConditionDescription">Situation</Label>
+                <p className="text-xs text-muted-foreground">
+                  Plain language, no keywords — the agent judges each turn against this description.
+                </p>
                 <Textarea
                   id="directiveConditionDescription"
                   value={form.conditionDescription}
-                  onChange={(event) =>
+                  placeholder="The visitor asks about refunds after the 30-day window"
+                  aria-invalid={invalidField === 'situation'}
+                  onChange={(event) => {
+                    markTouched('situation')
                     setForm((current) => ({ ...current, conditionDescription: event.target.value }))
-                  }
+                  }}
                   className="min-h-20"
                 />
               </div>
             ) : null}
-            <div className="space-y-2">
-              <Label htmlFor="directiveAction">Action</Label>
-              <Textarea
+            <div className="space-y-1.5">
+              <Label htmlFor="directiveAction">Instruction</Label>
+              <p className="text-xs text-muted-foreground">
+                How the agent should reply when this fires — a rule it follows, not a script it recites. Type #
+                to have it draw on a skill.
+              </p>
+              <SkillMentionInput
+                key={editingDirective?.id ?? 'new-directive'}
                 id="directiveAction"
+                ariaLabel="Instruction"
+                ariaInvalid={invalidField === 'instruction'}
+                placeholder="Answer in two sentences, then offer to connect them with support."
                 value={form.action}
-                onChange={(event) => setForm((current) => ({ ...current, action: event.target.value }))}
-                className="min-h-28"
+                recognizedSkillNames={editingDirective ? recognizedMentions(editingDirective) : []}
+                skills={bindableSkills}
+                skillMenuNotice={
+                  form.actionSkillNames[0]
+                    ? `The reply draws on ${form.actionSkillNames[0]}. Remove that chip to choose a different skill.`
+                    : null
+                }
+                skillMenuEmptyMessage={DIRECTIVE_SKILL_EMPTY_MESSAGE}
+                isSkillsLoading={!skillsLoaded && skillLoadError === null}
+                skillLoadError={skillLoadError}
+                onChange={(action) => setForm((current) => ({ ...current, action }))}
+                onSkillsChange={(skillNames) =>
+                  setForm((current) => ({ ...current, actionSkillNames: skillNames }))
+                }
+                onCreateSkill={bindableCapabilities.length > 0 ? requestSkillCreation : undefined}
               />
+              {skillLoadError ? <p className="text-xs text-destructive">{skillLoadError}</p> : null}
             </div>
-            {replaceCandidates.builtIns.length > 0 || replaceCandidates.authored.length > 0 ? (
-              <div className="space-y-2">
-                <Label>Replaces</Label>
-                <p className="text-xs text-muted-foreground">
-                  When this directive applies, the ones you select are cancelled and this one runs in their
-                  place. Outside its condition, they still apply as normal.
-                </p>
-                <div className="space-y-3 rounded-lg border border-border p-3">
-                  {replaceCandidates.builtIns.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Built-in behaviors</p>
-                      {replaceCandidates.builtIns.map((candidate) => (
-                        <ReplaceToggle
-                          key={candidate.name}
-                          candidate={candidate}
-                          checked={form.replaces.includes(candidate.name)}
-                          onToggle={(checked) => toggleReplace(candidate.name, checked)}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                  {replaceCandidates.authored.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-xs font-medium text-muted-foreground">Your other directives</p>
-                      {replaceCandidates.authored.map((candidate) => (
-                        <ReplaceToggle
-                          key={candidate.name}
-                          candidate={candidate}
-                          checked={form.replaces.includes(candidate.name)}
-                          onToggle={(checked) => toggleReplace(candidate.name, checked)}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
+            <DirectiveReplacesField
+              builtIns={replaceCandidates.builtIns}
+              authored={replaceCandidates.authored}
+              selected={form.replaces}
+              onToggle={toggleReplace}
+            />
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="directivePriority">Priority</Label>
+                <span className="text-xs text-muted-foreground">Optional</span>
               </div>
-            ) : null}
-            <div className="space-y-2">
-              <Label htmlFor="directivePriority">Priority (optional)</Label>
+              <p className="text-xs text-muted-foreground">
+                Higher wins when two directives apply at once and pull in different directions. Leave blank
+                for the default, {DIRECTIVE_PRIORITY.default}.
+              </p>
               <Input
                 id="directivePriority"
                 type="number"
@@ -756,29 +1039,55 @@ export function AssistantDirectivesSection({
                 min={DIRECTIVE_PRIORITY.min}
                 max={DIRECTIVE_PRIORITY.max}
                 value={form.priority}
-                placeholder="Default"
-                onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))}
+                placeholder={String(DIRECTIVE_PRIORITY.default)}
+                aria-invalid={invalidField === 'priority'}
+                onChange={(event) => {
+                  markTouched('priority')
+                  setForm((current) => ({ ...current, priority: event.target.value }))
+                }}
                 className="w-32"
               />
-              <p className="text-xs text-muted-foreground">
-                When two directives apply at once and pull in different directions, the agent follows the
-                higher-priority one. Each built-in shows its priority on its row below, so you can rank above
-                it. Leave blank to use the default.
-              </p>
+              <PriorityScale builtIns={builtIns} />
             </div>
-            {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
+            {visibleFormError ? (
+              <p className="text-sm text-destructive" role="alert">{visibleFormError.message}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeDialog} disabled={isSaving}>
               Cancel
             </Button>
-            <Button type="button" onClick={() => void handleSubmit()} disabled={isSaving || Boolean(formError)}>
+            <Button type="button" onClick={() => void handleSubmit()} disabled={isSaving}>
               {isSaving ? <Spinner className="mr-2" /> : null}
               Save directive
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Authoring a skill from the Instruction field: the capability choice, then the real skill
+          form. Both sit above the directive dialog and hand the created name back to the chip. */}
+      <CapabilityPicker
+        open={Boolean(pendingSkillCreation) && creationCapabilityId === null}
+        capabilities={directiveCapabilities}
+        description={DIRECTIVE_CAPABILITY_PICKER_DESCRIPTION}
+        onOpenChange={(open) => !open && cancelSkillCreation()}
+        onSelect={setCreationCapabilityId}
+      />
+      {pendingSkillCreation && creationCapabilityId ? (
+        <SkillForm
+          agentId={agentId}
+          open
+          capabilities={bindableCapabilities}
+          skills={agentSkills}
+          capabilityId={creationCapabilityId}
+          initialName={normalizeSkillName(pendingSkillCreation.typedName)}
+          isSaving={isCreatingSkill}
+          error={skillFormError}
+          onOpenChange={(open) => !open && cancelSkillCreation()}
+          onSubmit={createBoundSkill}
+        />
+      ) : null}
 
       <Dialog open={Boolean(deletingDirective)} onOpenChange={(open) => !open && setDeletingDirective(null)}>
         <DialogContent>

@@ -19,6 +19,10 @@ export type RoutineVariablesContextValue = {
   // Whether a slot stays editable after the routine completes (issue #746). Defaults off.
   getMutable: (refId: string) => boolean
   setMutable: (refId: string, mutable: boolean) => void
+  // True inside a routine, where a skill runs as a step and can bind its inputs to slots and
+  // assign its outputs. A skill mentioned outside a routine (a directive action) has no step
+  // to bind, so its chip shows the skill's identity only.
+  supportsStepBindings: boolean
 }
 
 const RoutineVariablesContext = createContext<RoutineVariablesContextValue | null>(null)
@@ -42,5 +46,6 @@ export function useRoutineVariables(): RoutineVariablesContextValue {
     setRequired: () => {},
     getMutable: () => false,
     setMutable: () => {},
+    supportsStepBindings: false,
   }
 }

@@ -229,10 +229,14 @@ export function useCopilotEntity(
   label: string,
   focused = false,
 ) {
-  const { registerEntity, unregisterEntity } = useCopilotContext()
+  // Ambient registration is an optional enhancement: shared primitives must
+  // render unchanged when no provider is mounted (isolated tests, embeds).
+  const context = useContext(CopilotContext)
+  const registerEntity = context?.registerEntity
+  const unregisterEntity = context?.unregisterEntity
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !registerEntity || !unregisterEntity) return
     const entity = { type, id, label, focused }
     registerEntity(entity)
     return () => unregisterEntity(entity)

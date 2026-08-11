@@ -1662,7 +1662,9 @@ export const createTestDependencies = (overrides: {
   };
   const audiencePulseService = {
     read: async () => ({ kind: "not_generated" }),
-  };
+    refresh: async () => ({ kind: "not_generated" }),
+    readEvidenceAnchor: async () => null,
+  } as unknown as AppDependencies["audiencePulseService"];
   const copilotRepository = new InMemoryCopilotRepository();
   const operatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,

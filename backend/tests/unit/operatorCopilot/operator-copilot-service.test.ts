@@ -38,7 +38,7 @@ describe("OperatorCopilotService", () => {
     });
 
     const events = [];
-    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Investigate", pageContext: { view: "history", agentId: null, conversationId: null }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
+    for await (const event of service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId: null, message: "Investigate", pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set(["workspace.agents.read"]) })) events.push(event);
 
     expect(events).toEqual([
       { event: "conversation", data: { conversationId: expect.any(String), turnId: expect.any(String) } },
@@ -69,7 +69,7 @@ describe("OperatorCopilotService", () => {
       now: () => now,
     });
     const turn = (conversationId: string | null, message: string) =>
-      service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId, message, pageContext: { view: "other", agentId: null, conversationId: null }, permissions: new Set() });
+      service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId, message, pageContext: { view: "other", agentId: null, conversationId: null, selection: null, entities: [] }, permissions: new Set() });
 
     const firstEvents = [];
     for await (const event of turn(null, "Check conversation abc")) firstEvents.push(event);
@@ -87,7 +87,7 @@ describe("OperatorCopilotService", () => {
 
   it("frames ambient viewing context as data and attaches a described entity to every activity stage", async () => {
     const repository = new MemoryCopilotRepository();
-    const runStreaming = vi.fn(() => ({
+    const runStreaming = vi.fn((_request: { systemPrompt: string; userMessage: string }) => ({
       events: (async function* () {
         yield { kind: "tool_call_validated" as const, stepIndex: 0, toolName: "reader", callId: "call", input: { conversationId: "conversation-1" }, at: 1 };
         yield { kind: "tool_call_invoked" as const, stepIndex: 0, toolName: "reader", callId: "call", at: 2 };

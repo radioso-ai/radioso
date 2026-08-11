@@ -37,9 +37,9 @@ describe("US2 copilot readers", () => {
       { name: "audience_topics", requiredPermission: "workspace.quality.read" },
     ]);
 
-    const evalResult = await descriptors[0].createTool(context).invoke({});
-    const qualityResult = await descriptors[1].createTool(context).invoke({});
-    const audienceResult = await descriptors[2].createTool(context).invoke({});
+    const evalResult = await descriptors[0].createTool(context).invoke({}, {} as never);
+    const qualityResult = await descriptors[1].createTool(context).invoke({}, {} as never);
+    const audienceResult = await descriptors[2].createTool(context).invoke({}, {} as never);
 
     expect(listWithLatestRun).toHaveBeenCalledWith("workspace-1");
     expect(getQualityStats).toHaveBeenCalledWith("workspace-1", { range: "30d", agentId: "agent-1" });

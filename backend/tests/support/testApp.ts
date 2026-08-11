@@ -147,6 +147,18 @@ import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
+import {
+  OperatorCopilotService,
+  type CopilotConversation,
+  type CopilotMessage,
+  type CopilotRepositoryPort,
+} from "../../src/modules/operatorCopilot/public.js";
+import {
+  AgenticCapabilityRunner,
+  DefaultAgentRuntime,
+  TextRoutedToolCallingGateway,
+} from "../../src/shared/agent-runtime/index.js";
+import { createCopilotToolCatalog } from "../../src/app/composition/copilotToolCatalog.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1643,9 +1655,27 @@ export const createTestDependencies = (overrides: {
     workbenchReplayRunner as any,
     logger,
   );
+  const copilotRepository = new InMemoryCopilotRepository();
+  const operatorCopilotService = new OperatorCopilotService({
+    repository: copilotRepository,
+    capabilityRunner: new AgenticCapabilityRunner({
+      runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }),
+    }),
+    usageLimitPolicy,
+    auditService,
+    prompt: loadPromptTemplate("copilot/system.md"),
+    tools: createCopilotToolCatalog({
+      agentService,
+      routineDefinitionService,
+      chatHistoryService,
+      documentSearchService,
+    }),
+  });
   const dependencies: AppDependencies = {
     env,
     logger,
+    operatorCopilotService,
+    copilotRepository,
     metricsRegistry,
     telemetryService,
     errorReportingService: persistentErrorReportingService,
@@ -2005,3 +2035,76 @@ const hashTerm = (term: string): number => {
 
   return hash;
 };
+
+class InMemoryCopilotRepository implements CopilotRepositoryPort {
+  private conversations: CopilotConversation[] = [];
+  private messages: CopilotMessage[] = [];
+
+  async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
+    const timestamp = new Date();
+    const conversation: CopilotConversation = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      operatorUserId: input.operatorUserId,
+      title: input.title,
+      status: "idle",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    this.conversations.push(conversation);
+    return conversation;
+  }
+
+  async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> {
+    return (
+      this.conversations.find(
+        (conversation) =>
+          conversation.id === input.id &&
+          conversation.workspaceId === input.workspaceId &&
+          conversation.operatorUserId === input.operatorUserId,
+      ) ?? null
+    );
+  }
+
+  async listConversations(input: { workspaceId: string; operatorUserId: string }): Promise<ReadonlyArray<CopilotConversation>> {
+    return this.conversations
+      .filter((conversation) => conversation.workspaceId === input.workspaceId && conversation.operatorUserId === input.operatorUserId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  async deleteConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> {
+    const existing = await this.findConversation(input);
+    if (!existing) return false;
+    this.conversations = this.conversations.filter((conversation) => conversation.id !== existing.id);
+    this.messages = this.messages.filter((message) => message.conversationId !== existing.id);
+    return true;
+  }
+
+  async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> {
+    const message: CopilotMessage = { ...input, id: randomUUID(), createdAt: new Date() };
+    this.messages.push(message);
+    return message;
+  }
+
+  async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> {
+    return this.messages.filter((message) => message.conversationId === input.conversationId);
+  }
+
+  async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> {
+    const conversation = await this.findConversation(input);
+    if (!conversation) return null;
+    if (conversation.status === "running") return "running";
+    return this.replaceStatus(conversation, "running");
+  }
+
+  async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> {
+    const conversation = await this.findConversation(input);
+    if (conversation) this.replaceStatus(conversation, "idle");
+  }
+
+  private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {
+    const next: CopilotConversation = { ...conversation, status, updatedAt: new Date() };
+    this.conversations[this.conversations.indexOf(conversation)] = next;
+    return next;
+  }
+}

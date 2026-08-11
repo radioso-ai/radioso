@@ -3,12 +3,15 @@ import { randomUUID } from "node:crypto";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { CopilotConversation, CopilotMessage, CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 
-interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: "idle" | "running"; created_at: Date; updated_at: Date; }
-interface CopilotMessageRow { id: string; conversation_id: string; role: "operator" | "copilot"; content: string; outcome: "completed" | "budget_exhausted" | "failed" | null; activity: unknown; created_at: Date; }
+interface CopilotConversationRow { id: string; workspace_id: string; operator_user_id: string; title: string | null; status: string; created_at: Date; updated_at: Date; }
+interface CopilotMessageRow { id: string; conversation_id: string; role: string; content: string; outcome: string | null; activity: unknown; created_at: Date; }
 const conversationColumns = ["id", "workspace_id", "operator_user_id", "title", "status", "created_at", "updated_at"] as const;
 const messageColumns = ["id", "conversation_id", "role", "content", "outcome", "activity", "created_at"] as const;
-const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: row.status, createdAt: row.created_at, updatedAt: row.updated_at });
-const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role, content: row.content, ...(row.outcome ? { outcome: row.outcome } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
+const narrowStatus = (status: string): CopilotConversation["status"] => (status === "running" ? "running" : "idle");
+const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | undefined =>
+  outcome === "completed" || outcome === "budget_exhausted" || outcome === "failed" ? outcome : undefined;
+const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
+const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
 
 export class CopilotRepository implements CopilotRepositoryPort {
   constructor(private readonly db: Db) {}

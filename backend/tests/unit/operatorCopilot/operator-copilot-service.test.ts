@@ -32,7 +32,7 @@ describe("OperatorCopilotService", () => {
       prompt: "system",
       tools: [
         tool("visible", "workspace.agents.read", invoke),
-        tool("hidden", "workspace.history.read", vi.fn()),
+        tool("hidden", "workspace.history.read", vi.fn(async () => ({ value: "hidden" }))),
       ],
       now: () => now,
     });
@@ -54,7 +54,7 @@ describe("OperatorCopilotService", () => {
   });
 });
 
-const tool = (name: string, requiredPermission: "workspace.agents.read" | "workspace.history.read", invoke: ReturnType<typeof vi.fn>) => ({
+const tool = (name: string, requiredPermission: "workspace.agents.read" | "workspace.history.read", invoke: (input: unknown, ctx: unknown) => Promise<unknown>) => ({
   name,
   uiLabel: name === "visible" ? "Visible" : "Hidden",
   description: "reader",
@@ -74,6 +74,7 @@ class MemoryCopilotRepository implements CopilotRepositoryPort {
   async deleteConversation(): Promise<boolean> { return false; }
   async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> { const message = { id: `m${this.messages.length}`, ...input, createdAt: now }; this.messages.push(message); return message; }
   async listMessages(): Promise<ReadonlyArray<CopilotMessage>> { return this.messages; }
-  async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation) return null; if (conversation.status === "running") return "running"; conversation.status = "running"; return conversation; }
-  async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) conversation.status = "idle"; }
+  async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation) return null; if (conversation.status === "running") return "running"; return this.replace(conversation, "running"); }
+  async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.replace(conversation, "idle"); }
+  private replace(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation { const next = { ...conversation, status }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
 }

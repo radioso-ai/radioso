@@ -167,3 +167,32 @@
 .docs-mdx-shell :is(h1, h2, h3, h4) {
   font-family: var(--font-display);
 }
+
+.docs-subtle-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.docs-subtle-scrollbar:hover,
+.docs-subtle-scrollbar:focus-within {
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.docs-subtle-scrollbar:hover::-webkit-scrollbar-thumb,
+.docs-subtle-scrollbar:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
+}

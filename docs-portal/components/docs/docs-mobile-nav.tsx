@@ -132,7 +132,7 @@ export function DocsMobileNav({
           <DocsNavSearch value={searchQuery} onChange={setSearchQuery} />
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-8">
+        <div className="docs-subtle-scrollbar min-h-0 flex-1 overflow-y-auto px-3 pb-8">
           <nav aria-label="Sections" className="mb-5 border-b border-sidebar-border pb-4">
             <ul className="space-y-0.5">
               {topLevelLinks.map((item) => {

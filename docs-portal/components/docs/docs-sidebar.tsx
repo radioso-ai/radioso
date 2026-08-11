@@ -106,7 +106,7 @@ export function DocsSidebar() {
   return (
     <aside
       aria-label="Documentation"
-      className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block"
+      className="docs-subtle-scrollbar sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block"
     >
       <div className="px-5 pb-4 pt-6">
         <DocsNavSearch value={searchQuery} onChange={setSearchQuery} />

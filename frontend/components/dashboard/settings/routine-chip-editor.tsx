@@ -25,6 +25,7 @@ import {
   COPY_COMMAND,
   FORMAT_TEXT_COMMAND,
   PASTE_COMMAND,
+  type EditorState,
   type LexicalNode,
   type TextNode,
 } from 'lexical'
@@ -1232,23 +1233,32 @@ function BranchDecisionDecorationPlugin() {
 function OnDocChangePlugin({ onDocChange, onParagraphChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void; onParagraphChange?: (paragraphs: ProseParagraph[]) => void }) {
   const [editor] = useLexicalComposerContext()
   const callbacksRef = useRef({ onDocChange, onParagraphChange })
+  const hasEmittedInitialDocRef = useRef(false)
   useEffect(() => {
     callbacksRef.current = { onDocChange, onParagraphChange }
   })
 
   useEffect(() => {
-    return editor.registerUpdateListener(({ editorState, prevEditorState, dirtyElements, dirtyLeaves }) => {
-      // Registering a listener and replacing its callbacks are not document edits. In
-      // particular, instruction-only editors can receive new parent callbacks after a
-      // draft update, so emitting from setup would feed the same draft back forever.
-      if (editorState === prevEditorState || (dirtyElements.size === 0 && dirtyLeaves.size === 0)) return
-
+    const emit = (editorState: EditorState) => {
       editorState.read(() => {
         const { onDocChange: emitDocChange, onParagraphChange: emitParagraphChange } = callbacksRef.current
         emitDocChange($serializeBlocks())
         emitParagraphChange?.($readProseParagraphs())
       })
+    }
+    const unregister = editor.registerUpdateListener(({ editorState, prevEditorState, dirtyElements, dirtyLeaves }) => {
+      // Replacing callbacks is not a document edit. In particular, instruction-only
+      // editors receive new parent callbacks after a draft update and must not emit again.
+      if (editorState === prevEditorState || (dirtyElements.size === 0 && dirtyLeaves.size === 0)) return
+      emit(editorState)
     })
+
+    if (!hasEmittedInitialDocRef.current) {
+      hasEmittedInitialDocRef.current = true
+      emit(editor.getEditorState())
+    }
+
+    return unregister
   }, [editor])
 
   return null

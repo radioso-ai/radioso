@@ -31,10 +31,15 @@ product-neutral:
    `workspace.documents.read`, `workspace.quality.read`,
    `workspace.settings.read`, `workspace.retrieval.query`, …) via
    `requireWorkspacePermission`.
-3. **Single-shot operator assists** — the agent wizard
-   (`backend/src/modules/agentWizard/`) and directive coach
-   (`directiveAuthorService.ts`) already turn operator intent into agent config,
-   but as fixed pipelines, not a conversational surface.
+3. **Single-purpose operator assistants** — the platform already ships three
+   bespoke LLM assists for operators: the agent wizard
+   (`backend/src/modules/agentWizard/`, website parsing → agent config), the
+   directive coach (`directiveAuthorService.ts`, coaching → directive draft),
+   and Audience Pulse (`backend/src/modules/audiencePulse/`, the periodic
+   census/summary of visitor questions from spec 939/956). Each is a fixed
+   pipeline with its own module, prompt, and composition wiring — the pattern
+   is sound, but none is conversational, and each new one has been a bespoke
+   surface.
 4. **Dashboard chat plumbing** — SSE streaming conventions
    (`chatPresenter.sendChatSse`, `frontend/lib/api-chat-stream.ts`) and workbench
    chat components.
@@ -62,6 +67,15 @@ them):
 - **Tools are hand-curated, not derived.** The catalog is not auto-generated from
   the OpenAPI registry; each tool has a tuned description, focused input/output
   schemas, and an explicit permission requirement.
+- **Existing single-purpose assistants fold in as catalog tools; they are the
+  pattern, not parallel surfaces.** The agent wizard and directive coach become
+  proposal-drafting tools, and Audience Pulse results become a read tool — each
+  module keeps owning its analysis/drafting logic and contributes a tool
+  descriptor. Going forward this is the default for operator-assist features:
+  ship a catalog tool through the contribution port, not a new bespoke
+  assistant surface, unless the feature genuinely needs its own non-chat UI (as
+  Audience Pulse's dashboard view does — the view stays; the copilot gains
+  access to the same results).
 - **Mutations are proposals.** The copilot never writes configuration. Mutation
   tools produce typed proposals rendered as reviewable cards; the write happens
   only when the operator applies the proposal through the existing guarded
@@ -311,9 +325,11 @@ Open clarifications (non-blocking; default answers stated):
 - **Encapsulation Rule**: `backend/src/shared/agent-runtime/` stays
   product-neutral — it must gain no knowledge of the copilot, tools, or
   workspaces. The conversation engine, `agent_skills` spine, and customer
-  conversation/message tables are not touched by this feature. The agent wizard
-  and directive coach services remain the owners of their drafting logic; the
-  copilot wraps them as tools rather than duplicating their prompts.
+  conversation/message tables are not touched by this feature. The agent wizard,
+  directive coach, and Audience Pulse modules remain the owners of their
+  drafting/analysis logic; the copilot wraps them as tools rather than
+  duplicating their prompts, and Audience Pulse's own dashboard view is
+  untouched.
 - **New Seams Required**:
   - A **copilot tool contribution port**: a typed descriptor (name, description,
     Zod input/output schemas, required permission, contributing module) that
@@ -371,7 +387,10 @@ Open clarifications (non-blocking; default answers stated):
 - **FR-005**: The initial tool catalog MUST cover, as read-only tools: agent
   configuration (agent, directives, routines, skills and their settings),
   conversation transcripts and turn traces, document corpus search and document
-  metadata, eval results, and quality/needs-attention signals.
+  metadata, eval results, quality/needs-attention signals, and Audience Pulse
+  topic-census results (the existing periodic visitor-question summary, exposed
+  as a read tool over its stored analyses — the copilot does not trigger new
+  analyses).
 - **FR-006**: Every tool MUST declare a required permission, and the catalog
   presented to a turn MUST include only tools whose permission the session
   principal holds. The initial matrix, following the owning areas' existing
@@ -383,7 +402,7 @@ Open clarifications (non-blocking; default answers stated):
   | Conversation transcripts and turn traces | `workspace.history.read` |
   | Document search and document metadata | `workspace.documents.read` |
   | Eval results | `workspace.retrieval.query` |
-  | Quality / needs-attention signals | `workspace.quality.read` |
+  | Quality / needs-attention signals, Audience Pulse census results | `workspace.quality.read` |
   | Workspace settings reads | `workspace.settings.read` |
   | Proposal drafting and apply (directives, agent settings) | `workspace.agents.manage` |
 

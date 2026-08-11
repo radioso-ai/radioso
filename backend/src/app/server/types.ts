@@ -98,6 +98,8 @@ import type { ApprovalDecisionService } from "../../modules/approvals/public.js"
 import type { OperatorReplyService } from "../../modules/handoff/public.js";
 import type { VectorIndexReconciler } from "../../modules/retrieval/composition.js";
 import type { EmbeddingBindingResolverPort } from "../../modules/embeddingProfiles/public.js";
+import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 
 export interface AppDependencies {
   env: Env;
@@ -212,6 +214,8 @@ export interface AppDependencies {
   connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;
+  operatorCopilotService: OperatorCopilotService;
+  copilotRepository: CopilotRepositoryPort;
   crawlerProvider: {
     fetchPageWithScreenshot(url: string, options?: {
       signal?: AbortSignal;

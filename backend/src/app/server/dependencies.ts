@@ -38,6 +38,10 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime, TextRoutedToolCallingGateway } from "../../shared/agent-runtime/index.js";
+import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -289,6 +293,19 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     routineDefinitionService,
     routineDraftAssistService,
   } = routineAuthoring;
+  const operatorCopilotService = new OperatorCopilotService({
+    repository: repositories.copilotRepository,
+    capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }) }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    auditService: infrastructure.auditService,
+    prompt: loadPromptTemplate("copilot/system.md"),
+    tools: createCopilotToolCatalog({
+      agentService,
+      routineDefinitionService,
+      chatHistoryService: chat.chatHistoryService,
+      documentSearchService: retrieval.documentSearchService,
+    }),
+  });
   const evalServices = buildEvalServices({
     chat,
     infrastructure,
@@ -438,6 +455,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatInferencePipeline,
+    operatorCopilotService,
+    copilotRepository: repositories.copilotRepository,
     crawlerProvider,
     assertPublicWebsiteUrl,
     websiteCrawlerLimits: (() => {

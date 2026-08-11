@@ -6,7 +6,7 @@
 **Input**: User description: "Generic clarification (disambiguation) capability: shared Clarifier + per-source detectors so the assistant asks instead of guessing when matching produces comparable candidates (routine activation, retrieval sense). Item 2 of issue #667; design direction in `.context/clarification-generic.md`."
 
 > "Clarification" is our product name for what the literature calls **disambiguation**
-> (comparable system, comparable system, comparable system). Distinct from **slot-filling**: slot-filling
+> (Amazon Lex, Copilot Studio, Parlant). Distinct from **slot-filling**: slot-filling
 > collects a *missing* value a routine declared it needs; clarification chooses among
 > *two or more comparable candidates* that already matched. This spec is only about
 > the second.

@@ -2,18 +2,35 @@ import { z } from "zod";
 
 import type { AgentService } from "../agents/public.js";
 import { routineToPortableDocument, type RoutineDefinitionService } from "../routines/public.js";
-import type { ChatHistoryService } from "../chat/services/chatHistoryService.js";
-import type { DocumentSearchService } from "../documents/services/documentSearchService.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
 
+/**
+ * Narrow ports over other modules' services. The copilot only needs these
+ * call shapes; composition injects the concrete services, so this module
+ * never imports another module's non-public files.
+ */
+export interface CopilotConversationHistoryPort {
+  getConversation(
+    workspaceId: string,
+    conversationId: string,
+    options: { limit: number },
+    debug: { includeTurnFailureDebug: boolean },
+  ): Promise<unknown>;
+  listConversations(workspaceId: string, options: { limit: number }): Promise<{ conversations: ReadonlyArray<unknown> }>;
+}
+
+export interface CopilotDocumentSearchPort {
+  search(input: { workspaceId: string; query: string; executionSurface: "operator_copilot" }): Promise<{ results: ReadonlyArray<unknown> }>;
+}
+
 export const createUs1CopilotTools = (deps: {
   readonly agentService: Pick<AgentService, "get">;
   readonly routineDefinitionService: Pick<RoutineDefinitionService, "get">;
-  readonly chatHistoryService: Pick<ChatHistoryService, "getConversation" | "listConversations">;
-  readonly documentSearchService: Pick<DocumentSearchService, "search">;
+  readonly chatHistoryService: CopilotConversationHistoryPort;
+  readonly documentSearchService: CopilotDocumentSearchPort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "agent_configuration", uiLabel: "Reading agent configuration", contributingModule: "agents", requiredPermission: "workspace.agents.read",

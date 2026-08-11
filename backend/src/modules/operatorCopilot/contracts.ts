@@ -1,6 +1,6 @@
 import { z, type ZodType } from "zod";
 
-import type { AccountPermission } from "../account/services/accountAccessService.js";
+import type { AccountPermission } from "../account/public.js";
 import type { AgentTool, AgentToolContext } from "../../shared/agent-runtime/index.js";
 
 export const copilotPageContextSchema = z.object({

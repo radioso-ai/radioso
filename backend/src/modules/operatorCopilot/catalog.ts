@@ -1,4 +1,4 @@
-import type { AccountPermission } from "../account/services/accountAccessService.js";
+import type { AccountPermission } from "../account/public.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
 
 export const filterCopilotToolCatalog = (

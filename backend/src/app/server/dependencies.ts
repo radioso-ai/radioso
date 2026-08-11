@@ -31,6 +31,7 @@ import {
   buildRoutineAuthoringServices,
   buildSkillCatalogServices,
 } from "./builders/skillsRoutines.js";
+import { buildAudiencePulseService } from "./builders/audiencePulse.js";
 import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
@@ -43,16 +44,6 @@ import { AgenticCapabilityRunner, DefaultAgentRuntime, TextRoutedToolCallingGate
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
-import {
-  AudiencePulseService,
-  AudiencePulseRefreshRateLimiter,
-  ContextualCensusServiceFactory,
-  PostgresAudiencePulseRunGate,
-} from "../../modules/audiencePulse/composition.js";
-import { AudiencePulseSnapshotRepository } from "../../db/repositories/audiencePulseSnapshotRepository.js";
-import { MessageFacetRepository } from "../../db/repositories/messageFacetRepository.js";
-import { TopicRepository } from "../../db/repositories/topicRepository.js";
-import { FACET_EXTRACTION_PROMPT_VERSION } from "../../modules/facets/composition.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -333,28 +324,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         evalMessageCaseService.lookupVerifications(workspaceId, assistantMessageIds),
     },
   );
-  const audiencePulseService = new AudiencePulseService({
-    historySource: new PostgresAudiencePulseHistorySource(infrastructure.database.kysely),
-    snapshotStore: new AudiencePulseSnapshotRepository(infrastructure.database.kysely),
-    runGate: new PostgresAudiencePulseRunGate(infrastructure.database.kysely),
-    refreshRateLimit: new AudiencePulseRefreshRateLimiter({
-      abuseControlService: chat.abuseControlService,
-      auditService: infrastructure.auditService,
-    }),
-    inferenceFactory: new ContextualStructuredInferenceFactory({ resolver: llmCapabilityResolver }, infrastructure.usageEventRecorder),
+  const audiencePulseService = buildAudiencePulseService({
+    kysely: infrastructure.database.kysely,
+    llmCapabilityResolver,
+    usageEventRecorder: infrastructure.usageEventRecorder,
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     logger,
-    censusServiceFactory: new ContextualCensusServiceFactory({
-      historySource: new PostgresAudiencePulseHistorySource(infrastructure.database.kysely),
-      facetSource: new MessageFacetRepository(infrastructure.database.kysely),
-      topicRepository: new TopicRepository(infrastructure.database.kysely),
-      embeddingBindingResolver,
-      currentFacetPromptVersion: FACET_EXTRACTION_PROMPT_VERSION,
-      namingInferenceFactory: new ContextualStructuredInferenceFactory({ resolver: llmCapabilityResolver }, infrastructure.usageEventRecorder),
-      privacyAuditInferenceFactory: createRewriteTierStructuredInferenceFactory({ resolver: llmCapabilityResolver }, infrastructure.usageEventRecorder),
-      telemetryService: infrastructure.telemetryService,
-    }),
+    telemetryService: infrastructure.telemetryService,
+    abuseControlService: chat.abuseControlService,
+    embeddingBindingResolver,
   });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,

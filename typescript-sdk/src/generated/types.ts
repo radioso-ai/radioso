@@ -18095,11 +18095,19 @@ export interface operations {
                     message: string;
                     pageContext: {
                         /** @enum {string|null} */
-                        view: "activity" | "history" | "agent" | "documents" | "workbench" | "quality" | "evals" | "other" | null;
+                        view: "activity" | "history" | "agent" | "documents" | "workbench" | "quality" | "evals" | "copilot" | "other" | null;
                         /** Format: uuid */
                         agentId: string | null;
                         /** Format: uuid */
                         conversationId: string | null;
+                        selection?: string | null;
+                        entities?: {
+                            /** @enum {string} */
+                            type: "agent" | "conversation" | "routine" | "directive" | "document" | "evalCase";
+                            id: string;
+                            label: string;
+                            focused: boolean;
+                        }[];
                     };
                 };
             };

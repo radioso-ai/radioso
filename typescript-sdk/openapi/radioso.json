@@ -34122,6 +34122,7 @@
                           "workbench",
                           "quality",
                           "evals",
+                          "copilot",
                           "other"
                         ]
                       },
@@ -34138,6 +34139,48 @@
                           "null"
                         ],
                         "format": "uuid"
+                      },
+                      "selection": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "entities": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "agent",
+                                "conversation",
+                                "routine",
+                                "directive",
+                                "document",
+                                "evalCase"
+                              ]
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "label": {
+                              "type": "string",
+                              "maxLength": 120
+                            },
+                            "focused": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "id",
+                            "label",
+                            "focused"
+                          ]
+                        },
+                        "maxItems": 30
                       }
                     },
                     "required": [

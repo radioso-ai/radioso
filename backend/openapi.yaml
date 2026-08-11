@@ -19,6 +19,7 @@ tags:
   - name: Documents
   - name: Connectors
   - name: Audience Pulse
+  - name: Copilot
 components:
   securitySchemes:
     sessionCookie:
@@ -21719,6 +21720,184 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/copilot/availability:
+    get:
+      tags:
+        - Copilot
+      summary: Check operator copilot availability
+      description: Dashboard session only; bearer API tokens are rejected.
+      operationId: getCopilotAvailability
+      security: *a46
+      responses:
+        "200":
+          description: Availability
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available:
+                    type: boolean
+                  reason:
+                    type: string
+                    enum:
+                      - ok
+                      - no_llm_capability
+                required:
+                  - available
+                  - reason
+        "403":
+          description: Forbidden
+  /api/v1/copilot/conversations:
+    get:
+      tags:
+        - Copilot
+      summary: List an operator's copilot conversations
+      operationId: listCopilotConversations
+      security: *a46
+      responses:
+        "200":
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        title:
+                          type:
+                            - string
+                            - "null"
+                        status:
+                          type: string
+                          enum:
+                            - idle
+                            - running
+                        createdAt:
+                          type: string
+                        updatedAt:
+                          type: string
+                      required:
+                        - id
+                        - title
+                        - status
+                        - createdAt
+                        - updatedAt
+                required:
+                  - conversations
+  /api/v1/copilot/conversations/{conversationId}:
+    get:
+      tags:
+        - Copilot
+      summary: Read a copilot conversation
+      operationId: getCopilotConversation
+      security: *a46
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "200":
+          description: Conversation
+        "404":
+          description: Not found
+    delete:
+      tags:
+        - Copilot
+      summary: Delete a copilot conversation
+      operationId: deleteCopilotConversation
+      security: *a46
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+  /api/v1/copilot/turns:
+    post:
+      tags:
+        - Copilot
+      summary: Start a streaming read-only copilot turn
+      description: Returns the fixed copilot SSE event stream. Dashboard session only; bearer API tokens are rejected.
+      operationId: createCopilotTurn
+      security: *a46
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                conversationId:
+                  type:
+                    - string
+                    - "null"
+                  format: uuid
+                message:
+                  type: string
+                  minLength: 1
+                  maxLength: 8000
+                pageContext:
+                  type: object
+                  properties:
+                    view:
+                      type:
+                        - string
+                        - "null"
+                      enum:
+                        - activity
+                        - history
+                        - agent
+                        - documents
+                        - workbench
+                        - quality
+                        - evals
+                        - other
+                    agentId:
+                      type:
+                        - string
+                        - "null"
+                      format: uuid
+                    conversationId:
+                      type:
+                        - string
+                        - "null"
+                      format: uuid
+                  required:
+                    - view
+                    - agentId
+                    - conversationId
+              required:
+                - conversationId
+                - message
+                - pageContext
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "409":
+          description: Conversation already running
+        "503":
+          description: No LLM capability
   /api/v1/evals/cases/by-source-message/{assistantMessageId}:
     get:
       tags:

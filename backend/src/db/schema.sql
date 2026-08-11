@@ -1358,6 +1358,39 @@ CREATE TABLE public.conversations (
 
 
 --
+-- Name: copilot_conversations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.copilot_conversations (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    operator_user_id uuid NOT NULL,
+    title text,
+    status text DEFAULT 'idle'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT copilot_conversations_status_check CHECK ((status = ANY (ARRAY['idle'::text, 'running'::text])))
+);
+
+
+--
+-- Name: copilot_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.copilot_messages (
+    id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    role text NOT NULL,
+    content text NOT NULL,
+    outcome text,
+    activity jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT copilot_messages_outcome_check CHECK ((outcome = ANY (ARRAY['completed'::text, 'budget_exhausted'::text, 'failed'::text]))),
+    CONSTRAINT copilot_messages_role_check CHECK ((role = ANY (ARRAY['operator'::text, 'copilot'::text])))
+);
+
+
+--
 -- Name: directive_states; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3199,6 +3232,22 @@ ALTER TABLE ONLY public.conversations
 
 
 --
+-- Name: copilot_conversations copilot_conversations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_conversations
+    ADD CONSTRAINT copilot_conversations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: copilot_messages copilot_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_messages
+    ADD CONSTRAINT copilot_messages_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: directive_states directive_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4476,6 +4525,20 @@ CREATE INDEX conversations_workspace_anon_updated_id_idx ON public.conversations
 --
 
 CREATE INDEX conversations_workspace_updated_id_idx ON public.conversations USING btree (workspace_id, updated_at DESC, created_at DESC, id DESC);
+
+
+--
+-- Name: copilot_conversations_operator_updated_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_conversations_operator_updated_idx ON public.copilot_conversations USING btree (workspace_id, operator_user_id, updated_at DESC);
+
+
+--
+-- Name: copilot_messages_conversation_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_messages_conversation_created_idx ON public.copilot_messages USING btree (conversation_id, created_at);
 
 
 --
@@ -6635,6 +6698,30 @@ ALTER TABLE ONLY public.conversations
 
 ALTER TABLE ONLY public.conversations
     ADD CONSTRAINT conversations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_conversations copilot_conversations_operator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_conversations
+    ADD CONSTRAINT copilot_conversations_operator_user_id_fkey FOREIGN KEY (operator_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_conversations copilot_conversations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_conversations
+    ADD CONSTRAINT copilot_conversations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_messages copilot_messages_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_messages
+    ADD CONSTRAINT copilot_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
 
 
 --

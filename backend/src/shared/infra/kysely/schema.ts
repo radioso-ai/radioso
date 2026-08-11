@@ -402,6 +402,26 @@ export interface ConversationSummaries {
   updated_at: Generated<Timestamp>;
 }
 
+export interface CopilotConversations {
+  created_at: Generated<Timestamp>;
+  id: string;
+  operator_user_id: string;
+  status: Generated<string>;
+  title: string | null;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface CopilotMessages {
+  activity: Json | null;
+  content: string;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  outcome: string | null;
+  role: string;
+}
+
 export interface DirectiveStates {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp | null;
@@ -1154,28 +1174,6 @@ export interface WorkspaceWebhookDestinations {
   workspace_id: string;
 }
 
-// Added with migration 140_operator_copilot.sql. This generated snapshot is kept
-// in sync with the migration so the Kysely repository stays tenant-typed.
-export interface CopilotConversations {
-  id: Generated<string>;
-  workspace_id: string;
-  operator_user_id: string;
-  title: string | null;
-  status: Generated<"idle" | "running">;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
-}
-
-export interface CopilotMessages {
-  id: Generated<string>;
-  conversation_id: string;
-  role: "operator" | "copilot";
-  content: string;
-  outcome: "completed" | "budget_exhausted" | "failed" | null;
-  activity: Json | null;
-  created_at: Generated<Timestamp>;
-}
-
 export interface DB {
   abuse_control_entries: AbuseControlEntries;
   account_invitations: AccountInvitations;
@@ -1201,14 +1199,14 @@ export interface DB {
   connector_sync_state: ConnectorSyncState;
   connector_whatsapp_contacts: ConnectorWhatsappContacts;
   connector_whatsapp_message_log: ConnectorWhatsappMessageLog;
-  copilot_conversations: CopilotConversations;
-  copilot_messages: CopilotMessages;
   context_identity_nonces: ContextIdentityNonces;
   context_variable_values: ContextVariableValues;
   context_variables: ContextVariables;
   conversation_ownership: ConversationOwnership;
   conversation_summaries: ConversationSummaries;
   conversations: Conversations;
+  copilot_conversations: CopilotConversations;
+  copilot_messages: CopilotMessages;
   directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;

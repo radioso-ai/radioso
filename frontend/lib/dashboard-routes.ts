@@ -10,7 +10,7 @@ import {
 } from './api-quality'
 import { parseUsageDetailsQuery } from './usage-details'
 
-export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account'
+export type DashboardSection = 'agents' | 'knowledge' | 'activity' | 'quality' | 'eval' | 'settings' | 'account' | 'copilot'
 export type AgentTab = 'chat' | 'behavior' | 'channels'
 export type KnowledgeTab = 'documents' | 'sources' | 'ingestion'
 export type ActivityTab = 'needs-attention' | 'all'
@@ -561,6 +561,20 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
     return normalized
   }
 
+  if (state.section === 'copilot') {
+    if (state.agentId) {
+      normalized.agentId = state.agentId
+    }
+    if (state.agentTab) {
+      normalized.agentTab = state.agentTab
+    }
+    if (state.historyItemKind && state.historyItemId) {
+      normalized.historyItemKind = state.historyItemKind
+      normalized.historyItemId = state.historyItemId
+    }
+    return normalized
+  }
+
   return normalized
 }
 
@@ -713,6 +727,19 @@ const buildQueryString = (normalized: DashboardRouteState) => {
     }
     if (normalized.qualityShowAll) {
       searchParams.set('all', 'true')
+    }
+  }
+
+  if (normalized.section === 'copilot') {
+    if (normalized.agentTab) {
+      searchParams.set('tab', normalized.agentTab)
+    }
+    if (normalized.agentId) {
+      searchParams.set('agent', normalized.agentId)
+    }
+    if (normalized.historyItemKind && normalized.historyItemId) {
+      searchParams.set('itemKind', normalized.historyItemKind)
+      searchParams.set('itemId', normalized.historyItemId)
     }
   }
 
@@ -1024,6 +1051,20 @@ export const parseDashboardRoute = (
       section: 'eval',
       workspaceId,
       ...(secondSegment ? { evalCaseId: secondSegment } : {}),
+    })
+  }
+
+  if (sectionCandidate === 'copilot') {
+    if (secondSegment || thirdSegment || fourthSegment || rest.length > 0) {
+      return null
+    }
+    return normalizeState({
+      section: 'copilot',
+      workspaceId,
+      agentTab: parseAgentTab(searchParams?.get('tab') ?? null),
+      agentId: searchParams?.get('agent') ?? undefined,
+      historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
+      historyItemId: searchParams?.get('itemId') ?? undefined,
     })
   }
 

@@ -17,6 +17,7 @@ const SECTION_TITLES: Record<DashboardSection, string> = {
   eval: 'Eval',
   settings: 'Settings',
   account: 'Account',
+  copilot: 'Copilot',
 }
 
 export const buildDashboardDocumentTitle = (section: DashboardSection): string =>

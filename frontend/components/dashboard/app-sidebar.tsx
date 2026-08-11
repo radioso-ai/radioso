@@ -22,6 +22,7 @@ import {
   BookOpen,
   Settings,
   FlaskConical,
+  Sparkles,
 } from 'lucide-react'
 import {
   buildDashboardHref,
@@ -33,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { WorkspaceSwitcher } from './workspace-switcher'
 import { AccountMenu } from './account-menu'
 import { useWorkspace } from '@/lib/workspace-context'
+import { getLastSelectedAgentId } from '@/lib/agent-selection'
 
 interface AppSidebarProps {
   accountId: string
@@ -40,6 +42,7 @@ interface AppSidebarProps {
   routeState: DashboardRouteState
   /** The active section's nested sub-navigation, rendered under its rail row. */
   areaSubNav?: ReactNode
+  copilotVisible?: boolean
 }
 
 // Activity sits first and is visually separated from the build/config sections below —
@@ -49,10 +52,11 @@ const navItems = [
   { id: 'agents' as const, label: 'Agents', icon: Bot },
   { id: 'knowledge' as const, label: 'Knowledge Base', icon: BookOpen },
   { id: 'eval' as const, label: 'Eval', icon: FlaskConical },
+  { id: 'copilot' as const, label: 'Copilot', icon: Sparkles },
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView, routeState, areaSubNav, copilotVisible = true }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const inboxCount = useInboxCount()
@@ -70,7 +74,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {navItems.filter((item) => item.id !== 'copilot' || copilotVisible).map((item) => {
                 const isActive = item.id === 'activity'
                   ? currentView === 'activity' || currentView === 'quality'
                   : currentView === item.id
@@ -80,6 +84,19 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
                 // keep the plain row so the entry never collapses to an empty gap.
                 const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
+                const copilotAgentId = item.id === 'copilot'
+                  ? routeState.agentId ?? getLastSelectedAgentId(activeWorkspaceId)
+                  : undefined
+                const navState: DashboardRouteState = {
+                  section: item.id,
+                  ...(copilotAgentId ? { agentId: copilotAgentId } : {}),
+                  ...(item.id === 'copilot' && routeState.agentTab ? { agentTab: routeState.agentTab } : {}),
+                  ...(item.id === 'copilot' && routeState.historyItemKind && routeState.historyItemId
+                    ? { historyItemKind: routeState.historyItemKind, historyItemId: routeState.historyItemId }
+                    : {}),
+                  workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                }
 
                 return (
                   <SidebarMenuItem
@@ -87,13 +104,9 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                     className={item.id === 'activity' ? 'mb-1 border-b border-sidebar-border pb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                        <Link
-                          href={buildDashboardHref(accountId, {
-                            section: item.id,
-                            workspaceId: activeWorkspaceId ?? undefined,
-                            workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                          })}
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                          <Link
+                            href={buildDashboardHref(accountId, navState)}
                         >
                           <item.icon className="w-4 h-4" />
                           <span>{item.label}</span>

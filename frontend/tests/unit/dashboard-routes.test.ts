@@ -26,6 +26,27 @@ describe('dashboard route state', () => {
     expect(href).toBe('/w/support-abc123/agents?tab=behavior')
   })
 
+  it('round-trips Copilot page context selections without treating ids as URL text', () => {
+    const agentId = '67acb0c8-caad-4a1b-9fef-70cbca3f7d12'
+    const href = buildDashboardHref('account-1', {
+      section: 'copilot',
+      workspacePublicRouteKey: 'support-abc123',
+      agentId,
+      agentTab: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+    })
+
+    expect(href).toBe('/w/support-abc123/copilot?tab=chat&agent=67acb0c8-caad-4a1b-9fef-70cbca3f7d12&itemKind=chat&itemId=conversation-1')
+    expect(parseDashboardRoute(['copilot'], new URLSearchParams(href.split('?')[1]))).toEqual({
+      section: 'copilot',
+      agentId,
+      agentTab: 'chat',
+      historyItemKind: 'chat',
+      historyItemId: 'conversation-1',
+    })
+  })
+
   it('builds a canonical knowledge document deep link with workspace key and page state', () => {
     const href = buildDashboardHref('account-1', {
       section: 'knowledge',

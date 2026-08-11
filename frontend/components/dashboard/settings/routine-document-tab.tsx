@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineGuardKind, RoutineReentryMode, RoutineSlotType, RoutineStepKind, RoutineTerminalKind } from '@/lib/api'
+import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineGuardKind, RoutineReentryMode, RoutineSlotType } from '@/lib/api'
 import { formatBindingLine, guardToSentence } from '@/lib/routine-document'
 import {
   addBranch,

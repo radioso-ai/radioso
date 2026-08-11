@@ -3973,15 +3973,9 @@ export interface components {
                 stableStepId: string;
                 /** @enum {string} */
                 kind: "chat" | "tool" | "action" | "approval";
-                instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
                 captureKey?: string | null;
-                options?: {
-                    id: string;
-                    label: string;
-                    description?: string | null;
-                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -4006,6 +4000,12 @@ export interface components {
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
                 };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
             }[];
             /** @default [] */
             transitions: {
@@ -4068,15 +4068,9 @@ export interface components {
                 stableStepId: string;
                 /** @enum {string} */
                 kind: "chat" | "tool" | "action" | "approval";
-                instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
                 captureKey?: string | null;
-                options?: {
-                    id: string;
-                    label: string;
-                    description?: string | null;
-                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -4101,6 +4095,12 @@ export interface components {
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
                 };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
             }[];
             /** @default [] */
             transitions: {
@@ -4175,15 +4175,9 @@ export interface components {
                 stableStepId: string;
                 /** @enum {string} */
                 kind: "chat" | "tool" | "action" | "approval";
-                instruction: string;
                 toolRef?: string | null;
                 actionType?: string | null;
                 captureKey?: string | null;
-                options?: {
-                    id: string;
-                    label: string;
-                    description?: string | null;
-                }[];
                 ordinal: number;
                 /** @default {} */
                 metadata: {
@@ -4208,6 +4202,12 @@ export interface components {
                     /** @enum {string} */
                     mode?: "typed" | "untyped";
                 };
+                instruction: string;
+                options?: {
+                    id: string;
+                    label: string;
+                    description?: string | null;
+                }[];
             }[];
             /** @default [] */
             transitions: {
@@ -4327,15 +4327,9 @@ export interface components {
                     stableStepId: string;
                     /** @enum {string} */
                     kind: "chat" | "tool" | "action" | "approval";
-                    instruction: string;
                     toolRef?: string | null;
                     actionType?: string | null;
                     captureKey?: string | null;
-                    options?: {
-                        id: string;
-                        label: string;
-                        description?: string | null;
-                    }[];
                     ordinal: number;
                     /** @default {} */
                     metadata: {
@@ -4360,6 +4354,12 @@ export interface components {
                         /** @enum {string} */
                         mode?: "typed" | "untyped";
                     };
+                    instruction: string;
+                    options?: {
+                        id: string;
+                        label: string;
+                        description?: string | null;
+                    }[];
                 }[];
                 /** @default [] */
                 transitions: {

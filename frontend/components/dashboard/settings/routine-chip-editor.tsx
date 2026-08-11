@@ -1232,7 +1232,9 @@ function BranchDecisionDecorationPlugin() {
 function OnDocChangePlugin({ onDocChange, onParagraphChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void; onParagraphChange?: (paragraphs: ProseParagraph[]) => void }) {
   const [editor] = useLexicalComposerContext()
   const callbacksRef = useRef({ onDocChange, onParagraphChange })
-  callbacksRef.current = { onDocChange, onParagraphChange }
+  useEffect(() => {
+    callbacksRef.current = { onDocChange, onParagraphChange }
+  })
 
   useEffect(() => {
     return editor.registerUpdateListener(({ editorState, prevEditorState, dirtyElements, dirtyLeaves }) => {

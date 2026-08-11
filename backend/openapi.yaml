@@ -2872,10 +2872,6 @@ components:
                   - tool
                   - action
                   - approval
-              instruction:
-                type: string
-                minLength: 1
-                maxLength: 4000
               toolRef:
                 type:
                   - string
@@ -2895,31 +2891,6 @@ components:
                 minLength: 1
                 maxLength: 120
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-              options:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-                    label:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                    description:
-                      type:
-                        - string
-                        - "null"
-                      minLength: 1
-                      maxLength: 500
-                  required:
-                    - id
-                    - label
-                  additionalProperties: false
-                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -2988,11 +2959,40 @@ components:
                       - typed
                       - untyped
                 default: &a19 {}
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
             required:
               - stableStepId
               - kind
-              - instruction
               - ordinal
+              - instruction
             additionalProperties: false
           minItems: 1
         transitions:
@@ -3234,10 +3234,6 @@ components:
               kind:
                 type: string
                 enum: *a17
-              instruction:
-                type: string
-                minLength: 1
-                maxLength: 4000
               toolRef:
                 type:
                   - string
@@ -3257,31 +3253,6 @@ components:
                 minLength: 1
                 maxLength: 120
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-              options:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-                    label:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                    description:
-                      type:
-                        - string
-                        - "null"
-                      minLength: 1
-                      maxLength: 500
-                  required:
-                    - id
-                    - label
-                  additionalProperties: false
-                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -3348,11 +3319,40 @@ components:
                     type: string
                     enum: *a18
                 default: *a19
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
             required:
               - stableStepId
               - kind
-              - instruction
               - ordinal
+              - instruction
             additionalProperties: false
           minItems: 1
         transitions:
@@ -3633,10 +3633,6 @@ components:
               kind:
                 type: string
                 enum: *a17
-              instruction:
-                type: string
-                minLength: 1
-                maxLength: 4000
               toolRef:
                 type:
                   - string
@@ -3656,31 +3652,6 @@ components:
                 minLength: 1
                 maxLength: 120
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-              options:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-                    label:
-                      type: string
-                      minLength: 1
-                      maxLength: 120
-                    description:
-                      type:
-                        - string
-                        - "null"
-                      minLength: 1
-                      maxLength: 500
-                  required:
-                    - id
-                    - label
-                  additionalProperties: false
-                maxItems: 8
               ordinal:
                 type: integer
                 minimum: 0
@@ -3747,11 +3718,40 @@ components:
                     type: string
                     enum: *a18
                 default: *a19
+              instruction:
+                type: string
+                minLength: 1
+                maxLength: 4000
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                      pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                    label:
+                      type: string
+                      minLength: 1
+                      maxLength: 120
+                    description:
+                      type:
+                        - string
+                        - "null"
+                      minLength: 1
+                      maxLength: 500
+                  required:
+                    - id
+                    - label
+                  additionalProperties: false
+                maxItems: 8
             required:
               - stableStepId
               - kind
-              - instruction
               - ordinal
+              - instruction
             additionalProperties: false
           minItems: 1
         transitions:
@@ -4116,10 +4116,6 @@ components:
                   kind:
                     type: string
                     enum: *a17
-                  instruction:
-                    type: string
-                    minLength: 1
-                    maxLength: 4000
                   toolRef:
                     type:
                       - string
@@ -4139,31 +4135,6 @@ components:
                     minLength: 1
                     maxLength: 120
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
-                  options:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          type: string
-                          minLength: 1
-                          maxLength: 120
-                          pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
-                        label:
-                          type: string
-                          minLength: 1
-                          maxLength: 120
-                        description:
-                          type:
-                            - string
-                            - "null"
-                          minLength: 1
-                          maxLength: 500
-                      required:
-                        - id
-                        - label
-                      additionalProperties: false
-                    maxItems: 8
                   ordinal:
                     type: integer
                     minimum: 0
@@ -4230,11 +4201,40 @@ components:
                         type: string
                         enum: *a18
                     default: *a19
+                  instruction:
+                    type: string
+                    minLength: 1
+                    maxLength: 4000
+                  options:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                          pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
+                        label:
+                          type: string
+                          minLength: 1
+                          maxLength: 120
+                        description:
+                          type:
+                            - string
+                            - "null"
+                          minLength: 1
+                          maxLength: 500
+                      required:
+                        - id
+                        - label
+                      additionalProperties: false
+                    maxItems: 8
                 required:
                   - stableStepId
                   - kind
-                  - instruction
                   - ordinal
+                  - instruction
                 additionalProperties: false
               minItems: 1
             transitions:

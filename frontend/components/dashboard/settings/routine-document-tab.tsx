@@ -54,9 +54,19 @@ const instructionParagraph = (segments: RoutineBlockInstructionSegment[]): Prose
     : { kind: 'chip', chipKind: 'variable', refId: segment.key, label: segment.key }),
 }]
 
-const segmentsFromParagraph = (segments: ProseSegment[]): RoutineBlockInstructionSegment[] => segments.map((segment) => segment.kind === 'text'
-  ? segment
-  : { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` })
+const segmentsFromParagraph = (segments: ProseSegment[]): RoutineBlockInstructionSegment[] => segments.length === 0
+  ? [{ kind: 'text', text: '' }]
+  : segments.map((segment) => segment.kind === 'text'
+    ? segment
+    : { kind: 'slotReference', key: segment.refId, source: `{{slot.${segment.refId}}}` })
+
+const instructionsEqual = (left: RoutineBlockInstructionSegment[], right: RoutineBlockInstructionSegment[]) =>
+  left.length === right.length && left.every((segment, index) => {
+    const candidate = right[index]
+    if (!candidate) return false
+    if (segment.kind === 'text') return candidate.kind === 'text' && segment.text === candidate.text
+    return candidate.kind === 'slotReference' && segment.key === candidate.key && segment.source === candidate.source
+  })
 
 const endingList = (doc: RoutineBlockDoc): RoutineBlockEnding[] => {
   const endings = new Map<string, RoutineBlockEnding>()
@@ -124,7 +134,11 @@ function DocumentEditor({ initialDoc, onDraftChange }: { initialDoc: RoutineBloc
 function StepEditor({ step, stepIndex, doc, variables, targetOptions, apply, addVariable }: { step: RoutineBlockStep; stepIndex: number; doc: RoutineBlockDoc; variables: Array<{ id: string; name: string; type: RoutineSlotType; required: boolean; mutable: boolean }>; targetOptions: (stepId: string) => ReactNode; apply: (edit: (current: RoutineBlockDoc) => RoutineBlockDoc) => void; addVariable: (variable: RoutineEditorVariable) => void }) {
   const catalog = useContext(RoutineSkillCatalogContext)
   const initialInstructionContent = useMemo(() => instructionParagraph(step.instruction), [step.instruction])
-  const updateInstruction = useCallback((segments: ProseSegment[]) => apply((current) => replaceInstruction(current, step.stableStepId, segmentsFromParagraph(segments))), [apply, step.stableStepId])
+  const updateInstruction = useCallback((segments: ProseSegment[]) => {
+    const instruction = segmentsFromParagraph(segments)
+    if (instructionsEqual(step.instruction, instruction)) return
+    apply((current) => replaceInstruction(current, step.stableStepId, instruction))
+  }, [apply, step.instruction, step.stableStepId])
   const updateBindingState = (state: { inputBindings?: Record<string, RoutineInputBinding>; outputAssignments?: Record<string, string>; mode?: 'typed' | 'untyped' }) => apply((current) => updateBindings(current, step.stableStepId, state))
   return <li className="space-y-3 rounded-lg border border-border p-4"><div className="flex flex-wrap items-center gap-2"><span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs">{stepIndex + 1}</span><Badge variant="outline">{step.kind === 'approval' ? 'Approval' : step.kind}</Badge>{step.kind === 'tool' || step.kind === 'action' ? <select aria-label={`${step.stableStepId} catalog item`} value={step.kind === 'tool' ? step.toolRef ?? '' : step.actionType ?? ''} onChange={(event) => apply((current) => updateStep(current, step.stableStepId, step.kind === 'tool' ? { toolRef: event.target.value } : { actionType: event.target.value }))} className="h-9 min-w-44 rounded-md border border-input bg-transparent px-2 text-sm"><option value="">Choose from catalog…</option>{catalog.skills.map((skill) => <option key={skill.skillName} value={skill.skillName}>{skill.displayName}</option>)}</select> : null}<span className="flex-1" /><Button type="button" size="icon" variant="ghost" disabled={stepIndex === 0} aria-label="Move step up" onClick={() => apply((current) => moveStep(current, step.stableStepId, -1))}><ArrowUp className="h-4 w-4" /></Button><Button type="button" size="icon" variant="ghost" disabled={stepIndex === doc.steps.length - 1} aria-label="Move step down" onClick={() => apply((current) => moveStep(current, step.stableStepId, 1))}><ArrowDown className="h-4 w-4" /></Button><Button type="button" size="icon" variant="ghost" aria-label="Remove step" onClick={() => apply((current) => removeStep(current, step.stableStepId))}><Trash2 className="h-4 w-4" /></Button></div>
     <RoutineInstructionEditor initialContent={initialInstructionContent} variables={variables} onCreateVariable={addVariable} onChange={updateInstruction} ariaLabel={`Step ${stepIndex + 1} instruction`} />

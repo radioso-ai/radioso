@@ -1,8 +1,8 @@
 import {
-  routineDefinitionDraftInputSchema,
+  routineDefinitionDraftEditingInputSchema,
   routineGuardProvenance,
-  type RoutineDefinitionDraftAuthoringInput,
-  type RoutineDefinitionDraftInput,
+  type RoutineDefinitionDraftEditingAuthoringInput,
+  type RoutineDefinitionDraftEditingInput,
   type RoutineGuardProvenance,
   type RoutineInputBinding,
   type RoutineStepMode,
@@ -10,10 +10,10 @@ import {
 import { SLOT_REFERENCE } from './document.js'
 import type { RoutineDefinitionDraftAuthored } from './types.js'
 
-type DraftSlot = RoutineDefinitionDraftInput['slots'][number]
-type DraftStep = RoutineDefinitionDraftInput['steps'][number]
-type DraftTransition = RoutineDefinitionDraftInput['transitions'][number]
-type DraftTerminal = RoutineDefinitionDraftInput['terminals'][number]
+type DraftSlot = RoutineDefinitionDraftEditingInput['slots'][number]
+type DraftStep = RoutineDefinitionDraftEditingInput['steps'][number]
+type DraftTransition = RoutineDefinitionDraftEditingInput['transitions'][number]
+type DraftTerminal = RoutineDefinitionDraftEditingInput['terminals'][number]
 
 export type RoutineBlockInstructionSegment =
   | { kind: 'text'; text: string }
@@ -58,11 +58,11 @@ export type RoutineBlockStep = Omit<DraftStep, 'instruction' | 'ordinal' | 'meta
 
 export type RoutineBlockDoc = {
   name: string
-  activation: RoutineDefinitionDraftInput['activation']
+  activation: RoutineDefinitionDraftEditingInput['activation']
   information: RoutineBlockSlot[]
   steps: RoutineBlockStep[]
   unreferencedEndings: RoutineBlockEnding[]
-  completionExport?: RoutineDefinitionDraftInput['completionExport']
+  completionExport?: RoutineDefinitionDraftEditingInput['completionExport']
 }
 
 export type RoutineBlockDiagnostic =
@@ -120,8 +120,8 @@ const slotKeysFromGuardText = (guardText: string | null): string[] => {
 const canonicalSlotFilledGuardText = (slotKeys: string[]): string =>
   slotKeys.map((slotKey) => `{{slot.${slotKey}}}`).join(' ')
 
-export function routineToBlockDoc(input: RoutineDefinitionDraftAuthoringInput): RoutineToBlockDocResult {
-  const parsed = routineDefinitionDraftInputSchema.safeParse(input)
+export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringInput): RoutineToBlockDocResult {
+  const parsed = routineDefinitionDraftEditingInputSchema.safeParse(input)
   if (!parsed.success) {
     return {
       ok: false,

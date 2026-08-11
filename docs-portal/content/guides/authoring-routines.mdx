@@ -9,11 +9,12 @@ A directive steers one turn. A routine carries a flow across many turns: it can 
 
 You author routines in an agent's **Routines** settings. The list shows one row per routine, not one row per version. Choose **New routine** to start a draft, or select an existing routine to open the editor.
 
-## Two views of the same draft
+## Three views of the same draft
 
-The editor has two views of one draft. Switching between them re-projects the same routine; it does not make a copy.
+The editor has three views of one draft. Switching between them re-projects the same routine; it does not make a copy.
 
 - **Prose** is the primary view. You write the routine in plain language and drop inline chips where structure is needed.
+- **Document** lays the routine out as a readable flow with typed controls for the parts that carry structure.
 - **Form** is a strict, lower-level view. It exposes slot, step, transition, and terminal fields directly. Some shapes — more than one handoff, an activation gate — open in Form because Prose cannot show them.
 
 ![The same routine in the Prose view: plain-language step lines with inline chips for the order_number and issue_description values.](/screenshots/dashboard-routine-prose.png)
@@ -21,6 +22,12 @@ The editor has two views of one draft. Switching between them re-projects the sa
 The graph the engine runs is compiled from the draft. You never draw or edit the graph by hand.
 
 ![The Damaged delivery intake routine open in the Form editor, showing the Name, Reentry, and Activation trigger fields, two required text slots named order_number and issue_description, and the first chat step.](/screenshots/dashboard-routine-editor.png)
+
+### Work in the Document view
+
+Document starts with a **Starts when** line, followed by **Information**, numbered steps, and endings. A skill step shows its **uses → sets** bindings. Each branch is marked **Rule** for an exact check or **AI decides** when the agent judges the condition, then points to another step, a finish, or a hand-off message.
+
+Edit the starts-when line directly. In a step instruction, type `@` to capture a value and choose its type in **Information**. Use **+ Step** to add chat, skill, approval, or action steps. Condition rows set the branch decision and target; ending rows set the message the flow delivers.
 
 ## Set the routine header
 

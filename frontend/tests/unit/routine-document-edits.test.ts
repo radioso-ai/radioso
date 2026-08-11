@@ -6,6 +6,7 @@ import {
   addSlot,
   addStep,
   changeBranchGuardKind,
+  createEndingForBranch,
   moveStep,
   referenceEnding,
   removeBranch,
@@ -16,8 +17,13 @@ import {
   targetBranchAtStep,
   updateBindings,
   updateBranchGuard,
+  updateEnding,
+  updateSlot,
+  updateStep,
 } from '@/lib/routine-document-edits'
+import { routineToForm } from '@/lib/routine-form'
 import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockDoc } from '@/lib/routine-prose'
+import type { RoutineDefinition, RoutineDefinitionDraft } from '@/lib/api'
 
 const source = () => {
   const result = routineToBlockDoc({
@@ -32,7 +38,47 @@ const source = () => {
   return result.doc
 }
 
+const pristineSeed = () => {
+  const result = routineToBlockDoc({
+    name: '',
+    activation: { triggerDescription: '', priority: 0 },
+    slots: [],
+    steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: '', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+    transitions: [],
+    terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: '', ordinal: 0 }],
+  })
+  if (!result.ok) throw new Error(result.diagnostics.map((item) => item.message).join(', '))
+  return result.doc
+}
+
 describe('routine document edits', () => {
+  it('replaces a pristine seed step when adding a step', () => {
+    const edited = addStep(pristineSeed(), 'approval')
+
+    expect(edited.steps).toHaveLength(1)
+    expect(edited.steps[0]!.kind).toBe('approval')
+  })
+
+  it('appends when the single seed step has instruction text', () => {
+    const edited = replaceInstruction(pristineSeed(), 'step_1', [{ kind: 'text', text: 'Ask for the account email.' }])
+    const withStep = addStep(edited, 'approval')
+
+    expect(withStep.steps).toHaveLength(2)
+  })
+
+  it('appends when the pristine seed step has a branch', () => {
+    const withBranch = addBranch(pristineSeed(), 'step_1')
+    const withStep = addStep(withBranch, 'approval')
+
+    expect(withStep.steps).toHaveLength(2)
+  })
+
+  it('appends on the second consecutive add from a pristine seed', () => {
+    const withSteps = addStep(addStep(pristineSeed(), 'chat'), 'chat')
+
+    expect(withSteps.steps).toHaveLength(2)
+  })
+
   it('adds, removes, and reorders steps without mutating the source', () => {
     const original = source()
     const withSteps = addStep(addStep(original, 'chat'), 'approval')
@@ -102,5 +148,52 @@ describe('routine document edits', () => {
     const projected = routineToBlockDoc(draft)
     expect(projected.ok).toBe(true)
     if (projected.ok) expect(projected.doc.steps).toHaveLength(2)
+  })
+
+  it('preserves field and AI branch guards through the Document-to-Form sync path', () => {
+    const initial = routineToBlockDoc({
+      name: 'Check order eligibility',
+      activation: { triggerDescription: 'When a customer asks whether an order is eligible.', priority: 0 },
+      slots: [],
+      steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: 'Ask for the order total.', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [],
+      terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: '', ordinal: 0 }],
+    })
+    if (!initial.ok) throw new Error(initial.diagnostics.map((item) => item.message).join(', '))
+
+    let doc = addStep(initial.doc, 'chat')
+    doc = replaceInstruction(doc, 'step_2', [
+      { kind: 'text', text: 'Ask for ' },
+      { kind: 'slotReference', key: 'order_total', source: '{{slot.order_total}}' },
+    ])
+    doc = renameSlot(addSlot(doc), 'slot_1', 'order_total')
+    doc = updateSlot(doc, 'order_total', { type: 'number' })
+    doc = updateStep(addStep(doc, 'tool'), 'step_3', { toolRef: 'orders.check_eligibility' })
+
+    doc = addBranch(doc, 'step_3')
+    doc = changeBranchGuardKind(doc, 'step_3', 0, 'field')
+    doc = updateBranchGuard(doc, 'step_3', 0, { fieldRef: 'order_total', fieldOp: 'lt', fieldValue: '50' })
+    doc = updateEnding(createEndingForBranch(doc, 'step_3', 0, 'handoff'), 'handoff_1', { instruction: 'Hand this order to the billing team.' })
+
+    doc = addBranch(doc, 'step_3')
+    doc = changeBranchGuardKind(doc, 'step_3', 1, 'llm')
+    doc = updateBranchGuard(doc, 'step_3', 1, { guardText: 'The customer needs a nuanced eligibility explanation.' })
+
+    const draft = draftFromBlockDoc(doc)
+    expect(draft.transitions).toHaveLength(2)
+    expect(draft.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+
+    const draftAsRoutine = (nextDraft: RoutineDefinitionDraft): RoutineDefinition => ({
+      ...nextDraft,
+      id: 'local-draft',
+      lineageId: 'local-lineage',
+      agentId: 'local-agent',
+      version: 1,
+      status: 'draft',
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    })
+    const form = routineToForm(draftAsRoutine(draft))
+    expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
   })
 })

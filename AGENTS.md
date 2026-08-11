@@ -24,6 +24,8 @@ This file is hand-maintained. Do not regenerate it from Speckit plans, append "r
 
 ## Architecture
 
+Operator-facing features ship a copilot tool descriptor or a stated coverage-map exclusion in the same change.
+
 ```
 Browser / website embed
           |

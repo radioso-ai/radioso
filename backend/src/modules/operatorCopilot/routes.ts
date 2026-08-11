@@ -9,7 +9,7 @@ import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/err
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotConflictError, CopilotNotFoundError } from "./public.js";
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
-const toolPermissions = ["workspace.agents.read", "workspace.history.read", "workspace.documents.read"] as const;
+const toolPermissions = ["workspace.agents.read", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read"] as const;
 
 export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | "authService" | "workspaceSessionService" | "accountAccessService" | "llmCapabilityResolver" | "operatorCopilotService">): Router => {
   const router = Router();

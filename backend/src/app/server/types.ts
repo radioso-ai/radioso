@@ -100,6 +100,8 @@ import type { VectorIndexReconciler } from "../../modules/retrieval/composition.
 import type { EmbeddingBindingResolverPort } from "../../modules/embeddingProfiles/public.js";
 import type { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
+import type { QualityTurnsService } from "../../modules/quality/composition.js";
+import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
 
 export interface AppDependencies {
   env: Env;
@@ -215,6 +217,8 @@ export interface AppDependencies {
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;
   operatorCopilotService: OperatorCopilotService;
+  qualitySignalsService: QualityTurnsService;
+  audiencePulseService: AudiencePulsePort;
   copilotRepository: CopilotRepositoryPort;
   crawlerProvider: {
     fetchPageWithScreenshot(url: string, options?: {

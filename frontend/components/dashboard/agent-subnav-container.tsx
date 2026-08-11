@@ -27,6 +27,7 @@ import { editionController } from '@/lib/edition-controller'
 import { agentsApi, type AgentSettings } from '@/lib/api'
 import { getLastSelectedAgentId, setLastSelectedAgentId } from '@/lib/agent-selection'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
+import { useCopilotEntity } from '@/lib/copilot-context'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { useWorkspace } from '@/lib/workspace-context'
 
@@ -86,6 +87,7 @@ export function AgentSubNavContainer({
   // and an IT "Claudio") are distinguishable in the dashboard. Visitors never see it.
   const agentName = getAgentOperatorLabel(selectedAgent)
   const activeSection = agentSectionFromRoute(routeState)
+  useCopilotEntity('agent', selectedAgentId, agentName, true)
 
   const agentCreationActions = useMemo(
     () =>

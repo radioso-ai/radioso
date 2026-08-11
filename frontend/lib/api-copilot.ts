@@ -9,6 +9,7 @@ export const COPILOT_PAGE_VIEWS = [
   'workbench',
   'quality',
   'evals',
+  'copilot',
   'other',
 ] as const
 
@@ -18,6 +19,17 @@ export interface CopilotPageContext {
   view: CopilotPageView | null
   agentId: string | null
   conversationId: string | null
+  selection: string | null
+  entities: CopilotPageEntity[]
+}
+
+export type CopilotPageEntityType = 'agent' | 'conversation' | 'routine' | 'directive' | 'document' | 'evalCase'
+
+export interface CopilotPageEntity {
+  type: CopilotPageEntityType
+  id: string
+  label: string
+  focused: boolean
 }
 
 export interface CopilotAvailability {
@@ -40,6 +52,12 @@ export interface CopilotConversationSummary {
 export interface CopilotActivitySummary {
   tool: string
   outcome: 'completed' | 'failed'
+  entity?: CopilotEntityReference
+}
+
+export interface CopilotEntityReference {
+  type: CopilotPageEntityType
+  id: string
 }
 
 export interface CopilotOperatorMessage {
@@ -81,6 +99,7 @@ export interface CopilotActivityEvent {
   toolCallId: string
   tool: string
   stage: CopilotActivityStage
+  entity?: CopilotEntityReference
 }
 
 export interface CopilotChunkEvent {
@@ -122,25 +141,43 @@ export const deriveCopilotPageContext = (
         view: routeState.activityTab === 'all' ? 'history' : 'activity',
         agentId,
         conversationId,
+        selection: null,
+        entities: [],
       }
     case 'agents':
-      return { view: (routeState.agentTab ?? 'chat') === 'chat' ? 'workbench' : 'agent', agentId, conversationId: null }
+      return { view: (routeState.agentTab ?? 'chat') === 'chat' ? 'workbench' : 'agent', agentId, conversationId: null, selection: null, entities: [] }
     case 'knowledge':
-      return { view: 'documents', agentId, conversationId: null }
+      return { view: 'documents', agentId, conversationId: null, selection: null, entities: [] }
     case 'quality':
-      return { view: 'quality', agentId, conversationId }
+      return { view: 'quality', agentId, conversationId, selection: null, entities: [] }
     case 'eval':
-      return { view: 'evals', agentId, conversationId: null }
+      return { view: 'evals', agentId, conversationId: null, selection: null, entities: [] }
     case 'copilot':
       return {
-        view: routeState.agentId
-          ? ((routeState.agentTab ?? 'chat') === 'chat' ? 'workbench' : 'agent')
-          : 'other',
+        view: 'copilot',
         agentId,
         conversationId,
+        selection: null,
+        entities: [],
       }
     default:
-      return { view: 'other', agentId, conversationId: null }
+      return { view: 'other', agentId, conversationId: null, selection: null, entities: [] }
+  }
+}
+
+export const buildCopilotPageContext = (
+  routeState: Parameters<typeof deriveCopilotPageContext>[0],
+  entities: readonly CopilotPageEntity[] = [],
+  selection: string | null = null,
+): CopilotPageContext => {
+  const base = deriveCopilotPageContext(routeState)
+  return {
+    ...base,
+    selection: selection?.trim().slice(0, 2000) || null,
+    entities: entities.slice(0, 30).map((entity) => ({
+      ...entity,
+      label: entity.label.trim().slice(0, 120) || entity.id,
+    })),
   }
 }
 

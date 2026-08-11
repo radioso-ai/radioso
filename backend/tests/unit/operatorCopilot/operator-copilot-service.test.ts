@@ -52,6 +52,38 @@ describe("OperatorCopilotService", () => {
     expect(invoke).not.toHaveBeenCalled();
     expect(repository.messages.at(-1)).toMatchObject({ role: "copilot", content: "Partial result", outcome: "budget_exhausted", activity: [{ tool: "Visible", outcome: "completed" }] });
   });
+
+  it("threads a bounded prior transcript into follow-up turns", async () => {
+    const repository = new MemoryCopilotRepository();
+    const runStreaming = vi.fn((_request: { systemPrompt: string; userMessage: string }) => ({
+      events: (async function* () {})(),
+      result: Promise.resolve({ terminatedReason: "completed" as const, finalMessage: "Done", stepsTaken: 1, toolResultTokensUsed: 0, wallTimeMs: 1 }),
+    }));
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming },
+      usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
+      auditService: { record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() },
+      prompt: "system",
+      tools: [],
+      now: () => now,
+    });
+    const turn = (conversationId: string | null, message: string) =>
+      service.runTurn({ workspaceId: "workspace", accountId: "account", operatorUserId: "operator", conversationId, message, pageContext: { view: "other", agentId: null, conversationId: null }, permissions: new Set() });
+
+    const firstEvents = [];
+    for await (const event of turn(null, "Check conversation abc")) firstEvents.push(event);
+    const conversationId = (firstEvents[0] as { data: { conversationId: string } }).data.conversationId;
+    for await (const _event of turn(conversationId, "can you summarize it?")) void _event;
+
+    const firstMessage = runStreaming.mock.calls[0][0];
+    expect(firstMessage.userMessage).toBe("Check conversation abc");
+    const secondMessage = runStreaming.mock.calls[1][0];
+    expect(secondMessage.userMessage).toContain("Earlier messages in this copilot conversation:");
+    expect(secondMessage.userMessage).toContain("Operator: Check conversation abc");
+    expect(secondMessage.userMessage).toContain("Copilot: Done");
+    expect(secondMessage.userMessage.endsWith("can you summarize it?")).toBe(true);
+  });
 });
 
 const tool = (name: string, requiredPermission: "workspace.agents.read" | "workspace.history.read", invoke: (input: unknown, ctx: unknown) => Promise<unknown>) => ({

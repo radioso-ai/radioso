@@ -13,6 +13,10 @@ import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 
 const COPILOT_BUDGETS = { maxSteps: 6, maxToolResultTokens: 12_000, maxWallTimeMs: 30_000 } as const;
 const TITLE_MAX_LENGTH = 120;
+// Bounded history keeps follow-up turns anchored without letting long copilot
+// conversations grow the model context unboundedly (spec 104 edge case).
+const HISTORY_MESSAGE_LIMIT = 12;
+const HISTORY_MESSAGE_CHARS = 2_000;
 
 export interface CopilotConversation {
   readonly id: string;
@@ -100,6 +104,7 @@ export class OperatorCopilotService {
     const labels = new Map(this.deps.tools.map((tool) => [tool.name, tool.uiLabel]));
     const tools = this.resolveTools(input, labels);
     try {
+      const priorTranscript = await this.buildPriorTranscript(conversation.id);
       await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
       await this.deps.auditService.record({
         accountId: input.accountId,
@@ -109,7 +114,14 @@ export class OperatorCopilotService {
         metadata: { conversationId: conversation.id, turnId },
       });
       yield { event: "conversation", data: { conversationId: conversation.id, turnId } };
-      const stream = this.deps.capabilityRunner.runStreaming({ systemPrompt: this.deps.prompt, userMessage: input.message }, tools, COPILOT_BUDGETS);
+      const stream = this.deps.capabilityRunner.runStreaming(
+        {
+          systemPrompt: this.deps.prompt,
+          userMessage: priorTranscript ? `${priorTranscript}\n${input.message}` : input.message,
+        },
+        tools,
+        COPILOT_BUDGETS,
+      );
       for await (const trace of stream.events) {
         const event = mapCopilotTraceEvent(trace, labels);
         trackActivity(trace, labels, activity);
@@ -155,6 +167,19 @@ export class OperatorCopilotService {
       .filter((descriptor) => input.permissions.has(descriptor.requiredPermission))
       .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, pageContext: input.pageContext }))
       .map((tool) => ({ ...tool, description: tool.description, name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema, invoke: tool.invoke } as AgentTool));
+  }
+
+  private async buildPriorTranscript(conversationId: string): Promise<string | null> {
+    const messages = await this.deps.repository.listMessages({ conversationId });
+    if (messages.length === 0) return null;
+    const lines = messages.slice(-HISTORY_MESSAGE_LIMIT).map((message) => {
+      const content =
+        message.content.length > HISTORY_MESSAGE_CHARS
+          ? `${message.content.slice(0, HISTORY_MESSAGE_CHARS)}…`
+          : message.content;
+      return `${message.role === "operator" ? "Operator" : "Copilot"}: ${content}`;
+    });
+    return `Earlier messages in this copilot conversation:\n${lines.join("\n")}\n\nCurrent operator message:\n`;
   }
 
   private async persistTerminal(conversation: CopilotConversation, content: string, outcome: CopilotTurnOutcome, activity: ReadonlyArray<{ tool: string; outcome: "completed" | "failed" }>): Promise<void> {

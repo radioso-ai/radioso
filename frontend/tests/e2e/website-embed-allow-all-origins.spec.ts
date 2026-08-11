@@ -20,14 +20,15 @@ test("operator can toggle website embed allow-all origins", async ({ page }) => 
     agentUpdates,
   });
 
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=website-embed`);
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=web-chat`);
 
-  await expect(page.getByRole("heading", { name: "Website chat widget" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Website widget", exact: true })).toBeVisible();
   await expect(page.getByLabel("Specific websites")).toBeVisible();
 
   await page.locator("#websiteEmbedWildcardOrigin").click();
 
-  await expect(page.getByLabel("Allowed websites")).toBeHidden();
+  // Allowing any website retires the per-origin list, so its field goes away.
+  await expect(page.getByLabel("Specific websites")).toBeHidden();
   await expect.poll(() => agentUpdates.length).toBeGreaterThanOrEqual(1);
   expect(agentUpdates.at(-1)).toMatchObject({
     surfaceSettings: {

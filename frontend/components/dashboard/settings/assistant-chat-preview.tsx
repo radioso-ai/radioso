@@ -17,8 +17,9 @@ import type { WebsiteEmbedThemeSettings } from '@/lib/api'
 import { contrastRatio } from '@/lib/color'
 import {
   buildWebsiteEmbedSurfaceCssVars,
-  DEFAULT_WEBSITE_EMBED_COPY,
+  getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
+  type WebsiteEmbedCopyOverrides,
 } from '@/lib/embed-widget'
 import { useSkillCatalog } from '@/lib/skill-catalog'
 
@@ -132,6 +133,7 @@ export function ChatPreview({
   showProactiveGreeting,
   assistantLinkUtmEnabled,
   branding,
+  copyOverrides,
 }: {
   themeSettings: WebsiteEmbedThemeSettings
   assistantName: string
@@ -140,6 +142,8 @@ export function ChatPreview({
   showProactiveGreeting: boolean
   assistantLinkUtmEnabled: boolean
   branding?: AgentBrandingSettings | null
+  /** Visitor-facing wording currently being edited, so the preview tracks it live. */
+  copyOverrides?: WebsiteEmbedCopyOverrides | null
 }) {
   const displayName = assistantName.trim() || 'Assistant'
   const resolvedLogo = logoUrl ?? '/radioso-icon.svg'
@@ -158,6 +162,8 @@ export function ChatPreview({
     () => buildPreviewMessages({ displayName, showProactiveGreeting, showSuggestedQuestions }),
     [displayName, showProactiveGreeting, showSuggestedQuestions],
   )
+
+  const copy = useMemo(() => getWebsiteEmbedCopy(null, copyOverrides), [copyOverrides])
 
   const surfaceVars = useMemo(
     () => buildWebsiteEmbedSurfaceCssVars(embedTheme) as CSSProperties,
@@ -238,13 +244,13 @@ export function ChatPreview({
       <PublicChatBubbleComposerSurface theme={embedTheme}>
         <PublicChatBubbleComposerForm
           theme={embedTheme}
-          copy={DEFAULT_WEBSITE_EMBED_COPY}
+          copy={copy}
           value=""
           readOnly
         />
         <PublicChatBubbleDisclaimer
           theme={embedTheme}
-          copy={DEFAULT_WEBSITE_EMBED_COPY}
+          copy={copy}
           workspaceName={displayName}
           branding={branding}
         />

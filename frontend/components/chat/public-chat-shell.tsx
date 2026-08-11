@@ -47,6 +47,7 @@ import {
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
+  resolveWebsiteEmbedCopyPack,
   shouldUseWebsiteEmbedCompactKeyboardLayout,
   shouldUseWebsiteEmbedNarrowLayout,
   type WebsiteEmbedCopyOverrides,
@@ -546,7 +547,6 @@ function PublicChatContent({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface: PublicChatSurface
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const [input, setInput] = useState('')
   const viewportLayout = useWebsiteEmbedViewportLayout()
   const isCompactKeyboardLayout = surface === 'embed' && viewportLayout.isCompactKeyboardLayout
@@ -560,6 +560,7 @@ function PublicChatContent({
     assistantLinkUtmEnabled,
     citationDisplayEnabled,
     assistantTheme,
+    assistantCopyPacks,
     branding,
     intakeActions,
     isLoading,
@@ -577,6 +578,14 @@ function PublicChatContent({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const resolvedCopyOverrides = useMemo(
+    () => ({ ...resolveWebsiteEmbedCopyPack(assistantCopyPacks, localeOverride), ...copyOverrides }),
+    [assistantCopyPacks, copyOverrides, localeOverride],
+  )
+  const copy = useMemo(
+    () => getWebsiteEmbedCopy(localeOverride, resolvedCopyOverrides),
+    [localeOverride, resolvedCopyOverrides],
+  )
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides

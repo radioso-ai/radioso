@@ -9,6 +9,7 @@ import {
 } from "../../../modules/chat/contracts/index.js";
 import type { AuditEventInput } from "../../../modules/audit/contracts/index.js";
 import {
+  getWebsiteEmbedSurfaceSettings,
   isAgentBootstrapActive,
   resolveAgentDisplayName,
   type ConversationAgent,
@@ -39,27 +40,31 @@ export const presentPublicChatSession = ({
   resume,
   assistantAvatarUrl,
   intakeActions,
-}: PublicChatSessionPresentationInput) => ({
-  workspaceName: resolveAgentDisplayName({
+}: PublicChatSessionPresentationInput) => {
+  const websiteEmbed = getWebsiteEmbedSurfaceSettings(agent);
+  return {
+    workspaceName: resolveAgentDisplayName({
+      agentName: agent.name,
+      workspaceName,
+    }),
+    agentId: agent.id,
     agentName: agent.name,
-    workspaceName,
-  }),
-  agentId: agent.id,
-  agentName: agent.name,
-  assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
-  citationDisplayEnabled: agent.citationDisplayEnabled,
-  publicChatToken,
-  publicSessionId: session.publicSessionId,
-  publicSessionToken: session.token,
-  resumeToken: resume.token,
-  assistantBootstrapActive: isAgentBootstrapActive(agent),
-  assistantAvatarUrl,
-  theme: agent.theme,
-  branding: agent.branding,
-  intakeActions,
-  expiresAt: session.expiresAt,
-  resumeExpiresAt: resume.expiresAt,
-});
+    assistantLinkUtmEnabled: agent.assistantLinkUtmEnabled,
+    citationDisplayEnabled: agent.citationDisplayEnabled,
+    publicChatToken,
+    publicSessionId: session.publicSessionId,
+    publicSessionToken: session.token,
+    resumeToken: resume.token,
+    assistantBootstrapActive: isAgentBootstrapActive(agent),
+    assistantAvatarUrl,
+    theme: websiteEmbed.theme,
+    copy: websiteEmbed.copy,
+    branding: agent.branding,
+    intakeActions,
+    expiresAt: session.expiresAt,
+    resumeExpiresAt: resume.expiresAt,
+  };
+};
 
 export const websiteEmbedLaunchAllowedAuditEvent = (input: {
   accountId: string;

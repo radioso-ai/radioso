@@ -73,8 +73,7 @@ const clearAgentCreationHandoff: () => void = agentCreationExtensionsEnabled
 
 /** Each non-chat agent section maps to a content mode and a column-3 title. */
 const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMeta> = {
-  identity: { title: 'Identity & appearance', mode: 'assistant' },
-  behavior: { title: 'Behavior', mode: 'assistant' },
+  profile: { title: 'Profile', mode: 'assistant' },
   skills: {
     title: 'Skills',
     mode: 'assistant',
@@ -87,8 +86,11 @@ const AGENT_SECTION_META: Record<Exclude<AgentSectionId, 'chat'>, AgentSectionMe
   },
   directives: { title: 'Directives', mode: 'assistant' },
   routines: { title: 'Routines', mode: 'assistant' },
-  'public-chat-link': { title: 'Public chat link', mode: 'channels' },
-  'website-embed': { title: 'Website widget', mode: 'channels' },
+  'web-chat': {
+    title: 'Web chat',
+    mode: 'channels',
+    description: 'How the chat looks and reads, and where visitors can reach it.',
+  },
   'api-channel': { title: 'API', mode: 'channels' },
   'mcp-channel': { title: 'MCP', mode: 'channels' },
   'slack-channel': { title: 'Slack', mode: 'channels' },
@@ -152,7 +154,7 @@ function AgentCreationHandoffBanner({
 function AgentSettingsDashboardPage({
   accountId,
   agentCreationHandoff,
-  channelsTabHref,
+  profileHref,
   dismissAgentCreationHandoff,
   meta,
   routeState,
@@ -163,7 +165,7 @@ function AgentSettingsDashboardPage({
 }: {
   accountId: string
   agentCreationHandoff: AgentCreationHandoff | null
-  channelsTabHref: string
+  profileHref: string
   dismissAgentCreationHandoff: () => void
   meta: AgentSectionMeta
   routeState: DashboardRouteState
@@ -184,7 +186,7 @@ function AgentSettingsDashboardPage({
       contentClassName="flex flex-col overflow-hidden p-0"
       contentScroll={false}
     >
-      {section === 'identity' && agentCreationHandoff ? (
+      {section === 'profile' && agentCreationHandoff ? (
         <AgentCreationHandoffBanner summary={agentCreationHandoff} onDismiss={dismissAgentCreationHandoff} />
       ) : null}
       <WorkspaceAssistantChannelsTab
@@ -193,7 +195,7 @@ function AgentSettingsDashboardPage({
         agentId={selectedAgentId}
         agentSection={section}
         routeState={routeState}
-        channelsTabHref={channelsTabHref}
+        profileHref={profileHref}
         onSaveStateChange={setSaveState}
       />
     </DashboardPage>
@@ -286,13 +288,13 @@ export function AgentView({
     }
   }, [loadAgents])
 
-  const channelsTabHref = useMemo(
+  const profileHref = useMemo(
     () =>
       buildDashboardHref(accountId, {
         ...routeState,
         section: 'agents',
-        agentTab: 'channels',
-        anchor: undefined,
+        agentTab: 'behavior',
+        anchor: 'assistant-profile',
       }),
     [accountId, routeState],
   )
@@ -446,7 +448,7 @@ export function AgentView({
           section: 'agents',
           agentId,
           agentTab: 'behavior',
-          anchor: 'assistant-identity',
+          anchor: 'assistant-profile',
           workspaceId: activeWorkspaceId ?? undefined,
           workspacePublicRouteKey: activeWorkspace?.publicRouteKey ?? undefined,
         })
@@ -495,7 +497,7 @@ export function AgentView({
         <AgentSettingsDashboardPage
           accountId={accountId}
           agentCreationHandoff={agentCreationHandoff}
-          channelsTabHref={channelsTabHref}
+          profileHref={profileHref}
           dismissAgentCreationHandoff={dismissAgentCreationHandoff}
           meta={meta}
           routeState={routeState}

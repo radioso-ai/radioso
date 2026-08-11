@@ -22,6 +22,7 @@ const createChatState = (overrides: Record<string, unknown> = {}) => ({
   assistantLinkUtmEnabled: true,
   citationDisplayEnabled: true,
   assistantTheme: null,
+  assistantCopyPacks: {},
   branding: { hidePoweredBy: false, privacyPolicyUrl: null },
   intakeActions: [],
   isLoading: false,
@@ -106,5 +107,29 @@ describe('PublicChatShell embedded layout', () => {
 
     expect(html).toMatch(/<h2[^>]*>Vikram<\/h2>/)
     expect(html).not.toContain('data-message-role="assistant"')
+  })
+
+  it('uses persisted wording on a shared link and keeps explicit URL copy authoritative', () => {
+    chatState.current = createChatState({
+      assistantCopyPacks: {
+        fr: {
+          publicChatEmptyMessage: 'Je peux vous aider avec votre commande.',
+          startPrompt: 'Posez une question',
+        },
+      },
+    })
+
+    const html = renderToStaticMarkup(
+      <PublicChatShell
+        token="public-token"
+        surface="public"
+        localeOverride="fr-CA"
+        copyOverrides={{ startPrompt: 'Dites bonjour' }}
+      />,
+    )
+
+    expect(html).toContain('Je peux vous aider avec votre commande.')
+    expect(html).toContain('Dites bonjour')
+    expect(html).not.toContain('Posez une question')
   })
 })

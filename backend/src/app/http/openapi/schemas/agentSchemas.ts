@@ -647,6 +647,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string(),
         text: z.string(),
       }).optional(),
+      copy: z.record(z.record(z.string())).optional(),
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),

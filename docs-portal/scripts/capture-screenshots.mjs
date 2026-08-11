@@ -89,8 +89,10 @@ const openProseView = async (page) => {
 const shots = [
   { name: 'dashboard-agents-workbench.png', url: ws(`/agents/${AGENT_ID}?tab=chat`), settle: 3000, action: askInWorkbench },
   { name: 'dashboard-knowledge-documents.png', url: ws('/documents'), settle: 2000 },
-  { name: 'dashboard-agent-behavior.png', url: ws(`/agents/${AGENT_ID}?tab=behavior`), settle: 2000 },
-  { name: 'dashboard-agent-directives.png', url: ws(`/agents/${AGENT_ID}?tab=behavior`), settle: 2000, action: openDirectives },
+  // The prior merged Identity & appearance and Behavior pages are now Profile;
+  // the docs image describes Web chat, which lives under Channels.
+  { name: 'dashboard-agent-behavior.png', url: ws(`/agents/${AGENT_ID}?tab=channels&anchor=web-chat`), settle: 2000 },
+  { name: 'dashboard-agent-directives.png', url: ws(`/agents/${AGENT_ID}?tab=behavior&anchor=assistant-directives`), settle: 2000, action: openDirectives },
   ...(ROUTINE_ID ? [
     { name: 'dashboard-routine-editor.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500 },
     { name: 'dashboard-routine-prose.png', url: ws(`/agents/${AGENT_ID}/routines/${ROUTINE_ID}`), settle: 2500, action: openProseView },
@@ -98,7 +100,7 @@ const shots = [
   { name: 'dashboard-activity.png', url: ws('/history?tab=all'), settle: 2000 },
   { name: 'dashboard-settings.png', url: ws('/settings'), settle: 2000 },
   { name: 'dashboard-eval.png', url: ws('/eval'), settle: 2000 },
-  { name: 'dashboard-agent-channels.png', url: ws(`/agents/${AGENT_ID}?tab=channels`), settle: 2000 },
+  { name: 'dashboard-agent-channels.png', url: ws(`/agents/${AGENT_ID}?tab=channels&anchor=web-chat`), settle: 2000 },
 ]
 
 const browser = await chromium.launch()

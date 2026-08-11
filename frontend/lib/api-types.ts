@@ -289,6 +289,7 @@ export interface PublicChatIntakeAction {
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
+  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -524,6 +525,7 @@ export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   assistantBootstrapActive?: boolean
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
+  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 

@@ -121,7 +121,7 @@ This payload covers user-facing workspace behavior such as:
 - `websiteEmbedCopy`
 - `websiteEmbedExpertOverrides`
 
-<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat settings remain separate from the hosted widget routes.
+<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat has its own keys and its own rotation endpoint, so the two placements are enabled and rotated independently even though the dashboard configures both on the agent's **Web chat** page.
 
 Public link and embed token rotation use explicit endpoints:
 

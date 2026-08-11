@@ -4450,6 +4450,11 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
             branding?: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
@@ -5542,6 +5547,11 @@ export interface components {
                 brandText: string;
                 surface: string;
                 text: string;
+            };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
             };
             branding?: {
                 hidePoweredBy: boolean;

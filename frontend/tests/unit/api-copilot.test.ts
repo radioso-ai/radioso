@@ -7,6 +7,7 @@ vi.mock('@/lib/api-client', () => ({
   API_BASE: '/backend/api/v1',
   buildError: buildErrorMock,
   request: requestMock,
+  getStoredActiveWorkspaceId: () => 'workspace-1',
 }))
 
 describe('copilotApi', () => {
@@ -64,7 +65,6 @@ describe('copilotApi', () => {
       { headers: { 'content-type': 'text/event-stream' } },
     )
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
-    vi.stubGlobal('window', { localStorage: { getItem: vi.fn(() => 'workspace-1') } })
 
     const { copilotApi } = await import('@/lib/api-copilot')
     await copilotApi.streamTurn({

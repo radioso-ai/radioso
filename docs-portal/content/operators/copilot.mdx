@@ -1,0 +1,79 @@
+---
+title: "Operator Copilot"
+description: "Use the dashboard Copilot to explain agent behavior from conversation traces, configuration, and the page you are viewing."
+last_updated: 2026-08-11
+---
+
+# Operator Copilot
+
+Copilot helps you investigate an agent from inside the dashboard. Ask why a
+conversation received a particular answer, why retrieval did not run, or which
+trace stage produced a refusal. Copilot reads the workspace data available to
+your operator session and streams its findings as it works.
+
+## Open Copilot
+
+Choose **Copilot** in the dashboard sidebar. The surface has three working
+areas:
+
+- **Conversations** keeps your saved Copilot threads. Select one to continue it,
+  or choose **New conversation** to start a separate investigation.
+- **The thread** shows your question, the streamed answer, and the activity
+  behind the answer.
+- **Current context** shows the dashboard view, selected agent, and selected
+  customer conversation sent with the next question.
+
+Copilot uses the page context that is already available in the dashboard. When
+you open it from a selected customer conversation, you can ask about “this
+conversation” without copying its id into the prompt.
+
+## Follow a running turn
+
+While Copilot works, activity lines show the UI-safe capability label and its
+stage. For example, **Reading conversation trace — started** becomes
+**completed** when that read finishes. A failed activity stays visible so you
+can distinguish an incomplete investigation from a successful one.
+
+The answer carries a terminal outcome:
+
+- **Completed** means the turn reached its normal end.
+- **Budget exhausted** means Copilot returned its partial findings after its
+  runtime budget ran out.
+- **Turn failed** means the turn could not complete. Read the visible activity
+  and error state before retrying.
+
+Only one turn runs in a Copilot conversation at a time. The composer is
+disabled while a turn is active, and a conversation that is already running
+shows the same locked state when you open it.
+
+## Manage conversations
+
+Your Copilot conversations are separate from customer Activity, quality, and
+history views. Return to Copilot to resume a saved thread. Use **Delete** in
+the thread header to remove the selected conversation and its messages.
+
+Copilot is available to operators with `workspace.agents.read`. It uses the
+dashboard session, so workspace API bearer tokens cannot start a Copilot turn.
+When the workspace has no resolved LLM capability, Copilot shows a provider
+setup state with a link to **Settings → Providers**.
+
+## Common failure modes
+
+- **The Copilot entry is missing** — your session does not hold
+  `workspace.agents.read` for the active workspace.
+- **Provider setup appears** — configure or select an LLM under **Settings →
+  Providers**, then return to Copilot.
+- **A turn remains locked** — another turn is still running in that
+  conversation. Select a different Copilot conversation or wait for the
+  running turn to finish.
+- **A tool activity fails** — Copilot continues where it can and marks the
+  affected turn honestly. The answer identifies the data it could not access.
+
+## Read next
+
+- [Human takeover](/operators/human-takeover) — investigate a customer
+  conversation and take ownership when a person needs to reply.
+- [Test your agent in the workbench](/guides/workbench) — run an agent turn
+  directly and inspect its customer-facing trace.
+- [Evaluate answer quality](/guides/evals) — turn a known behavior into a
+  repeatable quality check.

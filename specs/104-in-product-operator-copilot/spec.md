@@ -64,9 +64,21 @@ them):
   customer-facing agents an operator authors. The copilot is a fixed product
   surface built directly on the agent runtime. The earlier "no whole-turn
   agent" decision applies to the customer turn spine, not to this surface.
-- **Tools are hand-curated, not derived.** The catalog is not auto-generated from
-  the OpenAPI registry; each tool has a tuned description, focused input/output
-  schemas, and an explicit permission requirement.
+- **Tools are curated per family, contributed per module, and coverage-checked —
+  never schema-generated.** Breadth comes from generic family readers (one
+  agent-configuration reader over the `AgentConfig` projection, one trace
+  reader, one history search, one document search, …) rather than per-feature
+  tools — so a feature that follows the platform's own "agent settings are
+  agent data" rule (spec 079) is copilot-readable with no catalog change. Each
+  owning module contributes its own descriptors, shipping a descriptor (or an
+  explicit exclusion) is part of an operator-facing feature's definition of
+  done, and a repo check derived from the OpenAPI registry reports
+  control-plane operations unreachable by any tool — a forgotten feature is a
+  red check, not a silent gap. Individual tools are never auto-generated from
+  the OpenAPI registry: each has a tuned description, focused input/output
+  schemas, and an explicit permission requirement. (This mirrors how PostHog's
+  Max gets breadth: every tool hand-written, generic readers per family,
+  per-product auto-discovered contribution — no API-derived tools.)
 - **Existing single-purpose assistants fold in as catalog tools; they are the
   pattern, not parallel surfaces.** The agent wizard and directive coach become
   proposal-drafting tools, and Audience Pulse results become a read tool — each
@@ -277,6 +289,11 @@ Decisions resolved during drafting and review (planning must not relitigate):
 - **D6 — Staleness via per-target adapters.** Each proposal target type provides
   an adapter (read current version token, preview diff, apply-if-version-matches);
   there is no generic cross-entity staleness hash.
+- **D7 — Breadth strategy.** Catalog breadth comes from family-level readers,
+  per-module contribution as definition of done, and an OpenAPI-derived
+  coverage check — not from schema-generated tools (PostHog Max precedent:
+  all tools hand-written; breadth via generic readers and auto-discovered
+  per-product contribution).
 
 Open clarifications (non-blocking; default answers stated):
 
@@ -348,8 +365,14 @@ Open clarifications (non-blocking; default answers stated):
     with each turn describing what the operator is viewing (agent, conversation,
     view), validated on the backend and injected as context, never as
     instructions.
+  - A **catalog coverage check**: a repository check (sibling of
+    `validate-architecture-boundaries.mjs`) that derives the control-plane
+    operation list from the OpenAPI registry and fails when an operation is
+    neither reachable through a catalog tool nor explicitly allowlisted as out
+    of catalog scope with a stated reason.
 - **Anti-Goals**:
-  - Do not auto-generate tools from the OpenAPI registry.
+  - Do not auto-generate tools from the OpenAPI registry — derive the coverage
+    check from it instead.
   - Do not give the copilot direct repository/database access; every read and
     write goes through the owning module's service with permission checks.
   - Do not store copilot conversations in the customer conversation tables or let
@@ -390,7 +413,11 @@ Open clarifications (non-blocking; default answers stated):
   metadata, eval results, quality/needs-attention signals, and Audience Pulse
   topic-census results (the existing periodic visitor-question summary, exposed
   as a read tool over its stored analyses — the copilot does not trigger new
-  analyses).
+  analyses). These MUST be structured as family-level readers, not per-feature
+  tools: agent-configuration reads go through the `AgentConfig` projection (so
+  new agent-data fields are covered without catalog changes), routine reads
+  return the portable markdown form, and conversation reads return the existing
+  trace envelope.
 - **FR-006**: Every tool MUST declare a required permission, and the catalog
   presented to a turn MUST include only tools whose permission the session
   principal holds. The initial matrix, following the owning areas' existing
@@ -459,6 +486,12 @@ Open clarifications (non-blocking; default answers stated):
 - **FR-018**: Documentation MUST be updated in the same change: operator-facing
   docs for the copilot surface and proposals, and settings docs if any new
   setting is introduced.
+- **FR-019**: The repository MUST gain the catalog coverage check (see New
+  Seams): CI fails when a control-plane operation in the OpenAPI registry is
+  neither reachable through a catalog tool nor allowlisted with a stated
+  reason. The definition-of-done convention — an operator-facing feature ships
+  its copilot tool descriptor or an allowlist entry — MUST be recorded in
+  `AGENTS.md` in the same change.
 
 ### Key Entities
 

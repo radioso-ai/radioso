@@ -124,8 +124,9 @@ test("opens Copilot, streams activity and an answer, resumes history, and delete
   await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Why was retrieval skipped?");
   await page.getByRole("button", { name: "Send question" }).click();
 
-  await expect(page.getByText("Reading conversation trace").first()).toBeVisible();
   await expect(page.getByText("The trace shows retrieval was skipped.").first()).toBeVisible();
+  await page.getByRole("button", { name: /Read 1 source during this turn/ }).click();
+  await expect(page.getByText("Reading conversation trace").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Why was retrieval skipped?" }).click();
   await expect(page.getByText("Completed").first()).toBeVisible();
@@ -279,8 +280,8 @@ test("retries a failed Copilot turn with the same message", async ({ page }) => 
   await page.goto(`/w/${workspaceKey}/copilot`);
   await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Try this again");
   await page.getByRole("button", { name: "Send question" }).click();
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.getByText("The retry completed.")).toBeVisible();
   expect(turnCount).toBe(2);
 });

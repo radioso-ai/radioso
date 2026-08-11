@@ -5,13 +5,9 @@ description: Beyond answers — agents steer with directives, run multi-step rou
 
 # What an agent can do
 
-An agent does more than answer a question. It steers its own behavior with directives, runs multi-step routines across turns, takes action through your tools, and hands off to a person when it should. Every part of this is grounded in your data and recorded in the turn trace.
+An agent answers, acts, and hands off — inside the rules you author. It steers its own behavior with directives, answers from your data, runs multi-step routines across turns, takes action through your tools, and gets a person when it should. Every part of it is recorded in the turn trace.
 
-This page explains the four capabilities and how they fit together.
-
-## Answer from your data
-
-The baseline. When the agent has evidence in your documents, it answers and cites the source. When it does not, it says so. See [Grounded answers](/why-radioso/grounded-answers) for how grounding works and how to verify it.
+This page explains the four capabilities and how they fit together. For the shape they add up to, see [Guided autonomy](/why-radioso/guided-autonomy).
 
 ## Steer behavior with directives
 
@@ -22,6 +18,10 @@ A directive is a standing rule. It pairs a condition with how the agent should b
 A directive never acts on its own. It shapes tone, judgment, and approach — it steers the reply, it does not perform a task. Directives are always on. Each turn, the matching ones are applied by meaning, not by a keyword list, so the same rule works across every language and surface.
 
 Every directive that applies is recorded in the turn trace, with the reason it matched.
+
+## Answer from your data
+
+When the agent has evidence in your documents, it answers and cites the source. When it does not, it says so. See [Grounded answers](/why-radioso/grounded-answers) for how grounding works and how to verify it.
 
 ## Run multi-step routines
 
@@ -50,7 +50,7 @@ A routine is where talking turns into doing:
 
 - **Call a tool.** A tool step dispatches a skill — for example, a skill backed by an external system over MCP — and the routine branches on the result.
 - **Fire a webhook on completion.** A routine can post a signed payload to a workspace webhook destination when it finishes, so a downstream system picks up the result.
-- **Hand off to a person.** A handoff ends the routine by escalating to a human. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
+- **Hand off to a person.** A handoff ends the routine by escalating to a human. The built-in contact flow — collect an email, collect a message, submit, confirm — is written as routine data too, registered with the platform rather than stored on your agent.
 
 These run through an asynchronous action outbox: actions are dispatched, retried on transient failure, and recorded.
 

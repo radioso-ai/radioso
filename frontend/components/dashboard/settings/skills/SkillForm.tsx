@@ -372,6 +372,7 @@ export function SkillForm({
   skills,
   editingSkill = null,
   capabilityId = null,
+  initialName = null,
   isSaving = false,
   error = null,
   onOpenChange,
@@ -383,6 +384,9 @@ export function SkillForm({
   skills: AgentSkill[]
   editingSkill?: AgentSkill | null
   capabilityId?: AgentSkillCapabilityId | null
+  // Seeds the name for a new skill instead of the capability's suggestion, for a caller that
+  // already knows what the author called it.
+  initialName?: string | null
   isSaving?: boolean
   error?: string | null
   onOpenChange: (open: boolean) => void
@@ -394,7 +398,11 @@ export function SkillForm({
     }
     return capabilityId ? capabilities.filter((item) => item.id === capabilityId) : capabilities
   }, [capabilities, capabilityId, editingSkill])
-  const [draft, setDraft] = useState<SkillFormDraft>(() => createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
+  const buildDraft = useCallback((): SkillFormDraft => {
+    const initial = createInitialSkillDraft(scopedCapabilities, editingSkill, skills)
+    return !editingSkill && initialName ? { ...initial, name: initialName } : initial
+  }, [editingSkill, initialName, scopedCapabilities, skills])
+  const [draft, setDraft] = useState<SkillFormDraft>(buildDraft)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [routineOpen, setRoutineOpen] = useState(false)
   const [localError, setLocalError] = useState<string | null>(null)
@@ -442,12 +450,12 @@ export function SkillForm({
   useEffect(() => {
     if (!open) return
     queueMicrotask(() => {
-      setDraft(createInitialSkillDraft(scopedCapabilities, editingSkill, skills))
+      setDraft(buildDraft())
       setAdvancedOpen(false)
       setRoutineOpen(false)
       setLocalError(null)
     })
-  }, [editingSkill, open, scopedCapabilities, skills])
+  }, [buildDraft, open])
 
   const discoverTools = useCallback(async (connectionId: string, preferredToolName: string) => {
     if (!capability || capability.inputSchema.source !== 'discovered') return

@@ -1,5 +1,5 @@
 import { slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
-import type { RoutineGuardKind, RoutineSlotType, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
+import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
 
 const copy = <T>(value: T): T => structuredClone(value)
 

@@ -106,7 +106,7 @@ binding works.
 
 ## Security model
 
-The key points:
+Four rules govern how credentials and calls are handled:
 
 - **Secrets are encrypted at rest** and never returned. This covers access
   tokens, OAuth client secrets, and OAuth access/refresh tokens. The server URL

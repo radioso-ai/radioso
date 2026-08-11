@@ -5,7 +5,7 @@ description: Create public chat sessions and use the public chat routes that pre
 
 # Public chat and embed
 
-These routes support anonymous public chat and website embed sessions. They do not use the workspace API token.
+These routes support anonymous public chat and website embed sessions. They do not use the workspace API token — a browser or your own backend calls them directly against your Radioso host (`https://api.radioso.ai`, `https://api-us.radioso.ai`, or your self-hosted origin) using the public launch token embedded in your site, not a workspace credential.
 
 ## How it works
 
@@ -15,7 +15,7 @@ These routes support anonymous public chat and website embed sessions. They do n
 4. Store the returned `resumeToken` if the visitor should resume the same history after the public session expires.
 5. Preserve the server-set anonymous session cookie across requests when available.
 
-The key point is that the launch token identifies the public surface. The public session identifies the visitor.
+The launch token identifies the public surface, and the public session identifies the visitor.
 The resume token is the only supported way to request the same visitor session in a later session exchange.
 
 ## Create a public chat session
@@ -175,7 +175,7 @@ Use `GET /api/v1/public/chat/{token}/events/{conversationId}` to open a server-s
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+Session, message, and embed-config payloads are typed in full in the [API Reference](/api-reference).
 
 ```text
 POST /api/v1/public/chat/{token}/sessions

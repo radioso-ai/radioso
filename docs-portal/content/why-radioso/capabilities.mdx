@@ -15,7 +15,7 @@ A directive is a standing rule. It pairs a condition with how the agent should b
 
 > When the customer sounds anxious, slow down and confirm before acting.
 
-A directive never acts on its own. It shapes tone, judgment, and approach — it steers the reply, it does not perform a task. Directives are always on. Each turn, the matching ones are applied by meaning, not by a keyword list, so the same rule works across every language and surface.
+Directives are always on, and they steer the reply itself: its tone, its judgment, its approach. Giving the agent a new thing to *do* is a skill's job. Each turn, the matching directives are applied by meaning rather than by a keyword list, so the same rule works across every language and surface.
 
 Every directive that applies is recorded in the turn trace, with the reason it matched.
 
@@ -34,7 +34,7 @@ You author a routine in plain language in the agent's **Routines** settings. Wri
 - a **condition** to branch on, decided in code or by the model
 - an **end** or a **handoff** to a person
 
-The platform compiles that draft into a graph the engine runs and resumes turn to turn. There is no canvas to draw and no redeploy: you **validate**, then **publish**, and new conversations use the published version. Conversations already running stay on the version they started on.
+The platform compiles that draft into a graph the engine runs and resumes turn to turn. You **validate**, then **publish**, and new conversations pick up the published version straight away. Conversations already running stay on the version they started on.
 
 A simple example — a return request:
 

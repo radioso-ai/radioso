@@ -14,11 +14,19 @@ export const createOpenApiDocument = (
   const document = new OpenApiGeneratorV31(registry.definitions).generateDocument({
     openapi: "3.1.0",
     info: {
-      title: "radioso API",
+      title: "Radioso API",
       version: "0.1.0",
-      description: "Code-generated OpenAPI contract for the radioso backend",
+      description: "Grounded retrieval and assistant chat over your documents. Get a workspace API token from your Radioso dashboard, then send it as a Bearer token.",
     },
     servers: [
+      {
+        url: "https://api.radioso.ai",
+        description: "Production",
+      },
+      {
+        url: "https://api-us.radioso.ai",
+        description: "Production (US)",
+      },
       {
         url: "http://localhost:8080",
         description: "Local development",

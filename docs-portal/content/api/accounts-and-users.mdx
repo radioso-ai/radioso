@@ -1,12 +1,12 @@
 ---
 title: Accounts and users
 description: List accounts, invite users, manage organization roles, and switch account context.
-last_updated: 2026-08-03
+last_updated: 2026-08-07
 ---
 
 # Accounts and users
 
-These routes manage who can access an account, which account the current session is operating on, and account-level usage visibility for signed-in members.
+These routes manage who can access an account, which account the current session is operating on, and account-level usage visibility for signed-in members. They use the same session cookie as [Auth and sessions](/api/auth-and-sessions) — call them against whichever host you signed in on.
 
 ## How it works
 
@@ -122,8 +122,6 @@ DELETE /api/v1/account/users/{membershipId}
 ```
 
 ## Endpoint reference
-
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/account/users

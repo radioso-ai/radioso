@@ -1,6 +1,7 @@
 ---
-title: Self-hosting operations
-description: Backup, restore, upgrade, and worker incident practices for self-hosted Radioso deployments.
+title: "Self-hosting operations"
+description: "Backup, restore, upgrade, and worker incident practices for self-hosted Radioso deployments."
+last_updated: 2026-08-07
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -161,3 +162,8 @@ At minimum, monitor:
 <Callout type="info" emoji="i">
   The key point is that self-hosting is mostly database, storage, worker, and provider-key operations. The app itself is straightforward once those surfaces are backed up and monitored.
 </Callout>
+
+## Read next
+
+- [Deployment](/operators/deployment) — the production contract, required secrets, and rollout checklist this runbook assumes.
+- [Enterprise usage limits](/operators/enterprise-usage-limits) — cap indexed storage, monthly content, and monthly answers per account on Enterprise deployments.

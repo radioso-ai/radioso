@@ -2,11 +2,14 @@ import type {
   RoutineDefinition,
   RoutineDefinitionDraft,
   RoutineCompletionExport,
+  RoutineFieldGuardOp,
+  RoutineFieldGuardUnit,
   RoutineGuardKind,
   RoutineReentryMode,
   RoutineSlotType,
   RoutineStepKind,
   RoutineTerminalKind,
+  RoutineTransition,
   RoutineValidationDiagnostic,
 } from './api-types'
 import { approvalOptionTargets, approvalOptionTransitions } from './routine-approval'
@@ -27,6 +30,11 @@ export type RoutineTransitionForm = {
   guardText: string
   outcomeStatus: string
   counterLimit: string
+  fieldRef: string | null
+  fieldOp: RoutineFieldGuardOp | null
+  fieldValue: NonNullable<RoutineTransition['fieldValue']> | null
+  fieldValues: NonNullable<RoutineTransition['fieldValues']> | null
+  fieldUnit: RoutineFieldGuardUnit | null
 }
 
 // An approval option as authored in the Form editor: its id/label/description plus the
@@ -239,6 +247,11 @@ export const createTransitionForm = (fromStep: string, toRef: string): RoutineTr
   guardText: '',
   outcomeStatus: '',
   counterLimit: '',
+  fieldRef: null,
+  fieldOp: null,
+  fieldValue: null,
+  fieldValues: null,
+  fieldUnit: null,
 })
 
 export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
@@ -252,6 +265,11 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       guardText: transition.guardText ?? '',
       outcomeStatus: transition.outcomeStatus ?? '',
       counterLimit: transition.counterLimit ? String(transition.counterLimit) : '',
+      fieldRef: transition.fieldRef ?? null,
+      fieldOp: transition.fieldOp ?? null,
+      fieldValue: transition.fieldValue ?? null,
+      fieldValues: transition.fieldValues ?? null,
+      fieldUnit: transition.fieldUnit ?? null,
     })
     transitionsByStep.set(transition.fromStep, forms)
   }
@@ -400,6 +418,11 @@ export const formToRoutineDraft = (
         counterLimit: transition.guardKind === 'counter'
           ? Number.parseInt(transition.counterLimit, 10) || null
           : null,
+        fieldRef: transition.guardKind === 'field' ? transition.fieldRef : null,
+        fieldOp: transition.guardKind === 'field' ? transition.fieldOp : null,
+        fieldValue: transition.guardKind === 'field' ? transition.fieldValue : null,
+        fieldValues: transition.guardKind === 'field' ? transition.fieldValues : null,
+        fieldUnit: transition.guardKind === 'field' ? transition.fieldUnit : null,
         ordinal: transitionOrdinal++,
       }))
     }),

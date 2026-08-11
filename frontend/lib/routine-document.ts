@@ -5,15 +5,16 @@ export function guardToSentence(guard: Pick<RoutineBlockGuard, 'kind' | 'guardTe
     case 'llm':
       return guard.guardText ?? 'AI decides'
     case 'default':
-      return 'Otherwise'
+      return 'otherwise'
     case 'slot_filled':
       return formatSlotFilledLabel(guard.slotKeys ?? [], slotNames)
     case 'outcome':
-      return `outcome is ${guard.outcomeStatus ?? guard.guardText ?? 'unknown'}`
+      return `when the skill reports ${guard.outcomeStatus ?? guard.guardText ?? 'unknown'}`
     case 'counter':
-      return `after ${guard.counterLimit ?? 0} attempts`
+      return `after ${guard.counterLimit ?? 0} repeats`
     case 'field': {
-      const fieldRef = guard.fieldRef ?? 'field'
+      if (!guard.fieldRef) return 'choose a rule…'
+      const fieldRef = guard.fieldRef
       return formatConditionLabel(
         slotNames.get(fieldRef) ?? fieldRef,
         guard.fieldOp ?? 'equals',

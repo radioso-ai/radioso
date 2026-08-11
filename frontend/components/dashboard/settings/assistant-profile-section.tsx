@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { UserRound } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
+import { BlockHeading } from '@/components/dashboard/settings/block-heading'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
@@ -60,15 +61,6 @@ const INSTRUCTION_PRESETS: InstructionPreset[] = [
     text: 'Help visitors pick the right option. Ask about their goal, recommend the best fit, and call out any trade-offs honestly.',
   },
 ]
-
-function BlockHeading({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="space-y-0.5">
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </div>
-  )
-}
 
 function ChatModelOverrideBlock({
   value,

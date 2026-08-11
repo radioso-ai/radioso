@@ -64,6 +64,7 @@ describe('copilotApi', () => {
       { headers: { 'content-type': 'text/event-stream' } },
     )
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response))
+    vi.stubGlobal('window', { localStorage: { getItem: vi.fn(() => 'workspace-1') } })
 
     const { copilotApi } = await import('@/lib/api-copilot')
     await copilotApi.streamTurn({
@@ -83,6 +84,7 @@ describe('copilotApi', () => {
     }))
     const headers = (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>
     expect(headers.Authorization).toBeUndefined()
+    expect(headers['X-Workspace-Id']).toBe('workspace-1')
   })
 })
 

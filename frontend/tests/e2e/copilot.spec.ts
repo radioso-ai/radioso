@@ -54,6 +54,7 @@ test("opens Copilot, streams activity and an answer, resumes history, and delete
       return;
     }
     if (path === "/copilot/turns" && request.method() === "POST") {
+      expect(request.headers()["x-workspace-id"]).toBeTruthy();
       const body = JSON.parse(request.postData() ?? "{}") as {
         conversationId: string | null;
         message: string;

@@ -1,4 +1,4 @@
-import { API_BASE, buildError, request } from './api-client'
+import { API_BASE, buildError, getStoredActiveWorkspaceId, request } from './api-client'
 import type { DashboardRouteState } from './dashboard-routes'
 
 export const COPILOT_PAGE_VIEWS = [
@@ -256,14 +256,19 @@ export const copilotApi = {
   },
 
   async streamTurn(data: CopilotTurnRequest, handlers: CopilotStreamHandlers = {}): Promise<CopilotStreamResult> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Forwarded-Prefix': '/backend',
+    }
+    const workspaceId = getStoredActiveWorkspaceId()
+    if (workspaceId) {
+      headers['X-Workspace-Id'] = workspaceId
+    }
     const response = await fetch(`${API_BASE}${copilotPath('/turns')}`, {
       method: 'POST',
       cache: 'no-store',
       credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
-      },
+      headers,
       body: JSON.stringify(data),
     })
 

@@ -8,7 +8,6 @@ import { LexicalComposer } from '@lexical/react/LexicalComposer'
 import { ContentEditable } from '@lexical/react/LexicalContentEditable'
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary'
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin'
-import { OnChangePlugin } from '@lexical/react/LexicalOnChangePlugin'
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin'
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import {
@@ -26,7 +25,6 @@ import {
   COPY_COMMAND,
   FORMAT_TEXT_COMMAND,
   PASTE_COMMAND,
-  type EditorState,
   type LexicalNode,
   type TextNode,
 } from 'lexical'
@@ -1233,18 +1231,25 @@ function BranchDecisionDecorationPlugin() {
 
 function OnDocChangePlugin({ onDocChange, onParagraphChange }: { onDocChange: (blocks: RoutineDocBlock[]) => void; onParagraphChange?: (paragraphs: ProseParagraph[]) => void }) {
   const [editor] = useLexicalComposerContext()
-  // Emit the initial (possibly loaded) document once so the host seeds its draft from
-  // exactly what the editor parsed — Lexical's change handler ignores the initial state.
+  const callbacksRef = useRef({ onDocChange, onParagraphChange })
+  callbacksRef.current = { onDocChange, onParagraphChange }
+
   useEffect(() => {
-    editor.getEditorState().read(() => {
-      onDocChange($serializeBlocks())
-      onParagraphChange?.($readProseParagraphs())
+    return editor.registerUpdateListener(({ editorState, prevEditorState, dirtyElements, dirtyLeaves }) => {
+      // Registering a listener and replacing its callbacks are not document edits. In
+      // particular, instruction-only editors can receive new parent callbacks after a
+      // draft update, so emitting from setup would feed the same draft back forever.
+      if (editorState === prevEditorState || (dirtyElements.size === 0 && dirtyLeaves.size === 0)) return
+
+      editorState.read(() => {
+        const { onDocChange: emitDocChange, onParagraphChange: emitParagraphChange } = callbacksRef.current
+        emitDocChange($serializeBlocks())
+        emitParagraphChange?.($readProseParagraphs())
+      })
     })
-  }, [editor, onDocChange, onParagraphChange])
-  return <OnChangePlugin onChange={(editorState: EditorState) => editorState.read(() => {
-    onDocChange($serializeBlocks())
-    onParagraphChange?.($readProseParagraphs())
-  })} />
+  }, [editor])
+
+  return null
 }
 
 export function RoutineChipEditor({
@@ -1261,6 +1266,7 @@ export function RoutineChipEditor({
   onSetVariableMutable,
   onPasteFrontmatter,
   instructionOnly = false,
+  ariaLabel,
   onParagraphChange,
 }: {
   variables: ChipDocVariable[]
@@ -1278,6 +1284,7 @@ export function RoutineChipEditor({
   onSetVariableMutable?: (refId: string, mutable: boolean) => void
   onPasteFrontmatter?: (frontmatter: { name: string | null; trigger: string | null; terminals?: ProseTerminalConfig }) => void
   instructionOnly?: boolean
+  ariaLabel?: string
   onParagraphChange?: (paragraphs: ProseParagraph[]) => void
 }): JSX.Element {
   const variablesContext = useMemo(
@@ -1314,7 +1321,7 @@ export function RoutineChipEditor({
             <RichTextPlugin
               contentEditable={
                 <ContentEditable
-                  aria-label="Routine"
+                  aria-label={ariaLabel ?? 'Routine'}
                   className="min-h-40 w-full px-3 py-2 text-sm outline-none [&_p]:my-1 [&_h1]:mb-1 [&_h1]:mt-3 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:leading-tight [&_h1]:text-foreground first:[&_h1]:mt-0"
                 />
               }
@@ -1355,22 +1362,30 @@ export function RoutineInstructionEditor({
   variables,
   onCreateVariable,
   onChange,
+  ariaLabel,
 }: {
   initialContent: ProseParagraph[]
   variables: ChipDocVariable[]
   onCreateVariable: (variable: RoutineEditorVariable) => void
   onChange: (segments: ProseSegment[]) => void
+  ariaLabel?: string
 }): JSX.Element {
+  const reservedRefKinds = useMemo(() => Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind])), [variables])
+  const ignoreDocChange = useCallback(() => undefined, [])
+  const ignoreVariableTypeChange = useCallback(() => undefined, [])
+  const handleParagraphChange = useCallback((paragraphs: ProseParagraph[]) => onChange(paragraphs[0]?.segments ?? [{ kind: 'text', text: '' }]), [onChange])
+
   return (
     <RoutineChipEditor
       initialContent={initialContent}
       variables={variables}
-      reservedRefKinds={Object.fromEntries(variables.map((variable) => [variable.id, 'variable' as RoutineChipKind]))}
+      reservedRefKinds={reservedRefKinds}
       onCreateVariable={onCreateVariable}
-      onDocChange={() => undefined}
-      onSetVariableType={() => undefined}
+      onDocChange={ignoreDocChange}
+      onSetVariableType={ignoreVariableTypeChange}
       instructionOnly
-      onParagraphChange={(paragraphs) => onChange(paragraphs[0]?.segments ?? [{ kind: 'text', text: '' }])}
+      ariaLabel={ariaLabel}
+      onParagraphChange={handleParagraphChange}
     />
   )
 }

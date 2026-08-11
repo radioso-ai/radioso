@@ -1,5 +1,7 @@
 import fc from 'fast-check'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+vi.mock('@radioso/routine-definition', async () => import('../../routine-definition/src/index.ts'))
 
 import { routineDefinitionDraftInputSchema, type RoutineDefinitionDraftAuthoringInput } from '@radioso/routine-definition'
 import {
@@ -50,6 +52,106 @@ const withDocumentOrdinals = (input: ReturnType<typeof draft>) => ({
 })
 
 describe('routine block document', () => {
+  it('projects an empty draft to an empty document and round-trips empty arrays', () => {
+    const input: RoutineDefinitionDraftAuthoringInput = {
+      name: 'New routine',
+      activation: { triggerDescription: 'Start here', gateRef: null, priority: 0 },
+      slots: [],
+    }
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected).toEqual({
+      ok: true,
+      doc: {
+        name: 'New routine',
+        activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+        information: [],
+        steps: [],
+        unreferencedEndings: [],
+      },
+    })
+    if (!projected.ok) return
+    expect(draftFromBlockDoc(projected.doc)).toMatchObject({ slots: [], steps: [], transitions: [], terminals: [] })
+  })
+
+  it('preserves slots and activation when an authoring draft has no steps', () => {
+    const input: RoutineDefinitionDraftAuthoringInput = {
+      name: 'New routine',
+      activation: { triggerDescription: 'Start here', gateRef: 'support_gate', priority: 3, reentryMode: 'always' },
+      slots: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: true, description: 'Customer account', mutable: false, ordinal: 4 }],
+    }
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected).toMatchObject({
+      ok: true,
+      doc: {
+        activation: input.activation,
+        information: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: true, description: 'Customer account', mutable: false }],
+        steps: [],
+        unreferencedEndings: [],
+      },
+    })
+    if (!projected.ok) return
+    expect(draftFromBlockDoc(projected.doc)).toMatchObject({
+      activation: input.activation,
+      slots: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: true, description: 'Customer account', mutable: false, ordinal: 0 }],
+      steps: [],
+      transitions: [],
+      terminals: [],
+    })
+  })
+
+  it('projects and round-trips the new-routine seed with empty authoring text', () => {
+    const input = {
+      name: 'New routine',
+      activation: { triggerDescription: '', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+      slots: [],
+      steps: [{ stableStepId: 'start', kind: 'chat' as const, instruction: '', toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
+      transitions: [],
+      terminals: [],
+    }
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected).toMatchObject({ ok: true, doc: { activation: input.activation, steps: [{ instruction: [{ kind: 'text', text: '' }] }] } })
+    if (!projected.ok) return
+    expect(draftFromBlockDoc(projected.doc)).toEqual(input)
+  })
+
+  it('projects and round-trips a terminal before its instruction is typed', () => {
+    const input = draft({
+      terminals: [{ stableStepId: 'finished', kind: 'complete', instruction: '', ordinal: 10 }],
+    })
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected.ok).toBe(true)
+    if (!projected.ok) return
+    expect(projected.doc.steps[0]?.branches[0]?.target).toMatchObject({
+      kind: 'ending',
+      terminalId: 'finished',
+      ending: { instruction: '' },
+    })
+    expect(draftFromBlockDoc(projected.doc)).toEqual(withDocumentOrdinals(input))
+  })
+
+  it('projects a tool step before its tool is selected', () => {
+    const input = {
+      name: 'New routine',
+      activation: { triggerDescription: 'Start here', gateRef: null, priority: 0, reentryMode: 'once_per_conversation' },
+      slots: [],
+      steps: [{ stableStepId: 'select-tool', kind: 'tool' as const, instruction: 'Choose a tool.', toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
+      transitions: [],
+      terminals: [],
+    }
+
+    const projected = routineToBlockDoc(input)
+
+    expect(projected).toMatchObject({ ok: true, doc: { steps: [{ stableStepId: 'select-tool', toolRef: null }] } })
+  })
+
   it('preserves activation, information, bindings, action references, and completion export', () => {
     const input = draft()
     const { projected, restored } = roundTrip(input)
@@ -119,6 +221,12 @@ describe('routine block document', () => {
   it('returns diagnostics instead of dropping an unresolved transition target', () => {
     const input = draft({ transitions: [{ fromStep: 'collect', toRef: 'missing', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }] })
     expect(routineToBlockDoc(input)).toEqual({ ok: false, diagnostics: [{ code: 'unknown_transition_target', message: 'Transition from "collect" targets unknown id "missing".' }] })
+  })
+
+  it('returns diagnostics for duplicate stable ids', () => {
+    const input = draft({ terminals: [{ stableStepId: 'collect', kind: 'complete', instruction: 'All done.', ordinal: 0 }] })
+
+    expect(routineToBlockDoc(input)).toEqual({ ok: false, diagnostics: [{ code: 'duplicate_stable_id', message: 'Duplicate stable id "collect" cannot be represented.' }] })
   })
 
   it('returns schema issue paths and messages for an invalid authoring draft', () => {

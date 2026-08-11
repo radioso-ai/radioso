@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
-description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-07-02
+description: "How to create and edit routines in the dashboard using prose, document, and form views, bind skill inputs and outputs, copy a routine to text, and manage lifecycle."
+last_updated: 2026-08-10
 ---
 
 # Authoring Routines
@@ -14,10 +14,12 @@ You manage routines in the agent's **Routines** settings. The settings section
 shows one row per routine lineage, not one row per version. Choose **New
 routine** or select an existing routine to open the editor screen.
 
-The editor has two views of the same routine draft:
+The editor has three views of the same routine draft:
 
 - **Prose** - the primary view. You write the routine in plain language and
   insert inline chips for the parts that need structure.
+- **Document** - a structured, readable view that keeps instructions beside
+  typed controls for the routine's flow.
 - **Form** - a strict, lower-level view for routines the prose editor cannot
   show. Switching views re-projects the same draft; it does not create a copy.
 
@@ -463,6 +465,25 @@ skill the agent lacks — point it at a skill the agent has, then validate.
 
 For the exact format, see [Portable Routine Markdown](./portable-routine-markdown.md).
 For repository-based workflows, see [Portable Routines API](./portable-routines-api.md).
+
+## Document view
+
+**Document** lays the routine out as a flow you can read from top to bottom. It
+starts with a **Starts when** line, then shows the information the routine
+collects, numbered steps, and endings. Skill steps include a **uses → sets**
+line so you can see their input bindings and assigned outputs at a glance.
+
+Each condition row carries its decision rule: **Rule** marks an exact check,
+such as an amount comparison, while **AI decides** marks an instruction the
+agent judges in context. A branch points to another step, a **Finish** ending,
+or a **Hand off** ending with its message.
+
+Drafts stay editable in this view. Edit the **Starts when** line directly.
+Write step instructions as prose and type `@` to capture information; the new
+value appears in **Information**, where you choose its type and details. Use
+the **+ Step** menu to add a chat step, skill, approval, or action. Add a
+condition row to choose a Rule or AI-decides branch and its target. Add or edit
+ending rows to set the message a finished or handed-off routine delivers.
 
 ## Form view
 

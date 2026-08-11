@@ -1383,6 +1383,7 @@ function RoutineEditorScreen({
 
             {viewMode === 'document' && activeRoutineDraft ? (
               <RoutineDocumentTab
+                key={`${agentId}:${editingRoutine?.id ?? 'new'}`}
                 draft={activeRoutineDraft}
                 isReadOnly={isReadOnly}
                 onDraftChange={(nextDraft) => {

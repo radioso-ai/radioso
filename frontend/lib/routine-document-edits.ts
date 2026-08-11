@@ -23,8 +23,8 @@ export const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlock
     ...(kind === 'approval' ? {
       captureKey: 'decision',
       options: [
-        { id: 'approve', label: 'Approve' },
-        { id: 'decline', label: 'Decline' },
+        { id: 'approve', label: 'Approve', description: null },
+        { id: 'decline', label: 'Decline', description: null },
       ],
     } : {}),
     additionalMetadata: {},
@@ -32,9 +32,22 @@ export const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlock
   }
 }
 
+const isPristineSeedStep = (step: RoutineBlockStep) =>
+  step.stableStepId === 'step_1'
+  && step.kind === 'chat'
+  && step.instruction.every((segment) => segment.kind === 'text' && segment.text === '')
+  && step.branches.length === 0
+  && step.captureKey == null
+  && Object.keys(step.inputBindings ?? {}).length === 0
+  && Object.keys(step.outputAssignments ?? {}).length === 0
+  && step.toolRef == null
+  && step.actionType == null
+
 export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlockDoc => {
   const next = copy(doc)
-  next.steps.push(createDocumentStep(kind, next.steps))
+  const step = createDocumentStep(kind, next.steps)
+  if (next.steps.length === 1 && isPristineSeedStep(next.steps[0]!)) next.steps = [step]
+  else next.steps.push(step)
   return next
 }
 
@@ -76,9 +89,17 @@ export const replaceInstruction = (doc: RoutineBlockDoc, stableStepId: string, i
 })
 
 const guardFor = (kind: RoutineGuardKind): RoutineBlockGuard => {
-  const base = kind === 'llm'
-    ? { guardText: '', provenance: 'judgment' as const }
-    : { guardText: null, provenance: 'exact' as const }
+  const base = {
+    guardText: kind === 'llm' ? '' : null,
+    provenance: kind === 'llm' ? ('judgment' as const) : ('exact' as const),
+    outcomeStatus: null,
+    counterLimit: null,
+    fieldRef: null,
+    fieldOp: null,
+    fieldValue: null,
+    fieldValues: null,
+    fieldUnit: null,
+  }
   if (kind === 'slot_filled') return { ...base, kind, slotKeys: [] }
   return { ...base, kind }
 }
@@ -216,9 +237,14 @@ export const updateBindings = (doc: RoutineBlockDoc, stepId: string, state: { in
   ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...copy(state) } : copy(step)),
 })
 
-export const updateApproval = (doc: RoutineBlockDoc, stepId: string, patch: { instruction?: RoutineBlockInstructionSegment[]; captureKey?: string | null; options?: ApprovalDocOption[] }): RoutineBlockDoc => ({
-  ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...copy(patch) } : copy(step)),
-})
+export const updateApproval = (doc: RoutineBlockDoc, stepId: string, patch: { instruction?: RoutineBlockInstructionSegment[]; captureKey?: string | null; options?: ApprovalDocOption[] }): RoutineBlockDoc => {
+  const { options, ...rest } = patch
+  const normalized = {
+    ...copy(rest),
+    ...(options ? { options: options.map((option) => ({ ...option, description: option.description ?? null })) } : {}),
+  }
+  return { ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...normalized } : copy(step)) }
+}
 
 export const updateActivation = (doc: RoutineBlockDoc, patch: Partial<RoutineBlockDoc['activation']>): RoutineBlockDoc => ({ ...copy(doc), activation: { ...doc.activation, ...copy(patch) } })
 

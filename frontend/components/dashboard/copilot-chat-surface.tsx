@@ -85,9 +85,11 @@ const relativeTimestamp = (value: string) => {
 
 function ActivityLines({ activities, live = false }: { activities: CopilotActivityEvent[]; live?: boolean }) {
   const [expanded, setExpanded] = useState(live)
-  useEffect(() => {
+  const [prevLive, setPrevLive] = useState(live)
+  if (live !== prevLive) {
+    setPrevLive(live)
     if (!live) setExpanded(false)
-  }, [live])
+  }
   if (activities.length === 0) return null
 
   if (!expanded) {

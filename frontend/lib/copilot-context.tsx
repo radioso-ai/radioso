@@ -212,7 +212,7 @@ export function CopilotContextProvider({ children }: { children: ReactNode }) {
     openPanel,
     closePanel,
     dismissSelectionPrompt: () => setSelectionPrompt(null),
-  }), [closePanel, entities, openPanel, panelOpen, registerEntity, session, unregisterEntity])
+  }), [closePanel, entities, openPanel, panelOpen, registerEntity, selectionPrompt, session, unregisterEntity])
 
   return <CopilotContext.Provider value={value}>{children}</CopilotContext.Provider>
 }

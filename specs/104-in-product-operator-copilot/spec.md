@@ -2,9 +2,10 @@
 
 **Feature Branch**: `in-product-ai-agent-tab`
 **Created**: 2026-07-18
-**Status**: Draft (Codex review round 1 findings addressed 2026-07-18 — auth
-session-only, permission matrix, metering semantics, SSE contract, proposal
-adapters, proposal-target scope cut; see Resolved Decisions)
+**Status**: Approved (requestor approved in session 2026-08-11 after two Codex
+review rounds, a manual findings pass, and the breadth-strategy revision (D7);
+open-clarification defaults O1–O3 accepted as decisions — see Resolved
+Decisions and Open Clarifications)
 **Input**: User description: "A goal of Radioso is to give an AI agent tab similar to PostHog AI, which would allow the user to create/edit/troubleshoot Radioso agents, explain conversations, give recommendations etc. This can currently work by giving Claude/Codex/Gemini the source code and the API token to a workspace, but this is both expensive and doesn't replicate the experience I am aiming at (in-product agent)."
 
 ## Context

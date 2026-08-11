@@ -154,8 +154,7 @@ export function AgentSubNavContainer({
         const settings = await agentsApi.getGeneralSettings(selectedAgentId)
         if (!active) return
         setChannelStatus({
-          'public-chat-link': Boolean(settings.anonymousChatEnabled),
-          'website-embed': Boolean(settings.websiteEmbedEnabled),
+          'web-chat': Boolean(settings.anonymousChatEnabled) || Boolean(settings.websiteEmbedEnabled),
         })
       } catch {
         if (active) setChannelStatus({})
@@ -218,7 +217,7 @@ export function AgentSubNavContainer({
           workspacePublicRouteKey,
           agentId: created.id,
           agentTab: 'behavior',
-          anchor: 'assistant-identity',
+          anchor: 'assistant-profile',
         }),
       )
     } catch {
@@ -337,7 +336,7 @@ export function AgentSubNavContainer({
               section: 'agents',
               agentId,
               agentTab: 'behavior',
-              anchor: 'assistant-identity',
+              anchor: 'assistant-profile',
               workspaceId: activeWorkspaceId ?? undefined,
               workspacePublicRouteKey,
             })

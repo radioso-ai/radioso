@@ -1655,6 +1655,14 @@ export const createTestDependencies = (overrides: {
     workbenchReplayRunner as any,
     logger,
   );
+  const evalCaseService = new EvalCaseService(evalRepository);
+  const qualitySignalsService = {
+    getQualityStats: async () => ({ backlog: {} }),
+    listLowQualityTurns: async () => ({ items: [] }),
+  };
+  const audiencePulseService = {
+    read: async () => ({ kind: "not_generated" }),
+  };
   const copilotRepository = new InMemoryCopilotRepository();
   const operatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
@@ -1669,12 +1677,17 @@ export const createTestDependencies = (overrides: {
       routineDefinitionService,
       chatHistoryService,
       documentSearchService,
+      evalResultsService: evalCaseService,
+      qualitySignalsService,
+      audiencePulseService,
     }),
   });
   const dependencies: AppDependencies = {
     env,
     logger,
     operatorCopilotService,
+    qualitySignalsService: qualitySignalsService as any,
+    audiencePulseService,
     copilotRepository,
     metricsRegistry,
     telemetryService,
@@ -1808,7 +1821,7 @@ export const createTestDependencies = (overrides: {
     retrievalDefaultsProvider,
     evalSnapshotService,
     evalMessageCaseService,
-    evalCaseService: new EvalCaseService(evalRepository),
+    evalCaseService,
     evalRunService,
     evalSuiteService: new EvalSuiteService(evalRepository, evalRunService, logger),
     platformSettingsService,

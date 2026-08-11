@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AgentService } from "../agents/public.js";
 import { routineToPortableDocument, type RoutineDefinitionService } from "../routines/public.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
+import { boundConversationPayload } from "./boundedPayload.js";
 
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
@@ -48,7 +49,7 @@ export const createUs1CopilotTools = (deps: {
     name: "conversation_trace", uiLabel: "Reading conversation trace", contributingModule: "chat", requiredPermission: "workspace.history.read",
     description: "Read a customer conversation transcript and its retained turn trace envelope.",
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: z.object({ conversation: unknownRecord }),
-    createTool: (context) => ({ name: "conversation_trace", description: "Read a customer conversation transcript and its retained turn trace envelope.", inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: z.object({ conversation: unknownRecord }), invoke: async ({ conversationId }) => ({ conversation: await deps.chatHistoryService.getConversation(context.workspaceId, conversationId ?? requiredPageConversation(context.pageContext.conversationId), { limit: 100 }, { includeTurnFailureDebug: false }) as unknown as Record<string, unknown> }) }),
+    createTool: (context) => ({ name: "conversation_trace", description: "Read a customer conversation transcript and its retained turn trace envelope.", inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: z.object({ conversation: unknownRecord }), invoke: async ({ conversationId }) => ({ conversation: boundConversationPayload(await deps.chatHistoryService.getConversation(context.workspaceId, conversationId ?? requiredPageConversation(context.pageContext.conversationId), { limit: 100 }, { includeTurnFailureDebug: false }) as unknown as Record<string, unknown>) }) }),
   },
   {
     name: "conversation_history_search", uiLabel: "Searching conversations", contributingModule: "chat", requiredPermission: "workspace.history.read",

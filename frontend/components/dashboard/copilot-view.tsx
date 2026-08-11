@@ -136,7 +136,16 @@ function MessageThread({ messages, running }: { messages: LocalMessage[]; runnin
                   {message.role === 'operator' ? 'You' : 'Copilot'}
                 </p>
                 {message.role === 'copilot' ? (
-                  <AssistantMarkdownContent content={message.content || (message.streaming ? 'Working…' : '')} />
+                  <AssistantMarkdownContent
+                    content={
+                      message.content ||
+                      (message.streaming
+                        ? 'Working…'
+                        : message.outcome && message.outcome !== 'completed'
+                          ? 'The copilot could not complete this turn.'
+                          : '')
+                    }
+                  />
                 ) : (
                   <p className="whitespace-pre-wrap text-sm">{message.content}</p>
                 )}

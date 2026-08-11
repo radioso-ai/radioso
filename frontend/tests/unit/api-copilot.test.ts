@@ -70,7 +70,7 @@ describe('copilotApi', () => {
     await copilotApi.streamTurn({
       conversationId: null,
       message: 'Why did this answer refuse?',
-      pageContext: { view: 'history', agentId: 'agent-1', conversationId: 'customer-1' },
+      pageContext: { view: 'history', agentId: 'agent-1', conversationId: 'customer-1', selection: null, entities: [] },
     })
 
     expect(fetch).toHaveBeenCalledWith('/backend/api/v1/copilot/turns', expect.objectContaining({
@@ -79,7 +79,7 @@ describe('copilotApi', () => {
       body: JSON.stringify({
         conversationId: null,
         message: 'Why did this answer refuse?',
-        pageContext: { view: 'history', agentId: 'agent-1', conversationId: 'customer-1' },
+        pageContext: { view: 'history', agentId: 'agent-1', conversationId: 'customer-1', selection: null, entities: [] },
       }),
     }))
     const headers = (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).headers as Record<string, string>
@@ -130,6 +130,20 @@ describe('streamCopilotEvents', () => {
       outcome: 'budget_exhausted',
     })
   })
+
+  it('keeps entity references on streamed activity events', async () => {
+    const entity = { type: 'conversation', id: 'customer-1' } as const
+    const response = new Response(
+      `event: activity\ndata: ${JSON.stringify({ toolCallId: 'tool-1', tool: 'Reading conversation trace', stage: 'completed', entity })}\n\n` +
+      'event: outcome\ndata: {"status":"completed"}\n\n' +
+      'event: done\ndata: {}\n\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    )
+    const { streamCopilotEvents } = await import('@/lib/api-copilot')
+    let received: unknown
+    await streamCopilotEvents(response, { onActivity: (event) => { received = event.entity } })
+    expect(received).toEqual(entity)
+  })
 })
 
 describe('deriveCopilotPageContext', () => {
@@ -146,6 +160,8 @@ describe('deriveCopilotPageContext', () => {
       view: 'history',
       agentId: 'agent-1',
       conversationId: 'customer-conversation-1',
+      selection: null,
+      entities: [],
     })
   })
 
@@ -156,21 +172,44 @@ describe('deriveCopilotPageContext', () => {
       view: 'documents',
       agentId: null,
       conversationId: null,
+      selection: null,
+      entities: [],
     })
     expect(deriveCopilotPageContext({ section: 'agents', agentId: 'agent-1', agentTab: 'chat' })).toEqual({
       view: 'workbench',
       agentId: 'agent-1',
       conversationId: null,
+      selection: null,
+      entities: [],
     })
     expect(deriveCopilotPageContext({ section: 'settings', agentId: undefined })).toEqual({
       view: 'other',
       agentId: null,
       conversationId: null,
+      selection: null,
+      entities: [],
     })
     expect(deriveCopilotPageContext({ section: 'copilot', agentId: 'agent-1', agentTab: 'behavior' })).toEqual({
-      view: 'agent',
+      view: 'copilot',
       agentId: 'agent-1',
       conversationId: null,
+      selection: null,
+      entities: [],
+    })
+  })
+
+  it('assembles bounded v2 page context', async () => {
+    const { buildCopilotPageContext } = await import('@/lib/api-copilot')
+    expect(buildCopilotPageContext(
+      { section: 'activity', activityTab: 'needs-attention', agentId: 'agent-1' },
+      [{ type: 'conversation', id: 'conversation-1', label: 'A'.repeat(200), focused: true }],
+      '  selected text  ',
+    )).toEqual({
+      view: 'activity',
+      agentId: 'agent-1',
+      conversationId: null,
+      selection: 'selected text',
+      entities: [{ type: 'conversation', id: 'conversation-1', label: 'A'.repeat(120), focused: true }],
     })
   })
 })

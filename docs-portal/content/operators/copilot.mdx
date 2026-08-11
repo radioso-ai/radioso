@@ -1,38 +1,62 @@
 ---
 title: "Operator Copilot"
-description: "Use the dashboard Copilot to explain agent behavior from conversation traces, configuration, and the page you are viewing."
-last_updated: 2026-08-11
+description: "Use the dashboard Copilot panel to investigate agent behavior with page context, selected text, and linked activity."
+last_updated: 2026-08-12
 ---
 
 # Operator Copilot
 
-Copilot helps you investigate an agent from inside the dashboard. Ask why a
+Copilot helps you investigate an agent without leaving the dashboard. Ask why a
 conversation received a particular answer, why retrieval did not run, or which
 trace stage produced a refusal. Copilot reads the workspace data available to
 your operator session and streams its findings as it works.
 
-## Open Copilot
+## Open the panel
 
-Choose **Copilot** in the dashboard sidebar. The surface has three working
-areas:
+The Copilot panel is available on every dashboard view. Choose **Copilot** in
+the top bar, or press **Cmd/Ctrl+J**. The panel stays available while you move
+between Activity, Agents, Knowledge Base, Eval, and Quality.
 
-- **Conversations** keeps your saved Copilot threads. Select one to continue it,
-  or choose **New conversation** to start a separate investigation.
-- **The thread** shows your question, the streamed answer, and the activity
-  behind the answer.
-- **Current context** shows the dashboard view, selected agent, and selected
-  customer conversation sent with the next question.
+The panel keeps three useful pieces together:
 
-Copilot uses the page context that is already available in the dashboard. When
-you open it from a selected customer conversation, you can ask about “this
-conversation” without copying its id into the prompt.
+- **Conversations** keeps saved Copilot threads. Select one to continue it, or
+  choose **New conversation** for a separate investigation.
+- **The thread** shows your question, the streamed answer, the activity behind
+  the answer, and any entities Copilot read during the turn.
+- **Current context** shows the dashboard view and the named agents,
+  conversations, routines, eval cases, or documents currently rendered on the
+  screen.
+
+The full-page **Copilot** view uses the same thread and context. It is useful
+when you want more room for the conversation list and context rail.
+
+## Ask about what you see
+
+The panel captures the dashboard context that is already on screen. A selected
+conversation row, agent, routine, eval case, or trace stage can be included in
+the next turn, with display names shown in the context rail.
+
+To ask about a particular sentence, select the text in the dashboard. Choose
+**Ask Copilot** beside the selection. Copilot opens with the text quoted in the
+composer and sends it as selected context, limited to 2,000 characters.
+
+When a turn reads a specific conversation, agent, or routine, the answer shows
+a **Read during this turn** chip. Choose a chip to open the matching dashboard
+surface. If the current screen has no display name for an entity, the chip uses
+its id so the link remains useful.
+
+On an empty thread, suggested questions adapt to the view and focused entity.
+For example, a focused conversation offers to explain what happened in that
+conversation.
 
 ## Follow a running turn
 
 While Copilot works, activity lines show the UI-safe capability label and its
 stage. For example, **Reading conversation trace — started** becomes
-**completed** when that read finishes. A failed activity stays visible so you
-can distinguish an incomplete investigation from a successful one.
+**completed** when that read finishes. After the turn completes, the timeline
+collapses to a one-line summary; choose it to inspect the individual reads. A
+failed activity stays visible so you can distinguish an incomplete
+investigation from a successful one.
 
 The answer carries a terminal outcome:
 
@@ -40,7 +64,8 @@ The answer carries a terminal outcome:
 - **Budget exhausted** means Copilot returned its partial findings after its
   runtime budget ran out.
 - **Turn failed** means the turn could not complete. Read the visible activity
-  and error state before retrying.
+  and error state before retrying. Choose **Retry** to send the same question
+  again with the current page context.
 
 Only one turn runs in a Copilot conversation at a time. The composer is
 disabled while a turn is active, and a conversation that is already running
@@ -50,7 +75,8 @@ shows the same locked state when you open it.
 
 Your Copilot conversations are separate from customer Activity, quality, and
 history views. Return to Copilot to resume a saved thread. Use **Delete** in
-the thread header to remove the selected conversation and its messages.
+the thread header and confirm to remove the selected conversation and its
+messages.
 
 Copilot is available to operators with `workspace.agents.read`. It uses the
 dashboard session, so workspace API bearer tokens cannot start a Copilot turn.

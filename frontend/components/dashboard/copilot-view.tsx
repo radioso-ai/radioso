@@ -140,8 +140,17 @@ function MessageThread({ messages, running }: { messages: LocalMessage[]; runnin
                 ) : (
                   <p className="whitespace-pre-wrap text-sm">{message.content}</p>
                 )}
-                {message.role === 'copilot' && message.liveActivity ? (
-                  <div className="mt-4"><ActivityLines activities={message.liveActivity} live={message.streaming} /></div>
+                {message.role === 'copilot' && (message.liveActivity?.length || message.activity.length > 0) ? (
+                  <div className="mt-4">
+                    <ActivityLines
+                      activities={
+                        message.liveActivity?.length
+                          ? message.liveActivity
+                          : message.activity.map((entry, index) => ({ toolCallId: `${message.id}-${index}`, tool: entry.tool, stage: entry.outcome }))
+                      }
+                      live={message.streaming}
+                    />
+                  </div>
                 ) : null}
                 {message.role === 'copilot' && !message.streaming ? (
                   <div className="mt-4 flex items-center gap-2">
@@ -151,9 +160,6 @@ function MessageThread({ messages, running }: { messages: LocalMessage[]; runnin
                     >
                       {outcomeLabel(message.outcome)}
                     </Badge>
-                    {message.activity.length > 0 ? (
-                      <span className="text-xs text-muted-foreground">{message.activity.length} tool activit{message.activity.length === 1 ? 'y' : 'ies'}</span>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -216,52 +222,38 @@ export function CopilotView({
   }, [])
 
   useEffect(() => {
-    const effectiveAvailability = initialAvailability ?? availability
-    if (effectiveAvailability?.available !== true) {
-      return
-    }
-
-    let cancelled = false
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- The async loader updates conversation state when the external API resolves.
-    void loadConversations()
-      .then((items) => {
-        if (cancelled) return
+    let disposed = false
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Single bootstrap chain: availability, then the conversation list, then the newest conversation.
+    const bootstrap = async () => {
+      try {
+        const effectiveAvailability = initialAvailability ?? (await copilotApi.getAvailability())
+        if (disposed) return
+        setAvailability(effectiveAvailability)
+        if (effectiveAvailability.available !== true) return
+        const items = await loadConversations()
+        if (disposed) return
         const first = items[0]
         if (first) {
-          void loadConversation(first.id)
+          await loadConversation(first.id)
         } else {
           setSelectedConversationId(null)
           setMessages([])
         }
-      })
-      .catch((loadError) => {
-        if (!cancelled) setError(getApiErrorMessage(loadError, 'Could not load copilot conversations.'))
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [availability, initialAvailability, loadConversation, loadConversations])
-
-  useEffect(() => {
-    if (initialAvailability || availability) return
-    let cancelled = false
-    void copilotApi.getAvailability()
-      .then((nextAvailability) => {
-        if (!cancelled) setAvailability(nextAvailability)
-      })
-      .catch((availabilityError) => {
-        if (!cancelled) {
-          if (isCopilotApiErrorStatus(availabilityError, 403)) {
-            setPermissionDenied(true)
-          } else {
-            setError(getApiErrorMessage(availabilityError, 'Copilot availability could not be checked.'))
-          }
-          setIsLoading(false)
+      } catch (bootstrapError) {
+        if (disposed) return
+        if (isCopilotApiErrorStatus(bootstrapError, 403)) {
+          setPermissionDenied(true)
+        } else {
+          setError(getApiErrorMessage(bootstrapError, 'Could not load the copilot.'))
         }
-      })
-    return () => { cancelled = true }
-  }, [availability, initialAvailability])
+      } finally {
+        if (!disposed) setIsLoading(false)
+      }
+    }
+    void bootstrap()
+    return () => { disposed = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Mount-only bootstrap; reloads go through the explicit loaders.
+  }, [])
 
   if (permissionDenied) {
     return null

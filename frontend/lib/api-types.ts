@@ -41,6 +41,7 @@ export type RetrievalDefaults = Omit<ApiSchemas['RetrievalDefaultsResponse'], 'm
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
 export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
 export type DirectiveCondition = ApiSchemas['AuthoredDirectiveCondition']
+export type DirectiveBinding = ApiSchemas['AuthoredDirectiveBinding']
 export type Directive = ApiSchemas['AuthoredDirective']
 export type BuiltInDirective = ApiSchemas['BuiltInDirective']
 export type DirectiveCreateRequest = ApiSchemas['AuthoredDirectiveCreateRequest']
@@ -288,6 +289,7 @@ export interface PublicChatIntakeAction {
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
+  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -523,6 +525,7 @@ export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   assistantBootstrapActive?: boolean
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
+  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 

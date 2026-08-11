@@ -11,6 +11,7 @@ import {
   parseWebsiteEmbedCopyOverridesParam,
   parseWebsiteEmbedThemeOverridesParam,
   parseWebsiteEmbedOrigins,
+  resolveWebsiteEmbedCopyPack,
   resolveWebsiteEmbedScriptUrl,
 } from '@/lib/embed-widget'
 
@@ -164,5 +165,15 @@ describe('embed widget helpers', () => {
       accent: '#123456',
       panelBackground: '#fafafa',
     })
+  })
+
+  it('resolves persisted wording for a shared-link visitor locale before explicit URL overrides', () => {
+    const copyPacks = {
+      en: { publicChatEmptyTitle: 'Start a conversation' },
+      fr: { publicChatEmptyTitle: 'Commencer une conversation', startPrompt: 'Posez une question' },
+    }
+
+    expect(resolveWebsiteEmbedCopyPack(copyPacks, 'fr-CA')).toEqual(copyPacks.fr)
+    expect(resolveWebsiteEmbedCopyPack(copyPacks, 'de-DE')).toEqual(copyPacks.en)
   })
 })

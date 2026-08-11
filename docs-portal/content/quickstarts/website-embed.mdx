@@ -56,9 +56,9 @@ Opening either URL loads a config form, not a working widget yet: it asks for yo
 
 ## Example launcher snippet
 
-In production, the Enterprise launcher is a normal script include with the embed token. Branding, copy, locale text, theme colors, and expert overrides are stored in Radioso settings — the agent's **Identity & appearance** screen previews them live as you edit.
+In production, the Enterprise launcher is a normal script include with the embed token. Branding, visitor-facing wording, theme colors, and expert overrides are stored in Radioso settings — the **Web chat** page under the agent's Channels section previews them live as you edit. **Look** holds the logo, brand color, and surface style; **Wording** holds the ten visitor-facing strings, with **Add a translation** for a per-language pack the widget serves to visitors in that language; **Footer** holds the privacy policy URL.
 
-![The Identity & appearance settings with assistant name, brand color, and surface style beside a live preview of the chat widget answering a question.](/screenshots/dashboard-agent-behavior.png)
+![The Web chat page with the Look section's brand color and surface style beside a live preview of the chat widget answering a question.](/screenshots/dashboard-agent-behavior.png)
 
 ```html
 <!-- data-radioso-token below is a placeholder. Copy the real value from the
@@ -138,9 +138,9 @@ For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata
 <Steps>
 ### Enable anonymous chat and website embed
 
-The embed flow depends on the workspace public-chat capability. If website embed is enabled but the workspace has no public chat token, launch still fails. You'll find both under the agent's Channels section, alongside the Website widget, API, MCP, Slack, and WhatsApp channels.
+The embed flow depends on the workspace public-chat capability. If website embed is enabled but the workspace has no public chat token, launch still fails. Both live on the **Web chat** page under the agent's Channels section, in **Where it runs**: **Public link** carries the shareable URL, and **Website widget** carries the install snippet and allowed origins. The other channels — API, MCP, Slack, and WhatsApp — sit beside Web chat in the same sidebar group.
 
-![The agent Channels sidebar listing Public chat link, Website widget, API, MCP, Slack, and WhatsApp, with the Public chat link toggle and its last-used status shown](/screenshots/dashboard-agent-channels.png)
+![The agent Channels sidebar listing Web chat, API, MCP, Slack, and WhatsApp, with the Web chat page's Where it runs section showing the Public link toggle and its last-used status](/screenshots/dashboard-agent-channels.png)
 
 ### Set the exact allowed origins
 
@@ -158,7 +158,7 @@ Open the approved origin, confirm the launcher appears, open the widget, and con
 
 The browser sends its `Origin` header to the frontend session route. The frontend forwards that origin to the backend, which decides whether the launch is allowed.
 
-After a successful launch, the channels settings screen shows when the website embed credential was last used. If an install code is exposed, rotate the credential — the old install code stops launching new sessions the moment the token changes, and the settings screen shows the new code to deploy.
+After a successful launch, the Website widget placement on the Web chat page shows when the website embed credential was last used. If an install code is exposed, rotate the credential — the old install code stops launching new sessions the moment the token changes, and the settings screen shows the new code to deploy.
 
 ### Test the blocked path
 

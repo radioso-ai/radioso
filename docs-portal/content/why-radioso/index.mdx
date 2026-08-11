@@ -1,32 +1,20 @@
 ---
 title: Why Radioso
-description: Build self-hosted agents that talk, act, and stay grounded — and debug them when they are wrong.
+description: Build self-hosted agents that answer, act, and hand off — inside the rules you author, on every surface.
 last_updated: 2026-08-07
 ---
 
 # Why Radioso
 
-## Agents that talk, act, and stay grounded.
+## Agents that answer, act, and hand off — inside the rules you set.
 
-Most AI agents will happily answer anything — whether or not they actually know. Plenty of them will also happily *do* nothing; they just talk. Radioso agents are different. They talk to your users, follow the procedures you author, take real action, and answer from your own data. And when one gets it wrong, you can see why and fix it. One agent, every surface, one debug loop.
+A Radioso agent works out how to help, and the rules you author decide what it may do while it does that. It answers from your own data with citations, carries a request through to the action it needed, and gets a person when a person is what the moment calls for. When it gets something wrong, you can see which rule steered it and fix that. One agent, every surface, one debug loop.
 
 <a href="/quickstarts/run-locally" className="inline-flex h-9 items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground no-underline transition-colors hover:bg-primary/90">Run locally in 5 minutes →</a>
 
-## Grounded by default
+## It carries a request end to end
 
-When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
-
-That is the default for every Radioso agent, and it holds on every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
-
-## Debug the agent, not the framework
-
-Every agent gets a wrong answer eventually. The question is whether you can find out why and fix it without paging an ML engineer.
-
-In Radioso, every answer shows you the retrieval steps that produced it: which documents were considered, which chunks ranked highest, and which made it into the final context. If the answer was wrong, you can edit the source document, replay the question against the updated corpus, and watch the next answer get better. No vendor ticket. No retraining. No guessing.
-
-## It does the work, not just the talking
-
-A bot that can only talk is a glorified search box. Radioso agents act.
+Talking is the cheap half. The job is finishing the thing the person came for.
 
 **Directives** are standing rules that steer how the agent behaves. *"When the customer sounds anxious, slow down and confirm before doing anything."* You write the rule once; the agent applies it whenever it fits, on every surface, in every language. Directives steer; when you want the agent to actually *do* something, that is a skill's job.
 
@@ -36,7 +24,24 @@ And when the agent should stop talking and *do* something, it does: call a tool,
 
 Every step it takes — which directive steered it, which tool it called, which routine step it is on — lands in the same turn trace as the answers. If it does the wrong thing, you can see why.
 
-<a href="/why-radioso/capabilities" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">See everything an agent can do →</a>
+We call this shape guided autonomy: you don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
+
+<div className="mt-5 flex flex-wrap gap-4">
+  <a href="/why-radioso/guided-autonomy" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">How guided autonomy works →</a>
+  <a href="/why-radioso/capabilities" className="inline-flex items-center text-sm font-medium text-primary no-underline hover:underline">See everything an agent can do →</a>
+</div>
+
+## Grounded by default
+
+The answering half has its own rule, and it is on from the start. When the agent has evidence in your data, it answers and cites the source. When it does not, it says so.
+
+This is not a marketing claim. It is the default behavior of every Radioso agent, and it works the same way across every surface: your website chat, your API, your MCP server, and your public link. If you can break it, we want the bug report.
+
+## Debug the agent, not the framework
+
+Every agent gets a wrong answer eventually. The question is whether you can find out why and fix it without paging an ML engineer.
+
+In Radioso, every answer shows you the retrieval steps that produced it: which documents were considered, which chunks ranked highest, and which made it into the final context. If the answer was wrong, you can edit the source document, replay the question against the updated corpus, and watch the next answer get better. No vendor ticket. No retraining. No guessing.
 
 ## One agent, every surface
 
@@ -57,17 +62,17 @@ Most teams build five different integrations against five different stacks to ma
   </div>
 </div>
 
-## Who Radioso is not for
+## Whether we are the right fit
 
-We would rather lose a deal than win the wrong one. Some honest guidance:
+We would rather lose a deal than win the wrong one, so here is where the edges are.
 
-If what you need is your team's running internal conversation — ticket state, chat threads, wiki pages that change hourly — surfaced to a client as a live system of record, that's not what Radioso does. We index curated knowledge bases: documents you choose to upload, chunk, and keep current on purpose, not a live mirror of every tool your team touches.
+**Knowledge you curate, plus systems you call.** The agent answers from material you publish into Radioso — docs, policies, product pages, crawled sites — and grounding is only as current as what you have published. Live state that changes minute to minute, like ticket status or inventory, belongs on the other side of a skill: you connect the system over MCP and the agent queries it at the moment of the question. Deciding which knowledge is curated and which is fetched live is a real design call, and it is yours to make.
 
-If what you need is a visual canvas for wiring together dozens of tools into complex multi-step AI workflows, Radioso will feel narrow. We are focused on grounded, action-taking agents you put in front of real people — directives, routines, and skills, not a general-purpose workflow builder.
+**Agents you put in front of people.** Every part of this product is shaped around a conversation someone is actually having: a persona, standing rules, a flow that survives across turns, a handoff to a teammate. If the thing you need is a workbench for assembling arbitrary AI pipelines that no human talks to, you want a tool built for that job.
 
-If what you need is a full enterprise customer service platform — deep helpdesk integration, ticket routing, a per-resolution pricing model — Radioso is a piece of that stack, not the whole thing. We are built for teams who want to own their agent, not outsource it to a vendor's black box.
+**You own and operate the stack.** Radioso is open source, runs on your own infrastructure, and keeps every conversation in your Postgres. That also means you run it: upgrades, capacity, model keys, and the on-call pager are yours. Some teams want exactly that. Some teams would rather pay someone else to hold it, and that is a fair trade to want.
 
-If none of that sounds like you, or you've hit the edges of a tool that does, keep reading.
+If those trades read as the ones you would make, keep going.
 
 ## Get started
 

@@ -6773,6 +6773,15 @@
               "text"
             ]
           },
+          "copy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
           "branding": {
             "type": "object",
             "properties": {
@@ -10914,6 +10923,15 @@
               "surface",
               "text"
             ]
+          },
+          "copy": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
           },
           "branding": {
             "type": "object",

@@ -1,10 +1,20 @@
 # Radioso
 # <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
-## Self-hosted conversational agents, grounded in your data and following your rules.
+## Self-hosted conversational agents that answer, act, and hand off — inside the rules you set.
 
-Run one script and you have a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first. You write the flows in plain language and publish them; everything runs on your own infrastructure, against your own database.
+Run one script and you have a conversational agent that takes a request and sees it through: it carries a task across turns until the work is done, answers grounded in what you actually gave it, and hands off to a person when a turn calls for one — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
 
 Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
+
+---
+
+## Guided autonomy
+
+Radioso agents reason freely about how to help, inside rules you author. You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own. We call that guided autonomy, and it is the whole design.
+
+It shows up as three things, in this order. The agent **answers** — grounded in the sources you gave it, cited back to them. It **acts** — skills and routines carry a request across turns until the work is done. It **hands off** — to a person who picks up the whole conversation, with the routine it was running and the skills it called marked inline. Directives steer all three: standing rules that are matched by meaning, in any language, and applied on every turn.
+
+Control stays with you. Radioso is open source and runs in your cloud or on your own infrastructure, and every turn records which directive steered it, which skill it dispatched, and which routine step it was on.
 
 ---
 
@@ -16,7 +26,7 @@ Every message runs through a plain loop: read it, decide what the turn needs, do
 ./run-dev.sh
 ```
 
-The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. On a new open-source installation, register the first user to create the server's organization and default workspace. Add a key if you skipped it, upload a document, and ask a question.
+The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. On a new open-source installation, register the first user to create the server's organization and default workspace. Add a key if you skipped it, upload a document, and ask a question — the answer comes back cited to the document it came from. Then give the agent a Notify Human skill on its Skills tab, named `contact_human`, with a recipient email. Ask to speak to a person and the built-in contact routine takes over: it collects an email and a message, sends it to that recipient, and confirms. That is the shape of every agent here — answer, act, hand off. [Authoring routines](./docs/authoring-routines.md) covers building your own.
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
@@ -57,7 +67,7 @@ The assistant works with three kinds of unit on a turn.
 
 - A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, reached the same way as every other capability.
 - A **directive** is a standing rule that shapes *how* the assistant behaves. It pairs a condition with an action: when the condition holds, the action is added to the turn's instructions. A directive is matched and added to the prompt; it is never dispatched and returns nothing. For example: when the customer sounds anxious, slow down and confirm before acting.
-- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
+- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. Radioso ships one written the same way: the built-in contact flow — collect an email, collect a message, submit, confirm — is routine data registered at application composition rather than stored per agent, so it is available to every agent that enables a `contact_human` notify skill.
 
 **Skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
 
@@ -93,9 +103,9 @@ For the full model, see [Assistant turn spine](./docs/architecture/assistant-tur
               │
       ┌───────┴───────┐
       │ Routines      │  an active flow projects a
-      │ stateful      │  directive each turn (and can
-      │ multi-turn    │  drive a skill)
-      │ flows         │
+      │ stateful      │  directive each turn, and can
+      │ multi-turn    │  drive a skill, take an action,
+      │ flows         │  or hand off to a person
       └───────────────┘
 
    ═════════════════════════════════════════════════════════════
@@ -107,7 +117,7 @@ For the full model, see [Assistant turn spine](./docs/architecture/assistant-tur
                     └──────────────────────────────────┘
 ```
 
-Every surface — the web app, REST API, SDK, MCP clients, and the website embed — hands its turn to the same conversation engine. Selection chooses which skills to run, steered by the directives that matched this turn; dispatch runs them; compose merges their outcomes with the steering into a reply. Skills are a set you extend: `retrieval.answer` reads the chunks and vectors a background worker has ingested into Postgres with `pgvector`, but it sits alongside document search, plain assistant chat, and any skill you register. Directives are standing rules that shape selection and the reply. A routine is a stateful, multi-turn flow that expresses itself each turn by projecting its current step into a directive, and can drive a skill as it advances. The headless retrieval, SDK, and MCP surfaces can also call retrieval directly when no assistant behavior is wanted.
+Every surface — the web app, REST API, SDK, MCP clients, and the website embed — hands its turn to the same conversation engine. Selection chooses which skills to run, steered by the directives that matched this turn; dispatch runs them; compose merges their outcomes with the steering into a reply. Skills are a set you extend: document search, plain assistant chat, any skill you register, and `retrieval.answer`, which reads the chunks and vectors a background worker has ingested into Postgres with `pgvector`. Retrieval is one skill in that set, not a privileged step. The headless retrieval, SDK, and MCP surfaces can also call retrieval directly when no assistant behavior is wanted. Directives are standing rules that shape selection and the reply. A routine is a stateful, multi-turn flow that expresses itself each turn by projecting its current step into a directive, and can drive a skill as it advances — that is how a request is carried across turns to an action taken or a handoff to a person.
 
 Postgres is the system of record for everything, not just vectors: accounts, settings, conversations, and audit events live there too. Uploaded source files use the local filesystem in local development and GCS in cloud deployments. Ingestion runs in a background worker so uploads don't block the request path. The frontend, API, and worker all run in Docker Compose locally and on Cloud Run in production.
 
@@ -300,7 +310,7 @@ Cursor can use either same-host merged mode or a local standalone server. Claude
 
 Embed a Radioso chat widget on any website. One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control. The widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
 
-The channels settings screen shows whether public chat and website embed launch credentials are active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
+The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
 
 ---
 

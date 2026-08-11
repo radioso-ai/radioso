@@ -63,6 +63,38 @@ skills (`kind: retrieve`) are staged into the agentic retrieval loop as
 directive-scoped lookup tools. Action-only skill kinds are rejected. Invalid
 bindings return `400` and name the offending skill.
 
+In the dashboard, the binding is a chip in the directive's **Instruction** field:
+type `#` to pick from the skills this agent can bind, and the chip you insert is
+`binding.skillName`. The menu offers exactly the skills the API accepts, and a
+directive holds one, so the menu explains itself instead of offering a second
+while a chip is present. Deleting the chip clears the binding on save. A binding
+whose skill is disabled or renamed keeps its chip and marks it as an unknown
+skill, so the rule stays visible instead of disappearing.
+
+The chip is the binding, and `binding` in the API is what decides which text is
+a chip when the directive is opened again. Prose reads as prose: an action such
+as `Point the customer at #billing for pricing questions.` on a directive with
+no binding keeps those characters as words, and saving the directive leaves
+`binding` at `null` — even when a bindable skill named `billing` exists.
+
+Write the chip wherever the sentence needs it, including at the end:
+`Escalate using #issue_refund.` binds `issue_refund` and keeps its period,
+because a trailing `.` `,` `;` `:` `!` or `?` belongs to the prose. Reopening
+that directive shows the same chip and the same text, so a save that changes
+only the priority sends the action back unchanged.
+
+If you type a name the agent has no skill for, the menu offers
+**Create skill "…"**. That opens the same capability picker and configuration
+form the Skills list uses, narrowed to the two capabilities a directive can bind
+— **MCP tool** and **Knowledge retrieval** — with the name you typed already in
+the form. Skill names are lowercase identifiers, so `RefundLookup` is saved as
+`refundlookup` and the chip carries that. The skill is created enabled and
+`agent_selectable`, which is what the binding requires. Cancel out of either
+dialog and the field keeps your prose with no chip and no binding. MCP
+*connections* are still set up in the MCP channel section: connecting and
+authorizing a server is infrastructure, separate from authoring behavior over
+it.
+
 When a directive with an external MCP binding matches a non-routine turn, the
 turn selector routes to the bound skill if that skill is available as a runtime
 turn skill. When a directive with a retrieval binding matches, the answer loop
@@ -110,6 +142,15 @@ routine flow bypasses terminal turn selection.
 Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
 
 A `mcp_tool` skill (and the `external_mcp` directive binding below) is Radioso calling out to *someone else's* MCP server as a tool. That's the opposite direction from [Radioso's own MCP server](/guides/mcp-server), which a client like Cursor or Claude Desktop connects into.
+
+Each row in the Skills list says which authored surfaces reach it — "Used by 2
+directives and 1 routine", or "Not used by a directive or routine". A skill
+nothing references never fires, and the count is the fastest way to spot one
+after a rename or a deleted directive. The dashboard derives it from
+`GET /api/v1/agents/{agentId}/directives` and
+`GET /api/v1/agents/{agentId}/routines`; the skill envelope itself carries no
+usage field. A routine counts once however many of its steps call the skill, and
+a routine being revised counts once across its draft and published versions.
 
 Update skills with `PATCH /api/v1/agents/{agentId}/skills/{skillId}`. Use `config` for a shallow merge into the existing skill config. Use `replaceConfig` when sending the complete config from an editor and omitted keys should be removed, such as clearing a retrieval override so the skill inherits the default again. Do not send both fields in the same request.
 

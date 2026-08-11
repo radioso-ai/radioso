@@ -4533,6 +4533,12 @@ components:
             - brandText
             - surface
             - text
+        copy:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
         branding:
           type: object
           properties:
@@ -7367,6 +7373,12 @@ components:
             - brandText
             - surface
             - text
+        copy:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              type: string
         branding:
           type: object
           properties:

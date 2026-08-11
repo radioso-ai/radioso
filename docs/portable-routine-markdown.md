@@ -1,7 +1,7 @@
 ---
 title: "Portable Routine Markdown"
 description: "The normative markdown format for deterministic routine authoring and API round trips."
-last_updated: 2026-07-14
+last_updated: 2026-08-07
 ---
 
 # Portable Routine Markdown
@@ -97,6 +97,21 @@ Input bindings are:
 Each `in` and `out` entry must be a `name=value` pair. Output assignments must
 target a slot with `@slot_name`. The optional `mode` section accepts only
 `typed` or `untyped`.
+
+A token ends where the sentence does. Both markers stop at a trailing run of
+`.` `,` `;` `:` `!` `?`, which stays in the prose, so `Escalate using
+#issue_refund.` names the skill `issue_refund` and keeps its period, and
+`Record it as @order_id.` names the variable `order_id`. Punctuation inside a
+name is part of it: `#crm.lookup` names `crm.lookup`. Writing a token at the end
+of a sentence is therefore round-trip safe — parsing and re-serializing returns
+the same characters.
+
+A `[` that reaches the name overrides this. It opens the binding suffix, so every
+character before the bracket belongs to the name and the whole suffix is read: in
+`#crm.lookup.[in account=@account_id]` the skill is `crm.lookup.` and `account`
+is bound to the `account_id` slot. Skill names are `[a-z][a-z0-9_]*`, so a name
+that swallows a period this way matches nothing in the catalog and the step stays
+unresolved. Put a space before the bracket when the period ends a sentence.
 
 The `ctx.<name>` binding is preserved by the parser, serializer, and dashboard
 chip editor. The editor may render it as read-only; saving must not rewrite it as

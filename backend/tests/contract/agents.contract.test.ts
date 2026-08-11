@@ -488,6 +488,16 @@ describe("agents contract", () => {
           hidePoweredBy: false,
           privacyPolicyUrl,
         },
+        surfaceSettings: {
+          websiteEmbed: {
+            theme: {
+              brand: "#5b3df5",
+              brandText: "#ffffff",
+              surface: "#17142b",
+              text: "#f8f7ff",
+            },
+          },
+        },
       })
       .expect(200);
     expect(updated.body.branding).toEqual({
@@ -507,7 +517,15 @@ describe("agents contract", () => {
     const settings = await request(app)
       .put("/api/v1/settings/general")
       .set(adminSessionHeaders(session))
-      .send({ anonymousChatEnabled: true })
+      .send({
+        anonymousChatEnabled: true,
+        websiteEmbedCopy: {
+          en: {
+            publicChatEmptyTitle: "How can we help?",
+            startPrompt: "Ask Aurora Support",
+          },
+        },
+      })
       .expect(200);
     const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
     expect(anonymousChatToken).toBeTruthy();
@@ -520,6 +538,18 @@ describe("agents contract", () => {
       hidePoweredBy: false,
       privacyPolicyUrl,
     });
+    expect(publicSession.body.copy).toEqual({
+      en: {
+        publicChatEmptyTitle: "How can we help?",
+        startPrompt: "Ask Aurora Support",
+      },
+    });
+    expect(publicSession.body.theme).toEqual({
+      brand: "#5b3df5",
+      brandText: "#ffffff",
+      surface: "#17142b",
+      text: "#f8f7ff",
+    });
 
     const historyList = await request(app)
       .get(`/api/v1/public/chat/${anonymousChatToken}?limit=1`)
@@ -528,6 +558,18 @@ describe("agents contract", () => {
     expect(historyList.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+    });
+    expect(historyList.body.copy).toEqual({
+      en: {
+        publicChatEmptyTitle: "How can we help?",
+        startPrompt: "Ask Aurora Support",
+      },
+    });
+    expect(historyList.body.theme).toEqual({
+      brand: "#5b3df5",
+      brandText: "#ffffff",
+      surface: "#17142b",
+      text: "#f8f7ff",
     });
   });
 

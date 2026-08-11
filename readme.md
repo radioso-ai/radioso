@@ -310,7 +310,7 @@ Cursor can use either same-host merged mode or a local standalone server. Claude
 
 Embed a Radioso chat widget on any website. One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control. The widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
 
-The channels settings screen shows whether public chat and website embed launch credentials are active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
+The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
 
 ---
 

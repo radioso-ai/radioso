@@ -42,6 +42,7 @@ import {
   type ActivityTrace,
   type SkillStreamPayload,
   type WebsiteEmbedPageContext,
+  type WebsiteEmbedCopyPacks,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
@@ -118,6 +119,7 @@ interface AnonymousChatContextValue {
   assistantLinkUtmEnabled: boolean
   citationDisplayEnabled: boolean
   assistantTheme: WebsiteEmbedThemeOverrides | null
+  assistantCopyPacks: WebsiteEmbedCopyPacks
   branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
   isLoading: boolean
@@ -342,6 +344,7 @@ export function AnonymousChatProvider({
   const [assistantLinkUtmEnabled, setAssistantLinkUtmEnabled] = useState(true)
   const [citationDisplayEnabled, setCitationDisplayEnabled] = useState(true)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
+  const [assistantCopyPacks, setAssistantCopyPacks] = useState<WebsiteEmbedCopyPacks>({})
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
@@ -383,6 +386,7 @@ export function AnonymousChatProvider({
       setAssistantLinkUtmEnabled(session.assistantLinkUtmEnabled ?? true)
       setCitationDisplayEnabled(session.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
+      setAssistantCopyPacks(session.copy ?? {})
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
       return session
@@ -514,6 +518,7 @@ export function AnonymousChatProvider({
     setAssistantLinkUtmEnabled(true)
     setCitationDisplayEnabled(true)
     setAssistantTheme(null)
+    setAssistantCopyPacks({})
     setBranding(null)
     setIntakeActions([])
     setConversationId(undefined)
@@ -531,6 +536,7 @@ export function AnonymousChatProvider({
       setAssistantLinkUtmEnabled(response.assistantLinkUtmEnabled ?? true)
       setCitationDisplayEnabled(response.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
+      setAssistantCopyPacks(response.copy ?? {})
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
 
@@ -1204,6 +1210,7 @@ export function AnonymousChatProvider({
       assistantLinkUtmEnabled,
       citationDisplayEnabled,
       assistantTheme,
+      assistantCopyPacks,
       branding,
       intakeActions,
       isLoading,
@@ -1227,6 +1234,7 @@ export function AnonymousChatProvider({
       assistantLinkUtmEnabled,
       citationDisplayEnabled,
       assistantTheme,
+      assistantCopyPacks,
       branding,
       intakeActions,
       isLoading,

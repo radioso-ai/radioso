@@ -4,7 +4,7 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
+import { AssistantProfileSection } from '@/components/dashboard/settings/assistant-profile-section'
 import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
 import type { AssistantBehaviorSettings, GeneralSettings, RetrievalDefaults } from '@/lib/api'
 
@@ -110,10 +110,10 @@ describe('assistant suggested question settings UI', () => {
     container.remove()
   })
 
-  it('does not render the legacy behavior-section suggested questions toggle', () => {
+  it('does not render a suggested-questions toggle on the profile section', () => {
     act(() => {
       root.render(
-        <AssistantBehaviorSection
+        <AssistantProfileSection
           anonSettings={generalSettings()}
           assistantBehaviorSettings={behaviorSettings()}
           assistantLocaleInput=""

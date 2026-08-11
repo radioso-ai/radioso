@@ -18,10 +18,10 @@ test("operator can see public chat link last-used lifecycle", async ({ page }) =
     platformSettings,
   });
 
-  await page.goto(`/w/${workspaceKey}/agents?tab=channels&anchor=public-chat-link`);
+  await page.goto(`/w/${workspaceKey}/agents?tab=channels&anchor=web-chat`);
   const publicChatSection = page.getByRole("main").locator("#public-chat-link");
 
-  await expect(publicChatSection.getByRole("heading", { name: "Public chat link" })).toBeVisible();
+  await expect(publicChatSection.getByRole("heading", { name: "Public link", exact: true })).toBeVisible();
   await expect(publicChatSection.getByText("Active")).toHaveCount(0);
   await expect(publicChatSection.getByText("Revoked")).toHaveCount(0);
   await expect(publicChatSection.getByRole("button", { name: "Revoke" })).toHaveCount(0);

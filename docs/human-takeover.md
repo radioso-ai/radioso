@@ -202,7 +202,7 @@ The dashboard surfaces this work under **Activity**, which has three tabs:
   that total to the Needs attention item or refresh counts.
 
   Reviewing written feedback opens the exact failed answer and keeps direct
-  links to Knowledge, the agent's Behavior settings, and agent chat beside the
+  links to Knowledge, the agent's Profile settings, and agent chat beside the
   evidence. Mark it resolved after updating and testing, or choose **Not
   actionable**. Both actions open a compact popover where the operator can close
   immediately or add an optional classification. Only **Other** asks for a

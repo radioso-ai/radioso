@@ -2,15 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, ChevronLeft, ExternalLink, FolderOpen, Globe, KeyRound, Link as LinkIcon, MessageCircle, RefreshCw, ShieldAlert, Trash2, Wrench } from 'lucide-react'
+import { Building2, ChevronLeft, FolderOpen, Globe, KeyRound, MessageCircle, RefreshCw, ShieldAlert, Trash2, Wrench } from 'lucide-react'
 
 import { ApiChannelCard } from '@/components/dashboard/settings/api-channel-card'
-import { AssistantBehaviorSection } from '@/components/dashboard/settings/assistant-behavior-section'
 import { AssistantContextVariablesSection } from '@/components/dashboard/settings/assistant-context-variables-section'
 import { AssistantDirectivesSection } from '@/components/dashboard/settings/assistant-directives-section'
-import { AssistantIdentityAppearanceSection } from '@/components/dashboard/settings/assistant-identity-appearance-section'
-import { AssistantPreviewRail } from '@/components/dashboard/settings/assistant-preview-rail'
+import { AssistantProfileSection } from '@/components/dashboard/settings/assistant-profile-section'
 import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
+import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { McpConverseChannelCard } from '@/components/dashboard/settings/mcp-converse-channel-card'
@@ -31,7 +30,6 @@ import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { SettingsTabShell } from '@/components/dashboard/settings/settings-tab-shell'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
 import { WebhookDestinationsPanel } from '@/components/dashboard/settings/webhook-destinations-panel'
-import { WebsiteEmbedSettingsController } from '@/components/dashboard/settings/website-embed-settings-controller'
 import { WorkspaceEmailConnectionsSection } from '@/components/dashboard/settings/workspace-email-connections-section'
 import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
@@ -47,7 +45,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
-import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { storeAccountOrganizationName } from '@/lib/auth-context'
 import {
@@ -83,42 +80,14 @@ const writeCachedOrganizationName = (accountId: string, organizationName: string
 
 type GeneralSettingsUpdateInput = Parameters<typeof generalSettingsApi.updateGeneralSettings>[0]
 
-type ChannelId = 'public-chat-link' | 'website-embed' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel'
+type ChannelId = 'web-chat' | 'api-channel' | 'mcp-channel' | 'slack-channel' | 'whatsapp-channel'
 
 const CHANNEL_TITLES: Record<ChannelId, string> = {
-  'public-chat-link': 'Public chat link',
-  'website-embed': 'Website chat widget',
+  'web-chat': 'Web chat',
   'api-channel': 'API channel',
   'mcp-channel': 'MCP channel',
   'slack-channel': 'Slack',
   'whatsapp-channel': 'WhatsApp',
-}
-
-const formatLastUsed = (value: string | null | undefined) => {
-  if (!value) {
-    return 'Never used'
-  }
-  const timestamp = new Date(value).getTime()
-  if (!Number.isFinite(timestamp)) {
-    return 'Last used: Unknown'
-  }
-  const diffSeconds = Math.round((timestamp - Date.now()) / 1000)
-  const absoluteSeconds = Math.abs(diffSeconds)
-  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ['year', 60 * 60 * 24 * 365],
-    ['month', 60 * 60 * 24 * 30],
-    ['week', 60 * 60 * 24 * 7],
-    ['day', 60 * 60 * 24],
-    ['hour', 60 * 60],
-    ['minute', 60],
-  ]
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
-  for (const [unit, unitSeconds] of units) {
-    if (absoluteSeconds >= unitSeconds) {
-      return `Last used: ${formatter.format(Math.round(diffSeconds / unitSeconds), unit)}`
-    }
-  }
-  return `Last used: ${formatter.format(diffSeconds, 'second')}`
 }
 
 const fallbackRetrievalDefaults: RetrievalDefaults = {
@@ -150,7 +119,7 @@ export function WorkspaceAssistantChannelsTab({
   agentId,
   agentSection,
   routeState,
-  channelsTabHref,
+  profileHref,
   onSaveStateChange,
 }: {
   accountId: string
@@ -159,7 +128,7 @@ export function WorkspaceAssistantChannelsTab({
   /** When set, render only this section (the second column owns selection). */
   agentSection?: AgentSectionId
   routeState?: DashboardRouteState
-  channelsTabHref?: string
+  profileHref?: string
   onSaveStateChange?: (input: { state: 'idle' | 'saved' | 'saving' | 'error'; message?: string | null }) => void
 }) {
   const router = useRouter()
@@ -213,7 +182,7 @@ export function WorkspaceAssistantChannelsTab({
   // skip the in-page channel index/back affordance.
   const showSection = (id: AgentSectionId) => !agentSection || agentSection === id
   const isChannelId = (id: AgentSectionId | undefined): id is ChannelId =>
-    id === 'public-chat-link' || id === 'website-embed' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
+    id === 'web-chat' || id === 'api-channel' || id === 'mcp-channel' || id === 'slack-channel' || id === 'whatsapp-channel'
   const resolvedChannel: ChannelId | null = isChannelId(agentSection) ? agentSection : selectedChannel
   const channelIndexEnabled = !agentSection
   const organizationDraftVersionRef = useRef(0)
@@ -341,7 +310,7 @@ export function WorkspaceAssistantChannelsTab({
   }, [activeWorkspaceId, agentId, isWorkspaceLoading, loadGeneralSettings])
 
   useEffect(() => {
-    if (mode !== 'assistant') {
+    if (mode !== 'assistant' && mode !== 'channels') {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- Leaving assistant mode clears assistant-only draft state.
       setAssistantBehaviorSettings(null)
       setSavedAssistantBehaviorSettings(null)
@@ -907,48 +876,26 @@ export function WorkspaceAssistantChannelsTab({
         </section>
         ) : null}
 
-          {mode === 'assistant' && (showSection('identity') || showSection('behavior')) ? (
-          <section id={showSection('behavior') ? 'assistant-behavior' : 'assistant-identity'} className="space-y-6 scroll-mt-24">
+          {mode === 'assistant' && showSection('profile') ? (
+          <section id="assistant-profile" className="space-y-6 scroll-mt-24">
             {isAnonLoading || isAssistantBehaviorLoading ? (
               <div className="flex items-center justify-center py-4">
                 <LogoSpinner imageClassName="h-6 w-6" />
               </div>
             ) : anonSettings && assistantBehaviorSettings ? (
-              <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
-                <div className="space-y-6">
-                  {assistantSettingsError ? (
-                    <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
-                  ) : null}
-                  {showSection('identity') ? (
-                    <AssistantIdentityAppearanceSection
-                      anonSettings={anonSettings}
-                      assistantBehaviorSettings={assistantBehaviorSettings}
-                      showInternalName={Boolean(agentId)}
-                      onAssistantSettingChange={handleAssistantSettingChange}
-                      onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                      onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
-                      onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
-                      isAnonSaving={isAnonSaving}
-                      isAssistantLogoSaving={isAssistantLogoSaving}
-                    />
-                  ) : null}
-                  {showSection('behavior') ? (
-                    <AssistantBehaviorSection
-                      anonSettings={anonSettings}
-                      assistantBehaviorSettings={assistantBehaviorSettings}
-                      assistantLocaleInput={assistantLocaleInput}
-                      onAssistantSettingChange={handleAssistantSettingChange}
-                      onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
-                      onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
-                      isAnonSaving={isAnonSaving}
-                    />
-                  ) : null}
-                </div>
-                <AssistantPreviewRail
+              <div className="space-y-6">
+                {assistantSettingsError ? (
+                  <p className="text-sm text-destructive" role="alert">{assistantSettingsError}</p>
+                ) : null}
+                <AssistantProfileSection
                   anonSettings={anonSettings}
                   assistantBehaviorSettings={assistantBehaviorSettings}
-                  retrievalDefaults={effectiveRetrievalDefaults}
-                  channelsTabHref={channelsTabHref}
+                  assistantLocaleInput={assistantLocaleInput}
+                  showInternalName={Boolean(agentId)}
+                  onAssistantSettingChange={handleAssistantSettingChange}
+                  onAssistantLocaleInputChange={handleAssistantLocaleInputChange}
+                  onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+                  isAnonSaving={isAnonSaving}
                 />
               </div>
             ) : (
@@ -996,18 +943,15 @@ export function WorkspaceAssistantChannelsTab({
           <section className="space-y-4">
             <SettingsRowList>
               <SettingsRow
-                icon={<LinkIcon className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['public-chat-link']}
-                description="A shareable URL anyone can open without signing in."
-                status={anonSettings?.anonymousChatEnabled ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'muted' }}
-                onClick={() => setSelectedChannel('public-chat-link')}
-              />
-              <SettingsRow
                 icon={<Globe className="h-5 w-5 text-primary" />}
-                title={CHANNEL_TITLES['website-embed']}
-                description="Add a chat button to your website so visitors can talk to your agent from any page."
-                status={anonSettings?.websiteEmbedEnabled ? { label: 'On', tone: 'active' } : { label: 'Off', tone: 'muted' }}
-                onClick={() => setSelectedChannel('website-embed')}
+                title={CHANNEL_TITLES['web-chat']}
+                description="A shareable link and a website widget, sharing one look and wording."
+                status={
+                  anonSettings?.anonymousChatEnabled || anonSettings?.websiteEmbedEnabled
+                    ? { label: 'On', tone: 'active' }
+                    : { label: 'Off', tone: 'muted' }
+                }
+                onClick={() => setSelectedChannel('web-chat')}
               />
               <SettingsRow
                 icon={<KeyRound className="h-5 w-5 text-primary" />}
@@ -1048,86 +992,31 @@ export function WorkspaceAssistantChannelsTab({
           </button>
           ) : null}
 
-          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'public-chat-link' ? (
-          <section id="public-chat-link" className="space-y-6 scroll-mt-24">
-            {anonSettings ? (
-              <SettingsCard
-                icon={<LinkIcon className="h-5 w-5 text-primary" />}
-                title="Public chat link"
-                description="A shareable URL anyone can open without signing in."
-                headerEnd={
-                  <Switch
-                    id="anonChatToggle"
-                    checked={anonSettings.anonymousChatEnabled}
-                    onCheckedChange={handleAnonToggle}
-                    disabled={isAnonSaving}
-                  />
-                }
-              >
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-muted-foreground">
-                    {formatLastUsed(anonSettings.anonymousChatLastUsedAt)}
-                  </span>
-                </div>
-                {anonSettings.anonymousChatEnabled && anonSettings.anonymousChatUrl ? (
-                  <div className="space-y-3 rounded-xl bg-muted/50 p-4">
-                    <div className="flex items-center gap-2 text-foreground">
-                      <LinkIcon className="h-4 w-4" />
-                      <Label className="text-foreground">Share this link</Label>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Send this URL to anyone who needs the chat. They can open it without signing in.
-                    </p>
-                    <CopyValueField
-                      value={anonSettings.anonymousChatUrl}
-                      ariaLabel="Copy public chat link"
-                      className="w-full"
-                    />
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleAnonymousChatTokenRotate}
-                        disabled={isAnonSaving}
-                        className="text-muted-foreground hover:text-foreground"
-                        title="Generates a new public chat URL. The current link will stop working."
-                      >
-                        {isAnonSaving ? <Spinner className="mr-2 h-4 w-4" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                        Generate new link
-                      </Button>
-                      <Button asChild variant="default">
-                        <a href={anonSettings.anonymousChatUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          Try the chat
-                        </a>
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </SettingsCard>
-            ) : (
-              <p className="text-sm text-muted-foreground">Failed to load public chat link settings.</p>
-            )}
-          </section>
-          ) : null}
-
-
-          {mode !== 'channels' || (!isAnonLoading && resolvedChannel === 'website-embed') ? (
-            <WebsiteEmbedSettingsController
-            mode={mode}
-            anonSettings={anonSettings}
-            savedAnonSettings={savedAnonSettings}
-            setAnonSettings={setAnonSettings}
-            setSavedAnonSettings={setSavedAnonSettings}
-            isAnonSaving={isAnonSaving}
-            setIsAnonSaving={setIsAnonSaving}
-            updateGeneralSettings={updateGeneralSettings}
-            rotateWebsiteEmbedToken={rotateWebsiteEmbedToken}
-            anonDraftVersionRef={anonDraftVersionRef}
-            saveSequenceRef={saveSequenceRef}
-            setSaveState={setSaveState}
-            setSaveError={setSaveError}
-          />
+          {mode === 'channels' && !isAnonLoading && resolvedChannel === 'web-chat' ? (
+            <ChatChannelSection
+              mode={mode}
+              anonSettings={anonSettings}
+              savedAnonSettings={savedAnonSettings}
+              setAnonSettings={setAnonSettings}
+              setSavedAnonSettings={setSavedAnonSettings}
+              assistantBehaviorSettings={assistantBehaviorSettings}
+              retrievalDefaults={effectiveRetrievalDefaults}
+              onAssistantBehaviorDraft={updateAssistantBehaviorDraft}
+              onAssistantLogoUpload={(file) => void handleAssistantLogoUpload(file)}
+              onAssistantLogoDelete={() => void handleAssistantLogoDelete()}
+              onAnonymousChatToggle={(enabled) => void handleAnonToggle(enabled)}
+              onAnonymousChatTokenRotate={() => void handleAnonymousChatTokenRotate()}
+              isAnonSaving={isAnonSaving}
+              setIsAnonSaving={setIsAnonSaving}
+              isAssistantLogoSaving={isAssistantLogoSaving}
+              updateGeneralSettings={updateGeneralSettings}
+              rotateWebsiteEmbedToken={rotateWebsiteEmbedToken}
+              anonDraftVersionRef={anonDraftVersionRef}
+              saveSequenceRef={saveSequenceRef}
+              setSaveState={setSaveState}
+              setSaveError={setSaveError}
+              profileHref={profileHref}
+            />
           ) : null}
 
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (

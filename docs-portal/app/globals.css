@@ -4,6 +4,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Brand tokens mirror the marketing site (radioso.ai). `--primary` is
+   #2870bd = hsl(211 65% 45%); the Nextra vars below restate it in the
+   hue/saturation/lightness form nextra-theme-docs consumes, so Callouts,
+   Steps, Tabs, and prose links inherit the same blue instead of falling back
+   to an undefined color. */
 :root {
   --background: #f9f9f7;
   --foreground: #142317;
@@ -11,59 +16,73 @@
   --card-foreground: #142317;
   --popover: #ffffff;
   --popover-foreground: #142317;
-  --primary: #5096e7;
+  --primary: #2870bd;
   --primary-foreground: #f9f9f7;
   --secondary: #ffc720;
   --secondary-foreground: #142317;
   --muted: #e8eae8;
-  --muted-foreground: #8b9089;
+  --muted-foreground: #6a706b;
   --accent: #ffc720;
   --accent-foreground: #142317;
   --border: #d4d8d4;
   --input: #d4d8d4;
-  --ring: #5096e7;
+  --ring: #2870bd;
   --radius: 0.5rem;
   --sidebar: #ffffff;
   --sidebar-foreground: #142317;
-  --sidebar-primary: #5096e7;
+  --sidebar-primary: #2870bd;
   --sidebar-primary-foreground: #f9f9f7;
   --sidebar-accent: #eef0f4;
   --sidebar-accent-foreground: #142317;
   --sidebar-border: #e8eae8;
-  --sidebar-ring: #5096e7;
+  --sidebar-ring: #2870bd;
+
+  --nextra-primary-hue: 211deg;
+  --nextra-primary-saturation: 65%;
+  --nextra-primary-lightness: 45%;
+  --nextra-bg: 249, 249, 247;
 }
 
+/* Dark keeps the brand hue and saturation and only lifts lightness to 58%
+   (#4e92da), which clears WCAG AA on the #0c120f section background; #2870bd
+   itself measures 3.7:1 there and would fail for body-sized link text. */
 .dark {
-  --background: #0f1410;
+  --background: #0c120f;
   --foreground: #f9f9f7;
   --card: #1a1f1a;
   --card-foreground: #f9f9f7;
   --popover: #1a1f1a;
   --popover-foreground: #f9f9f7;
-  --primary: #5096e7;
-  --primary-foreground: #0f1410;
+  --primary: #4e92da;
+  --primary-foreground: #0c120f;
   --secondary: #ffc720;
-  --secondary-foreground: #0f1410;
+  --secondary-foreground: #0c120f;
   --muted: #252525;
   --muted-foreground: #a8a8a8;
   --accent: #ffc720;
-  --accent-foreground: #0f1410;
+  --accent-foreground: #0c120f;
   --border: #252525;
   --input: #252525;
-  --ring: #5096e7;
-  --sidebar: #141a23;
+  --ring: #4e92da;
+  --sidebar: #101713;
   --sidebar-foreground: #f9f9f7;
-  --sidebar-primary: #5096e7;
-  --sidebar-primary-foreground: #0f1410;
-  --sidebar-accent: #252a33;
+  --sidebar-primary: #4e92da;
+  --sidebar-primary-foreground: #0c120f;
+  --sidebar-accent: #1d251f;
   --sidebar-accent-foreground: #f9f9f7;
-  --sidebar-border: #252a33;
-  --sidebar-ring: #5096e7;
+  --sidebar-border: #1d251f;
+  --sidebar-ring: #4e92da;
+
+  --nextra-primary-hue: 211deg;
+  --nextra-primary-saturation: 65%;
+  --nextra-primary-lightness: 58%;
+  --nextra-bg: 12, 18, 15;
 }
 
 @theme inline {
   --font-sans: var(--font-inter), 'Inter', system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), 'JetBrains Mono', monospace;
+  --font-display: var(--font-fraunces), ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -108,6 +127,14 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+  }
 }
 
 .docs-footer {
@@ -124,7 +151,48 @@
   text-decoration: none;
 }
 
-.docs-mdx-shell article.nextra-body-typesetting-article {
-  margin-inline: auto;
+/* Nextra renders MDX straight into this container with no <article> wrapper, so
+   the readable measure has to be set here: 48rem minus the container's 2rem
+   gutters leaves a 44rem (704px) text column, roughly 70-75 characters. */
+.docs-mdx-shell {
   max-width: 48rem;
+}
+
+/* Nextra hard-codes prose headings to slate; pull them back onto the brand
+   foreground and the display face. */
+.docs-mdx-shell :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--foreground);
+}
+
+.docs-mdx-shell :is(h1, h2, h3, h4) {
+  font-family: var(--font-display);
+}
+
+.docs-subtle-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.docs-subtle-scrollbar:hover,
+.docs-subtle-scrollbar:focus-within {
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 35%, transparent) transparent;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.docs-subtle-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.docs-subtle-scrollbar:hover::-webkit-scrollbar-thumb,
+.docs-subtle-scrollbar:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--muted-foreground) 35%, transparent);
 }

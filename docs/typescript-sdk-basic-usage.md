@@ -252,7 +252,7 @@ configure an agent the same way the dashboard does: write routines, directives,
 and context variables, and bind skills. All authoring calls are namespaced under
 `client.agents.*` and take the agent id as the first argument.
 
-The key point is that authoring and running are the same token. A script can
+Authoring and running are the same token. A script can
 provision an agent, then chat with it, without a session cookie.
 
 ### Routines

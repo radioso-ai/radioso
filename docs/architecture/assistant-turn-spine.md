@@ -7,8 +7,8 @@ last_updated: 2026-08-05
 # Assistant Turn Spine
 
 The assistant turn is a loop that gathers context, dispatches capabilities, and
-composes a reply. Capabilities are **skills**. Retrieval is one skill among them,
-not a privileged step.
+composes a reply. Capabilities are **skills**. Retrieval is one of them, reached
+through the same skill-invocation port as every other capability.
 
 ## The shape of a turn
 
@@ -19,7 +19,7 @@ A turn moves through four phases:
 3. **Dispatch** — run the selected skill through the skill-invocation port.
 4. **Compose** — build the reply from what the skills returned.
 
-The key point: the loop holds the mechanism, skills hold the behavior. Adding a
+The loop holds the mechanism, skills hold the behavior. Adding a
 capability means registering a skill, not editing the loop.
 
 ## Reusable contract boundary
@@ -112,8 +112,8 @@ the same route-scoped runtime. Policy stays with the owning modules; the planner
 only sees candidate summaries. Neither fused nor staged interpretation receives
 configured answer instructions or decides scope before retrieval.
 
-The key point is that fallback is the existing staged path, all-or-nothing per
-turn. Fused planning is standard behavior. A turn bypasses planning entirely
+Fallback is the staged path, all-or-nothing per turn. Fused planning is standard
+behavior. A turn bypasses planning entirely
 (no planner call) when a routine is active or parked, when a pending
 clarification or decision resolves this turn, when a routine
 explicitly claims the turn (including completed-routine correction or semantic
@@ -189,11 +189,10 @@ through the same port as any other skill:
 - The chat turn produces grounded-answer context by dispatching `retrieval.answer`
   through the registry, then composes the reply from the result.
 
-In practice, the chat module no longer depends on the retrieval pipeline service.
-It depends on a narrow turn port (`RetrievalTurnPort`) for interpretation and
-dispatch, and on the retrieval *result type* for composition. The headless
-`retrieval.*` API, SDK, and MCP surfaces are unchanged — they call retrieval
-directly, as before.
+The chat module depends on a narrow turn port (`RetrievalTurnPort`, defined in
+`backend/src/modules/chat/services/retrievalTurnDispatch.ts`) for interpretation
+and dispatch, and on the retrieval *result type* for composition. The headless
+`retrieval.*` API, SDK, and MCP surfaces call the retrieval pipeline directly.
 
 ## Clarification resolves before routines
 

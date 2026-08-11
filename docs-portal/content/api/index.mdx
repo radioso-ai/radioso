@@ -5,42 +5,46 @@ description: How the Radioso API is organized, which auth mode to use, and where
 
 # API overview
 
-The Radioso API has three access patterns.
+Call the Radioso API to create workspaces, upload documents, and ask an agent a grounded question — the same work the dashboard does, reached over HTTP instead of a browser. One naming note before you dive in: the persona you configure in the dashboard is an **agent**. The chat surface you call to talk to it is still named **assistant** in API paths, such as `/api/v1/assistant/chat`. Same thing, two names — the assistant chat API is how you talk to an agent.
 
-- Session routes manage accounts, users, invitations, and workspaces.
-- Workspace token routes handle agents, skills, documents, chat, search, settings, and connectors.
-- Public token routes handle anonymous chat and Enterprise website embed flows.
+## Get a token and ask a question
 
-In practice, that split matters more than the endpoint count. It tells you which credential to use and where state is stored.
+Sign in to the dashboard, open a workspace, and copy its token from **Settings → API access**, or reveal it over the API itself — see [Workspaces and tokens](/api/workspaces-and-tokens). With a token in hand:
 
-One naming note before you dive in: the persona you configure in the dashboard is an **agent**. The chat surface you call to talk to it is still named **assistant** in API paths, such as `/api/v1/assistant/chat`. Same thing, two names — the assistant chat API is how you talk to an agent.
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"What can this workspace answer?","stream":false}'
+```
 
-## Start with the right path
+Swap in `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — a workspace token only works against the instance that issued it. If the workspace has no documents yet, the agent still answers, just without grounding; [Documents and search](/api/documents-and-search) covers giving it something to answer from.
 
-- If you are signing users into the product, start with [Auth and sessions](/api/auth-and-sessions).
-- If you are automating documents and chat from your backend, start with [Workspaces and tokens](/api/workspaces-and-tokens), then move to [Agents and skills](/api/agents-and-skills), [Portable routines](/api/portable-routines), [Documents and search](/api/documents-and-search), and [Chat and history](/api/chat-and-history).
-- If you are adding customer-facing public chat or the Enterprise website widget, start with [Public chat and embed](/api/public-chat-and-embed).
-- If you are tuning workspace behavior, use [Settings](/api/settings).
-- If you are managing external ingestion or messaging systems, use [Connectors and webhooks](/api/connectors-and-webhooks).
+## Find your workflow
 
-## Reference and scenarios
+- Signing users into the product yourself: [Auth and sessions](/api/auth-and-sessions).
+- Automating documents and chat from your backend: [Workspaces and tokens](/api/workspaces-and-tokens), then [Agents and skills](/api/agents-and-skills), [Portable routines](/api/portable-routines), [Documents and search](/api/documents-and-search), and [Chat and history](/api/chat-and-history).
+- Adding customer-facing public chat or the Enterprise website widget: [Public chat and embed](/api/public-chat-and-embed).
+- Tuning workspace behavior: [Settings](/api/settings).
+- Managing external ingestion or messaging systems: [Connectors and webhooks](/api/connectors-and-webhooks).
 
-There are two useful docs surfaces:
+## Three credentials, three jobs
 
-- [API Reference](/api-reference) for exact schemas, status codes, and payload contracts
-- API scenario pages for the order in which you call those endpoints
+Which credential you send determines which routes will accept the request:
 
-The OpenAPI document at `backend/openapi.json` is the canonical reference source for both.
+- **Session cookie** — set by login, invitation acceptance, or password reset. Manages accounts, users, invitations, and workspaces.
+- **Workspace API token** — sent as `Authorization: Bearer <token>`. Runs agents, skills, documents, chat, search, settings, and connectors.
+- **Public token** — a per-surface token embedded in a public chat link or website widget, not tied to your account. Handles anonymous chat and the Enterprise embed flow.
+
+Exact schemas, status codes, and payload contracts live in the [API Reference](/api-reference), generated from the OpenAPI document at `backend/openapi.json` — the canonical source for both that reference and this scenario-first section.
 
 ## System endpoint
-
-Radioso also exposes a simple health route:
 
 ```text
 GET /health
 ```
 
-Use it for service monitoring and basic deployment checks.
+Use it for service monitoring and basic deployment checks; it needs no credential.
 
 ## Read next
 

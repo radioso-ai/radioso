@@ -1,6 +1,7 @@
 ---
 title: Grounded answers
 description: How one capability works — retrieval evidence, citations, and honest behavior when support for a claim is missing.
+last_updated: 2026-08-07
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -13,14 +14,7 @@ Answering is one of three things a Radioso agent does — it also acts and hands
 
 ## The product point of view
 
-Many AI products optimize first for fluency. Radioso optimizes first for defensibility.
-
-That changes the product in visible ways:
-
-- retrieval behavior can be adjusted per agent because answer quality depends on the evidence path
-- citations are part of the answer experience rather than a debugging extra
-- unsupported claims should degrade honestly instead of sounding confident
-- operators should be able to inspect why the system answered the way it did
+Most AI products optimize for fluency: they would rather sound confident than say "I don't know." Radioso optimizes for defensibility instead, and that trade-off shows up everywhere in the product, not just in the chat window. Retrieval behavior is tunable per agent, because how you got the evidence matters as much as what it says. Citations sit in the answer itself, not behind a debugging toggle — a visitor sees them the same moment they see the reply. An unsupported claim degrades honestly instead of bluffing through it. And when an answer looks wrong, an operator can trace exactly why the system said what it said, instead of guessing.
 
 ## A simple example
 
@@ -28,48 +22,37 @@ Imagine a customer asks:
 
 `Do you offer refunds after 30 days?`
 
-There are two very different product behaviors:
-
-1. A generic assistant gives a polished answer based on patterns it has seen elsewhere.
-2. A grounded agent answers from your workspace documents, cites the supporting source, or says it does not have support for that claim.
-
-Radioso is built for the second behavior.
+A generic assistant answers from the patterns it has seen elsewhere — plausible, polished, and not necessarily true for your business. A grounded agent instead searches your workspace documents, answers from what it finds there, cites the source, or says plainly that it doesn't have support for that claim. Radioso is built for the second behavior, on every surface it talks through.
 
 ## How Radioso gets there
 
 <Steps>
 ### Retrieve evidence
 
-The system searches workspace documents and applies system defaults plus any selected agent retrieval skill settings to gather the best candidate context.
+The system searches workspace documents and applies system defaults plus any agent-specific retrieval settings to gather the best candidate context.
 
 ### Build the answer with traceable support
 
-The answer path keeps track of which chunks support which parts of the response.
+The answer path keeps track of which chunks support which parts of the response, so the connection between claim and evidence survives all the way to the reply.
 
 ### Present answers with citations
 
-The presented answer keeps citation metadata connected to the retrieved chunks that support the response.
+The presented answer keeps that citation metadata attached, so what the visitor sees links straight back to the chunks that support it.
 </Steps>
 
 ## Why this matters in practice
 
-- support teams need answers they can stand behind
-- customer-facing agents need to avoid inventing policy
-- customers need a path back to the source of an important claim
-- operators need to improve quality by inspecting retrieval behavior, not by guessing blindly
+A support team needs answers it can stand behind, not ones it has to hedge after the fact. A customer-facing agent needs to avoid inventing policy it was never told. A customer asking about pricing or a return window needs a path back to the actual source of that claim, not just Radioso's word for it. And an operator improving quality needs to inspect retrieval behavior directly — which chunks were considered, which ranked highest — rather than poke at the system prompt and hope.
 
 <Callout type="info" emoji="i">
-  The key point is that grounded answers are not one isolated feature. They are the contract that ties retrieval, citations, and unsupported-answer handling together.
+  Retrieval, citations, and unsupported-answer handling are one contract: change how any one of them behaves and the other two still have to hold.
 </Callout>
 
 ## What success looks like
 
-- a user can ask a policy or product question and get an answer tied to workspace content
-- citations point to the material that actually supports the claim
-- unsupported questions degrade clearly instead of sounding authoritative
-- operators can improve quality by adjusting ingestion and per-agent retrieval behavior rather than rewriting the whole system prompt
+A visitor asks about your return window and gets the number that is actually written in your policy document, with a citation they can follow to the paragraph it came from. Ask something your corpus never covered and the agent says it doesn't know, rather than filling the silence. When an answer does come out wrong, the trace names the stage that failed — ingestion, retrieval, or composition — so the operator knows which setting to reach for.
 
-## Related docs
+## Read next
 
 - [API first success](/quickstarts/api-first-success)
 - [Embed on your website](/quickstarts/website-embed)

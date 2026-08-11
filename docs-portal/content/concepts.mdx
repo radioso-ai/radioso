@@ -1,0 +1,43 @@
+---
+title: "Concepts"
+description: "The seven nouns Radioso is built from — workspace, agent, skill, capability, strategy, directive, routine — defined once, with a link to go deeper on each."
+last_updated: 2026-08-07
+---
+
+# Concepts
+
+Radioso's app, API, SDK, MCP server, and embed all describe themselves with the same seven nouns. This page defines each one once, so you don't have to piece it together from whichever page you land on first.
+
+## Workspace
+
+A workspace is the container: it holds your documents, settings, chat history, connector state, and the agents built on top of them. Everything else in Radioso lives inside one. See [Workspaces and tokens](/api/workspaces-and-tokens).
+
+## Agent
+
+An agent is the configured persona a workspace runs — its name, instructions, which of the workspace's documents it can see (its source scope), directives, routines, and channels. The app, API, SDK, MCP server, public chat link, and website widget all talk to the same agent, so a change you make once shows up everywhere it's reachable. See [Agents and skills](/api/agents-and-skills).
+
+## Skill
+
+A skill is something an agent can do: retrieve from your documents, send an email, post to Slack, call a webhook, or ask a human. You enable and configure skills on an agent; directives and routines call them by name. See [Agent skills](/api/agents-and-skills#agent-skills).
+
+## Capability
+
+"Capability" names two unrelated things in Radioso — worth keeping straight. A skill's capability is its type: `retrieve`, `email`, `slack_post`, `webhook_call`, `mcp_tool`, or `notify`, the tile you pick when you add a skill. An LLM capability is a model job slot — `chat`, `rewrite`, `rerank` — that a workspace assigns a provider and model to, independently of any skill. Same word, two different configuration surfaces: see [Agent skills](/api/agents-and-skills#agent-skills) for the first and [LLM model selection](/api/settings#llm-model-selection) for the second.
+
+## Strategy
+
+Strategy is the execution style the `retrieve` skill uses to answer a question: run one search pass, let the model plan and run several searches, or let Radioso choose per query. It's a setting on the agent's `retrieve` skill, not a workspace-wide switch. See [Retrieval skill settings](/api/agents-and-skills#retrieval-skill-settings).
+
+## Directive
+
+A directive is a standing rule: it pairs a condition with how the agent should behave when that condition holds. Its reach stops at behavior — a [skill](#skill) is what gives the agent a new capability. See [Steer behavior with directives](/why-radioso/capabilities#steer-behavior-with-directives).
+
+## Routine
+
+A routine is a flow the agent runs across turns — stateful and resumable, so it picks up where a conversation left off instead of starting over on the next message. See [Run multi-step routines](/why-radioso/capabilities#run-multi-step-routines).
+
+## Read next
+
+- [What agents can do](/why-radioso/capabilities)
+- [Agents and skills](/api/agents-and-skills)
+- [Settings](/api/settings)

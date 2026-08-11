@@ -5,9 +5,9 @@ description: Configure workspace agents, directives, named agent skills, and ins
 
 # Agents and skills
 
-Agents are the user-facing conversational agents in a workspace. Directives are matched steering rules for an agent. Agent skills are named capability instances an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts.
+This page configures three linked concepts: [agents](/concepts), the [directives](/concepts) that steer them turn by turn, and the named [skills](/concepts) an agent can use from routines or supported invocation modes. The read-only product skills catalog still describes stable platform contracts. The host that issued your workspace token is the host these routes answer on — see [Workspaces and tokens](/api/workspaces-and-tokens).
 
-The key point is that authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
+Authoring and execution are different. Agent skills are created through the agent skill endpoints. Runtime still dispatches through the capability executor behind the named skill.
 
 ## Agents
 
@@ -117,8 +117,10 @@ unavailable or blocked by the `retrieval.answer` capability, it is not staged as
 an agentic lookup tool.
 
 Agent config export/import preserves directive bindings by skill name. Import
-does not validate that the target agent currently has the skill; runtime
-fall-through applies until the skill is added and enabled.
+does not validate that the target agent currently has the skill: when the
+imported binding points at a skill the agent doesn't have, the same
+fall-through rule above applies — Radioso ignores the binding and uses normal
+selection — right up until you add and enable a skill with that name.
 
 Bindings on directives scoped with `routine:<id>` or
 `step:<routineId>:<stepId>` are accepted but inert during routine turns, because
@@ -138,6 +140,8 @@ routine flow bypasses terminal turn selection.
 - `enabled`
 
 Create skills with `POST /api/v1/agents/{agentId}/skills`. In the dashboard, **Add new skill** first opens a capability picker; enabled tiles then open the configuration form for that capability. The form shows only the skill name, enabled state, required target or tool fields, and essential capability settings by default. Invocation mode and advanced retrieval tuning live under **Advanced**. Input binding, outcomes, and advanced JSON live under **Routine integration** because they only matter when a routine or the agent selects the skill. The form and API use the same model for `retrieve`, `mcp_tool`, `email`, `slack_post`, `webhook_call`, and `notify`.
+
+A `mcp_tool` skill (and the `external_mcp` directive binding below) is Radioso calling out to *someone else's* MCP server as a tool. That's the opposite direction from [Radioso's own MCP server](/guides/mcp-server), which a client like Cursor or Claude Desktop connects into.
 
 Each row in the Skills list says which authored surfaces reach it — "Used by 2
 directives and 1 routine", or "Not used by a directive or routine". A skill
@@ -272,7 +276,7 @@ Skill entries include:
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+Agent, directive, skill, and context-variable bodies are documented field by field in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/agents

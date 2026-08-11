@@ -49,4 +49,4 @@ If you change the embedding model, let the re-indexing job finish so stored chun
 
 Until reprocessing finishes, semantic search stays on the active model. This avoids mixing vectors from different embedding models or vector dimensions in one search.
 
-Existing installations label pre-upgrade chunks with the default OpenAI embedding model. This matches the default deployment path. If an installation used a different embedding model before this setting existed, re-index the workspace after upgrade.
+Each chunk carries the label of the embedding model recorded when it was processed, and chunks with no recorded model are labeled with the default OpenAI one. If a workspace's stored vectors came from a different model than the label claims, re-index it so the two agree.

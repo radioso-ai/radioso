@@ -33,11 +33,9 @@ A smaller number means:
 - less noise
 - more risk of missing good evidence
 
-### What It Does Not Do
+### Role In The Pipeline
 
-This setting does **not** directly improve ranking quality.
-
-It improves the *chance* that good material is still present in the pool so later stages can do something useful with it.
+This stage decides what later stages are allowed to see. Ranking quality is reranking's job; `Vector Top K` governs whether the good material is in the pool for reranking to find in the first place.
 
 ### Tuning Signals
 

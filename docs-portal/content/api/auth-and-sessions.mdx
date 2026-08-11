@@ -27,10 +27,12 @@ Once the cookie is stored, use it for workspace management and token reveal flow
 
 Registration does not establish browser or cookie-jar state. Login, invitation acceptance, and password reset confirmation do. These session flows are separate from the workspace token flow used by the SDK.
 
+Examples below call `https://api.radioso.ai`, the hosted EU instance. Use `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — `http://localhost:8080` for a local deployment.
+
 ## Check registration availability
 
 ```bash
-curl -sS http://localhost:8080/api/v1/auth/registration
+curl -sS https://api.radioso.ai/api/v1/auth/registration
 ```
 
 The endpoint returns `{ "available": true }` or `{ "available": false }` and uses `Cache-Control: no-store` because availability can change as the server is initialized.
@@ -45,7 +47,7 @@ Use registration when `GET /api/v1/auth/registration` reports that open registra
 curl -sS \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword","organizationName":"Acme"}' \
-  http://localhost:8080/api/v1/auth/register
+  https://api.radioso.ai/api/v1/auth/register
 ```
 
 `organizationName` is optional. The required fields are `email` and `password`.
@@ -76,7 +78,7 @@ Use login when the account already exists.
 curl -sS -c cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/login
+  https://api.radioso.ai/api/v1/auth/login
 ```
 
 The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
@@ -92,7 +94,7 @@ The accept request establishes a session for the joined account.
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+The [API Reference](/api-reference) lists the fields on each register, login, and invitation payload.
 
 ```text
 GET  /api/v1/auth/registration

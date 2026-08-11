@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
+import { Fraunces, Inter, JetBrains_Mono } from 'next/font/google'
 import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 
 import { ThemeProvider } from '@/components/theme-provider'
-import { site } from '@/lib/site'
+import { ogImage, site } from '@/lib/site'
 import './globals.css'
 
 const inter = Inter({
@@ -15,6 +15,13 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-jetbrains-mono',
+})
+
+// Display face shared with the marketing site and the product dashboard.
+const fraunces = Fraunces({
+  subsets: ['latin'],
+  variable: '--font-fraunces',
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
@@ -29,13 +36,21 @@ export const metadata: Metadata = {
     canonical: site.docsUrl,
   },
   openGraph: {
+    type: 'website',
     title: site.name,
     description: site.description,
     url: site.docsUrl,
     siteName: site.name,
-    images: [{ url: '/radioso-lockup.svg', width: 1173, height: 300, alt: 'Radioso' }],
+    images: [ogImage],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: site.name,
+    description: site.description,
+    images: [ogImage],
   },
   icons: {
+    shortcut: '/favicon.ico',
     icon: '/radioso-icon.svg',
     apple: '/apple-icon.png',
   },
@@ -43,14 +58,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning className="bg-background">
-      <body className={`${inter.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+    // The font variables live on <html> so they are declared on the same element
+    // as :root. `@theme` resolves `--font-display` there; if `--font-fraunces`
+    // were only on <body>, the theme variable would be invalid at computed-value
+    // time and every `font-family: var(--font-display)` rule would silently fall
+    // back to the sans stack.
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${jetbrainsMono.variable} ${fraunces.variable} bg-background`}
+    >
+      <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
         </ThemeProvider>
         <Script
           src="https://app.radioso.ai/radioso-embed.js"
-          data-radioso-token="--kUGFPoIm-fe1Mg2Lvrlw"
+          data-radioso-token={site.embedToken}
           strategy="afterInteractive"
         />
       </body>

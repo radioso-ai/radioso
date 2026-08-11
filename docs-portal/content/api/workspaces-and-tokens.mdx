@@ -16,23 +16,38 @@ Workspaces are the unit that holds documents, settings, chat history, and connec
 
 Workspace management is session-based; most developer automation after that point is token-based.
 
+## Which host to call
+
+Radioso runs as a hosted service and as something you deploy yourself. Examples in this API section call `https://api.radioso.ai`, the EU-hosted instance and the TypeScript SDK's `DEFAULT_BASE_URL`. Use `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — `http://localhost:8080` for a local deployment. **A workspace API token only works against the instance that issued it**, so match the host to wherever you revealed the token, not just to the token value itself.
+
 ## Create a workspace
 
 ```bash
 curl -sS -b cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"name":"Support knowledge base"}' \
-  http://localhost:8080/api/v1/workspace
+  https://api.radioso.ai/api/v1/workspace
 ```
 
 ## Reveal the workspace token
 
 ```bash
 curl -sS -b cookies.txt \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/token
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token
 ```
 
-Use that token from trusted server environments. Do not expose it in browser code.
+The response is `{ "token": "radioso_..." }`. Use that token from trusted server environments. Do not expose it in browser code.
+
+The same token is available from the dashboard under **Settings → API access**, which also shows a ready-made `curl` example against your own host.
+
+## Rotate the workspace token
+
+```bash
+curl -sS -b cookies.txt -X POST \
+  https://api.radioso.ai/api/v1/account/workspaces/<workspace-id>/token/rotate
+```
+
+Rotation issues a new token and invalidates the old one immediately — there is no overlap window, so every client using the old token needs the new one before you rotate. Owners and admins can rotate; a `member` can reveal a workspace's token but not rotate it. Rotate on suspected exposure rather than relying on any disable/re-enable toggle to revoke access.
 
 ## Rename or delete a workspace
 
@@ -44,7 +59,7 @@ In practice, deletion is a high-impact operation. Make sure the workspace is not
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+Full payloads are in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/workspace
@@ -52,14 +67,17 @@ POST   /api/v1/workspace
 PATCH  /api/v1/workspace/{workspaceId}
 DELETE /api/v1/workspace/{workspaceId}
 GET    /api/v1/account/workspaces/{workspaceId}/token
+POST   /api/v1/account/workspaces/{workspaceId}/token/rotate
 ```
 
 ## Common failure modes
 
 - `400` usually means the request is missing a required field, or the workspace cannot be deleted in its current state.
 - `401` means the session is missing or invalid.
+- `403` on rotate means the caller is a `member` without rotate permission, or the workspace does not belong to the current account.
 - `404` means the workspace is not visible from the active account context.
-- `429` on token reveal means the reveal action is being rate limited.
+- `429` on reveal or rotate means that action is being rate limited.
+- `503` on rotate means the backend has no workspace token secret configured; that is an operator-side deployment gap, not something a client retry fixes.
 
 ## Read next
 

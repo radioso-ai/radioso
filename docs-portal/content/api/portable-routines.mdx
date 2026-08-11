@@ -7,11 +7,12 @@ description: Create, update, read, and canonicalize deterministic routine markdo
 
 Portable routines are routine definitions written as deterministic markdown. Use
 this surface when you keep routines as files, generate them from code, or need a
-stable text form for review.
+stable text form for review. It's also what the dashboard's [routine editor](/guides/authoring-routines) puts on your clipboard when you copy a routine as text, so a file exported from one agent is valid input to this API on another.
 
 This is not draft assist. Draft assist turns free prose into a proposed routine
 with an LLM. Portable routine markdown is parsed by the grammar package and then
-validated as the normal structured routine definition.
+validated as the normal structured routine definition — no model call, so the
+same input always parses to the same routine.
 
 ## Endpoints
 
@@ -22,7 +23,9 @@ POST /api/v1/agents/{agentId}/routines/portable
 POST /api/v1/routines/portable/canonicalize
 ```
 
-All four endpoints use this JSON envelope:
+These take a workspace token — call them against the host that issued it, see
+[Workspaces and tokens](/api/workspaces-and-tokens). All four use this JSON
+envelope:
 
 ```json
 {
@@ -31,7 +34,70 @@ All four endpoints use this JSON envelope:
 }
 ```
 
-Create returns the same canonical envelope plus `routineId`.
+Create returns the same canonical envelope plus `routineId`:
+
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/agents/<agentId>/routines/portable \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"grammarVersion":1,"content":"---\ngrammar: 1\nname: Refund check\ntrigger: customer asks for a refund\n---\nAsk for @order_id.\n-> end"}'
+```
+
+## Write a routine in markdown
+
+A document is YAML-like frontmatter, then one routine line per paragraph:
+
+```md
+---
+grammar: 1
+name: Refund check
+trigger: customer asks for a refund
+reentry: once_per_conversation
+priority: 20
+end: completed ("Refund closed.")
+handoff: refund_handoff ("Bring in a refund specialist.")
+vars: order_id:text, amount:number:optional
+---
+Ask for @order_id.
+# Check eligibility
+Call the refund tool #refund.check[in order=@order_id, locale=ctx.page_locale; out status=@refund_status]
+[if refund_status = approved] -> end
+[outcome failed] -> handoff
+```
+
+Frontmatter fields:
+
+- `grammar` — integer grammar version; a missing key parses as `1`.
+- `name`, `trigger` — display name and activation trigger; both default to empty when omitted.
+- `vars` — comma-separated slot declarations, `key:type[:optional][:mutable]`. Valid types are `text`, `number`, `boolean`, `email`, and `date`. A required `text` variable referenced in the body as a bare `@name` doesn't need a `vars` entry.
+- `reentry` — `once_per_conversation` (default), `always`, or `semantic`.
+- `priority` — integer activation priority; defaults to `0`.
+- `export` — completion export, `<complete|handoff|complete,handoff> -> <destinationRef>`, referencing a [webhook destination](/api/settings#webhook-destinations) id.
+- `end`, `handoff` — the primary completion and handoff terminals, each `<id>` or `<id> ("message")`.
+
+Inline tokens in the body:
+
+- `@name` references a slot variable.
+- `#skill_name` calls a skill, optionally with typed bindings: `#crm.lookup[in email=@email, locale=ctx.page_locale, tier=gold; out account_id=@account_id]`. An input can be a literal (`tier=gold`), a slot (`in order=@order_id`), or a context variable (`locale=ctx.page_locale`); an output must assign a slot with `out name=@slot`.
+- `[action "type"]` records an action marker.
+- `# Title` starts a named step; following lines belong to it until the next heading.
+
+Branch lines start with a guard and end with `-> <target>`:
+
+- Field guards: `[if amount >= 100]`, `[if country in US, CA]`, `[if order_date older than 30 days]`, `[if email is present]`. Operators are `=`, `!=`, `in`, `>`, `>=`, `<`, `<=`, `is true`, `is false`, `is present`, `is absent`, `older than`, and `within`.
+- Skill outcome guards: `[outcome failed]`.
+- Slot-filled guards: `[filled @email, @order_id]`.
+- A branch line with no deterministic guard is an LLM guard — its prose becomes the text the runtime asks the model to judge.
+- Targets: `-> end`, `-> end:name ("Message")`, `-> handoff`, `-> step:step_id`, or `-> step:step_id (max 3)` for a bounded loop. A loop's `(max N)` can't combine with `[if ...]`, `[outcome ...]`, or `[filled ...]` on the same line.
+
+Decision and approval gates pause for a choice:
+
+```md
+[decision refund_decision: approve="Approve", deny="Deny"]
+[approval refund_decision: approve="Approve" -> end, deny="Deny" ("Needs review") -> handoff]
+```
+
+Decision options don't need route targets; approval options do.
 
 ## Commit-back workflow
 
@@ -49,23 +115,22 @@ routine validator.
 ## Error split
 
 `400` means the markdown failed grammar parsing. The response contains line-based
-diagnostics.
+diagnostics, each with `line`, `code`, and `message` — for example
+`unsupported_grammar_version` when `grammar` isn't `1`, or `invalid_target_token`
+when a `->` target doesn't match the stable-id grammar.
 
 `422` means the markdown parsed, but the resulting routine definition failed
 routine validation. `GET` and `PUT` can also return `422` when a valid structured
 routine cannot be represented as portable markdown v1, such as a routine with
-multiple handoff terminals.
+multiple handoff terminals or an activation gate (`GET` returns
+`routine_not_portable` for a gated routine; `PUT` can still update it, preserving
+the existing gate while applying the markdown body).
 
 `409` means the create request conflicts with an existing routine definition,
 such as the same routine name and version for the agent.
 
-## Grammar
+## Read next
 
-Portable markdown v1 includes frontmatter (`grammar`, `name`, `trigger`, `vars`,
-`reentry`, `priority`, `export`), variable tokens (`@email`), skill tokens
-(`#lookup`), skill bindings (`in email=@email`, `in locale=ctx.page_locale`),
-guards, jumps, terminals, actions, completion export, and decision or approval
-gates.
-
-For the normative grammar, see `docs/portable-routine-markdown.md` in the
-repository. The OpenAPI reference is generated from `backend/openapi.json`.
+- [Author a routine](/guides/authoring-routines) — the dashboard editor that reads and writes this same format.
+- [Agents and skills](/api/agents-and-skills)
+- [API Reference](/api-reference)

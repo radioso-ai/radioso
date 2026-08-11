@@ -41,8 +41,23 @@ export function CodeBlock({ code, language, filename, showLineNumbers = true }: 
           </span>
           {filename ? <span className="font-mono text-xs text-muted-foreground">{filename}</span> : null}
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100" onClick={handleCopy}>
-          {copied ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={copied ? 'Copied to clipboard' : 'Copy code to clipboard'}
+          className={cn(
+            // Visible without hover so the control also exists on touch.
+            'h-8 w-8 opacity-60 transition-opacity',
+            'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+          )}
+          onClick={handleCopy}
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-primary" aria-hidden="true" />
+          ) : (
+            <Copy className="h-4 w-4" aria-hidden="true" />
+          )}
         </Button>
       </div>
       <div className="overflow-x-auto">

@@ -63,8 +63,8 @@ There are three options:
   already collected, start a fresh run, or leave it finished. Use this for tasks
   that a visitor may continue or repeat in different ways.
 
-The key point is that the default stays safe. An existing routine keeps running
-once per conversation until you change this setting.
+The default is the cautious one: a routine keeps running once per conversation
+until you change this setting.
 
 ## Write the routine in prose
 
@@ -115,7 +115,7 @@ own colour:
   tick **Loop back** and set a max count. A backward jump must be bounded so the
   loop always ends (the count compiles to a `counter` guard).
 
-The key point: chips for structure, prose for instruction. You never type curly
+Chips carry the structure; prose carries the instruction. You never type curly
 braces or arrows.
 
 ### Variable types and flags
@@ -216,8 +216,8 @@ For each input you choose where its value comes from:
   user, or an output an earlier skill step produced. You pick the variable by
   name.
 
-The key point: the binding lives on the step, inside the routine. You no longer
-match names by hand in the skill's own settings.
+The binding lives on the step, inside the routine: you set it where the skill is
+used, not in the skill's own settings.
 
 You can also assign a skill's **outputs** to variables. Give an output a variable
 name, and later steps can read it - in a branch condition, or as the input to
@@ -257,7 +257,7 @@ having collected the values it needs.
 In **Prose**, put the branch on its own line, click **More → When filled** in the toolbar, pick the slots that must be present, and add a target on the same line
 (End, Handoff, or a step) the way you would for any branch. It shows as a
 **when … provided** chip. Routines that use one edit in **Prose** as well as in
-the **Form** view, so you no longer have to leave Prose to work on the rest of the
+the **Form** view, so Prose stays a complete authoring surface for the whole
 routine. When you copy a routine as text, the branch is written as
 `[filled @slot_a, @slot_b]`.
 

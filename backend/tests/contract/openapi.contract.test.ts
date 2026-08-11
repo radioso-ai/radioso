@@ -267,6 +267,19 @@ describe("openapi contract", () => {
     expect(operation?.responses).toHaveProperty("401");
   });
 
+  it("advertises the hosted production servers before local development, and a Radioso-branded title", () => {
+    const document = createOpenApiDocument();
+
+    expect(document.info.title).toBe("Radioso API");
+    expect(document.info.description).toEqual(expect.any(String));
+    expect(document.info.description).not.toMatch(/radioso backend/i);
+    expect(document.servers).toEqual([
+      { url: "https://api.radioso.ai", description: "Production" },
+      { url: "https://api-us.radioso.ai", description: "Production (US)" },
+      { url: "http://localhost:8080", description: "Local development" },
+    ]);
+  });
+
   it("advertises dashboard and public conversation tail response shapes", () => {
     const document = createOpenApiDocument();
     const schemas = document.components?.schemas ?? {};

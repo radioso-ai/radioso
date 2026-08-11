@@ -16,11 +16,11 @@ This page defines the vocabulary and shows how the shipped pieces fit together. 
 
 Radioso lets AI applications discover what a workspace can safely do, choose the right grounded work surface, and inspect why the system behaved the way it did.
 
-A caller no longer has to already know which Radioso surface to use before it makes a request. Assistant chat, retrieval answer, retrieval search, and MCP tools each expose useful work, and the skills catalog describes them as one coherent workspace contract.
+A caller discovers which Radioso surface to use at request time. Assistant chat, retrieval answer, retrieval search, and MCP tools each expose useful work, and the skills catalog describes them as one coherent workspace contract.
 
 An SDK or MCP client can discover that a workspace supports `retrieval.answer`, see that it requires document-read capability, understand that the stable execution path is the retrieval answer endpoint, and receive diagnostics that explain which retrieval shape and step overrides ran.
 
-The practical value is not a generic agent layer. It is that customers can build against a workspace that says what it can do, enforces what it is allowed to do, and explains what happened after each grounded action.
+Customers build against a workspace that says what it can do, enforces what it is allowed to do, and explains what happened after each grounded action.
 
 ## Core Idea
 
@@ -37,7 +37,7 @@ Examples include:
 
 Some skills are interactive. Some are background or administrative. Some are deterministic once selected. Others use probabilistic planning or ranking internally.
 
-The key point is that the caller understands what was attempted, what contract was used, and why the system chose a particular execution path.
+Whatever the internals, the caller learns what was attempted, what contract was used, and why the system chose a particular execution path.
 
 ## Vocabulary
 
@@ -251,8 +251,6 @@ Every expansion preserves:
 - diagnostics for probabilistic decisions
 - honest unsupported outcomes
 - separation between assistant behavior and retrieval-only behavior
-
-That is the difference between a grounded skill runtime and a black-box agent wrapper.
 
 ## Open Directions
 

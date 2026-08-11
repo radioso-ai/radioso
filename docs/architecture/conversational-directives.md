@@ -22,7 +22,7 @@ Radioso has two kinds of unit the assistant works with on a turn.
 - A **Directive** is something that shapes *how* the assistant behaves. It is
   matched and added to the prompt. It is never dispatched and returns nothing.
 
-The key point is the distinction: Skills act, Directives steer. A Directive has
+Skills act, Directives steer. A Directive has
 no executor and produces no output. If a rule needs to *do* something, it is a
 Skill, not a Directive.
 
@@ -166,7 +166,7 @@ grows:
 - `dependsOn` — this directive applies only if all named directives also apply
   this turn. Dropping a dependency cascades to its dependents.
 
-The key point: relationships are resolved after the capability filter, so a
+Relationships resolve after the capability filter, so a
 directive the agent is not authorized for can neither exclude nor satisfy
 another. Each drop is recorded in the turn trace with its reason.
 

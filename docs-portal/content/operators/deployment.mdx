@@ -1,6 +1,7 @@
 ---
-title: Deployment
-description: Production deployment expectations for Radioso and the standalone docs portal.
+title: "Deployment"
+description: "Production deployment expectations for Radioso and the standalone docs portal."
+last_updated: 2026-08-07
 ---
 
 import { Callout } from 'nextra/components'
@@ -30,6 +31,8 @@ At minimum, a production deployment needs:
 
 Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`.
 
+Radioso's own MCP server is a deployment-level setting: set `RADIOSO_MCP_ENABLED` to turn it on, and set `RADIOSO_MCP_STANDALONE` depending on whether MCP should run merged into the backend or as its own process. See [MCP server](/guides/mcp-server) for both deployment shapes and the credentials each one needs.
+
 ## Enterprise Edition deployment
 
 <span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span>
@@ -40,6 +43,8 @@ Enterprise deployments use the same Cloud Run services, but the deploy workflow 
 - Terraform injects `RADIOSO_APPLICATION_MODULES` and edition flags into Cloud Run
 
 Keep `app_base_url_override` set to the public frontend origin after the first service rollout, for example `https://app.example.com`. If you use the included Terraform workflow, set the GitHub environment variable `APP_BASE_URL` to that origin. If you deploy another way, set the backend runtime `APP_BASE_URL` to the same origin. Terraform also forwards this value as `RADIOSO_WIDGET_ORIGIN`. Password reset emails, email verification emails, and the website embed snippet use these values when they build hosted links.
+
+Once accounts start creating content, cap how much of it an account can index and how many answers it can generate — see [Enterprise usage limits](/operators/enterprise-usage-limits) for the meters, the admin API, and the `429` responses callers see at a cap.
 
 ## Required secrets
 
@@ -55,15 +60,13 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
 
+`WORKSPACE_TOKEN_SECRET` signs workspace API tokens and derives the per-agent signing key a workspace admin can reveal so their website's own backend can prove [signed visitor identity](/operators/context-variables#signed-visitor-identity) for embedded chat.
+
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`.
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
-## Auth email cutover
-
-Password reset and email verification tokens are stored in OSS tables. Deployments upgrading from the older Enterprise auth email implementation do not migrate active `ee_password_reset_tokens` or `ee_email_verification_tokens` rows. In practice, reset or verification links sent before this deployment stop working after the migration runs. Users should request a new password reset or verification email after the rollout.
-
-## Optional public chat limits
+## Public chat rate limits
 
 Public chat and website embed rate limits are operator tuning knobs, not workspace settings. When unset, the backend uses built-in defaults.
 
@@ -71,9 +74,7 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 - `PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS`
 - `PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS`
 
-The session limit applies to a visitor session. The global limit applies across public chat traffic for the process.
-
-Older workspace-level public chat limits, including `anonymousRateLimit` and `messagesPerMinute`, are no longer read. If an existing workspace depended on a custom value, set the equivalent operator-level environment variables during the rollout.
+The session limit applies to a visitor session. The global limit applies across public chat traffic for the process, and both are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
 
 ## Runtime separation
 
@@ -98,7 +99,7 @@ Startup migration metadata checks use separate lock and statement timeout budget
 - `DB_MIGRATION_LOCK_TIMEOUT_MS`
 - `DB_MIGRATION_STATEMENT_TIMEOUT_MS`
 
-In practice, a blocked migration metadata check should now fail with an application log that names startup migrations as the failing phase. It should not look only like a platform port-listen failure. A lock timeout usually means another database session is holding or waiting on the migration metadata table. The migration SQL body disables those local metadata timeouts so large index builds and backfills can still finish.
+In practice, a blocked migration metadata check fails with an application log that names startup migrations as the failing phase, rather than looking only like a platform port-listen failure. A lock timeout usually means another database session is holding or waiting on the migration metadata table. The migration SQL body disables those local metadata timeouts so large index builds and backfills can still finish.
 
 The backend owns migrations during startup; there is no separate pre-deploy migration job.
 
@@ -113,9 +114,14 @@ The docs portal is its own Next.js app under `docs-portal/`. It syncs the backen
 3. Confirm worker runtime can claim or receive jobs.
 4. Confirm frontend points at the current backend service.
 5. Confirm public URLs used for auth and embed flows are correct.
-6. Ask users with old Enterprise reset or verification links to request fresh links.
-7. Confirm docs portal build synced the current OpenAPI document.
+6. Confirm docs portal build synced the current OpenAPI document.
 
 <Callout type="info" emoji="i">
   If the app is live but document uploads never become searchable, treat that as a worker-path or dispatch-path incident first.
 </Callout>
+
+## Read next
+
+- [Self-hosting operations](/operators/self-hosting-operations) — backup, restore, and upgrade steps for deployments you run yourself, including the migration-startup incident playbook this page's startup-migration behavior feeds into.
+- [Enterprise usage limits](/operators/enterprise-usage-limits) — cap indexed storage, monthly content, and monthly answers per account.
+- [Deployment topology](/architecture/deployment-topology) — how the backend, frontend, and worker services relate at runtime.

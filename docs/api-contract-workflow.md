@@ -29,7 +29,7 @@ When backend routes, schemas, or response contracts change:
 4. Run `pnpm run check:api-contracts` from the repo root.
 5. Commit the backend contract, SDK snapshot, and MCP generated types together.
 
-The key point is that generated clients should drift only inside one local change. A pull request that changes backend API contracts should include the generated downstream artifacts or fail the contract check.
+Generated clients should drift only inside one local change. A pull request that changes backend API contracts should include the generated downstream artifacts or fail the contract check.
 
 ## Approval decisions
 

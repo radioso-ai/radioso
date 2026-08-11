@@ -177,7 +177,7 @@ await client.settings.updateGeneral({
 
 ## Skills
 
-The SDK exposes the read-only product skills catalog. Agent-authored skills use the agent skills REST endpoints until the generated SDK surface is promoted. Those agent skills are named capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
+The SDK exposes the read-only product skills catalog. Agent-authored skills are configured through the agent skills REST endpoints directly — the SDK doesn't wrap them with typed methods, so call them with `fetch` or another HTTP client using the same bearer token, as shown below. Those agent skills are named capability instances such as `retrieve`, `email`, `slack_post`, `webhook_call`, `mcp_tool`, and `notify`.
 
 List skills:
 
@@ -214,7 +214,7 @@ const created = await fetch(`/api/v1/agents/${agentId}/skills`, {
 })
 ```
 
-Retrieval answer settings now live on the default-answer `retrieve` skill. Suggested questions are part of that skill's config. Contact escalation is a `notify` skill, and routine completion export is a `webhook_call` skill.
+Retrieval answer settings live on the default-answer `retrieve` skill. Suggested questions are part of that skill's config. Contact escalation is a `notify` skill, and routine completion export is a `webhook_call` skill.
 
 Temporal retrieval fields such as `temporalStructuredLookupEnabled`, `temporalBoostUpcomingEnabled`, and `temporalDeterministicSortEnabled` are per-agent `retrieval.answer` skill settings. They default to on and control date-aware event lookup, boosting, and ordering when enriched chunks contain `dateFrom` and `dateTo` metadata.
 

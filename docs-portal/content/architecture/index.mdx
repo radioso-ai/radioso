@@ -1,49 +1,98 @@
 ---
-title: Architecture overview
-description: High-level agent, retrieval, document-processing, and deployment structure for Radioso.
+title: "Architecture overview"
+description: "The services Radioso runs, what each one owns, and why chat and document work sit on separate paths."
+last_updated: 2026-08-07
 ---
 
 # Architecture overview
 
-Radioso separates interactive agent work from background document processing. That separation is part of the product contract and shows up both in the operator model and in the user experience.
+Radioso answers questions from the documents a workspace uploads or crawls, so an answer traces back to content you control.
 
-## Main surfaces
+Two clocks run underneath that. A chat turn has to return inside the request that asked for it. Turning a new document into searchable, cited context takes as long as it takes. Radioso keeps those on separate paths, and that split explains most of what follows — why services scale independently, and where to look first when something is wrong.
 
-- frontend application
-- backend API
-- document worker
-- PostgreSQL
-- optional public chat surface
-- optional Enterprise website widget surface
+## The pieces
 
-## Assistant execution model
+```mermaid
+flowchart TB
+  dash["Dashboard"]
+  link["Public chat link"]
+  embed["Embed widget<br/>Enterprise"]
+  sdk["Your code<br/>REST API / TypeScript SDK"]
+  mcp["MCP client"]
 
-Radioso uses two assistant execution classes on purpose, even though only the interactive path is shipped for the core chat workflows.
+  backend["Backend API<br/>auth · agents · retrieval · chat"]
+  engine(["Conversation engine (library)<br/>steer · pick skill · advance routine · compose"])
+
+  db[("PostgreSQL<br/>+ pgvector")]
+  files[("Object storage")]
+
+  docworker["Document worker<br/>parse · chunk · embed<br/>action outbox drain"]
+  crawler["Crawler worker<br/>website crawl jobs"]
+  targets["Slack · webhooks · email"]
+
+  dash --> backend
+  link --> backend
+  embed --> backend
+  sdk --> backend
+  mcp --> backend
+
+  backend -- "every turn" --> engine
+  backend --> db
+  backend --> files
+  backend -. "enqueue document job" .-> docworker
+  backend -. "enqueue crawl job" .-> crawler
+
+  docworker --> db
+  docworker --> files
+  docworker -. "deliver action" .-> targets
+  crawler --> db
+```
+
+Solid arrows happen inside the request that triggered them. Dotted arrows hand work off to run on its own clock.
+
+## What each piece owns
+
+| Piece | Owns |
+|---|---|
+| **Backend API** (Express) | Auth, agent configuration, retrieval, and the assistant chat endpoints every surface sends turns to. |
+| **[Conversation engine](/architecture/conversation-engine)** | One turn loop, shared by every surface: steer with directives, pick a skill, advance a routine, compose the reply. It lives in its own packages and reaches the database and the model only through ports the backend hands it. |
+| **PostgreSQL + pgvector** | The system of record: accounts, workspace and agent settings, documents, chunks, embeddings, and conversation history. |
+| **Document worker** | Parsing, chunking, and embedding, off the request path. The same process drains the action outbox. |
+| **Crawler worker** | The website-crawl job lifecycle: claiming crawl jobs and running the crawl provider. |
+| **Frontend** (Next.js) | The operator dashboard — agents, retrieval settings, channels — and signed-in chat. |
+| **Object storage** | Uploaded source files. The local filesystem in development, GCS in cloud deployments, selected by `DOCUMENT_STORAGE_DRIVER`. |
+
+Backend, frontend, document worker, and crawler worker each deploy as their own service, so you can scale and restart them independently. The conversation engine is the exception: it is a library the backend runs in-process, which is why it has no arrow to the database of its own.
+
+## Ways in
+
+Every surface below talks to the same agent through the same backend, so an answer is consistent wherever it is asked for.
+
+- **Dashboard** — operators configure agents and chat with them while signed in.
+- **Public chat link** — anonymous access to a single agent.
+- **Website embed widget** — an agent embedded in your own site, in Enterprise Edition.
+- **REST API and TypeScript SDK** — your own code, calling the assistant chat and retrieval endpoints directly.
+- **MCP client** — Claude, Cursor, and other MCP clients, reaching Radioso over the same versioned HTTP API.
+
+## Two clocks
 
 ### Live chat stays immediate
 
-Normal agent chat runs in the live request path. That includes:
+Normal agent chat runs in the live request path — authenticated turns, anonymous turns, Enterprise embedded widget turns, and the bootstrap greeting for a new conversation. Each one ends in an immediate response, immediate streaming, or an explicit failure. Radioso keeps chat in the request path even under load, so a slow reply is visible rather than silently deferred.
 
-- authenticated chat turns
-- anonymous chat turns
-- Enterprise embedded widget chat turns
-- assistant bootstrap greetings for new conversations
+### Post-turn side effects run through an action outbox
 
-Users either get an immediate response, immediate streaming, or an explicit failure. Radioso does not silently convert normal chat into background work under load.
+A turn or routine step can trigger work that does not need to block the reply: notifying an operator about a handoff or approval gate, sending a contact request, posting to Slack, or calling an outbound webhook.
 
-### Background work is separate
+Radioso queues that work as an action request. The document worker process claims it with a lease, delivers it, and retries on failure, so a slow notification target cannot stall the chat turn that triggered it.
 
-Long-running assistant-adjacent work belongs in a separate deferred class when Radioso has a real background runtime behind it.
+### Where to look first
 
-Use deferred execution for workflows such as:
-
-- exports and offline analysis
-- notifications or other post-turn follow-up jobs
-
-Those workflows should present themselves as background work from the start. They should expose status, completion, and failure clearly instead of pretending to be a live chat turn.
+The two clocks are also the first split during an incident. Stuck uploads and a slow chat turn point at different services, so check which clock is affected before digging further.
 
 ## Read next
 
+- [Conversation engine](/architecture/conversation-engine)
 - [Retrieval pipeline](/architecture/retrieval-pipeline)
 - [Document processing lifecycle](/architecture/document-processing-lifecycle)
 - [Deployment topology](/architecture/deployment-topology)

@@ -40,7 +40,7 @@ The unified endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-The per-type Slack routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints above are the primary surface:
+Build against `/skills`. These per-type Slack routes serve the same `agent_skills` rows:
 
 - `GET /api/v1/agents/{agentId}/slack-skills`
 - `POST /api/v1/agents/{agentId}/slack-skills`

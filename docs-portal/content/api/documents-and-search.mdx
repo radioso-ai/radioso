@@ -31,10 +31,12 @@ Use search history when you need to compare current behavior with a previous sea
 
 Document create and update are asynchronous. The API accepts the request first and processes the content in the background.
 
+Examples below call the hosted EU API (`https://api.radioso.ai`); swap in `https://api-us.radioso.ai`, or your own origin such as `http://localhost:8080`, to match wherever your workspace token was issued — see [Workspaces and tokens](/api/workspaces-and-tokens).
+
 ## Create a document from inline text
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/document/ \
+curl -sS -X POST https://api.radioso.ai/api/v1/document/ \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"title":"FAQ","content":"Radioso can answer questions grounded in uploaded content.","metadata":{"category":"support"},"externalDocumentId":"faq-001"}'
@@ -47,7 +49,7 @@ curl -sS -X POST http://localhost:8080/api/v1/document/ \
 Use multipart import when you want Radioso to extract text from an uploaded source file. Imports accept PDF, Markdown (`.md` / `.markdown`), plain text, DOCX, and XLSX files.
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/document/import \
+curl -sS -X POST https://api.radioso.ai/api/v1/document/import \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -F "file=@./handbook.pdf" \
   -F "title=Support handbook"
@@ -60,7 +62,6 @@ import { readFile } from 'node:fs/promises'
 import { createRadiosoClient } from '@radioso/typescript-sdk'
 
 const client = createRadiosoClient({
-  baseUrl: 'http://localhost:8080',
   apiToken: process.env.RADIOSO_API_TOKEN!,
 })
 
@@ -91,7 +92,7 @@ Document creation (`POST /api/v1/document/`) and file import (`POST /api/v1/docu
 Single-document reprocess accepts an optional metadata extraction override for that run:
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/document/document-id/reprocess \
+curl -sS -X POST https://api.radioso.ai/api/v1/document/document-id/reprocess \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"documentEnrichmentOverride":"on"}'
@@ -106,7 +107,7 @@ Sources expose `documentEnrichmentOverride` as `inherit`, `on`, or `off`. `inher
 Update a source override:
 
 ```bash
-curl -sS -X PATCH http://localhost:8080/api/v1/document/sources/source-id \
+curl -sS -X PATCH https://api.radioso.ai/api/v1/document/sources/source-id \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"documentEnrichmentOverride":"on"}'
@@ -115,7 +116,7 @@ curl -sS -X PATCH http://localhost:8080/api/v1/document/sources/source-id \
 Reprocess only one source:
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/document/sources/source-id/reprocess \
+curl -sS -X POST https://api.radioso.ai/api/v1/document/sources/source-id/reprocess \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"documentEnrichmentOverride":"on"}'
@@ -126,7 +127,7 @@ The response reports `queuedDocumentCount`, `skippedDocumentCount`, and a status
 ## Search documents
 
 ```bash
-curl -sS -X POST http://localhost:8080/api/v1/document/search \
+curl -sS -X POST https://api.radioso.ai/api/v1/document/search \
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query":"uploaded content","metadataFilter":{"category":"support"}}'
@@ -148,7 +149,7 @@ In practice, this is useful when you are tuning retrieval and want to compare cu
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+Field-level detail for document, source, and search bodies is in the [API Reference](/api-reference).
 
 ```text
 GET    /api/v1/document/

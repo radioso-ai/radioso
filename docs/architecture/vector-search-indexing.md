@@ -152,8 +152,8 @@ Rebuild should support:
 - all workspaces
 - dry-run or count comparison where practical
 
-The key point is that a lost or corrupted vector index must not lose Radioso
-application data. The index should be recoverable from canonical chunks and the
+A lost or corrupted vector index must not cost Radioso any application data. The
+index should be recoverable from canonical chunks and the
 configured embedding model policy.
 
 ## Candidate Backends

@@ -4,7 +4,7 @@ import type { OpenApiSecurity } from "../openApiRegistry.js";
 
 const availability = z.object({ available: z.boolean(), reason: z.enum(["ok", "no_llm_capability"]) });
 const conversation = z.object({ id: z.string().uuid(), title: z.string().nullable(), status: z.enum(["idle", "running"]), createdAt: z.string(), updatedAt: z.string() });
-const turn = z.object({ conversationId: z.string().uuid().nullable(), message: z.string().min(1).max(8000), pageContext: z.object({ view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "other"]).nullable(), agentId: z.string().uuid().nullable(), conversationId: z.string().uuid().nullable() }) });
+const turn = z.object({ conversationId: z.string().uuid().nullable(), message: z.string().min(1).max(8000), pageContext: z.object({ view: z.enum(["activity", "history", "agent", "documents", "workbench", "quality", "evals", "copilot", "other"]).nullable(), agentId: z.string().uuid().nullable(), conversationId: z.string().uuid().nullable(), selection: z.string().nullable().optional(), entities: z.array(z.object({ type: z.enum(["agent", "conversation", "routine", "directive", "document", "evalCase"]), id: z.string(), label: z.string().max(120), focused: z.boolean() })).max(30).optional() }) });
 
 export const registerCopilotPaths = (registry: OpenAPIRegistry, security: OpenApiSecurity): void => {
   const session = security.workspaceAdminSecurity;

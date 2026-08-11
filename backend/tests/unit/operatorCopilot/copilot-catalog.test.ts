@@ -32,4 +32,22 @@ describe("filterCopilotToolCatalog", () => {
 
     expect(catalog.map((tool) => tool.requiredPermission)).toEqual(["workspace.agents.read"]);
   });
+
+  it("recognizes every read permission in the initial catalog matrix", () => {
+    const catalog = filterCopilotToolCatalog(
+      [
+        descriptor("workspace.agents.read"),
+        descriptor("workspace.history.read"),
+        descriptor("workspace.documents.read"),
+        descriptor("workspace.retrieval.query"),
+        descriptor("workspace.quality.read"),
+      ],
+      new Set(["workspace.retrieval.query", "workspace.quality.read"]),
+    );
+
+    expect(catalog.map((tool) => tool.requiredPermission)).toEqual([
+      "workspace.retrieval.query",
+      "workspace.quality.read",
+    ]);
+  });
 });

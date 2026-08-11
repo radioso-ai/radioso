@@ -20,6 +20,14 @@ const compactValue = (value: unknown): unknown => {
 const serializedLength = (value: unknown): number => JSON.stringify(value).length;
 
 /**
+ * Generic model-result compaction shared by every copilot family reader. It
+ * bounds scalar and collection fan-out without making the copilot depend on a
+ * particular owning module's result shape.
+ */
+export const boundPayload = <T extends Record<string, unknown>>(payload: T): T =>
+  compactValue(payload) as T;
+
+/**
  * Bounds a conversation history payload for model consumption. Debug/trace
  * envelopes dominate the size, so after generic compaction they are dropped
  * from the oldest messages first (marked `debugOmitted`), keeping the most
@@ -32,7 +40,7 @@ export const boundConversationPayload = (payload: Record<string, unknown>): Reco
   if (Array.isArray(source.messages) && source.messages.length > MAX_MESSAGES) {
     source.messages = source.messages.slice(-MAX_MESSAGES);
   }
-  const compact = compactValue(source) as Record<string, unknown>;
+  const compact = boundPayload(source);
   if (serializedLength(compact) <= CONVERSATION_PAYLOAD_CHAR_BUDGET) return compact;
 
   const messages = Array.isArray(compact.messages) ? [...(compact.messages as Array<Record<string, unknown>>)] : null;

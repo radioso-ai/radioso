@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatBindingLine, guardToSentence } from '@/lib/routine-document'
+import { documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence } from '@/lib/routine-document'
 
 describe('routine document helpers', () => {
   const slots = new Map([['email', 'Customer email'], ['attempts', 'Attempts'], ['order_total', 'Order total'], ['placed_at', 'Placed at'], ['is_member', 'Member']])
@@ -47,6 +47,28 @@ describe('routine document helpers', () => {
 
   it('renders an unset field guard as an editable placeholder', () => {
     expect(guardToSentence(guardFixture({ kind: 'field' }), slots)).toBe('choose a rule…')
+  })
+
+  it('segments guard and ending slot references for inline chips', () => {
+    expect(documentTextToSegments('Escalate when {{slot.demo_request}} needs review.')).toEqual([
+      { kind: 'text', text: 'Escalate when ' },
+      { kind: 'slotReference', key: 'demo_request', source: '{{slot.demo_request}}' },
+      { kind: 'text', text: ' needs review.' },
+    ])
+    expect(documentTextToSegments('We saved {{slot.demo_request}}.')).toEqual([
+      { kind: 'text', text: 'We saved ' },
+      { kind: 'slotReference', key: 'demo_request', source: '{{slot.demo_request}}' },
+      { kind: 'text', text: '.' },
+    ])
+  })
+
+  it('keeps ending target labels compact', () => {
+    expect(formatBranchTargetLabel({
+      kind: 'complete',
+      stableStepId: 'complete_1',
+      instruction: 'This completion message is deliberately long enough to be shortened.',
+    })).toBe('Finish: This completion message is deliberately…')
+    expect(formatBranchTargetLabel({ kind: 'handoff', stableStepId: 'handoff_1', instruction: null })).toBe('Hand off: handoff_1')
   })
 
   it('assembles inputs and outputs into the uses-to-sets line', () => {

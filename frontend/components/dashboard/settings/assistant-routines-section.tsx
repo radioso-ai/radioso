@@ -1314,7 +1314,7 @@ function RoutineEditorScreen({
                   {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
                 </p>
               </div>
-              <div className="space-y-1 sm:col-span-2">
+              {viewMode !== 'document' ? <div className="space-y-1 sm:col-span-2">
                 <Label htmlFor="routineTrigger">Activation trigger</Label>
                 <Textarea
                   id="routineTrigger"
@@ -1330,7 +1330,7 @@ function RoutineEditorScreen({
                   disabled={isReadOnly}
                 />
                 {triggerLocalValidationError ? <p className="text-xs text-destructive" role="status">{triggerLocalValidationError}</p> : null}
-              </div>
+              </div> : null}
             </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 

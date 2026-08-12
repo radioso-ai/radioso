@@ -107,8 +107,10 @@ test("author, validate, and read a routine through the Document tab", async ({ p
     "uses nothing → sets nothing",
     "order_total is less than 50",
     "The customer needs a nuanced eligibility explanation.",
-    "hand off: Hand this order to the billing team.",
-    "Finish: Eligibility check finished.",
+    "hand off",
+    "Hand this order to the billing team.",
+    "Finish",
+    "Eligibility check finished.",
   ];
   for (const line of documentLines) expect(editableRestText).toContain(line);
 

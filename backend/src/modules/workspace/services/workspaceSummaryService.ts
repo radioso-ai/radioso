@@ -29,8 +29,14 @@ export class WorkspaceSummaryService {
       this.conversationRepository.countByWorkspaceId(workspaceId),
     ]);
 
+    // Projected field by field rather than spread: this summary is the onboarding
+    // contract, so it must not grow silently when the document record does.
     return {
-      ...documentSummary,
+      documentCount: documentSummary.documentCount,
+      readyDocumentCount: documentSummary.readyDocumentCount,
+      pendingDocumentCount: documentSummary.pendingDocumentCount,
+      sampleDocumentCount: documentSummary.sampleDocumentCount,
+      sampleDocumentSlugs: documentSummary.sampleDocumentSlugs,
       conversationCount,
       hasDocuments: documentSummary.documentCount > 0,
       hasPendingDocuments: documentSummary.pendingDocumentCount > 0,

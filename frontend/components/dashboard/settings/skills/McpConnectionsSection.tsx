@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, KeyRound, Plus, RefreshCw, Server, Trash2, X } from 'lucide-react'
 
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
@@ -52,26 +52,31 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const [authMethod, setAuthMethod] = useState<McpAuthMethodChoice>('access_token')
   const [accessToken, setAccessToken] = useState('')
   const [oauthDraft, setOauthDraft] = useState<OauthConnectionDraft>(emptyOauthDraft)
+  const loadVersion = useRef(0)
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    const version = ++loadVersion.current
     setIsLoading(true)
     setError(null)
     try {
       const response = await externalSkillsApi.listConnections(agentId)
+      if (version !== loadVersion.current) return
       setConnections(response.connections)
     } catch (loadError) {
+      if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load MCP connections.'))
     } finally {
-      setIsLoading(false)
+      if (version === loadVersion.current) {
+        setIsLoading(false)
+      }
     }
-  }
+  }, [agentId])
 
   useEffect(() => {
     queueMicrotask(() => {
       void load()
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Reload when the owning agent changes.
-  }, [agentId])
+  }, [load])
 
   useEffect(() => {
     const onFocus = () => {
@@ -82,8 +87,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Focus refresh uses the current agent id.
-  }, [agentId])
+  }, [load])
 
   const createConnection = async () => {
     setBusyAction('create')

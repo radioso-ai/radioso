@@ -73,7 +73,8 @@ WITH ranked_exports AS (
   JOIN workspace_webhook_destinations wd
     ON wd.workspace_id = a.workspace_id
    AND wd.id::text = lower(ce.destination_ref)
-  WHERE ce.enabled = TRUE
+  WHERE d.status = 'published'
+    AND ce.enabled = TRUE
     AND COALESCE((a.behavior_settings ->> 'webhookExportsEnabled')::boolean, FALSE) = TRUE
     AND NULLIF(BTRIM(ce.destination_ref), '') IS NOT NULL
   ORDER BY d.agent_id, d.updated_at DESC, ce.destination_ref ASC

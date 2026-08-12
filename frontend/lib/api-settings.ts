@@ -322,24 +322,33 @@ export const agentsApi = {
     return agentToAssistantBehaviorSettings(await this.getAgent(agentId))
   },
 
-  async updateBehaviorSettings(agentId: string, data: AssistantBehaviorSettings): Promise<AssistantBehaviorSettings> {
-    return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, {
-      suggestedQuestionsEnabled: data.suggestedQuestionsEnabled,
-      customInstruction: data.customInstruction,
-      assistantLinkUtmEnabled: data.assistantLinkUtmEnabled,
-      citationDisplayEnabled: data.citationDisplayEnabled,
-      contactRequestsEnabled: data.contactRequestsEnabled,
-      webhookExportsEnabled: data.webhookExportsEnabled,
-      contactRequestDelivery: data.contactRequestDelivery,
-      retrievalEnabled: data.retrievalEnabled,
-      theme: data.theme,
-      branding: data.branding,
-      sourceScope: data.sourceScope,
-      skillSettings: data.retrievalSkillSettings
+  async updateBehaviorSettings(
+    agentId: string,
+    data: AssistantBehaviorSettings,
+    saved: AssistantBehaviorSettings,
+  ): Promise<AssistantBehaviorSettings> {
+    const hasChanged = (next: unknown, previous: unknown) => JSON.stringify(next) !== JSON.stringify(previous)
+    const update: AgentSettingsUpdate = {}
+
+    if (data.suggestedQuestionsEnabled !== saved.suggestedQuestionsEnabled) update.suggestedQuestionsEnabled = data.suggestedQuestionsEnabled
+    if (data.customInstruction !== saved.customInstruction) update.customInstruction = data.customInstruction
+    if (data.assistantLinkUtmEnabled !== saved.assistantLinkUtmEnabled) update.assistantLinkUtmEnabled = data.assistantLinkUtmEnabled
+    if (data.citationDisplayEnabled !== saved.citationDisplayEnabled) update.citationDisplayEnabled = data.citationDisplayEnabled
+    if (data.contactRequestsEnabled !== saved.contactRequestsEnabled) update.contactRequestsEnabled = data.contactRequestsEnabled
+    if (data.webhookExportsEnabled !== saved.webhookExportsEnabled) update.webhookExportsEnabled = data.webhookExportsEnabled
+    if (hasChanged(data.contactRequestDelivery, saved.contactRequestDelivery)) update.contactRequestDelivery = data.contactRequestDelivery
+    if (data.retrievalEnabled !== saved.retrievalEnabled) update.retrievalEnabled = data.retrievalEnabled
+    if (hasChanged(data.theme, saved.theme)) update.theme = data.theme
+    if (hasChanged(data.branding, saved.branding)) update.branding = data.branding
+    if (hasChanged(data.sourceScope, saved.sourceScope)) update.sourceScope = data.sourceScope
+    if (hasChanged(data.skillSettings, saved.skillSettings) || hasChanged(data.retrievalSkillSettings, saved.retrievalSkillSettings)) {
+      update.skillSettings = data.retrievalSkillSettings
         ? writeRetrievalSkillSettingsOverride(data.skillSettings, data.retrievalSkillSettings)
-        : data.skillSettings,
-      // null = clear back to workspace fallback; undefined = leave unchanged.
-      chatModelOverride: data.chatModelOverride === undefined ? undefined : data.chatModelOverride,
-    }))
+        : data.skillSettings
+    }
+    // null = clear back to workspace fallback; undefined = leave unchanged.
+    if (data.chatModelOverride !== saved.chatModelOverride) update.chatModelOverride = data.chatModelOverride
+
+    return agentToAssistantBehaviorSettings(await this.updateAgent(agentId, update))
   },
 }

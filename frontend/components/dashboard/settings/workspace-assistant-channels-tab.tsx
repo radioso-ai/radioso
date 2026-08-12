@@ -223,11 +223,14 @@ export function WorkspaceAssistantChannelsTab({
     return agentsApi.getBehaviorSettings(agentId)
   }, [agentId])
 
-  const updateAssistantBehaviorSettings = useCallback(async (data: AssistantBehaviorSettings) => {
+  const updateAssistantBehaviorSettings = useCallback(async (
+    data: AssistantBehaviorSettings,
+    saved: AssistantBehaviorSettings,
+  ) => {
     if (!agentId) {
       throw new Error('Assistant behavior settings require an agent')
     }
-    return agentsApi.updateBehaviorSettings(agentId, data)
+    return agentsApi.updateBehaviorSettings(agentId, data, saved)
   }, [agentId])
 
   useEffect(() => {
@@ -728,7 +731,7 @@ export function WorkspaceAssistantChannelsTab({
       try {
         const updated = normalizeAssistantBehaviorSettingsByAgent(
           agentId,
-          await updateAssistantBehaviorSettings(assistantBehaviorSettings),
+          await updateAssistantBehaviorSettings(assistantBehaviorSettings, savedAssistantBehaviorSettings),
         )
         if (saveSequenceRef.current !== saveId) return
         setSavedAssistantBehaviorSettings(updated)

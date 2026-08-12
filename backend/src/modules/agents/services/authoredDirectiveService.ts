@@ -1,6 +1,6 @@
 import type { DirectiveCoherenceChecker, DirectiveCoherenceVerdict } from "@radioso/conversation-contract";
 
-import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { AgentDirectiveUpdateOptions, AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type { AgentSkillRepositoryPort } from "../../agentSkills/public.js";
 import { defaultAnswerDirectives } from "../../directives/public.js";
@@ -18,6 +18,8 @@ export interface AuthoredDirectiveSaveResult {
   directive: AuthoredDirective;
   coherence: DirectiveCoherenceVerdict;
 }
+
+export type AuthoredDirectiveVersionOptions = AgentDirectiveUpdateOptions;
 
 type AuthoredDirectiveAgentContext = Pick<
   AgentRecord,
@@ -47,7 +49,7 @@ export class AuthoredDirectiveService {
     return this.options.repository.listDirectives(agentId, workspaceId);
   }
 
-  async create(workspaceId: string, agentId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirectiveSaveResult> {
+  async create(workspaceId: string, agentId: string, input: AuthoredDirectiveInput, options?: AuthoredDirectiveVersionOptions): Promise<AuthoredDirectiveSaveResult> {
     const agent = await this.requireAgent(workspaceId, agentId);
     const directive = this.validateInput(input);
     await this.validateBinding(workspaceId, agentId, directive);
@@ -56,7 +58,7 @@ export class AuthoredDirectiveService {
     const saved = await this.options.repository.createDirective(agentId, workspaceId, {
       ...directive,
       routes: [],
-    });
+    }, options);
     return { directive: saved, coherence };
   }
 
@@ -65,6 +67,7 @@ export class AuthoredDirectiveService {
     agentId: string,
     directiveId: string,
     input: Partial<AuthoredDirectiveInput>,
+    options?: AuthoredDirectiveVersionOptions,
   ): Promise<AuthoredDirectiveSaveResult> {
     const agent = await this.requireAgent(workspaceId, agentId);
     const existingDirectives = await this.options.repository.listDirectives(agentId, workspaceId);
@@ -92,7 +95,7 @@ export class AuthoredDirectiveService {
     const saved = await this.options.repository.updateDirective(agentId, workspaceId, directiveId, {
       ...directive,
       routes: [],
-    });
+    }, options);
     return { directive: saved, coherence };
   }
 

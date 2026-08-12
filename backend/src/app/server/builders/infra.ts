@@ -47,6 +47,7 @@ import { WebhookSkillDefinitionRepository } from "../../../db/repositories/webho
 import { IntegrationConnectionRepository } from "../../../modules/integrationConnections/public.js";
 import { SlackChannelBindingRepository, SlackInstallationRepository } from "../../../modules/slack/public.js";
 import { SlackSkillDefinitionRepository } from "../../../modules/slackSkills/public.js";
+import { CopilotRepository } from "../../../db/repositories/copilotRepository.js";
 import { ProductAnalyticsService } from "../../../shared/analytics/productAnalyticsService.js";
 import { NoopUsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
 import { DurableUsageEventRecorder } from "../../../shared/infra/usage/durableUsageEventRecorder.js";
@@ -198,6 +199,7 @@ export const buildRepositories = (
   emailSkillActivityRepository: new EmailSkillActivityRepository(database.kysely),
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
   slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
+  copilotRepository: new CopilotRepository(database.kysely),
 });
 
 export const buildLogger = (): AppLogger => createLogger();

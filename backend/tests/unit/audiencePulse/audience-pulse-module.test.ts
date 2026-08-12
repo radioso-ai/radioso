@@ -17,70 +17,49 @@ vi.mock("../../../src/shared/infra/llm/contextualGateways.js", () => ({
   },
 }));
 
-import {
-  ApplicationModuleCoordinator,
-  createApplicationExtensionRegistry,
-} from "../../../src/app/composition/applicationModule.js";
-import { createAudiencePulseApplicationModule } from "../../../src/app/composition/builtIn/audiencePulseModule.js";
-import type { AppDependencies } from "../../../src/app/server/types.js";
+import { buildAudiencePulseService } from "../../../src/app/server/builders/audiencePulse.js";
 import type { UsageEventRecorder } from "../../../src/shared/domain/usageEventRecorder.js";
 
-const buildMount = () => {
-  const registry = createApplicationExtensionRegistry();
-  new ApplicationModuleCoordinator({
-    logger: { error() {} },
-    registry,
-  }).apply([createAudiencePulseApplicationModule()]);
+const builderInput = (recorder: UsageEventRecorder) =>
+  ({
+    kysely: {},
+    llmCapabilityResolver: {},
+    usageEventRecorder: recorder,
+    usageLimitPolicy: {},
+    auditService: {},
+    logger: {},
+    telemetryService: { emit: vi.fn().mockResolvedValue(undefined) },
+    abuseControlService: {},
+    embeddingBindingResolver: {},
+  }) as unknown as Parameters<typeof buildAudiencePulseService>[0];
 
-  const mount = registry.routeMounts[0];
-  if (!mount) throw new Error("Audience Pulse route mount was not registered");
-  return mount;
-};
-
-const fakeDependencies = (recorder: UsageEventRecorder) => ({
-  connectorDb: { kysely: {} },
-  llmCapabilityResolver: {},
-  usageEventRecorder: recorder,
-  usageLimitPolicy: {},
-  auditService: {},
-  logger: {},
-  accountAccessService: {},
-  abuseControlService: {},
-  telemetryService: { emit: vi.fn().mockResolvedValue(undefined) },
-  env: {},
-}) as unknown as AppDependencies;
-
-describe("Audience Pulse application module", () => {
+describe("Audience Pulse service assembly", () => {
   beforeEach(() => {
     constructedWithRecorder.mockClear();
     constructedRewriteWithRecorder.mockClear();
   });
 
-  it("passes the app usage recorder into its structured inference factory", () => {
+  it("threads the app usage recorder into the analysis and naming inference factories", () => {
     const recorder: UsageEventRecorder = {
       async recordEmbedding() {},
       async recordModelCall() {},
     };
 
-    buildMount().createRouter(fakeDependencies(recorder));
+    buildAudiencePulseService(builderInput(recorder));
 
+    // Once for the service's own analysis call, once for census topic naming.
+    expect(constructedWithRecorder).toHaveBeenCalledTimes(2);
     expect(constructedWithRecorder).toHaveBeenCalledWith(recorder);
   });
 
-  it("composes the topic census service factory with real repositories and both model tiers without throwing", () => {
+  it("wires the privacy audit as the only cheap-tier call, with the recorder", () => {
     const recorder: UsageEventRecorder = {
       async recordEmbedding() {},
       async recordModelCall() {},
     };
 
-    expect(() => buildMount().createRouter(fakeDependencies(recorder))).not.toThrow();
+    buildAudiencePulseService(builderInput(recorder));
 
-    // Naming uses the answer tier -- the same `ContextualStructuredInferenceFactory`
-    // default `AudiencePulseService`'s own analysis call uses -- so this constructor
-    // fires twice: once for that call, once for naming.
-    expect(constructedWithRecorder).toHaveBeenCalledTimes(2);
-    expect(constructedWithRecorder).toHaveBeenCalledWith(recorder);
-    // The privacy audit is the only cheap-tier call this module wires.
     expect(constructedRewriteWithRecorder).toHaveBeenCalledTimes(1);
     expect(constructedRewriteWithRecorder).toHaveBeenCalledWith(recorder);
   });

@@ -83,6 +83,12 @@ import {
   type RoutineFormState,
 } from '@/lib/routine-form'
 import { createEmptyRoutineProseDraft, routineToChipDoc } from '@/lib/routine-prose'
+import { useCopilotEntity } from '@/lib/copilot-context'
+
+function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
+  useCopilotEntity('routine', routine.id, routine.name || 'Untitled routine')
+  return null
+}
 
 // A blank routine for the Form tab: one empty step the author fills in, no transitions
 // yet, and a single complete terminal. The Prose tab starts from the steps-stripped
@@ -402,6 +408,7 @@ function RoutineListScreen({
     const activeVersion = lineage.activeRoutine?.version ?? routine.version
     return (
       <div key={lineage.lineageId} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-4">
+        <CopilotRoutineEntity routine={routine} />
         <button
           type="button"
           className="min-w-0 flex-1 text-left"
@@ -546,6 +553,12 @@ function RoutineEditorScreen({
   const initializedRouteKeyRef = useRef<string | null>(null)
   const routineEditorDirtyRef = useRef(false)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  useCopilotEntity(
+    'routine',
+    isNewRoutine ? null : routineRouteId,
+    editingRoutine?.name || 'Routine editor',
+    true,
+  )
 
   const listHref = buildDashboardHref(accountId, {
     section: 'agents',

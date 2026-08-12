@@ -1,4 +1,4 @@
-import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { AgentRepositoryPort, AgentUpdateOptions } from "../../../db/repositories/agentRepository.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AccessGrantService } from "../../accessGrants/public.js";
@@ -93,14 +93,14 @@ export class AgentService {
     return this.present(agent, existingDefault?.id ?? agent.id);
   }
 
-  async update(workspaceId: string, agentId: string, input: AgentInput): Promise<AgentSettingsResource> {
+  async update(workspaceId: string, agentId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
     await this.validateSourceScope(workspaceId, input);
     const existing = await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!existing) {
       throw notFound("Agent not found");
     }
-    const updated = await this.agentRepository.update(agentId, workspaceId, input);
+    const updated = await this.agentRepository.update(agentId, workspaceId, input, options);
     await this.syncPublicLaunchGrants(existing, updated);
     if (workspace.defaultAgentId === agentId) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);

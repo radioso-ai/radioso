@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
@@ -16,6 +16,8 @@ import { SettingsView } from './settings-view'
 import { QualityView } from './quality-view'
 import { AudiencePulseView } from './audience-pulse-view'
 import { EvalView } from './eval-view'
+import { CopilotView } from './copilot-view'
+import { CopilotLauncher, CopilotPanel, CopilotSelectionAffordance } from './copilot-panel'
 import { FirstRunExperience } from './first-run-experience'
 import {
   buildDashboardHref,
@@ -30,6 +32,8 @@ import {
 import { useWorkspace } from '@/lib/workspace-context'
 import { useWorkspaceOnboarding } from '@/lib/onboarding'
 import { LogoSpinner } from '@/components/ui/spinner'
+import { copilotApi, isCopilotApiErrorStatus, type CopilotAvailability } from '@/lib/api-copilot'
+import { CopilotContextProvider } from '@/lib/copilot-context'
 
 interface DashboardShellProps {
   accountId: string
@@ -44,6 +48,8 @@ export function DashboardShell({
   const routeWorkspaceSyncKeyRef = useRef<string | null>(null)
   const pendingRouteWorkspaceIdRef = useRef<string | null>(null)
   const { activeWorkspaceId, workspaces, isLoading: isWorkspaceLoading, switchWorkspace } = useWorkspace()
+  const [copilotAvailability, setCopilotAvailability] = useState<CopilotAvailability | null>(null)
+  const [copilotPermissionDenied, setCopilotPermissionDenied] = useState(false)
   const onboarding = useWorkspaceOnboarding(activeWorkspaceId, workspaces.length)
   const requestedWorkspaceId = routeState.workspaceId
   const requestedWorkspaceExists = requestedWorkspaceId
@@ -60,6 +66,28 @@ export function DashboardShell({
   const showFirstRun = isAgentChatView && onboarding.shouldShowFirstRun
   const area = activeArea(routeState)
   const hasSubNav = area !== null && !showFirstRun
+
+  useEffect(() => {
+    if (!activeWorkspaceId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset workspace-scoped Copilot access before loading the next workspace.
+      setCopilotAvailability(null)
+      setCopilotPermissionDenied(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setCopilotAvailability(null)
+    setCopilotPermissionDenied(false)
+    void copilotApi.getAvailability(controller.signal)
+      .then((availability) => setCopilotAvailability(availability))
+      .catch((error: unknown) => {
+        if (isCopilotApiErrorStatus(error, 403)) {
+          setCopilotPermissionDenied(true)
+        }
+      })
+
+    return () => controller.abort()
+  }, [activeWorkspaceId])
 
   useEffect(() => {
     const syncKey = requestedWorkspaceExists ? (requestedWorkspaceId ?? null) : null
@@ -142,17 +170,20 @@ export function DashboardShell({
     })
   ) {
     return (
-      <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
-        <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
-        <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
-            <SidebarTrigger />
-          </header>
-          <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 items-center justify-center md:h-screen">
-            <LogoSpinner imageClassName="h-7 w-7" />
-          </div>
-        </SidebarInset>
-      </SidebarProvider>
+      <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
+        <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+          <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
+          <SidebarInset className="min-h-0 overflow-hidden">
+            <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+              <SidebarTrigger />
+              {!copilotPermissionDenied ? <CopilotLauncher /> : null}
+            </header>
+            <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 items-center justify-center">
+              <LogoSpinner imageClassName="h-7 w-7" />
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+      </CopilotContextProvider>
     )
   }
 
@@ -189,18 +220,20 @@ export function DashboardShell({
   )
 
   return (
-    <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
-      <AppSidebar
-        accountId={accountId}
-        currentView={currentView}
-        routeState={routeState}
-        areaSubNav={subNav}
-      />
-      <SidebarInset className="min-h-0 overflow-hidden">
-        <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
-          <SidebarTrigger />
-        </header>
-        <div key={activeWorkspaceId} className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col md:h-screen">
+    <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
+      <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
+        <AppSidebar
+          accountId={accountId}
+          currentView={currentView}
+          routeState={routeState}
+          areaSubNav={subNav}
+        />
+        <SidebarInset className="min-h-0 overflow-hidden">
+          <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <SidebarTrigger />
+            {!copilotPermissionDenied ? <CopilotLauncher /> : null}
+          </header>
+          <div key={activeWorkspaceId} data-dashboard-surface className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col">
           {showFirstRun ? (
             <FirstRunExperience accountId={accountId} onboarding={onboarding} />
           ) : hasSubNav ? (
@@ -219,9 +252,19 @@ export function DashboardShell({
             )
           ) : currentView === 'eval' ? (
             <EvalView accountId={accountId} routeState={routeState} />
+          ) : currentView === 'copilot' && !copilotPermissionDenied ? (
+            <CopilotView
+              key={activeWorkspaceId ?? 'copilot'}
+              accountId={accountId}
+              routeState={routeState}
+              availability={copilotAvailability}
+            />
           ) : null}
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+          </div>
+        </SidebarInset>
+        {!copilotPermissionDenied ? <CopilotPanel accountId={accountId} routeState={routeState} availability={copilotAvailability} /> : null}
+        {!copilotPermissionDenied ? <CopilotSelectionAffordance /> : null}
+      </SidebarProvider>
+    </CopilotContextProvider>
   )
 }

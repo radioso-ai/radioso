@@ -39,13 +39,13 @@ export interface DocumentSearchResponse {
   activityTrace?: ActivityTrace;
 }
 
-export type DocumentSearchExecutionSurface = "documents" | "mcp_capability";
+export type DocumentSearchExecutionSurface = "documents" | "mcp_capability" | "operator_copilot";
 
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   searchId: string;
-  query: string;
   resultCount: number;
-  results: DocumentSearchResult[];
+  query?: string;
+  results?: DocumentSearchResult[];
   activityTrace?: ActivityTrace;
   executionSurface: DocumentSearchExecutionSurface;
 }
@@ -115,11 +115,13 @@ export class DocumentSearchService {
 
     const metadata: DocumentSearchAuditMetadata = {
       searchId: response.searchId,
-      query: response.query,
       resultCount: response.resultCount,
-      results: response.results,
-      activityTrace: response.activityTrace,
       executionSurface: input.executionSurface ?? "documents",
+      ...(input.executionSurface === "operator_copilot" ? {} : {
+        query: response.query,
+        results: response.results,
+        activityTrace: response.activityTrace,
+      }),
     };
 
     await this.auditService.record({

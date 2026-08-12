@@ -32,6 +32,7 @@ import { registerEvalPaths } from "./paths/evalPaths.js";
 import { registerMcpConversePaths } from "./paths/mcpConversePaths.js";
 import { registerContextVariablePaths } from "./paths/contextVariablePaths.js";
 import { registerAudiencePulsePaths } from "./paths/audiencePulsePaths.js";
+import { registerCopilotPaths } from "./paths/copilotPaths.js";
 
 export const registerOpenApiPaths = (
   registry: OpenAPIRegistry,
@@ -66,6 +67,7 @@ export const registerOpenApiPaths = (
   registerConnectorsPaths(registry, schemas, security);
   registerQualityPaths(registry, schemas, security);
   registerAudiencePulsePaths(registry, schemas, security);
+  registerCopilotPaths(registry, security);
   registerEvalPaths(registry, schemas, security);
   registerMcpConversePaths(registry, schemas, security);
   registerAssistantPublicChatPaths(registry, schemas, security);

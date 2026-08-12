@@ -41,6 +41,7 @@ import {
   getConversationSourceBadge,
 } from '@/lib/history-source'
 import { getAgentOperatorLabel } from '@/lib/agent-label'
+import { useCopilotEntity } from '@/lib/copilot-context'
 import {
   presentActivityOutcome,
   presentRunParameters,
@@ -292,6 +293,12 @@ export function ConversationDrawer({
     isAudiencePulseEvidence,
     additionalConversationMessages: conversationTail.messages,
   })
+  useCopilotEntity(
+    'conversation',
+    selectedChatConversationId,
+    'Selected conversation',
+    Boolean(selectedChatConversationId),
+  )
 
   const {
     isDocumentDialogOpen,

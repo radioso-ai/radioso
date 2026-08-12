@@ -36,6 +36,7 @@ import { createPublicChatRoutes } from "./publicChatRoutes.js";
 import { createSkillRoutes } from "./skillRoutes.js";
 import { createEvalRoutes } from "../../../modules/eval/composition.js";
 import { getMcpMountStatus } from "../../server/mcpMount.js";
+import { createCopilotRoutes } from "../../../modules/operatorCopilot/routes.js";
 
 export const createApiRouter = (dependencies: AppDependencies): Router => {
   const router = Router();
@@ -76,6 +77,7 @@ export const createApiRouter = (dependencies: AppDependencies): Router => {
   router.use("/api/v1/agents", createSlackSkillRoutes(dependencies));
   router.use("/api/v1/agents", createAgentSkillRoutes(dependencies));
   router.use("/api/v1/assistant", createAssistantRoutes(dependencies));
+  router.use("/api/v1/copilot", createCopilotRoutes(dependencies));
   router.use("/api/v1/conversations", createConversationOwnershipRoutes(dependencies));
   router.use("/api/v1/history", createHistoryRoutes(dependencies));
   router.use("/api/v1/observability", createObservabilityRoutes(dependencies));

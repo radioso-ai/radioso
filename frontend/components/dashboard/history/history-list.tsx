@@ -19,6 +19,7 @@ import { editionController } from '@/lib/edition-controller'
 import { type ChatConversationSummary, type ContactHistorySummary, type DocumentSearchHistoryEntry } from '@/lib/api'
 import { getAgentOperatorLabel, getAgentPublicNameHint } from '@/lib/agent-label'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
+import { useCopilotEntity } from '@/lib/copilot-context'
 import { formatConversationLocation, getConversationSourceBadge } from '@/lib/history-source'
 import type { WorkspaceOnboardingState } from '@/lib/onboarding'
 
@@ -124,6 +125,12 @@ function ConversationRow({
   conversation: ChatConversationSummary
   onSelect: (item: SelectedHistoryItem) => void
 }) {
+  useCopilotEntity('conversation', conversation.id, conversation.preview || 'Untitled conversation')
+  useCopilotEntity(
+    'agent',
+    conversation.agentId,
+    getAgentOperatorLabel({ internalName: conversation.agentInternalName, name: conversation.agentName }, 'Unknown agent'),
+  )
   const location = formatConversationLocation(conversation)
   const sourceBadge = getConversationSourceBadge(conversation)
   const publicNameHint = getAgentPublicNameHint({

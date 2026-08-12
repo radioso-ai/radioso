@@ -4,6 +4,7 @@ import {
   type AgentRunInput,
   type AgentRunOptions,
   type AgentRunResult,
+  type AgentRunStream,
   type AgentRuntime,
   type AgentTool,
   type AgentTraceEvent,
@@ -131,5 +132,18 @@ export class AgenticCapabilityRunner {
       stepsTaken: runResult.stepsTaken,
       budgetProfile,
     };
+  }
+
+  runStreaming(
+    input: AgenticCapabilityRunInput,
+    tools: ReadonlyArray<AgentTool>,
+    budgetProfile?: Partial<AgentBudgets>,
+  ): AgentRunStream {
+    return this.deps.runtime.runStreaming(
+      { systemPrompt: input.systemPrompt, userMessage: input.userMessage, metadata: input.metadata },
+      tools,
+      resolveAgenticCapabilityBudgetProfile(budgetProfile),
+      { signal: input.signal, now: input.now, usageContext: input.usageContext },
+    );
   }
 }

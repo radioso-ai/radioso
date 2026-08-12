@@ -45,6 +45,7 @@ export {
 } from "./services/agentService.js";
 export {
   AuthoredDirectiveService,
+  type AuthoredDirectiveVersionOptions,
   type AuthoredDirectiveSaveResult,
   type AuthoredDirectiveServiceOptions,
 } from "./services/authoredDirectiveService.js";

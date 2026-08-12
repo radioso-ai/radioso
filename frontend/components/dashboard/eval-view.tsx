@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
+import { useCopilotEntity } from '@/lib/copilot-context'
 import {
   DashboardTable,
   DashboardTableBody,
@@ -451,6 +452,11 @@ interface EvalListProps {
   routeState: DashboardRouteState
 }
 
+function CopilotEvalCaseEntity({ evalCase }: { evalCase: EvalCaseListItem }) {
+  useCopilotEntity('evalCase', evalCase.id, evalCase.name)
+  return null
+}
+
 function EvalList({ accountId, routeState }: EvalListProps) {
   const router = useRouter()
   const [cases, setCases] = useState<EvalCaseListItem[] | null>(null)
@@ -712,8 +718,9 @@ function EvalList({ accountId, routeState }: EvalListProps) {
           </DashboardTableHead>
           <DashboardTableBody>
             {(visibleCases ?? []).map((c) => (
-              <DashboardTableRow
-                key={c.id}
+              <Fragment key={c.id}>
+                <CopilotEvalCaseEntity evalCase={c} />
+                <DashboardTableRow
                 role="button"
                 tabIndex={0}
                 onClick={() => openCase(c.id)}
@@ -799,7 +806,8 @@ function EvalList({ accountId, routeState }: EvalListProps) {
                     </button>
                   </div>
                 </DashboardTableCell>
-              </DashboardTableRow>
+                </DashboardTableRow>
+              </Fragment>
             ))}
           </DashboardTableBody>
         </DashboardTable>

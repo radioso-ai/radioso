@@ -1,6 +1,7 @@
 'use client'
 
 import type { ActivityTrace, ActivityStage } from '@/lib/api'
+import { useCopilotEntity } from '@/lib/copilot-context'
 
 const STATUS_DOT: Record<ActivityStage['status'], string> = {
   applied: 'bg-emerald-500',
@@ -255,6 +256,7 @@ function CompactStageNode({
   onSelect: (stageId: string) => void
   className?: string
 }) {
+  useCopilotEntity('conversation', stage.stageId, `Trace stage: ${displayLabel(stage)}`)
   const summary = summaryLine(stage)
 
   return (

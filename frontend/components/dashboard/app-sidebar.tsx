@@ -80,6 +80,11 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
                 // keep the plain row so the entry never collapses to an empty gap.
                 const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
+                const navState: DashboardRouteState = {
+                  section: item.id,
+                  workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                }
 
                 return (
                   <SidebarMenuItem
@@ -87,13 +92,9 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                     className={item.id === 'activity' ? 'mb-1 border-b border-sidebar-border pb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                        <Link
-                          href={buildDashboardHref(accountId, {
-                            section: item.id,
-                            workspaceId: activeWorkspaceId ?? undefined,
-                            workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                          })}
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                          <Link
+                            href={buildDashboardHref(accountId, navState)}
                         >
                           <item.icon className="w-4 h-4" />
                           <span>{item.label}</span>

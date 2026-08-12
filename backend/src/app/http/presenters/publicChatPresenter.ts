@@ -57,7 +57,7 @@ export const presentPublicChatSession = ({
     resumeToken: resume.token,
     assistantBootstrapActive: isAgentBootstrapActive(agent),
     assistantAvatarUrl,
-    theme: websiteEmbed.theme,
+    theme: agent.theme,
     copy: websiteEmbed.copy,
     branding: agent.branding,
     intakeActions,

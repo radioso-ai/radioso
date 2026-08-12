@@ -81,6 +81,30 @@ test("operator configures one chat surface for both placements", async ({ page }
   await expect(page.getByRole("heading", { name: "Website widget", exact: true })).toBeVisible();
 });
 
+test("operator changes the shared chat color without resubmitting unrelated behavior", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    agentUpdates,
+  });
+
+  await page.goto(webChatUrl);
+  await page.locator("#assistantTheme-brand").fill("#0d3fb5");
+
+  await expect.poll(() =>
+    agentUpdates.find((update) => (update as { theme?: { brand?: string } }).theme?.brand === "#0d3fb5"),
+  ).toEqual({
+    theme: {
+      brand: "#0d3fb5",
+      brandText: "#ffffff",
+      surface: "#ffffff",
+      text: "#0f172a",
+    },
+  });
+});
+
 test("the retired website-embed anchor still lands on the merged chat page", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
@@ -44,12 +44,14 @@ export function SkillList({ agentId }: { agentId: string }) {
   // Null while the referencing surfaces are unread or unreadable: a partial count would report a
   // used skill as an orphan, which is worse than saying nothing.
   const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
+  const loadVersion = useRef(0)
 
-  const loadUsage = useCallback(async () => {
+  const loadUsage = useCallback(async (version: number) => {
     const [directiveResult, routineResult] = await Promise.allSettled([
       directivesApi.listDirectives(agentId),
       routinesApi.listRoutines(agentId),
     ])
+    if (version !== loadVersion.current) return
     if (directiveResult.status !== 'fulfilled' || routineResult.status !== 'fulfilled') {
       setUsage(null)
       return
@@ -58,20 +60,25 @@ export function SkillList({ agentId }: { agentId: string }) {
   }, [agentId])
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current
     setIsLoading(true)
     setError(null)
-    void loadUsage()
+    void loadUsage(version)
     try {
       const [capabilityResponse, skillResponse] = await Promise.all([
         agentSkillsApi.getSkillCapabilities(agentId),
         agentSkillsApi.listSkills(agentId),
       ])
+      if (version !== loadVersion.current) return
       setCapabilities(capabilityResponse.capabilities)
       setSkills(skillResponse.skills)
     } catch (loadError) {
+      if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load skills.'))
     } finally {
-      setIsLoading(false)
+      if (version === loadVersion.current) {
+        setIsLoading(false)
+      }
     }
   }, [agentId, loadUsage])
 

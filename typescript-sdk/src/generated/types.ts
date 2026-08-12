@@ -2750,6 +2750,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a copilot proposal preview */
+        get: operations["getCopilotProposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a pending copilot proposal */
+        post: operations["applyCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a pending copilot proposal */
+        post: operations["dismissCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -18042,7 +18093,51 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        title: string | null;
+                        /** @enum {string} */
+                        status: "idle" | "running";
+                        messages: ({
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "operator";
+                            content: string;
+                            createdAt: string;
+                        } | {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "copilot";
+                            content: string;
+                            createdAt: string;
+                            /** @enum {string} */
+                            outcome: "completed" | "budget_exhausted" | "failed";
+                            activity: {
+                                tool: string;
+                                /** @enum {string} */
+                                outcome: "completed" | "failed";
+                                entity?: {
+                                    type: string;
+                                    id: string;
+                                };
+                            }[];
+                            proposals: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                targetType: "directive" | "agent_setting";
+                                targetLabel: string;
+                                summary: string;
+                                /** @enum {string} */
+                                status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                            }[];
+                        })[];
+                    };
+                };
             };
             /** @description Not found */
             404: {
@@ -18131,6 +18226,135 @@ export interface operations {
             };
             /** @description No LLM capability */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        targetType: "directive" | "agent_setting";
+                        targetRef?: unknown;
+                        target: {
+                            /** @enum {string} */
+                            type: "directive" | "agent_setting";
+                            ref?: unknown;
+                        };
+                        targetLabel: string;
+                        /** @enum {string} */
+                        status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                        preview: {
+                            targetLabel: string;
+                            current?: unknown;
+                            proposed?: unknown;
+                        };
+                        currentVersionMatches: boolean;
+                        appliedRef?: unknown;
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    applyCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "applied" | "stale" | "failed";
+                        appliedRef?: unknown;
+                    };
+                };
+            };
+            /** @description Missing agent management permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismissCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "dismissed";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

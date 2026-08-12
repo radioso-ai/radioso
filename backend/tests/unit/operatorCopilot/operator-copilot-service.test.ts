@@ -29,7 +29,7 @@ describe("OperatorCopilotService", () => {
         }),
       },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit, release })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
-      auditService: { record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       tools: [
         tool("visible", "workspace.agents.read", invoke),
@@ -64,7 +64,7 @@ describe("OperatorCopilotService", () => {
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
-      auditService: { record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       tools: [],
       now: () => now,
@@ -100,7 +100,7 @@ describe("OperatorCopilotService", () => {
       repository,
       capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit: vi.fn(async () => {}), release: vi.fn(async () => {}) })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
-      auditService: { record: vi.fn(async () => {}), getLatestSuccessfulChatAnswerMetadata: vi.fn(), updateChatAnswerSuggestions: vi.fn() },
+      auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       tools: [{
         ...tool("reader", "workspace.agents.read", vi.fn(async () => ({}))),

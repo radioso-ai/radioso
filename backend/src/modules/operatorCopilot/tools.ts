@@ -7,9 +7,9 @@ import type {
   CopilotAuditPort,
   CopilotDirectiveProposalAdapter,
   CopilotProposal,
-  CopilotRepositoryPort,
   CopilotToolDescriptor,
 } from "./contracts.js";
+import type { CopilotRepositoryPort } from "./service.js";
 import { boundConversationPayload, boundPayload } from "./boundedPayload.js";
 
 const idSchema = z.string().uuid();

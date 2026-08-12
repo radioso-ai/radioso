@@ -423,8 +423,8 @@ export interface CopilotMessages {
 }
 
 export interface CopilotProposals {
-  apply_started_at: Timestamp | null;
   applied_ref: Json | null;
+  apply_started_at: Timestamp | null;
   conversation_id: string;
   created_at: Generated<Timestamp>;
   id: string;

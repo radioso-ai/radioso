@@ -34033,7 +34033,190 @@
         ],
         "responses": {
           "200": {
-            "description": "Conversation"
+            "description": "Conversation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "idle",
+                        "running"
+                      ]
+                    },
+                    "messages": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "operator"
+                                ]
+                              },
+                              "content": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "role",
+                              "content",
+                              "createdAt"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "role": {
+                                "type": "string",
+                                "enum": [
+                                  "copilot"
+                                ]
+                              },
+                              "content": {
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "string"
+                              },
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "completed",
+                                  "budget_exhausted",
+                                  "failed"
+                                ]
+                              },
+                              "activity": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "tool": {
+                                      "type": "string"
+                                    },
+                                    "outcome": {
+                                      "type": "string",
+                                      "enum": [
+                                        "completed",
+                                        "failed"
+                                      ]
+                                    },
+                                    "entity": {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string"
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "required": [
+                                        "type",
+                                        "id"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "tool",
+                                    "outcome"
+                                  ]
+                                }
+                              },
+                              "proposals": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "targetType": {
+                                      "type": "string",
+                                      "enum": [
+                                        "directive",
+                                        "agent_setting"
+                                      ]
+                                    },
+                                    "targetLabel": {
+                                      "type": "string"
+                                    },
+                                    "summary": {
+                                      "type": "string"
+                                    },
+                                    "status": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pending",
+                                        "applied",
+                                        "dismissed",
+                                        "failed",
+                                        "stale"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "targetType",
+                                    "targetLabel",
+                                    "summary",
+                                    "status"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "role",
+                              "content",
+                              "createdAt",
+                              "outcome",
+                              "activity",
+                              "proposals"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "status",
+                    "messages"
+                  ]
+                }
+              }
+            }
           },
           "404": {
             "description": "Not found"
@@ -34215,6 +34398,229 @@
           },
           "503": {
             "description": "No LLM capability"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/proposals/{proposalId}": {
+      "get": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Read a copilot proposal preview",
+        "operationId": "getCopilotProposal",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "targetType": {
+                      "type": "string",
+                      "enum": [
+                        "directive",
+                        "agent_setting"
+                      ]
+                    },
+                    "targetRef": {},
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "directive",
+                            "agent_setting"
+                          ]
+                        },
+                        "ref": {}
+                      },
+                      "required": [
+                        "type"
+                      ]
+                    },
+                    "targetLabel": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "applied",
+                        "dismissed",
+                        "failed",
+                        "stale"
+                      ]
+                    },
+                    "preview": {
+                      "type": "object",
+                      "properties": {
+                        "targetLabel": {
+                          "type": "string"
+                        },
+                        "current": {},
+                        "proposed": {}
+                      },
+                      "required": [
+                        "targetLabel"
+                      ]
+                    },
+                    "currentVersionMatches": {
+                      "type": "boolean"
+                    },
+                    "appliedRef": {}
+                  },
+                  "required": [
+                    "id",
+                    "targetType",
+                    "target",
+                    "targetLabel",
+                    "status",
+                    "preview",
+                    "currentVersionMatches"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/proposals/{proposalId}/apply": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Apply a pending copilot proposal",
+        "operationId": "applyCopilotProposal",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposal outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "applied",
+                        "stale",
+                        "failed"
+                      ]
+                    },
+                    "appliedRef": {}
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing agent management permission"
+          },
+          "409": {
+            "description": "Proposal is not pending"
+          }
+        }
+      }
+    },
+    "/api/v1/copilot/proposals/{proposalId}/dismiss": {
+      "post": {
+        "tags": [
+          "Copilot"
+        ],
+        "summary": "Dismiss a pending copilot proposal",
+        "operationId": "dismissCopilotProposal",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "proposalId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Proposal outcome",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "dismissed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "409": {
+            "description": "Proposal is not pending"
           }
         }
       }

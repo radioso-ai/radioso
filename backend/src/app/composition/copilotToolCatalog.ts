@@ -4,14 +4,16 @@ import {
   createUs1CopilotTools,
   createUs2CopilotTools,
   createUs3CopilotTools,
-  type CopilotAgentSettingProposalAdapter,
   type CopilotConversationHistoryPort,
   type CopilotDocumentSearchPort,
-  type CopilotDirectiveProposalAdapter,
   type CopilotEvalResultsPort,
   type CopilotQualitySignalsPort,
   type CopilotAudiencePulsePort,
 } from "../../modules/operatorCopilot/tools.js";
+import type {
+  CopilotAgentSettingProposalAdapter,
+  CopilotDirectiveProposalAdapter,
+} from "../../modules/operatorCopilot/public.js";
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";

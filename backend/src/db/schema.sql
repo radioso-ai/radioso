@@ -1391,6 +1391,30 @@ CREATE TABLE public.copilot_messages (
 
 
 --
+-- Name: copilot_proposals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.copilot_proposals (
+    id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    operator_user_id uuid NOT NULL,
+    conversation_id uuid NOT NULL,
+    message_id uuid,
+    target_type text NOT NULL,
+    target_ref jsonb NOT NULL,
+    payload jsonb NOT NULL,
+    version_token text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    apply_started_at timestamp with time zone,
+    applied_ref jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent_setting'::text])))
+);
+
+
+--
 -- Name: directive_states; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3248,6 +3272,14 @@ ALTER TABLE ONLY public.copilot_messages
 
 
 --
+-- Name: copilot_proposals copilot_proposals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: directive_states directive_states_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4539,6 +4571,20 @@ CREATE INDEX copilot_conversations_operator_updated_idx ON public.copilot_conver
 --
 
 CREATE INDEX copilot_messages_conversation_created_idx ON public.copilot_messages USING btree (conversation_id, created_at);
+
+
+--
+-- Name: copilot_proposals_conversation_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_conversation_message_idx ON public.copilot_proposals USING btree (conversation_id, message_id, created_at);
+
+
+--
+-- Name: copilot_proposals_operator_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX copilot_proposals_operator_created_idx ON public.copilot_proposals USING btree (workspace_id, operator_user_id, created_at DESC);
 
 
 --
@@ -6722,6 +6768,38 @@ ALTER TABLE ONLY public.copilot_conversations
 
 ALTER TABLE ONLY public.copilot_messages
     ADD CONSTRAINT copilot_messages_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_message_id_fkey FOREIGN KEY (message_id) REFERENCES public.copilot_messages(id) ON DELETE SET NULL;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_operator_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_operator_user_id_fkey FOREIGN KEY (operator_user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: copilot_proposals copilot_proposals_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.copilot_proposals
+    ADD CONSTRAINT copilot_proposals_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

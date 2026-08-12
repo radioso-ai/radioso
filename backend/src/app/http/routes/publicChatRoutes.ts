@@ -244,7 +244,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       res.status(200).json({
         launcherLabel: websiteEmbed.launcherLabel,
         launcherPosition: websiteEmbed.launcherPosition,
-        theme: websiteEmbed.theme,
+        theme: agent.theme,
         branding: agent.branding,
         copy: websiteEmbed.copy,
         expertOverrides: websiteEmbed.expertOverrides,

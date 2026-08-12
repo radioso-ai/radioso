@@ -488,15 +488,11 @@ describe("agents contract", () => {
           hidePoweredBy: false,
           privacyPolicyUrl,
         },
-        surfaceSettings: {
-          websiteEmbed: {
-            theme: {
-              brand: "#5b3df5",
-              brandText: "#ffffff",
-              surface: "#17142b",
-              text: "#f8f7ff",
-            },
-          },
+        theme: {
+          brand: "#5b3df5",
+          brandText: "#ffffff",
+          surface: "#17142b",
+          text: "#f8f7ff",
         },
       })
       .expect(200);
@@ -1631,10 +1627,22 @@ describe("agents contract", () => {
       .put(`/api/v1/agents/${agentId}`)
       .set("Authorization", authorization)
       .send({
+        theme: {
+          brand: "#123456",
+          brandText: "#ffffff",
+          surface: "#f8fafc",
+          text: "#102030",
+        },
         surfaceSettings: {
           websiteEmbed: {
             enabled: true,
             allowedOrigins: ["https://host.example.com"],
+            theme: {
+              brand: "#abcdef",
+              brandText: "#111111",
+              surface: "#ffffff",
+              text: "#222222",
+            },
           },
         },
       })
@@ -1656,6 +1664,12 @@ describe("agents contract", () => {
       .expect(200);
     expect(fromAllowed.headers["cache-control"]).toContain("public");
     expect(fromAllowed.headers["vary"]).toContain("Origin");
+    expect(fromAllowed.body.theme).toEqual({
+      brand: "#123456",
+      brandText: "#ffffff",
+      surface: "#f8fafc",
+      text: "#102030",
+    });
 
     const fromAllowedEnglish = await request(app)
       .get(`/api/v1/public/chat/${embedToken}/embed-config`)

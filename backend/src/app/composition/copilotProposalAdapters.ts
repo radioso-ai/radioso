@@ -103,13 +103,25 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
   },
 });
 
+// Maps a stored proposal payload onto the management input. The draft keeps
+// presentation extras (e.g. the coach's rationale) that the .strict()
+// directive input schema rejects, so unknown keys are stripped here.
 const directivePayload = (value: unknown): AuthoredDirectiveInput => {
   const draft = z.object({
     name: z.string(),
     condition: z.unknown(),
     action: z.string(),
     tags: z.array(z.string()).optional(),
-  }).passthrough().parse(value);
+    priority: z.number().nullable().optional(),
+    criticality: z.unknown().optional(),
+    requiredCapabilities: z.array(z.string()).optional(),
+    dependsOn: z.array(z.string()).optional(),
+    excludes: z.array(z.string()).optional(),
+    description: z.string().optional(),
+    binding: z.unknown().optional(),
+    lifecycle: z.unknown().optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }).parse(value);
   return draft as AuthoredDirectiveInput;
 };
 

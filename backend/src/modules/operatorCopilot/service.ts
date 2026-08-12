@@ -102,7 +102,7 @@ export class OperatorCopilotService {
     return { proposal, preview, currentVersionMatches };
   }
 
-  async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown }> {
+  async applyProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: Exclude<CopilotProposalStatus, "pending" | "dismissed">; appliedRef?: unknown; reason?: string }> {
     const proposal = await this.deps.repository.claimProposalApply({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
     if (!proposal) {
       const existing = await this.deps.repository.findProposal({ id: input.proposalId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -122,7 +122,7 @@ export class OperatorCopilotService {
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
     await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, true);
-    return { status };
+    return result.outcome === "failed" ? { status, reason: result.reason } : { status };
   }
 
   async dismissProposal(input: { workspaceId: string; accountId: string; operatorUserId: string; proposalId: string }): Promise<{ status: "dismissed" }> {

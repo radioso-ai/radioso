@@ -187,3 +187,33 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
 }
 
 const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" ? String((proposal.payload as { name?: unknown }).name ?? "Directive") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : "Draft setting change", status: proposal.status });
+
+describe("directive proposal adapter payload mapping", () => {
+  it("strips draft-only presentation fields before calling directive management", async () => {
+    const { createDirectiveCopilotProposalAdapter } = await import("../../../src/app/composition/copilotProposalAdapters.js");
+    const create = vi.fn(async () => ({ directive: { id: "directive-1" }, coherence: null }));
+    const adapter = createDirectiveCopilotProposalAdapter({
+      authoredDirectiveService: { list: vi.fn(async () => []), create, update: vi.fn() } as never,
+      directiveAuthorService: { draft: vi.fn() } as never,
+      agentService: { get: vi.fn(async () => ({ updatedAt: new Date(0) })) } as never,
+    });
+
+    const result = await adapter.applyIfVersionMatches(
+      "workspace-1",
+      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: null },
+      {
+        name: "shipping-damage-remediation",
+        condition: { kind: "contextual", description: "Order arrived damaged." },
+        action: "Ask for a photo, then offer replacement or refund.",
+        tags: [],
+        rationale: "Coach explanation the strict input schema must never see.",
+      },
+      String(new Date(0).getTime()),
+    );
+
+    expect(result).toEqual({ outcome: "applied", appliedRef: { directiveId: "directive-1" } });
+    const [, , input] = create.mock.calls[0] as unknown as [string, string, Record<string, unknown>];
+    expect(input.rationale).toBeUndefined();
+    expect(input.name).toBe("shipping-damage-remediation");
+  });
+});

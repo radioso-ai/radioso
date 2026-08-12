@@ -53,6 +53,9 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     workspaceRepository = new WorkspaceRepository(database.kysely);
     agentRepository = new AgentRepository(database.kysely);
     routineRepository = new RoutineDefinitionRepository(database.kysely);
+    await database.execute(
+      "CREATE TABLE schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    );
     // Full schema, then re-apply 111 after seeding legacy contact/webhook-export settings so we
     // exercise its (idempotent) projection — mirrors the other migration projection tests.
     await runAllTestMigrations(database);
@@ -161,7 +164,7 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     });
   });
 
-  it("keeps and corrects completion-export targets from the latest published definition", async () => {
+  it("corrects an untouched 111 target without overwriting a later skill edit", async () => {
     const account = await accountRepository.create({
       name: "Completion Export Published Migration",
       email: `completion-export-published-${randomUUID()}@example.com`,
@@ -174,14 +177,16 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     });
     const publishedDestinationId = randomUUID();
     const draftDestinationId = randomUUID();
+    const userEditedDestinationId = randomUUID();
     await database.execute(
       `INSERT INTO workspace_webhook_destinations (
          id, workspace_id, name, url, secret_ciphertext, encryption_key_id
        )
        VALUES
          ($1, $2, 'Published completion export', 'https://example.test/published', 'ciphertext', 'test-key'),
-         ($3, $2, 'Draft completion export', 'https://example.test/draft', 'ciphertext', 'test-key')`,
-      [publishedDestinationId, workspace.id, draftDestinationId],
+         ($3, $2, 'Draft completion export', 'https://example.test/draft', 'ciphertext', 'test-key'),
+         ($4, $2, 'User edited completion export', 'https://example.test/user-edited', 'ciphertext', 'test-key')`,
+      [publishedDestinationId, workspace.id, draftDestinationId, userEditedDestinationId],
     );
     const draftInput = (name: string, destinationRef: string) => ({
       name,
@@ -216,6 +221,9 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     );
 
     await database.pool.query(migration111Sql);
+    await database.execute(
+      "INSERT INTO schema_migrations (filename) VALUES ('111_notify_and_completion_export_skills.sql')",
+    );
 
     const [seededSkill] = await database.query<{ target_id: string }>(
       "SELECT target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'completion_export'",
@@ -224,7 +232,14 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     expect(seededSkill).toEqual({ target_id: publishedDestinationId });
 
     await database.execute(
-      "UPDATE agent_skills SET target_id = $1 WHERE agent_id = $2 AND skill_name = 'completion_export'",
+      `UPDATE agent_skills
+       SET target_id = $1,
+           updated_at = (
+             SELECT applied_at - INTERVAL '1 second'
+             FROM schema_migrations
+             WHERE filename = '111_notify_and_completion_export_skills.sql'
+           )
+       WHERE agent_id = $2 AND skill_name = 'completion_export'`,
       [draftDestinationId, agent.id],
     );
     await database.pool.query(correctionMigrationSql);
@@ -234,6 +249,18 @@ describeIfDatabase("notify and completion-export skill migration", () => {
       [agent.id],
     );
     expect(correctedSkill).toEqual({ target_id: publishedDestinationId });
+
+    await database.execute(
+      "UPDATE agent_skills SET target_id = $1, updated_at = NOW() WHERE agent_id = $2 AND skill_name = 'completion_export'",
+      [userEditedDestinationId, agent.id],
+    );
+    await database.pool.query(correctionMigrationSql);
+
+    const [userEditedSkill] = await database.query<{ target_id: string }>(
+      "SELECT target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'completion_export'",
+      [agent.id],
+    );
+    expect(userEditedSkill).toEqual({ target_id: userEditedDestinationId });
   });
 
   it("fails instead of overwriting an existing non-notify contact_human skill", async () => {

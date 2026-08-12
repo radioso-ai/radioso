@@ -1405,6 +1405,7 @@ CREATE TABLE public.copilot_proposals (
     payload jsonb NOT NULL,
     version_token text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
+    failure_reason text,
     apply_started_at timestamp with time zone,
     applied_ref jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

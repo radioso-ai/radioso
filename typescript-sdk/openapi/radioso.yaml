@@ -21743,9 +21743,12 @@ paths:
                     enum:
                       - ok
                       - no_llm_capability
+                  canManage:
+                    type: boolean
                 required:
                   - available
                   - reason
+                  - canManage
         "403":
           description: Forbidden
   /api/v1/copilot/conversations:
@@ -21917,6 +21920,10 @@ paths:
                                       - dismissed
                                       - failed
                                       - stale
+                                  reason:
+                                    type:
+                                      - string
+                                      - "null"
                                 required:
                                   - id
                                   - targetType
@@ -22116,6 +22123,10 @@ paths:
                       - targetLabel
                   currentVersionMatches:
                     type: boolean
+                  reason:
+                    type:
+                      - string
+                      - "null"
                   appliedRef: {}
                 required:
                   - id
@@ -22156,6 +22167,10 @@ paths:
                       - stale
                       - failed
                   appliedRef: {}
+                  reason:
+                    type:
+                      - string
+                      - "null"
                 required:
                   - status
         "403":

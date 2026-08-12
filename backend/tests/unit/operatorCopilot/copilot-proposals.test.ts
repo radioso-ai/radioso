@@ -150,6 +150,26 @@ describe("US3 copilot proposals", () => {
     expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.status).toBe("failed");
     expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ eventType: "copilot.proposal.apply_failed", metadata: expect.objectContaining({ outcome: "failed" }) }));
   });
+
+  it("persists adapter failure reasons so failed proposals still explain themselves after reload", async () => {
+    const repository = new MemoryProposalRepository();
+    const proposal = await repository.createProposal({ workspaceId, operatorUserId, conversationId: "conversation-1", targetType: "directive", targetRef: { agentId, directiveId }, payload: { name: "Updated" }, versionToken: "current" });
+    const message = await repository.createMessage({ conversationId: "conversation-1", role: "copilot", content: "Drafted", outcome: "completed", activity: [] });
+    await repository.attachProposalsToMessage({ proposalIds: [proposal.id], conversationId: "conversation-1", messageId: message.id });
+    const service = new OperatorCopilotService({
+      repository,
+      capabilityRunner: { runStreaming: vi.fn() },
+      usageLimitPolicy: noLimitPolicy(),
+      auditService: auditService(),
+      prompt: "system",
+      tools: [],
+      proposalAdapters: [{ targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(async () => ({ outcome: "failed" as const, reason: "Directive validation failed." })) }],
+    });
+
+    expect(await service.applyProposal({ workspaceId, accountId, operatorUserId, proposalId: proposal.id })).toEqual({ status: "failed", reason: "Directive validation failed." });
+    expect((await repository.findProposal({ id: proposal.id, workspaceId, operatorUserId }))?.reason).toBe("Directive validation failed.");
+    expect((await repository.listMessages({ conversationId: "conversation-1" }))[0]?.proposals?.[0]?.reason).toBe("Directive validation failed.");
+  });
 });
 
 const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
@@ -179,14 +199,14 @@ class MemoryProposalRepository implements CopilotRepositoryPort {
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> { return this.messages.filter((item) => item.conversationId === input.conversationId).map((message) => ({ ...message, proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map(presentProposal) })); }
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> { const conversation = await this.findConversation(input); if (!conversation || conversation.status === "running") return conversation ? "running" : null; const next = { ...conversation, status: "running" as const }; this.conversations[this.conversations.indexOf(conversation)] = next; return next; }
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> { const conversation = await this.findConversation(input); if (conversation) this.conversations[this.conversations.indexOf(conversation)] = { ...conversation, status: "idle" }; }
-  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
+  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> { const createdAt = new Date(); const proposal = { ...input, id: randomUUID(), messageId: null, status: "pending" as const, reason: null, appliedRef: null, createdAt, updatedAt: createdAt }; this.proposals.push(proposal); return proposal; }
   async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { return this.proposals.find((item) => item.id === input.id && item.workspaceId === input.workspaceId && item.operatorUserId === input.operatorUserId) ?? null; }
   async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> { this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId } : proposal); }
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal) return null; const next = { ...proposal, status: input.status, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; return next; }
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); if (!proposal) return null; const next = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() }; this.proposals[this.proposals.indexOf(proposal)] = next; return next; }
   async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> { const proposal = await this.findProposal(input); return proposal?.status === "pending" ? proposal : null; }
 }
 
-const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" ? String((proposal.payload as { name?: unknown }).name ?? "Directive") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : "Draft setting change", status: proposal.status });
+const presentProposal = (proposal: CopilotProposal) => ({ id: proposal.id, targetType: proposal.targetType, targetLabel: proposal.targetType === "directive" ? String((proposal.payload as { name?: unknown }).name ?? "Directive") : String((proposal.targetRef as { settingKey: string }).settingKey), summary: proposal.targetType === "directive" ? "Draft directive" : "Draft setting change", status: proposal.status, reason: proposal.reason ?? null });
 
 describe("directive proposal adapter payload mapping", () => {
   it("strips draft-only presentation fields before calling directive management", async () => {

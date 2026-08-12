@@ -172,7 +172,7 @@ export function DashboardShell({
     return (
       <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
         <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
-          <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} copilotVisible={!copilotPermissionDenied} />
+          <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
           <SidebarInset className="min-h-0 overflow-hidden">
             <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
               <SidebarTrigger />
@@ -227,7 +227,6 @@ export function DashboardShell({
           currentView={currentView}
           routeState={routeState}
           areaSubNav={subNav}
-          copilotVisible={!copilotPermissionDenied}
         />
         <SidebarInset className="min-h-0 overflow-hidden">
           <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">

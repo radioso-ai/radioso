@@ -35,8 +35,7 @@ export interface CopilotPageEntity {
 export interface CopilotAvailability {
   available: boolean
   reason: 'ok' | 'no_llm_capability'
-  /** Optional capability detail supplied by permission-aware dashboard shells. */
-  canManage?: boolean
+  canManage: boolean
 }
 
 export type CopilotConversationStatus = 'idle' | 'running'
@@ -251,7 +250,7 @@ export const streamCopilotEvents = async (
   handlers: CopilotStreamHandlers = {},
 ): Promise<CopilotStreamResult> => {
   if (!response.body) {
-    throw new Error('Copilot streaming response body was unavailable.')
+    throw new Error('Ray streaming response body was unavailable.')
   }
 
   const reader = response.body.getReader()

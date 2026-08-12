@@ -427,6 +427,7 @@ export interface CopilotProposals {
   apply_started_at: Timestamp | null;
   conversation_id: string;
   created_at: Generated<Timestamp>;
+  failure_reason: string | null;
   id: string;
   message_id: string | null;
   operator_user_id: string;

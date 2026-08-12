@@ -3,7 +3,7 @@ const meta = {
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
   'human-takeover': 'Human takeover',
-  copilot: 'Operator Copilot',
+  copilot: 'Ray',
   'slack-channel': 'Slack channel',
   'document-processing': 'Document processing',
   'enterprise-usage-limits': 'Enterprise usage limits',

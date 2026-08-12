@@ -18035,6 +18035,7 @@ export interface operations {
                         available: boolean;
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
+                        canManage: boolean;
                     };
                 };
             };
@@ -18134,6 +18135,7 @@ export interface operations {
                                 summary: string;
                                 /** @enum {string} */
                                 status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                                reason?: string | null;
                             }[];
                         })[];
                     };
@@ -18270,6 +18272,7 @@ export interface operations {
                             proposed?: unknown;
                         };
                         currentVersionMatches: boolean;
+                        reason?: string | null;
                         appliedRef?: unknown;
                     };
                 };
@@ -18304,6 +18307,7 @@ export interface operations {
                         /** @enum {string} */
                         status: "applied" | "stale" | "failed";
                         appliedRef?: unknown;
+                        reason?: string | null;
                     };
                 };
             };

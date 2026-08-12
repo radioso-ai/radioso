@@ -4,6 +4,7 @@ import { DashboardPage } from '@/components/dashboard/shared/dashboard-page'
 import { CopilotChatSurface } from './copilot-chat-surface'
 import type { CopilotAvailability } from '@/lib/api-copilot'
 import { type DashboardRouteState } from '@/lib/dashboard-routes'
+import { RAY_NAME } from '@/lib/ray'
 
 export function CopilotView({
   accountId,
@@ -16,7 +17,7 @@ export function CopilotView({
 }) {
   return (
     <DashboardPage
-      title="Copilot"
+      title={RAY_NAME}
       description="Investigate agent behavior from the dashboard."
       contentClassName="relative flex min-h-0 flex-col p-0"
       contentScroll={false}

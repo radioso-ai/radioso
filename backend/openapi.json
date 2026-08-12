@@ -33921,11 +33921,15 @@
                         "ok",
                         "no_llm_capability"
                       ]
+                    },
+                    "canManage": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "available",
-                    "reason"
+                    "reason",
+                    "canManage"
                   ]
                 }
               }
@@ -34181,6 +34185,12 @@
                                         "dismissed",
                                         "failed",
                                         "stale"
+                                      ]
+                                    },
+                                    "reason": {
+                                      "type": [
+                                        "string",
+                                        "null"
                                       ]
                                     }
                                   },
@@ -34491,6 +34501,12 @@
                     "currentVersionMatches": {
                       "type": "boolean"
                     },
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
                     "appliedRef": {}
                   },
                   "required": [
@@ -34552,7 +34568,13 @@
                         "failed"
                       ]
                     },
-                    "appliedRef": {}
+                    "appliedRef": {},
+                    "reason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
                   },
                   "required": [
                     "status"

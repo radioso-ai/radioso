@@ -47,6 +47,7 @@ export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | 
         status: result.proposal.status,
         preview: result.preview,
         currentVersionMatches: result.currentVersionMatches,
+        reason: result.proposal.reason ?? null,
         appliedRef: result.proposal.appliedRef,
       });
     } catch (error) { next(error); }
@@ -94,6 +95,26 @@ const sessionLocals = (res: Response): { workspaceId: string; accountId: string;
   const locals = res.locals as { workspaceId: string; accountId: string; userId: string; authPrincipal: { type: "session_user"; userId: string } };
   return { workspaceId: locals.workspaceId, accountId: locals.accountId, userId: locals.userId, principal: locals.authPrincipal };
 };
-const availability = async (dependencies: Pick<AppDependencies, "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability" }> => { try { await dependencies.llmCapabilityResolver.resolve("chat", { workspaceId: sessionLocals(res).workspaceId }); return { available: true, reason: "ok" }; } catch { return { available: false, reason: "no_llm_capability" }; } };
+const availability = async (dependencies: Pick<AppDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean }> => {
+  const { workspaceId, accountId, userId, principal } = sessionLocals(res);
+  const canManage = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission: "workspace.agents.manage" });
+  try {
+    await dependencies.llmCapabilityResolver.resolve("chat", { workspaceId });
+    return { available: true, reason: "ok", canManage };
+  } catch {
+    return { available: false, reason: "no_llm_capability", canManage };
+  }
+};
 const presentConversation = (result: { conversation: CopilotConversation; messages: ReadonlyArray<CopilotMessage> }): unknown => ({ id: result.conversation.id, title: result.conversation.title, status: result.conversation.status, messages: result.messages.map((message) => ({ id: message.id, role: message.role, content: message.content, createdAt: message.createdAt.toISOString(), ...(message.role === "copilot" ? { outcome: message.outcome, activity: message.activity ?? [], proposals: message.proposals ?? [] } : {}) })) });
-const sendCopilotSse = async (res: Response, events: AsyncIterable<CopilotSseEvent>): Promise<void> => { res.status(200).setHeader("Content-Type", "text/event-stream"); res.setHeader("Cache-Control", "no-cache"); res.setHeader("Connection", "keep-alive"); res.flushHeaders(); for await (const event of events) { if (!res.writableEnded) res.write(`event: ${event.event}\ndata: ${JSON.stringify(event.data)}\n\n`); } if (!res.writableEnded) res.end(); };
+const sendCopilotSse = async (res: Response, events: AsyncIterable<CopilotSseEvent>): Promise<void> => {
+  const iterator = events[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  res.status(200).setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+  for (let next = first; !next.done; next = await iterator.next()) {
+    if (!res.writableEnded) res.write(`event: ${next.value.event}\ndata: ${JSON.stringify(next.value.data)}\n\n`);
+  }
+  if (!res.writableEnded) res.end();
+};

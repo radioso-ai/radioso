@@ -8,7 +8,7 @@ import {
   workspaceKey,
 } from "./dashboard-fixtures";
 
-test("opens Copilot, streams activity and an answer, resumes history, and deletes it", async ({ page }) => {
+test("opens Ray, streams activity and an answer, resumes history, and deletes it", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page);
 
@@ -29,7 +29,7 @@ test("opens Copilot, streams activity and an answer, resumes history, and delete
     const path = url.pathname.replace("/backend/api/v1", "");
 
     if (path === "/copilot/availability" && request.method() === "GET") {
-      await route.fulfill({ json: { available: true, reason: "ok" } });
+      await route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
       return;
     }
     if (path === "/copilot/conversations" && request.method() === "GET") {
@@ -118,25 +118,26 @@ test("opens Copilot, streams activity and an answer, resumes history, and delete
   });
 
   await page.goto(`/w/${workspaceKey}/copilot`);
-  await expect(page.getByRole("heading", { name: "Copilot" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Copilot" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Hi, I'm Ray ☀️" })).toBeVisible();
 
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Why was retrieval skipped?");
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Why was retrieval skipped?");
   await page.getByRole("button", { name: "Send question" }).click();
 
   await expect(page.getByText("The trace shows retrieval was skipped.").first()).toBeVisible();
-  await page.getByRole("button", { name: /Read 1 source during this turn/ }).click();
+  await expect(page.getByText("Ray").first()).toBeVisible();
+  await expect(page.getByRole("img", { name: "Ray" }).first()).toBeVisible();
+  await page.getByRole("button", { name: /Looked at 1 source/ }).click();
   await expect(page.getByText("Reading conversation trace").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Why was retrieval skipped?" }).click();
-  await expect(page.getByText("Completed").first()).toBeVisible();
 
   await page.getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("heading", { name: "Delete this Ray conversation?" })).toBeVisible();
   await page.getByRole("button", { name: "Delete conversation" }).click();
-  await expect(page.getByText("Your copilot conversations appear here.")).toBeVisible();
+  await expect(page.getByText("Your Ray conversations appear here.")).toBeVisible();
 });
 
-test("summons Copilot from Activity with ambient conversation context and links activity", async ({ page }) => {
+test("summons Ray from Activity with ambient conversation context and links activity", async ({ page }) => {
   const conversationId = "conversation-ambient-1";
   const copilotConversationId = "copilot-ambient-1";
   const historyList = {
@@ -167,7 +168,7 @@ test("summons Copilot from Activity with ambient conversation context and links 
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
     if (path === "/copilot/availability" && request.method() === "GET") {
-      await route.fulfill({ json: { available: true, reason: "ok" } });
+      await route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
       return;
     }
     if (path === "/copilot/conversations" && request.method() === "GET") {
@@ -202,14 +203,15 @@ test("summons Copilot from Activity with ambient conversation context and links 
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await expect(page.getByText("Why did this conversation route to retrieval?").first()).toBeVisible();
-  await page.getByRole("button", { name: "Open Copilot" }).click();
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Explain this conversation");
+  await page.getByRole("button", { name: "Open Ray" }).click();
+  await expect(page.getByRole("heading", { name: "Ray", exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Explain this conversation");
   await page.getByRole("button", { name: "Send question" }).click();
   await expect(page.getByText("The conversation used retrieval.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Why did this conversation route to retrieval?" })).toBeVisible();
 });
 
-test("asks Copilot about selected dashboard text", async ({ page }) => {
+test("asks Ray about selected dashboard text", async ({ page }) => {
   const selectedText = "Why did this conversation route to retrieval?";
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -219,7 +221,7 @@ test("asks Copilot about selected dashboard text", async ({ page }) => {
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
     if (path === "/copilot/conversations") return route.fulfill({ json: { conversations: [] } });
     if (path === "/copilot/turns" && request.method() === "POST") {
       const body = JSON.parse(request.postData() ?? "{}") as { pageContext: { selection: string | null } };
@@ -240,13 +242,13 @@ test("asks Copilot about selected dashboard text", async ({ page }) => {
   });
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await page.getByText(selectedText).first().selectText();
-  await page.getByRole("button", { name: "Ask Copilot" }).click();
-  await expect(page.getByRole("textbox", { name: "Ask Copilot" })).toHaveValue(new RegExp(selectedText));
+  await page.getByRole("button", { name: "Ask Ray" }).click();
+  await expect(page.getByRole("textbox", { name: "Ask Ray" })).toHaveValue(new RegExp(selectedText));
   await page.getByRole("button", { name: "Send question" }).click();
   await expect.poll(() => selectionReceived).toBe(selectedText);
 });
 
-test("retries a failed Copilot turn with the same message", async ({ page }) => {
+test("retries a failed Ray turn with the same message", async ({ page }) => {
   const copilotConversationId = "copilot-retry-1";
   let turnCount = 0;
   let messages: unknown[] = [];
@@ -255,7 +257,7 @@ test("retries a failed Copilot turn with the same message", async ({ page }) => 
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/availability") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Retry this", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Retry this", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === "/copilot/turns" && request.method() === "POST") {
@@ -278,7 +280,7 @@ test("retries a failed Copilot turn with the same message", async ({ page }) => 
     await route.continue();
   });
   await page.goto(`/w/${workspaceKey}/copilot`);
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Try this again");
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Try this again");
   await page.getByRole("button", { name: "Send question" }).click();
   await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Retry", exact: true }).click();
@@ -310,7 +312,7 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
@@ -338,7 +340,7 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   });
 
   await page.goto(`/w/${workspaceKey}/copilot`);
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a refund rule");
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Draft a refund rule");
   await page.getByRole("button", { name: "Send question" }).click();
   await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();
   await expect(page.getByText(detail.summary, { exact: true })).toBeVisible();
@@ -360,7 +362,7 @@ test("dismisses a pending proposal without applying it", async ({ page }) => {
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}/dismiss` && request.method() === "POST") return route.fulfill({ json: { status: "dismissed" } });
@@ -372,7 +374,7 @@ test("dismisses a pending proposal without applying it", async ({ page }) => {
     await route.continue();
   });
   await page.goto(`/w/${workspaceKey}/copilot`);
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a concise style setting");
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Draft a concise style setting");
   await page.getByRole("button", { name: "Send question" }).click();
   await page.getByRole("button", { name: "Dismiss", exact: true }).click();
   await expect(page.getByText("Dismissed", { exact: true })).toBeVisible();
@@ -387,7 +389,7 @@ test("shows the stale explanation when applying a changed proposal", async ({ pa
   await page.route("**/backend/api/v1/copilot/**", async (route) => {
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
-    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "stale" } });
@@ -399,9 +401,9 @@ test("shows the stale explanation when applying a changed proposal", async ({ pa
     await route.continue();
   });
   await page.goto(`/w/${workspaceKey}/copilot`);
-  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a refund approval rule");
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Draft a refund approval rule");
   await page.getByRole("button", { name: "Send question" }).click();
   await page.getByRole("button", { name: "Apply", exact: true }).click();
   await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
-  await expect(page.getByText("The target changed since this proposal was drafted. Ask Copilot to draft it again.", { exact: true })).toBeVisible();
+  await expect(page.getByText("The target changed since this proposal was drafted. Ask Ray to draft it again.", { exact: true })).toBeVisible();
 });

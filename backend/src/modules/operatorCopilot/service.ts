@@ -56,7 +56,7 @@ export interface CopilotRepositoryPort {
   createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal>;
   findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
   attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void>;
-  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null>;
+  updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposalStatus; appliedRef?: unknown | null; reason?: string | null; requiresApplyClaim?: boolean }): Promise<CopilotProposal | null>;
   claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null>;
 }
 
@@ -121,7 +121,7 @@ export class OperatorCopilotService {
       return { status: "applied", appliedRef: result.appliedRef };
     }
     const status = result.outcome === "stale" ? "stale" : "failed";
-    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, true);
+    await this.updateProposalAndAudit(input, proposal, status, null, "copilot.proposal.apply_failed", "failure", result.outcome, true, result.outcome === "failed" ? result.reason : null);
     return result.outcome === "failed" ? { status, reason: result.reason } : { status };
   }
 
@@ -246,9 +246,9 @@ export class OperatorCopilotService {
         message.content.length > HISTORY_MESSAGE_CHARS
           ? `${message.content.slice(0, HISTORY_MESSAGE_CHARS)}…`
           : message.content;
-      return `${message.role === "operator" ? "Operator" : "Copilot"}: ${content}`;
+      return `${message.role === "operator" ? "Operator" : "Ray"}: ${content}`;
     });
-    return `Earlier messages in this copilot conversation:\n${lines.join("\n")}\n\nCurrent operator message:\n`;
+    return `Earlier messages in this copilot conversation:\n${lines.join("\n")}\n\n`;
   }
 
   private async persistTerminal(conversation: CopilotConversation, content: string, outcome: CopilotTurnOutcome, activity: ReadonlyArray<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>, proposals: ReadonlyArray<CopilotProposalCard>): Promise<void> {
@@ -279,8 +279,8 @@ export class OperatorCopilotService {
     return proposal;
   }
 
-  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, requiresApplyClaim = false): Promise<void> {
-    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, requiresApplyClaim });
+  private async updateProposalAndAudit(input: { workspaceId: string; accountId: string; operatorUserId: string }, proposal: CopilotProposal, status: CopilotProposalStatus, appliedRef: unknown | null, eventType: string, eventStatus: "success" | "failure", outcome: string, requiresApplyClaim = false, reason: string | null = null): Promise<void> {
+    const updated = await this.deps.repository.updateProposalOutcome({ id: proposal.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId, status, appliedRef, reason, requiresApplyClaim });
     if (!updated) throw new CopilotConflictError();
     await this.deps.auditService.record({ accountId: input.accountId, workspaceId: input.workspaceId, eventType, eventStatus, metadata: { proposalId: proposal.id, targetType: proposal.targetType, outcome } });
   }

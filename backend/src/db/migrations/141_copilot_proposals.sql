@@ -9,6 +9,7 @@ CREATE TABLE copilot_proposals (
   payload JSONB NOT NULL,
   version_token TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('pending', 'applied', 'dismissed', 'failed', 'stale')) DEFAULT 'pending',
+  failure_reason TEXT NULL,
   apply_started_at TIMESTAMPTZ NULL,
   applied_ref JSONB NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

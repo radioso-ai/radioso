@@ -140,7 +140,7 @@ const targetReference = (
 }
 
 const statusMessage = (state: CopilotProposalCardState, detail: CopilotProposalDetail | null) => {
-  if (state.status === 'stale') return 'The target changed since this proposal was drafted. Ask Copilot to draft it again.'
+  if (state.status === 'stale') return 'The target changed since this proposal was drafted. Ask Ray to draft it again.'
   if (state.status === 'failed') return state.reason ?? detail?.reason ?? detail?.failureReason ?? 'The proposal could not be applied.'
   return null
 }

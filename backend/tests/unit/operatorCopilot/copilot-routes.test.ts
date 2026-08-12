@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import express from "express";
+import request from "supertest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createCopilotRoutes } from "../../../src/modules/operatorCopilot/routes.js";
+import { CopilotConflictError } from "../../../src/modules/operatorCopilot/public.js";
+
+const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
+const USER_ID = "33333333-3333-3333-3333-333333333333";
+const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
+const CONVERSATION_ID = "44444444-4444-4444-4444-444444444444";
 
 describe("createCopilotRoutes", () => {
   it("mounts the fixed copilot endpoint set", () => {
@@ -16,5 +24,93 @@ describe("createCopilotRoutes", () => {
     const paths = router.stack
       .flatMap((layer: { route?: { path?: string } }) => layer.route?.path ? [layer.route.path] : []);
     expect(paths).toEqual(expect.arrayContaining(["/availability", "/conversations", "/turns"]));
+  });
+
+  it("reports agent management permission in availability", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries(
+        (req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter(
+          (part): part is [string, string] => part.length === 2,
+        ),
+      );
+      next();
+    });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: {
+        async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; },
+      },
+      workspaceSessionService: {
+        async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; },
+      },
+      accountAccessService: {
+        async requireActiveMembership() {},
+        async requirePermission() {},
+        hasPermission: vi.fn(async ({ permission }: { permission: string }) => permission !== "workspace.agents.manage"),
+      },
+      llmCapabilityResolver: {
+        async resolve() { return {}; },
+      },
+      operatorCopilotService: {},
+    } as never));
+
+    const response = await request(app)
+      .get("/api/v1/copilot/availability")
+      .set("Cookie", "radioso_session=valid-session");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ available: true, reason: "ok", canManage: false });
+  });
+
+  it("returns a JSON conflict before committing SSE headers when a turn cannot be acquired", async () => {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      req.cookies = Object.fromEntries(
+        (req.header("cookie") ?? "").split(";").map((part) => part.trim().split("=")).filter(
+          (part): part is [string, string] => part.length === 2,
+        ),
+      );
+      next();
+    });
+    app.use("/api/v1/copilot", createCopilotRoutes({
+      env: { SESSION_COOKIE_NAME: "radioso_session" },
+      authService: {
+        async authenticateSession() { return { accountId: ACCOUNT_ID, userId: USER_ID, sessionId: "session-id" }; },
+      },
+      workspaceSessionService: {
+        async resolve() { return { accountId: ACCOUNT_ID, workspaceId: WORKSPACE_ID }; },
+      },
+      accountAccessService: {
+        async requireActiveMembership() {},
+        async requirePermission() {},
+        hasPermission: vi.fn(async () => true),
+      },
+      llmCapabilityResolver: {
+        async resolve() { return {}; },
+      },
+      operatorCopilotService: {
+        runTurn: async function* () { throw new CopilotConflictError(); },
+      },
+    } as never));
+    app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      const appError = error as { statusCode?: number; code?: string };
+      res.status(appError.statusCode ?? 500).json({ error: { code: appError.code ?? "internal_error" } });
+    });
+
+    const response = await request(app)
+      .post("/api/v1/copilot/turns")
+      .set("Cookie", "radioso_session=valid-session")
+      .send({
+        conversationId: CONVERSATION_ID,
+        message: "Try this follow-up",
+        pageContext: { view: "history", agentId: null, conversationId: null, selection: null, entities: [] },
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.headers["content-type"]).toContain("application/json");
+    expect(response.body).toEqual({ code: "conflict" });
   });
 });

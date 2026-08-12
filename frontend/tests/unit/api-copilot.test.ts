@@ -19,7 +19,7 @@ describe('copilotApi', () => {
 
   it('uses dashboard session authorization for all CRUD adapters', async () => {
     requestMock
-      .mockResolvedValueOnce({ available: true, reason: 'ok' })
+      .mockResolvedValueOnce({ available: true, reason: 'ok', canManage: true })
       .mockResolvedValueOnce({ conversations: [] })
       .mockResolvedValueOnce({ id: 'conversation-1', title: null, status: 'idle', createdAt: 'now', updatedAt: 'now', messages: [] })
       .mockResolvedValueOnce({ id: 'proposal-1', targetType: 'directive', targetLabel: 'Refund policy', summary: 'Add a refund rule', status: 'pending', preview: { current: null, proposed: { name: 'Refund policy' } }, currentVersionMatches: true })

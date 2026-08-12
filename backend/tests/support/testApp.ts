@@ -2121,6 +2121,7 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
         targetLabel: proposal.targetType === "directive" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
         summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : "",
         status: proposal.status,
+        reason: proposal.reason ?? null,
       })),
     }));
   }
@@ -2139,7 +2140,7 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
 
   async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> {
     const createdAt = new Date();
-    const proposal: CopilotProposal = { ...input, id: randomUUID(), messageId: null, status: "pending", appliedRef: null, createdAt, updatedAt: createdAt };
+    const proposal: CopilotProposal = { ...input, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
     this.proposals.push(proposal);
     return proposal;
   }
@@ -2152,10 +2153,10 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
     this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
   }
 
-  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null }): Promise<CopilotProposal | null> {
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> {
     const proposal = await this.findProposal(input);
     if (!proposal || proposal.status !== "pending") return null;
-    const updated = { ...proposal, status: input.status, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
+    const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
     this.proposals[this.proposals.indexOf(proposal)] = updated;
     return updated;
   }

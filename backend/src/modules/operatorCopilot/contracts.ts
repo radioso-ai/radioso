@@ -62,6 +62,7 @@ export interface CopilotProposal {
   readonly payload: unknown;
   readonly versionToken: string;
   readonly status: CopilotProposalStatus;
+  readonly reason?: string | null;
   readonly appliedRef: unknown | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
@@ -73,6 +74,7 @@ export interface CopilotProposalCard {
   readonly targetLabel: string;
   readonly summary: string;
   readonly status: CopilotProposalStatus;
+  readonly reason?: string | null;
 }
 
 export interface CopilotProposalAdapter {

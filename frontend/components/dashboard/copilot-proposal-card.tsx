@@ -119,7 +119,7 @@ const formatValue = (value: unknown) => {
   }
 }
 
-const targetReference = (
+export const targetReference = (
   summary: CopilotProposalSummary,
   detail: CopilotProposalDetail | null,
   appliedRef: Record<string, unknown> | null,
@@ -131,6 +131,13 @@ const targetReference = (
   if (summary.targetType === 'agent_setting') {
     const id = agentId
     return id ? { entity: { type: 'agent', id }, agentId: id } : null
+  }
+  if (summary.targetType === 'routine') {
+    const routineId = applied.routineId ?? ref.routineId ?? ref.id
+    return typeof routineId === 'string' ? {
+      entity: { type: 'routine', id: routineId },
+      ...(agentId ? { agentId } : {}),
+    } : null
   }
   const directiveId = applied.directiveId ?? ref.directiveId ?? ref.id
   return typeof directiveId === 'string' ? {

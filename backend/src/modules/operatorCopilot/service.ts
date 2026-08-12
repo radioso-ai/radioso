@@ -294,7 +294,7 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
 const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
-  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting") && typeof output.targetLabel === "string" && typeof output.summary === "string";
+  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting" || output.targetType === "routine") && typeof output.targetLabel === "string" && typeof output.summary === "string";
 };
 
 const trackActivity = (trace: AgentTraceEvent, labels: ReadonlyMap<string, string>, entitiesByToolCall: ReadonlyMap<string, CopilotEntityReference>, activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): void => {

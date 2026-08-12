@@ -43,7 +43,7 @@ import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js"
 import { AgenticCapabilityRunner, DefaultAgentRuntime, TextRoutedToolCallingGateway } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -339,6 +339,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,

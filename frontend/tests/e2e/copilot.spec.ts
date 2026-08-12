@@ -353,6 +353,86 @@ test("reviews a directive proposal, expands its diff, applies it, and opens the 
   await expect(page.getByRole("button", { name: `Open ${targetLabel}`, exact: true })).toBeVisible();
 });
 
+test("applies a routine proposal and opens the routine editor", async ({ page }) => {
+  const copilotConversationId = "copilot-routine-proposal-apply";
+  const proposalId = "proposal-routine-apply-1";
+  const routineId = "55555555-5555-4555-9555-000000000901";
+  const targetLabel = "Refund workflow";
+  const detail = {
+    id: proposalId,
+    targetType: "routine",
+    targetLabel,
+    summary: "Create a draft refund workflow.",
+    status: "pending",
+    targetRef: { agentId: defaultAgentId, routineId: null },
+    preview: {
+      current: null,
+      proposed: { name: targetLabel, steps: [{ type: "message", text: "Review the refund request." }] },
+    },
+    currentVersionMatches: true,
+  };
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routines: [{
+      id: routineId,
+      lineageId: routineId,
+      status: "draft",
+      version: 1,
+      agentId: defaultAgentId,
+      name: targetLabel,
+      activation: { triggerDescription: "Customer asks for a refund.", gateRef: null, priority: 20, reentryMode: "once_per_conversation" },
+      slots: [],
+      steps: [{ stableStepId: "review_request", kind: "chat", instruction: "Review the refund request.", toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "review_request", toRef: "done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete", instruction: "All set.", ordinal: 0 }],
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    }],
+  });
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok", canManage: true } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { routineId } } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string; pageContext: { view: string | null; agentId: string | null } };
+      expect(body.pageContext).toEqual(expect.objectContaining({ view: "copilot", agentId: defaultAgentId }));
+      messages = [
+        { id: "operator-routine-proposal-apply", role: "operator", content: body.message, createdAt: nowIso },
+        { id: "answer-routine-proposal-apply", role: "copilot", content: "I drafted a refund workflow for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "routine", targetLabel, summary: detail.summary, status: "pending" }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-routine-proposal-apply" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "routine", targetLabel, summary: detail.summary })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted a refund workflow for review.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot?agent=${defaultAgentId}`);
+  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Draft a refund workflow");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();
+  await expect(page.getByText(detail.summary, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: `Open ${targetLabel}`, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/${routineId}(\\?|$)`));
+});
+
 test("dismisses a pending proposal without applying it", async ({ page }) => {
   const copilotConversationId = "copilot-proposal-dismiss";
   const proposalId = "proposal-dismiss-1";

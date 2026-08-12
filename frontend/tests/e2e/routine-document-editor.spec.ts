@@ -41,7 +41,7 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a customer asks whether an order is eligible.");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await documentEditor.getByRole("button", { name: "+ Step", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Chat" }).click();
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
   const chatInstruction = documentEditor.getByLabel("Step 1 instruction");
@@ -53,7 +53,7 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await documentEditor.getByLabel("Slot order_total type").selectOption("number");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await documentEditor.getByRole("button", { name: "+ Step", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Check eligibility" }).first().click();
   const skillStep = documentEditor.getByRole("button", { name: "Check eligibility", exact: true }).locator("xpath=ancestor::li[1]");
   await expect(skillStep.getByText("uses nothing → sets nothing")).toBeVisible();
@@ -123,5 +123,5 @@ test("author, validate, and read a routine through the Document tab", async ({ p
     expect(editableRestText).toContain(line);
     expect(readerText).toContain(line);
   }
-  await expect(page.getByRole("button", { name: "+ Step", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Step", exact: true })).toHaveCount(0);
 });

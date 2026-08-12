@@ -285,3 +285,123 @@ test("retries a failed Copilot turn with the same message", async ({ page }) => 
   await expect(page.getByText("The retry completed.")).toBeVisible();
   expect(turnCount).toBe(2);
 });
+
+test("reviews a directive proposal, expands its diff, applies it, and opens the target", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-apply";
+  const proposalId = "proposal-apply-1";
+  const targetLabel = "Refund policy";
+  const detail = {
+    id: proposalId,
+    targetType: "directive",
+    targetLabel,
+    summary: "Require approval before issuing a refund.",
+    status: "pending",
+    targetRef: { agentId: defaultAgentId, directiveId: "directive-refund-1" },
+    preview: {
+      current: { action: "Issue a refund", priority: 10 },
+      proposed: { action: "Require approval before issuing a refund", priority: 20 },
+    },
+    currentVersionMatches: true,
+  };
+  let messages: unknown[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund rule", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { directiveId: "directive-refund-1" } } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string; pageContext: { view: string | null } };
+      expect(body.pageContext).toEqual(expect.objectContaining({ view: "copilot" }));
+      messages = [
+        { id: "operator-proposal-apply", role: "operator", content: body.message, createdAt: nowIso },
+        { id: "answer-proposal-apply", role: "copilot", content: "I drafted a refund directive for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "directive", targetLabel, summary: detail.summary, status: "pending" }] },
+      ];
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: [
+          `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-proposal-apply" })}`,
+          `event: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "directive", targetLabel, summary: detail.summary })}`,
+          "event: chunk\ndata: {\"text\":\"I drafted a refund directive for review.\"}",
+          "event: outcome\ndata: {\"status\":\"completed\"}",
+          "event: done\ndata: {}",
+        ].join("\n\n") + "\n\n",
+      });
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a refund rule");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();
+  await expect(page.getByText(detail.summary, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: `Show proposed changes for ${targetLabel}`, exact: true }).click();
+  await expect(page.getByText("Current", { exact: true })).toBeVisible();
+  await expect(page.getByText("Require approval before issuing a refund", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("Applied", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `Open ${targetLabel}`, exact: true })).toBeVisible();
+});
+
+test("dismisses a pending proposal without applying it", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-dismiss";
+  const proposalId = "proposal-dismiss-1";
+  let messages: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Dismiss proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}/dismiss` && request.method() === "POST") return route.fulfill({ json: { status: "dismissed" } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string };
+      messages = [{ id: "operator-proposal-dismiss", role: "operator", content: body.message, createdAt: nowIso }, { id: "answer-proposal-dismiss", role: "copilot", content: "Review this setting change.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "agent_setting", targetLabel: "Answer style", summary: "Use a concise answer style.", status: "pending" }] }];
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-proposal-dismiss" })}\n\nevent: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "agent_setting", targetLabel: "Answer style", summary: "Use a concise answer style." })}\n\nevent: chunk\ndata: {"text":"Review this setting change."}\n\nevent: outcome\ndata: {"status":"completed"}\n\nevent: done\ndata: {}\n\n` });
+    }
+    await route.continue();
+  });
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a concise style setting");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Dismiss", exact: true }).click();
+  await expect(page.getByText("Dismissed", { exact: true })).toBeVisible();
+});
+
+test("shows the stale explanation when applying a changed proposal", async ({ page }) => {
+  const copilotConversationId = "copilot-proposal-stale";
+  const proposalId = "proposal-stale-1";
+  let messages: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/copilot/**", async (route) => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname.replace("/backend/api/v1", "");
+    if (path === "/copilot/availability" && request.method() === "GET") return route.fulfill({ json: { available: true, reason: "ok" } });
+    if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
+    if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Stale proposal", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "stale" } });
+    if (path === "/copilot/turns" && request.method() === "POST") {
+      const body = JSON.parse(request.postData() ?? "{}") as { message: string };
+      messages = [{ id: "operator-proposal-stale", role: "operator", content: body.message, createdAt: nowIso }, { id: "answer-proposal-stale", role: "copilot", content: "This draft needs review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "directive", targetLabel: "Refund policy", summary: "Require approval for refunds.", status: "pending" }] }];
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body: `event: conversation\ndata: ${JSON.stringify({ conversationId: copilotConversationId, turnId: "turn-proposal-stale" })}\n\nevent: proposal\ndata: ${JSON.stringify({ proposalId, targetType: "directive", targetLabel: "Refund policy", summary: "Require approval for refunds." })}\n\nevent: chunk\ndata: {"text":"This draft needs review."}\n\nevent: outcome\ndata: {"status":"completed"}\n\nevent: done\ndata: {}\n\n` });
+    }
+    await route.continue();
+  });
+  await page.goto(`/w/${workspaceKey}/copilot`);
+  await page.getByRole("textbox", { name: "Ask Copilot" }).fill("Draft a refund approval rule");
+  await page.getByRole("button", { name: "Send question" }).click();
+  await page.getByRole("button", { name: "Apply", exact: true }).click();
+  await page.getByRole("button", { name: "Apply proposal", exact: true }).click();
+  await expect(page.getByText("The target changed since this proposal was drafted. Ask Copilot to draft it again.", { exact: true })).toBeVisible();
+});

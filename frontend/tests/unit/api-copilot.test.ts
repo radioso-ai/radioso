@@ -22,6 +22,9 @@ describe('copilotApi', () => {
       .mockResolvedValueOnce({ available: true, reason: 'ok' })
       .mockResolvedValueOnce({ conversations: [] })
       .mockResolvedValueOnce({ id: 'conversation-1', title: null, status: 'idle', createdAt: 'now', updatedAt: 'now', messages: [] })
+      .mockResolvedValueOnce({ id: 'proposal-1', targetType: 'directive', targetLabel: 'Refund policy', summary: 'Add a refund rule', status: 'pending', preview: { current: null, proposed: { name: 'Refund policy' } }, currentVersionMatches: true })
+      .mockResolvedValueOnce({ status: 'applied', appliedRef: { directiveId: 'directive-1' } })
+      .mockResolvedValueOnce({ status: 'dismissed' })
       .mockResolvedValueOnce(undefined)
 
     const { copilotApi } = await import('@/lib/api-copilot')
@@ -29,6 +32,9 @@ describe('copilotApi', () => {
     await copilotApi.getAvailability()
     await copilotApi.listConversations()
     await copilotApi.getConversation('conversation-1')
+    await copilotApi.getProposal('proposal-1')
+    await copilotApi.applyProposal('proposal-1')
+    await copilotApi.dismissProposal('proposal-1')
     await copilotApi.deleteConversation('conversation-1')
 
     expect(requestMock).toHaveBeenNthCalledWith(
@@ -51,6 +57,24 @@ describe('copilotApi', () => {
     )
     expect(requestMock).toHaveBeenNthCalledWith(
       4,
+      '/copilot/proposals/proposal-1',
+      { method: 'GET', signal: undefined },
+      { withSession: true },
+    )
+    expect(requestMock).toHaveBeenNthCalledWith(
+      5,
+      '/copilot/proposals/proposal-1/apply',
+      { method: 'POST' },
+      { withSession: true },
+    )
+    expect(requestMock).toHaveBeenNthCalledWith(
+      6,
+      '/copilot/proposals/proposal-1/dismiss',
+      { method: 'POST' },
+      { withSession: true },
+    )
+    expect(requestMock).toHaveBeenNthCalledWith(
+      7,
       '/copilot/conversations/conversation-1',
       { method: 'DELETE' },
       { withSession: true },
@@ -143,6 +167,20 @@ describe('streamCopilotEvents', () => {
     let received: unknown
     await streamCopilotEvents(response, { onActivity: (event) => { received = event.entity } })
     expect(received).toEqual(entity)
+  })
+
+  it('parses proposal events and leaves them pending until the server reports a status', async () => {
+    const response = new Response(
+      'event: conversation\ndata: {"conversationId":"conversation-1","turnId":"turn-1"}\n\n' +
+      'event: proposal\ndata: {"proposalId":"proposal-1","targetType":"directive","targetLabel":"Refund policy","summary":"Add a refund rule"}\n\n' +
+      'event: outcome\ndata: {"status":"completed"}\n\n' +
+      'event: done\ndata: {}\n\n',
+      { headers: { 'content-type': 'text/event-stream' } },
+    )
+    const { streamCopilotEvents } = await import('@/lib/api-copilot')
+    let proposal: unknown
+    await streamCopilotEvents(response, { onProposal: (event) => { proposal = event } })
+    expect(proposal).toEqual({ proposalId: 'proposal-1', targetType: 'directive', targetLabel: 'Refund policy', summary: 'Add a refund rule' })
   })
 })
 

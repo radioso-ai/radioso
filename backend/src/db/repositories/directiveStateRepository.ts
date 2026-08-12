@@ -1,6 +1,7 @@
 import type { DirectiveFiring, DirectiveFiringState, DirectiveStateStore } from "../../modules/directives/public.js";
 import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import { sql } from "kysely";
 
 interface DirectiveStateRow {
   session_id: string;
@@ -64,7 +65,10 @@ export class DirectiveStateRepository implements DirectiveStateStore {
   }
 
   async save(input: { sessionId: string; state: DirectiveFiringState }): Promise<void> {
-    const expiresAt = new Date(Date.now() + this.ttlMs);
+    // Expiry is written and read against the SAME clock (the database's):
+    // stamping app time here while load() compares against now() lets a few
+    // milliseconds of clock skew resurrect expired state.
+    const expiresAt = sql<Date>`now() + make_interval(secs => ${this.ttlMs / 1000})`;
     // One row per conversation — each committed turn upserts the advanced state.
     await this.db
       .insertInto("directive_states")

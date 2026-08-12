@@ -422,6 +422,23 @@ export interface CopilotMessages {
   role: string;
 }
 
+export interface CopilotProposals {
+  apply_started_at: Timestamp | null;
+  applied_ref: Json | null;
+  conversation_id: string;
+  created_at: Generated<Timestamp>;
+  id: string;
+  message_id: string | null;
+  operator_user_id: string;
+  payload: Json;
+  status: Generated<string>;
+  target_ref: Json;
+  target_type: string;
+  updated_at: Generated<Timestamp>;
+  version_token: string;
+  workspace_id: string;
+}
+
 export interface DirectiveStates {
   created_at: Generated<Timestamp>;
   expires_at: Timestamp | null;
@@ -1207,6 +1224,7 @@ export interface DB {
   conversations: Conversations;
   copilot_conversations: CopilotConversations;
   copilot_messages: CopilotMessages;
+  copilot_proposals: CopilotProposals;
   directive_states: DirectiveStates;
   document_processing_jobs: DocumentProcessingJobs;
   document_sources: DocumentSources;

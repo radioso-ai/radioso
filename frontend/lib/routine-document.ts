@@ -1,4 +1,19 @@
-import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockGuard, type RoutineInputBinding } from '@/lib/routine-prose'
+import { instructionToBlockSegments } from '@radioso/routine-markdown'
+
+import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
+
+const TARGET_MESSAGE_LIMIT = 40
+
+export function documentTextToSegments(text: string): RoutineBlockInstructionSegment[] {
+  return instructionToBlockSegments(text)
+}
+
+export function formatBranchTargetLabel(ending: Pick<RoutineBlockEnding, 'kind' | 'instruction' | 'stableStepId'>): string {
+  const kind = ending.kind === 'complete' ? 'Finish' : 'Hand off'
+  const message = ending.instruction || ending.stableStepId
+  const truncatedMessage = message.length > TARGET_MESSAGE_LIMIT ? `${message.slice(0, TARGET_MESSAGE_LIMIT - 1)}…` : message
+  return `${kind}: ${truncatedMessage}`
+}
 
 export function guardToSentence(guard: Pick<RoutineBlockGuard, 'kind' | 'guardText' | 'outcomeStatus' | 'counterLimit' | 'fieldRef' | 'fieldOp' | 'fieldValue' | 'fieldValues' | 'fieldUnit'> & { slotKeys?: string[] }, slotNames: Map<string, string>): string {
   switch (guard.kind) {

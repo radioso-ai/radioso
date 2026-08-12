@@ -5,7 +5,7 @@ import { ArrowRight, Bot, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, 
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
-import { formatBindingLine, guardToSentence } from '@/lib/routine-document'
+import { documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
 export const instructionIsEmpty = (segments: RoutineBlockInstructionSegment[]) =>
@@ -16,6 +16,10 @@ export function InstructionSentence({ segments, editable = false }: { segments: 
     return editable ? <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">Write what this step should do…</p> : null
   }
   return <p className="leading-7 text-foreground">{segments.map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</p>
+}
+
+function InlineSlotText({ text }: { text: string }) {
+  return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</>
 }
 
 function EditHint({ editable }: { editable: boolean }) {
@@ -29,7 +33,7 @@ export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }:
   editor?: ReactNode
 }) {
   const trigger = doc.activation.triggerDescription || 'an activation trigger is met'
-  return <header className="border-b border-border pb-4"><h2 className="text-xl font-semibold tracking-tight text-foreground">{doc.name || 'Untitled routine'}</h2>{editor ?? <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group mt-1 block text-left text-sm text-muted-foreground disabled:cursor-default"><span>Starts when {trigger}.</span><EditHint editable={editable} /></button>}</header>
+  return <header className="border-b border-border pb-4"><h2 className="text-xl font-semibold tracking-tight text-foreground">{doc.name || 'Untitled routine'}</h2>{editor ?? <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group mt-3 block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span><EditHint editable={editable} /></button>}</header>
 }
 
 export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor }: {
@@ -44,7 +48,7 @@ export function RoutineInformationSection({ slots, editable = false, editingSlot
 
 function BranchTarget({ branch }: { branch: RoutineBlockBranch }) {
   if (branch.target.kind === 'step') return <span>continue to {branch.target.stableStepId}</span>
-  if (branch.target.ending) return <span className="inline-flex items-center gap-1">{branch.target.ending.kind === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CornerUpRight className="h-3.5 w-3.5" />}{branch.target.ending.kind === 'complete' ? 'finish' : 'hand off'}{branch.target.ending.instruction ? `: ${branch.target.ending.instruction}` : ''}</span>
+  if (branch.target.ending) return <span className="inline-flex items-center gap-1">{branch.target.ending.kind === 'complete' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CornerUpRight className="h-3.5 w-3.5" />}{branch.target.ending.kind === 'complete' ? 'finish' : 'hand off'}{branch.target.ending.instruction ? <><span>:</span><InlineSlotText text={branch.target.ending.instruction} /></> : null}</span>
   return <span className="inline-flex items-center gap-1 text-muted-foreground"><CircleDashed className="h-3.5 w-3.5" />see {branch.target.terminalId} ending</span>
 }
 
@@ -58,7 +62,7 @@ export function RoutineBranchRow({ branch, slotNames, editable = false, editing 
 }) {
   const branchIsAi = branch.guard.provenance === 'judgment'
   if (editing) return <li className="rounded-md border border-border p-2 text-sm">{editor}</li>
-  return <li className="rounded-md bg-muted/50 p-2 text-sm"><button type="button" aria-label={branchIsAi ? 'AI decides' : 'Rule'} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default"><Badge variant="outline" className={branchIsAi ? 'border-violet-300 bg-violet-100 text-violet-900 dark:border-violet-500/70 dark:bg-violet-500/15 dark:text-violet-100' : 'border-indigo-300 bg-indigo-100 text-indigo-900 dark:border-indigo-500/70 dark:bg-indigo-500/15 dark:text-indigo-100'}>{branchIsAi ? 'AI decides' : 'Rule'}</Badge><span>{guardToSentence(branch.guard, slotNames)}</span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /><BranchTarget branch={branch} /><EditHint editable={editable} /></button></li>
+  return <li className="rounded-md bg-muted/50 p-2 text-sm"><button type="button" aria-label={branchIsAi ? 'AI decides' : 'Rule'} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default"><Badge variant="outline" className={branchIsAi ? 'border-violet-300 bg-violet-100 text-violet-900 dark:border-violet-500/70 dark:bg-violet-500/15 dark:text-violet-100' : 'border-indigo-300 bg-indigo-100 text-indigo-900 dark:border-indigo-500/70 dark:bg-indigo-500/15 dark:text-indigo-100'}>{branchIsAi ? 'AI decides' : 'Rule'}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /><BranchTarget branch={branch} /><EditHint editable={editable} /></button></li>
 }
 
 export function RoutineStepRow({ step, stepIndex, slotNames, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor }: {
@@ -93,5 +97,5 @@ export function RoutineEndingsSection({ endings, editable = false, editingEnding
   renderEditor?: (ending: RoutineBlockEnding) => ReactNode
 }) {
   if (endings.length === 0) return null
-  return <section aria-labelledby="routine-document-endings"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3><ul className="mt-2 space-y-2">{endings.map((ending) => <li key={ending.stableStepId} className="rounded-md bg-muted/50 p-3 text-sm">{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default">{ending.kind === 'complete' ? <CheckCircle2 className="h-4 w-4" /> : <CornerUpRight className="h-4 w-4" />}<span>{ending.kind === 'complete' ? 'Finish' : 'Hand off'}{ending.instruction ? `: ${ending.instruction}` : ''}</span><EditHint editable={editable} /></button>}</li>)}</ul></section>
+  return <section aria-labelledby="routine-document-endings"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3><ul className="mt-2 space-y-2">{endings.map((ending) => <li key={ending.stableStepId} className="rounded-md bg-muted/50 p-3 text-sm">{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default">{ending.kind === 'complete' ? <CheckCircle2 className="h-4 w-4" /> : <CornerUpRight className="h-4 w-4" />}<span className="inline-flex items-center gap-1">{ending.kind === 'complete' ? 'Finish' : 'Hand off'}{ending.instruction ? <><span>:</span><InlineSlotText text={ending.instruction} /></> : null}</span><EditHint editable={editable} /></button>}</li>)}</ul></section>
 }

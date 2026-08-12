@@ -35,11 +35,52 @@ export interface CopilotPageEntity {
 export interface CopilotAvailability {
   available: boolean
   reason: 'ok' | 'no_llm_capability'
+  /** Optional capability detail supplied by permission-aware dashboard shells. */
+  canManage?: boolean
 }
 
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting'
+export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
+
+export interface CopilotProposalSummary {
+  id: string
+  targetType: CopilotProposalTargetType
+  targetLabel: string
+  summary: string
+  status: CopilotProposalStatus
+  reason?: string | null
+}
+
+export interface CopilotProposalPreview {
+  current: unknown | null
+  proposed: unknown
+}
+
+export interface CopilotProposalTargetReference {
+  agentId?: string | null
+  directiveId?: string | null
+  settingKey?: string | null
+  id?: string | null
+}
+
+export interface CopilotProposalDetail extends CopilotProposalSummary {
+  targetRef?: CopilotProposalTargetReference
+  target?: CopilotProposalTargetReference
+  preview: CopilotProposalPreview
+  currentVersionMatches: boolean
+  reason?: string | null
+  failureReason?: string | null
+  appliedRef?: Record<string, unknown> | null
+}
+
+export interface CopilotProposalApplyResult {
+  status: Extract<CopilotProposalStatus, 'applied' | 'failed' | 'stale'>
+  appliedRef?: Record<string, unknown> | null
+  reason?: string | null
+}
 
 export interface CopilotConversationSummary {
   id: string
@@ -74,6 +115,7 @@ export interface CopilotAnswerMessage {
   createdAt: string
   outcome: CopilotOutcomeStatus
   activity: CopilotActivitySummary[]
+  proposals: CopilotProposalSummary[]
 }
 
 export type CopilotMessage = CopilotOperatorMessage | CopilotAnswerMessage
@@ -102,6 +144,13 @@ export interface CopilotActivityEvent {
   entity?: CopilotEntityReference
 }
 
+export interface CopilotProposalEvent {
+  proposalId: string
+  targetType: CopilotProposalTargetType
+  targetLabel: string
+  summary: string
+}
+
 export interface CopilotChunkEvent {
   text: string
 }
@@ -120,6 +169,7 @@ export interface CopilotStreamResult {
 export interface CopilotStreamHandlers {
   onConversation?: (event: CopilotConversationEvent) => void
   onActivity?: (event: CopilotActivityEvent) => void
+  onProposal?: (event: CopilotProposalEvent) => void
   onChunk?: (event: CopilotChunkEvent) => void
   onOutcome?: (event: CopilotOutcomeEvent) => void
   onDone?: () => void
@@ -234,6 +284,9 @@ export const streamCopilotEvents = async (
       case 'activity':
         handlers.onActivity?.(payload as unknown as CopilotActivityEvent)
         break
+      case 'proposal':
+        handlers.onProposal?.(payload as unknown as CopilotProposalEvent)
+        break
       case 'chunk': {
         const event = payload as unknown as CopilotChunkEvent
         answer += event.text
@@ -286,6 +339,18 @@ export const copilotApi = {
 
   getConversation(conversationId: string, signal?: AbortSignal): Promise<CopilotConversationDetail> {
     return request(copilotPath(`/conversations/${encodeURIComponent(conversationId)}`), { method: 'GET', signal }, { withSession: true })
+  },
+
+  getProposal(proposalId: string, signal?: AbortSignal): Promise<CopilotProposalDetail> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}`), { method: 'GET', signal }, { withSession: true })
+  },
+
+  applyProposal(proposalId: string): Promise<CopilotProposalApplyResult> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/apply`), { method: 'POST' }, { withSession: true })
+  },
+
+  dismissProposal(proposalId: string): Promise<{ status: 'dismissed' }> {
+    return request(copilotPath(`/proposals/${encodeURIComponent(proposalId)}/dismiss`), { method: 'POST' }, { withSession: true })
   },
 
   async deleteConversation(conversationId: string): Promise<void> {

@@ -49,6 +49,26 @@ On an empty thread, suggested questions adapt to the view and focused entity.
 For example, a focused conversation offers to explain what happened in that
 conversation.
 
+## Review proposals
+
+When Copilot identifies a configuration change, it can draft a proposal for a
+directive or an agent setting. The proposal card names the target, summarizes
+the change, and shows the current and proposed values before anything is
+written. Expand **Show changes** to inspect the field-level diff.
+
+Operators with `workspace.agents.manage` can choose **Apply** and confirm the
+change. Copilot sends the confirmed proposal through the same guarded
+management service used by the dashboard. Operators with read access can
+review or dismiss a pending proposal; the Apply action is available only when
+their session can manage agents.
+
+Each proposal is checked against the target version captured while it was
+drafted. If the target changed in the meantime, the card becomes **Stale** and
+explains that the change was not applied. Ask Copilot to draft the change again
+so the proposal reflects the current configuration. Applied proposals link to
+the target entity, while failed proposals show the reason returned by the
+management service.
+
 ## Follow a running turn
 
 While Copilot works, activity lines show the UI-safe capability label and its
@@ -94,6 +114,8 @@ setup state with a link to **Settings → Providers**.
   running turn to finish.
 - **A tool activity fails** — Copilot continues where it can and marks the
   affected turn honestly. The answer identifies the data it could not access.
+- **A proposal is stale** — the target changed after Copilot drafted it. Ask
+  Copilot to prepare the change again and review the updated diff.
 
 ## Read next
 

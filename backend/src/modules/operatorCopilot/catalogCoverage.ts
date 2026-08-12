@@ -35,4 +35,10 @@ const excluded = { excluded: "Outside the initial read-only operator copilot cat
 export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...catalogToolCoverage,
   ...Object.fromEntries(excludedOperationIds.map((operationId) => [operationId, excluded])),
+  createAgentDirective: "propose_directive",
+  updateAgentDirective: "propose_directive",
+  updateAgent: "propose_agent_setting",
+  getCopilotProposal: { excluded: "Operator proposal preview is a read-only UI endpoint, not a catalog tool." },
+  applyCopilotProposal: { excluded: "Operator-confirmed proposal application is intentionally outside the tool loop." },
+  dismissCopilotProposal: { excluded: "Operator proposal dismissal is intentionally outside the tool loop." },
 };

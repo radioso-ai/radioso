@@ -43,6 +43,7 @@ import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js"
 import { AgenticCapabilityRunner, DefaultAgentRuntime, TextRoutedToolCallingGateway } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -335,11 +336,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     abuseControlService: chat.abuseControlService,
     embeddingBindingResolver,
   });
+  const copilotProposalAdapters = [
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
+    createAgentSettingCopilotProposalAdapter({ agentService }),
+  ] as const;
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }) }),
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
+    proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
     tools: createCopilotToolCatalog({
       agentService,
@@ -349,6 +355,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       evalResultsService: evalCaseService,
       qualitySignalsService,
       audiencePulseService,
+      proposalRepository: repositories.copilotRepository,
+      proposalAdapters: copilotProposalAdapters,
+      auditService: infrastructure.auditService,
     }),
   });
   // Per-message facet extraction (topic census). `composition.facetExtraction` lets a

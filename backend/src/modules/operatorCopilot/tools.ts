@@ -2,7 +2,14 @@ import { z } from "zod";
 
 import type { AgentService } from "../agents/public.js";
 import { routineToPortableDocument, type RoutineDefinitionService } from "../routines/public.js";
-import type { CopilotToolDescriptor } from "./contracts.js";
+import type {
+  CopilotAgentSettingProposalAdapter,
+  CopilotAuditPort,
+  CopilotDirectiveProposalAdapter,
+  CopilotProposal,
+  CopilotRepositoryPort,
+  CopilotToolDescriptor,
+} from "./contracts.js";
 import { boundConversationPayload, boundPayload } from "./boundedPayload.js";
 
 const idSchema = z.string().uuid();
@@ -114,6 +121,99 @@ export const createUs2CopilotTools = (deps: {
     createTool: (context) => ({ name: "audience_topics", description: "Read the latest stored Audience Pulse topic census. This never starts a new analysis.", inputSchema: z.object({}), outputSchema: z.object({ result: unknownRecord }), invoke: async () => boundPayload({ result: asRecord(await deps.audiencePulseService.read({ accountId: context.accountId, userId: context.operatorUserId, workspaceId: context.workspaceId })) }) }),
   },
 ];
+
+const proposalOutputSchema = z.object({
+  proposalId: z.string().uuid(),
+  targetType: z.enum(["directive", "agent_setting"]),
+  targetLabel: z.string(),
+  summary: z.string(),
+});
+
+export const createUs3CopilotTools = (deps: {
+  readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter>;
+  readonly auditService: CopilotAuditPort;
+}): ReadonlyArray<CopilotToolDescriptor> => {
+  const directiveAdapter = proposalAdapter(deps.proposalAdapters, "directive");
+  const settingAdapter = proposalAdapter(deps.proposalAdapters, "agent_setting");
+  return [
+    {
+      name: "propose_directive", uiLabel: "Drafting a directive", contributingModule: "directives", requiredPermission: "workspace.agents.manage",
+      description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
+      inputSchema: z.object({ agentId: idSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+      outputSchema: proposalOutputSchema,
+      createTool: (context) => ({
+        name: "propose_directive",
+        description: "Draft a directive proposal for operator review. It does not change configuration.",
+        inputSchema: z.object({ agentId: idSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+        outputSchema: proposalOutputSchema,
+        invoke: async ({ agentId, directiveId, intent }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
+          const draft = await directiveAdapter.draft(context.workspaceId, targetRef, intent);
+          const versionToken = await directiveAdapter.readVersionToken(context.workspaceId, targetRef);
+          const proposal = await deps.proposalRepository.createProposal({
+            workspaceId: context.workspaceId,
+            operatorUserId: context.operatorUserId,
+            conversationId: requiredCopilotConversation(context),
+            targetType: "directive",
+            targetRef,
+            payload: draft.payload,
+            versionToken,
+          });
+          await recordProposalCreated(deps.auditService, context, proposal);
+          return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: draft.targetLabel, summary: draft.summary };
+        },
+      }),
+    },
+    {
+      name: "propose_agent_setting", uiLabel: "Drafting a setting change", contributingModule: "agents", requiredPermission: "workspace.agents.manage",
+      description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
+      inputSchema: z.object({ agentId: idSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+      outputSchema: proposalOutputSchema,
+      createTool: (context) => ({
+        name: "propose_agent_setting",
+        description: "Draft an agent setting change for operator review. It does not change configuration.",
+        inputSchema: z.object({ agentId: idSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+        outputSchema: proposalOutputSchema,
+        invoke: async ({ agentId, settingKey, value, rationale }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
+          const validated = await settingAdapter.validatePayload(context.workspaceId, targetRef, { value, ...(rationale ? { rationale } : {}) });
+          const versionToken = await settingAdapter.readVersionToken(context.workspaceId, validated.targetRef);
+          const proposal = await deps.proposalRepository.createProposal({
+            workspaceId: context.workspaceId,
+            operatorUserId: context.operatorUserId,
+            conversationId: requiredCopilotConversation(context),
+            targetType: "agent_setting",
+            targetRef: validated.targetRef,
+            payload: validated.payload,
+            versionToken,
+          });
+          await recordProposalCreated(deps.auditService, context, proposal);
+          return { proposalId: proposal.id, targetType: "agent_setting" as const, targetLabel: settingKey, summary: rationale ?? settingKey };
+        },
+      }),
+    },
+  ];
+};
+
+const proposalAdapter = <TType extends "directive" | "agent_setting">(
+  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter>,
+  targetType: TType,
+): Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter, { targetType: TType }> => {
+  const adapter = adapters.find((candidate) => candidate.targetType === targetType);
+  if (!adapter) throw new Error(`No copilot proposal adapter registered for ${targetType}`);
+  return adapter as Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter, { targetType: TType }>;
+};
+
+const requiredCopilotConversation = (context: { copilotConversationId?: string }): string => {
+  const conversationId = context.copilotConversationId;
+  if (!conversationId) throw new Error("Copilot proposal drafting requires a persisted conversation");
+  return conversationId;
+};
+
+const recordProposalCreated = async (auditService: CopilotAuditPort, context: { accountId: string; workspaceId: string }, proposal: CopilotProposal): Promise<void> => {
+  await auditService.record({ accountId: context.accountId, workspaceId: context.workspaceId, eventType: "copilot.proposal.created", eventStatus: "success", metadata: { proposalId: proposal.id, targetType: proposal.targetType } });
+};
 
 const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
 const asRecord = (value: object): Record<string, unknown> => value as Record<string, unknown>;

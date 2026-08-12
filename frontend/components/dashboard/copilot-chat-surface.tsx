@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ExternalLink, MessageSquare, Plus, Send, Sparkles, Trash2, Wrench } from 'lucide-react'
 
 import { AssistantMarkdownContent } from '@/components/dashboard/chat-markdown'
+import { CopilotProposalCard } from './copilot-proposal-card'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,6 +31,8 @@ import {
   type CopilotConversationSummary,
   type CopilotEntityReference,
   type CopilotOutcomeStatus,
+  type CopilotProposalEvent,
+  type CopilotProposalSummary,
 } from '@/lib/api-copilot'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
@@ -60,7 +63,9 @@ const outcomeLabel = (outcome: CopilotOutcomeStatus) => {
   return 'Completed'
 }
 
-const messageFromDetail = (detail: CopilotConversationDetail): CopilotLocalMessage[] => detail.messages
+const messageFromDetail = (detail: CopilotConversationDetail): CopilotLocalMessage[] => detail.messages.map((message) => (
+  message.role === 'copilot' ? { ...message, proposals: message.proposals ?? [] } : message
+))
 
 const relativeTimestamp = (value: string) => {
   const timestamp = Date.parse(value)
@@ -343,6 +348,22 @@ export function CopilotChatSurface({
     }))
   }
 
+  const handleProposal = (assistantId: string, event: CopilotProposalEvent) => {
+    const proposal: CopilotProposalSummary = {
+      id: event.proposalId,
+      targetType: event.targetType,
+      targetLabel: event.targetLabel,
+      summary: event.summary,
+      status: 'pending',
+    }
+    updateSession((current) => ({
+      ...current,
+      messages: current.messages.map((message) => message.id === assistantId && message.role === 'copilot'
+        ? { ...message, proposals: [...(message.proposals ?? []).filter((item) => item.id !== proposal.id), proposal] }
+        : message),
+    }))
+  }
+
   const handleSubmit = async (event: Pick<FormEvent, 'preventDefault'>, retryMessage?: string) => {
     event.preventDefault()
     const trimmed = (retryMessage ?? session.input).trim()
@@ -363,6 +384,7 @@ export function CopilotChatSurface({
       createdAt: new Date().toISOString(),
       outcome: 'completed',
       activity: [],
+      proposals: [],
       streaming: true,
       liveActivity: [],
     }
@@ -384,6 +406,7 @@ export function CopilotChatSurface({
       }, {
         onConversation: (conversation) => updateSession((current) => ({ ...current, selectedConversationId: conversation.conversationId })),
         onActivity: (activity) => handleActivity(assistantId, activity),
+        onProposal: (proposal) => handleProposal(assistantId, proposal),
         onChunk: (chunk) => updateSession((current) => ({
           ...current,
           messages: current.messages.map((message) => message.id === assistantId && message.role === 'copilot'
@@ -432,13 +455,15 @@ export function CopilotChatSurface({
     }
   }
 
-  const openEntity = (entity: CopilotEntityReference) => {
+  const openEntity = (entity: CopilotEntityReference, targetAgentId?: string) => {
     closePanel()
     const base = { ...routeState, workspaceId: activeWorkspaceId ?? undefined, workspacePublicRouteKey: activeWorkspace?.publicRouteKey }
     if (entity.type === 'conversation') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'activity', activityTab: 'all', historyItemKind: 'chat', historyItemId: entity.id }))
     } else if (entity.type === 'agent') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: entity.id, agentTab: 'behavior' }))
+    } else if (entity.type === 'directive') {
+      router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: targetAgentId ?? pageContext.agentId ?? undefined, agentTab: 'behavior', anchor: 'assistant-directives-card' }))
     } else if (entity.type === 'routine') {
       router.push(buildDashboardHref(accountId, { ...base, section: 'agents', agentId: pageContext.agentId ?? undefined, agentTab: 'behavior', agentRoutineId: entity.id }))
     }
@@ -504,7 +529,8 @@ export function CopilotChatSurface({
                     ? message.liveActivity?.length
                       ? message.liveActivity
                       : message.activity.map((entry, activityIndex) => ({ toolCallId: `${message.id}-${activityIndex}`, tool: entry.tool, stage: entry.outcome, entity: entry.entity }))
-                    : []
+                      : []
+                  const proposals = message.role === 'copilot' ? message.proposals ?? [] : []
                   return (
                     <article key={message.id} className={message.role === 'operator' ? 'ml-auto max-w-[85%]' : 'mr-auto max-w-[95%]'}>
                       <div className={message.role === 'operator' ? 'rounded-xl bg-primary px-4 py-3 text-primary-foreground' : 'rounded-xl border border-border bg-card px-4 py-3'}>
@@ -517,6 +543,19 @@ export function CopilotChatSurface({
                         ) : <p className="whitespace-pre-wrap text-sm">{message.content}</p>}
                         {message.role === 'copilot' && activities.length > 0 ? <div className="mt-4"><ActivityLines activities={activities} live={message.streaming} /></div> : null}
                         {message.role === 'copilot' ? <EntityChips activities={activities} entities={entities} onOpen={openEntity} /> : null}
+                        {message.role === 'copilot' && proposals.length > 0 ? (
+                          <div className="mt-4 space-y-3">
+                            {proposals.map((proposal) => (
+                              <CopilotProposalCard
+                                key={proposal.id}
+                                proposal={proposal}
+                                canApply={session.availability?.canManage !== false}
+                                defaultAgentId={pageContext.agentId}
+                                onOpenEntity={openEntity}
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                         {message.role === 'copilot' && !message.streaming ? (
                           <div className="mt-4 flex flex-wrap items-center gap-2">
                             <Badge variant={message.outcome === 'completed' ? 'secondary' : 'outline'} className={message.outcome === 'completed' ? undefined : 'border-destructive/40 text-destructive'}>{outcomeLabel(message.outcome)}</Badge>

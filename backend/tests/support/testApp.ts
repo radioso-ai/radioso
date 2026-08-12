@@ -151,6 +151,7 @@ import {
   OperatorCopilotService,
   type CopilotConversation,
   type CopilotMessage,
+  type CopilotProposal,
   type CopilotRepositoryPort,
 } from "../../src/modules/operatorCopilot/public.js";
 import {
@@ -159,6 +160,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog } from "../../src/app/composition/copilotToolCatalog.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1666,6 +1668,10 @@ export const createTestDependencies = (overrides: {
     readEvidenceAnchor: async () => null,
   } as unknown as AppDependencies["audiencePulseService"];
   const copilotRepository = new InMemoryCopilotRepository();
+  const copilotProposalAdapters = [
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
+    createAgentSettingCopilotProposalAdapter({ agentService }),
+  ] as const;
   const operatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({
@@ -1673,6 +1679,7 @@ export const createTestDependencies = (overrides: {
     }),
     usageLimitPolicy,
     auditService,
+    proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
     tools: createCopilotToolCatalog({
       agentService,
@@ -1682,6 +1689,9 @@ export const createTestDependencies = (overrides: {
       evalResultsService: evalCaseService,
       qualitySignalsService,
       audiencePulseService,
+      proposalRepository: copilotRepository,
+      proposalAdapters: copilotProposalAdapters,
+      auditService,
     }),
   });
   const dependencies: AppDependencies = {
@@ -2054,6 +2064,7 @@ const hashTerm = (term: string): number => {
 class InMemoryCopilotRepository implements CopilotRepositoryPort {
   private conversations: CopilotConversation[] = [];
   private messages: CopilotMessage[] = [];
+  private proposals: CopilotProposal[] = [];
 
   async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
     const timestamp = new Date();
@@ -2102,7 +2113,16 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
   }
 
   async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> {
-    return this.messages.filter((message) => message.conversationId === input.conversationId);
+    return this.messages.filter((message) => message.conversationId === input.conversationId).map((message) => ({
+      ...message,
+      proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map((proposal) => ({
+        id: proposal.id,
+        targetType: proposal.targetType,
+        targetLabel: proposal.targetType === "directive" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
+        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : "",
+        status: proposal.status,
+      })),
+    }));
   }
 
   async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> {
@@ -2115,6 +2135,34 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
   async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> {
     const conversation = await this.findConversation(input);
     if (conversation) this.replaceStatus(conversation, "idle");
+  }
+
+  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> {
+    const createdAt = new Date();
+    const proposal: CopilotProposal = { ...input, id: randomUUID(), messageId: null, status: "pending", appliedRef: null, createdAt, updatedAt: createdAt };
+    this.proposals.push(proposal);
+    return proposal;
+  }
+
+  async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    return this.proposals.find((proposal) => proposal.id === input.id && proposal.workspaceId === input.workspaceId && proposal.operatorUserId === input.operatorUserId) ?? null;
+  }
+
+  async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> {
+    this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
+  }
+
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending") return null;
+    const updated = { ...proposal, status: input.status, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
+    this.proposals[this.proposals.indexOf(proposal)] = updated;
+    return updated;
+  }
+
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    return proposal?.status === "pending" ? proposal : null;
   }
 
   private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {

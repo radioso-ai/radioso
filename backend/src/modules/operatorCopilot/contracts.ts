@@ -33,12 +33,67 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /** Internal copilot thread identity; distinct from pageContext.conversationId. */
+  readonly copilotConversationId?: string;
   readonly pageContext: CopilotPageContext;
 }
 
 export interface CopilotEntityReference {
   readonly type: string;
   readonly id: string;
+}
+
+/** Narrow audit port owned by the copilot consumer. */
+export interface CopilotAuditPort {
+  record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
+}
+
+export type CopilotProposalTargetType = "directive" | "agent_setting";
+export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
+
+export interface CopilotProposal {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly operatorUserId: string;
+  readonly conversationId: string;
+  readonly messageId: string | null;
+  readonly targetType: CopilotProposalTargetType;
+  readonly targetRef: unknown;
+  readonly payload: unknown;
+  readonly versionToken: string;
+  readonly status: CopilotProposalStatus;
+  readonly appliedRef: unknown | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface CopilotProposalCard {
+  readonly id: string;
+  readonly targetType: CopilotProposalTargetType;
+  readonly targetLabel: string;
+  readonly summary: string;
+  readonly status: CopilotProposalStatus;
+}
+
+export interface CopilotProposalAdapter {
+  readonly targetType: CopilotProposalTargetType;
+  readVersionToken(workspaceId: string, targetRef: unknown): Promise<string>;
+  preview(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetLabel: string; current: unknown | null; proposed: unknown }>;
+  applyIfVersionMatches(workspaceId: string, targetRef: unknown, payload: unknown, versionToken: string): Promise<
+    | { outcome: "applied"; appliedRef: unknown }
+    | { outcome: "stale" }
+    | { outcome: "failed"; reason: string }
+  >;
+}
+
+export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "directive";
+  draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
+}
+
+export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "agent_setting";
+  validatePayload(workspaceId: string, targetRef: unknown, payload: unknown): Promise<{ targetRef: unknown; payload: unknown }>;
 }
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
@@ -57,6 +112,7 @@ export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }
   | { readonly event: "activity"; readonly data: { toolCallId: string; tool: string; stage: "started" | "completed" | "failed"; entity?: CopilotEntityReference } }
   | { readonly event: "chunk"; readonly data: { text: string } }
+  | { readonly event: "proposal"; readonly data: { proposalId: string; targetType: CopilotProposalTargetType; targetLabel: string; summary: string } }
   | { readonly event: "outcome"; readonly data: { status: CopilotTurnOutcome } }
   | { readonly event: "done"; readonly data: Record<string, never> };
 

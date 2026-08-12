@@ -254,12 +254,22 @@ export const deriveCopilotSuggestedQuestions = (
   entities: readonly CopilotEntity[],
 ): string[] => {
   const focused = entities.find((entity) => entity.focused)
+  const ambientAgent = entities.find((entity) => entity.type === 'agent')
   if (focused?.type === 'conversation') {
-    return [`Explain what happened in ${focused.label}`, 'Why did this conversation take this route?']
+    return [
+      `Explain what happened in ${focused.label}`,
+      'Why did this conversation take this route?',
+      ...(ambientAgent ? [`Draft a change for ${ambientAgent.label}`] : []),
+    ]
   }
   if (focused?.type === 'agent') {
-    return [`What should I check on ${focused.label}?`, 'Which settings are most likely to affect this agent?']
+    return [
+      `What should I check on ${focused.label}?`,
+      'Which settings are most likely to affect this agent?',
+      `Draft a change for ${focused.label}`,
+    ]
   }
+  if (ambientAgent) return [`What should I check on ${ambientAgent.label}?`, `Draft a change for ${ambientAgent.label}`]
   if (view === 'quality') return ['What needs attention in this workspace?', 'What quality pattern should I investigate first?']
   if (view === 'evals') return ['Which eval cases need attention?', 'What changed in the latest eval results?']
   return ['Why did this agent behave this way?', 'What should I investigate next?']

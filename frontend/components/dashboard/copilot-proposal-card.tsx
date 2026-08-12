@@ -50,9 +50,11 @@ const STATUS_LABELS: Record<CopilotProposalStatus, string> = {
 
 const statusVariant = (status: CopilotProposalStatus) => {
   if (status === 'applied') return 'secondary' as const
-  if (status === 'failed' || status === 'stale') return 'destructive' as const
   return 'outline' as const
 }
+
+const statusBadgeClassName = (status: CopilotProposalStatus) =>
+  status === 'failed' || status === 'stale' ? 'border-destructive/40 text-destructive' : undefined
 
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(
   value && typeof value === 'object' && !Array.isArray(value),
@@ -231,7 +233,7 @@ export function CopilotProposalCard({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Proposed change</p>
             <p className="mt-1 truncate text-sm font-medium">{proposal.targetLabel}</p>
           </div>
-          <Badge variant={statusVariant(effectiveState.status)}>{STATUS_LABELS[effectiveState.status]}</Badge>
+          <Badge variant={statusVariant(effectiveState.status)} className={statusBadgeClassName(effectiveState.status)}>{STATUS_LABELS[effectiveState.status]}</Badge>
         </div>
         <p className="text-sm text-muted-foreground">{proposal.summary}</p>
       </CardHeader>

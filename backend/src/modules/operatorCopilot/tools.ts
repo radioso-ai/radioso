@@ -126,9 +126,9 @@ export const createUs1CopilotTools = (deps: {
   },
   {
     name: "document_search", uiLabel: "Searching documents", contributingModule: "documents", requiredPermission: "workspace.documents.read",
-    description: "Search workspace documents and return matching document metadata and evidence.",
+    description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and evidence.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
+    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
   },
 ];
 
@@ -196,11 +196,11 @@ export const createUs4CopilotTools = (deps: {
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "document_status", uiLabel: "Checking document status", contributingModule: "documents", requiredPermission: "workspace.documents.read",
-    description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state.",
+    description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
     inputSchema: z.object({}), outputSchema: documentStatusOutputSchema,
     createTool: (context) => ({
       name: "document_status",
-      description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state.",
+      description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
       inputSchema: z.object({}),
       outputSchema: documentStatusOutputSchema,
       invoke: async () => {
@@ -238,11 +238,11 @@ export const createUs4CopilotTools = (deps: {
   },
   {
     name: "agent_skills", uiLabel: "Reading agent skills", contributingModule: "agentSkills", requiredPermission: "workspace.agents.read",
-    description: "Read the skills configured on an agent and which skill capabilities have a usable connection.",
+    description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
     inputSchema: optionalAgentInput, outputSchema: agentSkillsOutputSchema,
     createTool: (context) => ({
       name: "agent_skills",
-      description: "Read the skills configured on an agent and which skill capabilities have a usable connection.",
+      description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
       inputSchema: optionalAgentInput,
       outputSchema: agentSkillsOutputSchema,
       invoke: async ({ agentId }) => {

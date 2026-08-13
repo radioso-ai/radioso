@@ -32,6 +32,38 @@ export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equal
 export const routineFieldGuardUnits = ["days", "weeks", "months", "years"] as const;
 export const routineTerminalKinds = ["complete", "handoff"] as const;
 export const routineCompletionExportTriggerKinds = routineTerminalKinds;
+export const routineValidationCodes = [
+  "unreachable_step",
+  "missing_terminal",
+  "dangling_action_reference",
+  "dangling_step_reference",
+  "unbounded_back_edge",
+  "missing_action_follow_up",
+  "declared_unused_slot",
+  "referenced_undeclared_slot",
+  "unregistered_action_type",
+  "unknown_skill",
+  "action_capability_denied",
+  "invalid_webhook_destination_ref",
+  "unknown_webhook_destination",
+  "attempt_limit_without_fallback",
+  "outcome_guard_on_non_tool_step",
+  "structured_guard_missing_parameter",
+  "field_guard_unknown_reference",
+  "field_guard_incompatible_type",
+  "completion_export_missing_destination",
+  "approval_step_llm_edge",
+  "approval_step_no_decision_edge",
+  "approval_step_unknown_option",
+  "approval_step_unreachable_option",
+  "unsatisfiable_required_input",
+  "input_type_mismatch",
+  "unknown_input_binding",
+  "unknown_variable_ref",
+  "unknown_context_variable",
+  "variable_name_collision",
+  "node_id_collision",
+] as const;
 
 export const routineIdentifierPattern = /^[A-Za-z_][A-Za-z0-9_.-]*$/u;
 const identifierPattern = routineIdentifierPattern;
@@ -276,6 +308,7 @@ export type RoutineGuardProvenance = "exact" | "judgment";
 export const routineGuardProvenance = (guardKind: RoutineGuardKind): RoutineGuardProvenance =>
   guardKind === "llm" ? "judgment" : "exact";
 export type RoutineTerminalKind = typeof routineTerminalKinds[number];
+export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;
 export type RoutineStepMode = z.infer<typeof routineStepModeSchema>;

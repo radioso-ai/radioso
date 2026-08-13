@@ -1,4 +1,14 @@
 import type { components, operations } from '../../typescript-sdk/src/generated/types'
+import type {
+  RoutineFieldGuardOp,
+  RoutineFieldGuardUnit,
+  RoutineGuardKind,
+  RoutineReentryMode,
+  RoutineSlotType,
+  RoutineStepKind,
+  RoutineTerminalKind,
+  RoutineValidationCode,
+} from '@radioso/routine-definition'
 import type { RoutineInputBinding } from '@radioso/routine-markdown'
 import { API_BASE } from './api-client'
 import {
@@ -64,16 +74,17 @@ export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVar
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
 
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
-export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
-export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
+export type {
+  RoutineFieldGuardOp,
+  RoutineFieldGuardUnit,
+  RoutineGuardKind,
+  RoutineReentryMode,
+  RoutineSlotType,
+  RoutineStepKind,
+  RoutineTerminalKind,
+  RoutineValidationCode,
+}
 export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
-export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
-export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
-export type RoutineFieldGuardOp =
-  | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
-  | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
-export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
-export type RoutineTerminalKind = 'complete' | 'handoff'
 // Binding kinds come from the shared definition package so the frontend dialect
 // cannot drift from the wire contract again (this type was stale after spec 097
 // added contextVariableRef, which silently excluded context-bound routines).
@@ -82,11 +93,6 @@ export type RoutineStepMetadata = {
   outputAssignments?: Record<string, string>
   mode?: 'typed' | 'untyped'
 } & Record<string, unknown>
-// Derived from the wire contract rather than restated, so a new backend validation code
-// cannot go missing here. The hand-written union had already drifted, dropping
-// unknown_context_variable.
-export type RoutineValidationCode = ApiSchemas['RoutineValidationResult']['diagnostics'][number]['code']
-
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode
   location: string

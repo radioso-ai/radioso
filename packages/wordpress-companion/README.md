@@ -24,6 +24,19 @@ Pairs with the `wordpress` connector in the Radioso backend
 That's it. Every time a configured post type is published, updated, or deleted,
 the plugin will fire a signed webhook to Radioso.
 
+## Resync existing content
+
+Use **Settings → Radioso Sync → Resync all content** to backfill every existing
+published post and page of the configured post types. The plugin sends each
+item through the outbound signed webhook, so this works when the WordPress site
+is behind Cloudflare or its REST API is blocked.
+
+The resync runs in background batches, avoiding a timeout on large sites. It
+advances as WordPress WP-Cron ticks, which normally happens with site traffic.
+Use **Cancel resync** on the same settings page to stop an in-progress run.
+It is safe to run again because Radioso upserts content by WordPress post
+identity.
+
 One workspace WordPress connector accepts one site. The signed payload includes
 the site's public URL, and Radioso rejects events whose site or post permalink
 does not match the configured WordPress site. Changing the site URL in Radioso

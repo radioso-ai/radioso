@@ -569,6 +569,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const [statusAnnouncement, setStatusAnnouncement] = useState('')
   const [focusAfterTriageKey, setFocusAfterTriageKey] = useState<string | 'page' | null>(null)
   const [now, setNow] = useState(() => new Date())
+  const [terminalQualityMessageIds, setTerminalQualityMessageIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  )
   const isMountedRef = useRef(false)
   const inboxRequestIdRef = useRef(0)
   const pageTitleRef = useRef<HTMLSpanElement | null>(null)
@@ -646,7 +649,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     () => qualityInboxPresentation(qualitySnapshot),
     [qualitySnapshot],
   )
-  const qualityTurns = qualityPresentation.turns
+  const qualityTurns = qualityPresentation.turns.filter(
+    (turn) => !terminalQualityMessageIds.has(turn.assistantMessageId),
+  )
   const inboxModel = useMemo(
     () => buildInboxModel({
       decisions,
@@ -714,6 +719,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         const current = getQualityTriageConflict(caught)
         if (current) {
           if (isTerminalQualityTriageState(current.state)) {
+            setTerminalQualityMessageIds((previous) => new Set([...previous, messageId]))
             setQualitySnapshot((previous) =>
               removeQualityInboxTurn(previous, messageId))
             setSelectedInboxItem(null)

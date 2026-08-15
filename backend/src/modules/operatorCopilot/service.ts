@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { AgenticCapabilityRunner, AgentTool, AgentTraceEvent } from "../../shared/agent-runtime/index.js";
+import { AGENT_BUDGET_DEFAULTS, type AgenticCapabilityRunner, type AgentTool, type AgentTraceEvent } from "../../shared/agent-runtime/index.js";
 import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
 import type {
   CopilotPageContext,
@@ -16,7 +16,7 @@ import type {
 } from "./contracts.js";
 import { mapCopilotTraceEvent, outcomeFromTerminatedReason } from "./sse.js";
 
-const COPILOT_BUDGETS = { maxSteps: 6, maxToolResultTokens: 12_000, maxWallTimeMs: 30_000 } as const;
+const COPILOT_BUDGETS = AGENT_BUDGET_DEFAULTS;
 const TITLE_MAX_LENGTH = 120;
 // Bounded history keeps follow-up turns anchored without letting long copilot
 // conversations grow the model context unboundedly (spec 104 edge case).
@@ -234,8 +234,7 @@ export class OperatorCopilotService {
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => input.permissions.has(descriptor.requiredPermission))
-      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, pageContext: input.pageContext }))
-      .map((tool) => ({ ...tool, description: tool.description, name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema, invoke: tool.invoke } as AgentTool));
+      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, pageContext: input.pageContext }) as AgentTool);
   }
 
   private async buildPriorTranscript(conversationId: string): Promise<string | null> {
@@ -294,7 +293,7 @@ const proposalFromTrace = (trace: AgentTraceEvent): CopilotProposalCard | null =
 const isProposalOutput = (value: unknown): value is { proposalId: string; targetType: CopilotProposal["targetType"]; targetLabel: string; summary: string } => {
   if (!value || typeof value !== "object") return false;
   const output = value as Record<string, unknown>;
-  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting") && typeof output.targetLabel === "string" && typeof output.summary === "string";
+  return typeof output.proposalId === "string" && (output.targetType === "directive" || output.targetType === "agent_setting" || output.targetType === "routine") && typeof output.targetLabel === "string" && typeof output.summary === "string";
 };
 
 const trackActivity = (trace: AgentTraceEvent, labels: ReadonlyMap<string, string>, entitiesByToolCall: ReadonlyMap<string, CopilotEntityReference>, activity: Array<{ tool: string; outcome: "completed" | "failed"; entity?: CopilotEntityReference }>): void => {

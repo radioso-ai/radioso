@@ -9,14 +9,21 @@ import {
   type AgentInput,
   type AuthoredDirectiveInput,
 } from "../../modules/agents/public.js";
+import {
+  routineDefinitionDraftInputSchema,
+  type RoutineDefinitionService,
+  type RoutineDraftAssistService,
+} from "../../modules/routines/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotDirectiveProposalAdapter,
+  CopilotRoutineProposalAdapter,
 } from "../../modules/operatorCopilot/public.js";
 import { AppError } from "../../shared/domain/errors.js";
 
 const directiveTargetRefSchema = z.object({ agentId: z.string().uuid(), directiveId: z.string().uuid().nullable() }).strict();
 const settingTargetRefSchema = z.object({ agentId: z.string().uuid(), settingKey: z.string().min(1).max(200) }).strict();
+const routineTargetRefSchema = z.object({ agentId: z.string().uuid(), routineId: z.null() }).strict();
 const settingPayloadSchema = z.object({ value: z.unknown(), rationale: z.string().min(1).max(1_000).optional() }).strict();
 
 /** Composition adapter: drafts through the existing coach and writes only through authored-directive management. */
@@ -103,6 +110,48 @@ export const createAgentSettingCopilotProposalAdapter = (deps: {
   },
 });
 
+/** Composition adapter: turns a coached authored routine into a draft-only proposal. */
+export const createRoutineCopilotProposalAdapter = (deps: {
+  readonly agentService: Pick<AgentService, "get">;
+  readonly routineDraftAssistService: Pick<RoutineDraftAssistService, "draft">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "createDraft">;
+}): CopilotRoutineProposalAdapter => ({
+  targetType: "routine",
+  async readVersionToken(workspaceId, rawTargetRef) {
+    const targetRef = routineTargetRefSchema.parse(rawTargetRef);
+    return versionToken((await deps.agentService.get(workspaceId, targetRef.agentId)).updatedAt);
+  },
+  async preview(_workspaceId, _rawTargetRef, payload) {
+    const proposed = routinePayload(payload);
+    return { targetLabel: proposed.name, current: null, proposed };
+  },
+  async applyIfVersionMatches(workspaceId, rawTargetRef, payload, token) {
+    const targetRef = routineTargetRefSchema.parse(rawTargetRef);
+    try {
+      const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
+      if (versionToken(agent.updatedAt) !== token) return { outcome: "stale" as const };
+      const result = await deps.routineDefinitionService.createDraft(workspaceId, targetRef.agentId, routinePayload(payload));
+      // The card deep-links from appliedRef alone when the proposal detail was
+      // never loaded, so the agent id must travel with the routine id.
+      return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: result.routine.id } };
+    } catch (error) {
+      if (isStale(error)) return { outcome: "stale" as const };
+      return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Routine draft creation failed" };
+    }
+  },
+  async draft(workspaceId, rawTargetRef, intent) {
+    const targetRef = routineTargetRefSchema.parse(rawTargetRef);
+    const result = await deps.routineDraftAssistService.draft(workspaceId, targetRef.agentId, { prose: intent });
+    const diagnostics = result.validation.diagnostics.length;
+    const summary = diagnostics === 0
+      ? `Draft routine ${result.draft.name}.`
+      : `Draft routine ${result.draft.name} has ${diagnostics} open validation diagnostic${diagnostics === 1 ? "" : "s"}.`;
+    // The card summary is rebuilt from payload.rationale after a reload, so
+    // the summary rides the stored payload the same way directive drafts do.
+    return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary };
+  },
+});
+
 // Maps a stored proposal payload onto the management input. The draft keeps
 // presentation extras (e.g. the coach's rationale) that the .strict()
 // directive input schema rejects, so unknown keys are stripped here.
@@ -123,6 +172,16 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     metadata: z.record(z.unknown()).optional(),
   }).parse(value);
   return draft as AuthoredDirectiveInput;
+};
+
+// Strips the draft-only rationale before the .strict() authoring schema, the
+// same way directivePayload drops the coach's presentation extras.
+const routinePayload = (value: unknown) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const { rationale: _rationale, ...rest } = value as Record<string, unknown>;
+    return routineDefinitionDraftInputSchema.parse(rest);
+  }
+  return routineDefinitionDraftInputSchema.parse(value);
 };
 
 const settingPatch = (settingKey: string, value: unknown): AgentInput => ({ [settingKey]: value }) as AgentInput;

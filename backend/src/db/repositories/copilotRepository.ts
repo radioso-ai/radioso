@@ -14,13 +14,16 @@ const narrowOutcome = (outcome: string | null): CopilotMessage["outcome"] | unde
   outcome === "completed" || outcome === "budget_exhausted" || outcome === "failed" ? outcome : undefined;
 const mapConversation = (row: CopilotConversationRow): CopilotConversation => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, title: row.title, status: narrowStatus(row.status), createdAt: row.created_at, updatedAt: row.updated_at });
 const mapMessage = (row: CopilotMessageRow): CopilotMessage => ({ id: row.id, conversationId: row.conversation_id, role: row.role === "copilot" ? "copilot" : "operator", content: row.content, ...(narrowOutcome(row.outcome) ? { outcome: narrowOutcome(row.outcome) } : {}), ...(Array.isArray(row.activity) ? { activity: row.activity as CopilotMessage["activity"] } : {}), createdAt: row.created_at });
-const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => targetType === "agent_setting" ? "agent_setting" : "directive";
+const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => {
+  if (targetType === "directive" || targetType === "agent_setting" || targetType === "routine") return targetType;
+  throw new Error(`Unknown copilot proposal target type: ${targetType}`);
+};
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
 const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, conversationId: row.conversation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
-const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
+export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
   const targetRef = asRecord(proposal.targetRef);
   const payload = asRecord(proposal.payload);
-  const targetLabel = proposal.targetType === "directive" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
+  const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");
   return { id: proposal.id, targetType: proposal.targetType, targetLabel, summary: textValue(payload.rationale, targetLabel), status: proposal.status, reason: proposal.reason ?? null };
 };
 const asRecord = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

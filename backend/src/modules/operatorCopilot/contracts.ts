@@ -48,7 +48,7 @@ export interface CopilotAuditPort {
   record(input: { accountId: string; workspaceId: string; eventType: string; eventStatus: "success" | "failure"; metadata: Record<string, unknown> }): Promise<void>;
 }
 
-export type CopilotProposalTargetType = "directive" | "agent_setting";
+export type CopilotProposalTargetType = "directive" | "agent_setting" | "routine";
 export type CopilotProposalStatus = "pending" | "applied" | "dismissed" | "failed" | "stale";
 
 export interface CopilotProposal {
@@ -90,6 +90,11 @@ export interface CopilotProposalAdapter {
 
 export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter {
   readonly targetType: "directive";
+  draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
+}
+
+export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {
+  readonly targetType: "routine";
   draft(workspaceId: string, targetRef: unknown, intent: string): Promise<{ payload: unknown; targetLabel: string; summary: string }>;
 }
 

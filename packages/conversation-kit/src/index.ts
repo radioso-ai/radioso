@@ -37,14 +37,15 @@ export {
   createDirectiveCoherenceChecker,
   createDirectiveCoherenceGate,
   DEFAULT_DIRECTIVE_COHERENCE_PROMPT,
-  DirectiveCoherenceError,
   ModelDirectiveCoherenceChecker,
   type CreateDirectiveCoherenceCheckerOptions,
 } from "@radioso/conversation-defaults";
+export { isDirectiveCoherenceError } from "./directiveCoherenceError.js";
 export type {
   DirectiveCoherenceCheckInput,
   DirectiveCoherenceChecker,
   DirectiveCoherenceConflict,
+  DirectiveCoherenceError,
   DirectiveCoherenceInvocationContext,
   DirectiveCoherenceGate,
   DirectiveCoherenceGateOptions,

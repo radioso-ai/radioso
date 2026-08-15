@@ -98,6 +98,42 @@ client.createDirective(agent.id, {
 });
 ```
 
+### Handling directive conflicts
+
+When directive coherence enforcement rejects a create or update, identify the
+structured rejection with the kit's guard. It deliberately does not require an
+`instanceof` check against an implementation package.
+
+```ts
+import {
+  createConversationKitClient,
+  isDirectiveCoherenceError,
+} from "@radioso/conversation-kit";
+
+const client = createConversationKitClient({
+  modelGateway,
+  directiveCoherence: { enabled: true },
+});
+const agent = client.createAgent({
+  id: "agent_support",
+  name: "Support",
+});
+
+try {
+  await client.createDirective(agent.id, {
+    name: "brief",
+    condition: { kind: "always" },
+    action: "Keep replies brief.",
+  });
+} catch (error) {
+  if (isDirectiveCoherenceError(error)) {
+    console.log(error.verdict.conflicts);
+  } else {
+    throw error;
+  }
+}
+```
+
 Any object satisfying `ConversationKitAuthoringStore` works here, so a host that
 already has a database points the kit at that instead.
 

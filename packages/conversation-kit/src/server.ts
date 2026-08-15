@@ -2,9 +2,9 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import { once } from "node:events";
 
 import type { ConversationAgentConfig, Directive, Routine } from "@radioso/conversation-contract";
-import { DirectiveCoherenceError } from "@radioso/conversation-defaults";
 
 import { createConversationKit, type ConversationKit, type CreateConversationKitOptions } from "./composition.js";
+import { isDirectiveCoherenceError } from "./directiveCoherenceError.js";
 import { parseTurnRequestBody, isRecord, type TurnResponseBody } from "./httpTypes.js";
 import { createConversationKitClient, type ConversationKitClient } from "./sdk.js";
 
@@ -164,7 +164,7 @@ const isBadRequest = (message: string): boolean =>
   message === "invalid_routine_request";
 
 const sendError = (response: ServerResponse, error: unknown): void => {
-  if (error instanceof DirectiveCoherenceError) {
+  if (isDirectiveCoherenceError(error)) {
     sendJson(response, 409, {
       error: error.code,
       coherent: error.verdict.coherent,

@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationModelGateway, Directive } from "@radioso/conversation-contract";
+import type {
+  ConversationModelGateway,
+  Directive,
+  DirectiveCoherenceError,
+} from "@radioso/conversation-contract";
 
 import {
   createConversationKitClient,
-  DirectiveCoherenceError,
+  isDirectiveCoherenceError,
 } from "../src/index.js";
 
 const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "action">): Directive => ({
@@ -164,14 +168,18 @@ describe("directive coherence", () => {
     expect(gateway.complete).not.toHaveBeenCalled();
   });
 
-  it("exposes a concrete error type for structured conflict handling", () => {
-    const error = new DirectiveCoherenceError({
-      coherent: false,
-      conflicts: [{ directiveName: "existing", reason: "Conflict." }],
-      rationale: "Blocked.",
-    });
+  it("identifies coherence rejections structurally without exposing the defaults error class", () => {
+    const error: DirectiveCoherenceError = {
+      code: "conversation_kit_directive_coherence_conflict",
+      verdict: {
+        coherent: false,
+        conflicts: [{ directiveName: "existing", reason: "Conflict." }],
+        rationale: "Blocked.",
+      },
+    };
 
-    expect(error.message).toBe("conversation_kit_directive_coherence_conflict");
-    expect(error.code).toBe("conversation_kit_directive_coherence_conflict");
+    expect(isDirectiveCoherenceError(error)).toBe(true);
+    expect(isDirectiveCoherenceError({ ...error, verdict: { coherent: false } })).toBe(false);
+    expect(isDirectiveCoherenceError(new Error("conversation_kit_directive_coherence_conflict"))).toBe(false);
   });
 });

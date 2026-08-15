@@ -37,7 +37,10 @@ const answerEnvelope = (answer: string): string =>
 
 const retrievalResult = (
   request: RetrievalPipelineRequest,
-  options: { suggestedQuestionsEnabled?: boolean } = {},
+  options: {
+    suggestedQuestionsEnabled?: boolean;
+    retrievalSubqueries?: RetrievalPipelineResult["diagnostics"]["retrievalSubqueries"];
+  } = {},
 ): RetrievalPipelineResult => {
   const now = new Date().toISOString();
   const candidates = hathaRajaYogaCandidates().slice(0, 4);
@@ -78,6 +81,7 @@ const retrievalResult = (
       rewriteEligible: true,
       rewriteRan: false,
       materialDisagreement: false,
+      ...(options.retrievalSubqueries ? { retrievalSubqueries: options.retrievalSubqueries } : {}),
       triggerAnalysis: {
         status: "skipped_not_configured",
         consideredRules: [],
@@ -107,7 +111,10 @@ const retrievalResult = (
 
 const retrievalTurn = (
   capturedRequests: RetrievalPipelineRequest[] = [],
-  options: { suggestedQuestionsEnabled?: boolean } = {},
+  options: {
+    suggestedQuestionsEnabled?: boolean;
+    retrievalSubqueries?: RetrievalPipelineResult["diagnostics"]["retrievalSubqueries"];
+  } = {},
 ): RetrievalTurnController => {
   const pipeline: RetrievalPipelineService = {
     async run(input) {
@@ -168,6 +175,7 @@ const makeService = (input: {
   directiveRuntime?: RouteScopedDirectiveRuntime;
   messageRepository?: InMemoryMessageRepository;
   routerInputs?: TurnRouterInput[];
+  retrievalSubqueries?: RetrievalPipelineResult["diagnostics"]["retrievalSubqueries"];
   suggestedQuestionsEnabled?: boolean;
   turnInterpreter?: ChatServiceOptions["turnInterpreter"];
 }) => {
@@ -176,6 +184,7 @@ const makeService = (input: {
     conversationRepository: new InMemoryConversationRepository(),
     messageRepository: input.messageRepository ?? new InMemoryMessageRepository(),
     retrievalTurn: retrievalTurn(input.capturedRequests, {
+      retrievalSubqueries: input.retrievalSubqueries,
       suggestedQuestionsEnabled: input.suggestedQuestionsEnabled,
     }),
     chatGateway: gateway,
@@ -258,6 +267,59 @@ const captureDirectiveRuntime = (inputs: DirectiveSteerInput[]): RouteScopedDire
 });
 
 describe("retrieval sense clarification", () => {
+  it("answers over planned retrieval branches without turning them into visitor-facing choices", async () => {
+    let saved: PendingClarification | null = null;
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const answerInputs: ChatGatewayInput[] = [];
+    const detector = {
+      detect: vi.fn(async () => [
+        { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
+        { id: "doc-raja", label: "Raja yoga", confidence: 0.59, payload: { documentIds: ["doc-raja"] } },
+      ]),
+    };
+    const service = makeService({
+      capturedRequests,
+      chatGateway: chatGateway({ answerInputs }),
+      detector,
+      retrievalSubqueries: [
+        {
+          id: "posture",
+          label: "posture practice",
+          semanticQuery: "yoga posture practice",
+          lexicalQuery: "hatha yoga",
+        },
+        {
+          id: "meditation",
+          label: "meditation practice",
+          semanticQuery: "yoga meditation practice",
+          lexicalQuery: "raja yoga",
+        },
+      ],
+      clarificationStore: {
+        loadPending: vi.fn(async () => null),
+        save: vi.fn(async (pending) => { saved = pending; }),
+        clear: vi.fn(),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "tell me about yoga",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Grounded answer");
+    expect(detector.detect).not.toHaveBeenCalled();
+    expect(saved).toBeNull();
+    expect(answerInputs).toHaveLength(1);
+    expect(answerInputs[0]?.systemPrompt).not.toMatch(/alternative interpretation/i);
+    expect(answerInputs[0]?.prompt).toContain("Hatha Yoga Foundations");
+    expect(answerInputs[0]?.prompt).toContain("Raja Yoga Meditation");
+    expect(capturedRequests.every((request) => request.documentScope === undefined)).toBe(true);
+    expect(response.citations?.map((citation) => citation.documentId)).toEqual(["doc-hatha"]);
+    expect(response.turnTrace?.spine.stages.filter((stage) => stage.kind === "clarification")).toEqual([]);
+  });
+
   it("answers with the strongest sense, offers alternatives in the answer prompt, and stores offer-mode pending candidates", async () => {
     let saved: PendingClarification | null = null;
     const capturedRequests: RetrievalPipelineRequest[] = [];

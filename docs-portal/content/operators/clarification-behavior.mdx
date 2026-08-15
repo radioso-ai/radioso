@@ -30,6 +30,10 @@ intent-phrased option inline. It rarely blocks with a menu — only when two sen
 are statistically indistinguishable (their confidences fall within a small ask
 margin), where leading with an arbitrary pick would be worse than asking.
 
+A retrieval plan can search several subqueries to cover one request. Radioso keeps
+their results together and composes one grounded answer from the combined
+evidence.
+
 Clarification text is an ordinary assistant message. It is generated from
 candidate labels and descriptions, not from raw document content or hard-coded
 wording. Options are phrased as possible visitor intents, not as document titles.

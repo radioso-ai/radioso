@@ -398,10 +398,10 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
     if (path === "/copilot/conversations" && request.method() === "GET") return route.fulfill({ json: { conversations: messages.length ? [{ id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso }] : [] } });
     if (path === `/copilot/conversations/${copilotConversationId}` && request.method() === "GET") return route.fulfill({ json: { id: copilotConversationId, title: "Draft a refund workflow", status: "idle", createdAt: nowIso, updatedAt: nowIso, messages } });
     if (path === `/copilot/proposals/${proposalId}` && request.method() === "GET") return route.fulfill({ json: detail });
-    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { routineId } } });
+    if (path === `/copilot/proposals/${proposalId}/apply` && request.method() === "POST") return route.fulfill({ json: { status: "applied", appliedRef: { agentId: defaultAgentId, routineId } } });
     if (path === "/copilot/turns" && request.method() === "POST") {
       const body = JSON.parse(request.postData() ?? "{}") as { message: string; pageContext: { view: string | null; agentId: string | null } };
-      expect(body.pageContext).toEqual(expect.objectContaining({ view: "copilot", agentId: defaultAgentId }));
+      expect(body.pageContext).toEqual(expect.objectContaining({ view: "copilot", agentId: null }));
       messages = [
         { id: "operator-routine-proposal-apply", role: "operator", content: body.message, createdAt: nowIso },
         { id: "answer-routine-proposal-apply", role: "copilot", content: "I drafted a refund workflow for review.", createdAt: nowIso, outcome: "completed", activity: [], proposals: [{ id: proposalId, targetType: "routine", targetLabel, summary: detail.summary, status: "pending" }] },
@@ -421,7 +421,9 @@ test("applies a routine proposal and opens the routine editor", async ({ page })
     await route.continue();
   });
 
-  await page.goto(`/w/${workspaceKey}/copilot?agent=${defaultAgentId}`);
+  // No ?agent= on purpose: the deep-link must work from the apply response's
+  // appliedRef alone, without an agent-scoped page context.
+  await page.goto(`/w/${workspaceKey}/copilot`);
   await page.getByRole("textbox", { name: "Ask Ray" }).fill("Draft a refund workflow");
   await page.getByRole("button", { name: "Send question" }).click();
   await expect(page.getByText(targetLabel, { exact: true })).toBeVisible();

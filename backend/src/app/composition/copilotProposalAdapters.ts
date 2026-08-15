@@ -131,7 +131,9 @@ export const createRoutineCopilotProposalAdapter = (deps: {
       const agent = await deps.agentService.get(workspaceId, targetRef.agentId);
       if (versionToken(agent.updatedAt) !== token) return { outcome: "stale" as const };
       const result = await deps.routineDefinitionService.createDraft(workspaceId, targetRef.agentId, routinePayload(payload));
-      return { outcome: "applied" as const, appliedRef: { routineId: result.routine.id } };
+      // The card deep-links from appliedRef alone when the proposal detail was
+      // never loaded, so the agent id must travel with the routine id.
+      return { outcome: "applied" as const, appliedRef: { agentId: targetRef.agentId, routineId: result.routine.id } };
     } catch (error) {
       if (isStale(error)) return { outcome: "stale" as const };
       return { outcome: "failed" as const, reason: error instanceof Error ? error.message : "Routine draft creation failed" };
@@ -144,7 +146,9 @@ export const createRoutineCopilotProposalAdapter = (deps: {
     const summary = diagnostics === 0
       ? `Draft routine ${result.draft.name}.`
       : `Draft routine ${result.draft.name} has ${diagnostics} open validation diagnostic${diagnostics === 1 ? "" : "s"}.`;
-    return { payload: result.draft, targetLabel: result.draft.name, summary };
+    // The card summary is rebuilt from payload.rationale after a reload, so
+    // the summary rides the stored payload the same way directive drafts do.
+    return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary };
   },
 });
 
@@ -170,8 +174,15 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
   return draft as AuthoredDirectiveInput;
 };
 
-const routinePayload = (value: unknown) =>
-  routineDefinitionDraftInputSchema.parse(value);
+// Strips the draft-only rationale before the .strict() authoring schema, the
+// same way directivePayload drops the coach's presentation extras.
+const routinePayload = (value: unknown) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const { rationale: _rationale, ...rest } = value as Record<string, unknown>;
+    return routineDefinitionDraftInputSchema.parse(rest);
+  }
+  return routineDefinitionDraftInputSchema.parse(value);
+};
 
 const settingPatch = (settingKey: string, value: unknown): AgentInput => ({ [settingKey]: value }) as AgentInput;
 const settingValue = (settings: object, settingKey: string): unknown => Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;

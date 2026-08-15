@@ -307,18 +307,39 @@ describe("routine proposal adapter", () => {
       routineDefinitionService: { createDraft } as never,
     });
     const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const summary = "Draft routine Return intake has 1 open validation diagnostic.";
+    const storedPayload = { ...payload, rationale: summary };
 
     expect(await adapter.draft("workspace-1", targetRef, "Draft a return intake routine")).toEqual({
-      payload,
+      payload: storedPayload,
       targetLabel: "Return intake",
-      summary: "Draft routine Return intake has 1 open validation diagnostic.",
+      summary,
     });
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, payload, updatedAt.toISOString())).toEqual({ outcome: "applied", appliedRef: { routineId: "routine-1" } });
+    expect(await adapter.preview("workspace-1", targetRef, storedPayload)).toEqual({ targetLabel: "Return intake", current: null, proposed: payload });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, updatedAt.toISOString())).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId: targetRef.agentId, routineId: "routine-1" },
+    });
     expect(createDraft).toHaveBeenCalledWith("workspace-1", targetRef.agentId, payload);
 
     updatedAt.setTime(updatedAt.getTime() + 1);
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, payload, new Date(0).toISOString())).toEqual({ outcome: "stale" });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, storedPayload, new Date(0).toISOString())).toEqual({ outcome: "stale" });
     expect(createDraft).toHaveBeenCalledOnce();
+  });
+});
+
+describe("proposal card presentation", () => {
+  it("keeps a routine proposal's drafted summary across a reload", async () => {
+    const { presentProposalCard } = await import("../../../src/db/repositories/copilotRepository.js");
+    const base = {
+      id: "proposal-1", workspaceId: "workspace-1", operatorUserId: "user-1", conversationId: "conversation-1", messageId: "message-1",
+      targetType: "routine" as const, targetRef: { agentId: "agent-1", routineId: null }, versionToken: "v1",
+      status: "pending" as const, reason: null, appliedRef: null, createdAt: new Date(0), updatedAt: new Date(0),
+    };
+    const summary = "Draft routine Return intake has 1 open validation diagnostic.";
+
+    expect(presentProposalCard({ ...base, payload: { name: "Return intake", rationale: summary } })).toMatchObject({ targetLabel: "Return intake", summary });
+    expect(presentProposalCard({ ...base, payload: { name: "Return intake" } })).toMatchObject({ targetLabel: "Return intake", summary: "Return intake" });
   });
 });
 

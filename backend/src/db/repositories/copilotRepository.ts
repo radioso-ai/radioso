@@ -20,7 +20,7 @@ const narrowTargetType = (targetType: string): CopilotProposal["targetType"] => 
 };
 const narrowProposalStatus = (status: string): CopilotProposal["status"] => status === "applied" || status === "dismissed" || status === "failed" || status === "stale" ? status : "pending";
 const mapProposal = (row: CopilotProposalRow): CopilotProposal => ({ id: row.id, workspaceId: row.workspace_id, operatorUserId: row.operator_user_id, conversationId: row.conversation_id, messageId: row.message_id, targetType: narrowTargetType(row.target_type), targetRef: row.target_ref, payload: row.payload, versionToken: row.version_token, status: narrowProposalStatus(row.status), reason: row.failure_reason, appliedRef: row.applied_ref, createdAt: row.created_at, updatedAt: row.updated_at });
-const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
+export const presentProposalCard = (proposal: CopilotProposal): CopilotProposalCard => {
   const targetRef = asRecord(proposal.targetRef);
   const payload = asRecord(proposal.payload);
   const targetLabel = proposal.targetType === "directive" || proposal.targetType === "routine" ? textValue(payload.name, "") : textValue(targetRef.settingKey, "");

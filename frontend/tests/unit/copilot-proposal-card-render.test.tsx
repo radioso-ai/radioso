@@ -68,5 +68,10 @@ describe('CopilotProposalCard', () => {
       entity: { type: 'routine', id: 'routine-id' },
       agentId: 'agent-1',
     })
+    // Live-apply path: no detail ever loaded, apply response alone carries both ids.
+    expect(targetReference(proposal, null, { agentId: 'agent-9', routineId: 'routine-applied' })).toEqual({
+      entity: { type: 'routine', id: 'routine-applied' },
+      agentId: 'agent-9',
+    })
   })
 })

@@ -1003,6 +1003,7 @@ export class ChatTurnAssembly {
       conversationId: input.session.conversation.id,
       messageId: input.session.userMessage.id,
       originalQuery: input.session.userMessage.content,
+      retrievalSubqueries: input.session.retrieval.diagnostics.retrievalSubqueries,
       conversationLanguage: input.session.agent.assistantDefaultLocale ?? undefined,
       usageContext: {
         workspaceId: input.session.conversation.workspaceId,

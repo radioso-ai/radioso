@@ -288,12 +288,15 @@ run, but the Clarifier auto-picks the top candidate and records the decision as
 suppressed. This keeps active routine state and pending clarification state from
 competing to interpret the visitor's next message.
 
-The retrieval-sense detector runs only on conversational retrieval turns, after
-retrieval has produced candidates and before the grounded answer is composed.
-The default retrieval-sense policy is answer-first: `askMargin = 0.03`, so a
+Conversational retrieval turns with one active retrieval subquery run the
+retrieval-sense detector after candidate retrieval and before grounded answer
+composition. Plans with several retrieval subqueries keep their combined results
+as the evidence for one grounded answer.
+
+The default retrieval-sense policy is answer-first: `askMargin = 0.01`, so a
 no-clear-winner set that survives floor, loop guard, and priority checks becomes
 an offer instead of a blocking question — except when the top two senses are
-within the `0.03` tie band, where they are statistically indistinguishable and a
+within the `0.01` tie band, where they are statistically indistinguishable and a
 blocking ask is still used. Routine activation keeps `askMargin = clearMargin`,
 preserving the blocking ask behavior for routine ambiguity.
 Standalone retrieval answer, document search, SDK retrieval, and MCP retrieval

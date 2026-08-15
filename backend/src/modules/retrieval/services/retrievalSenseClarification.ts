@@ -7,6 +7,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import type { RetrievalSubquery } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalPipelineResult } from "./retrievalPipelineService.js";
 import {
   documentScopeFromClarificationCandidate,
@@ -57,6 +58,7 @@ export const evaluateRetrievalSenseClarification = async (input: {
   conversationId: string;
   messageId: string;
   originalQuery: string;
+  retrievalSubqueries?: RetrievalSubquery[];
   conversationLanguage?: string;
   usageContext?: ModelCallUsageContext;
   policy: ClarificationPolicy;
@@ -65,7 +67,15 @@ export const evaluateRetrievalSenseClarification = async (input: {
   loopGuardCandidateIds?: string[];
   expiresAt: Date;
 }): Promise<RetrievalSenseClarificationEffect | null> => {
-  if (!input.detector || input.suppressNewClarification) {
+  // Multiple retrieval branches are an authored recall strategy, not evidence that
+  // the visitor is unsure what they asked. Their results are intentionally flattened
+  // into one answer context, so regrouping those documents as competing senses would
+  // expose an internal query plan as a confusing user-facing choice.
+  if (
+    !input.detector ||
+    input.suppressNewClarification ||
+    (input.retrievalSubqueries?.length ?? 0) > 1
+  ) {
     return null;
   }
 

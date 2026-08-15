@@ -648,6 +648,15 @@ test("a terminal acknowledgement conflict removes stale feedback actions", async
   const assistantMessageId = "assistant-terminal-feedback";
   const conversationId = "conversation-terminal-feedback";
   const triageRequests: Array<Record<string, unknown>> = [];
+  let holdStaleFeedbackRefresh = false;
+  let resolveStaleFeedbackRefreshStarted: () => void = () => undefined;
+  const staleFeedbackRefreshStarted = new Promise<void>((resolve) => {
+    resolveStaleFeedbackRefreshStarted = resolve;
+  });
+  let releaseStaleFeedbackRefresh: () => void = () => undefined;
+  const staleFeedbackRefreshReleased = new Promise<void>((resolve) => {
+    releaseStaleFeedbackRefresh = resolve;
+  });
   const feedbackTurn = {
     assistantMessageId,
     conversationId,
@@ -688,6 +697,10 @@ test("a terminal acknowledgement conflict removes stale feedback actions", async
   await page.route("**/backend/api/v1/quality/turns**", async (route) => {
     const isWrittenFeedback =
       new URL(route.request().url()).searchParams.get("hasComment") === "true";
+    if (isWrittenFeedback && holdStaleFeedbackRefresh) {
+      resolveStaleFeedbackRefreshStarted();
+      await staleFeedbackRefreshReleased;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -728,17 +741,25 @@ test("a terminal acknowledgement conflict removes stale feedback actions", async
   );
 
   await page.goto(`/w/${workspaceKey}/activity`);
-  await page.getByRole("button", {
+  const feedbackReviewButton = page.getByRole("button", {
     name: "Review feedback: Can I return an opened item?",
-  }).click();
+  });
+  await expect(feedbackReviewButton).toBeVisible();
+  holdStaleFeedbackRefresh = true;
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await staleFeedbackRefreshStarted;
+  await feedbackReviewButton.click();
+
+  await expect(page.locator("main").getByRole("status")).toContainText(
+    "Another operator already closed this feedback. It was removed from Needs attention.",
+  );
+  releaseStaleFeedbackRefresh();
+  await page.waitForTimeout(100);
 
   await expect(page.locator(
     'button[aria-label="Review feedback: Can I return an opened item?"]',
   )).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Close details panel" })).toHaveCount(0);
-  await expect(page.locator("main").getByRole("status")).toContainText(
-    "Another operator already closed this feedback. It was removed from Needs attention.",
-  );
   expect(triageRequests).toEqual([{
     state: "acknowledged",
     expectedVersion: 1,

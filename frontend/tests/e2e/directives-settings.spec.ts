@@ -327,7 +327,10 @@ test("agent directives reach inline skill creation from the keyboard", async ({ 
 
   const instruction = page.getByLabel("Instruction");
   await instruction.click();
-  await instruction.pressSequentially("Refund the order using #RefundLookup");
+  // Paced typing: under parallel-worker CPU contention Lexical's typeahead can
+  // record a stale replacement range for the # query, leaving partial "#Ref"
+  // text behind after the menu inserts the chip.
+  await instruction.pressSequentially("Refund the order using #RefundLookup", { delay: 20 });
   await expect(page.getByRole("option", { name: 'Create skill “RefundLookup”' })).toBeVisible();
 
   // Enter takes the menu's highlighted option. An empty catalog must not park a dead notice

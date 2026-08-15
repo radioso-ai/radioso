@@ -37,6 +37,7 @@ import type {
   DocumentSourceResolverInput,
   DocumentSummary,
   DocumentSummaryRecord,
+  DocumentWorkspaceSummaryRecord,
   EmbeddingCoverageReconciliationPort,
 } from "../contracts/documentContracts.js";
 
@@ -529,6 +530,24 @@ export class DocumentIngestionService {
       nextCursor,
       hasMore,
     };
+  }
+
+  async summarizeWorkspace(workspaceId: string): Promise<DocumentWorkspaceSummaryRecord> {
+    return this.documentRepository.summarizeWorkspace(workspaceId);
+  }
+
+  /**
+   * Ingestion-state read for operability surfaces (needs-attention lists). It is
+   * deliberately not paginated or routable: callers ask for a small, bounded
+   * newest-first slice of documents sitting in the given processing states.
+   */
+  async listByStatuses(
+    workspaceId: string,
+    statuses: ReadonlyArray<string>,
+    input: { limit: number },
+  ): Promise<DocumentSummary[]> {
+    const documents = await this.documentRepository.listSummariesByStatus(workspaceId, statuses, input);
+    return documents.map((document) => this.toSummary(document));
   }
 
   async listForSource(

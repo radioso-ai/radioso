@@ -6,6 +6,7 @@ import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAuditPort,
   CopilotDirectiveProposalAdapter,
+  CopilotRoutineProposalAdapter,
   CopilotProposal,
   CopilotToolDescriptor,
 } from "./contracts.js";
@@ -40,6 +41,54 @@ export interface CopilotQualitySignalsPort {
 
 export interface CopilotAudiencePulsePort {
   read(input: { accountId: string; userId: string; workspaceId: string }): Promise<object>;
+}
+
+export interface CopilotDocumentStatusPort {
+  summarizeWorkspace(workspaceId: string): Promise<{
+    documentCount: number;
+    readyDocumentCount: number;
+    pendingDocumentCount: number;
+    failedDocumentCount: number;
+  }>;
+  listByStatuses(workspaceId: string, statuses: ReadonlyArray<string>, input: { limit: number }): Promise<ReadonlyArray<{
+    id: string;
+    title: string;
+    status: string;
+    failureReason?: string | null;
+    updatedAt: Date;
+    sourceId?: string | null;
+  }>>;
+}
+
+export interface CopilotDocumentSourceStatusPort {
+  listByWorkspaceIdWithDocumentCounts(workspaceId: string): Promise<ReadonlyArray<{
+    id: string;
+    kind: string;
+    name: string;
+    lastSyncStatus: string | null;
+    lastSyncedAt: Date | null;
+    documentCount: number;
+  }>>;
+}
+
+export interface CopilotAgentSkillsPort {
+  list(workspaceId: string, agentId: string): Promise<ReadonlyArray<{
+    name: string;
+    capability: string;
+    target: { kind: string | null; id: string | null };
+    config: Record<string, unknown>;
+    invocationMode: string;
+    enabled: boolean;
+  }>>;
+}
+
+export interface CopilotSkillCapabilityTargetsPort {
+  list(): ReadonlyArray<{
+    id: string;
+    targetKind: string;
+    requiresTarget?: boolean;
+    enumerateTargets(context: { workspaceId: string; agentId: string }): Promise<ReadonlyArray<{ id: string; label: string; status?: string }>>;
+  }>;
 }
 
 export const createUs1CopilotTools = (deps: {
@@ -77,9 +126,9 @@ export const createUs1CopilotTools = (deps: {
   },
   {
     name: "document_search", uiLabel: "Searching documents", contributingModule: "documents", requiredPermission: "workspace.documents.read",
-    description: "Search workspace documents and return matching document metadata and evidence.",
+    description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and evidence.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
+    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
   },
 ];
 
@@ -122,20 +171,141 @@ export const createUs2CopilotTools = (deps: {
   },
 ];
 
+const documentAttentionStatuses = ["failed", "queued", "processing"] as const;
+const documentAttentionLimit = 25;
+
+const documentStatusOutputSchema = z.object({
+  counts: z.object({ total: z.number(), ready: z.number(), pending: z.number(), failed: z.number() }),
+  attention: z.array(unknownRecord),
+  sources: z.array(unknownRecord),
+});
+const agentSkillsOutputSchema = z.object({ skills: z.array(unknownRecord), capabilities: z.array(unknownRecord) });
+
+/**
+ * Operability readers: how the workspace's knowledge base is processing, and what
+ * an agent can actually do. Both project their source records field by field —
+ * document content, document metadata values, source credentials, and skill
+ * config values never reach the model.
+ */
+export const createUs4CopilotTools = (deps: {
+  readonly agentService: Pick<AgentService, "get">;
+  readonly documentStatusService: CopilotDocumentStatusPort;
+  readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
+  readonly agentSkillsService: CopilotAgentSkillsPort;
+  readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
+}): ReadonlyArray<CopilotToolDescriptor> => [
+  {
+    name: "document_status", uiLabel: "Checking document status", contributingModule: "documents", requiredPermission: "workspace.documents.read",
+    description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
+    inputSchema: z.object({}), outputSchema: documentStatusOutputSchema,
+    createTool: (context) => ({
+      name: "document_status",
+      description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
+      inputSchema: z.object({}),
+      outputSchema: documentStatusOutputSchema,
+      invoke: async () => {
+        const [summary, attention, sources] = await Promise.all([
+          deps.documentStatusService.summarizeWorkspace(context.workspaceId),
+          deps.documentStatusService.listByStatuses(context.workspaceId, documentAttentionStatuses, { limit: documentAttentionLimit }),
+          deps.documentSourceStatusService.listByWorkspaceIdWithDocumentCounts(context.workspaceId),
+        ]);
+        return boundPayload({
+          counts: {
+            total: summary.documentCount,
+            ready: summary.readyDocumentCount,
+            pending: summary.pendingDocumentCount,
+            failed: summary.failedDocumentCount,
+          },
+          attention: attention.map((document) => ({
+            id: document.id,
+            title: document.title,
+            status: document.status,
+            failureReason: document.failureReason ?? null,
+            updatedAt: document.updatedAt.toISOString(),
+            sourceId: document.sourceId ?? null,
+          })),
+          sources: sources.map((source) => ({
+            id: source.id,
+            kind: source.kind,
+            label: source.name,
+            lastSyncStatus: source.lastSyncStatus,
+            lastSyncedAt: source.lastSyncedAt ? source.lastSyncedAt.toISOString() : null,
+            documentCount: source.documentCount,
+          })),
+        }) as z.infer<typeof documentStatusOutputSchema>;
+      },
+    }),
+  },
+  {
+    name: "agent_skills", uiLabel: "Reading agent skills", contributingModule: "agentSkills", requiredPermission: "workspace.agents.read",
+    description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
+    inputSchema: optionalAgentInput, outputSchema: agentSkillsOutputSchema,
+    createTool: (context) => ({
+      name: "agent_skills",
+      description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
+      inputSchema: optionalAgentInput,
+      outputSchema: agentSkillsOutputSchema,
+      invoke: async ({ agentId }) => {
+        const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
+        // Tenancy guard, and it must run first: skill targets (MCP connections,
+        // external skills) are agent-scoped, so enumerating them before the agent
+        // is proven to belong to this workspace would leak another tenant's
+        // connections.
+        await deps.agentService.get(context.workspaceId, resolvedAgentId);
+
+        const capabilities = await Promise.all(deps.skillCapabilityRegistry.list().map(async (descriptor) => {
+          const targets = await descriptor.enumerateTargets({ workspaceId: context.workspaceId, agentId: resolvedAgentId });
+          const requiresTarget = descriptor.requiresTarget ?? true;
+          const available = requiresTarget ? targets.length > 0 : true;
+          return { id: descriptor.id, targetKind: descriptor.targetKind, requiresTarget, available, targets };
+        }));
+        const targetsByCapability = new Map(capabilities.map((capability) => [
+          capability.id,
+          new Map(capability.targets.map((target) => [target.id, target])),
+        ]));
+        const skills = (await deps.agentSkillsService.list(context.workspaceId, resolvedAgentId)).map((skill) => {
+          const target = skill.target.id ? targetsByCapability.get(skill.capability)?.get(skill.target.id) ?? null : null;
+          return {
+            name: skill.name,
+            capability: skill.capability,
+            invocationMode: skill.invocationMode,
+            enabled: skill.enabled,
+            target: { kind: skill.target.kind, id: skill.target.id, label: target?.label ?? null, status: target?.status ?? null },
+            // Key names only: skill config carries operator-entered payload
+            // bindings, delivery addresses, and credentials.
+            configKeys: Object.keys(skill.config).sort(),
+          };
+        });
+        return boundPayload({
+          skills,
+          capabilities: capabilities.map(({ targets, available, ...capability }) => ({
+            ...capability,
+            targetCount: targets.length,
+            available,
+            unavailableReason: available ? null : "no_connection",
+          })),
+        }) as z.infer<typeof agentSkillsOutputSchema>;
+      },
+    }),
+    describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
+  },
+];
+
 const proposalOutputSchema = z.object({
   proposalId: z.string().uuid(),
-  targetType: z.enum(["directive", "agent_setting"]),
+  targetType: z.enum(["directive", "agent_setting", "routine"]),
   targetLabel: z.string(),
   summary: z.string(),
 });
 
 export const createUs3CopilotTools = (deps: {
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
-  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter>;
+  readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
   readonly auditService: CopilotAuditPort;
 }): ReadonlyArray<CopilotToolDescriptor> => {
   const directiveAdapter = proposalAdapter(deps.proposalAdapters, "directive");
   const settingAdapter = proposalAdapter(deps.proposalAdapters, "agent_setting");
+  const routineAdapter = proposalAdapter(deps.proposalAdapters, "routine");
   return [
     {
       name: "propose_directive", uiLabel: "Drafting a directive", contributingModule: "directives", requiredPermission: "workspace.agents.manage",
@@ -164,6 +334,35 @@ export const createUs3CopilotTools = (deps: {
           return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: draft.targetLabel, summary: draft.summary };
         },
       }),
+    },
+    {
+      name: "propose_routine", uiLabel: "Drafting a routine", contributingModule: "routines", requiredPermission: "workspace.agents.manage",
+      description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
+      inputSchema: z.object({ agentId: idSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+      outputSchema: proposalOutputSchema,
+      createTool: (context) => ({
+        name: "propose_routine",
+        description: "Draft a new routine proposal for operator review. It does not change configuration.",
+        inputSchema: z.object({ agentId: idSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+        outputSchema: proposalOutputSchema,
+        invoke: async ({ agentId, intent }) => {
+          const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
+          const draft = await routineAdapter.draft(context.workspaceId, targetRef, intent);
+          const versionToken = await routineAdapter.readVersionToken(context.workspaceId, targetRef);
+          const proposal = await deps.proposalRepository.createProposal({
+            workspaceId: context.workspaceId,
+            operatorUserId: context.operatorUserId,
+            conversationId: requiredCopilotConversation(context),
+            targetType: "routine",
+            targetRef,
+            payload: draft.payload,
+            versionToken,
+          });
+          await recordProposalCreated(deps.auditService, context, proposal);
+          return { proposalId: proposal.id, targetType: "routine" as const, targetLabel: draft.targetLabel, summary: draft.summary };
+        },
+      }),
+      describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
     },
     {
       name: "propose_agent_setting", uiLabel: "Drafting a setting change", contributingModule: "agents", requiredPermission: "workspace.agents.manage",
@@ -196,13 +395,13 @@ export const createUs3CopilotTools = (deps: {
   ];
 };
 
-const proposalAdapter = <TType extends "directive" | "agent_setting">(
-  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter>,
+const proposalAdapter = <TType extends "directive" | "agent_setting" | "routine">(
+  adapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>,
   targetType: TType,
-): Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter, { targetType: TType }> => {
+): Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter, { targetType: TType }> => {
   const adapter = adapters.find((candidate) => candidate.targetType === targetType);
   if (!adapter) throw new Error(`No copilot proposal adapter registered for ${targetType}`);
-  return adapter as Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter, { targetType: TType }>;
+  return adapter as Extract<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter, { targetType: TType }>;
 };
 
 const requiredCopilotConversation = (context: { copilotConversationId?: string }): string => {

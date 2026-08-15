@@ -21924,6 +21924,7 @@ paths:
                                     enum: &a84
                                       - directive
                                       - agent_setting
+                                      - routine
                                   targetLabel:
                                     type: string
                                   summary:

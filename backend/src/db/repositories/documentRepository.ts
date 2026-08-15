@@ -131,6 +131,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         sql<string>`COUNT(*)::text`.as("document_count"),
         sql<string>`COUNT(*) FILTER (WHERE status = 'ready')::text`.as("ready_document_count"),
         sql<string>`COUNT(*) FILTER (WHERE status IN ('queued', 'processing'))::text`.as("pending_document_count"),
+        sql<string>`COUNT(*) FILTER (WHERE status = 'failed')::text`.as("failed_document_count"),
         sql<string>`COUNT(*) FILTER (WHERE metadata ->> 'sampleDocument' = 'true')::text`.as("sample_document_count"),
         sql<string[]>`COALESCE(
            ARRAY_AGG(metadata ->> 'sampleSlug')
@@ -148,6 +149,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       documentCount: Number(row?.document_count ?? "0"),
       readyDocumentCount: Number(row?.ready_document_count ?? "0"),
       pendingDocumentCount: Number(row?.pending_document_count ?? "0"),
+      failedDocumentCount: Number(row?.failed_document_count ?? "0"),
       sampleDocumentCount: Number(row?.sample_document_count ?? "0"),
       sampleDocumentSlugs: row?.sample_document_slugs ?? [],
     };
@@ -358,6 +360,28 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .select(documentSummarySelectColumns)
       .where("workspace_id", "=", workspaceId)
       .where((eb) => anyOf(eb.ref("id"), documentIds, "uuid[]"))
+      .execute()) as DocumentRow[];
+
+    return rows.map(mapDocumentSummary);
+  }
+
+  async listSummariesByStatus(
+    workspaceId: string,
+    statuses: ReadonlyArray<string>,
+    input: { limit: number },
+  ): Promise<DocumentSummaryRecord[]> {
+    if (statuses.length === 0) {
+      return [];
+    }
+
+    const rows = (await this.db
+      .selectFrom("documents")
+      .select(documentSummarySelectColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("status", "in", [...statuses])
+      .orderBy("updated_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.limit)
       .execute()) as DocumentRow[];
 
     return rows.map(mapDocumentSummary);

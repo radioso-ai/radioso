@@ -40,10 +40,10 @@ import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
 import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
-import { AgenticCapabilityRunner, DefaultAgentRuntime, TextRoutedToolCallingGateway } from "../../shared/agent-runtime/index.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
@@ -339,10 +339,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
-    capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }) }),
+    capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
     usageLimitPolicy: infrastructure.usageLimitPolicy,
     auditService: infrastructure.auditService,
     proposalAdapters: copilotProposalAdapters,
@@ -355,6 +356,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       evalResultsService: evalCaseService,
       qualitySignalsService,
       audiencePulseService,
+      documentStatusService: documents.documentIngestionService,
+      documentSourceStatusService: repositories.documentSourceRepository,
+      agentSkillsService,
+      skillCapabilityRegistry,
       proposalRepository: repositories.copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService: infrastructure.auditService,

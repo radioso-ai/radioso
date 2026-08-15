@@ -277,6 +277,7 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     await repository.create({ ...baseCreateInput(), status: "ready" });
     await repository.create({ ...baseCreateInput(), status: "queued" });
     await repository.create({ ...baseCreateInput(), status: "processing" });
+    await repository.create({ ...baseCreateInput(), status: "failed" });
     await repository.create({
       ...baseCreateInput({ metadata: { sampleDocument: "true", sampleSlug: "welcome" } }),
       status: "ready",
@@ -284,9 +285,10 @@ describeIntegration("DocumentRepository (Postgres)", () => {
 
     const summary = await repository.summarizeWorkspace(workspaceId);
 
-    expect(summary.documentCount).toBe(4);
+    expect(summary.documentCount).toBe(5);
     expect(summary.readyDocumentCount).toBe(2);
     expect(summary.pendingDocumentCount).toBe(2);
+    expect(summary.failedDocumentCount).toBe(1);
     expect(summary.sampleDocumentCount).toBe(1);
     expect(summary.sampleDocumentSlugs).toEqual(["welcome"]);
   });
@@ -297,9 +299,25 @@ describeIntegration("DocumentRepository (Postgres)", () => {
       documentCount: 0,
       readyDocumentCount: 0,
       pendingDocumentCount: 0,
+      failedDocumentCount: 0,
       sampleDocumentCount: 0,
       sampleDocumentSlugs: [],
     });
+  });
+
+  it("listSummariesByStatus returns only the requested statuses, newest first, capped by limit", async () => {
+    await repository.create({ ...baseCreateInput({ title: "Ready" }), status: "ready" });
+    const failed = await repository.create({ ...baseCreateInput({ title: "Failed" }), status: "failed" });
+    const queued = await repository.create({ ...baseCreateInput({ title: "Queued" }), status: "queued" });
+    // updated_at is written by the database clock, so order the rows explicitly.
+    await database.query("UPDATE documents SET updated_at = $2 WHERE id = $1", [failed.id, new Date("2026-08-01T00:00:00Z")]);
+    await database.query("UPDATE documents SET updated_at = $2 WHERE id = $1", [queued.id, new Date("2026-08-02T00:00:00Z")]);
+
+    const attention = await repository.listSummariesByStatus(workspaceId, ["failed", "queued", "processing"], { limit: 25 });
+
+    expect(attention.map((document) => document.title)).toEqual(["Queued", "Failed"]);
+    expect(await repository.listSummariesByStatus(workspaceId, ["failed", "queued"], { limit: 1 })).toHaveLength(1);
+    expect(await repository.listSummariesByStatus(workspaceId, [], { limit: 25 })).toEqual([]);
   });
 
   it("listByWorkspaceId returns documents ordered by created_at descending", async () => {

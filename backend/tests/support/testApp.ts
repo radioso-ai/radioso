@@ -160,7 +160,7 @@ import {
   TextRoutedToolCallingGateway,
 } from "../../src/shared/agent-runtime/index.js";
 import { createCopilotToolCatalog } from "../../src/app/composition/copilotToolCatalog.js";
-import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -1671,6 +1671,7 @@ export const createTestDependencies = (overrides: {
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
     createAgentSettingCopilotProposalAdapter({ agentService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
   const operatorCopilotService = new OperatorCopilotService({
     repository: copilotRepository,
@@ -1689,6 +1690,10 @@ export const createTestDependencies = (overrides: {
       evalResultsService: evalCaseService,
       qualitySignalsService,
       audiencePulseService,
+      documentStatusService: documentIngestionService,
+      documentSourceStatusService: documentSourceRepository,
+      agentSkillsService,
+      skillCapabilityRegistry,
       proposalRepository: copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService,
@@ -2118,8 +2123,8 @@ class InMemoryCopilotRepository implements CopilotRepositoryPort {
       proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map((proposal) => ({
         id: proposal.id,
         targetType: proposal.targetType,
-        targetLabel: proposal.targetType === "directive" && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
-        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : "",
+        targetLabel: (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
+        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
         status: proposal.status,
         reason: proposal.reason ?? null,
       })),

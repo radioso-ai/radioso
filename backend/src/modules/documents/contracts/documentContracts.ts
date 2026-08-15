@@ -178,6 +178,11 @@ export interface DocumentRepositoryPort {
     externalDocumentId: string,
   ): Promise<DocumentRecord | null>;
   listSummariesByIdsAndWorkspaceId(workspaceId: string, documentIds: string[]): Promise<DocumentSummaryRecord[]>;
+  listSummariesByStatus(
+    workspaceId: string,
+    statuses: ReadonlyArray<string>,
+    input: { limit: number },
+  ): Promise<DocumentSummaryRecord[]>;
   listSummaryPageByWorkspaceId(
     workspaceId: string,
     input: { limit: number; offset?: number; cursor?: string },
@@ -234,6 +239,7 @@ export interface DocumentWorkspaceSummaryRecord {
   documentCount: number;
   readyDocumentCount: number;
   pendingDocumentCount: number;
+  failedDocumentCount: number;
   sampleDocumentCount: number;
   sampleDocumentSlugs: string[];
 }

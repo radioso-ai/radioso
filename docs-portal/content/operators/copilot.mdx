@@ -1,15 +1,21 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to investigate agent behavior with page context, selected text, and linked activity."
-last_updated: 2026-08-12
+last_updated: 2026-08-13
 ---
 
 # Ray
 
 Ray, your operator copilot, helps you investigate an agent without leaving the dashboard. Ask why a
-conversation received a particular answer, why retrieval did not run, or which
-trace stage produced a refusal. Ray reads the workspace data available to
+conversation received a particular answer, why retrieval did not run, which
+trace stage produced a refusal, which documents failed to process, or which
+skills an agent can reach. Ray reads the workspace data available to
 your operator session and streams its findings as it works.
+
+Ray sees document titles, processing status, and failure reasons rather than
+document text, and it sees the names of a skill's settings rather than their
+values. So it can tell you that a webhook skill has no connection configured,
+without reading the token you would put there.
 
 ## Open the panel
 
@@ -53,9 +59,12 @@ conversation.
 ## Review proposals
 
 When Ray identifies a configuration change, it can draft a proposal for a
-directive or an agent setting. The proposal card names the target, summarizes
-the change, and shows the current and proposed values before anything is
-written. Expand **Show changes** to inspect the field-level diff.
+directive, an agent setting, or a routine. The proposal card names the target,
+summarizes the change, and shows the current and proposed values before
+anything is written. Expand **Show changes** to inspect the field-level diff.
+
+Applying a routine proposal creates a draft routine. Review and publish it in
+the routine editor.
 
 Operators with `workspace.agents.manage` can choose **Apply** and confirm the
 change. Ray sends the confirmed proposal through the same guarded

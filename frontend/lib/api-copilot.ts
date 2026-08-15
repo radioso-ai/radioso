@@ -41,7 +41,7 @@ export interface CopilotAvailability {
 export type CopilotConversationStatus = 'idle' | 'running'
 export type CopilotMessageRole = 'operator' | 'copilot'
 export type CopilotOutcomeStatus = 'completed' | 'budget_exhausted' | 'failed'
-export type CopilotProposalTargetType = 'directive' | 'agent_setting'
+export type CopilotProposalTargetType = 'directive' | 'agent_setting' | 'routine'
 export type CopilotProposalStatus = 'pending' | 'applied' | 'dismissed' | 'failed' | 'stale'
 
 export interface CopilotProposalSummary {
@@ -61,6 +61,7 @@ export interface CopilotProposalPreview {
 export interface CopilotProposalTargetReference {
   agentId?: string | null
   directiveId?: string | null
+  routineId?: string | null
   settingKey?: string | null
   id?: string | null
 }

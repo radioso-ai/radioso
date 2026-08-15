@@ -184,6 +184,16 @@ export interface DirectiveCoherenceVerdict {
   rationale: string;
 }
 
+/**
+ * The stable, structural shape of a rejection from a conversation-kit
+ * directive-coherence check. Consumers identify it with the kit's
+ * `isDirectiveCoherenceError` helper rather than a cross-package `instanceof`.
+ */
+export interface DirectiveCoherenceError {
+  code: "conversation_kit_directive_coherence_conflict";
+  verdict: DirectiveCoherenceVerdict;
+}
+
 export interface DirectiveCoherenceInvocationContext {
   workspaceId: string;
   agentId: string;

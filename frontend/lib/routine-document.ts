@@ -1,8 +1,18 @@
 import { instructionToBlockSegments } from '@radioso/routine-markdown'
 
-import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
+import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const TARGET_MESSAGE_LIMIT = 40
+
+// A default edge into the very next step says only what the numbering already says, so the
+// document does not render it. A default edge to an ending, a jump to a step further along,
+// and every conditional edge all carry information and still render.
+export function branchIsImplicitFallThrough(branch: Pick<RoutineBlockBranch, 'guard' | 'target'>, nextStepId: string | null): boolean {
+  return branch.guard.kind === 'default'
+    && branch.target.kind === 'step'
+    && nextStepId !== null
+    && branch.target.stableStepId === nextStepId
+}
 
 export function documentTextToSegments(text: string): RoutineBlockInstructionSegment[] {
   return instructionToBlockSegments(text)

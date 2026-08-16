@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence } from '@/lib/routine-document'
+import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence } from '@/lib/routine-document'
+import type { RoutineBlockBranch } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
   const slots = new Map([['email', 'Customer email'], ['attempts', 'Attempts'], ['order_total', 'Order total'], ['placed_at', 'Placed at'], ['is_member', 'Member']])
@@ -84,5 +85,32 @@ describe('routine document helpers', () => {
 
   it('omits an empty uses-to-sets line', () => {
     expect(formatBindingLine({}, {})).toBeNull()
+  })
+
+  describe('implicit fall-through detection', () => {
+    const guard = (kind: RoutineBlockBranch['guard']['kind']) => guardFixture({ kind }) as RoutineBlockBranch['guard']
+    const branch = (guardKind: RoutineBlockBranch['guard']['kind'], target: RoutineBlockBranch['target']): RoutineBlockBranch =>
+      ({ guard: guard(guardKind), target })
+
+    it('treats a default edge into the next step as implied by the numbering', () => {
+      expect(branchIsImplicitFallThrough(branch('default', { kind: 'step', stableStepId: 'step_2' }), 'step_2')).toBe(true)
+    })
+
+    it('keeps a default edge that ends the routine', () => {
+      expect(branchIsImplicitFallThrough(branch('default', { kind: 'ending', terminalId: 'complete_1' }), 'step_2')).toBe(false)
+    })
+
+    it('keeps a jump to a step further along', () => {
+      expect(branchIsImplicitFallThrough(branch('default', { kind: 'step', stableStepId: 'step_5' }), 'step_2')).toBe(false)
+    })
+
+    it('keeps a conditional edge even when it points at the next step', () => {
+      expect(branchIsImplicitFallThrough(branch('field', { kind: 'step', stableStepId: 'step_2' }), 'step_2')).toBe(false)
+      expect(branchIsImplicitFallThrough(branch('llm', { kind: 'step', stableStepId: 'step_2' }), 'step_2')).toBe(false)
+    })
+
+    it('keeps every edge on the last step, which has no next step', () => {
+      expect(branchIsImplicitFallThrough(branch('default', { kind: 'step', stableStepId: 'step_2' }), null)).toBe(false)
+    })
   })
 })

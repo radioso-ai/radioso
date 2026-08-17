@@ -437,6 +437,8 @@ Full configuration reference, API docs, retrieval tuning guide, and deployment d
 
 ## Contributing
 
+Contributions are welcome. Run `./run-dev.sh` to get a full local stack, then read [CONTRIBUTING.md](./CONTRIBUTING.md) for the per-package test targets, the `pnpm run ci:local` check to run before you open a pull request, and the Conventional Commits format the history uses.
+
 ```
 backend/         Express API and background document worker
 frontend/        Next.js application
@@ -446,7 +448,7 @@ infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```
 
-Run `./run-dev.sh` to get a full local stack. Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
+Found a security vulnerability? Report it privately — see [SECURITY.md](./SECURITY.md). By taking part you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md). Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
 
 ---
 

@@ -11,9 +11,30 @@ const fetchReady = async (url) => {
   }
 };
 
+// A cold first `run-dev.sh` reinstalls dependencies inside the containers, which
+// routinely runs several minutes before the health endpoints answer. The ceiling
+// is generous so we don't report a false failure while the stack is still
+// installing; operators on fast/warm boots still return as soon as probes pass.
+const DEFAULT_READINESS_TIMEOUT_MS = 600_000;
+
+export const resolveReadinessTimeoutMs = (env = process.env) => {
+  const raw = env?.RADIOSO_STARTUP_TIMEOUT_MS;
+  if (raw === undefined || raw === null || `${raw}`.trim() === "") {
+    return DEFAULT_READINESS_TIMEOUT_MS;
+  }
+
+  const parsed = Number.parseInt(`${raw}`, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_READINESS_TIMEOUT_MS;
+  }
+
+  return parsed;
+};
+
 export const waitForReadiness = async (options = {}) => {
-  const timeoutMs = options.timeoutMs ?? 120_000;
+  const timeoutMs = options.timeoutMs ?? resolveReadinessTimeoutMs();
   const intervalMs = options.intervalMs ?? 2_000;
+  const onProgress = typeof options.onProgress === "function" ? options.onProgress : null;
   const ports = options.ports ?? resolveLocalPorts();
   const frontendUrl = localHttpUrl(ports.frontend);
   const backendUrl = localHttpUrl(ports.backend);
@@ -42,6 +63,10 @@ export const waitForReadiness = async (options = {}) => {
           "Containers keep running in detached mode after this command exits.",
         ],
       };
+    }
+
+    if (onProgress) {
+      onProgress({ elapsedMs: Date.now() - startedAt, timeoutMs, statuses });
     }
 
     await sleep(intervalMs);

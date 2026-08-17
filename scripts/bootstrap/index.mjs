@@ -99,6 +99,23 @@ const printConfigurationSummary = (values, ansi, out = process.stdout) => {
   );
 };
 
+// A cold first boot can spend minutes reinstalling dependencies before the
+// health endpoints answer. Emit a throttled heartbeat so a long-but-healthy
+// startup does not read as a hung command.
+const createStartupHeartbeat = (out, ansi, everyMs = 30_000) => {
+  let lastPrintedAt = 0;
+  return ({ elapsedMs }) => {
+    if (elapsedMs - lastPrintedAt < everyMs) {
+      return;
+    }
+    lastPrintedAt = elapsedMs;
+    const seconds = Math.round(elapsedMs / 1000);
+    out.write(
+      `${formatMessage("helper", `Still starting services... (${seconds}s elapsed; a first run installs dependencies)\n`, ansi)}`,
+    );
+  };
+};
+
 const renderPostStartGuide = (report, ansi, out = process.stdout) => {
   const [frontendUrl = "http://127.0.0.1:3000", backendUrl = "http://127.0.0.1:8080"] = report.applicationUrls;
 
@@ -186,7 +203,9 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     return result.code ?? 1;
   }
 
-  const report = await startCompose();
+  const report = await startCompose({
+    waitOptions: { onProgress: createStartupHeartbeat(out, ansi) },
+  });
   const result = summarizeStartup(report, ansi, { stdout: out });
   if (typeof result === "number") {
     return result;

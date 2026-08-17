@@ -3,9 +3,48 @@ import assert from "node:assert/strict";
 
 import {
   attachComposeStack,
+  resolveReadinessTimeoutMs,
   startComposeStack,
   waitForReadiness,
 } from "../../scripts/bootstrap/compose-runner.mjs";
+
+test("resolveReadinessTimeoutMs defaults to a cold-boot-safe ceiling", () => {
+  assert.equal(resolveReadinessTimeoutMs({}), 600_000);
+});
+
+test("resolveReadinessTimeoutMs honors a valid RADIOSO_STARTUP_TIMEOUT_MS override", () => {
+  assert.equal(resolveReadinessTimeoutMs({ RADIOSO_STARTUP_TIMEOUT_MS: "90000" }), 90_000);
+});
+
+test("resolveReadinessTimeoutMs falls back to the default for invalid overrides", () => {
+  assert.equal(resolveReadinessTimeoutMs({ RADIOSO_STARTUP_TIMEOUT_MS: "not-a-number" }), 600_000);
+  assert.equal(resolveReadinessTimeoutMs({ RADIOSO_STARTUP_TIMEOUT_MS: "0" }), 600_000);
+  assert.equal(resolveReadinessTimeoutMs({ RADIOSO_STARTUP_TIMEOUT_MS: "  " }), 600_000);
+});
+
+test("waitForReadiness reports progress while services are still starting", async () => {
+  const ticks = [];
+  let calls = 0;
+
+  const report = await waitForReadiness({
+    timeoutMs: 50,
+    intervalMs: 1,
+    onProgress: (tick) => ticks.push(tick),
+    checks: [
+      {
+        name: "backend",
+        probe: async () => {
+          calls += 1;
+          return calls > 2;
+        },
+      },
+    ],
+  });
+
+  assert.equal(report.ok, true);
+  assert.ok(ticks.length >= 1);
+  assert.ok(ticks.every((tick) => tick.timeoutMs === 50 && typeof tick.elapsedMs === "number"));
+});
 
 test("startComposeStack returns failure when compose up exits non-zero", async () => {
   const report = await startComposeStack({

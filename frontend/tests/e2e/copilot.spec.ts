@@ -203,12 +203,16 @@ test("summons Ray from Activity with ambient conversation context and links acti
 
   await page.goto(`/w/${workspaceKey}/activity?tab=all`);
   await expect(page.getByText("Why did this conversation route to retrieval?").first()).toBeVisible();
-  await page.getByRole("button", { name: "Open Ray" }).click();
+  // Ask Ray straight from the sidebar input; one Enter opens the panel and sends.
+  const askRay = page.getByRole("textbox", { name: "Ask a question for Ray" });
+  await askRay.fill("Explain this conversation");
+  await askRay.press("Enter");
   await expect(page.getByRole("heading", { name: "Ray", exact: true })).toBeVisible();
-  await page.getByRole("textbox", { name: "Ask Ray" }).fill("Explain this conversation");
-  await page.getByRole("button", { name: "Send question" }).click();
   await expect(page.getByText("The conversation used retrieval.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Why did this conversation route to retrieval?" })).toBeVisible();
+  // The panel docks beside the activity list (non-modal), so both surfaces show this
+  // label — scope the answer's activity link to the Ray panel.
+  const rayPanel = page.getByRole("complementary", { name: "Ray" });
+  await expect(rayPanel.getByRole("button", { name: "Why did this conversation route to retrieval?" })).toBeVisible();
 });
 
 test("asks Ray about selected dashboard text", async ({ page }) => {

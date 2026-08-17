@@ -120,6 +120,12 @@ interface CopilotContextValue {
   openPanel: (selection?: string | null) => void
   closePanel: () => void
   dismissSelectionPrompt: () => void
+  /** Increments each time a question is queued for auto-send; the panel watches this. */
+  askToken: number
+  /** Open the panel and queue `question` to be sent as soon as the panel is ready. */
+  askRay: (question: string) => void
+  /** Atomically read-and-clear the queued question (null once consumed). */
+  consumePendingQuestion: () => string | null
 }
 
 const CopilotContext = createContext<CopilotContextValue | null>(null)
@@ -129,6 +135,10 @@ export function CopilotContextProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState(initialCopilotSessionState)
   const [panelOpen, setPanelOpen] = useState(false)
   const [selectionPrompt, setSelectionPrompt] = useState<{ text: string; top: number; left: number } | null>(null)
+  const [askToken, setAskToken] = useState(0)
+  // Held in a ref (not state) so consumption is synchronous — the panel's effect can
+  // read-and-clear it exactly once even under StrictMode's double-invoked effects.
+  const pendingQuestionRef = useRef<string | null>(null)
   const registrationSources = useRef(new Map<string, CopilotEntity[]>())
 
   const registerEntity = useCallback((entity: CopilotEntity) => {
@@ -165,6 +175,21 @@ export function CopilotContextProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const closePanel = useCallback(() => setPanelOpen(false), [])
+
+  const askRay = useCallback((question: string) => {
+    const trimmed = truncateCopilotSelection(question)
+    if (!trimmed) return
+    pendingQuestionRef.current = trimmed
+    setSelectionPrompt(null)
+    setPanelOpen(true)
+    setAskToken((token) => token + 1)
+  }, [])
+
+  const consumePendingQuestion = useCallback(() => {
+    const question = pendingQuestionRef.current
+    pendingQuestionRef.current = null
+    return question
+  }, [])
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -212,7 +237,10 @@ export function CopilotContextProvider({ children }: { children: ReactNode }) {
     openPanel,
     closePanel,
     dismissSelectionPrompt: () => setSelectionPrompt(null),
-  }), [closePanel, entities, openPanel, panelOpen, registerEntity, selectionPrompt, session, unregisterEntity])
+    askToken,
+    askRay,
+    consumePendingQuestion,
+  }), [askRay, askToken, closePanel, consumePendingQuestion, entities, openPanel, panelOpen, registerEntity, selectionPrompt, session, unregisterEntity])
 
   return <CopilotContext.Provider value={value}>{children}</CopilotContext.Provider>
 }

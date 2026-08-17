@@ -1,5 +1,6 @@
 import type {
   LlmCapabilityConfig,
+  LlmCapabilityDefault,
   LlmCapabilityName,
   LlmProviderName,
   ResolvedLlmConfig,
@@ -52,14 +53,6 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
 
     const resolvedProviderAndModel = await this.resolveProviderAndModel(capability, input);
     const { provider, model } = resolvedProviderAndModel;
-
-    if (provider === envDefault.provider && model === envDefault.model) {
-      const overrideKey = await this.deps.credentials.getApiKey(input.workspaceId, provider);
-      if (overrideKey) {
-        return { ...envDefault, apiKey: overrideKey };
-      }
-      return envDefault;
-    }
 
     const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
     const baseUrl = this.resolveBaseUrl(provider, capability, envDefault);
@@ -122,7 +115,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   private resolveBaseUrl(
     provider: LlmProviderName,
     capability: LlmCapabilityName,
-    envDefault: LlmCapabilityConfig,
+    envDefault: LlmCapabilityDefault,
   ): string | undefined {
     if (provider !== "openai-compatible") {
       return undefined;

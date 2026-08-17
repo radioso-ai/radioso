@@ -73,7 +73,8 @@ describe("embedding provider binding resolution", () => {
 
   it("fingerprints endpoint scope without credentials or trailing-slash variance", () => {
     const first = endpointScopeFingerprint(compatible);
-    const rotated = endpointScopeFingerprint({ ...compatible, apiKey: "rotated", baseUrl: "https://embeddings.example/v1" });
+    const rotatedConfig = { ...compatible, apiKey: "rotated", baseUrl: "https://embeddings.example/v1" };
+    const rotated = endpointScopeFingerprint(rotatedConfig);
     const other = endpointScopeFingerprint({ ...compatible, baseUrl: "https://other.example/v1" });
 
     expect(first).toBe(rotated);

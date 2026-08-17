@@ -12,6 +12,12 @@ import { startWorkerRuntime } from "../../src/runtime/startWorkerRuntime.js";
 import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerRuntime.js";
 import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import { createTestDependencies } from "../support/testApp.js";
+import { WORKER_TASK_AUTH_HEADER } from "../../src/shared/infra/workerTaskAuth.js";
+
+const workerTaskAuthToken = "0123456789abcdef0123456789abcdef";
+const createWorkerTaskTestDependencies = () => createTestDependencies({
+  envOverrides: { WORKER_TASK_AUTH_TOKEN: workerTaskAuthToken },
+});
 
 const createEnv = (port: number): Env => ({
   NODE_ENV: "test",
@@ -50,6 +56,7 @@ const createEnv = (port: number): Env => ({
   WORKSPACE_TOKEN_SECRET: "fedcba9876543210fedcba9876543210",
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
+  AUTH_AUTO_VERIFY_EMAIL: false,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
@@ -75,6 +82,7 @@ const createEnv = (port: number): Env => ({
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+  WORKER_TASK_AUTH_TOKEN: workerTaskAuthToken,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
   WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -178,7 +186,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("worker task runtime returns 410 Gone for website-crawl pushes so Cloud Tasks stops retrying", async () => {
-    const { dependencies } = createTestDependencies();
+    const { dependencies } = createWorkerTaskTestDependencies();
     const crawlWorkerSpy = vi.spyOn(dependencies.websiteCrawlWorker, "runJobById");
 
     const runtime = await startWorkerTaskRuntime({
@@ -192,6 +200,7 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/website-crawl")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ jobId: randomUUID() });
 
     expect(response.status).toBe(410);
@@ -200,7 +209,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("crawler worker task runtime serves the website-crawl route", async () => {
-    const { dependencies } = createTestDependencies();
+    const { dependencies } = createWorkerTaskTestDependencies();
     const crawlerWorkerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
     const documentWorkerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
     const runJobByIdSpy = vi
@@ -219,6 +228,7 @@ describe("runtime entrypoints", () => {
     const jobId = randomUUID();
     const response = await request(runtime.server!)
       .post("/internal/tasks/website-crawl")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ jobId });
 
     expect(response.status).toBe(204);
@@ -228,7 +238,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("crawler worker task runtime does not expose the document-processing route", async () => {
-    const { dependencies } = createTestDependencies();
+    const { dependencies } = createWorkerTaskTestDependencies();
 
     const runtime = await startCrawlerWorkerTaskRuntime({
       env: createEnv(8100),
@@ -241,13 +251,14 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/document-processing")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ jobId: randomUUID() });
 
     expect(response.status).toBe(404);
   });
 
   it("worker task runtime exposes bounded document recovery without starting the polling loop", async () => {
-    const { dependencies } = createTestDependencies();
+    const { dependencies } = createWorkerTaskTestDependencies();
     const workerStartSpy = vi.spyOn(dependencies.documentProcessingWorker, "start");
     const runOnceSpy = vi
       .spyOn(dependencies.documentProcessingWorker, "runOnce")
@@ -271,6 +282,7 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/document-processing/recover")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ maxJobs: 5 });
 
     expect(response.status).toBe(200);
@@ -281,7 +293,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("crawler worker task runtime exposes bounded crawl recovery without starting the polling loop", async () => {
-    const { dependencies } = createTestDependencies();
+    const { dependencies } = createWorkerTaskTestDependencies();
     const crawlerWorkerStartSpy = vi.spyOn(dependencies.websiteCrawlWorker, "start");
     const runOnceSpy = vi
       .spyOn(dependencies.websiteCrawlWorker, "runOnce")
@@ -299,6 +311,7 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/website-crawl/recover")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ maxJobs: 2 });
 
     expect(response.status).toBe(200);
@@ -308,7 +321,7 @@ describe("runtime entrypoints", () => {
   });
 
   it("starts the worker task runtime and serves internal task routes", async () => {
-    const { dependencies, repositories } = createTestDependencies();
+    const { dependencies, repositories } = createWorkerTaskTestDependencies();
     const workerStartSpy = vi
       .spyOn(dependencies.documentProcessingWorker, "start")
       .mockResolvedValue(undefined);
@@ -344,6 +357,7 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/document-processing")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
       .send({ jobId: job.id });
 
     expect(response.status).toBe(204);

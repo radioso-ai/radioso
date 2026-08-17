@@ -249,6 +249,7 @@ export const createDefaultDocumentJobDispatcher = (
     | "WORKER_TASKS_QUEUE_NAME"
     | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
     | "WORKER_AMQP_DLQ_NAME"
@@ -263,6 +264,7 @@ export const createDefaultDocumentJobDispatcher = (
         queueName: env.WORKER_TASKS_QUEUE_NAME!,
         workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,
       })
     : env.WORKER_DISPATCH_DRIVER === "amqp"
@@ -290,6 +292,7 @@ export const createDefaultActionDrainDispatcher = (
     | "WORKER_TASKS_QUEUE_LOCATION"
     | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
     | "ACTION_DISPATCH_TASK_QUEUE_NAME"
   >,
   logger: AppLogger,
@@ -301,6 +304,7 @@ export const createDefaultActionDrainDispatcher = (
         queueName: env.ACTION_DISPATCH_TASK_QUEUE_NAME,
         workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,
       })
     : new NoopActionDrainDispatcher();
@@ -337,6 +341,7 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
     | "WORKER_TASKS_SERVICE_URL"
     | "WORKER_TASKS_CRAWL_SERVICE_URL"
     | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
     | "WORKER_AMQP_URL"
     | "WORKER_AMQP_QUEUE_NAME"
     | "WORKER_AMQP_CRAWL_QUEUE_NAME"
@@ -352,6 +357,7 @@ export const createDefaultWebsiteCrawlJobDispatcher = (
         queueName: env.WORKER_TASKS_CRAWL_QUEUE_NAME ?? env.WORKER_TASKS_QUEUE_NAME!,
         workerServiceUrl: env.WORKER_TASKS_CRAWL_SERVICE_URL ?? env.WORKER_TASKS_SERVICE_URL!,
         invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,
       })
     : env.WORKER_DISPATCH_DRIVER === "amqp"

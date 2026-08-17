@@ -13,10 +13,10 @@ import {
 } from "../../src/shared/infra/llm/providerTypes.js";
 
 const envConfig: ResolvedLlmConfig = {
-  chat: { capability: "chat", provider: "openai", model: "gpt-5.2", apiKey: "env-openai" },
-  rewrite: { capability: "rewrite", provider: "openai", model: "gpt-5.2", apiKey: "env-openai" },
-  rerank: { capability: "rerank", provider: "openai", model: "gpt-5-mini", apiKey: "env-openai" },
-  embeddings: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small", apiKey: "env-openai" },
+  chat: { capability: "chat", provider: "openai", model: "gpt-5.2" },
+  rewrite: { capability: "rewrite", provider: "openai", model: "gpt-5.2" },
+  rerank: { capability: "rerank", provider: "openai", model: "gpt-5-mini" },
+  embeddings: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
   embeddingProviderConfigs: [],
 };
 
@@ -198,7 +198,6 @@ describe("WorkspaceLlmCapabilityResolver", () => {
         capability: "chat",
         provider: "openai-compatible",
         model: "compat-model",
-        apiKey: "env-compat",
         baseUrl: "https://compat.example.com",
       },
     };

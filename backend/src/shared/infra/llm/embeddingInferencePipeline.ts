@@ -120,6 +120,7 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
         purpose: input.purpose,
         provider: input.provider,
         endpointScopeFingerprint: input.endpointScopeFingerprint,
+        workspaceId: input.operation.workspaceId,
       });
       await this.recordUsage(input, "succeeded", result.usage);
       setTraceAttributes({ "llm.provider.outcome": "succeeded" });

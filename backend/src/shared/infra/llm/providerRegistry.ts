@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { ModelChatGateway, ModelFallbackReplyComposer } from "../../../modules/chat/llmAdapters.js";
 import {
   TextRoutedToolCallingGateway,
@@ -21,13 +23,13 @@ import {
   ContextualTriggerAnalysisGateway,
 } from "./contextualGateways.js";
 import { TextGenerationClientCache } from "./textClientFactory.js";
-import { ClaudeTextGenerationClient } from "./claudeProvider.js";
-import { GeminiEmbeddingClient, GeminiTextGenerationClient } from "./geminiProvider.js";
-import { createOpenAIClient, OpenAIEmbeddingClient, OpenAITextGenerationClient } from "./openaiProvider.js";
+import { GeminiEmbeddingClient } from "./geminiProvider.js";
+import { createOpenAIClient, OpenAIEmbeddingClient } from "./openaiProvider.js";
 import type { AppLogger } from "../../observability/logger.js";
 import type { UsageEventRecorder } from "../../domain/usageEventRecorder.js";
 import { EmbeddingInferencePipelineService } from "./embeddingInferencePipeline.js";
 import { ModelInferencePipelineService, type ModelInferencePipeline } from "./modelInferencePipeline.js";
+import { streamWithUsage } from "./providerStreaming.js";
 import {
   EmbeddingModelProbeService,
 } from "../../../modules/embeddingProfiles/services/embeddingVectorValidator.js";
@@ -54,16 +56,16 @@ import {
   type EmbeddingClientOptions,
   type EmbeddingResult,
   type LlmCapabilityConfig,
+  type LlmCapabilityDefault,
   type LlmCapabilityName,
   type LlmProviderMetadata,
   ProviderConfigurationError,
   type ResolvedLlmConfig,
-  type TextGenerationClient,
 } from "./providerTypes.js";
 
 export { ProviderConfigurationError } from "./providerTypes.js";
 
-const supportsEmbeddings = (config: LlmCapabilityConfig): boolean =>
+const supportsEmbeddings = (config: LlmCapabilityDefault): boolean =>
   config.provider === "openai" || config.provider === "openai-compatible" || config.provider === "gemini";
 
 class RoutedEmbeddingClient implements EmbeddingClient {
@@ -71,9 +73,12 @@ class RoutedEmbeddingClient implements EmbeddingClient {
   private readonly providers = new Map<string, EmbeddingProviderPort>();
 
   constructor(
-    private readonly primaryConfig: LlmCapabilityConfig,
-    private readonly configs: LlmCapabilityConfig[],
-    private readonly clientFactory: (config: LlmCapabilityConfig) => EmbeddingClient,
+    private readonly primaryConfig: LlmCapabilityDefault,
+    private readonly configs: LlmCapabilityDefault[],
+    private readonly clientFactory: (
+      config: LlmCapabilityDefault,
+      workspaceId?: string,
+    ) => Promise<{ config: LlmCapabilityConfig; client: EmbeddingClient }>,
   ) {
     this.metadata = {
       capability: primaryConfig.capability,
@@ -84,10 +89,10 @@ class RoutedEmbeddingClient implements EmbeddingClient {
 
   async embedTexts(texts: string[], options?: EmbeddingClientOptions): Promise<EmbeddingResult> {
     const model = options?.model ?? this.primaryConfig.model;
-    const binding = this.bindingForModel(model, {
+    const binding = await this.bindingForModel(model, {
       provider: options?.provider,
       endpointScopeFingerprint: options?.endpointScopeFingerprint,
-    });
+    }, options?.workspaceId);
     const catalogDescriptor = isSupportedEmbeddingModel(model)
       ? getSupportedEmbeddingModel(model)
       : null;
@@ -128,28 +133,34 @@ class RoutedEmbeddingClient implements EmbeddingClient {
     });
   }
 
-  private bindingForModel(
+  private async bindingForModel(
     model: string,
     requestedBinding?: EmbeddingProviderBindingSelection,
-  ): {
+    workspaceId?: string,
+  ): Promise<{
     config: EmbeddingCapabilityConfig;
     provider: EmbeddingProviderPort;
-  } {
-    const config = resolveEmbeddingProviderBinding(
+  }> {
+    const metadata = resolveEmbeddingProviderBinding(
       model,
       this.primaryConfig,
       this.configs,
       requestedBinding,
       { acceptExistingSelection: true },
     );
-    const cacheKey = endpointScopeFingerprint(config);
+    const resolved = await this.clientFactory(metadata, workspaceId);
+    const config = resolved.config as EmbeddingCapabilityConfig;
+    const cacheKey = [
+      endpointScopeFingerprint(config),
+      createHash("sha256").update(resolved.config.apiKey).digest("hex").slice(0, 16),
+    ].join(":");
     const existing = this.providers.get(cacheKey);
     if (existing) {
       return { config, provider: existing };
     }
 
     const validatedProvider = new EmbeddingClientProviderAdapter(
-      this.clientFactory(config),
+      resolved.client,
       (candidateModel, dimensions) =>
         resolveEmbeddingModelDescriptor(candidateModel, {
           provider: config.provider,
@@ -278,7 +289,14 @@ export class LlmProviderRegistry {
   createRerankGateway(usageEventRecorder?: UsageEventRecorder) {
     const defaultFallback = this.config.rerank.provider === "openai"
       ? new OpenAISemanticRerankGateway(
-          createOpenAIClient(this.config.rerank),
+          {
+            responses: {
+              create: async (input) => {
+                const config = await this.resolveCredentialedConfig(this.config.rerank);
+                return createOpenAIClient(config).responses.create(input);
+              },
+            },
+          },
           this.config.rerank.model,
           this.logger,
           usageEventRecorder,
@@ -302,7 +320,13 @@ export class LlmProviderRegistry {
         new RoutedEmbeddingClient(
           this.config.embeddings,
           this.config.embeddingProviderConfigs,
-          (config) => this.createEmbeddingClient(config),
+          async (config, workspaceId) => {
+            const credentialed = await this.resolveCredentialedConfig(config, workspaceId, true);
+            return {
+              config: credentialed,
+              client: this.createEmbeddingClient(credentialed),
+            };
+          },
         ),
         usageEventRecorder,
         (model, provider) => this.identifyEmbeddingModel(model, provider),
@@ -314,7 +338,7 @@ export class LlmProviderRegistry {
     model: string,
     provider?: EmbeddingProviderImplementation,
     requestedEndpointScopeFingerprint?: string,
-  ): { probe(): ReturnType<EmbeddingModelProbeService["probe"]> } {
+  ): { probe(workspaceId?: string): ReturnType<EmbeddingModelProbeService["probe"]> } {
     const descriptor = getSupportedEmbeddingModel(model);
     const config = resolveEmbeddingProviderBinding(
       model,
@@ -325,13 +349,15 @@ export class LlmProviderRegistry {
         endpointScopeFingerprint: requestedEndpointScopeFingerprint,
       },
     );
-    const validatedProvider = new EmbeddingClientProviderAdapter(
-      this.createEmbeddingClient(config),
-      getSupportedEmbeddingModel,
-    );
-    const probeService = new EmbeddingModelProbeService(validatedProvider);
     return {
-      probe: () => probeService.probe(descriptor),
+      probe: async (workspaceId?: string) => {
+        const credentialed = await this.resolveCredentialedConfig(config, workspaceId, true);
+        const validatedProvider = new EmbeddingClientProviderAdapter(
+          this.createEmbeddingClient(credentialed),
+          getSupportedEmbeddingModel,
+        );
+        return new EmbeddingModelProbeService(validatedProvider).probe(descriptor);
+      },
     };
   }
 
@@ -390,7 +416,7 @@ export class LlmProviderRegistry {
     }
   }
 
-  private metadataFor(config: LlmCapabilityConfig): LlmProviderMetadata {
+  private metadataFor(config: LlmCapabilityDefault): LlmProviderMetadata {
     return {
       capability: config.capability,
       provider: config.provider,
@@ -398,23 +424,63 @@ export class LlmProviderRegistry {
     };
   }
 
-  private createInferencePipeline(config: LlmCapabilityConfig, usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
-    return new ModelInferencePipelineService(this.createTextClient(config), usageEventRecorder);
+  private createInferencePipeline(config: LlmCapabilityDefault, usageEventRecorder?: UsageEventRecorder): ModelInferencePipeline {
+    const registry = this;
+    const create = async (workspaceId?: string) => {
+      const credentialed = await registry.resolveCredentialedConfig(config, workspaceId, true);
+      return new ModelInferencePipelineService(
+        registry.clientCache.getOrCreate(credentialed),
+        usageEventRecorder,
+      );
+    };
+    return {
+      metadata: this.metadataFor(config),
+      async complete(input) {
+        return (await create(input.operation.workspaceId)).complete(input);
+      },
+      stream(input) {
+        return streamWithUsage(async function* () {
+          const result = (await create(input.operation.workspaceId)).stream(input);
+          for await (const text of result.textStream) {
+            yield text;
+          }
+          return await result.usage;
+        });
+      },
+    };
   }
 
-  private createTextClient(config: LlmCapabilityConfig): TextGenerationClient {
-    const client = (() => {
-      switch (config.provider) {
-        case "openai":
-        case "openai-compatible":
-          return new OpenAITextGenerationClient(config);
-        case "gemini":
-          return new GeminiTextGenerationClient(config);
-        case "claude":
-          return new ClaudeTextGenerationClient(config);
-      }
-    })();
-    return client;
+  private async resolveCredentialedConfig(
+    config: LlmCapabilityDefault,
+    workspaceId?: string,
+    preserveProviderModel = false,
+  ): Promise<LlmCapabilityConfig> {
+    if (this.resolver && workspaceId && workspaceId !== "unknown") {
+      return this.resolver.resolve(config.capability, {
+        workspaceId,
+        ...(preserveProviderModel
+          ? {
+              capabilityOverride: {
+                provider: config.provider,
+                model: config.model,
+              },
+            }
+          : {}),
+      });
+    }
+    const apiKey = this.config.providerApiKeys?.[config.provider];
+    if (!apiKey) {
+      throw new ProviderConfigurationError(
+        `No API key configured for provider "${config.provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
+        {
+          kind: "missing_api_key",
+          provider: config.provider,
+          capability: config.capability,
+          remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
+        },
+      );
+    }
+    return { ...config, apiKey };
   }
 
   private createEmbeddingClient(config: LlmCapabilityConfig): EmbeddingClient {

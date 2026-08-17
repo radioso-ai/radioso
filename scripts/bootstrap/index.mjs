@@ -16,14 +16,7 @@ import { formatMessage, renderHeader } from "./terminal-theme.mjs";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const envPath = path.join(repoRoot, ".env");
 
-const generatedValues = () => ({
-  SESSION_COOKIE_SECRET: crypto.randomBytes(24).toString("base64"),
-  WORKSPACE_TOKEN_SECRET: crypto.randomBytes(24).toString("base64"),
-  PUBLIC_CHAT_SESSION_SECRET: crypto.randomBytes(24).toString("base64"),
-  CONNECTOR_ENCRYPTION_KEY: crypto.randomBytes(32).toString("base64"),
-});
-
-const resolveGeneratedValues = (existingValues) => ({
+export const resolveGeneratedValues = (existingValues) => ({
   SESSION_COOKIE_SECRET: existingValues.SESSION_COOKIE_SECRET || crypto.randomBytes(24).toString("base64"),
   WORKSPACE_TOKEN_SECRET: existingValues.WORKSPACE_TOKEN_SECRET || crypto.randomBytes(24).toString("base64"),
   PUBLIC_CHAT_SESSION_SECRET:
@@ -33,6 +26,9 @@ const resolveGeneratedValues = (existingValues) => ({
   CONNECTOR_ENCRYPTION_KEY:
     existingValues.CONNECTOR_ENCRYPTION_KEY ||
     existingValues.SECRETS_ENCRYPTION_KEY ||
+    crypto.randomBytes(32).toString("base64"),
+  WORKER_TASK_AUTH_TOKEN:
+    existingValues.WORKER_TASK_AUTH_TOKEN ||
     crypto.randomBytes(32).toString("base64"),
 });
 
@@ -97,6 +93,23 @@ const printConfigurationSummary = (values, ansi, out = process.stdout) => {
       ansi,
     )}`,
   );
+};
+
+// A cold first boot can spend minutes reinstalling dependencies before the
+// health endpoints answer. Emit a throttled heartbeat so a long-but-healthy
+// startup does not read as a hung command.
+const createStartupHeartbeat = (out, ansi, everyMs = 30_000) => {
+  let lastPrintedAt = 0;
+  return ({ elapsedMs }) => {
+    if (elapsedMs - lastPrintedAt < everyMs) {
+      return;
+    }
+    lastPrintedAt = elapsedMs;
+    const seconds = Math.round(elapsedMs / 1000);
+    out.write(
+      `${formatMessage("helper", `Still starting services... (${seconds}s elapsed; a first run installs dependencies)\n`, ansi)}`,
+    );
+  };
 };
 
 const renderPostStartGuide = (report, ansi, out = process.stdout) => {
@@ -186,7 +199,9 @@ export const main = async (argv = process.argv.slice(2), dependencies = {}) => {
     return result.code ?? 1;
   }
 
-  const report = await startCompose();
+  const report = await startCompose({
+    waitOptions: { onProgress: createStartupHeartbeat(out, ansi) },
+  });
   const result = summarizeStartup(report, ansi, { stdout: out });
   if (typeof result === "number") {
     return result;

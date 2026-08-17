@@ -164,7 +164,9 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
   }
 
   const terminalById = new Map(terminals.map((terminal) => [terminal.stableStepId, terminal]))
-  const includedEndings = new Set<string>()
+  // Every branch that targets a terminal carries the full ending. Copies keep target edits
+  // local: removing or retargeting one branch can never take the definition away from
+  // another. The inverse mapping deduplicates by stable id, and edits patch every copy.
   const transitionRows = (fromStep: string): RoutineBlockBranch[] => draft.transitions
     .filter((transition) => transition.fromStep === fromStep)
     .sort(byOrdinal)
@@ -172,13 +174,8 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
       const { fromStep: _fromStep, toRef: _toRef, ordinal: _ordinal, guardKind, ...guardFields } = transition
       const terminal = terminalById.get(transition.toRef)
       const target: RoutineBlockBranchTarget = terminal
-        ? {
-            kind: 'ending',
-            terminalId: terminal.stableStepId,
-            ...(includedEndings.has(terminal.stableStepId) ? {} : { ending: { ...terminal } }),
-          }
+        ? { kind: 'ending', terminalId: terminal.stableStepId, ending: { ...terminal } }
         : { kind: 'step', stableStepId: transition.toRef }
-      if (terminal) includedEndings.add(terminal.stableStepId)
       const guard: RoutineBlockGuard = guardKind === 'slot_filled'
         ? { ...guardFields, kind: guardKind, provenance: routineGuardProvenance(guardKind), slotKeys: slotKeysFromGuardText(guardFields.guardText) }
         : { ...guardFields, kind: guardKind, provenance: routineGuardProvenance(guardKind) }
@@ -200,9 +197,10 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
         ...metadataForBlock(metadata),
         branches: transitionRows(step.stableStepId),
       })),
-      unreferencedEndings: terminals
-        .filter((terminal) => !includedEndings.has(terminal.stableStepId))
-        .map((terminal) => ({ ...terminal })),
+      unreferencedEndings: (() => {
+        const referenced = new Set(draft.transitions.map((transition) => transition.toRef))
+        return terminals.filter((terminal) => !referenced.has(terminal.stableStepId)).map((terminal) => ({ ...terminal }))
+      })(),
       ...(draft.completionExport === undefined ? {} : { completionExport: draft.completionExport }),
     },
   }

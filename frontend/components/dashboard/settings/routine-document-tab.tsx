@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import type { RoutineDefinitionDraft, RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineGuardKind, RoutineReentryMode, RoutineSlotType } from '@/lib/api'
-import { formatBindingLine, formatBranchTargetLabel } from '@/lib/routine-document'
+import { formatBindingLine, formatBranchTargetLabel, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import {
   addBranch,
   addStep,
@@ -107,7 +107,7 @@ function DocumentEditor({ initialDoc, onDraftChange }: { initialDoc: RoutineBloc
     const next = edit(docRef.current)
     docRef.current = next
     setDoc(next)
-    onDraftChange(draftFromBlockDoc(next))
+    onDraftChange(sanitizeDraftContentForSave(draftFromBlockDoc(next)))
   }, [onDraftChange])
   const variables = useMemo(() => doc.information.map((slot) => ({ id: slot.key, name: slot.key, type: slot.type, required: slot.required, mutable: slot.mutable ?? false })), [doc.information])
   const endings = useMemo(() => endingList(doc), [doc])

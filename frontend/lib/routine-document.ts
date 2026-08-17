@@ -1,5 +1,6 @@
 import { instructionToBlockSegments } from '@radioso/routine-markdown'
 
+import type { RoutineDefinitionDraft } from '@/lib/api-types'
 import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const TARGET_MESSAGE_LIMIT = 40
@@ -65,4 +66,35 @@ export function formatBindingLine(
   const outputs = Object.entries(outputAssignments ?? {}).map(([key, value]) => `${key} = ${value}`)
   if (inputs.length === 0 && outputs.length === 0) return null
   return `uses ${inputs.length > 0 ? inputs.join(', ') : 'nothing'} → sets ${outputs.length > 0 ? outputs.join(', ') : 'nothing'}`
+}
+
+// The editing schema accepts empty strings for content still being written (an unnamed
+// ending message, an untyped AI condition), but the persistence schema requires present
+// text to be non-empty. Saving therefore translates "still empty" back to "absent" so a
+// half-finished row never turns into a rejected request.
+const emptyToNull = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : null
+}
+
+export function sanitizeDraftContentForSave(draft: RoutineDefinitionDraft): RoutineDefinitionDraft {
+  return {
+    ...draft,
+    slots: draft.slots.map((slot) => ({ ...slot, description: emptyToNull(slot.description) })),
+    steps: draft.steps.map((step) => ({
+      ...step,
+      toolRef: emptyToNull(step.toolRef),
+      actionType: emptyToNull(step.actionType),
+      captureKey: emptyToNull(step.captureKey),
+      ...(step.options ? { options: step.options.map((option) => ({ ...option, description: emptyToNull(option.description) })) } : {}),
+    })),
+    transitions: draft.transitions.map((transition) => ({
+      ...transition,
+      guardText: emptyToNull(transition.guardText),
+      outcomeStatus: emptyToNull(transition.outcomeStatus),
+      fieldValue: typeof transition.fieldValue === 'string' ? emptyToNull(transition.fieldValue) : transition.fieldValue ?? null,
+      fieldValues: transition.fieldValues && transition.fieldValues.length > 0 ? transition.fieldValues : null,
+    })),
+    terminals: draft.terminals.map((terminal) => ({ ...terminal, instruction: emptyToNull(terminal.instruction) })),
+  }
 }

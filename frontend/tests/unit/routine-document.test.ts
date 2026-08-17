@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence } from '@/lib/routine-document'
+import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import type { RoutineBlockBranch } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
@@ -112,5 +112,39 @@ describe('routine document helpers', () => {
     it('keeps every edge on the last step, which has no next step', () => {
       expect(branchIsImplicitFallThrough(branch('default', { kind: 'step', stableStepId: 'step_2' }), null)).toBe(false)
     })
+  })
+})
+
+describe('sanitizeDraftContentForSave', () => {
+  const transition = {
+    fromStep: 's1', toRef: 'end1', guardKind: 'field' as const, guardText: '', outcomeStatus: '',
+    counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: '', fieldValues: [], fieldUnit: null, ordinal: 0,
+  }
+  const draft = {
+    name: 'X',
+    activation: { triggerDescription: 't', priority: 0 },
+    slots: [{ stableSlotId: 'a', key: 'a', type: 'text' as const, required: true, description: '', ordinal: 0 }],
+    steps: [{ stableStepId: 's1', kind: 'chat' as const, instruction: 'x', toolRef: '', actionType: '', captureKey: '', ordinal: 0, metadata: {}, options: [{ id: 'ok', label: 'OK', description: '' }] }],
+    transitions: [transition],
+    terminals: [{ stableStepId: 'end1', kind: 'complete' as const, instruction: '', ordinal: 0 }],
+  }
+
+  it('turns still-empty optional text back into absent values', () => {
+    const saved = sanitizeDraftContentForSave(draft as never)
+    expect(saved.terminals[0]!.instruction).toBeNull()
+    expect(saved.transitions[0]).toMatchObject({ guardText: null, outcomeStatus: null, fieldValue: null, fieldValues: null })
+    expect(saved.slots[0]!.description).toBeNull()
+    expect(saved.steps[0]).toMatchObject({ toolRef: null, actionType: null, captureKey: null })
+    expect(saved.steps[0]!.options![0]!.description).toBeNull()
+  })
+
+  it('keeps written content untouched', () => {
+    const saved = sanitizeDraftContentForSave({
+      ...draft,
+      terminals: [{ ...draft.terminals[0]!, instruction: 'Done.' }],
+      transitions: [{ ...transition, guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] }],
+    } as never)
+    expect(saved.terminals[0]!.instruction).toBe('Done.')
+    expect(saved.transitions[0]).toMatchObject({ guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] })
   })
 })

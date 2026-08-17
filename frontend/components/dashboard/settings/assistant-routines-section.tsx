@@ -146,6 +146,9 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
   if (draft.steps.some((step) => step.kind === 'action' && !step.actionType?.trim())) {
     return 'Action steps need an action type.'
   }
+  if (draft.steps.some((step) => (step.options ?? []).some((option) => !option.label.trim()))) {
+    return 'Each approval option needs a label.'
+  }
   if (draft.completionExport?.enabled && !draft.completionExport.destinationRef.trim()) {
     return 'Completion export needs a webhook destination.'
   }

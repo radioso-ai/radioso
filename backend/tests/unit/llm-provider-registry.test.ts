@@ -128,7 +128,6 @@ describe("llm provider config", () => {
     const geminiConfig = resolveLlmConfig({
       LLM_PROVIDER: "gemini",
       GEMINI_API_KEY: "gemini-key",
-      OPENAI_API_KEY: "openai-key",
       OPENAI_CHAT_MODEL: "gpt-5.2",
       OPENAI_VECTOR_MODEL: "text-embedding-3-small",
     });
@@ -146,8 +145,20 @@ describe("llm provider config", () => {
       model: "gemini-2.5-flash",
     });
     expect(geminiConfig.embeddings).toMatchObject({
-      provider: "openai",
+      provider: "gemini",
+      model: "gemini-embedding-001",
+    });
+
+    const compatibleConfig = resolveLlmConfig({
+      LLM_PROVIDER: "openai-compatible",
+      OPENAI_COMPATIBLE_API_KEY: "compat-key",
+      OPENAI_COMPATIBLE_BASE_URL: "https://llm.example/v1",
+    });
+
+    expect(compatibleConfig.embeddings).toMatchObject({
+      provider: "openai-compatible",
       model: "text-embedding-3-small",
+      baseUrl: "https://llm.example/v1",
     });
 
     const claudeConfig = resolveLlmConfig({

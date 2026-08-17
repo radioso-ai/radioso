@@ -40,6 +40,8 @@ interface AppSidebarProps {
   routeState: DashboardRouteState
   /** The active section's nested sub-navigation, rendered under its rail row. */
   areaSubNav?: ReactNode
+  /** The "Ask Ray" input, rendered at the top of the sidebar above the nav. */
+  askRaySlot?: ReactNode
 }
 
 // Activity sits first and is visually separated from the build/config sections below —
@@ -52,7 +54,7 @@ const navItems = [
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView, routeState, areaSubNav, askRaySlot }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const inboxCount = useInboxCount()
@@ -67,6 +69,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
       </SidebarHeader>
 
       <SidebarContent>
+        {askRaySlot ? <div className="px-2 pt-2">{askRaySlot}</div> : null}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>

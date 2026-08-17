@@ -17,7 +17,7 @@ import { QualityView } from './quality-view'
 import { AudiencePulseView } from './audience-pulse-view'
 import { EvalView } from './eval-view'
 import { CopilotView } from './copilot-view'
-import { CopilotLauncher, CopilotPanel, CopilotSelectionAffordance } from './copilot-panel'
+import { AskRayInput, CopilotPanel, CopilotSelectionAffordance } from './copilot-panel'
 import { FirstRunExperience } from './first-run-experience'
 import {
   buildDashboardHref,
@@ -172,13 +172,20 @@ export function DashboardShell({
     return (
       <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
         <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
-          <AppSidebar accountId={accountId} currentView={currentView} routeState={routeState} />
-          <SidebarInset className="min-h-0 overflow-hidden">
-            <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <AppSidebar
+            accountId={accountId}
+            currentView={currentView}
+            routeState={routeState}
+            askRaySlot={copilotPermissionDenied ? null : <AskRayInput />}
+          />
+          <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+            {/* Mobile-only chrome: the desktop sidebar is pinned open (single nav
+                surface), so this top strip only exists on mobile, where the nav is
+                offcanvas and needs a trigger to open it. Ask Ray lives in the sidebar. */}
+            <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
               <SidebarTrigger />
-              {!copilotPermissionDenied ? <CopilotLauncher /> : null}
             </header>
-            <div className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 items-center justify-center">
+            <div className="flex min-h-0 flex-1 items-center justify-center">
               <LogoSpinner imageClassName="h-7 w-7" />
             </div>
           </SidebarInset>
@@ -227,13 +234,16 @@ export function DashboardShell({
           currentView={currentView}
           routeState={routeState}
           areaSubNav={subNav}
+          askRaySlot={copilotPermissionDenied ? null : <AskRayInput />}
         />
-        <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center justify-between border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <SidebarInset className="min-h-0 min-w-0 overflow-hidden">
+          {/* Mobile-only chrome: the desktop sidebar is pinned open (single nav
+              surface), so this top strip only exists on mobile, where the nav is
+              offcanvas and needs a trigger to open it. Ask Ray lives in the sidebar. */}
+          <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center border-b border-border bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden">
             <SidebarTrigger />
-            {!copilotPermissionDenied ? <CopilotLauncher /> : null}
           </header>
-          <div key={activeWorkspaceId} data-dashboard-surface className="flex h-[calc(100vh-3rem)] min-h-0 flex-1 flex-col">
+          <div key={activeWorkspaceId} data-dashboard-surface className="flex min-h-0 flex-1 flex-col">
           {showFirstRun ? (
             <FirstRunExperience accountId={accountId} onboarding={onboarding} />
           ) : hasSubNav ? (

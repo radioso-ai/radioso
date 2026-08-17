@@ -290,6 +290,8 @@ export function CopilotChatSurface({
     session,
     setSession,
     closePanel,
+    askToken,
+    consumePendingQuestion,
   } = useCopilotContext()
   const pageContext = useMemo(
     () => buildCopilotPageContext(routeState, entities, session.selection),
@@ -513,6 +515,21 @@ export function CopilotChatSurface({
       updateSession((current) => ({ ...current, isRunning: false }))
     }
   }
+
+  // Auto-send questions queued from the sidebar "Ask Ray" input. Only the panel
+  // surface consumes them, and consumePendingQuestion clears the queue atomically,
+  // so exactly one turn is sent even if the effect re-runs. The ref keeps the
+  // latest handleSubmit closure without retriggering the effect.
+  const handleSubmitRef = useRef(handleSubmit)
+  handleSubmitRef.current = handleSubmit
+  useEffect(() => {
+    if (mode !== 'panel' || askToken === 0) return
+    if (session.availability?.available !== true) return
+    if (session.isRunning || session.conversationBusy || session.isLoadingConversation) return
+    const question = consumePendingQuestion()
+    if (!question) return
+    void handleSubmitRef.current(undefined, question)
+  }, [askToken, mode, session.availability?.available, session.isRunning, session.conversationBusy, session.isLoadingConversation, consumePendingQuestion])
 
   const openEntity = (entity: CopilotEntityReference, targetAgentId?: string) => {
     closePanel()

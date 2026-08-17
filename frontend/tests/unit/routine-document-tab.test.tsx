@@ -166,6 +166,42 @@ describe('RoutineDocumentTab', () => {
     expect(container.querySelector('[aria-label="Rule variable"]')).toBeTruthy()
   })
 
+  it('anchors validation diagnostics to their step with operator copy, quiet while editing', () => {
+    const draft = {
+      ...newRoutineDraft,
+      steps: [{ ...newRoutineDraft.steps[0]!, instruction: 'Ask something.' }],
+      transitions: [{
+        fromStep: 'step_1', toRef: 'end_1', guardKind: 'field' as const, guardText: null, outcomeStatus: null,
+        counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0,
+      }],
+      terminals: [{ stableStepId: 'end_1', kind: 'complete' as const, instruction: 'Done.', ordinal: 0 }],
+    }
+    act(() => {
+      root.render(
+        <RoutineSkillCatalogContext.Provider value={{ agentId: '', skills: [], isLoading: false, error: null }}>
+          <RoutineDocumentTab
+            draft={draft}
+            isReadOnly={false}
+            onDraftChange={vi.fn()}
+            diagnostics={[{
+              code: 'structured_guard_missing_parameter',
+              location: 'transition:step_1->end_1',
+              message: 'structured guard missing parameter: field guard from "step_1" must declare a field reference and operator.',
+            }]}
+          />
+        </RoutineSkillCatalogContext.Provider>,
+      )
+    })
+    expect(container.textContent).toContain('This rule needs a variable and a comparison.')
+    expect(container.textContent).not.toContain('structured guard missing parameter')
+
+    const stepButton = container.querySelector<HTMLButtonElement>('button[aria-label="Chat"]')!
+    act(() => {
+      stepButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).not.toContain('This rule needs a variable and a comparison.')
+  })
+
   it('settles when document edits feed back into the parent draft', () => {
     const onDraftChange = vi.fn()
 

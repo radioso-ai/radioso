@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, sanitizeDraftContentForSave } from '@/lib/routine-document'
+import { branchIsImplicitFallThrough, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import type { RoutineBlockBranch } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
@@ -69,7 +69,7 @@ describe('routine document helpers', () => {
       stableStepId: 'complete_1',
       instruction: 'This completion message is deliberately long enough to be shortened.',
     })).toBe('Finish: This completion message is deliberately…')
-    expect(formatBranchTargetLabel({ kind: 'handoff', stableStepId: 'handoff_1', instruction: null })).toBe('Hand off: handoff_1')
+    expect(formatBranchTargetLabel({ kind: 'handoff', stableStepId: 'handoff_1', instruction: null })).toBe('Hand off (no message yet)')
   })
 
   it('assembles inputs and outputs into the uses-to-sets line', () => {
@@ -146,5 +146,23 @@ describe('sanitizeDraftContentForSave', () => {
     } as never)
     expect(saved.terminals[0]!.instruction).toBe('Done.')
     expect(saved.transitions[0]).toMatchObject({ guardText: 'judge this', fieldValue: 50, fieldValues: ['a'] })
+  })
+})
+
+describe('documentDiagnosticText', () => {
+  it('maps typed codes to operator copy', () => {
+    expect(documentDiagnosticText({
+      code: 'structured_guard_missing_parameter',
+      location: 'transition:step_3->complete_1',
+      message: 'structured guard missing parameter: field guard from "step_3" must declare a field reference and operator.',
+    })).toBe('This rule needs a variable and a comparison.')
+  })
+
+  it('falls back to the validator message for unmapped codes', () => {
+    expect(documentDiagnosticText({
+      code: 'missing_terminal',
+      location: 'routine:x',
+      message: 'routine has no terminal step',
+    })).toBe('routine has no terminal step')
   })
 })

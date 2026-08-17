@@ -584,6 +584,22 @@ const targetKey = (target: DiagnosticTarget): string => `${target.scope} ${targe
 // routine-scoped ones *plus* every diagnostic whose target no rendered artifact claims —
 // including all of them when the Form editor is not on screen at all (prose mode), where
 // `renderedTargets` is empty. Nothing the validator emits can be invisible.
+// Every target the Document tab renders (draft-space): each step, terminal, slot, and
+// transition is a visible row there, so any diagnostic addressed to one of them can be
+// anchored instead of surfacing in the routine-level list.
+export const renderedDraftTargets = (draft: RoutineDefinitionDraft): DiagnosticTarget[] => {
+  const targets: DiagnosticTarget[] = [
+    ...draft.slots.map((slot): DiagnosticTarget => ({ scope: 'slot', id: slot.key })),
+    ...draft.steps.map((step): DiagnosticTarget => ({ scope: 'step', id: step.stableStepId })),
+    ...draft.terminals.map((terminal): DiagnosticTarget => ({ scope: 'step', id: terminal.stableStepId })),
+    ...draft.transitions.map((transition): DiagnosticTarget => ({ scope: 'transition', id: `${transition.fromStep}->${transition.toRef}` })),
+  ]
+  if (draft.completionExport?.enabled) {
+    targets.push({ scope: 'completionExport', id: 'destinationRef' })
+  }
+  return targets
+}
+
 export const routineLevelDiagnostics = (
   diagnostics: RoutineValidationDiagnostic[],
   renderedTargets: readonly DiagnosticTarget[],

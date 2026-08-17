@@ -38,6 +38,11 @@ function InlineSlotText({ text }: { text: string }) {
   return <>{documentTextToSegments(text).map((segment, index) => segment.kind === 'text' ? segment.text : <span key={`${segment.key}-${index}`} className="mx-0.5 inline-flex select-none items-center rounded-md border border-emerald-300 bg-emerald-100 px-1.5 py-0 align-baseline text-xs font-medium text-emerald-900">{segment.key}</span>)}</>
 }
 
+export function DiagnosticNotes({ notes }: { notes?: string[] }) {
+  if (!notes || notes.length === 0) return null
+  return <div className="mt-1 space-y-0.5">{notes.map((note, index) => <p key={`${note}-${index}`} className="text-xs text-destructive">{note}</p>)}</div>
+}
+
 function EditHint({ editable }: { editable: boolean }) {
   return editable ? <span aria-hidden="true" className="ml-2 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">Edit</span> : null
 }
@@ -52,14 +57,15 @@ export function RoutineDocumentHeader({ doc, editable = false, onEdit, editor }:
   return <header className="border-b border-border pb-4"><h2 className="text-xl font-semibold tracking-tight text-foreground">{doc.name || 'Untitled routine'}</h2>{editor ? <div className="rounded-md border border-border bg-muted/30 p-3">{editor}</div> : <button type="button" aria-label="Starts when" onClick={onEdit} disabled={!editable} className="group mt-3 block text-left disabled:cursor-default"><span className="block text-xs font-semibold text-foreground">Starts when</span><span className="mt-1 block text-sm text-muted-foreground">{trigger}</span><EditHint editable={editable} /></button>}</header>
 }
 
-export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor }: {
+export function RoutineInformationSection({ slots, editable = false, editingSlotId, onEditSlot, renderEditor, notesFor }: {
   slots: RoutineBlockSlot[]
   editable?: boolean
   editingSlotId?: string | null
   onEditSlot?: (slot: RoutineBlockSlot) => void
   renderEditor?: (slot: RoutineBlockSlot) => ReactNode
+  notesFor?: (slot: RoutineBlockSlot) => string[] | undefined
 }) {
-  return <section aria-labelledby="routine-document-information"><h3 id="routine-document-information" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Collected information</h3>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}</li>)}</ul>}</section>
+  return <section aria-labelledby="routine-document-information"><h3 id="routine-document-information" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Collected information</h3>{slots.length === 0 ? <p className="mt-2 text-sm text-muted-foreground">No information is collected.</p> : <ul className="mt-2 space-y-0.5">{slots.map((slot) => <li key={slot.stableSlotId} className={editingSlotId === slot.stableSlotId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'text-sm'}>{editingSlotId === slot.stableSlotId ? renderEditor?.(slot) : <button type="button" aria-label={slot.key} onClick={() => onEditSlot?.(slot)} disabled={!editable} className="group flex w-full items-baseline gap-2 text-left disabled:cursor-default"><span className="shrink-0 font-medium text-foreground">{slot.key}</span><span className="shrink-0 text-xs text-muted-foreground">{slot.type}{slot.required ? ', required' : ', optional'}</span>{slot.description ? <span className="min-w-0 truncate text-xs text-muted-foreground">{slot.description}</span> : null}<EditHint editable={editable} /></button>}{editingSlotId === slot.stableSlotId ? null : <DiagnosticNotes notes={notesFor?.(slot)} />}</li>)}</ul>}</section>
 }
 
 function EndingPhrase({ ending, muted = false }: { ending: RoutineBlockEnding; muted?: boolean }) {
@@ -93,12 +99,13 @@ export function RoutineBranchRow({ branch, slotNames, index, editable = false, e
   return <li className="py-1.5 text-sm"><button type="button" aria-label={isDefault ? 'Continue' : branchIsAi ? 'AI decides' : 'Rule'} onClick={onEdit} disabled={!editable} className="group flex w-full flex-wrap items-center gap-2 text-left disabled:cursor-default">{isDefault ? <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" /> : <><Badge variant="outline" className="border-border bg-transparent font-normal text-muted-foreground">{branchIsAi ? 'AI decides' : 'Rule'}</Badge><span><InlineSlotText text={guardToSentence(branch.guard, slotNames)} /></span><GitBranch className="h-3.5 w-3.5 text-muted-foreground" /></>}<BranchTarget branch={branch} index={index} /><EditHint editable={editable} /></button></li>
 }
 
-export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor }: {
+export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId = null, notes, editable = false, editing, onEditInstruction, onEditBinding, onEditApproval, onEditBranch, onEditStep, instructionEditor, bindingEditor, approvalEditor, branchEditor, stepEditor }: {
   step: RoutineBlockStep
   stepIndex: number
   slotNames: Map<string, string>
   index?: RoutineDocumentIndex
   nextStepId?: string | null
+  notes?: string[]
   editable?: boolean
   editing?: string | null
   onEditInstruction?: () => void
@@ -135,6 +142,7 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
     {step.kind === 'tool' || step.kind === 'action' ? <div className="mt-2">{editing === 'binding' ? <div className="rounded-md border border-border bg-muted/30 p-3">{bindingEditor}</div> : <button type="button" aria-label="Bindings" onClick={onEditBinding} disabled={!editable} className="group flex items-center gap-1 text-left text-xs text-muted-foreground disabled:cursor-default"><ArrowRight className="h-3.5 w-3.5" />{formatBindingLine(step.inputBindings, step.outputAssignments) ?? 'uses nothing → sets nothing'}<EditHint editable={editable} /></button>}</div> : null}
     {step.kind === 'approval' ? <div className="mt-2">{editing === 'approval' ? <div className="rounded-md border border-border bg-muted/30 p-3">{approvalEditor}</div> : <button type="button" aria-label="Approval choices" onClick={onEditApproval} disabled={!editable} className="group block w-full text-left text-sm disabled:cursor-default"><p className="font-medium">A person chooses:<EditHint editable={editable} /></p><ul className="mt-2 space-y-1">{(step.options ?? []).map((option) => <li key={option.id}>{option.label}{option.description ? ` — ${option.description}` : ''}</li>)}</ul></button>}</div> : null}
     {branchRows.length > 0 ? <ul className="mt-2">{branchRows}</ul> : null}
+    {editing ? null : <DiagnosticNotes notes={notes} />}
   </>
   if (isChat) {
     return <li className="py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3"><button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group mt-0.5 disabled:cursor-default">{number}</button><div className="min-w-0 flex-1">{editing === 'step' ? <div className="rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : instruction}{details}</div></div></li>
@@ -142,13 +150,14 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   return <li className="py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{number}<div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm font-medium text-foreground">{step.kind === 'approval' ? <ListChecks className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group text-left disabled:cursor-default"><span>{label}</span><EditHint editable={editable} /></button></div>{editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : <div className="mt-1">{instruction}</div>}{details}</div></div></li>
 }
 
-export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, renderEditor }: {
+export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, renderEditor, notesFor }: {
   endings: RoutineBlockEnding[]
   editable?: boolean
   editingEndingId?: string | null
   onEdit?: (ending: RoutineBlockEnding) => void
   renderEditor?: (ending: RoutineBlockEnding) => ReactNode
+  notesFor?: (ending: RoutineBlockEnding) => string[] | undefined
 }) {
   if (endings.length === 0) return null
-  return <section aria-labelledby="routine-document-endings"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}</li>)}</ul></section>
+  return <section aria-labelledby="routine-document-endings"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}{editingEndingId === ending.stableStepId ? null : <DiagnosticNotes notes={notesFor?.(ending)} />}</li>)}</ul></section>
 }

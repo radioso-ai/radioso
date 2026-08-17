@@ -13,6 +13,7 @@ import {
   routineToForm,
   type DiagnosticTarget,
   type RoutineFormState,
+  renderedDraftTargets,
 } from '@/lib/routine-form'
 
 const routine = {
@@ -682,5 +683,24 @@ describe('routine diagnostic anchoring', () => {
 
     expect(targets).not.toContainEqual({ scope: 'completionExport', id: 'destinationRef' })
     expect(routineLevelDiagnostics([diagnostic], targets)).toEqual([diagnostic])
+  })
+})
+
+describe('renderedDraftTargets', () => {
+  it('claims every draft artifact the Document tab renders', () => {
+    const targets = renderedDraftTargets({
+      name: 'X',
+      activation: { triggerDescription: 't', priority: 0 },
+      slots: [{ stableSlotId: 'email', key: 'email', type: 'email', required: true, description: null, ordinal: 0 }],
+      steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: 'x', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: 'step_1', toRef: 'end_1', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: 'end_1', kind: 'complete', instruction: null, ordinal: 0 }],
+    })
+    expect(targets).toEqual(expect.arrayContaining([
+      { scope: 'slot', id: 'email' },
+      { scope: 'step', id: 'step_1' },
+      { scope: 'step', id: 'end_1' },
+      { scope: 'transition', id: 'step_1->end_1' },
+    ]))
   })
 })

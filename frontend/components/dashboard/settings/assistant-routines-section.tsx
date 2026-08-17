@@ -79,6 +79,7 @@ import { getRoutineLineageVersions, groupRoutineLineages, type RoutineLineageGro
 import {
   formToRoutineDraft,
   renderedDiagnosticTargets,
+  renderedDraftTargets,
   routineLevelDiagnostics,
   routineToForm,
   type RoutineDraftHeader,
@@ -637,8 +638,12 @@ function RoutineEditorScreen({
   // the editor has no site for — surfaces here, so no diagnostic can block publish while
   // being invisible (FR-030).
   const renderedFormTargets = useMemo(
-    () => (viewMode === 'form' && form ? renderedDiagnosticTargets(form) : []),
-    [form, viewMode],
+    () => {
+      if (viewMode === 'form' && form) return renderedDiagnosticTargets(form)
+      if (viewMode === 'document' && activeRoutineDraft) return renderedDraftTargets(activeRoutineDraft)
+      return []
+    },
+    [activeRoutineDraft, form, viewMode],
   )
   const routineDiagnostics = useMemo(
     () => routineLevelDiagnostics(validationDiagnostics, renderedFormTargets),
@@ -1389,6 +1394,7 @@ function RoutineEditorScreen({
                 key={`${agentId}:${routineRouteId}`}
                 draft={activeRoutineDraft}
                 isReadOnly={isReadOnly}
+                diagnostics={validationDiagnostics}
                 onDraftChange={(nextDraft) => {
                   routineEditorDirtyRef.current = true
                   setDocumentDraft(nextDraft)

@@ -1,6 +1,6 @@
 import { instructionToBlockSegments } from '@radioso/routine-markdown'
 
-import type { RoutineDefinitionDraft } from '@/lib/api-types'
+import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
 import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const TARGET_MESSAGE_LIMIT = 40
@@ -21,7 +21,9 @@ export function documentTextToSegments(text: string): RoutineBlockInstructionSeg
 
 export function formatBranchTargetLabel(ending: Pick<RoutineBlockEnding, 'kind' | 'instruction' | 'stableStepId'>): string {
   const kind = ending.kind === 'complete' ? 'Finish' : 'Hand off'
-  const message = ending.instruction || ending.stableStepId
+  // A fresh ending has no message yet; its stable id would only leak an internal name.
+  if (!ending.instruction) return `${kind} (no message yet)`
+  const message = ending.instruction
   const truncatedMessage = message.length > TARGET_MESSAGE_LIMIT ? `${message.slice(0, TARGET_MESSAGE_LIMIT - 1)}…` : message
   return `${kind}: ${truncatedMessage}`
 }
@@ -97,4 +99,25 @@ export function sanitizeDraftContentForSave(draft: RoutineDefinitionDraft): Rout
     })),
     terminals: draft.terminals.map((terminal) => ({ ...terminal, instruction: emptyToNull(terminal.instruction) })),
   }
+}
+
+// Validator diagnostics arrive phrased for the graph ("structured guard missing
+// parameter: field guard from \"step_3\"…"). Anchored to its row, a diagnostic no longer
+// needs to name its location, so the typed code maps to a plain sentence; codes without a
+// mapping fall back to the validator's own message rather than hiding.
+const DOCUMENT_DIAGNOSTIC_COPY: Partial<Record<RoutineValidationDiagnostic['code'], string>> = {
+  structured_guard_missing_parameter: 'This rule needs a variable and a comparison.',
+  field_guard_unknown_reference: 'This rule points at information the routine does not collect.',
+  field_guard_incompatible_type: "This rule's comparison does not fit the variable's type.",
+  unreachable_step: 'Nothing leads to this step.',
+  dangling_step_reference: 'This points at a step that no longer exists.',
+  unbounded_back_edge: 'This jump back needs a repeat limit.',
+  declared_unused_slot: 'This information is collected but never used.',
+  referenced_undeclared_slot: 'This step uses information the routine does not collect.',
+  unknown_skill: 'This skill is not available to the agent.',
+  outcome_guard_on_non_tool_step: 'An outcome rule only works after a skill step.',
+}
+
+export function documentDiagnosticText(diagnostic: RoutineValidationDiagnostic): string {
+  return DOCUMENT_DIAGNOSTIC_COPY[diagnostic.code] ?? diagnostic.message
 }

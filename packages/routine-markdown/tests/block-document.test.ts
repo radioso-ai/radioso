@@ -207,15 +207,32 @@ describe('routine block document', () => {
     expect(restored.transitions[0]?.guardText).toBe('{{slot.account_id}} {{slot.contact}}')
   })
 
-  it('carries a shared ending inline once and retains an unreferenced ending', () => {
+  it('embeds a shared ending on every referencing branch and retains an unreferenced ending', () => {
     const input = draft()
     const projected = routineToBlockDoc(input)
     expect(projected).toMatchObject({ ok: true })
     if (!projected.ok) return
+    // Every branch carries the full definition so removing or retargeting one branch cannot
+    // take the ending away from another; the inverse mapping deduplicates by stable id.
     expect(projected.doc.steps[0]?.branches[0]?.target).toMatchObject({ kind: 'ending', terminalId: 'finished', ending: { kind: 'complete' } })
-    expect(projected.doc.steps[1]?.branches[0]?.target).toEqual({ kind: 'ending', terminalId: 'finished' })
+    expect(projected.doc.steps[1]?.branches[0]?.target).toMatchObject({ kind: 'ending', terminalId: 'finished', ending: { kind: 'complete' } })
     expect(projected.doc.unreferencedEndings).toMatchObject([{ stableStepId: 'human', kind: 'handoff', instruction: 'A person will take over.' }])
     expect(routineDefinitionDraftInputSchema.parse(draftFromBlockDoc(projected.doc))).toEqual(withDocumentOrdinals(input))
+  })
+
+  it('keeps a shared ending alive when the branch that used to carry it is removed', () => {
+    const input = draft()
+    const projected = routineToBlockDoc(input)
+    expect(projected).toMatchObject({ ok: true })
+    if (!projected.ok) return
+    // Drop the first referencing branch entirely, as the Document tab's remove control does.
+    const edited = {
+      ...projected.doc,
+      steps: projected.doc.steps.map((step, index) => index === 0 ? { ...step, branches: [] } : step),
+    }
+    const emitted = routineDefinitionDraftInputSchema.parse(draftFromBlockDoc(edited))
+    expect(emitted.terminals.map((terminal) => terminal.stableStepId)).toContain('finished')
+    expect(routineToBlockDoc(emitted)).toMatchObject({ ok: true })
   })
 
   it('returns diagnostics instead of dropping an unresolved transition target', () => {

@@ -15,7 +15,9 @@ import {
   replaceInstruction,
   slotReferences,
   targetBranchAtStep,
+  updateApproval,
   updateBindings,
+  updateBranch,
   updateBranchGuard,
   updateEnding,
   updateSlot,
@@ -106,7 +108,9 @@ describe('routine document edits', () => {
     const handoff = withEnding.unreferencedEndings.find((ending) => ending.kind === 'handoff')!
     const branched = addBranch(withEnding, 'ask_email')
     const referenced = referenceEnding(branched, 'ask_email', 0, handoff.stableStepId)
-    expect(referenced.steps[0]!.branches[0]!.target).toEqual({ kind: 'ending', terminalId: handoff.stableStepId })
+    // The branch embeds its own copy of the definition so later edits to other branches
+    // can never orphan it; emission still deduplicates to a single terminal.
+    expect(referenced.steps[0]!.branches[0]!.target).toMatchObject({ kind: 'ending', terminalId: handoff.stableStepId, ending: { kind: 'handoff' } })
     const projected = draftFromBlockDoc(referenced)
     expect(projected.terminals.filter((ending) => ending.stableStepId === handoff.stableStepId)).toHaveLength(1)
   })
@@ -195,5 +199,62 @@ describe('routine document edits', () => {
     })
     const form = routineToForm(draftAsRoutine(draft))
     expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+  })
+})
+
+describe('approval decision edges', () => {
+  const emptyDoc = () => {
+    const projected = routineToBlockDoc({
+      name: 'X',
+      activation: { triggerDescription: 't', priority: 0 },
+      slots: [],
+      steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: 'Greet.', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [],
+      terminals: [{ stableStepId: 'complete', kind: 'complete', instruction: 'Done.', ordinal: 0 }],
+    })
+    if (!projected.ok) throw new Error('fixture must project')
+    return projected.doc
+  }
+
+  it('creates one decision edge per option when an approval step is added', () => {
+    const doc = addStep(emptyDoc(), 'approval')
+    const approval = doc.steps.find((step) => step.kind === 'approval')!
+    expect(approval.branches).toHaveLength(2)
+    expect(approval.branches.map((branch) => branch.guard)).toMatchObject([
+      { kind: 'field', fieldRef: 'decision.id', fieldOp: 'equals', fieldValue: 'approve' },
+      { kind: 'field', fieldRef: 'decision.id', fieldOp: 'equals', fieldValue: 'decline' },
+    ])
+    const emitted = draftFromBlockDoc(doc)
+    const decisionEdges = emitted.transitions.filter((transition) => transition.fieldRef === 'decision.id')
+    expect(decisionEdges).toHaveLength(2)
+  })
+
+  it('reconciles edges when options are added, removed, or the capture key changes', () => {
+    const withApproval = addStep(emptyDoc(), 'approval')
+    const approvalId = withApproval.steps.find((step) => step.kind === 'approval')!.stableStepId
+    const options = withApproval.steps.find((step) => step.kind === 'approval')!.options!
+
+    const withThird = updateApproval(withApproval, approvalId, { options: [...options, { id: 'defer', label: 'Defer', description: null }] })
+    expect(withThird.steps.find((step) => step.stableStepId === approvalId)!.branches).toHaveLength(3)
+
+    const withoutDecline = updateApproval(withThird, approvalId, { options: [options[0]!, { id: 'defer', label: 'Defer', description: null }] })
+    const branches = withoutDecline.steps.find((step) => step.stableStepId === approvalId)!.branches
+    expect(branches.map((branch) => branch.guard.fieldValue)).toEqual(['approve', 'defer'])
+
+    const renamed = updateApproval(withoutDecline, approvalId, { captureKey: 'verdict' })
+    const renamedBranches = renamed.steps.find((step) => step.stableStepId === approvalId)!.branches
+    expect(renamedBranches.every((branch) => branch.guard.fieldRef === 'verdict.id')).toBe(true)
+  })
+
+  it('leaves custom branches on an approval step untouched', () => {
+    const withApproval = addStep(emptyDoc(), 'approval')
+    const approvalId = withApproval.steps.find((step) => step.kind === 'approval')!.stableStepId
+    const withCustom = updateBranch(addBranch(withApproval, approvalId, 'llm'), approvalId, 2, {
+      guard: { kind: 'llm', provenance: 'judgment', guardText: 'needs a human read', outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null },
+    })
+    const reconciled = updateApproval(withCustom, approvalId, { captureKey: 'decision' })
+    const guards = reconciled.steps.find((step) => step.stableStepId === approvalId)!.branches.map((branch) => branch.guard.kind)
+    expect(guards.filter((kind) => kind === 'llm')).toHaveLength(1)
+    expect(guards.filter((kind) => kind === 'field')).toHaveLength(2)
   })
 })

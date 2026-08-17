@@ -1,5 +1,6 @@
 import { slugifyVariableKey, type ApprovalDocOption, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockSlot, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 import type { RoutineGuardKind, RoutineStepKind, RoutineTerminalKind } from '@/lib/api-types'
+import { approvalCaptureFieldRef } from '@/lib/routine-approval'
 
 const copy = <T>(value: T): T => structuredClone(value)
 
@@ -48,7 +49,7 @@ export const addStep = (doc: RoutineBlockDoc, kind: RoutineStepKind): RoutineBlo
   const step = createDocumentStep(kind, next.steps)
   if (next.steps.length === 1 && isPristineSeedStep(next.steps[0]!)) next.steps = [step]
   else next.steps.push(step)
-  return next
+  return kind === 'approval' ? syncApprovalBranches(next, step.stableStepId) : next
 }
 
 export const removeStep = (doc: RoutineBlockDoc, stableStepId: string): RoutineBlockDoc => {
@@ -158,7 +159,7 @@ export const referenceEnding = (doc: RoutineBlockDoc, stepId: string, branchInde
     ?? doc.steps.flatMap((step) => step.branches)
       .map((branch) => branch.target.kind === 'ending' ? branch.target : undefined)
       .find((target) => target?.terminalId === terminalId)?.ending
-  return ending ? updateBranch(doc, stepId, branchIndex, { target: { kind: 'ending', terminalId } }) : copy(doc)
+  return ending ? updateBranch(doc, stepId, branchIndex, { target: { kind: 'ending', terminalId, ending: copy(ending) } }) : copy(doc)
 }
 
 export const addEnding = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): RoutineBlockDoc => {
@@ -237,13 +238,65 @@ export const updateBindings = (doc: RoutineBlockDoc, stepId: string, state: { in
   ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...copy(state) } : copy(step)),
 })
 
+// An approval's options are its decision edges: the backend requires one
+// `<captureKey>.id == <optionId>` transition per option, so the document keeps a branch per
+// option. Targets stay editable through the ordinary branch rows.
+const approvalOptionGuard = (captureKey: string, optionId: string): RoutineBlockGuard => ({
+  kind: 'field',
+  provenance: 'exact',
+  guardText: null,
+  outcomeStatus: null,
+  counterLimit: null,
+  fieldRef: approvalCaptureFieldRef(captureKey),
+  fieldOp: 'equals',
+  fieldValue: optionId,
+  fieldValues: null,
+  fieldUnit: null,
+})
+
+const isApprovalOptionBranch = (branch: RoutineBlockBranch, fieldRefs: string[]) =>
+  branch.guard.kind === 'field' && branch.guard.fieldOp === 'equals' && branch.guard.fieldRef !== null && branch.guard.fieldRef !== undefined && fieldRefs.includes(branch.guard.fieldRef)
+
+export const syncApprovalBranches = (doc: RoutineBlockDoc, stepId: string, previousCaptureKey?: string | null): RoutineBlockDoc => {
+  const next = copy(doc)
+  const step = next.steps.find((candidate) => candidate.stableStepId === stepId)
+  if (!step || step.kind !== 'approval' || !step.captureKey) return next
+  const captureKey = step.captureKey
+  const fieldRef = approvalCaptureFieldRef(captureKey)
+  const knownRefs = previousCaptureKey ? [fieldRef, approvalCaptureFieldRef(previousCaptureKey)] : [fieldRef]
+  const options = step.options ?? []
+  const optionIds = new Set(options.map((option) => option.id))
+  const kept: RoutineBlockBranch[] = []
+  const existingByOption = new Map<string, RoutineBlockBranch>()
+  for (const branch of step.branches) {
+    if (!isApprovalOptionBranch(branch, knownRefs)) {
+      kept.push(branch)
+      continue
+    }
+    const optionId = String(branch.guard.fieldValue ?? '')
+    if (optionIds.has(optionId)) existingByOption.set(optionId, branch)
+  }
+  step.branches = [
+    ...options.map((option) => {
+      const existing = existingByOption.get(option.id)
+      return existing
+        ? { ...existing, guard: approvalOptionGuard(captureKey, option.id) }
+        : { guard: approvalOptionGuard(captureKey, option.id), target: createEndingTarget(next, 'complete') }
+    }),
+    ...kept,
+  ]
+  return next
+}
+
 export const updateApproval = (doc: RoutineBlockDoc, stepId: string, patch: { instruction?: RoutineBlockInstructionSegment[]; captureKey?: string | null; options?: ApprovalDocOption[] }): RoutineBlockDoc => {
   const { options, ...rest } = patch
   const normalized = {
     ...copy(rest),
     ...(options ? { options: options.map((option) => ({ ...option, description: option.description ?? null })) } : {}),
   }
-  return { ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...normalized } : copy(step)) }
+  const previousCaptureKey = doc.steps.find((step) => step.stableStepId === stepId)?.captureKey
+  const next = { ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...normalized } : copy(step)) }
+  return syncApprovalBranches(next, stepId, previousCaptureKey)
 }
 
 export const updateActivation = (doc: RoutineBlockDoc, patch: Partial<RoutineBlockDoc['activation']>): RoutineBlockDoc => ({ ...copy(doc), activation: { ...doc.activation, ...copy(patch) } })

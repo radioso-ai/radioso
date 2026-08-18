@@ -1725,6 +1725,7 @@ export const createTestDependencies = (overrides: {
       proposalRepository: copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService,
+      workspaceRepository,
     }),
   });
   const dependencies: AppDependencies = {

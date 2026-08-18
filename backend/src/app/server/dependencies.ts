@@ -360,6 +360,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentSourceStatusService: repositories.documentSourceRepository,
       agentSkillsService,
       skillCapabilityRegistry,
+      workspaceRepository: repositories.workspaceRepository,
       workspaceSettings: {
         async getRetrievalDefaults(workspaceId) {
           return retrievalDefaultsProvider.getDefaults(workspaceId);

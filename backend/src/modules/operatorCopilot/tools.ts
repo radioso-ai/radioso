@@ -11,6 +11,7 @@ import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAuditPort,
   CopilotDirectiveProposalAdapter,
+  CopilotEntityDescription,
   CopilotRoutineProposalAdapter,
   CopilotProposal,
   CopilotToolDescriptor,
@@ -19,13 +20,21 @@ import type { CopilotRepositoryPort } from "./service.js";
 import { boundConversationPayload, boundPayload, boundTurnTracePayload } from "./boundedPayload.js";
 
 const idSchema = z.string().uuid();
+const entityNameSchema = z.string().trim().min(1).max(160);
 const unknownRecord = z.record(z.unknown());
-const optionalAgentInput = z.object({ agentId: idSchema.optional() });
+const optionalAgentInput = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() });
 const agentConfigurationInputSchema = z.object({
   mode: z.enum(["auto", "list", "detail"]).optional(),
   agentId: idSchema.optional(),
+  agentName: entityNameSchema.optional(),
   directiveId: idSchema.optional(),
 }).strict();
+const routineDefinitionInputSchema = z.object({
+  agentId: idSchema.optional(),
+  agentName: entityNameSchema.optional(),
+  routineId: idSchema.optional(),
+  routineTitle: entityNameSchema.optional(),
+});
 const agentConfigurationOutputSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("list"),
@@ -726,18 +735,23 @@ export const createUs1CopilotTools = (deps: {
         };
       },
     }),
-    describeEntity: ({ mode, agentId }, context) => mode === "list"
+    describeEntity: (input, context) => {
+      const parsed = input as z.infer<typeof agentConfigurationInputSchema>;
+      return parsed.mode === "list"
       ? null
-      : entity("agent", agentId ?? context?.pageContext.agentId),
+        : parsed.agentName
+          ? describeNamedAgent(parsed, context, deps.agentService)
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
   },
   {
     name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", requiredPermission: "workspace.agents.read",
     description: "List an agent's routines or read one routine in portable Markdown form.",
-    inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema.optional() }), outputSchema: routineDefinitionOutputSchema,
+    inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
       name: "routine_definition",
       description: "List an agent's routines or read one routine in portable Markdown form.",
-      inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema.optional() }),
+      inputSchema: routineDefinitionInputSchema,
       outputSchema: routineDefinitionOutputSchema,
       invoke: async ({ agentId, routineId }) => {
         const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
@@ -759,7 +773,14 @@ export const createUs1CopilotTools = (deps: {
         };
       },
     }),
-    describeEntity: ({ routineId }) => entity("routine", routineId),
+    describeEntity: (input, context) => {
+      const parsed = input as z.infer<typeof routineDefinitionInputSchema>;
+      return parsed.agentName || parsed.routineTitle
+        ? describeNamedRoutine(parsed, context, deps)
+        : parsed.routineId
+          ? { type: "routine", id: parsed.routineId, ...(parsed.agentId ?? context?.pageContext.agentId ? { agentId: parsed.agentId ?? context?.pageContext.agentId! } : {}) }
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
   },
   {
     name: "conversation_transcript", shape: "read", uiLabel: "Reading conversation transcript", contributingModule: "chat", requiredPermission: "workspace.history.read",
@@ -994,6 +1015,7 @@ const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknow
 };
 
 export const createUs2CopilotTools = (deps: {
+  readonly agentService?: Pick<AgentService, "listExisting">;
   readonly evalResultsService: CopilotEvalResultsPort;
   readonly qualitySignalsService: CopilotQualitySignalsPort;
   readonly audiencePulseService: CopilotAudiencePulsePort;
@@ -1001,8 +1023,8 @@ export const createUs2CopilotTools = (deps: {
   {
     name: "eval_results", shape: "read", uiLabel: "Reading eval results", contributingModule: "eval", requiredPermission: "workspace.retrieval.query",
     description: "Read recent evaluation cases and their latest outcomes for an agent.",
-    inputSchema: z.object({ agentId: idSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {
+    inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
+    createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {
       const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
       const cases = (await deps.evalResultsService.listWithLatestRun(context.workspaceId)).map(asRecord)
         .filter((item) => agentIdForEvalCase(item) === resolvedAgentId)
@@ -1010,6 +1032,12 @@ export const createUs2CopilotTools = (deps: {
         .slice(0, limit ?? 20);
       return boundPayload({ cases }) as { cases: Record<string, unknown>[] };
     } }),
+    describeEntity: (input, context) => {
+      const parsed = input as { agentId?: string; agentName?: string };
+      return parsed.agentName
+        ? describeNamedAgent(parsed, context, deps.agentService)
+        : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
   },
   {
     name: "quality_signals", shape: "read", uiLabel: "Reading quality signals", contributingModule: "quality", requiredPermission: "workspace.quality.read",
@@ -1023,6 +1051,12 @@ export const createUs2CopilotTools = (deps: {
       ]);
       return boundPayload({ summary: asRecord(summary), needsAttention: needsAttention.items.map(asRecord) }) as { summary: Record<string, unknown>; needsAttention: Record<string, unknown>[] };
     } }),
+    describeEntity: (input, context) => {
+      const parsed = input as { agentId?: string; agentName?: string };
+      return parsed.agentName
+        ? describeNamedAgent(parsed, context, deps.agentService)
+        : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
   },
   {
     name: "audience_topics", shape: "read", uiLabel: "Reading audience topics", contributingModule: "audiencePulse", requiredPermission: "workspace.quality.read",
@@ -1049,7 +1083,7 @@ const agentSkillsOutputSchema = z.object({ skills: z.array(unknownRecord), capab
  * config values never reach the model.
  */
 export const createUs4CopilotTools = (deps: {
-  readonly agentService: Pick<AgentService, "get">;
+  readonly agentService: Pick<AgentService, "get"> & Partial<Pick<AgentService, "listExisting">>;
   readonly documentStatusService: CopilotDocumentStatusPort;
   readonly documentSourceStatusService: CopilotDocumentSourceStatusPort;
   readonly agentSkillsService: CopilotAgentSkillsPort;
@@ -1148,7 +1182,16 @@ export const createUs4CopilotTools = (deps: {
         }) as z.infer<typeof agentSkillsOutputSchema>;
       },
     }),
-    describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
+    describeEntity: (input, context) => {
+      const parsed = input as { agentId?: string; agentName?: string };
+      // This group only needs `get`, so `listExisting` is optional here. Pass the method itself
+      // rather than the service: narrowing an optional property by truthiness on its parent does
+      // not narrow the parent's type.
+      const listExisting = deps.agentService.listExisting;
+      return parsed.agentName
+        ? describeNamedAgent(parsed, context, listExisting ? { listExisting } : undefined)
+        : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+    },
   },
 ];
 
@@ -1160,6 +1203,7 @@ const proposalOutputSchema = z.object({
 });
 
 export const createUs3CopilotTools = (deps: {
+  readonly agentService?: Pick<AgentService, "listExisting">;
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
   readonly auditService: CopilotAuditPort;
@@ -1171,12 +1215,12 @@ export const createUs3CopilotTools = (deps: {
     {
       name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", requiredPermission: "workspace.agents.manage",
       description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_directive",
         description: "Draft a directive proposal for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, directiveId, intent }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), directiveId: directiveId ?? null };
@@ -1195,16 +1239,22 @@ export const createUs3CopilotTools = (deps: {
           return { proposalId: proposal.id, targetType: "directive" as const, targetLabel: draft.targetLabel, summary: draft.summary };
         },
       }),
+      describeEntity: (input, context) => {
+        const parsed = input as { agentId?: string; agentName?: string };
+        return parsed.agentName
+          ? describeNamedAgent(parsed, context, deps.agentService)
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+      },
     },
     {
       name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", requiredPermission: "workspace.agents.manage",
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_routine",
         description: "Draft a new routine proposal for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, intent }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), routineId: null };
@@ -1223,17 +1273,22 @@ export const createUs3CopilotTools = (deps: {
           return { proposalId: proposal.id, targetType: "routine" as const, targetLabel: draft.targetLabel, summary: draft.summary };
         },
       }),
-      describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
+      describeEntity: (input, context) => {
+        const parsed = input as { agentId?: string; agentName?: string };
+        return parsed.agentName
+          ? describeNamedAgent(parsed, context, deps.agentService)
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+      },
     },
     {
       name: "propose_agent_setting", shape: "propose", uiLabel: "Drafting a setting change", contributingModule: "agents", requiredPermission: "workspace.agents.manage",
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
-      inputSchema: z.object({ agentId: idSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
       outputSchema: proposalOutputSchema,
       createTool: (context) => ({
         name: "propose_agent_setting",
         description: "Draft an agent setting change for operator review. It does not change configuration.",
-        inputSchema: z.object({ agentId: idSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, settingKey, value, rationale }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };
@@ -1252,6 +1307,12 @@ export const createUs3CopilotTools = (deps: {
           return { proposalId: proposal.id, targetType: "agent_setting" as const, targetLabel: settingKey, summary: rationale ?? settingKey };
         },
       }),
+      describeEntity: (input, context) => {
+        const parsed = input as { agentId?: string; agentName?: string };
+        return parsed.agentName
+          ? describeNamedAgent(parsed, context, deps.agentService)
+          : entity("agent", parsed.agentId ?? context?.pageContext.agentId);
+      },
     },
   ];
 };
@@ -1276,6 +1337,82 @@ const recordProposalCreated = async (auditService: CopilotAuditPort, context: { 
 };
 
 const entity = (type: string, id: string | null | undefined) => id ? { type, id } : null;
+
+type NamedAgentInput = {
+  readonly agentId?: string;
+  readonly agentName?: string;
+};
+
+const describeNamedAgent = async <TInput extends NamedAgentInput>(
+  input: TInput,
+  context: { workspaceId: string; pageContext: { agentId: string | null } } | undefined,
+  agentService: Pick<AgentService, "listExisting"> | undefined,
+): Promise<CopilotEntityDescription<TInput> | null> => {
+  if (input.agentId) return entity("agent", input.agentId);
+  if (!input.agentName) return entity("agent", context?.pageContext.agentId);
+  if (!context) return { kind: "not_found" };
+
+  if (!agentService) return { kind: "not_found" };
+  const candidates = (await agentService.listExisting(context.workspaceId))
+    .filter((agent) => normalizeEntityName(agent.name) === normalizeEntityName(input.agentName!))
+    .map((agent) => ({ type: "agent", id: agent.id, label: agent.name }));
+  if (candidates.length !== 1) {
+    return candidates.length === 0 ? { kind: "not_found" } : { kind: "ambiguous", candidates };
+  }
+  const candidate = candidates[0]!;
+  return {
+    kind: "resolved",
+    entity: candidate,
+    input: { ...input, agentId: candidate.id, agentName: undefined } as TInput,
+  };
+};
+
+const describeNamedRoutine = async (
+  input: { agentId?: string; agentName?: string; routineId?: string; routineTitle?: string },
+  context: { workspaceId: string; pageContext: { agentId: string | null } } | undefined,
+  deps: Pick<Parameters<typeof createUs1CopilotTools>[0], "agentService" | "routineDefinitionService">,
+): Promise<CopilotEntityDescription<typeof input> | null> => {
+  const agentDescription = await describeNamedAgent(input, context, deps.agentService);
+  if (agentDescription && "kind" in agentDescription && agentDescription.kind !== "resolved") {
+    return agentDescription;
+  }
+  const resolvedInput = agentDescription && "kind" in agentDescription
+    ? agentDescription.input
+    : input;
+  const agentId = resolvedInput.agentId ?? context?.pageContext.agentId ?? undefined;
+
+  if (resolvedInput.routineId) {
+    return { type: "routine", id: resolvedInput.routineId, ...(agentId ? { agentId } : {}) };
+  }
+  if (!resolvedInput.routineTitle) {
+    return entity("agent", agentId);
+  }
+  if (!context) return { kind: "not_found" };
+
+  const agents = agentId
+    ? [{ id: agentId }]
+    : (await deps.agentService.listExisting(context.workspaceId)).map((agent) => ({ id: agent.id }));
+  const routines = (await Promise.all(agents.map(async (agent) =>
+    (await deps.routineDefinitionService.list(context.workspaceId, agent.id)).map((routine) => ({
+      agentId: agent.id,
+      id: routine.id,
+      label: routine.name,
+    })),
+  ))).flat().filter((routine) => normalizeEntityName(routine.label) === normalizeEntityName(resolvedInput.routineTitle!));
+  if (routines.length !== 1) {
+    return routines.length === 0
+      ? { kind: "not_found" }
+      : { kind: "ambiguous", candidates: routines.map((routine) => ({ type: "routine", ...routine })) };
+  }
+  const routine = routines[0]!;
+  return {
+    kind: "resolved",
+    entity: { type: "routine", ...routine },
+    input: { ...resolvedInput, agentId: routine.agentId, routineId: routine.id, routineTitle: undefined },
+  };
+};
+
+const normalizeEntityName = (value: string): string => value.trim().normalize("NFKC").toLowerCase();
 const asRecord = (value: object): Record<string, unknown> => value as Record<string, unknown>;
 const requiredPageAgent = (agentId: string | null): string => { if (!agentId) throw new Error("No agent context is available"); return agentId; };
 const requiredPageConversation = (conversationId: string | null): string => { if (!conversationId) throw new Error("No conversation context is available"); return conversationId; };

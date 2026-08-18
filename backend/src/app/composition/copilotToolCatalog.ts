@@ -25,6 +25,8 @@ import type {
 import type { CopilotToolDescriptor } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
+import { enrichCopilotToolCatalog } from "../../modules/operatorCopilot/catalog.js";
+import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
 export const createCopilotToolCatalog = (deps: {
@@ -43,10 +45,17 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalRepository: Pick<CopilotRepositoryPort, "createProposal">;
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
   readonly auditService: CopilotAuditPort;
-}): ReadonlyArray<CopilotToolDescriptor> => [
+  readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
+}): ReadonlyArray<CopilotToolDescriptor> => enrichCopilotToolCatalog([
   ...createUs1CopilotTools(deps),
   ...createUs2CopilotTools(deps),
   ...createUs4CopilotTools(deps),
   ...createWorkspaceSettingsCopilotTools(deps),
   ...createUs3CopilotTools(deps),
-];
+], {
+  resolveWorkspaceKey: async (workspaceId) => {
+    const workspace = await deps.workspaceRepository.findById(workspaceId);
+    if (!workspace) throw new Error("Copilot workspace no longer exists");
+    return workspace.publicRouteKey;
+  },
+});

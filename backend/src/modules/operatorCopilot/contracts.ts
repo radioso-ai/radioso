@@ -33,6 +33,8 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /** Present for transport-facing catalog calls so entity lookup cannot bypass tool permissions. */
+  readonly permissions?: ReadonlySet<string>;
   /** Internal copilot thread identity; distinct from pageContext.conversationId. */
   readonly copilotConversationId?: string;
   readonly pageContext: CopilotPageContext;
@@ -40,8 +42,26 @@ export interface CopilotToolInvocationContext {
 
 export interface CopilotEntityReference {
   readonly type: string;
-  readonly id: string;
+  readonly id?: string;
+  readonly label?: string;
+  readonly agentId?: string;
 }
+
+export type CopilotEntityDescription<TInput> =
+  | CopilotEntityReference
+  | {
+      readonly kind: "resolved";
+      readonly entity: CopilotEntityReference;
+      /** The entity-owning descriptor may replace a human name with its stable id. */
+      readonly input: TInput;
+    }
+  | {
+      readonly kind: "ambiguous";
+      readonly candidates: ReadonlyArray<CopilotEntityReference>;
+    }
+  | {
+      readonly kind: "not_found";
+    };
 
 /** Narrow audit port owned by the copilot consumer. */
 export interface CopilotAuditPort {
@@ -113,7 +133,7 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly requiredPermission: AccountPermission;
   readonly contributingModule: string;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
-  describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityReference | null;
+  describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityDescription<TInput> | null | Promise<CopilotEntityDescription<TInput> | null>;
 }
 
 /**

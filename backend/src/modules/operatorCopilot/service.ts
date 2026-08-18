@@ -179,12 +179,16 @@ export class OperatorCopilotService {
       );
       for await (const trace of stream.events) {
         if (trace.kind === "tool_call_validated") {
-          const describedEntity = descriptors.get(trace.toolName)?.describeEntity?.(trace.input, {
+          const described = await descriptors.get(trace.toolName)?.describeEntity?.(trace.input, {
             workspaceId: input.workspaceId,
             accountId: input.accountId,
             operatorUserId: input.operatorUserId,
+            permissions: input.permissions,
             pageContext: input.pageContext,
           });
+          const describedEntity = described && "kind" in described
+            ? described.kind === "resolved" ? described.entity : null
+            : described;
           if (describedEntity) entitiesByToolCall.set(trace.callId, describedEntity);
         }
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
@@ -234,7 +238,7 @@ export class OperatorCopilotService {
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => input.permissions.has(descriptor.requiredPermission))
-      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, pageContext: input.pageContext }) as AgentTool);
+      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, pageContext: input.pageContext }) as AgentTool);
   }
 
   private async buildPriorTranscript(conversationId: string): Promise<string | null> {

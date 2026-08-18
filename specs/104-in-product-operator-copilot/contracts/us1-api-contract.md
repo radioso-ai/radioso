@@ -101,8 +101,9 @@ Family readers, each with a UI-safe label used in `activity.tool`:
 - agent discovery plus selected-agent configuration (via `AgentConfig`
   projection, including bounded directive summaries and an optional targeted
   directive whose metadata, collections, and total result have explicit bounds;
-  explicit discovery can override page context; label "Reading agent
-  configuration")
+  the bounded projection also includes the platform's built-in answer
+  directives so authored supersession/conflicts can be explained; explicit
+  discovery can override page context; label "Reading agent configuration")
 - bounded routine discovery with stable ids and portability metadata, plus a
   targeted portable-Markdown definition or explicit diagnostic/omission reason;
   label "Reading routine"

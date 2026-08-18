@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { serializeAgentConfig, type AgentConfig, type AgentService } from "../agents/public.js";
+import { builtInAnswerDirectiveViews, type BuiltInDirectiveView } from "../directives/public.js";
 import {
   projectRoutineToPortableDocument,
   type RoutineDefinition,
@@ -50,6 +51,9 @@ const routineDefinitionOutputSchema = z.object({
 
 const copilotAgentListLimit = 40;
 const copilotDirectiveListLimit = 40;
+const copilotBuiltInDirectiveListLimit = 20;
+const copilotBuiltInDirectiveActionCharLimit = 8_000;
+const copilotBuiltInDirectiveTotalActionCharBudget = 20_000;
 const copilotDirectiveDetailCollectionLimit = 10;
 const copilotDirectiveMetadataCharLimit = 4_000;
 const copilotDirectiveDetailCharBudget = 24_000;
@@ -282,10 +286,39 @@ const projectAgentConfiguration = (
       id: directives[index]!.id,
       name: directives[index]!.name,
     })),
+    builtInDirectiveCount: builtInAnswerDirectiveViews.length,
+    builtInsTruncated: builtInAnswerDirectiveViews.length > copilotBuiltInDirectiveListLimit,
+    builtIns: projectBuiltInDirectives(builtInAnswerDirectiveViews),
     directive: selectedIndex >= 0
       ? projectDirectiveDetail(directives[selectedIndex]!.id, portableDirectives[selectedIndex]!)
       : null,
   };
+};
+
+const projectBuiltInDirectives = (
+  directives: ReadonlyArray<BuiltInDirectiveView>,
+): ReadonlyArray<Record<string, unknown>> => {
+  let remainingActionChars = copilotBuiltInDirectiveTotalActionCharBudget;
+  return directives.slice(0, copilotBuiltInDirectiveListLimit).map((directive) => {
+    const actionTooLarge = directive.action.length > copilotBuiltInDirectiveActionCharLimit;
+    const exceedsTotalBudget = directive.action.length > remainingActionChars;
+    const omittedReason = actionTooLarge
+      ? "content_too_large"
+      : exceedsTotalBudget ? "total_budget" : null;
+    if (!omittedReason) remainingActionChars -= directive.action.length;
+    const boundedIdentity = boundPayload({
+      name: directive.name,
+      condition: directive.condition,
+      priority: directive.priority,
+      description: directive.description,
+    });
+    return {
+      ...boundedIdentity,
+      action: omittedReason ? null : directive.action,
+      actionChars: directive.action.length,
+      omittedReason,
+    };
+  });
 };
 
 const directiveCollectionKeys = [

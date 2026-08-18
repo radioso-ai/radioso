@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { validateAgentInput } from "../../../src/modules/agents/public.js";
+import { builtInAnswerDirectiveViews } from "../../../src/modules/directives/public.js";
 import { createUs1CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
 
@@ -194,6 +195,13 @@ describe("US1 copilot family readers", () => {
       directivesTruncated: false,
       directiveRefs: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Do not guess" }],
       directive: null,
+      builtInDirectiveCount: builtInAnswerDirectiveViews.length,
+      builtInsTruncated: false,
+      builtIns: builtInAnswerDirectiveViews.map((directive) => ({
+        ...directive,
+        actionChars: directive.action.length,
+        omittedReason: null,
+      })),
       surfaceSettings: {
         anonymousChat: { token: { __redacted: "secret" } },
         websiteEmbed: {

@@ -24,6 +24,7 @@
 - [X] T019 [US1] [US2] Add review-driven regression coverage for nonportable routines, large routine definitions, list bounds, and existing directive proposal targets
 - [X] T020 [US1] Add explicit agent list/detail selection plus bounded directive discovery and targeted full directive reads
 - [X] T021 [US1] Add explicit targeted-directive metadata, collection, and total-result budgets and correct list activity entity linking
+- [X] T022 [US1] Expose bounded built-in answer directives so list-directive catalog coverage includes both authored and platform rules
 
 ### Dependencies
 

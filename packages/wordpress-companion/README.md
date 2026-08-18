@@ -33,9 +33,19 @@ is behind Cloudflare or its REST API is blocked.
 
 The resync runs in background batches, avoiding a timeout on large sites. It
 advances as WordPress WP-Cron ticks, which normally happens with site traffic.
-Use **Cancel resync** on the same settings page to stop an in-progress run.
-It is safe to run again because Radioso upserts content by WordPress post
-identity.
+The settings page shows whether the next batch is scheduled, running, overdue,
+or missing. It also keeps the latest 20 WordPress-side activity entries,
+including schedule failures, batch checkpoints, immediate webhook-start
+errors, and PHP fatal errors.
+
+If WP-Cron is disabled or a batch is missing, overdue, stalled, or failed, use
+**Run next batch now** to execute one batch from the settings page. Use
+**Cancel resync** to stop an in-progress run. It is safe to run again because
+Radioso upserts content by WordPress post identity.
+
+The activity log can confirm that WordPress started a non-blocking webhook
+request. It cannot confirm that Radioso accepted or ingested the post; check
+the Radioso document list or backend logs for that receiver-side result.
 
 One workspace WordPress connector accepts one site. The signed payload includes
 the site's public URL, and Radioso rejects events whose site or post permalink
@@ -58,7 +68,12 @@ You should see a new document with `metadata.source = "wordpress"` and
 If nothing arrives:
 - Confirm Radioso reports the connector as **enabled** for your workspace.
 - Confirm the shared secret matches exactly.
-- Check WordPress' PHP error log for `wp_remote_post` warnings.
+- Check the resync status and activity log for cron, scheduling, dispatch, or
+  PHP errors.
+- Open **Tools → Site Health** and check for loopback-request or scheduled-event
+  failures when a batch is overdue or missing.
+- Check the WordPress host's PHP error log when the activity log reports a
+  fatal error or a batch remains stalled.
 
 ## Security
 

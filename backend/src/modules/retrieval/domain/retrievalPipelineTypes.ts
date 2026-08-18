@@ -320,6 +320,7 @@ export interface RetrievalExecutionDiagnostics {
     | "query_embedding_unavailable"
     | "vector_search_unavailable"
     | null;
+  degradedRetrievalChannels?: Array<"lexical" | "temporal">;
   retrievalSkipped?: boolean;
   parsedQuery?: ParsedQueryInterpretation;
   appliedConstraints?: AppliedConstraint[];

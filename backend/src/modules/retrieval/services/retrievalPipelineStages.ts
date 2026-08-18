@@ -91,6 +91,16 @@ export type SemanticRetrievalFailureReason =
   | "query_embedding_unavailable"
   | "vector_search_unavailable";
 
+// Retrieval channels that degrade to empty instead of failing the turn. Semantic
+// degradation is reported separately because it carries a failure reason and a
+// three-valued availability; these channels are simply present or absent.
+export type DegradableRetrievalChannel = "lexical" | "temporal";
+
+export const DEGRADABLE_RETRIEVAL_CHANNELS: readonly DegradableRetrievalChannel[] = [
+  "lexical",
+  "temporal",
+];
+
 export interface CandidateRetrievalStageResult extends QueryInterpretationStageResult {
   activeEmbedding: number[];
   activeEmbeddingDurationMs: number;
@@ -104,6 +114,7 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   vectorFallbackApplied: boolean;
   semanticRetrievalAvailability?: SemanticRetrievalAvailability;
   semanticRetrievalFailureReason?: SemanticRetrievalFailureReason | null;
+  degradedRetrievalChannels?: DegradableRetrievalChannel[];
 }
 
 export interface CandidatePreparationStageResult extends CandidateRetrievalStageResult {
@@ -220,6 +231,7 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   vectorFallbackApplied?: unknown;
   semanticRetrievalAvailability?: unknown;
   semanticRetrievalFailureReason?: unknown;
+  degradedRetrievalChannels?: unknown;
 };
 
 type TraceCandidatePreparationInput = TraceCandidateRetrievalInput & {
@@ -312,6 +324,17 @@ export const buildQueryInterpretationTraceAttributes = (result: TraceQueryInterp
     "retrieval.trigger.considered_rule.count": boundedTraceCount(result.triggerAnalysis?.consideredRules?.length),
   });
 
+// Bounded, low-cardinality: the channel set is closed, so this yields at most four
+// distinct values. "none" is emitted explicitly so a healthy turn is distinguishable
+// from a turn that predates the attribute.
+export const formatDegradedChannels = (channels: unknown): string | undefined => {
+  if (!Array.isArray(channels)) {
+    return undefined;
+  }
+  const known = DEGRADABLE_RETRIEVAL_CHANNELS.filter((channel) => channels.includes(channel));
+  return known.length === 0 ? "none" : known.join(",");
+};
+
 export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRetrievalInput): TraceAttributes =>
   compactTraceAttributes({
     ...buildQueryInterpretationTraceAttributes(result),
@@ -326,6 +349,7 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,
     "retrieval.semantic.availability": result.semanticRetrievalAvailability,
     "retrieval.semantic.failure_reason": result.semanticRetrievalFailureReason,
+    "retrieval.degraded_channels": formatDegradedChannels(result.degradedRetrievalChannels),
   });
 
 export const buildCandidatePreparationTraceAttributes = (result: TraceCandidatePreparationInput): TraceAttributes =>

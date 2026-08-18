@@ -597,7 +597,18 @@ function PublicChatContent({
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
-  const visibleMessages = messages
+  // A turn that failed before producing any text renders the localized failure copy.
+  // Resolving it here (rather than in the chat context) keeps the string on the same
+  // path as every other visitor-facing string: built-in locale pack, then the agent's
+  // copy pack, then operator overrides.
+  const visibleMessages = useMemo(
+    () => messages.map((message) => (
+      message.status === 'error' && !message.content
+        ? { ...message, content: copy.publicChatMessageFailedMessage }
+        : message
+    )),
+    [copy.publicChatMessageFailedMessage, messages],
+  )
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout

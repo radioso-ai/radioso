@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
@@ -224,7 +226,11 @@ describe("hybrid retrieval search", () => {
     expect(results[1]?.lexicalRankScore).toBe(1);
   });
 
-  it("keeps legacy chunks searchable when search_text is null", async () => {
+  // Legacy chunks with a null search_text stay searchable, but the guarantee now
+  // lives in migration 144 rather than in a query-side content fallback: the fallback
+  // made the tsvector expression differ from chunks_search_text_fts_idx, which cost
+  // the GIN index and seq-scanned every chunk partition on every lexical search.
+  it("builds its tsvector from search_text alone so the GIN index applies", async () => {
     let executedSql = "";
     const search = new PgLexicalSearch({
       async query(sql: string) {
@@ -239,7 +245,19 @@ describe("hybrid retrieval search", () => {
       topK: 5,
     });
 
-    expect(executedSql).toContain("coalesce(c.search_text, c.content, '')");
+    expect(executedSql).toContain("to_tsvector('simple', coalesce(c.search_text, ''))");
+    expect(executedSql).not.toContain("c.content, ''");
+  });
+
+  it("backfills legacy null search_text so those chunks stay searchable", async () => {
+    const migration = await readFile(
+      new URL("../../src/db/migrations/144_chunks_search_text_backfill.sql", import.meta.url),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/UPDATE\s+chunks/i);
+    expect(migration).toMatch(/SET\s+search_text\s*=\s*content/i);
+    expect(migration).toMatch(/WHERE\s+search_text\s+IS\s+NULL/i);
   });
 
   it("compiles phrase and OR-compatible lexical syntax instead of executing raw backend syntax", async () => {

@@ -155,19 +155,6 @@ const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
   return null
 }
 
-const getErrorMessage = (error: unknown) => {
-  const structuredError = getErrorResponse(error)
-  if (structuredError) {
-    return structuredError.message
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return 'Sorry, something went wrong. Please try again.'
-}
-
 const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
   const structuredError = getErrorResponse(error)
   if (structuredError?.code !== 'rate_limit_exceeded') {
@@ -1126,7 +1113,6 @@ export function AnonymousChatProvider({
             return
           }
 
-          const errorMessage = getErrorMessage(error)
           onAnalyticsEvent?.({
             event: 'chat.failed',
             subjectType: resolvedConversationId ? 'conversation' : undefined,
@@ -1141,9 +1127,13 @@ export function AnonymousChatProvider({
             restoreMessageSuggestions(
               prev.map((message) => {
                 if (message.id !== assistantMessageId) return message
+                // Content stays as-is: whatever streamed before the failure is kept,
+                // and an empty body is left empty. The visitor-facing failure copy is
+                // rendered by the view, which owns the resolved locale pack and the
+                // operator's copy overrides. Backend error text is never shown here —
+                // it is untranslated and can carry internal detail.
                 return {
                   ...message,
-                  content: message.content || errorMessage,
                   status: 'error' as const,
                   answerSegments: undefined,
                   suggestions: undefined,

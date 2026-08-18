@@ -11,7 +11,12 @@ import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
-import type { CandidateRetrievalStage as CandidateRetrievalStageContract, QueryInterpretationStageResult } from "./retrievalPipelineStages.js";
+import {
+  DEGRADABLE_RETRIEVAL_CHANNELS,
+  type CandidateRetrievalStage as CandidateRetrievalStageContract,
+  type DegradableRetrievalChannel,
+  type QueryInterpretationStageResult,
+} from "./retrievalPipelineStages.js";
 
 export class CandidateRetrievalStageService implements CandidateRetrievalStageContract {
   constructor(
@@ -39,6 +44,10 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
     // semantic contexts below and contribute lexical-only.
     const uniqueSemanticQueries = [...new Set(semanticQueries)].slice(0, RETRIEVAL_BEHAVIOR.maxSemanticBranches);
     const searchedSemanticQueries = new Set(uniqueSemanticQueries);
+    // A failing channel degrades the answer; it must never abort the turn. Semantic
+    // search is already guarded below, so an unguarded lexical or temporal query was
+    // the one path where a backend outage produced no reply at all.
+    const degradedChannels = new Set<DegradableRetrievalChannel>();
     const lexicalSearchBySubquery = new Map(
       input.activeRetrievalSubqueries.map((subquery) => [
         subquery.id,
@@ -49,6 +58,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           metadataFilter,
           sourceFilter,
           lexicalPlan: subquery.lexicalPlan,
+        }).catch(() => {
+          degradedChannels.add("lexical");
+          return [];
         }),
       ] as const),
     );
@@ -150,6 +162,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           topK: input.settings.vectorTopK,
           metadataFilter,
           sourceFilter,
+        }).catch(() => {
+          degradedChannels.add("temporal");
+          return [];
         })
       : [];
 
@@ -167,6 +182,8 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
       semanticRetrievalAvailability,
       semanticRetrievalFailureReason,
+      degradedRetrievalChannels: DEGRADABLE_RETRIEVAL_CHANNELS
+        .filter((channel) => degradedChannels.has(channel)),
     };
   }
 

@@ -79,7 +79,11 @@ export class PgLexicalSearch implements LexicalSearchPort {
                 c.start_offset,
                 c.end_offset,
                 c.metadata,
-                to_tsvector('simple', coalesce(c.search_text, c.content, '')) AS search_vector
+                -- Must stay textually equivalent to chunks_search_text_fts_idx, or
+                -- Postgres cannot use the GIN index and seq-scans every partition.
+                -- Migration 144 backfilled search_text so dropping the content
+                -- fallback does not change which chunks are searchable.
+                to_tsvector('simple', coalesce(c.search_text, '')) AS search_vector
          FROM chunks c
          JOIN documents d ON d.id = c.document_id
          WHERE c.workspace_id = $1

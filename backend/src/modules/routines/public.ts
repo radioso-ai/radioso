@@ -78,10 +78,12 @@ export {
 export {
   canonicalizePortableRoutineDocument,
   parsePortableRoutineDocument,
+  projectRoutineToPortableDocument,
   routineToPortableDocument,
   type PortableRoutineDocumentCanonicalizeResult,
   type PortableRoutineDocumentEnvelope,
   type PortableRoutineDocumentParseResult,
+  type PortableRoutineDocumentProjectionResult,
 } from "./portableDocument.js";
 export {
   RoutineDraftAssistService,

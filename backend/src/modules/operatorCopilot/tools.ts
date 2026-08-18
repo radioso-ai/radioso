@@ -1,7 +1,11 @@
 import { z } from "zod";
 
-import type { AgentService } from "../agents/public.js";
-import { routineToPortableDocument, type RoutineDefinitionService } from "../routines/public.js";
+import { serializeAgentConfig, type AgentConfig, type AgentService } from "../agents/public.js";
+import {
+  projectRoutineToPortableDocument,
+  type RoutineDefinition,
+  type RoutineDefinitionService,
+} from "../routines/public.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotAuditPort,
@@ -16,6 +20,41 @@ import { boundConversationPayload, boundPayload } from "./boundedPayload.js";
 const idSchema = z.string().uuid();
 const unknownRecord = z.record(z.unknown());
 const optionalAgentInput = z.object({ agentId: idSchema.optional() });
+const agentConfigurationInputSchema = z.object({
+  mode: z.enum(["auto", "list", "detail"]).optional(),
+  agentId: idSchema.optional(),
+  directiveId: idSchema.optional(),
+}).strict();
+const agentConfigurationOutputSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("list"),
+    agentCount: z.number().int().nonnegative(),
+    agentsTruncated: z.boolean(),
+    agents: z.array(unknownRecord),
+    agent: z.null(),
+  }),
+  z.object({
+    mode: z.literal("detail"),
+    agentCount: z.null(),
+    agentsTruncated: z.null(),
+    agents: z.array(unknownRecord).max(0),
+    agent: unknownRecord,
+  }),
+]);
+const routineDefinitionOutputSchema = z.object({
+  routineCount: z.number().int().nonnegative(),
+  routinesTruncated: z.boolean(),
+  routine: unknownRecord.nullable(),
+  routines: z.array(unknownRecord),
+});
+
+const copilotAgentListLimit = 40;
+const copilotDirectiveListLimit = 40;
+const copilotDirectiveDetailCollectionLimit = 10;
+const copilotDirectiveMetadataCharLimit = 4_000;
+const copilotDirectiveDetailCharBudget = 24_000;
+const copilotRoutineListLimit = 40;
+const copilotRoutineContentCharLimit = 20_000;
 
 /**
  * Narrow ports over other modules' public services. The copilot owns these
@@ -92,24 +131,91 @@ export interface CopilotSkillCapabilityTargetsPort {
 }
 
 export const createUs1CopilotTools = (deps: {
-  readonly agentService: Pick<AgentService, "get">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "get">;
+  readonly agentService: Pick<AgentService, "listExisting" | "resolve">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "list" | "get">;
   readonly chatHistoryService: CopilotConversationHistoryPort;
   readonly documentSearchService: CopilotDocumentSearchPort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "agent_configuration", uiLabel: "Reading agent configuration", contributingModule: "agents", requiredPermission: "workspace.agents.read",
-    description: "Read the selected agent's current configuration. Use this for workspace-specific settings and behavior.",
-    inputSchema: optionalAgentInput, outputSchema: z.object({ agent: unknownRecord }),
-    createTool: (context) => ({ name: "agent_configuration", description: "Read the selected agent's current configuration.", inputSchema: optionalAgentInput, outputSchema: z.object({ agent: unknownRecord }), invoke: async ({ agentId }) => ({ agent: await deps.agentService.get(context.workspaceId, agentId ?? requiredPageAgent(context.pageContext.agentId)) as Record<string, unknown> }) }),
-    describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
+    description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+    inputSchema: agentConfigurationInputSchema, outputSchema: agentConfigurationOutputSchema,
+    createTool: (context) => ({
+      name: "agent_configuration",
+      description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+      inputSchema: agentConfigurationInputSchema,
+      outputSchema: agentConfigurationOutputSchema,
+      invoke: async ({ mode = "auto", agentId, directiveId }) => {
+        if (mode === "list") {
+          if (agentId || directiveId) throw new Error("Agent discovery does not accept an agent or directive id");
+          const agents = await deps.agentService.listExisting(context.workspaceId);
+          return {
+            mode: "list" as const,
+            agentCount: agents.length,
+            agentsTruncated: agents.length > copilotAgentListLimit,
+            agents: projectAgentSummaries(agents),
+            agent: null,
+          };
+        }
+
+        const resolvedAgentId = agentId ?? (mode === "detail" || directiveId
+          ? requiredPageAgent(context.pageContext.agentId)
+          : context.pageContext.agentId);
+        if (!resolvedAgentId) {
+          const agents = await deps.agentService.listExisting(context.workspaceId);
+          return {
+            mode: "list" as const,
+            agentCount: agents.length,
+            agentsTruncated: agents.length > copilotAgentListLimit,
+            agents: projectAgentSummaries(agents),
+            agent: null,
+          };
+        }
+
+        const selectedAgent = await deps.agentService.resolve(context.workspaceId, resolvedAgentId);
+        return {
+          mode: "detail" as const,
+          agentCount: null,
+          agentsTruncated: null,
+          agents: [],
+          agent: projectAgentConfiguration(selectedAgent, directiveId),
+        };
+      },
+    }),
+    describeEntity: ({ mode, agentId }, context) => mode === "list"
+      ? null
+      : entity("agent", agentId ?? context?.pageContext.agentId),
   },
   {
     name: "routine_definition", uiLabel: "Reading routine", contributingModule: "routines", requiredPermission: "workspace.agents.read",
-    description: "Read an agent routine in portable Markdown form.",
-    inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema }), outputSchema: z.object({ routine: unknownRecord }),
-    createTool: (context) => ({ name: "routine_definition", description: "Read an agent routine in portable Markdown form.", inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema }), outputSchema: z.object({ routine: unknownRecord }), invoke: async ({ agentId, routineId }) => ({ routine: routineToPortableDocument(await deps.routineDefinitionService.get(context.workspaceId, agentId ?? requiredPageAgent(context.pageContext.agentId), routineId)) as unknown as Record<string, unknown> }) }),
-    describeEntity: ({ routineId }) => ({ type: "routine", id: routineId }),
+    description: "List an agent's routines or read one routine in portable Markdown form.",
+    inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema.optional() }), outputSchema: routineDefinitionOutputSchema,
+    createTool: (context) => ({
+      name: "routine_definition",
+      description: "List an agent's routines or read one routine in portable Markdown form.",
+      inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema.optional() }),
+      outputSchema: routineDefinitionOutputSchema,
+      invoke: async ({ agentId, routineId }) => {
+        const resolvedAgentId = agentId ?? requiredPageAgent(context.pageContext.agentId);
+        if (routineId) {
+          const routine = await deps.routineDefinitionService.get(context.workspaceId, resolvedAgentId, routineId);
+          return {
+            routineCount: 1,
+            routinesTruncated: false,
+            routine: projectRoutineDetail(routine),
+            routines: [],
+          };
+        }
+        const definitions = await deps.routineDefinitionService.list(context.workspaceId, resolvedAgentId);
+        return {
+          routineCount: definitions.length,
+          routinesTruncated: definitions.length > copilotRoutineListLimit,
+          routine: null,
+          routines: definitions.slice(0, copilotRoutineListLimit).map(projectRoutineSummary),
+        };
+      },
+    }),
+    describeEntity: ({ routineId }) => entity("routine", routineId),
   },
   {
     name: "conversation_trace", uiLabel: "Reading conversation trace", contributingModule: "chat", requiredPermission: "workspace.history.read",
@@ -131,6 +237,157 @@ export const createUs1CopilotTools = (deps: {
     createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
   },
 ];
+
+const projectAgentSummaries = (
+  agents: Awaited<ReturnType<AgentService["listExisting"]>>,
+) => agents.slice(0, copilotAgentListLimit).map((agent) => ({
+  id: agent.id,
+  name: agent.name,
+  isDefault: agent.isDefault,
+  assistantBootstrapActive: agent.assistantBootstrapActive,
+}));
+
+const projectAgentConfiguration = (
+  agent: Awaited<ReturnType<AgentService["resolve"]>>,
+  directiveId: string | undefined,
+): Record<string, unknown> => {
+  const serialized = serializeAgentConfig(agent);
+  const { authoredDirectives: portableDirectives, ...portableAgent } = serialized;
+  const directives = agent.authoredDirectives ?? [];
+  const selectedIndex = directiveId
+    ? directives.findIndex((directive) => directive.id === directiveId)
+    : -1;
+  if (directiveId && selectedIndex < 0) throw new Error("Directive not found");
+
+  const visibleIndexes = Array.from(
+    { length: Math.min(directives.length, copilotDirectiveListLimit) },
+    (_, index) => index,
+  );
+  if (selectedIndex >= copilotDirectiveListLimit) {
+    visibleIndexes[visibleIndexes.length - 1] = selectedIndex;
+  }
+
+  return {
+    id: agent.id,
+    ...boundPayload(portableAgent as unknown as Record<string, unknown>),
+    authoredDirectives: visibleIndexes.map((index) => ({
+      id: directives[index]!.id,
+      name: directives[index]!.name,
+      priority: directives[index]!.priority,
+      actionChars: directives[index]!.action.length,
+    })),
+    directiveCount: directives.length,
+    directivesTruncated: directives.length > copilotDirectiveListLimit,
+    directiveRefs: visibleIndexes.map((index) => ({
+      id: directives[index]!.id,
+      name: directives[index]!.name,
+    })),
+    directive: selectedIndex >= 0
+      ? projectDirectiveDetail(directives[selectedIndex]!.id, portableDirectives[selectedIndex]!)
+      : null,
+  };
+};
+
+const directiveCollectionKeys = [
+  "requiredCapabilities",
+  "dependsOn",
+  "excludes",
+  "routes",
+  "tags",
+] as const satisfies ReadonlyArray<keyof AgentConfig["authoredDirectives"][number]>;
+
+const projectDirectiveDetail = (
+  id: string,
+  directive: AgentConfig["authoredDirectives"][number],
+): Record<string, unknown> => {
+  const metadataChars = JSON.stringify(directive.metadata).length;
+  const metadataOmitted = metadataChars > copilotDirectiveMetadataCharLimit;
+  const truncatedCollections = directiveCollectionKeys.filter(
+    (key) => directive[key].length > copilotDirectiveDetailCollectionLimit,
+  );
+  const boundedCollections = Object.fromEntries(directiveCollectionKeys.map((key) => [
+    key,
+    directive[key].slice(0, copilotDirectiveDetailCollectionLimit),
+  ]));
+  const projected = {
+    id,
+    ...directive,
+    ...boundedCollections,
+    metadata: metadataOmitted ? null : directive.metadata,
+    detailBounds: {
+      metadataOmittedReason: metadataOmitted ? "content_too_large" : null,
+      truncatedCollections,
+    },
+  };
+  const projectedChars = JSON.stringify(projected).length;
+  if (projectedChars <= copilotDirectiveDetailCharBudget) return projected;
+
+  const allPopulatedCollections = directiveCollectionKeys.filter((key) => directive[key].length > 0);
+  const withoutCollections = {
+    ...projected,
+    ...Object.fromEntries(directiveCollectionKeys.map((key) => [key, []])),
+    metadata: null,
+    detailBounds: {
+      metadataOmittedReason: "total_budget",
+      truncatedCollections: allPopulatedCollections,
+      charBudget: copilotDirectiveDetailCharBudget,
+      originalChars: projectedChars,
+    },
+  };
+  if (JSON.stringify(withoutCollections).length <= copilotDirectiveDetailCharBudget) return withoutCollections;
+
+  return {
+    id,
+    name: directive.name,
+    priority: directive.priority,
+    action: null,
+    detailBounds: {
+      detailOmittedReason: "content_too_large",
+      charBudget: copilotDirectiveDetailCharBudget,
+      originalChars: projectedChars,
+    },
+  };
+};
+
+const routineIdentity = (routine: RoutineDefinition) => ({
+  id: routine.id,
+  name: routine.name,
+  status: routine.status,
+});
+
+const projectRoutineSummary = (routine: RoutineDefinition): Record<string, unknown> => {
+  const projected = projectRoutineToPortableDocument(routine);
+  if (!projected.ok) {
+    return { ...routineIdentity(routine), portable: projected };
+  }
+  return {
+    ...routineIdentity(routine),
+    portable: {
+      ok: true,
+      grammarVersion: projected.envelope.grammarVersion,
+      contentChars: projected.envelope.content.length,
+    },
+  };
+};
+
+const projectRoutineDetail = (routine: RoutineDefinition): Record<string, unknown> => {
+  const projected = projectRoutineToPortableDocument(routine);
+  if (!projected.ok) {
+    return { ...routineIdentity(routine), portable: projected };
+  }
+  const contentChars = projected.envelope.content.length;
+  const contentTooLarge = contentChars > copilotRoutineContentCharLimit;
+  return {
+    ...routineIdentity(routine),
+    portable: {
+      ok: true,
+      grammarVersion: projected.envelope.grammarVersion,
+      content: contentTooLarge ? null : projected.envelope.content,
+      contentChars,
+      omittedReason: contentTooLarge ? "content_too_large" : null,
+    },
+  };
+};
 
 export const createUs2CopilotTools = (deps: {
   readonly evalResultsService: CopilotEvalResultsPort;

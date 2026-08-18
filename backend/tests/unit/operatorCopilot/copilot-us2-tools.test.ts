@@ -53,8 +53,8 @@ describe("US2 copilot readers", () => {
 
   it("marks single-entity US1 reads and leaves searches unlinked", () => {
     const descriptors = createUs1CopilotTools({
-      agentService: { get: vi.fn() },
-      routineDefinitionService: { get: vi.fn() },
+      agentService: { listExisting: vi.fn(), resolve: vi.fn() },
+      routineDefinitionService: { list: vi.fn(), get: vi.fn() },
       chatHistoryService: { getConversation: vi.fn(), listConversations: vi.fn() },
       documentSearchService: { search: vi.fn() },
     });

@@ -5,7 +5,7 @@ import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type WebsiteCrawlerAuditPort } from "./service.js";
 
 export class WebsiteCrawlWorker {
-  private static readonly DEFAULT_SLICE_DURATION_MS = 240_000;
+  private static readonly DEFAULT_SLICE_DURATION_MS = 120_000;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   // Tracks the currently in-flight tick (claim + process) so that stop() can
@@ -53,7 +53,7 @@ export class WebsiteCrawlWorker {
     }
   }
 
-  async runOnce(now: Date = new Date()): Promise<boolean> {
+  async runOnce(now: Date = new Date()): Promise<boolean | "yielded"> {
     await this.releaseStaleJobs(now);
     // The whole claim+process tick is tracked so stop() can await it. Tracking
     // only the process half would leave a window where claimNext just returned
@@ -65,8 +65,7 @@ export class WebsiteCrawlWorker {
       if (!job) {
         return false;
       }
-      await this.processClaimedJob(job);
-      return true;
+      return (await this.processClaimedJob(job)) ?? true;
     });
   }
 
@@ -152,7 +151,7 @@ export class WebsiteCrawlWorker {
     }
   }
 
-  private async processClaimedJob(job: WebsiteCrawlJobRecord): Promise<void> {
+  private async processClaimedJob(job: WebsiteCrawlJobRecord): Promise<"yielded" | void> {
     if (!this.dependencies.provider) {
       await this.dependencies.repository.markFailed(job.id, "Website crawler is not configured");
       return;
@@ -208,7 +207,7 @@ export class WebsiteCrawlWorker {
           jobId: job.id,
           workspaceId: job.workspaceId,
         });
-        return;
+        return "yielded";
       }
       await this.dependencies.repository.markCompleted(job.id, result as unknown as Record<string, unknown>);
     } catch (error) {

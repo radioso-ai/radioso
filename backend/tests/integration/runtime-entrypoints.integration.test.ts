@@ -320,6 +320,31 @@ describe("runtime entrypoints", () => {
     expect(runOnceSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("crawler recovery returns after a yielded slice dispatches its continuation", async () => {
+    const { dependencies } = createWorkerTaskTestDependencies();
+    const runOnceSpy = vi
+      .spyOn(dependencies.websiteCrawlWorker, "runOnce")
+      .mockResolvedValueOnce("yielded");
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env: createEnv(8102),
+      logger: dependencies.logger,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      buildDependencies: () => dependencies,
+      createApp: createCrawlerWorkerTaskApp,
+    });
+    runtimes.push(runtime);
+
+    const response = await request(runtime.server!)
+      .post("/internal/tasks/website-crawl/recover")
+      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
+      .send({ maxJobs: 5 });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ processedJobCount: 1 });
+    expect(runOnceSpy).toHaveBeenCalledOnce();
+  });
+
   it("starts the worker task runtime and serves internal task routes", async () => {
     const { dependencies, repositories } = createWorkerTaskTestDependencies();
     const workerStartSpy = vi

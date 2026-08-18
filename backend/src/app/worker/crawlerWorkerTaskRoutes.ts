@@ -62,6 +62,9 @@ export const createCrawlerWorkerTaskRoutes = (
           break;
         }
         processedJobCount += 1;
+        if (processed === "yielded") {
+          break;
+        }
       }
 
       res.status(200).json({ processedJobCount });

@@ -26,6 +26,7 @@ import {
 import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workbench-drawer'
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
+import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
@@ -1348,12 +1349,33 @@ function RoutineEditorScreen({
                 isReadOnly={isReadOnly}
                 diagnostics={validationDiagnostics}
                 onDraftChange={(nextDraft) => {
-                  const mergedDraft = mergeDocumentHeaderChange(nextDraft, documentDraft, draftHeader)
+                  // Completion export is edited in the panel below, not in the document, so
+                  // a document emission must not revert a panel change it never saw.
+                  const mergedDraft = {
+                    ...mergeDocumentHeaderChange(nextDraft, documentDraft, draftHeader),
+                    ...(documentDraft?.completionExport !== undefined ? { completionExport: documentDraft.completionExport } : {}),
+                  }
                   routineEditorDirtyRef.current = true
                   setDocumentDraft(mergedDraft)
                   setForm(routineToForm(draftAsRoutine(mergedDraft, editingRoutine)))
                   setDraftHeader(headerFromDraft(mergedDraft))
                 }}
+              />
+            ) : null}
+
+            {viewMode === 'document' && activeRoutineDraft && !isReadOnly ? (
+              <RoutineCompletionExportPanel
+                idPrefix="document-completion-export"
+                value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
+                onChange={(next) => {
+                  routineEditorDirtyRef.current = true
+                  const merged = { ...(documentDraft ?? activeRoutineDraft), completionExport: next }
+                  setDocumentDraft(merged)
+                  setForm(routineToForm(draftAsRoutine(merged, editingRoutine)))
+                }}
+                webhookDestinations={webhookDestinations}
+                isLoading={isWebhookDestinationsLoading}
+                error={webhookDestinationsError}
               />
             ) : null}
 

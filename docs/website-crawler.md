@@ -1,7 +1,7 @@
 ---
 title: "Website Crawler Provider"
 description: "API and provider contract for website ingestion including crawl policy, job management, deployment topology, and disabling."
-last_updated: 2026-06-13
+last_updated: 2026-08-18
 ---
 
 # Website Crawler Provider
@@ -239,6 +239,7 @@ interface WebsiteCrawlerProvider {
   crawl(request: {
     url: string;
     limit: number;
+    maxDurationMs?: number;
     signal?: AbortSignal;
     policy?: {
       includeUrlPatterns: string[];
@@ -262,6 +263,7 @@ interface WebsiteCrawlerProvider {
     request: {
       url: string;
       limit: number;
+      maxDurationMs?: number;
       signal?: AbortSignal;
       policy?: WebsiteCrawlPolicy;
       checkpoint?: WebsiteCrawlCheckpoint;
@@ -274,18 +276,20 @@ interface WebsiteCrawlerProvider {
 
 When `crawlStream` is implemented, the service calls it instead of `crawl`, ingesting each page as soon as the crawler discovers it rather than waiting for the entire crawl to finish. The batch `crawl` method is used as a fallback for providers that do not support streaming.
 
+`maxDurationMs` bounds one execution slice. A streaming provider returns `outcome: "yielded"` when that slice expires and `outcome: "completed"` when its frontier is exhausted. A yielded result is not terminal: Radioso keeps the checkpoint, queues the same job for another delivery, and leaves source sync state unchanged until the crawl completes.
+
 Radioso validates returned page URLs, removes duplicate canonical URLs, skips empty content and oversized pages, redacts sensitive provider details, and rejects crawl targets that resolve to localhost or private network addresses. The bundled provider applies that public-network policy before fetching each page, `robots.txt`, same-origin sitemap, and redirect target.
 
 ## Deployment topology
 
-Website crawl jobs run in a dedicated worker process, separate from the document processing worker that handles chunking and embeddings. A long crawl cannot starve the embedding workload, and each side can be scaled independently.
+Website crawl jobs run in a dedicated worker process, separate from the document processing worker that handles chunking and embeddings. Crawl and embedding capacity can be scaled independently.
 
 In practice this is two long-running processes per environment:
 
 - `start:worker` (or `start:worker-server`) — runs the document processing worker and consumer. Receives Cloud Tasks pushes at `/internal/tasks/document-processing` when `WORKER_DISPATCH_DRIVER=cloud-tasks`.
 - `start:crawler-worker` (or `start:crawler-worker-server`) — runs the website crawl worker and consumer. Receives Cloud Tasks pushes at `/internal/tasks/website-crawl` when `WORKER_DISPATCH_DRIVER=cloud-tasks`.
 
-Database polling stays active in both processes as a fallback, so an outage of the queue dispatcher does not lose work.
+The long-running commands poll the database. The `*-server` commands process explicit queue deliveries and rely on scheduled recovery for a missed dispatch.
 
 ### Local docker-compose
 
@@ -304,7 +308,9 @@ Every `/internal/tasks/*` request also carries `X-Radioso-Worker-Token`. Set the
 
 Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services use `min_instances = 0` and request-based CPU so they can scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
 
-Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. Document recovery defaults to hourly (`document_worker_recovery_schedule = "0 * * * *"`). Crawler recovery defaults to daily (`crawler_worker_recovery_schedule = "0 3 * * *"`) because normal crawls are delivered through Cloud Tasks and the crawler is usually idle. This keeps missed-dispatch recovery available without using a frequent recovery request as a keepalive.
+The crawler worker runs a job in two-minute slices, below Cloud Scheduler's three-minute request deadline and Cloud Run's five-minute request timeout. At the end of a slice it saves the frontier checkpoint, atomically returns the same job to `queued`, creates a continuation task, and finishes the current request. Pages interrupted by the slice boundary stay pending for the next delivery instead of being counted as failures.
+
+Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. When a recovered crawl yields, the request stops after dispatching its continuation rather than reclaiming the same job again. Document recovery defaults to hourly (`document_worker_recovery_schedule = "0 * * * *"`). Crawler recovery defaults to daily (`crawler_worker_recovery_schedule = "0 3 * * *"`) because normal crawls are delivered through Cloud Tasks and the crawler is usually idle. This keeps missed-dispatch recovery available without using a frequent recovery request as a keepalive.
 
 ### Rollout ordering
 

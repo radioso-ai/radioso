@@ -19,6 +19,14 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
+  it("maps conversation history operations to the bounded transcript reader", () => {
+    expect(catalogCoverage).toMatchObject({
+      getHistoryConversation: "conversation_transcript",
+      tailHistoryConversation: "conversation_transcript",
+      getLegacyHistoryConversation: "conversation_transcript",
+    });
+  });
+
   it("maps every OpenAPI operation to a catalog tool or stated exclusion", async () => {
     const openApi = JSON.parse(await readFile(new URL("../../../openapi.json", import.meta.url), "utf8")) as {
       paths: Record<string, Record<string, { operationId?: string }>>;

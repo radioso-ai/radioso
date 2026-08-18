@@ -169,6 +169,7 @@ export interface ChatConversationTurn {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
   answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
+  latencyMs?: number;
   debug?: ChatConversationTurnDebug;
   /**
    * Set only when the conversation is read with `includeTurnFailureDebug` (the
@@ -214,6 +215,17 @@ export interface ChatConversationDetail {
   nextCursor: string | null;
   tailCursor: string | null;
   messages: ChatConversationTurn[];
+  ownership?: ChatConversationOwnership;
+}
+
+/**
+ * Message-scoped operator diagnostic. It intentionally works for user messages:
+ * unanswered turns store their failure fact on the user message because there is
+ * no assistant message to attach it to.
+ */
+export interface ChatConversationTurnDetail {
+  conversationId: string;
+  message: ChatConversationTurn;
   ownership?: ChatConversationOwnership;
 }
 
@@ -1002,10 +1014,79 @@ export class ChatHistoryService {
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
+        latencyMs: message.totalLatencyMs,
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
       })),
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
+    };
+  }
+
+  async getConversationTurn(
+    workspaceId: string,
+    messageId: string,
+    options: {
+      includeAnswerFeedback?: boolean;
+      includeOwnership?: boolean;
+      includeTurnFailureDebug?: boolean;
+    } = {},
+  ): Promise<ChatConversationTurnDetail> {
+    const message = await this.messageRepository.findByIdAndWorkspaceId(workspaceId, messageId);
+    if (!message) {
+      throw notFound("Conversation message not found");
+    }
+
+    const isAssistant = message.role === "assistant";
+    const isUser = message.role === "user";
+    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord] = await Promise.all([
+      isAssistant
+        ? this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
+            workspaceId,
+            message.conversationId,
+            [message.id],
+          )
+        : Promise.resolve([]),
+      options.includeTurnFailureDebug && isUser
+        ? this.auditEventRepository.listUnansweredChatAnswerEventsByUserMessageIds(
+            workspaceId,
+            message.conversationId,
+            [message.id],
+          )
+        : Promise.resolve([]),
+      options.includeAnswerFeedback && isAssistant
+        ? this.answerFeedbackHistoryProvider.listByAssistantMessageIds(workspaceId, [message.id])
+        : Promise.resolve(new Map<string, ChatAnswerFeedbackEntry[]>()),
+      options.includeOwnership
+        ? this.conversationOwnership.load(message.conversationId)
+        : Promise.resolve(null),
+    ]);
+    const artifacts = isAssistant ? this.buildArtifactsIndex(auditEvents).get(message.id) : undefined;
+    const debug = isAssistant ? this.buildDebugIndex(auditEvents, [message]).get(message.id) : undefined;
+    const turnFailure = isUser
+      ? this.buildTurnFailureIndex(turnFailureEvents).get(message.id)
+      : undefined;
+
+    return {
+      conversationId: message.conversationId,
+      message: {
+        id: message.id,
+        role: message.role,
+        source: message.source ?? deriveMessageSourceFromRole(message.role),
+        content: message.content,
+        createdAt: toIsoString(message.createdAt),
+        inputMetadata: message.inputMetadata,
+        citations: artifacts?.citations,
+        answerSegments: artifacts?.answerSegments,
+        suggestions: artifacts?.suggestions,
+        answerFeedbackEntries: feedbackByAssistantMessageId.get(message.id),
+        latencyMs: message.totalLatencyMs,
+        debug,
+        turnFailure,
+        operatorDisplayName: operatorDisplayNameFrom(message),
+      },
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
         : {}),
@@ -1051,6 +1132,7 @@ export class ChatHistoryService {
       content: message.content,
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
+      latencyMs: message.totalLatencyMs,
       operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }

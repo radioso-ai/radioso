@@ -55,14 +55,15 @@ describe("US2 copilot readers", () => {
     const descriptors = createUs1CopilotTools({
       agentService: { listExisting: vi.fn(), resolve: vi.fn() },
       routineDefinitionService: { list: vi.fn(), get: vi.fn() },
-      chatHistoryService: { getConversation: vi.fn(), listConversations: vi.fn() },
+      chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
       documentSearchService: { search: vi.fn() },
     });
     const byName = new Map(descriptors.map((descriptor) => [descriptor.name, descriptor]));
 
     expect(byName.get("agent_configuration")?.describeEntity?.({}, context)).toEqual({ type: "agent", id: "agent-1" });
     expect(byName.get("routine_definition")?.describeEntity?.({ routineId: "routine-1" }, context)).toEqual({ type: "routine", id: "routine-1" });
-    expect(byName.get("conversation_trace")?.describeEntity?.({}, { ...context, pageContext: { ...context.pageContext, conversationId: "conversation-1" } })).toEqual({ type: "conversation", id: "conversation-1" });
+    expect(byName.get("conversation_transcript")?.describeEntity?.({}, { ...context, pageContext: { ...context.pageContext, conversationId: "conversation-1" } })).toEqual({ type: "conversation", id: "conversation-1" });
+    expect(byName.get("turn_trace")?.describeEntity).toBeUndefined();
     expect(byName.get("conversation_history_search")?.describeEntity).toBeUndefined();
     expect(byName.get("document_search")?.describeEntity).toBeUndefined();
   });

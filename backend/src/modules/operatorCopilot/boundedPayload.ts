@@ -1,23 +1,111 @@
 const MAX_STRING_CHARS = 500;
 const MAX_ARRAY_ITEMS = 40;
 const MAX_MESSAGES = 20;
-// Keeps the serialized tool result safely inside the runtime's tool-token
-// budget (spec 104 SC-006: family readers are size-bounded, never raw dumps).
+// Keeps the serialized transcript safely inside the runtime's tool-token budget.
 export const CONVERSATION_PAYLOAD_CHAR_BUDGET = 28_000;
+export const TURN_TRACE_PAYLOAD_CHAR_BUDGET = 96_000;
 
-const truncateString = (value: string): string =>
-  value.length > MAX_STRING_CHARS ? `${value.slice(0, MAX_STRING_CHARS)}…` : value;
+type TruncationReason = "string_length" | "array_length" | "budget_omitted";
 
-const compactValue = (value: unknown): unknown => {
-  if (typeof value === "string") return truncateString(value);
-  if (Array.isArray(value)) return value.slice(0, MAX_ARRAY_ITEMS).map(compactValue);
+interface TruncationEntry {
+  path: string;
+  reason: TruncationReason;
+  originalLength?: number;
+  retainedLength?: number;
+}
+
+interface CompactionOptions {
+  maxStringChars: number;
+  maxArrayItems: number;
+}
+
+interface CompactionResult<T> {
+  value: T;
+  truncation: TruncationEntry[];
+}
+
+const serializedLength = (value: unknown): number => JSON.stringify(value).length;
+
+const appendPath = (path: string, key: string): string => `${path}.${key}`;
+
+const compactValue = (
+  value: unknown,
+  options: CompactionOptions,
+  path: string,
+  truncation: TruncationEntry[],
+): unknown => {
+  if (typeof value === "string") {
+    if (value.length <= options.maxStringChars) return value;
+    truncation.push({
+      path,
+      reason: "string_length",
+      originalLength: value.length,
+      retainedLength: options.maxStringChars,
+    });
+    return `${value.slice(0, options.maxStringChars)}…`;
+  }
+  if (Array.isArray(value)) {
+    if (value.length > options.maxArrayItems) {
+      truncation.push({
+        path,
+        reason: "array_length",
+        originalLength: value.length,
+        retainedLength: options.maxArrayItems,
+      });
+    }
+    return value.slice(0, options.maxArrayItems).map((entry, index) =>
+      compactValue(entry, options, `${path}[${index}]`, truncation));
+  }
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, compactValue(entry)]));
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      compactValue(entry, options, appendPath(path, key), truncation),
+    ]));
   }
   return value;
 };
 
-const serializedLength = (value: unknown): number => JSON.stringify(value).length;
+const compactRecord = <T extends Record<string, unknown>>(
+  payload: T,
+  options: CompactionOptions,
+  initialTruncation: ReadonlyArray<TruncationEntry> = [],
+): CompactionResult<T> => {
+  const truncation = [...initialTruncation];
+  return {
+    value: compactValue(payload, options, "$", truncation) as T,
+    truncation,
+  };
+};
+
+const withTruncation = <T extends Record<string, unknown>>(
+  payload: T,
+  truncation: ReadonlyArray<TruncationEntry>,
+): T => truncation.length === 0
+  ? payload
+  : {
+      ...payload,
+      truncation: {
+        truncated: true,
+        entries: truncation,
+      },
+    } as T;
+
+const compactForBudget = <T extends Record<string, unknown>>(
+  payload: T,
+  profiles: ReadonlyArray<CompactionOptions>,
+  charBudget: number,
+  initialTruncation: ReadonlyArray<TruncationEntry> = [],
+): CompactionResult<T> => {
+  let finalResult = compactRecord(payload, profiles.at(-1)!, initialTruncation);
+  for (const profile of profiles) {
+    const result = compactRecord(payload, profile, initialTruncation);
+    finalResult = result;
+    if (serializedLength(withTruncation(result.value, result.truncation)) <= charBudget) {
+      return result;
+    }
+  }
+  return finalResult;
+};
 
 /**
  * Generic model-result compaction shared by every copilot family reader. It
@@ -25,34 +113,59 @@ const serializedLength = (value: unknown): number => JSON.stringify(value).lengt
  * particular owning module's result shape.
  */
 export const boundPayload = <T extends Record<string, unknown>>(payload: T): T =>
-  compactValue(payload) as T;
+  compactRecord(payload, { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS }).value;
 
 /**
- * Bounds a conversation history payload for model consumption. Debug/trace
- * envelopes dominate the size, so after generic compaction they are dropped
- * from the oldest messages first (marked `debugOmitted`), keeping the most
- * recent turns fully inspectable.
+ * Bounds a shallow transcript. Its truncation marker is part of the tool result
+ * contract: the model can distinguish an absent field from a removed one.
  */
 export const boundConversationPayload = (payload: Record<string, unknown>): Record<string, unknown> => {
   const source = { ...payload };
-  // Newest messages matter most for troubleshooting; keep them before the
-  // generic array cap can discard them from the head.
+  const initialTruncation: TruncationEntry[] = [];
   if (Array.isArray(source.messages) && source.messages.length > MAX_MESSAGES) {
+    initialTruncation.push({
+      path: "$.messages",
+      reason: "array_length",
+      originalLength: source.messages.length,
+      retainedLength: MAX_MESSAGES,
+    });
     source.messages = source.messages.slice(-MAX_MESSAGES);
   }
-  const compact = boundPayload(source);
-  if (serializedLength(compact) <= CONVERSATION_PAYLOAD_CHAR_BUDGET) return compact;
 
-  const messages = Array.isArray(compact.messages) ? [...(compact.messages as Array<Record<string, unknown>>)] : null;
-  if (!messages) return compact;
+  const compacted = compactRecord(source, { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS }, initialTruncation);
+  const messages = Array.isArray(compacted.value.messages)
+    ? [...(compacted.value.messages as Array<Record<string, unknown>>)]
+    : null;
+  if (!messages) return withTruncation(compacted.value, compacted.truncation);
 
-  const bounded = { ...compact, messages };
-  for (const message of bounded.messages) {
-    if (serializedLength(bounded) <= CONVERSATION_PAYLOAD_CHAR_BUDGET) break;
-    if (message.debug !== undefined) {
-      delete message.debug;
-      message.debugOmitted = true;
-    }
+  const bounded = { ...compacted.value, messages };
+  const truncation = [...compacted.truncation];
+  while (serializedLength(withTruncation(bounded, truncation)) > CONVERSATION_PAYLOAD_CHAR_BUDGET) {
+    const message = messages.find((candidate) => candidate.debug !== undefined);
+    if (!message) break;
+    const messageIndex = messages.indexOf(message);
+    delete message.debug;
+    message.debugOmitted = true;
+    truncation.push({ path: `$.messages[${messageIndex}].debug`, reason: "budget_omitted" });
   }
-  return bounded;
+  return withTruncation(bounded, truncation);
+};
+
+/**
+ * A single turn gets a materially larger, field-oriented budget than a many-turn
+ * transcript. The spine remains intact while strings and fan-out are progressively
+ * shortened, each with a machine-readable location in `truncation.entries`.
+ */
+export const boundTurnTracePayload = (payload: Record<string, unknown>): Record<string, unknown> => {
+  const compacted = compactForBudget(
+    payload,
+    [
+      { maxStringChars: 6_000, maxArrayItems: 160 },
+      { maxStringChars: 3_000, maxArrayItems: 120 },
+      { maxStringChars: 1_500, maxArrayItems: 80 },
+      { maxStringChars: MAX_STRING_CHARS, maxArrayItems: MAX_ARRAY_ITEMS },
+    ],
+    TURN_TRACE_PAYLOAD_CHAR_BUDGET,
+  );
+  return withTruncation(compacted.value, compacted.truncation);
 };

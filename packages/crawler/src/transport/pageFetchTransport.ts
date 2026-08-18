@@ -1,4 +1,6 @@
+import { isIP } from "node:net";
 import { delimiter as pathDelimiter } from "node:path";
+import { checkServerIdentity, type PeerCertificate } from "node:tls";
 import { gunzipSync } from "node:zlib";
 import {
   CheerioCrawler,
@@ -14,6 +16,54 @@ import { canonicalizeUrlIdentity } from "./url.js";
 export const BLOCKED_HTTP_STATUS_CODES = new Set([401, 403, 429]);
 const MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
 const MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
+
+const findTlsCertificateHostnameError = (error: unknown): Record<string, unknown> | null => {
+  const visited = new Set<unknown>();
+  let current = error;
+  while (current && typeof current === "object" && !visited.has(current)) {
+    visited.add(current);
+    const record = current as Record<string, unknown>;
+    if (record.code === "ERR_TLS_CERT_ALTNAME_INVALID") {
+      return record;
+    }
+    current = record.cause;
+  }
+  return null;
+};
+
+const resolveCertificateHostnameFallbackUrl = (url: string, error: unknown): string | null => {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.hostname.startsWith("www.") || isIP(parsed.hostname) !== 0) {
+    return null;
+  }
+  const tlsError = findTlsCertificateHostnameError(error);
+  if (!tlsError?.cert || typeof tlsError.cert !== "object") {
+    return null;
+  }
+  const fallbackHostname = `www.${parsed.hostname}`;
+  if (checkServerIdentity(fallbackHostname, tlsError.cert as PeerCertificate)) {
+    return null;
+  }
+  parsed.hostname = fallbackHostname;
+  return parsed.toString();
+};
+
+const fetchWithCertificateHostnameFallback = async (
+  url: string,
+  init: RequestInit,
+  validateFallbackUrl?: (url: string) => Promise<void> | void,
+): Promise<{ response: Response; requestUrl: string }> => {
+  try {
+    return { response: await fetch(url, init), requestUrl: url };
+  } catch (error) {
+    const fallbackUrl = resolveCertificateHostnameFallbackUrl(url, error);
+    if (!fallbackUrl) {
+      throw error;
+    }
+    await validateFallbackUrl?.(fallbackUrl);
+    return { response: await fetch(fallbackUrl, init), requestUrl: fallbackUrl };
+  }
+};
 
 const readNumericProperty = (input: Record<string, unknown>, name: string): number | undefined => {
   const value = input[name];
@@ -175,11 +225,13 @@ export const fetchText = async (
   let response: Response | null = null;
   for (let redirectCount = 0; redirectCount <= 10; redirectCount += 1) {
     await options?.validateNavigationUrl?.(currentUrl);
-    response = await fetch(currentUrl, {
+    const fetched = await fetchWithCertificateHostnameFallback(currentUrl, {
       redirect: "manual",
       signal: fetchSignal,
       ...(options?.userAgent ? { headers: { "User-Agent": options.userAgent } } : {}),
-    });
+    }, options?.validateNavigationUrl);
+    currentUrl = fetched.requestUrl;
+    response = fetched.response;
     if (response.status < 300 || response.status >= 400) {
       break;
     }
@@ -284,7 +336,7 @@ const fetchPageWithPlainFetch = async (
     assertInScope(currentUrl);
     await options?.validateNavigationUrl?.(currentUrl);
     await assertPlainFetchAllowedByRobots(currentUrl, options);
-    response = await fetch(currentUrl, {
+    const fetched = await fetchWithCertificateHostnameFallback(currentUrl, {
       redirect: "manual",
       signal: fetchSignal,
       headers: {
@@ -292,7 +344,12 @@ const fetchPageWithPlainFetch = async (
         ...(options?.etag ? { "If-None-Match": options.etag } : {}),
         ...(options?.lastModified ? { "If-Modified-Since": options.lastModified } : {}),
       },
+    }, async (fallbackUrl) => {
+      assertInScope(fallbackUrl);
+      await options?.validateNavigationUrl?.(fallbackUrl);
     });
+    currentUrl = fetched.requestUrl;
+    response = fetched.response;
     if (response.status < 300 || response.status >= 400) {
       break;
     }

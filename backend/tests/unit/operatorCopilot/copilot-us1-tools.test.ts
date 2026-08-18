@@ -129,6 +129,16 @@ const dependencies = (routineDefinitions: RoutineDefinition[] = [
 };
 
 describe("US1 copilot family readers", () => {
+  it("classifies every family reader as a read", () => {
+    expect(dependencies().descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
+      { name: "agent_configuration", shape: "read" },
+      { name: "routine_definition", shape: "read" },
+      { name: "conversation_trace", shape: "read" },
+      { name: "conversation_history_search", shape: "read" },
+      { name: "document_search", shape: "read" },
+    ]);
+  });
+
   it("lists bounded safe agent summaries without creating or resolving an agent", async () => {
     const ports = dependencies();
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "agent_configuration")!;

@@ -106,18 +106,20 @@ describe("US4 copilot readers", () => {
   it("declares the document status and agent skills readers with their required permissions", () => {
     const descriptors = buildDescriptors();
 
-    expect(descriptors.map(({ name, requiredPermission, contributingModule, uiLabel }) => ({ name, requiredPermission, contributingModule, uiLabel }))).toEqual([
+    expect(descriptors.map(({ name, requiredPermission, contributingModule, uiLabel, shape }) => ({ name, requiredPermission, contributingModule, uiLabel, shape }))).toEqual([
       {
         name: "document_status",
         requiredPermission: "workspace.documents.read",
         contributingModule: "documents",
         uiLabel: "Checking document status",
+        shape: "read",
       },
       {
         name: "agent_skills",
         requiredPermission: "workspace.agents.read",
         contributingModule: "agentSkills",
         uiLabel: "Reading agent skills",
+        shape: "read",
       },
     ]);
   });

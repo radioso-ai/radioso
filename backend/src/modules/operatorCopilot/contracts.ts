@@ -105,6 +105,7 @@ export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapt
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
+  readonly shape: CopilotToolShape;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;
@@ -114,6 +115,20 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
   describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityReference | null;
 }
+
+/**
+ * The write and cost semantics of a catalog tool. This remains independent of
+ * any transport so future MCP administration can consume the same taxonomy.
+ */
+export type CopilotToolShape =
+  /** No state change and no meaningful compute cost. */
+  | "read"
+  /** No persisted state change, but incurs real compute cost. */
+  | "probe"
+  /** Persists a reversible, idempotent change that is not customer-visible. */
+  | "act"
+  /** Drafts an operator-confirmed change to live agent or workspace behavior. */
+  | "propose";
 
 export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }

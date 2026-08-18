@@ -105,6 +105,12 @@ describe("US3 copilot proposals", () => {
     });
     const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
+    expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
+      { name: "propose_directive", shape: "propose" },
+      { name: "propose_routine", shape: "propose" },
+      { name: "propose_agent_setting", shape: "propose" },
+    ]);
+
     await descriptors.find((descriptor) => descriptor.name === "propose_directive")?.createTool(context).invoke({ directiveId, intent: "Do not recommend competitors" }, {} as never);
     await descriptors.find((descriptor) => descriptor.name === "propose_agent_setting")?.createTool(context).invoke({ settingKey: "retrievalEnabled", value: false }, {} as never);
 
@@ -229,6 +235,7 @@ describe("US3 copilot proposals", () => {
 
 const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
   name,
+  shape: "propose" as const,
   uiLabel: "Drafting a directive",
   description: "Draft",
   requiredPermission,

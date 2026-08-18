@@ -31,10 +31,10 @@ describe("US2 copilot readers", () => {
       audiencePulseService: { read },
     });
 
-    expect(descriptors.map(({ name, requiredPermission }) => ({ name, requiredPermission }))).toEqual([
-      { name: "eval_results", requiredPermission: "workspace.retrieval.query" },
-      { name: "quality_signals", requiredPermission: "workspace.quality.read" },
-      { name: "audience_topics", requiredPermission: "workspace.quality.read" },
+    expect(descriptors.map(({ name, requiredPermission, shape }) => ({ name, requiredPermission, shape }))).toEqual([
+      { name: "eval_results", requiredPermission: "workspace.retrieval.query", shape: "read" },
+      { name: "quality_signals", requiredPermission: "workspace.quality.read", shape: "read" },
+      { name: "audience_topics", requiredPermission: "workspace.quality.read", shape: "read" },
     ]);
 
     const evalResult = await descriptors[0].createTool(context).invoke({}, {} as never);

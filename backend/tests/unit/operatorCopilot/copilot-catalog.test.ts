@@ -8,6 +8,7 @@ import {
 
 const descriptor = (permission: CopilotToolDescriptor["requiredPermission"]): CopilotToolDescriptor => ({
   name: `tool_${permission.replaceAll(".", "_")}`,
+  shape: "read",
   uiLabel: "Safe tool label",
   description: "A focused read-only operator capability.",
   inputSchema: z.object({}),

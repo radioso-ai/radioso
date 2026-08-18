@@ -141,7 +141,7 @@ export const createUs1CopilotTools = (deps: {
   readonly documentSearchService: CopilotDocumentSearchPort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "agent_configuration", uiLabel: "Reading agent configuration", contributingModule: "agents", requiredPermission: "workspace.agents.read",
+    name: "agent_configuration", shape: "read", uiLabel: "Reading agent configuration", contributingModule: "agents", requiredPermission: "workspace.agents.read",
     description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
     inputSchema: agentConfigurationInputSchema, outputSchema: agentConfigurationOutputSchema,
     createTool: (context) => ({
@@ -191,7 +191,7 @@ export const createUs1CopilotTools = (deps: {
       : entity("agent", agentId ?? context?.pageContext.agentId),
   },
   {
-    name: "routine_definition", uiLabel: "Reading routine", contributingModule: "routines", requiredPermission: "workspace.agents.read",
+    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", requiredPermission: "workspace.agents.read",
     description: "List an agent's routines or read one routine in portable Markdown form.",
     inputSchema: z.object({ agentId: idSchema.optional(), routineId: idSchema.optional() }), outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
@@ -222,20 +222,20 @@ export const createUs1CopilotTools = (deps: {
     describeEntity: ({ routineId }) => entity("routine", routineId),
   },
   {
-    name: "conversation_trace", uiLabel: "Reading conversation trace", contributingModule: "chat", requiredPermission: "workspace.history.read",
+    name: "conversation_trace", shape: "read", uiLabel: "Reading conversation trace", contributingModule: "chat", requiredPermission: "workspace.history.read",
     description: "Read a customer conversation transcript and its retained turn trace envelope.",
     inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: z.object({ conversation: unknownRecord }),
     createTool: (context) => ({ name: "conversation_trace", description: "Read a customer conversation transcript and its retained turn trace envelope.", inputSchema: z.object({ conversationId: idSchema.optional() }), outputSchema: z.object({ conversation: unknownRecord }), invoke: async ({ conversationId }) => ({ conversation: boundConversationPayload(await deps.chatHistoryService.getConversation(context.workspaceId, conversationId ?? requiredPageConversation(context.pageContext.conversationId), { limit: 100 }, { includeTurnFailureDebug: false }) as Record<string, unknown>) }) }),
     describeEntity: ({ conversationId }, context) => entity("conversation", conversationId ?? context?.pageContext.conversationId),
   },
   {
-    name: "conversation_history_search", uiLabel: "Searching conversations", contributingModule: "chat", requiredPermission: "workspace.history.read",
+    name: "conversation_history_search", shape: "read", uiLabel: "Searching conversations", contributingModule: "chat", requiredPermission: "workspace.history.read",
     description: "List recent customer conversations in this workspace for investigation.",
     inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "conversation_history_search", description: "List recent customer conversations in this workspace for investigation.", inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ conversations: z.array(unknownRecord) }), invoke: async ({ limit }) => ({ conversations: boundPayload({ conversations: (await deps.chatHistoryService.listConversations(context.workspaceId, { limit: limit ?? 20 })).conversations as Record<string, unknown>[] }).conversations as Record<string, unknown>[] }) }),
   },
   {
-    name: "document_search", uiLabel: "Searching documents", contributingModule: "documents", requiredPermission: "workspace.documents.read",
+    name: "document_search", shape: "read", uiLabel: "Searching documents", contributingModule: "documents", requiredPermission: "workspace.documents.read",
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: z.object({ query: z.string().min(1).max(1000) }), outputSchema: z.object({ results: z.array(unknownRecord) }), invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
@@ -428,7 +428,7 @@ export const createUs2CopilotTools = (deps: {
   readonly audiencePulseService: CopilotAudiencePulsePort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "eval_results", uiLabel: "Reading eval results", contributingModule: "eval", requiredPermission: "workspace.retrieval.query",
+    name: "eval_results", shape: "read", uiLabel: "Reading eval results", contributingModule: "eval", requiredPermission: "workspace.retrieval.query",
     description: "Read recent evaluation cases and their latest outcomes for an agent.",
     inputSchema: z.object({ agentId: idSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "eval_results", description: "Read recent evaluation cases and their latest outcomes for an agent.", inputSchema: z.object({ agentId: idSchema.optional(), limit: z.number().int().min(1).max(50).optional() }), outputSchema: z.object({ cases: z.array(unknownRecord) }), invoke: async ({ agentId, limit }) => {
@@ -441,7 +441,7 @@ export const createUs2CopilotTools = (deps: {
     } }),
   },
   {
-    name: "quality_signals", uiLabel: "Reading quality signals", contributingModule: "quality", requiredPermission: "workspace.quality.read",
+    name: "quality_signals", shape: "read", uiLabel: "Reading quality signals", contributingModule: "quality", requiredPermission: "workspace.quality.read",
     description: "Read workspace quality and needs-attention signals.",
     inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }),
     createTool: (context) => ({ name: "quality_signals", description: "Read workspace quality and needs-attention signals.", inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }), invoke: async ({ agentId }) => {
@@ -454,7 +454,7 @@ export const createUs2CopilotTools = (deps: {
     } }),
   },
   {
-    name: "audience_topics", uiLabel: "Reading audience topics", contributingModule: "audiencePulse", requiredPermission: "workspace.quality.read",
+    name: "audience_topics", shape: "read", uiLabel: "Reading audience topics", contributingModule: "audiencePulse", requiredPermission: "workspace.quality.read",
     description: "Read the latest stored Audience Pulse topic census. This never starts a new analysis.",
     inputSchema: z.object({}), outputSchema: z.object({ result: unknownRecord }),
     createTool: (context) => ({ name: "audience_topics", description: "Read the latest stored Audience Pulse topic census. This never starts a new analysis.", inputSchema: z.object({}), outputSchema: z.object({ result: unknownRecord }), invoke: async () => boundPayload({ result: asRecord(await deps.audiencePulseService.read({ accountId: context.accountId, userId: context.operatorUserId, workspaceId: context.workspaceId })) }) }),
@@ -485,7 +485,7 @@ export const createUs4CopilotTools = (deps: {
   readonly skillCapabilityRegistry: CopilotSkillCapabilityTargetsPort;
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "document_status", uiLabel: "Checking document status", contributingModule: "documents", requiredPermission: "workspace.documents.read",
+    name: "document_status", shape: "read", uiLabel: "Checking document status", contributingModule: "documents", requiredPermission: "workspace.documents.read",
     description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
     inputSchema: z.object({}), outputSchema: documentStatusOutputSchema,
     createTool: (context) => ({
@@ -527,7 +527,7 @@ export const createUs4CopilotTools = (deps: {
     }),
   },
   {
-    name: "agent_skills", uiLabel: "Reading agent skills", contributingModule: "agentSkills", requiredPermission: "workspace.agents.read",
+    name: "agent_skills", shape: "read", uiLabel: "Reading agent skills", contributingModule: "agentSkills", requiredPermission: "workspace.agents.read",
     description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
     inputSchema: optionalAgentInput, outputSchema: agentSkillsOutputSchema,
     createTool: (context) => ({
@@ -598,7 +598,7 @@ export const createUs3CopilotTools = (deps: {
   const routineAdapter = proposalAdapter(deps.proposalAdapters, "routine");
   return [
     {
-      name: "propose_directive", uiLabel: "Drafting a directive", contributingModule: "directives", requiredPermission: "workspace.agents.manage",
+      name: "propose_directive", shape: "propose", uiLabel: "Drafting a directive", contributingModule: "directives", requiredPermission: "workspace.agents.manage",
       description: "Draft a directive proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), directiveId: idSchema.optional(), intent: z.string().trim().min(1).max(20_000) }).strict(),
       outputSchema: proposalOutputSchema,
@@ -626,7 +626,7 @@ export const createUs3CopilotTools = (deps: {
       }),
     },
     {
-      name: "propose_routine", uiLabel: "Drafting a routine", contributingModule: "routines", requiredPermission: "workspace.agents.manage",
+      name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", requiredPermission: "workspace.agents.manage",
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
       outputSchema: proposalOutputSchema,
@@ -655,7 +655,7 @@ export const createUs3CopilotTools = (deps: {
       describeEntity: ({ agentId }, context) => entity("agent", agentId ?? context?.pageContext.agentId),
     },
     {
-      name: "propose_agent_setting", uiLabel: "Drafting a setting change", contributingModule: "agents", requiredPermission: "workspace.agents.manage",
+      name: "propose_agent_setting", shape: "propose", uiLabel: "Drafting a setting change", contributingModule: "agents", requiredPermission: "workspace.agents.manage",
       description: "Draft an agent setting change for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional() }).strict(),
       outputSchema: proposalOutputSchema,

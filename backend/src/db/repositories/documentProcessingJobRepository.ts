@@ -67,6 +67,9 @@ export interface DocumentProcessingJobRepositoryPort {
     targetEmbeddingSpaceId: string;
     generation: string;
   }): Promise<number>;
+  listWorkspaceCanonicalEmbeddingGaps(): Promise<
+    Array<{ workspaceId: string; missingChunks: number }>
+  >;
   reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
   }): Promise<{ enqueued: number; skipped: number }>;
@@ -471,6 +474,31 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .where("status", "in", ["queued", "processing", "failed"])
       .executeTakeFirst();
     return Number(result.numUpdatedRows);
+  }
+
+  // Read-only view of the canonical projection backlog: chunks that carry a legacy
+  // embedding but have no chunk_embeddings row. Coverage reconciliation is enqueued
+  // per workspace, so this reports where that work is still outstanding — chiefly
+  // for operators running the one-time backfill after upgrading.
+  async listWorkspaceCanonicalEmbeddingGaps(): Promise<
+    Array<{ workspaceId: string; missingChunks: number }>
+  > {
+    const result = await sql<{ workspace_id: string; missing_chunks: string }>`
+      SELECT c.workspace_id,
+             COUNT(*) AS missing_chunks
+      FROM chunks c
+      LEFT JOIN chunk_embeddings ce
+        ON ce.workspace_id = c.workspace_id
+       AND ce.chunk_id = c.id
+      WHERE ce.chunk_id IS NULL
+      GROUP BY c.workspace_id
+      ORDER BY COUNT(*) DESC
+    `.execute(this.db);
+
+    return result.rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      missingChunks: Number(row.missing_chunks),
+    }));
   }
 
   async reconcileEmbeddingProfileJobsForWorkspace(input: {

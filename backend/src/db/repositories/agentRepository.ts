@@ -723,7 +723,9 @@ export class AgentRepository implements AgentRepositoryPort {
       if (!row) {
         throw conflict("Agent was updated by another writer; reload before saving again");
       }
-      await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      if (input.sourceScope !== undefined) {
+        await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      }
       const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
       return mapAgent({
         ...row,

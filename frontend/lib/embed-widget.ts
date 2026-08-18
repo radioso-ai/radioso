@@ -38,6 +38,7 @@ export interface WebsiteEmbedCopy {
   publicChatOpenNewTabLabel: string
   publicChatDisclaimerTemplate: string
   publicChatRateLimitRetryTemplate: string
+  publicChatMessageFailedMessage: string
   skillReceiptSubmittedLabel: string
   skillReceiptFailedLabel: string
 }
@@ -103,6 +104,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatOpenNewTabLabel: 'Open in new tab',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
+  publicChatMessageFailedMessage: 'Sorry, something went wrong. Please try again.',
   skillReceiptSubmittedLabel: 'Submitted',
   skillReceiptFailedLabel: "Couldn't submit",
 }
@@ -152,6 +154,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatOpenNewTabLabel',
   'publicChatDisclaimerTemplate',
   'publicChatRateLimitRetryTemplate',
+  'publicChatMessageFailedMessage',
   'skillReceiptSubmittedLabel',
   'skillReceiptFailedLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]

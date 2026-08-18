@@ -8,3 +8,39 @@
 - [X] T006 [US3] Add proposal routes and OpenAPI registration in `backend/src/modules/operatorCopilot/routes.ts` and `backend/src/app/http/openapi/paths/copilotPaths.ts`
 - [X] T007 [US3] Update catalog coverage and copilot prompt in `backend/src/modules/operatorCopilot/catalogCoverage.ts` and `backend/prompts/copilot/system.md`
 - [X] T008 [US3] Run focused Vitest files and `scripts/validate-architecture-boundaries.mjs`; record results in `.context/terra-us3-report.md`
+
+## US1/US2 Reader Completion Slice
+
+- [X] T009 [US1] Add failing agent discovery, projected configuration, directive redaction, and entity-link tests in `backend/tests/unit/operatorCopilot/copilot-us1-tools.test.ts`
+- [X] T010 [US2] Add failing routine list/detail portable-document and entity-link tests in `backend/tests/unit/operatorCopilot/copilot-us1-tools.test.ts`
+- [X] T011 [US1] Complete `agent_configuration` through public agent list/resolve services and `serializeAgentConfig` in `backend/src/modules/operatorCopilot/tools.ts`
+- [X] T012 [US2] Complete routine list/detail behavior through the public routine service and portable projection in `backend/src/modules/operatorCopilot/tools.ts`
+- [X] T013 [US1] Update catalog dependency typing and existing focused fixtures in `backend/src/app/composition/copilotToolCatalog.ts` and `backend/tests/unit/operatorCopilot/copilot-us2-tools.test.ts`
+- [X] T014 [US2] Update Ray operator guidance in `docs-portal/content/operators/copilot.mdx`
+- [X] T015 Run focused operator-copilot tests, backend build/type validation, architecture checks, and record results in `.context/ray-existing-skills.md`
+- [X] T016 [US1] Add a non-mutating persisted-agent discovery method and prove the empty-workspace path performs no bootstrap writes
+- [X] T017 [US1] Separate agent discovery from detail reads and expose stable directive references for update proposals
+- [X] T018 [US2] Preserve routine identity, project unsupported routines as diagnostics, and use explicit list/content bounds without truncating Markdown
+- [X] T019 [US1] [US2] Add review-driven regression coverage for nonportable routines, large routine definitions, list bounds, and existing directive proposal targets
+- [X] T020 [US1] Add explicit agent list/detail selection plus bounded directive discovery and targeted full directive reads
+- [X] T021 [US1] Add explicit targeted-directive metadata, collection, and total-result budgets and correct list activity entity linking
+- [X] T022 [US1] Expose bounded built-in answer directives so list-directive catalog coverage includes both authored and platform rules
+
+### Dependencies
+
+- T009 and T010 are the red phase and must complete before T011 and T012.
+- T011 and T012 may be implemented independently after their corresponding
+  failing tests; T013 integrates both into catalog typing.
+- T014 follows the final behavior; T015 gates review and delivery.
+- T016-T019 are senior-review remediations and must pass before T015 and the
+  second review pass.
+
+### Independent Test Criteria
+
+- US1: without an agent in page context Ray returns a safe workspace agent list;
+  with a selected or explicit agent it returns the redacted `AgentConfig`,
+  including authored directives, without raw surface tokens.
+- US2: without a routine id Ray returns bounded routine identities and
+  portability metadata for the selected agent; with a routine id it returns
+  the complete portable document when it fits the explicit content budget, or
+  an omission reason/diagnostics without returning corrupted Markdown.

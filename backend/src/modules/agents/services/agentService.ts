@@ -43,6 +43,15 @@ export class AgentService {
     return list.map((agent) => this.present(agent, defaultAgentId));
   }
 
+  /** Lists persisted agents without bootstrapping or changing workspace state. */
+  async listExisting(workspaceId: string): Promise<AgentSettingsResource[]> {
+    const [workspace, agents] = await Promise.all([
+      this.requireWorkspace(workspaceId),
+      this.agentRepository.listByWorkspaceId(workspaceId),
+    ]);
+    return agents.map((agent) => this.present(agent, workspace.defaultAgentId));
+  }
+
   async get(workspaceId: string, agentId: string): Promise<AgentSettingsResource> {
     const [workspace, agent] = await Promise.all([
       this.requireWorkspace(workspaceId),

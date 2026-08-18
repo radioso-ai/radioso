@@ -26,8 +26,8 @@ import type { CopilotAuditPort } from "../../modules/operatorCopilot/public.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
 export const createCopilotToolCatalog = (deps: {
-  readonly agentService: Pick<AgentService, "get">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "get">;
+  readonly agentService: Pick<AgentService, "get" | "listExisting" | "resolve">;
+  readonly routineDefinitionService: Pick<RoutineDefinitionService, "get" | "list">;
   readonly chatHistoryService: CopilotConversationHistoryPort;
   readonly documentSearchService: CopilotDocumentSearchPort;
   readonly evalResultsService: CopilotEvalResultsPort;

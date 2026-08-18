@@ -6,6 +6,14 @@ import { catalogCoverage } from "../../../src/modules/operatorCopilot/catalogCov
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
 
 describe("operator copilot catalog coverage", () => {
+  it("maps agent and routine discovery operations to the completed family readers", () => {
+    expect(catalogCoverage).toMatchObject({
+      listAgents: "agent_configuration",
+      listAgentDirectives: "agent_configuration",
+      listAgentRoutines: "routine_definition",
+    });
+  });
+
   it("maps every OpenAPI operation to a catalog tool or stated exclusion", async () => {
     const openApi = JSON.parse(await readFile(new URL("../../../openapi.json", import.meta.url), "utf8")) as {
       paths: Record<string, Record<string, { operationId?: string }>>;

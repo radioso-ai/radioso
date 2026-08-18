@@ -49,6 +49,7 @@ mcp_server=false
 crawler=false
 census=false
 ee=false
+wordpress_companion=false
 
 mark_all() {
   backend=true
@@ -59,6 +60,7 @@ mark_all() {
   crawler=true
   census=true
   ee=true
+  wordpress_companion=true
 }
 
 if [ "$RUN_ALL" = true ]; then
@@ -85,6 +87,10 @@ else
         docs=true
         typescript_sdk=true
         mcp_server=true
+        ;;
+      frontend/public/radioso-sync.zip)
+        frontend=true
+        wordpress_companion=true
         ;;
       frontend/*)
         frontend=true
@@ -113,6 +119,9 @@ else
       packages/census/*)
         census=true
         ;;
+      packages/wordpress-companion/*)
+        wordpress_companion=true
+        ;;
       packages/document-parser/*|packages/connector-api/*)
         backend=true
         ;;
@@ -126,7 +135,7 @@ else
   done < <(git diff --name-only "$BASE_REF...HEAD")
 fi
 
-if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee" = "falsefalsefalsefalsefalsefalsefalsefalse" ]; then
+if [ "$backend$frontend$docs$typescript_sdk$mcp_server$crawler$census$ee$wordpress_companion" = "falsefalsefalsefalsefalsefalsefalsefalsefalse" ]; then
   echo "No CI-relevant changes detected against $BASE_REF."
   exit 0
 fi
@@ -227,6 +236,15 @@ echo "  mcp_server=$mcp_server"
 echo "  crawler=$crawler"
 echo "  census=$census"
 echo "  ee=$ee"
+echo "  wordpress_companion=$wordpress_companion"
+
+if [ "$wordpress_companion" = true ]; then
+  require_docker
+  run docker run --rm -v "$ROOT_DIR:/work" -w /work php:8.3-cli \
+    php -l packages/wordpress-companion/radioso-sync.php
+  run docker run --rm -v "$ROOT_DIR:/work" -w /work php:8.3-cli \
+    php packages/wordpress-companion/tests/status-test.php
+fi
 
 if [ "$backend" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-backend... --filter @radioso/crawler...

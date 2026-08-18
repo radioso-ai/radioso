@@ -157,9 +157,25 @@ function radioso_schedule_resync_batch($state, $message) {
     return true;
 }
 
-function radioso_resync_acquire_lock() {
+function radioso_resync_delete_lock_if_unchanged($lock) {
     global $wpdb;
 
+    $deleted = $wpdb->delete(
+        $wpdb->options,
+        [
+            'option_name' => RADIOSO_OPT_RESYNC_LOCK,
+            'option_value' => maybe_serialize($lock),
+        ],
+        ['%s', '%s']
+    );
+    if ($deleted !== 1) {
+        return false;
+    }
+    wp_cache_delete(RADIOSO_OPT_RESYNC_LOCK, 'options');
+    return true;
+}
+
+function radioso_resync_acquire_lock() {
     $now = time();
     $token = uniqid('radioso_resync_', true);
     $lock = ['token' => $token, 'acquired_at' => $now];
@@ -175,18 +191,9 @@ function radioso_resync_acquire_lock() {
         return false;
     }
 
-    $deleted = $wpdb->delete(
-        $wpdb->options,
-        [
-            'option_name' => RADIOSO_OPT_RESYNC_LOCK,
-            'option_value' => maybe_serialize($existing),
-        ],
-        ['%s', '%s']
-    );
-    if ($deleted !== 1) {
+    if (!radioso_resync_delete_lock_if_unchanged($existing)) {
         return false;
     }
-    wp_cache_delete(RADIOSO_OPT_RESYNC_LOCK, 'options');
     return add_option(RADIOSO_OPT_RESYNC_LOCK, $lock, '', false) ? $token : false;
 }
 
@@ -196,7 +203,7 @@ function radioso_resync_release_lock($token) {
     }
     $existing = get_option(RADIOSO_OPT_RESYNC_LOCK, []);
     if (is_array($existing) && isset($existing['token']) && $existing['token'] === $token) {
-        delete_option(RADIOSO_OPT_RESYNC_LOCK);
+        radioso_resync_delete_lock_if_unchanged($existing);
     }
 }
 

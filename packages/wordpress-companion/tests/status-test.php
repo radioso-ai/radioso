@@ -7,6 +7,7 @@ $GLOBALS['scheduled_result'] = true;
 $GLOBALS['next_scheduled'] = false;
 $GLOBALS['query_posts'] = [];
 $GLOBALS['wp_cache_deletes'] = [];
+$GLOBALS['before_delete_option'] = null;
 
 class WPDB_Stub {
     public $options = 'wp_options';
@@ -58,7 +59,15 @@ function add_option($key, $value, $deprecated = '', $autoload = true) {
     $GLOBALS['wp_options'][$key] = $value;
     return true;
 }
-function delete_option($key) { unset($GLOBALS['wp_options'][$key]); return true; }
+function delete_option($key) {
+    if (is_callable($GLOBALS['before_delete_option'])) {
+        $callback = $GLOBALS['before_delete_option'];
+        $GLOBALS['before_delete_option'] = null;
+        $callback();
+    }
+    unset($GLOBALS['wp_options'][$key]);
+    return true;
+}
 function maybe_serialize($value) { return is_array($value) ? serialize($value) : $value; }
 function wp_cache_delete($key, $group = '') { $GLOBALS['wp_cache_deletes'][] = [$key, $group]; return true; }
 function wp_schedule_single_event($timestamp, $hook, $args = [], $wp_error = false) { return $GLOBALS['scheduled_result']; }
@@ -142,6 +151,18 @@ $GLOBALS['wpdb']->before_delete = function () use ($newer_lock) {
 assert_true(radioso_resync_acquire_lock() === false, 'stale takeover does not delete a newer lock');
 assert_true(radioso_resync_owns_lock('newer-worker'), 'newer lock survives stale takeover race');
 radioso_resync_release_lock('newer-worker');
+
+$release_lock = radioso_resync_acquire_lock();
+$newer_lock = ['token' => 'newer-release-worker', 'acquired_at' => time()];
+$replace_lock = function () use ($newer_lock) {
+    $GLOBALS['wp_options'][RADIOSO_OPT_RESYNC_LOCK] = $newer_lock;
+};
+$GLOBALS['before_delete_option'] = $replace_lock;
+$GLOBALS['wpdb']->before_delete = $replace_lock;
+radioso_resync_release_lock($release_lock);
+assert_true(radioso_resync_owns_lock('newer-release-worker'), 'lock release cannot delete a newer lock');
+$GLOBALS['before_delete_option'] = null;
+radioso_resync_release_lock('newer-release-worker');
 
 $GLOBALS['scheduled_result'] = true;
 $GLOBALS['query_posts'] = [11, 12];

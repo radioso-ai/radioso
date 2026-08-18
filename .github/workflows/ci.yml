@@ -27,6 +27,7 @@ jobs:
       crawler: ${{ steps.filter.outputs.crawler }}
       census: ${{ steps.filter.outputs.census }}
       ee: ${{ steps.filter.outputs.ee }}
+      wordpress_companion: ${{ steps.filter.outputs.wordpress_companion }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -52,6 +53,7 @@ jobs:
           crawler=false
           census=false
           ee=false
+          wordpress_companion=false
 
           mark_all() {
             backend=true
@@ -62,6 +64,7 @@ jobs:
             crawler=true
             census=true
             ee=true
+            wordpress_companion=true
           }
 
           # Fail safe: if the diff cannot be computed (e.g. no merge base), run
@@ -88,6 +91,10 @@ jobs:
                 docs=true
                 typescript_sdk=true
                 mcp_server=true
+                ;;
+              frontend/public/radioso-sync.zip)
+                frontend=true
+                wordpress_companion=true
                 ;;
               frontend/*)
                 frontend=true
@@ -116,6 +123,9 @@ jobs:
               packages/census/*)
                 census=true
                 ;;
+              packages/wordpress-companion/*)
+                wordpress_companion=true
+                ;;
               packages/document-parser/*|packages/connector-api/*)
                 backend=true
                 ;;
@@ -130,7 +140,7 @@ jobs:
 
           backend_openapi="${backend}"
           run_ci=false
-          for value in "$backend" "$frontend" "$docs" "$typescript_sdk" "$mcp_server" "$crawler" "$census" "$ee"; do
+          for value in "$backend" "$frontend" "$docs" "$typescript_sdk" "$mcp_server" "$crawler" "$census" "$ee" "$wordpress_companion"; do
             if [ "$value" = true ]; then
               run_ci=true
               break
@@ -148,6 +158,7 @@ jobs:
             echo "crawler=${crawler}"
             echo "census=${census}"
             echo "ee=${ee}"
+            echo "wordpress_companion=${wordpress_companion}"
           } >> "$GITHUB_OUTPUT"
 
   backend-build-openapi:
@@ -370,6 +381,21 @@ jobs:
       - name: Test frontend end-to-end suite
         working-directory: frontend
         run: pnpm run test:e2e
+
+  wordpress-companion:
+    name: WordPress Companion
+    needs: changes
+    if: needs.changes.outputs.wordpress_companion == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Test WordPress companion plugin
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work php:8.3-cli \
+            php -l packages/wordpress-companion/radioso-sync.php
+          docker run --rm -v "$PWD:/work" -w /work php:8.3-cli \
+            php packages/wordpress-companion/tests/status-test.php
 
   docs-portal:
     name: Docs Portal

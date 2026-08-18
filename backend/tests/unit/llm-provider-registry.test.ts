@@ -9,6 +9,9 @@ import type {
   TextGenerationClient,
   TextGenerationRequest,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityResolveInput,
+} from "../../src/shared/infra/llm/capabilityResolver.js";
 import {
   endpointScopeFingerprint,
 } from "../../src/shared/infra/llm/embeddingProviderResolver.js";
@@ -670,21 +673,45 @@ describe("LlmProviderRegistry", () => {
       });
     });
 
+    const resolver = {
+      resolve: vi.fn(async (_capability: string, input: LlmCapabilityResolveInput) => ({
+        capability: "embeddings" as const,
+        provider: input.capabilityOverride?.provider ?? endpointB.provider,
+        model: input.capabilityOverride?.model ?? endpointB.model,
+        apiKey: "workspace-endpoint-key",
+        baseUrl: input.capabilityOverride?.baseUrl ?? endpointB.baseUrl,
+      })),
+    };
     const registry = new LlmProviderRegistry({
       ...baseConfig,
       embeddings: endpointB,
       embeddingProviderConfigs: [endpointB, endpointA],
-    });
+    }, undefined, { resolver });
     const gateway = registry.createEmbeddingGateway();
 
     await expect(gateway.embedTexts(["hello"], {
       model: "text-embedding-3-small",
       provider: "openai-compatible",
       endpointScopeFingerprint: endpointScopeFingerprint(endpointA),
+      usageContext: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "embedding",
+        operation: "embedding",
+        attemptKey: "embedding:0",
+      },
     })).resolves.toHaveLength(1);
     expect(requestedUrls).toEqual([
       "https://endpoint-a.example/v1/embeddings",
     ]);
+    expect(resolver.resolve).toHaveBeenCalledWith("embeddings", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-a.example/v1",
+      },
+    });
 
     await expect(gateway.embedTexts(["hello"], {
       model: "text-embedding-3-small",

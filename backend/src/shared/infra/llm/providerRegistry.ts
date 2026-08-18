@@ -463,6 +463,7 @@ export class LlmProviderRegistry {
               capabilityOverride: {
                 provider: config.provider,
                 model: config.model,
+                ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
               },
             }
           : {}),

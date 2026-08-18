@@ -200,8 +200,8 @@ describe("runtime entrypoints", () => {
 
     const response = await request(runtime.server!)
       .post("/internal/tasks/website-crawl")
-      .set(WORKER_TASK_AUTH_HEADER, workerTaskAuthToken)
-      .send({ jobId: randomUUID() });
+      .set("Content-Type", "application/json")
+      .send("{ invalid json");
 
     expect(response.status).toBe(410);
     expect(response.body).toMatchObject({ error: "moved" });

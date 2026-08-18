@@ -7,6 +7,8 @@ import type { LlmProviderName } from "./providerTypes.js";
 export interface LlmCapabilityOverride {
   provider: LlmProviderName;
   model: string;
+  /** Exact endpoint selected by infrastructure-owned provider binding metadata. */
+  baseUrl?: string;
 }
 
 /**

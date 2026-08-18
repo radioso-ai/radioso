@@ -213,6 +213,40 @@ describe("WorkspaceLlmCapabilityResolver", () => {
     expect(config.baseUrl).toBe("https://compat.example.com");
   });
 
+  it("preserves the exact openai-compatible endpoint from a capability override", async () => {
+    const compatibleDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      embeddings: {
+        capability: "embeddings",
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-b.example.com/v1",
+      },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: compatibleDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai-compatible": "ws-compat-key" }),
+      envKeys: envKeyResolver({}),
+      envBaseUrls: { "openai-compatible": "https://endpoint-b.example.com/v1" },
+    });
+
+    const config = await resolver.resolve("embeddings", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-a.example.com/v1",
+      },
+    });
+
+    expect(config).toMatchObject({
+      provider: "openai-compatible",
+      apiKey: "ws-compat-key",
+      baseUrl: "https://endpoint-a.example.com/v1",
+    });
+  });
+
   it("rewrite/rerank capabilities ignore capabilityOverride from agent (workspace-level only)", async () => {
     // The resolver does not interpret semantic meaning of an override; callers should not
     // pass agent overrides to rewrite/rerank. This test pins that contract: when the

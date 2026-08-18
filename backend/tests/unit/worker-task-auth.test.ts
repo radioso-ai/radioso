@@ -73,7 +73,7 @@ describe("worker task authentication", () => {
     expect(runJobById).toHaveBeenCalledWith(jobId);
   });
 
-  it("guards action, recovery, and legacy task routes on the document worker", async () => {
+  it("guards action and recovery task routes on the document worker", async () => {
     const { dependencies } = createTestDependencies();
     withTaskToken(dependencies, taskToken);
     const documentRunOnce = vi.spyOn(dependencies.documentProcessingWorker, "runOnce");
@@ -84,13 +84,25 @@ describe("worker task authentication", () => {
       "/internal/tasks/document-processing/recover",
       "/internal/tasks/actions/drain",
       "/internal/tasks/actions/recover",
-      "/internal/tasks/website-crawl",
     ]) {
       await request(app).post(path).send({}).expect(401, { error: "unauthorized" });
     }
 
     expect(documentRunOnce).not.toHaveBeenCalled();
     expect(actionDrain).not.toHaveBeenCalled();
+  });
+
+  it("returns 410 for legacy crawler pushes before auth and JSON parsing", async () => {
+    const { dependencies } = createTestDependencies();
+    withTaskToken(dependencies, taskToken);
+
+    const response = await request(createWorkerTaskApp(dependencies))
+      .post("/internal/tasks/website-crawl")
+      .set("Content-Type", "application/json")
+      .send("{ invalid json");
+
+    expect(response.status).toBe(410);
+    expect(response.body).toMatchObject({ error: "moved" });
   });
 
   it("guards crawler task and recovery routes while leaving crawler health public", async () => {

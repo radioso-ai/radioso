@@ -72,6 +72,10 @@ describe("runtime configuration", () => {
       "node",
       "./dist/src/crawlerWorker.js",
     ]);
+
+    expect((prodCompose.services?.postgres as { ports?: string[] })?.ports).toEqual([
+      "127.0.0.1:${RADIOSO_POSTGRES_PORT:-5432}:5432",
+    ]);
   });
 
   it("uses the watch-oriented backend dev image and bind mounts in docker compose development", async () => {
@@ -89,6 +93,7 @@ describe("runtime configuration", () => {
     expect(backend?.build?.dockerfile).toBe("infra/backend.dev.Dockerfile");
     expect(worker?.build?.dockerfile).toBe("infra/backend.dev.Dockerfile");
     expect(backend?.command).toEqual(["backend-dev-entrypoint.sh", "dev:http"]);
+    expect((backend as { environment?: Record<string, string> })?.environment?.AUTH_AUTO_VERIFY_EMAIL).toBe("true");
     expect(worker?.command).toEqual(["backend-dev-entrypoint.sh", "dev:worker"]);
     expect(backend?.volumes).toEqual(expect.arrayContaining([
       "./backend:/app/backend",
@@ -100,6 +105,12 @@ describe("runtime configuration", () => {
       "./packages:/app/packages",
       "radioso_backend_node_modules:/app/backend/node_modules",
     ]));
+  });
+
+  it("enables development-only email auto-verification in the Enterprise dev runtime", async () => {
+    const runtime = await readFile(new URL("../../../scripts/run-ee-dev.mjs", import.meta.url), "utf8");
+
+    expect(runtime).toMatch(/const enterpriseBackendEnv = \{[\s\S]*NODE_ENV: "development",[\s\S]*AUTH_AUTO_VERIFY_EMAIL: "true"/);
   });
 
   it("keeps backend dev dependency installation aligned with backend workspace imports", async () => {
@@ -205,6 +216,32 @@ describe("runtime configuration", () => {
     expect(env.PRODUCT_ANALYTICS_SINKS).toBe("audit");
     expect(env.ERROR_SINKS).toBe("audit");
     expect(env.RADIOSO_EDITION).toBe("oss");
+  });
+
+  it("keeps email verification enabled by default", () => {
+    const env = getEnv({
+      ...baseEnv,
+    });
+
+    expect(env.AUTH_AUTO_VERIFY_EMAIL).toBe(false);
+  });
+
+  it("allows automatic email verification only in development", () => {
+    const env = getEnv({
+      ...baseEnv,
+      NODE_ENV: "development",
+      AUTH_AUTO_VERIFY_EMAIL: "true",
+    });
+
+    expect(env.AUTH_AUTO_VERIFY_EMAIL).toBe(true);
+
+    for (const nodeEnv of ["test", "production"] as const) {
+      expect(() => getEnv({
+        ...baseEnv,
+        NODE_ENV: nodeEnv,
+        AUTH_AUTO_VERIFY_EMAIL: "true",
+      })).toThrow(/AUTH_AUTO_VERIFY_EMAIL/);
+    }
   });
 
   it("requires an OTLP endpoint when tracing is enabled", () => {
@@ -346,6 +383,31 @@ describe("runtime configuration", () => {
     expect(env.WORKER_AMQP_QUEUE_NAME).toBeUndefined();
     expect(env.WORKER_AMQP_CRAWL_QUEUE_NAME).toBeUndefined();
     expect(env.WORKER_AMQP_PREFETCH).toBe(1);
+    expect(env.WORKER_TASK_AUTH_TOKEN).toBeUndefined();
+  });
+
+  it("requires a strong worker task token for Cloud Tasks dispatch", () => {
+    const cloudTasksEnv = {
+      ...baseEnv,
+      WORKER_DISPATCH_DRIVER: "cloud-tasks",
+      GOOGLE_CLOUD_PROJECT: "radioso-test",
+      WORKER_TASKS_QUEUE_LOCATION: "europe-west1",
+      WORKER_TASKS_QUEUE_NAME: "document-processing",
+      WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "tasks@example.iam.gserviceaccount.com",
+    } as const;
+
+    expect(() => getEnv(cloudTasksEnv)).toThrow(/WORKER_TASK_AUTH_TOKEN/);
+    expect(() => getEnv({
+      ...cloudTasksEnv,
+      WORKER_TASK_AUTH_TOKEN: "too-short",
+    })).toThrow(/WORKER_TASK_AUTH_TOKEN/);
+
+    const env = getEnv({
+      ...cloudTasksEnv,
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
+    });
+    expect(env.WORKER_TASK_AUTH_TOKEN).toBe("0123456789abcdef0123456789abcdef");
   });
 
   it("defaults backend MCP to disabled and non-standalone", () => {
@@ -477,6 +539,8 @@ describe("runtime configuration", () => {
     const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
     const terraformApis = await readFile(new URL("../../../infra/terraform/apis.tf", import.meta.url), "utf8");
     const schedulerTf = await readFile(new URL("../../../infra/terraform/scheduler.tf", import.meta.url), "utf8");
+    const databaseTf = await readFile(new URL("../../../infra/terraform/database.tf", import.meta.url), "utf8");
+    const secretsTf = await readFile(new URL("../../../infra/terraform/secrets.tf", import.meta.url), "utf8");
     const registryTf = await readFile(new URL("../../../infra/terraform/registry.tf", import.meta.url), "utf8");
     const stagingEnv = await readFile(new URL("../../../infra/terraform/environments/staging/main.tf", import.meta.url), "utf8");
     const stagingEnvVariables = await readFile(new URL("../../../infra/terraform/environments/staging/variables.tf", import.meta.url), "utf8");
@@ -500,6 +564,8 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('resource "google_cloud_run_v2_service_iam_member" "crawler_worker_invoker"');
     expect(computeTf).toContain('value = try(google_cloud_run_v2_service.crawler_worker[0].uri, "")');
     expect(computeTf).toContain('name  = "WORKER_TASKS_CRAWL_SERVICE_URL"');
+    expect((computeTf.match(/name\s+=\s+"WORKER_TASK_AUTH_TOKEN"/g) ?? [])).toHaveLength(3);
+    expect((computeTf.match(/secret  = google_secret_manager_secret\.secrets\["worker-task-auth-token"\]\.secret_id/g) ?? [])).toHaveLength(3);
     expect(computeTf).toContain('network_interfaces {');
     expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
     expect(computeTf).not.toContain("cpu_idle = false");
@@ -550,6 +616,11 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain("schedule = local.document_worker_recovery_schedule");
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "crawler_worker_recovery"');
     expect(schedulerTf).toContain("schedule = local.crawler_worker_recovery_schedule");
+    expect((schedulerTf.match(/"X-Radioso-Worker-Token"\s+=\s+random_password\.worker_task_auth_token\.result/g) ?? [])).toHaveLength(3);
+    expect((schedulerTf.match(/oidc_token \{/g) ?? [])).toHaveLength(3);
+    expect(databaseTf).toContain('resource "random_password" "worker_task_auth_token"');
+    expect(databaseTf).toMatch(/resource "random_password" "worker_task_auth_token" \{[\s\S]*?length\s+=\s+(?:3[2-9]|[4-9]\d|\d{3,})/);
+    expect(secretsTf).toMatch(/"worker-task-auth-token"\s+=\s+random_password\.worker_task_auth_token\.result/);
     expect(registryTf).toContain('id     = "delete-untagged-older-than-7-days"');
     expect(registryTf).toContain('id     = "delete-tagged-older-than-30-days"');
     expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");

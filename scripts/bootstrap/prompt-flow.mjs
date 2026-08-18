@@ -9,10 +9,11 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
   const reconfigure = Boolean(options.reconfigure);
   const questions = [];
   const provider = existingValues.LLM_PROVIDER || contract.defaults.LLM_PROVIDER || "openai";
+  const asksProviderChoice = reconfigure || !existingValues.LLM_PROVIDER;
   const defaultStorageDriver = existingValues.DOCUMENT_STORAGE_DRIVER
     || (existingValues.DOCUMENT_STORAGE_BUCKET ? "gcs" : contract.defaults.DOCUMENT_STORAGE_DRIVER || "local");
 
-  if (reconfigure || !existingValues.LLM_PROVIDER) {
+  if (asksProviderChoice) {
     questions.push({
       key: "LLM_PROVIDER",
       prompt: "Choose your default AI provider",
@@ -22,26 +23,50 @@ export const planQuestions = (existingValues = {}, contract = getEnvContract(), 
     });
   }
 
-  const providerValue = reconfigure ? provider : existingValues.LLM_PROVIDER || provider;
-  const providerCredentialKeys = getProviderCredentialKeys(providerValue);
-  const providerRequiredKeys = getProviderRequiredKeys(providerValue);
-
-  for (const key of providerCredentialKeys) {
-    if (reconfigure || !existingValues[key]) {
-      const required = providerRequiredKeys.includes(key);
-      const prompt = key === "OPENAI_COMPATIBLE_BASE_URL"
-        ? "OpenAI-compatible base URL"
-        : required
-          ? `Enter ${key}`
-          : `Enter ${key} (optional — add later in the app under Settings → Credentials)`;
-      questions.push({
-        key,
-        prompt,
-        defaultValue: existingValues[key] || contract.defaults[key] || "",
-        secret: key.includes("KEY"),
-        required,
-      });
+  const appendProviderQuestions = (selectedProvider, dependencies = []) => {
+    const providerRequiredKeys = getProviderRequiredKeys(selectedProvider);
+    for (const key of getProviderCredentialKeys(selectedProvider)) {
+      if (reconfigure || !existingValues[key]) {
+        const required = providerRequiredKeys.includes(key);
+        const prompt = key === "OPENAI_COMPATIBLE_BASE_URL"
+          ? "OpenAI-compatible base URL"
+          : required
+            ? `Enter ${key}`
+            : `Enter ${key} (optional — add later in the app under Settings → Credentials)`;
+        questions.push({
+          key,
+          prompt,
+          defaultValue: existingValues[key] || contract.defaults[key] || "",
+          secret: key.includes("KEY"),
+          required,
+          dependsOnAll: dependencies,
+        });
+      }
     }
+  };
+
+  if (asksProviderChoice) {
+    for (const option of contract.providerOptions) {
+      appendProviderQuestions(option, [{ key: "LLM_PROVIDER", value: option }]);
+    }
+    questions.push({
+      key: "LLM_EMBEDDING_PROVIDER",
+      prompt: "Choose an embedding provider",
+      defaultValue: ["openai", "openai-compatible", "gemini"].includes(existingValues.LLM_EMBEDDING_PROVIDER)
+        ? existingValues.LLM_EMBEDDING_PROVIDER
+        : "openai",
+      kind: "choice",
+      choices: ["openai", "openai-compatible", "gemini"],
+      dependsOnAll: [{ key: "LLM_PROVIDER", value: "claude" }],
+    });
+    for (const option of ["openai", "openai-compatible", "gemini"]) {
+      appendProviderQuestions(option, [
+        { key: "LLM_PROVIDER", value: "claude" },
+        { key: "LLM_EMBEDDING_PROVIDER", value: option },
+      ]);
+    }
+  } else {
+    appendProviderQuestions(provider);
   }
 
   if (reconfigure || !existingValues.DOCUMENT_STORAGE_DRIVER) {
@@ -148,7 +173,9 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
   };
 
   for (const question of questions) {
-    if (question.dependsOn && answers[question.dependsOn.key] !== question.dependsOn.value) {
+    const dependencies = question.dependsOnAll
+      ?? (question.dependsOn ? [question.dependsOn] : []);
+    if (dependencies.some((dependency) => answers[dependency.key] !== dependency.value)) {
       continue;
     }
 
@@ -160,6 +187,9 @@ export const collectAnswers = async (questions, ansi, io = {}) => {
         continue;
       }
       answers[question.key] = answer;
+      if (question.key === "LLM_PROVIDER" && answer !== "claude") {
+        answers.LLM_EMBEDDING_PROVIDER = answer;
+      }
       if (question.key === "DOCUMENT_STORAGE_DRIVER") {
         if (answer === "gcs" && !plannedKeys.has("DOCUMENT_STORAGE_BUCKET")) {
           await askFollowUp({

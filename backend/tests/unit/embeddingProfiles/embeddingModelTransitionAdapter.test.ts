@@ -496,7 +496,7 @@ describe("RegistryFixedInputEmbeddingValidation", () => {
       "openai",
       "scope",
     );
-    expect(probe).toHaveBeenCalledOnce();
+    expect(probe).toHaveBeenCalledWith("workspace-1");
   });
 
   it("distinguishes invalid vector contracts from temporary provider failures", async () => {

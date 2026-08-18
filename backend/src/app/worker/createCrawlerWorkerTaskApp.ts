@@ -7,6 +7,7 @@ import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import type { AppDependencies } from "../server/types.js";
 import { createCrawlerWorkerTaskRoutes } from "./crawlerWorkerTaskRoutes.js";
+import { createWorkerTaskAuthMiddleware } from "./workerTaskAuthMiddleware.js";
 
 export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
   const app = express();
@@ -15,6 +16,7 @@ export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
   app.use(createHttpLogger(dependencies.logger));
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));
+  app.use("/internal/tasks", createWorkerTaskAuthMiddleware(dependencies.env.WORKER_TASK_AUTH_TOKEN));
   app.use(express.json({ limit: "1mb" }));
   app.use((error: unknown, _req: express.Request, _res: express.Response, next: express.NextFunction) => {
     if (error instanceof SyntaxError) {

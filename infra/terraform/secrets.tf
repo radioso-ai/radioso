@@ -10,6 +10,7 @@ locals {
     {
       "database-url"               = "postgres://${google_sql_user.radioso.name}:${random_password.db_password.result}@${google_sql_database_instance.postgres.private_ip_address}:5432/${google_sql_database.radioso.name}"
       "database-password"          = random_password.db_password.result
+      "worker-task-auth-token"     = random_password.worker_task_auth_token.result
       "openai-api-key"             = var.openai_api_key
       "session-cookie-secret"      = var.session_cookie_secret
       "workspace-token-secret"     = var.workspace_token_secret
@@ -46,6 +47,7 @@ locals {
     {
       "database-url"               = true
       "database-password"          = true
+      "worker-task-auth-token"     = true
       "openai-api-key"             = true
       "session-cookie-secret"      = true
       "workspace-token-secret"     = true

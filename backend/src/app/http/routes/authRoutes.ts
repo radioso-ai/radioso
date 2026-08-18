@@ -152,11 +152,13 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         requestIp: req.ip,
         requestUserAgent: req.get("user-agent"),
       });
-      await dependencies.emailVerificationService.resend({
-        email: req.body.email,
-        requestIp: req.ip,
-        requestUserAgent: req.get("user-agent"),
-      });
+      if (result.requiresEmailVerification) {
+        await dependencies.emailVerificationService.resend({
+          email: req.body.email,
+          requestIp: req.ip,
+          requestUserAgent: req.get("user-agent"),
+        });
+      }
       if (result.sessionCookie) {
         res.setHeader("Set-Cookie", result.sessionCookie);
       }
@@ -167,7 +169,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         workspaceId: result.workspaceId,
         workspaceName: result.workspaceName,
         workspacePublicRouteKey: result.workspacePublicRouteKey,
-        requiresEmailVerification: true,
+        requiresEmailVerification: result.requiresEmailVerification,
       });
     } catch (error) {
       next(error);

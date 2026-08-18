@@ -282,6 +282,8 @@ const main = async () => {
     RADIOSO_WIDGET_ORIGIN: appOrigin,
     PUBLIC_CHAT_BASE_URL: `${appOrigin}/chat`,
     APP_BASE_URL: appOrigin,
+    NODE_ENV: "development",
+    AUTH_AUTO_VERIFY_EMAIL: "true",
   };
   if (process.env.RADIOSO_APPLICATION_MODULES) {
     enterpriseBackendEnv.RADIOSO_APPLICATION_MODULES = process.env.RADIOSO_APPLICATION_MODULES;

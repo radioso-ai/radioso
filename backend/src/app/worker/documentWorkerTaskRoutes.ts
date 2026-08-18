@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../server/types.js";
@@ -15,6 +15,16 @@ const recoveryTaskSchema = z.object({
 }).default({});
 
 type DocumentWorkerTaskRouteDependencies = Pick<AppDependencies, "documentProcessingWorker">;
+
+// Compatibility tombstone for Cloud Tasks pushes enqueued before the crawler
+// worker split. Mount this ahead of task authentication and JSON parsing so
+// headerless legacy tasks receive a permanent 410 instead of retryable 401/400.
+export const legacyWebsiteCrawlTaskHandler: RequestHandler = (_req, res) => {
+  res.status(410).json({
+    error: "moved",
+    message: "Website crawl tasks are handled by the dedicated crawler worker. Scheduled recovery will reclaim this job.",
+  });
+};
 
 export const createDocumentWorkerTaskRoutes = (
   dependencies: DocumentWorkerTaskRouteDependencies,
@@ -71,18 +81,6 @@ export const createDocumentWorkerTaskRoutes = (
     } catch (error) {
       next(error);
     }
-  });
-
-  // Compatibility stub for in-flight Cloud Tasks pushes that were enqueued
-  // before the website-crawl Cloud Run service was split out. We respond 410
-  // (Gone) so Cloud Tasks treats it as a permanent failure and stops retrying;
-  // the polling fallback in the new crawler worker will pick the job up on its
-  // next tick. Safe to remove one full release after the split has shipped.
-  router.post("/internal/tasks/website-crawl", (_req, res) => {
-    res.status(410).json({
-      error: "moved",
-      message: "Website crawl tasks are handled by the dedicated crawler worker. Scheduled recovery will reclaim this job.",
-    });
   });
 
   return router;

@@ -64,7 +64,7 @@ export function AuthPage() {
             className="mx-auto mb-4 hidden h-28 w-auto object-contain dark:block"
             priority
           />
-          <p className="text-muted-foreground mt-1">Agents that talk, act, and stay grounded.</p>
+          <p className="text-muted-foreground mt-1">Agents that answer, act, and hand off — inside the rules you set.</p>
         </div>
         <div className="bg-card border border-border rounded-lg p-6 shadow-sm">
           <h2 className="text-lg font-medium text-card-foreground mb-4">

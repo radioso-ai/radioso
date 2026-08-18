@@ -3,6 +3,11 @@ resource "random_password" "db_password" {
   special = false
 }
 
+resource "random_password" "worker_task_auth_token" {
+  length  = 48
+  special = false
+}
+
 resource "google_sql_database_instance" "postgres" {
   name                = "${local.resource_name_prefix}-db"
   database_version    = "POSTGRES_16"

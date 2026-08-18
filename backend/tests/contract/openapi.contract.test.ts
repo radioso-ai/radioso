@@ -122,6 +122,11 @@ describe("openapi contract", () => {
       responses: { "200": expect.any(Object) },
     });
     expect(paths["/api/v1/auth/register"]?.post?.responses).toHaveProperty("403");
+    expect(document.components?.schemas?.RegisterResponse).toMatchObject({
+      properties: {
+        requiresEmailVerification: { type: "boolean" },
+      },
+    });
     expect(paths["/api/v1/account/accounts"]?.post).toMatchObject({
       operationId: "createAdditionalOrganization",
       responses: {

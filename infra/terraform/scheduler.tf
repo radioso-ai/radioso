@@ -20,7 +20,8 @@ resource "google_cloud_scheduler_job" "document_worker_recovery" {
     uri         = local.document_worker_recovery_url
     body        = local.worker_recovery_body
     headers = {
-      "Content-Type" = "application/json"
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
     }
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
@@ -42,7 +43,8 @@ resource "google_cloud_scheduler_job" "crawler_worker_recovery" {
     uri         = local.crawler_worker_recovery_url
     body        = local.worker_recovery_body
     headers = {
-      "Content-Type" = "application/json"
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
     }
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
@@ -64,7 +66,8 @@ resource "google_cloud_scheduler_job" "action_dispatch_recovery" {
     uri         = local.action_dispatch_recovery_url
     body        = local.action_dispatch_recovery_body
     headers = {
-      "Content-Type" = "application/json"
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
     }
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email

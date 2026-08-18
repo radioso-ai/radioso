@@ -6,13 +6,13 @@ import {
 } from "./supportedEmbeddingModels.js";
 import {
   ProviderConfigurationError,
-  type LlmCapabilityConfig,
+  type LlmCapabilityDefault,
 } from "./providerTypes.js";
 import type {
   EmbeddingProviderImplementation,
 } from "../../../modules/embeddingProfiles/contracts/embeddingProvider.js";
 
-export type EmbeddingCapabilityConfig = LlmCapabilityConfig & {
+export type EmbeddingCapabilityConfig = LlmCapabilityDefault & {
   provider: EmbeddingProviderImplementation;
 };
 
@@ -22,14 +22,14 @@ export interface EmbeddingProviderBindingSelection {
 }
 
 const isEmbeddingProvider = (
-  config: LlmCapabilityConfig,
+  config: LlmCapabilityDefault,
 ): config is EmbeddingCapabilityConfig =>
   config.provider === "openai" ||
   config.provider === "openai-compatible" ||
   config.provider === "gemini";
 
 const supportsDescriptor = (
-  config: LlmCapabilityConfig,
+  config: LlmCapabilityDefault,
   family: "openai_like" | "gemini",
 ): boolean =>
   family === "gemini"
@@ -39,8 +39,8 @@ const supportsDescriptor = (
 
 export const resolveEmbeddingProviderBinding = (
   model: string,
-  primary: LlmCapabilityConfig,
-  configured: readonly LlmCapabilityConfig[],
+  primary: LlmCapabilityDefault,
+  configured: readonly LlmCapabilityDefault[],
   requestedBinding?: EmbeddingProviderBindingSelection,
   options: { readonly acceptExistingSelection?: boolean } = {},
 ): EmbeddingCapabilityConfig => {
@@ -113,7 +113,7 @@ export const resolveEmbeddingProviderBinding = (
   return resolved;
 };
 
-const normalizedEndpointScope = (config: LlmCapabilityConfig): string => {
+const normalizedEndpointScope = (config: LlmCapabilityDefault): string => {
   if (config.provider === "openai") {
     return "openai:public-api";
   }
@@ -133,7 +133,7 @@ const normalizedEndpointScope = (config: LlmCapabilityConfig): string => {
 };
 
 export const endpointScopeFingerprint = (
-  config: LlmCapabilityConfig,
+  config: LlmCapabilityDefault,
 ): string =>
   createHash("sha256")
     .update(normalizedEndpointScope(config))

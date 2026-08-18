@@ -5,6 +5,7 @@ services:
       dockerfile: infra/backend.dev.Dockerfile
     environment:
       NODE_ENV: development
+      AUTH_AUTO_VERIFY_EMAIL: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./package.json:/app/package.json:ro

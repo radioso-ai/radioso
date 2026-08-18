@@ -43,7 +43,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       workspaceId: z.string().uuid(),
       workspaceName: z.string(),
       workspacePublicRouteKey: z.string(),
-      requiresEmailVerification: z.literal(true),
+      requiresEmailVerification: z.boolean(),
     }),
   );
 

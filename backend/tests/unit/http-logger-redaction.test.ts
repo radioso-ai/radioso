@@ -42,6 +42,7 @@ describe("HTTP logger redaction", () => {
       .get("/health?visible=yes")
       .set("cookie", "session=secret-request-cookie")
       .set("authorization", "Bearer radioso_secret")
+      .set("x-radioso-worker-token", "worker-task-secret")
       .set("x-radioso-public-session", "public-session-secret")
       .set("x-workspace-id", "workspace-secret")
       .set("x-visible-header", "visible-value")
@@ -53,6 +54,7 @@ describe("HTTP logger redaction", () => {
     expect(requestLog).toBeDefined();
     expect(JSON.stringify(requestLog)).not.toContain("secret-request-cookie");
     expect(JSON.stringify(requestLog)).not.toContain("radioso_secret");
+    expect(JSON.stringify(requestLog)).not.toContain("worker-task-secret");
     expect(JSON.stringify(requestLog)).not.toContain("public-session-secret");
     expect(JSON.stringify(requestLog)).not.toContain("workspace-secret");
     expect(JSON.stringify(requestLog)).not.toContain("secret-response-cookie");

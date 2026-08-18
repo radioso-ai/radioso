@@ -9,6 +9,7 @@ test("classifyEnvState marks an env missing core required keys as partial", () =
     LLM_PROVIDER: "openai",
     SESSION_COOKIE_SECRET: "secret-secret-secret",
     CONNECTOR_ENCRYPTION_KEY: "secret-secret-secret",
+    WORKER_TASK_AUTH_TOKEN: "worker-task-token-with-at-least-32-characters",
   });
 
   assert.equal(state, "partial");
@@ -30,6 +31,7 @@ test("classifyEnvState treats a complete env without a provider API key as valid
     PUBLIC_CHAT_SESSION_SECRET: "public-session-secret",
     SESSION_TTL_HOURS: "168",
     CONNECTOR_ENCRYPTION_KEY: "secret-secret-secret",
+    WORKER_TASK_AUTH_TOKEN: "worker-task-token-with-at-least-32-characters",
     DOCUMENT_STORAGE_DRIVER: "local",
     DOCUMENT_STORAGE_LOCAL_PATH: "../.context/document-storage",
     DOCUMENT_UPLOAD_MAX_BYTES: "10485760",
@@ -101,6 +103,8 @@ test("runPreflightChecks fails when docker is missing", async () => {
 });
 
 test("runPreflightChecks reports port conflicts when project is not already running", async () => {
+  const originalConductorPort = process.env.CONDUCTOR_PORT;
+  delete process.env.CONDUCTOR_PORT;
   const composePsKey = ["docker", ...getComposeArgs(), "ps", "--services", "--status", "running"].join(" ");
   const responses = {
     "docker --version": { ok: true, stdout: "Docker version", stderr: "" },
@@ -109,13 +113,21 @@ test("runPreflightChecks reports port conflicts when project is not already runn
     [composePsKey]: { ok: true, stdout: "", stderr: "" },
   };
 
-  const results = await runPreflightChecks({
-    run: async (command, args) => responses[[command, ...args].join(" ")],
-    portCheck: async (port) => port !== 3000,
-  });
+  try {
+    const results = await runPreflightChecks({
+      run: async (command, args) => responses[[command, ...args].join(" ")],
+      portCheck: async (port) => port !== 3000,
+    });
 
-  const blockedPort = results.find((result) => result.name === "port-3000");
-  assert.equal(blockedPort?.status, "fail");
+    const blockedPort = results.find((result) => result.name === "port-3000");
+    assert.equal(blockedPort?.status, "fail");
+  } finally {
+    if (originalConductorPort === undefined) {
+      delete process.env.CONDUCTOR_PORT;
+    } else {
+      process.env.CONDUCTOR_PORT = originalConductorPort;
+    }
+  }
 });
 
 test("runPreflightChecks uses Conductor port allocation when present", async () => {

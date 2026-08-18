@@ -1,6 +1,6 @@
 import type { Env } from "../../../app/config/env.js";
 import {
-  type LlmCapabilityConfig,
+  type LlmCapabilityDefault,
   type LlmCapabilityName,
   type LlmProviderName,
   ProviderConfigurationError,
@@ -37,16 +37,25 @@ const requireString = (value: string | number | boolean | undefined, field: stri
   throw new ProviderConfigurationError(`Missing required configuration: ${field}`);
 };
 
-const resolveApiKey = (provider: LlmProviderName, env: ProviderEnv): string => {
+const resolveApiKey = (provider: LlmProviderName, env: ProviderEnv): string | undefined => {
   switch (provider) {
     case "openai":
-      return requireString(env.OPENAI_API_KEY, "OPENAI_API_KEY");
+      return typeof env.OPENAI_API_KEY === "string" && env.OPENAI_API_KEY.trim()
+        ? env.OPENAI_API_KEY.trim()
+        : undefined;
     case "openai-compatible":
-      return requireString(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY, "OPENAI_COMPATIBLE_API_KEY");
+      return typeof (env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY) === "string"
+        && String(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY).trim()
+        ? String(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY).trim()
+        : undefined;
     case "gemini":
-      return requireString(env.GEMINI_API_KEY, "GEMINI_API_KEY");
+      return typeof env.GEMINI_API_KEY === "string" && env.GEMINI_API_KEY.trim()
+        ? env.GEMINI_API_KEY.trim()
+        : undefined;
     case "claude":
-      return requireString(env.ANTHROPIC_API_KEY, "ANTHROPIC_API_KEY");
+      return typeof env.ANTHROPIC_API_KEY === "string" && env.ANTHROPIC_API_KEY.trim()
+        ? env.ANTHROPIC_API_KEY.trim()
+        : undefined;
   }
 };
 
@@ -63,13 +72,15 @@ const resolveCapability = (
   provider: LlmProviderName,
   model: string,
   env: ProviderEnv,
-): LlmCapabilityConfig => ({
-  capability,
-  provider,
-  model,
-  apiKey: resolveApiKey(provider, env),
-  baseUrl: resolveBaseUrl(provider, env),
-});
+): LlmCapabilityDefault => {
+  const baseUrl = resolveBaseUrl(provider, env);
+  return {
+    capability,
+    provider,
+    model,
+    ...(baseUrl ? { baseUrl } : {}),
+  };
+};
 
 const resolveTextModel = (
   provider: LlmProviderName,
@@ -134,10 +145,10 @@ const hasRequiredProviderCredentials = (provider: LlmProviderName, env: Provider
 };
 
 const resolveSupplementalEmbeddingConfigs = (
-  primary: LlmCapabilityConfig,
+  primary: LlmCapabilityDefault,
   env: ProviderEnv,
-): LlmCapabilityConfig[] => {
-  const configs = new Map<LlmProviderName, LlmCapabilityConfig>();
+): LlmCapabilityDefault[] => {
+  const configs = new Map<LlmProviderName, LlmCapabilityDefault>();
   configs.set(primary.provider, primary);
 
   if (!configs.has("openai") && hasRequiredProviderCredentials("openai", env)) {
@@ -172,7 +183,9 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
   const rerankModel = resolveTextModel(rerankProvider, env.LLM_RERANK_MODEL, env.OPENAI_RERANK_MODEL ?? env.OPENAI_CHAT_MODEL);
   const rerank = resolveCapability("rerank", rerankProvider, rerankModel, env);
 
-  const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER") ?? DEFAULT_PROVIDER;
+  const defaultEmbeddingProvider = sharedProvider === "claude" ? DEFAULT_PROVIDER : sharedProvider;
+  const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER")
+    ?? defaultEmbeddingProvider;
   const embeddingModel = resolveEmbeddingModel(embeddingProvider, env.LLM_EMBEDDING_MODEL, env.OPENAI_VECTOR_MODEL);
   const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
   const embeddingProviderConfigs = resolveSupplementalEmbeddingConfigs(embeddings, env);
@@ -183,5 +196,11 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
     rerank,
     embeddings,
     embeddingProviderConfigs,
+    providerApiKeys: Object.fromEntries(
+      PROVIDERS.flatMap((provider) => {
+        const apiKey = resolveApiKey(provider, env);
+        return apiKey ? [[provider, apiKey]] : [];
+      }),
+    ),
   };
 };

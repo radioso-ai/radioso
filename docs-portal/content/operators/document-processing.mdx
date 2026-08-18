@@ -54,6 +54,7 @@ If metadata extraction is enabled for the run, the worker queues a separate, low
 - workspace ingestion settings control chunking strategy and chunk sizes.
 - `documentEnrichmentEnabled` controls the workspace default for metadata extraction. Source overrides and reprocess overrides can force extraction on or off for narrower runs.
 - `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
+- `WORKER_TASK_AUTH_TOKEN` authenticates every Cloud Tasks and recovery request at the worker application boundary; use the same value on dispatchers and workers and preserve `X-Radioso-Worker-Token` through any proxy.
 - `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
 
 Reprocessing can target a single document, a single source, or the whole workspace. Source reprocessing queues eligible documents for that source only and reports queued and skipped counts.

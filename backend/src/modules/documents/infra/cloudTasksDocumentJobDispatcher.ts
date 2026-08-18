@@ -1,6 +1,7 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { WORKER_TASK_AUTH_HEADER } from "../../../shared/infra/workerTaskAuth.js";
 import type { DocumentJobDispatchRequest, DocumentJobDispatcherPort } from "../services/documentJobDispatcher.js";
 
 const WORKER_TASK_PATH = "/internal/tasks/document-processing";
@@ -12,6 +13,7 @@ export interface CloudTasksDocumentJobDispatcherOptions {
   queueName: string;
   workerServiceUrl: string;
   invokerServiceAccountEmail: string;
+  workerTaskAuthToken: string;
   logger: AppLogger;
 }
 
@@ -47,6 +49,7 @@ export class CloudTasksDocumentJobDispatcher implements DocumentJobDispatcherPor
           url: this.targetUrl,
           headers: {
             "Content-Type": "application/json",
+            [WORKER_TASK_AUTH_HEADER]: this.options.workerTaskAuthToken,
           },
           body: toBase64Json({
             jobId: input.jobId,

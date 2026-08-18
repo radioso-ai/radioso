@@ -130,6 +130,15 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       env {
+        name = "WORKER_TASK_AUTH_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["worker-task-auth-token"].secret_id
+            version = "latest"
+          }
+        }
+      }
+      env {
         name  = "OPENAI_CHAT_MODEL"
         value = var.openai_chat_model
       }
@@ -549,6 +558,16 @@ resource "google_cloud_run_v2_service" "document_worker" {
 
       command = ["npm", "run", "start:worker-server"]
 
+      env {
+        name = "WORKER_TASK_AUTH_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["worker-task-auth-token"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
       resources {
         cpu_idle = true
       }
@@ -884,6 +903,16 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       image = var.backend_image
 
       command = ["npm", "run", "start:crawler-worker-server"]
+
+      env {
+        name = "WORKER_TASK_AUTH_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.secrets["worker-task-auth-token"].secret_id
+            version = "latest"
+          }
+        }
+      }
 
       resources {
         cpu_idle = true

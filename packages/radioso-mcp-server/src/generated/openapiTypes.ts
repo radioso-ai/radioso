@@ -3092,8 +3092,7 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
-            /** @enum {boolean} */
-            requiresEmailVerification: true;
+            requiresEmailVerification: boolean;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -6860,7 +6859,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Account created and verification required before sign-in */
+            /** @description Account created; email verification may be required before sign-in */
             201: {
                 headers: {
                     [name: string]: unknown;

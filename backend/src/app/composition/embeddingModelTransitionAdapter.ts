@@ -219,7 +219,7 @@ interface EmbeddingModelProbeRegistry {
     provider?: EmbeddingProviderImplementation,
     endpointScopeFingerprint?: string,
   ): {
-    probe(): Promise<unknown>;
+    probe(workspaceId?: string): Promise<unknown>;
   };
 }
 
@@ -252,7 +252,7 @@ implements FixedInputEmbeddingValidationPort {
           requireEmbeddingProvider(target.provider),
           target.endpointScopeFingerprint,
         )
-        .probe();
+        .probe(input.workspaceId);
     } catch (error) {
       throw new FixedInputEmbeddingValidationError(
         error instanceof EmbeddingVectorContractError

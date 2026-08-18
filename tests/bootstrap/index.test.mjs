@@ -4,7 +4,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { main } from "../../scripts/bootstrap/index.mjs";
+import { main, resolveGeneratedValues } from "../../scripts/bootstrap/index.mjs";
+
+test("bootstrap generates and preserves a strong worker task authentication token", () => {
+  const generated = resolveGeneratedValues({});
+  assert.ok(generated.WORKER_TASK_AUTH_TOKEN.length >= 32);
+
+  const existing = "existing-worker-token-with-at-least-32-characters";
+  assert.equal(
+    resolveGeneratedValues({ WORKER_TASK_AUTH_TOKEN: existing }).WORKER_TASK_AUTH_TOKEN,
+    existing,
+  );
+});
 
 test("main auto-completes a partial env file during non-interactive startup", async () => {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-bootstrap-main-"));
@@ -90,6 +101,7 @@ test("main auto-completes a partial env file during non-interactive startup", as
     assert.match(writes[0].source, /DOCUMENT_PROCESSING_JOB_LEASE_MS=300000/);
     assert.doesNotMatch(writes[0].source, /AUTH_SKIP_EMAIL_VERIFICATION=/);
     assert.match(writes[0].source, /PUBLIC_CHAT_SESSION_SECRET=existing-embed-secret/);
+    assert.match(writes[0].source, /WORKER_TASK_AUTH_TOKEN=[A-Za-z0-9+/=]{32,}/);
     assert.doesNotMatch(writes[0].source, /WEBSITE_EMBED_SECRET=/);
     assert.match(stdoutChunks.join(""), /Auto-completed \.env for non-interactive startup/);
   } finally {

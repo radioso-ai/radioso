@@ -88,6 +88,7 @@ const envSchema = z.object({
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   RADIOSO_MCP_SIGNING_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
+  AUTH_AUTO_VERIFY_EMAIL: booleanish(false),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
     z
       .string()
@@ -137,6 +138,7 @@ const envSchema = z.object({
   WORKER_TASKS_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_CRAWL_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: emptyStringToUndefined(z.string().email()),
+  WORKER_TASK_AUTH_TOKEN: emptyStringToUndefined(z.string().min(32)),
   WORKER_AMQP_URL: emptyStringToUndefined(z.string().url()),
   WORKER_AMQP_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_AMQP_CRAWL_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
@@ -248,6 +250,7 @@ const envSchema = z.object({
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT",
         "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT is required when WORKER_DISPATCH_DRIVER is cloud-tasks",
       ],
+      ["WORKER_TASK_AUTH_TOKEN", "WORKER_TASK_AUTH_TOKEN is required when WORKER_DISPATCH_DRIVER is cloud-tasks"],
     ] as const) {
       if (!value[field]) {
         ctx.addIssue({
@@ -295,6 +298,14 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK"],
       message: "WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK cannot be enabled in production",
+    });
+  }
+
+  if (value.NODE_ENV !== "development" && value.AUTH_AUTO_VERIFY_EMAIL) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AUTH_AUTO_VERIFY_EMAIL"],
+      message: "AUTH_AUTO_VERIFY_EMAIL can only be enabled when NODE_ENV is development",
     });
   }
 

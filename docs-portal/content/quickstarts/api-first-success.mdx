@@ -1,7 +1,7 @@
 ---
 title: API first success
 description: Reach first success with plain HTTP by registering, getting a token, uploading content, and asking an agent a grounded question.
-last_updated: 2026-08-07
+last_updated: 2026-08-17
 ---
 
 import { Steps } from 'nextra/components'
@@ -38,7 +38,7 @@ Register the first user on an empty open-source server, log in with an existing 
 
 ### Establish a session
 
-Registration sends a verification email but does not return a session cookie. Login and invitation acceptance establish a session.
+Production registration sends a verification email and does not return a session cookie. The documented development stack verifies new password registrations and returns a session immediately. Login and invitation acceptance also establish sessions.
 
 ### Reveal the workspace token
 
@@ -80,7 +80,7 @@ curl -sS \
   https://api.radioso.ai/api/v1/auth/register
 ```
 
-Registration returns bootstrap data such as `workspaceId`, sends a verification email, and does not establish a session. Verify the email address before logging in.
+Registration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. Production returns `true`, sends a verification email, and waits for verification before login. The development stack returns `false` and establishes the session in the registration response.
 
 If the user already exists, log in and save the session cookie:
 

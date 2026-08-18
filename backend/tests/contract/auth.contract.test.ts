@@ -79,7 +79,7 @@ describe("auth contract", () => {
   });
 
   it("registers a user, returns workspace bootstrap data, and requires email verification", async () => {
-    const { app } = createTestApp();
+    const { app, repositories } = createTestApp();
 
     const response = await request(app).post("/api/v1/auth/register").send({
       email: "alice@example.com",
@@ -102,6 +102,42 @@ describe("auth contract", () => {
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
     expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(repositories.auditEventRepository.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: "auth.register",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ verificationMode: "email_verification" }),
+      }),
+    ]));
+  });
+
+  it("auto-verifies new password registrations and creates a session in development", async () => {
+    const { app, repositories } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_AUTO_VERIFY_EMAIL: true,
+      },
+    });
+
+    const response = await request(app).post("/api/v1/auth/register").send({
+      email: "local-dev@example.com",
+      password: "verysecurepassword",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.requiresEmailVerification).toBe(false);
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_session=");
+    expect((await repositories.userRepository.findByEmail("local-dev@example.com"))?.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(repositories.auditEventRepository.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: "auth.register",
+        eventStatus: "success",
+        metadata: expect.objectContaining({ verificationMode: "development_auto_verify" }),
+      }),
+    ]));
+    expect(repositories.auditEventRepository.items).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ eventType: "auth.email_verification.resend" }),
+    ]));
   });
 
   it("returns a documented 429 envelope when additional organization creation is capped", async () => {

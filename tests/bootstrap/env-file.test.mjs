@@ -28,6 +28,15 @@ test("buildEnvValues preserves existing values unless overridden", () => {
   assert.equal(values.SESSION_COOKIE_SECRET, "generated");
   assert.equal(values.WORKSPACE_TOKEN_SECRET, "workspace-secret");
   assert.equal(values.PUBLIC_CHAT_SESSION_SECRET, "public-session-secret");
+  assert.equal(values.WORKER_TASK_AUTH_TOKEN, "");
+});
+
+test("renderEnvFile includes the worker task authentication token", () => {
+  const content = renderEnvFile({
+    WORKER_TASK_AUTH_TOKEN: "a".repeat(64),
+  });
+
+  assert.match(content, new RegExp(`WORKER_TASK_AUTH_TOKEN=${"a".repeat(64)}`));
 });
 
 test("env bootstrap includes default auth mail settings", () => {

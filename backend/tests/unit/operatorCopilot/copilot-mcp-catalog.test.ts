@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { enrichCopilotToolCatalog } from "../../../src/modules/operatorCopilot/catalog.js";
 import { buildCopilotDashboardLink } from "../../../src/modules/operatorCopilot/dashboardLinks.js";
 import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/public.js";
-import { createUs1CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createAgentConfigurationCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
 
 const context = (permissions: ReadonlySet<string>) => ({
   workspaceId: "workspace-1",
@@ -23,6 +23,7 @@ const descriptor = (describeEntity: NonNullable<CopilotToolDescriptor<{ name: st
   outputSchema: z.object({ value: z.string() }),
   requiredPermission: "workspace.agents.read",
   contributingModule: "agents",
+  dashboardSubject: { type: "agent" },
   describeEntity,
   createTool: () => ({
     name: "agent_configuration",
@@ -79,7 +80,7 @@ describe("MCP-compatible copilot catalog", () => {
   });
 
   it("lets the agent-owning descriptor resolve a name without ambient page context", async () => {
-    const [agentConfiguration] = createUs1CopilotTools({
+    const [agentConfiguration] = createAgentConfigurationCopilotTools({
       agentService: {
         listExisting: vi.fn(async () => [
           { id: "agent-1", name: "Support" },
@@ -87,9 +88,6 @@ describe("MCP-compatible copilot catalog", () => {
         ] as never),
         resolve: vi.fn(),
       },
-      routineDefinitionService: { list: vi.fn(), get: vi.fn() },
-      chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
-      documentSearchService: { search: vi.fn() },
     });
     const [tool] = enrichCopilotToolCatalog([agentConfiguration!], {
       resolveWorkspaceKey: async () => "acme",

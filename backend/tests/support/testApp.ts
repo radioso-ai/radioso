@@ -1685,8 +1685,15 @@ export const createTestDependencies = (overrides: {
     proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
     tools: createCopilotToolCatalog({
-      agentService,
-      routineDefinitionService,
+      agentService: {
+        get: agentService.get.bind(agentService),
+        listExisting: agentService.listExisting.bind(agentService),
+        resolve: agentService.resolve.bind(agentService),
+      },
+      routineDefinitionService: {
+        get: routineDefinitionService.get.bind(routineDefinitionService),
+        list: routineDefinitionService.list.bind(routineDefinitionService),
+      },
       chatHistoryService,
       documentSearchService,
       evalResultsService: evalCaseService,

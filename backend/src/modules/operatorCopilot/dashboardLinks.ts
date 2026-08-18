@@ -39,34 +39,3 @@ export const buildCopilotDashboardLink = (
       return `${base}/agents`;
   }
 };
-
-/** Collection routes still give terminal clients a usable dashboard handoff. */
-export const dashboardSubjectForCopilotTool = (toolName: string): CopilotEntityReference => {
-  switch (toolName) {
-    case "workspace_settings":
-      return { type: "workspace_settings" };
-    case "agent_configuration":
-    case "routine_definition":
-    case "agent_skills":
-      return { type: "agent" };
-    case "conversation_transcript":
-    case "turn_trace":
-    case "conversation_history_search":
-      return { type: "conversation" };
-    case "document_search":
-    case "document_status":
-      return { type: "document" };
-    case "eval_results":
-      return { type: "eval" };
-    case "quality_signals":
-      return { type: "quality_turn" };
-    case "audience_topics":
-      return { type: "audience_topics" };
-    case "propose_directive":
-    case "propose_routine":
-    case "propose_agent_setting":
-      return { type: "proposal" };
-    default:
-      return { type: "workspace" };
-  }
-};

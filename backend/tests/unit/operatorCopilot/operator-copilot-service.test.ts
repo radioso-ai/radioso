@@ -150,6 +150,7 @@ const tool = (name: string, requiredPermission: "workspace.agents.read" | "works
   outputSchema: z.object({ value: z.string() }),
   requiredPermission,
   contributingModule: "test",
+  dashboardSubject: { type: "workspace" },
   createTool: () => ({ name, description: "reader", inputSchema: z.object({}), outputSchema: z.object({ value: z.string() }), invoke }),
 });
 

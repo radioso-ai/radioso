@@ -15,6 +15,7 @@ const descriptor = (permission: CopilotToolDescriptor["requiredPermission"]): Co
   outputSchema: z.object({}),
   requiredPermission: permission,
   contributingModule: "test",
+  dashboardSubject: { type: "workspace" },
   createTool: () => ({
     name: "test",
     description: "test",

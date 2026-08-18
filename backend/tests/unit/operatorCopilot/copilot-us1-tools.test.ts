@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { validateAgentInput } from "../../../src/modules/agents/public.js";
 import { builtInAnswerDirectiveViews } from "../../../src/modules/directives/public.js";
-import { createUs1CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createAgentConfigurationCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/tools/chat.js";
+import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
+import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/public.js";
 
 const pageContext = (agentId: string | null) => ({
@@ -125,12 +128,12 @@ const dependencies = (routineDefinitions: RoutineDefinition[] = [
     getConversation,
     getConversationTurn,
     listConversations,
-    descriptors: createUs1CopilotTools({
-      agentService: { listExisting: listAgents, resolve: resolveAgent },
-      routineDefinitionService: { list: listRoutines, get: getRoutine },
-      chatHistoryService: { getConversation, getConversationTurn, listConversations },
-      documentSearchService: { search: vi.fn() },
-    }),
+    descriptors: [
+      ...createAgentConfigurationCopilotTools({ agentService: { listExisting: listAgents, resolve: resolveAgent } }),
+      ...createRoutineDefinitionCopilotTools({ agentLookup: { listExisting: listAgents }, routineDefinitionService: { list: listRoutines, get: getRoutine } }),
+      ...createChatCopilotTools({ chatHistoryService: { getConversation, getConversationTurn, listConversations } }),
+      ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
+    ],
   };
 };
 

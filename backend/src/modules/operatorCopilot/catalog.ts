@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { AccountPermission } from "../account/public.js";
 import type { CopilotToolDescriptor } from "./contracts.js";
 import type { CopilotEntityDescription, CopilotEntityReference, CopilotToolInvocationContext } from "./contracts.js";
-import { buildCopilotDashboardLink, dashboardSubjectForCopilotTool } from "./dashboardLinks.js";
+import { buildCopilotDashboardLink } from "./dashboardLinks.js";
 
 export const filterCopilotToolCatalog = (
   descriptors: ReadonlyArray<CopilotToolDescriptor>,
@@ -28,8 +28,8 @@ const resolvedDescription = (
   return { entity: description.entity, input: description.input, candidates: null };
 };
 
-const deniedResolution = (workspaceKey: string, toolName: string) => ({
-  dashboardUrl: buildCopilotDashboardLink(workspaceKey, dashboardSubjectForCopilotTool(toolName)),
+const deniedResolution = (workspaceKey: string, dashboardSubject: CopilotEntityReference) => ({
+  dashboardUrl: buildCopilotDashboardLink(workspaceKey, dashboardSubject),
   resolution: { status: "not_found" as const, candidates: [] },
 });
 
@@ -51,7 +51,7 @@ export const enrichCopilotToolCatalog = (
       invoke: async (input, agentContext) => {
         const workspaceKey = await deps.resolveWorkspaceKey(context.workspaceId);
         if (context.permissions && !context.permissions.has(descriptor.requiredPermission)) {
-          return deniedResolution(workspaceKey, descriptor.name);
+          return deniedResolution(workspaceKey, descriptor.dashboardSubject);
         }
 
         const description = descriptor.describeEntity
@@ -60,7 +60,7 @@ export const enrichCopilotToolCatalog = (
         const resolution = resolvedDescription(description, input);
         if (resolution.candidates) {
           return {
-            dashboardUrl: buildCopilotDashboardLink(workspaceKey, dashboardSubjectForCopilotTool(descriptor.name)),
+            dashboardUrl: buildCopilotDashboardLink(workspaceKey, descriptor.dashboardSubject),
             resolution: {
               status: "ambiguous" as const,
               candidates: resolution.candidates.map((candidate) => ({
@@ -79,7 +79,7 @@ export const enrichCopilotToolCatalog = (
           ...output,
           dashboardUrl: buildCopilotDashboardLink(
             workspaceKey,
-            resolution.entity ?? dashboardSubjectForCopilotTool(descriptor.name),
+            resolution.entity ?? descriptor.dashboardSubject,
           ),
         };
       },

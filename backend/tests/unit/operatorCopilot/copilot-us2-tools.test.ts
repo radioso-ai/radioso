@@ -4,7 +4,13 @@ vi.mock("../../../src/modules/routines/public.js", () => ({
   routineToPortableDocument: vi.fn(),
 }));
 
-import { createUs1CopilotTools, createUs2CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createAgentConfigurationCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createAudiencePulseCopilotTools } from "../../../src/modules/operatorCopilot/tools/audiencePulse.js";
+import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/tools/chat.js";
+import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
+import { createEvalCopilotTools } from "../../../src/modules/operatorCopilot/tools/eval.js";
+import { createQualityCopilotTools } from "../../../src/modules/operatorCopilot/tools/quality.js";
+import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -25,11 +31,11 @@ describe("US2 copilot readers", () => {
     const getQualityStats = vi.fn(async () => ({ backlog: { grounding_gaps: 1 } }));
     const listLowQualityTurns = vi.fn(async () => ({ items: [{ assistantMessageId: "message-1" }], total: 1 }));
     const read = vi.fn(async () => ({ kind: "completed" as const, report: { themes: [{ title: "Checkout questions" }] } }));
-    const descriptors = createUs2CopilotTools({
-      evalResultsService: { listWithLatestRun },
-      qualitySignalsService: { getQualityStats, listLowQualityTurns },
-      audiencePulseService: { read },
-    });
+    const descriptors = [
+      ...createEvalCopilotTools({ evalResultsService: { listWithLatestRun } }),
+      ...createQualityCopilotTools({ qualitySignalsService: { getQualityStats, listLowQualityTurns } }),
+      ...createAudiencePulseCopilotTools({ audiencePulseService: { read } }),
+    ];
 
     expect(descriptors.map(({ name, requiredPermission, shape }) => ({ name, requiredPermission, shape }))).toEqual([
       { name: "eval_results", requiredPermission: "workspace.retrieval.query", shape: "read" },
@@ -52,12 +58,13 @@ describe("US2 copilot readers", () => {
   });
 
   it("marks single-entity US1 reads and leaves searches unlinked", () => {
-    const descriptors = createUs1CopilotTools({
-      agentService: { listExisting: vi.fn(), resolve: vi.fn() },
-      routineDefinitionService: { list: vi.fn(), get: vi.fn() },
-      chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
-      documentSearchService: { search: vi.fn() },
-    });
+    const agentService = { listExisting: vi.fn(), resolve: vi.fn() };
+    const descriptors = [
+      ...createAgentConfigurationCopilotTools({ agentService }),
+      ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn() } }),
+      ...createChatCopilotTools({ chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() } }),
+      ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
+    ];
     const byName = new Map(descriptors.map((descriptor) => [descriptor.name, descriptor]));
 
     expect(byName.get("agent_configuration")?.describeEntity?.({}, context)).toEqual({ type: "agent", id: "agent-1" });

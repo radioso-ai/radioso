@@ -132,6 +132,8 @@ export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly outputSchema: ZodType<TOutput>;
   readonly requiredPermission: AccountPermission;
   readonly contributingModule: string;
+  /** Default dashboard handoff for this tool's collection or owning subject. */
+  readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
   describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityDescription<TInput> | null | Promise<CopilotEntityDescription<TInput> | null>;
 }

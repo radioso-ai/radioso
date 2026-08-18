@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createWorkspaceSettingsCopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createWorkspaceSettingsCopilotTools } from "../../../src/modules/operatorCopilot/tools/settings.js";
 
 const context = {
   workspaceId: "workspace-1",

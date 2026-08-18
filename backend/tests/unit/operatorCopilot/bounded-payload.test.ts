@@ -4,7 +4,7 @@ import {
   boundConversationPayload,
   boundTurnTracePayload,
   CONVERSATION_PAYLOAD_CHAR_BUDGET,
-} from "../../../src/modules/operatorCopilot/boundedPayload.js";
+} from "../../../src/modules/operatorCopilot/tools/chatPayloadBounds.js";
 
 describe("boundConversationPayload", () => {
   it("returns small payloads compacted but structurally intact", () => {

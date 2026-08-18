@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createUs4CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createAgentSkillsCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentSkills.js";
+import { createDocumentStatusCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 
 const context = {
   workspaceId: "workspace-1",
@@ -88,9 +89,8 @@ const agentSkillPorts = () => {
 const buildDescriptors = (
   documents = documentStatusPorts(),
   skills = agentSkillPorts(),
-) =>
-  createUs4CopilotTools({
-    agentService: { get: skills.get },
+) => [
+  ...createDocumentStatusCopilotTools({
     documentStatusService: {
       summarizeWorkspace: documents.summarizeWorkspace,
       listByStatuses: documents.listByStatuses,
@@ -98,9 +98,13 @@ const buildDescriptors = (
     documentSourceStatusService: {
       listByWorkspaceIdWithDocumentCounts: documents.listByWorkspaceIdWithDocumentCounts,
     },
+  }),
+  ...createAgentSkillsCopilotTools({
+    agentService: { get: skills.get },
     agentSkillsService: { list: skills.list },
     skillCapabilityRegistry: { list: skills.registryList },
-  });
+  }),
+];
 
 describe("US4 copilot readers", () => {
   it("declares the document status and agent skills readers with their required permissions", () => {

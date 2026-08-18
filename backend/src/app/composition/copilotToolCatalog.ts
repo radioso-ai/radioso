@@ -1,11 +1,6 @@
-import type { AgentService } from "../../modules/agents/public.js";
-import type { RoutineDefinitionService } from "../../modules/routines/public.js";
 import {
-  createUs1CopilotTools,
-  createUs2CopilotTools,
-  createUs3CopilotTools,
-  createUs4CopilotTools,
-  createWorkspaceSettingsCopilotTools,
+  createCopilotToolDescriptors,
+  type CopilotAgentPort,
   type CopilotAgentSkillsPort,
   type CopilotConversationHistoryPort,
   type CopilotDocumentSearchPort,
@@ -13,10 +8,11 @@ import {
   type CopilotDocumentStatusPort,
   type CopilotEvalResultsPort,
   type CopilotQualitySignalsPort,
+  type CopilotRoutineDefinitionPort,
   type CopilotSkillCapabilityTargetsPort,
   type CopilotAudiencePulsePort,
   type CopilotWorkspaceSettingsPort,
-} from "../../modules/operatorCopilot/tools.js";
+} from "../../modules/operatorCopilot/tools/index.js";
 import type {
   CopilotAgentSettingProposalAdapter,
   CopilotDirectiveProposalAdapter,
@@ -30,8 +26,8 @@ import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRep
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
 export const createCopilotToolCatalog = (deps: {
-  readonly agentService: Pick<AgentService, "get" | "listExisting" | "resolve">;
-  readonly routineDefinitionService: Pick<RoutineDefinitionService, "get" | "list">;
+  readonly agentService: CopilotAgentPort;
+  readonly routineDefinitionService: CopilotRoutineDefinitionPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
   readonly documentSearchService: CopilotDocumentSearchPort;
   readonly evalResultsService: CopilotEvalResultsPort;
@@ -46,13 +42,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly proposalAdapters: ReadonlyArray<CopilotDirectiveProposalAdapter | CopilotAgentSettingProposalAdapter | CopilotRoutineProposalAdapter>;
   readonly auditService: CopilotAuditPort;
   readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById">;
-}): ReadonlyArray<CopilotToolDescriptor> => enrichCopilotToolCatalog([
-  ...createUs1CopilotTools(deps),
-  ...createUs2CopilotTools(deps),
-  ...createUs4CopilotTools(deps),
-  ...createWorkspaceSettingsCopilotTools(deps),
-  ...createUs3CopilotTools(deps),
-], {
+}): ReadonlyArray<CopilotToolDescriptor> => enrichCopilotToolCatalog(createCopilotToolDescriptors(deps), {
   resolveWorkspaceKey: async (workspaceId) => {
     const workspace = await deps.workspaceRepository.findById(workspaceId);
     if (!workspace) throw new Error("Copilot workspace no longer exists");

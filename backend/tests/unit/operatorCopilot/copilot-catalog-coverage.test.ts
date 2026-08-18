@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { catalogCoverage } from "../../../src/modules/operatorCopilot/catalogCoverage.js";
+import { catalogCoverage } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
 
 describe("operator copilot catalog coverage", () => {

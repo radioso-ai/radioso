@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
+import { WORKER_TASK_AUTH_HEADER } from "../../src/shared/infra/workerTaskAuth.js";
+
+const workerTaskAuthToken = "0123456789abcdef0123456789abcdef";
 
 /** Shape asserted below; declared so `createTask.mock.calls[0]` is a typed tuple, not `[]`. */
 interface CreateTaskRequest {
@@ -30,6 +33,7 @@ describe("CloudTasksActionDrainDispatcher", () => {
       queueName: "radioso-conversation-actions",
       workerServiceUrl: "https://worker.example.com/",
       invokerServiceAccountEmail: "worker-task@radioso-prod.iam.gserviceaccount.com",
+      workerTaskAuthToken,
       logger: { info: vi.fn() } as never,
     });
 
@@ -48,7 +52,10 @@ describe("CloudTasksActionDrainDispatcher", () => {
     });
     // No row-specific payload — the push is a trigger, not a message; draining is
     // idempotent via the outbox's own claim/lease model.
-    expect(request.task.httpRequest.headers).toEqual({ "Content-Type": "application/json" });
+    expect(request.task.httpRequest.headers).toEqual({
+      "Content-Type": "application/json",
+      [WORKER_TASK_AUTH_HEADER]: workerTaskAuthToken,
+    });
   });
 
   it("does not throw when the underlying Cloud Tasks call rejects (best-effort push)", async () => {
@@ -61,6 +68,7 @@ describe("CloudTasksActionDrainDispatcher", () => {
       queueName: "radioso-conversation-actions",
       workerServiceUrl: "https://worker.example.com",
       invokerServiceAccountEmail: "worker-task@radioso-prod.iam.gserviceaccount.com",
+      workerTaskAuthToken,
       logger: { info: vi.fn(), warn: vi.fn() } as never,
     });
 

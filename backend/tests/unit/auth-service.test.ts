@@ -178,8 +178,9 @@ const createAuthService = (options: {
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   organizationCreationGuard?: OrganizationCreationGuard;
   organizationProvisioner?: OrganizationCoreProvisioner;
+  envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
 }) => {
-  const env = createTestEnv();
+  const env = { ...createTestEnv(), ...options.envOverrides };
   const auditService = createAuditService();
   const accountRepository = options.accountRepository ?? new TrackingAccountRepository();
   const userRepository = options.userRepository ?? new InMemoryUserRepository();
@@ -224,6 +225,27 @@ const createAuthService = (options: {
 };
 
 describe("AuthService rollback", () => {
+  it("rolls back an auto-verified registration when session creation fails", async () => {
+    const accountRepository = new TrackingAccountRepository();
+    const userRepository = new InMemoryUserRepository();
+    const { authService } = createAuthService({
+      accountRepository,
+      userRepository,
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_AUTO_VERIFY_EMAIL: true,
+      },
+    });
+
+    await expect(authService.register({
+      email: "rollback-auto-verify@example.com",
+      password: "verysecurepassword",
+    })).rejects.toThrow("session create failed");
+
+    expect(accountRepository.deletedIds).toEqual(["account-1"]);
+    expect(await userRepository.findByEmail("rollback-auto-verify@example.com")).toBeNull();
+  });
+
   it("deletes the newly created account and user if post-registration provisioning fails", async () => {
     const accountRepository = new TrackingAccountRepository();
     const userRepository = new InMemoryUserRepository();

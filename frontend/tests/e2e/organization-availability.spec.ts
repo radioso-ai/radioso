@@ -37,6 +37,76 @@ test('offers first-user registration when the server reports it available', asyn
 
   await page.getByRole('button', { name: 'Register' }).click()
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible()
+  await expect(page.getByText('Agents that answer, act, and hand off — inside the rules you set.', { exact: true })).toBeVisible()
+})
+
+test('enters the workspace directly after a development auto-verified registration', async ({ page }) => {
+  await page.route('**/backend/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/backend\/api\/v1/, '')
+    const method = route.request().method()
+
+    if (path === '/auth/registration') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true }) })
+      return
+    }
+    if (path === '/auth/register' && method === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          userId: '11111111-1111-4111-8111-111111111111',
+          accountId: '22222222-2222-4222-8222-222222222222',
+          organizationName: 'Local Dev Organization',
+          workspaceId: '33333333-3333-4333-8333-333333333333',
+          workspaceName: 'Default',
+          workspacePublicRouteKey: '1234567890',
+          requiresEmailVerification: false,
+        }),
+      })
+      return
+    }
+    if (path === '/workspace' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          workspaces: [{
+            id: '33333333-3333-4333-8333-333333333333',
+            accountId: '22222222-2222-4222-8222-222222222222',
+            name: 'Default',
+            publicRouteKey: '1234567890',
+            createdAt: '2026-08-17T00:00:00.000Z',
+            updatedAt: '2026-08-17T00:00:00.000Z',
+          }],
+        }),
+      })
+      return
+    }
+    if (path === '/agents' && method === 'GET') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ agents: [] }) })
+      return
+    }
+    if (path === '/ee/auth/google/status') {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ enabled: false }) })
+      return
+    }
+
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: { code: 'not_found', message: 'Not found' } }),
+    })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Register' }).click()
+  await page.getByLabel('Email').fill('local-dev@example.com')
+  await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
+  await page.getByLabel('Confirm Password').fill('verysecurepassword')
+  await page.getByRole('button', { name: 'Create Account' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Verify your email' })).toHaveCount(0)
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('radioso.authUser'))).toContain('local-dev@example.com')
 })
 
 test('shows invitation guidance without flashing registration when registration is closed', async ({ page }) => {

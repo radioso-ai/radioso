@@ -16,14 +16,7 @@ import { formatMessage, renderHeader } from "./terminal-theme.mjs";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const envPath = path.join(repoRoot, ".env");
 
-const generatedValues = () => ({
-  SESSION_COOKIE_SECRET: crypto.randomBytes(24).toString("base64"),
-  WORKSPACE_TOKEN_SECRET: crypto.randomBytes(24).toString("base64"),
-  PUBLIC_CHAT_SESSION_SECRET: crypto.randomBytes(24).toString("base64"),
-  CONNECTOR_ENCRYPTION_KEY: crypto.randomBytes(32).toString("base64"),
-});
-
-const resolveGeneratedValues = (existingValues) => ({
+export const resolveGeneratedValues = (existingValues) => ({
   SESSION_COOKIE_SECRET: existingValues.SESSION_COOKIE_SECRET || crypto.randomBytes(24).toString("base64"),
   WORKSPACE_TOKEN_SECRET: existingValues.WORKSPACE_TOKEN_SECRET || crypto.randomBytes(24).toString("base64"),
   PUBLIC_CHAT_SESSION_SECRET:
@@ -33,6 +26,9 @@ const resolveGeneratedValues = (existingValues) => ({
   CONNECTOR_ENCRYPTION_KEY:
     existingValues.CONNECTOR_ENCRYPTION_KEY ||
     existingValues.SECRETS_ENCRYPTION_KEY ||
+    crypto.randomBytes(32).toString("base64"),
+  WORKER_TASK_AUTH_TOKEN:
+    existingValues.WORKER_TASK_AUTH_TOKEN ||
     crypto.randomBytes(32).toString("base64"),
 });
 

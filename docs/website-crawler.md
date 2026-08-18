@@ -300,6 +300,8 @@ The Terraform configuration provisions two Cloud Run services:
 
 The dispatcher reads `WORKER_TASKS_CRAWL_SERVICE_URL` to know where website crawl Cloud Tasks pushes should land. When unset it falls back to `WORKER_TASKS_SERVICE_URL`, so a single-worker deployment still works. Terraform discovers the crawler worker URL automatically by referencing `google_cloud_run_v2_service.crawler_worker.uri` from the backend and document worker — no override variable is needed. The document worker URL still needs `worker_tasks_service_url_override` on the second apply because the document worker self-references its own URI for retry dispatch.
 
+Every `/internal/tasks/*` request also carries `X-Radioso-Worker-Token`. Set the same `WORKER_TASK_AUTH_TOKEN` value on the backend, document worker, and crawler worker; the included Terraform manages and injects it for Cloud Run and adds it to Cloud Scheduler recovery requests. Google OIDC remains enabled as the infrastructure-level check. A reverse proxy in front of a self-hosted task server must forward the custom header, and the token must be at least 32 characters.
+
 Scaling defaults are independent: `worker_min_instances` / `worker_max_instances` for the document worker, `crawler_worker_min_instances` / `crawler_worker_max_instances` for the crawler. In Cloud Tasks driven environments, both worker services use `min_instances = 0` and request-based CPU so they can scale to zero when idle. The task-server runtimes process explicit Cloud Tasks deliveries by job ID. They do not start the continuous database polling loops.
 
 Terraform also provisions Cloud Scheduler recovery jobs for both workers. Each recovery request performs a bounded `runOnce` pass over queued or stale jobs. Document recovery defaults to hourly (`document_worker_recovery_schedule = "0 * * * *"`). Crawler recovery defaults to daily (`crawler_worker_recovery_schedule = "0 3 * * *"`) because normal crawls are delivered through Cloud Tasks and the crawler is usually idle. This keeps missed-dispatch recovery available without using a frequent recovery request as a keepalive.
@@ -311,6 +313,8 @@ When upgrading from a single combined worker to the split topology, the order ma
 1. Deploy the new `crawler_worker` Cloud Run service (or `backend-crawler-worker` container).
 2. Apply Terraform / restart the backend so newly enqueued crawl Cloud Tasks land on the new worker URL via `WORKER_TASKS_CRAWL_SERVICE_URL`.
 3. Roll the document worker last.
+
+When adding worker-task authentication to an existing Cloud Tasks deployment, provision the shared token and update task/Scheduler senders before enabling guarded worker receivers. Tasks queued before the sender update do not contain the header; their durable PostgreSQL jobs remain available to the recovery sweep.
 
 In-flight Cloud Tasks pushes that were enqueued against the old combined worker URL will keep arriving at `/internal/tasks/website-crawl` on the **document worker** for a few minutes. The document worker responds `410 Gone` to that path so Cloud Tasks stops retrying immediately. Scheduled recovery in the crawler worker then reclaims those jobs on its next run. The 410 stub is a one-release compatibility shim and can be removed after the next release.
 

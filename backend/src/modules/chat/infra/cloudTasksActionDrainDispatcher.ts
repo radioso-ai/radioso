@@ -1,6 +1,7 @@
 import { CloudTasksClient } from "@google-cloud/tasks";
 
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import { WORKER_TASK_AUTH_HEADER } from "../../../shared/infra/workerTaskAuth.js";
 import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
 
 const ACTION_DRAIN_TASK_PATH = "/internal/tasks/actions/drain";
@@ -12,6 +13,7 @@ export interface CloudTasksActionDrainDispatcherOptions {
   queueName: string;
   workerServiceUrl: string;
   invokerServiceAccountEmail: string;
+  workerTaskAuthToken: string;
   logger: AppLogger;
 }
 
@@ -22,10 +24,8 @@ const normalizeUrl = (value: string): string => value.replace(/\/+$/, "");
  * `CloudTasksDocumentJobDispatcher` (documents module) exactly: same OIDC-token
  * shape (service account + URL audience), same queue/parent construction. The
  * task body carries no row-specific payload — see {@link ActionDrainDispatcherPort}.
- * Auth for the receiving endpoint is enforced entirely by Cloud Run IAM (only the
- * `worker_task_invoker` service account may invoke the worker task service); this
- * class supplies the OIDC token Cloud Run's platform-level check verifies, and adds
- * no application-level auth of its own — same as the document-processing dispatcher.
+ * Cloud Run IAM verifies the OIDC token while the worker service independently
+ * verifies the application-level worker task token.
  */
 export class CloudTasksActionDrainDispatcher implements ActionDrainDispatcherPort {
   private readonly client: CloudTasksClient;
@@ -47,6 +47,7 @@ export class CloudTasksActionDrainDispatcher implements ActionDrainDispatcherPor
           url: this.targetUrl,
           headers: {
             "Content-Type": "application/json",
+            [WORKER_TASK_AUTH_HEADER]: this.options.workerTaskAuthToken,
           },
           oidcToken: {
             serviceAccountEmail: this.options.invokerServiceAccountEmail,

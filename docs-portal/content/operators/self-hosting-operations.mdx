@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
 description: "Backup, restore, upgrade, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-08-07
+last_updated: 2026-08-17
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -21,6 +21,8 @@ For a small private deployment, the minimum baseline is:
 
 - run the backend, frontend, document worker, crawler worker, PostgreSQL, and document storage as separate services or containers
 - put the frontend and backend behind HTTPS
+- keep the default PostgreSQL host publication on `127.0.0.1`; use the private container network or a private database network for service access
+- give the backend and HTTP task workers the same `WORKER_TASK_AUTH_TOKEN`, and preserve `X-Radioso-Worker-Token` through any reverse proxy
 - keep `.env` and secret values outside source control
 - back up PostgreSQL and document storage every day
 - test restore before relying on the backup

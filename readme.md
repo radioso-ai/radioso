@@ -26,11 +26,11 @@ Control stays with you. Radioso is open source and runs in your cloud or on your
 ./run-dev.sh
 ```
 
-The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. On a new open-source installation, register the first user to create the server's organization and default workspace. Add a key if you skipped it, upload a document, and ask a question — the answer comes back cited to the document it came from. Then give the agent a Notify Human skill on its Skills tab, named `contact_human`, with a recipient email. Ask to speak to a person and the built-in contact routine takes over: it collects an email and a message, sends it to that recipient, and confirms. That is the shape of every agent here — answer, act, hand off. [Authoring routines](./docs/authoring-routines.md) covers building your own.
+The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. OpenAI, OpenAI-compatible, and Gemini use the same provider for text and embeddings; Claude setup asks which supported provider should create document embeddings. On a new open-source installation, register the first user to create the server's organization and default workspace. The development stack verifies that new account and signs it in automatically. Add a key if you skipped it, upload a document, and ask a question — the answer comes back cited to the document it came from. Then give the agent a Notify Human skill on its Skills tab, named `contact_human`, with a recipient email. Ask to speak to a person and the built-in contact routine takes over: it collects an email and a message, sends it to that recipient, and confirms. That is the shape of every agent here — answer, act, hand off. [Authoring routines](./docs/authoring-routines.md) covers building your own.
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
-By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on port 5432. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
+By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on `127.0.0.1:5432`. The database stays reachable from the local host and the Compose network without accepting connections on public host interfaces. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
 
 For Enterprise Edition development, run:
 
@@ -133,13 +133,13 @@ One naming note: the persona you configure is an **agent**; the chat surface you
 
 1. Run `./run-dev.sh`.
 2. Open `http://localhost:3000`.
-3. On a new installation, register the first user. Otherwise, sign in or accept an invitation.
+3. On a new installation, register the first user. The development stack verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation.
 4. If you skipped the provider key at startup, add one under Settings → Credentials. Chat and document processing both need a provider key.
 5. Let Radioso seed the starter documents for the workspace.
 6. Wait for document processing to finish.
 7. Ask one of the suggested questions in chat.
 
-On an empty open-source server, the first registration creates the server's organization and default workspace, then sends a verification email. After that, open registration closes: organization owners and admins invite later users into the existing organization. Enterprise Edition keeps open registration and additional organization creation. Registration does not create a session; verify the email address and then sign in. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
+On an empty open-source server, the first registration creates the server's organization and default workspace. `./run-dev.sh` enables development-only automatic verification, so a newly registered password user receives a session immediately and no verification message is sent. Production registration sends a verification email and creates no session until the address is verified. After the first open-source registration, organization owners and admins invite later users into the existing organization; Enterprise Edition keeps open registration and additional organization creation. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` for production transactional email delivery.
 
 The organization limit does not limit workspaces. Authorized users can create additional workspaces inside the existing organization in either edition.
 
@@ -164,7 +164,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-The response includes `workspaceId` and `workspacePublicRouteKey`, sends a verification email, and does not set a session cookie. Verify the email address, then log in to save a session cookie:
+The response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification`. In the development stack that flag is `false` and the response sets a session cookie. Production returns `true`, sends a verification email, and requires verification before login. When verification is required, log in after following the email link:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -364,7 +364,7 @@ Fused planning is standard behavior and requires no configuration.
 
 Document ingestion always creates a durable PostgreSQL processing job first. Worker dispatch controls how the API wakes worker services after that durable job exists.
 
-Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, and `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`.
+Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Scheduler send that shared secret in `X-Radioso-Worker-Token` alongside Google OIDC; proxies in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
 
 Broker-based deployments can use `WORKER_DISPATCH_DRIVER=amqp` with a RabbitMQ-compatible AMQP 0-9-1 broker:
 

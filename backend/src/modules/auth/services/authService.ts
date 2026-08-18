@@ -147,6 +147,7 @@ export class AuthService {
     workspaceId: string;
     workspaceName: string;
     workspacePublicRouteKey: string;
+    requiresEmailVerification: boolean;
     sessionCookie?: string;
   }> {
     const email = normalizeEmail(input.email);
@@ -161,6 +162,8 @@ export class AuthService {
     }
 
     const organizationName = input.organizationName?.trim() || deriveOrganizationName(email);
+    const autoVerifyEmail = this.dependencies.env.NODE_ENV === "development"
+      && this.dependencies.env.AUTH_AUTO_VERIFY_EMAIL;
     let core: OrganizationCoreProvisioningResult | null = null;
     try {
       core = await (organizationCreationReservation.coreProvisioner ?? this.dependencies.organizationProvisioner)
@@ -169,15 +172,21 @@ export class AuthService {
         organizationName,
         email,
         passwordHash,
-        emailVerifiedAt: null,
+        emailVerifiedAt: autoVerifyEmail ? new Date() : null,
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
+      const sessionCookie = autoVerifyEmail
+        ? await this.createSessionCookie(core.userId, core.account.id)
+        : undefined;
 
       await this.dependencies.auditService.record({
         accountId: core.account.id,
         eventType: "auth.register",
         eventStatus: "success",
-        metadata: { email },
+        metadata: {
+          email,
+          verificationMode: autoVerifyEmail ? "development_auto_verify" : "email_verification",
+        },
       });
       await organizationCreationReservation.commit({ accountId: core.account.id });
 
@@ -188,6 +197,8 @@ export class AuthService {
         workspaceId: core.workspace.id,
         workspaceName: core.workspace.name,
         workspacePublicRouteKey: core.workspace.publicRouteKey,
+        requiresEmailVerification: !autoVerifyEmail,
+        ...(sessionCookie ? { sessionCookie } : {}),
       };
     } catch (error) {
       try {

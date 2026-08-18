@@ -45,6 +45,55 @@ test("collectAnswers allows skipping an optional provider key", async () => {
   assert.equal(answers.OPENAI_API_KEY, "");
 });
 
+test("fresh setup persists Gemini as both the text and embedding provider", async () => {
+  const questions = planQuestions({});
+  const answers = await collectAnswers(questions, false, {
+    ask: async (question) => {
+      if (question.key === "LLM_PROVIDER") return "gemini";
+      if (question.key === "GEMINI_API_KEY") return "";
+      if (question.key === "DOCUMENT_STORAGE_DRIVER") return "local";
+      return question.defaultValue || "";
+    },
+  });
+
+  assert.equal(answers.LLM_PROVIDER, "gemini");
+  assert.equal(answers.LLM_EMBEDDING_PROVIDER, "gemini");
+  assert.ok(Object.hasOwn(answers, "GEMINI_API_KEY"));
+  assert.ok(!Object.hasOwn(answers, "OPENAI_API_KEY"));
+});
+
+test("Claude setup asks for a supported embedding provider and its optional credentials", async () => {
+  const questions = planQuestions({}, undefined, { reconfigure: true });
+  const asked = [];
+  const answers = await collectAnswers(questions, false, {
+    ask: async (question) => {
+      asked.push(question.key);
+      if (question.key === "LLM_PROVIDER") return "claude";
+      if (question.key === "LLM_EMBEDDING_PROVIDER") return "gemini";
+      if (question.key === "DOCUMENT_STORAGE_DRIVER") return "local";
+      return question.defaultValue || "";
+    },
+  });
+
+  assert.equal(answers.LLM_EMBEDDING_PROVIDER, "gemini");
+  assert.ok(asked.includes("ANTHROPIC_API_KEY"));
+  assert.ok(asked.includes("GEMINI_API_KEY"));
+  assert.ok(!asked.includes("OPENAI_API_KEY"));
+});
+
+test("reconfiguring OpenAI-compatible mirrors it for embeddings", async () => {
+  const questions = planQuestions({
+    LLM_PROVIDER: "openai-compatible",
+    OPENAI_COMPATIBLE_BASE_URL: "https://models.example/v1",
+  }, undefined, { reconfigure: true });
+  const answers = await collectAnswers(questions, false, {
+    ask: async (question) => question.defaultValue || "",
+  });
+
+  assert.equal(answers.LLM_PROVIDER, "openai-compatible");
+  assert.equal(answers.LLM_EMBEDDING_PROVIDER, "openai-compatible");
+});
+
 test("planQuestions defaults legacy bucket-only storage config to gcs", () => {
   const questions = planQuestions({
     LLM_PROVIDER: "openai",

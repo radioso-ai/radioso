@@ -114,8 +114,6 @@ components:
           type: string
         requiresEmailVerification:
           type: boolean
-          enum:
-            - true
       required:
         - userId
         - accountId
@@ -10405,7 +10403,7 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Account created and verification required before sign-in
+          description: Account created; email verification may be required before sign-in
           content:
             application/json:
               schema:

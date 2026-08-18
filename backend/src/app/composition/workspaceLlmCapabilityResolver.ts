@@ -1,5 +1,6 @@
 import type {
   LlmCapabilityConfig,
+  LlmCapabilityDefault,
   LlmCapabilityName,
   LlmProviderName,
   ResolvedLlmConfig,
@@ -53,16 +54,13 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     const resolvedProviderAndModel = await this.resolveProviderAndModel(capability, input);
     const { provider, model } = resolvedProviderAndModel;
 
-    if (provider === envDefault.provider && model === envDefault.model) {
-      const overrideKey = await this.deps.credentials.getApiKey(input.workspaceId, provider);
-      if (overrideKey) {
-        return { ...envDefault, apiKey: overrideKey };
-      }
-      return envDefault;
-    }
-
     const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
-    const baseUrl = this.resolveBaseUrl(provider, capability, envDefault);
+    const baseUrl = this.resolveBaseUrl(
+      provider,
+      capability,
+      envDefault,
+      input.capabilityOverride?.baseUrl,
+    );
 
     return {
       capability,
@@ -122,14 +120,15 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   private resolveBaseUrl(
     provider: LlmProviderName,
     capability: LlmCapabilityName,
-    envDefault: LlmCapabilityConfig,
+    envDefault: LlmCapabilityDefault,
+    overrideBaseUrl?: string,
   ): string | undefined {
     if (provider !== "openai-compatible") {
       return undefined;
     }
     const inheritedBaseUrl = provider === envDefault.provider ? envDefault.baseUrl : undefined;
     const envBaseUrl = this.deps.envBaseUrls?.[provider];
-    const baseUrl = inheritedBaseUrl ?? envBaseUrl;
+    const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? envBaseUrl;
     if (!baseUrl) {
       throw new ProviderConfigurationError(
         "openai-compatible requires OPENAI_COMPATIBLE_BASE_URL to be configured; selecting this provider for a workspace without a base URL would silently call the default OpenAI endpoint.",

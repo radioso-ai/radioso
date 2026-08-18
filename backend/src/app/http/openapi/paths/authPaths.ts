@@ -44,7 +44,7 @@ export const registerAuthPaths = (
     },
     responses: {
       201: {
-        description: "Account created and verification required before sign-in",
+        description: "Account created; email verification may be required before sign-in",
         content: {
           "application/json": {
             schema: schemas.RegisterResponseSchema,

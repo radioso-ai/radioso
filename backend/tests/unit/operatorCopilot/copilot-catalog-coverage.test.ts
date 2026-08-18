@@ -9,7 +9,7 @@ describe("operator copilot catalog coverage", () => {
   // Ratchet: this may only ever decrease as tools land. It went 131 -> 133 once, when ingestion
   // settings were reclassified from a permanent exclusion to Wave 3 planned work — an honest
   // increase in the backlog, not deferred scope creep.
-  const maxDeferredCatalogExclusions = 133;
+  const maxDeferredCatalogExclusions = 128;
 
   it("maps agent and routine discovery operations to the completed family readers", () => {
     expect(catalogCoverage).toMatchObject({
@@ -24,6 +24,17 @@ describe("operator copilot catalog coverage", () => {
       getHistoryConversation: "conversation_transcript",
       tailHistoryConversation: "conversation_transcript",
       getLegacyHistoryConversation: "conversation_transcript",
+    });
+  });
+
+  it("maps safe workspace settings reads to the workspace settings reader", () => {
+    expect(catalogCoverage).toMatchObject({
+      getPlatformSettings: "workspace_settings",
+      getSettingsRetrievalDefaults: "workspace_settings",
+      getIngestionSettings: "workspace_settings",
+      getGeneralSettings: "workspace_settings",
+      listWorkspaceProviderCredentials: "workspace_settings",
+      getWorkspaceLlmModels: "workspace_settings",
     });
   });
 

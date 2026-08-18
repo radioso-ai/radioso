@@ -360,6 +360,32 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentSourceStatusService: repositories.documentSourceRepository,
       agentSkillsService,
       skillCapabilityRegistry,
+      workspaceSettings: {
+        async getRetrievalDefaults(workspaceId) {
+          return retrievalDefaultsProvider.getDefaults(workspaceId);
+        },
+        async getIngestionSettings(workspaceId) {
+          return settings.ingestionSettingsService.getForWorkspace(workspaceId);
+        },
+        async listLlmModels(workspaceId) {
+          return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+        },
+        async getProviderCredentialHealth(workspaceId) {
+          return {
+            encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
+            credentials: await workspaceProviderCredentialsService.listConfigured(workspaceId),
+            envProviderAvailability: {
+              openai: Boolean(env.OPENAI_API_KEY),
+              "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
+              gemini: Boolean(env.GEMINI_API_KEY),
+              claude: Boolean(env.ANTHROPIC_API_KEY),
+            },
+          };
+        },
+        async getGeneralSettings(workspaceId) {
+          return platformSettingsService.getForWorkspace(workspaceId);
+        },
+      },
       proposalRepository: repositories.copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService: infrastructure.auditService,

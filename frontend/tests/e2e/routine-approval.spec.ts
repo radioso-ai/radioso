@@ -17,7 +17,7 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
 
@@ -77,7 +77,7 @@ test("author an approval gate in the Form editor, save, and reload", async ({ pa
   await expect(page.getByLabel("Step 1 option 2 label")).toHaveValue("Deny");
 });
 
-test("author an approval gate in the Prose editor, save, and reload without Form fallback", async ({ page }) => {
+test("author an approval gate in the Document editor, save, and publish", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
   await seedDashboardStorage(page);
@@ -85,106 +85,56 @@ test("author an approval gate in the Prose editor, save, and reload without Form
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
-
   await page.getByLabel("Name", { exact: true }).fill("Refund approval");
-  await page.getByLabel("Activation trigger", { exact: true }).fill("A refund over the limit needs a manager.");
 
-  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
-  await editor.click();
-  await editor.pressSequentially("Summarize the refund and get a manager decision. ");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(documentEditor).toBeVisible();
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("A refund over the limit needs a manager.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  // Insert a self-contained approval chip: capture key + option→target table. The dialog
-  // seeds Approve + Decline; point each at a branch (and rename the second to Deny).
-  await page.getByRole("button", { name: "More", exact: true }).click();
+  // Adding an approval step synthesizes one decision edge per option; the instruction editor
+  // opens because the new step has no question yet.
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Approval" }).click();
-  await page.getByLabel("Decision name").fill("refund_decision");
-  await page.getByLabel("Option 1 label").fill("Approve");
-  await page.getByLabel("Option 1 target").selectOption({ label: "End (complete)" });
-  await page.getByLabel("Option 2 label").fill("Deny");
-  await page.getByLabel("Option 2 target").selectOption({ label: "Handoff" });
-  await page.getByRole("button", { name: "Save approval" }).click();
+  await documentEditor.getByRole("button", { name: "Approval", exact: true }).click();
+  const question = documentEditor.getByLabel("Step 1 instruction");
+  await question.click();
+  await question.pressSequentially("Summarize the refund and get a manager decision.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  // The gate renders as conditional prose, not an opaque badge: each choice and where it
-  // routes is visible inline.
-  const chip = page.locator('[data-routine-chip="approval"]');
-  await expect(chip).toBeVisible();
-  await expect(chip).toContainText("refund_decision");
-  await expect(chip).toContainText("if Approve then End");
-  await expect(chip).toContainText("if Deny then Handoff");
+  // Each option's edge reads as an ordinary rule row; route the decline edge to a hand-off.
+  const approvalStep = documentEditor.getByRole("button", { name: "Approval", exact: true }).locator("xpath=ancestor::li[1]");
+  await expect(approvalStep.getByText("A person chooses:")).toBeVisible();
+  await expect(approvalStep.getByText("decision.id is approve")).toBeVisible();
+  await approvalStep.getByRole("button", { name: "Rule", exact: true }).nth(1).click();
+  await approvalStep.getByRole("button", { name: "New hand-off" }).click();
+  await approvalStep.getByLabel("Ending message").fill("A manager will take over.");
+  await approvalStep.getByRole("button", { name: "Done", exact: true }).click();
 
-  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 
   const created = routineUpdates.find((update) => update.method === "POST");
   const body = created?.body as RoutineFixture | undefined;
-  const approvalStep = body?.steps.find((step) => step.kind === "approval");
-  expect(approvalStep).toMatchObject({
-    captureKey: "refund_decision",
-    options: [{ id: "approve", label: "Approve" }, { id: "deny", label: "Deny" }],
+  const approval = body?.steps.find((step) => step.kind === "approval");
+  expect(approval).toMatchObject({
+    captureKey: "decision",
+    options: [{ id: "approve", label: "Approve" }, { id: "decline", label: "Decline" }],
   });
   const edges = (body?.transitions ?? []).filter((transition) => transition.guardKind === "field");
   expect(edges).toEqual(expect.arrayContaining([
-    expect.objectContaining({ toRef: "done", fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "approve" }),
-    expect.objectContaining({ toRef: "handoff", fieldRef: "refund_decision.id", fieldOp: "equals", fieldValue: "deny" }),
+    expect.objectContaining({ fieldRef: "decision.id", fieldOp: "equals", fieldValue: "approve" }),
+    expect.objectContaining({ fieldRef: "decision.id", fieldOp: "equals", fieldValue: "decline" }),
   ]));
 
-  // Reload: the approval round-trips back into Prose as the inline decision model — a small
-  // `decision` declaration chip plus one editable branch line per choice (no Form fallback,
-  // and no opaque block chip).
-  await page.getByRole("button", { name: "Back to routines" }).click();
-  await page.getByRole("button", { name: "Edit draft Refund approval" }).click();
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
-  const decisionChip = page.locator('[data-routine-chip="decision"]');
-  await expect(decisionChip).toBeVisible();
-  await expect(decisionChip).toContainText("refund_decision");
-  await expect(decisionChip).toContainText("Approve");
-  await expect(decisionChip).toContainText("Deny");
-  // The branches are ordinary inline condition + target chips now.
-  await expect(editor.locator('[data-routine-chip="condition"]').first()).toBeVisible();
-  await expect(editor.locator('[data-routine-chip="handoff"]')).toBeVisible();
-});
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible();
 
-test("author an approval gate by typing the rules in the Prose editor (no buttons)", async ({ page }) => {
-  const routineUpdates: RoutineMutationFixture[] = [];
-
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { routineUpdates });
-
-  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
-  await page.getByRole("button", { name: "New routine" }).click();
-  await page.getByLabel("Name", { exact: true }).fill("Typed approval");
-  await page.getByLabel("Activation trigger", { exact: true }).fill("A refund needs a manager.");
-
-  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
-  await editor.click();
-
-  // Declare the gate by typing @decision — no toolbar button.
-  await editor.pressSequentially("Get a manager decision. ");
-  await editor.pressSequentially("@decision");
-  await page.getByRole("option", { name: "Decision (a person chooses)" }).click();
-
-  // Type the rules as branch lines: "if decision is Approve → End", "if decision is Deny → Handoff".
-  await page.keyboard.press("Enter");
-  await editor.pressSequentially("@approve");
-  await page.getByRole("option", { name: "If decision is Approve" }).click();
-  await editor.pressSequentially("@end");
-  await page.getByRole("option", { name: "End (complete the routine)" }).click();
-
-  await page.keyboard.press("Enter");
-  await editor.pressSequentially("@deny");
-  await page.getByRole("option", { name: "If decision is Deny" }).click();
-  await editor.pressSequentially("@handoff");
-  await page.getByRole("option", { name: "Handoff (escalate to a person)" }).click();
-
-  await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
-  await expect.poll(() => routineUpdates.filter((update) => update.method === "POST").length, { timeout: 15_000 }).toBeGreaterThan(0);
-
-  const body = routineUpdates.find((update) => update.method === "POST")?.body as RoutineFixture | undefined;
-  const approvalStep = body?.steps.find((step) => step.kind === "approval");
-  expect(approvalStep).toMatchObject({ captureKey: "decision", options: [{ id: "approve" }, { id: "deny" }] });
-  const edges = (body?.transitions ?? []).filter((transition) => transition.guardKind === "field");
-  expect(edges).toEqual(expect.arrayContaining([
-    expect.objectContaining({ toRef: "done", fieldRef: "decision.id", fieldOp: "equals", fieldValue: "approve" }),
-    expect.objectContaining({ toRef: "handoff", fieldRef: "decision.id", fieldOp: "equals", fieldValue: "deny" }),
-  ]));
+  // The locked reader shows the question, the choices, and where each decision routes.
+  const reader = page.getByRole("article", { name: "Routine document" });
+  await expect(reader).toContainText("Summarize the refund and get a manager decision.");
+  await expect(reader).toContainText("A person chooses:");
+  await expect(reader).toContainText("decision.id is approve");
+  await expect(reader).toContainText("A manager will take over.");
 });

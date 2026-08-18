@@ -13,6 +13,9 @@ const nextId = (prefix: string, ids: Iterable<string>) => {
   return `${prefix}_${index}`
 }
 
+export const nextApprovalOptionId = (options: ApprovalDocOption[]): string =>
+  nextId('option', options.map((option) => option.id))
+
 export const createDocumentStep = (kind: RoutineStepKind, existing: RoutineBlockStep[]): RoutineBlockStep => {
   const stableStepId = nextId('step', existing.map((step) => step.stableStepId))
   return {
@@ -190,7 +193,7 @@ export const renameSlot = (doc: RoutineBlockDoc, stableSlotId: string, key: stri
   if (!previous || !key.trim()) return copy(doc)
   const nextKey = slugifyVariableKey(key)
   const next = copy(doc)
-  next.information = next.information.map((slot) => slot.stableSlotId === stableSlotId ? { ...slot, key: nextKey, stableSlotId: nextKey } : slot)
+  next.information = next.information.map((slot) => slot.stableSlotId === stableSlotId ? { ...slot, key: nextKey } : slot)
   next.steps = next.steps.map((step) => ({
     ...step,
     instruction: replaceSlotReferences(step.instruction, previous.key, nextKey),

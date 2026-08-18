@@ -8,6 +8,7 @@ import {
   changeBranchGuardKind,
   createEndingForBranch,
   moveStep,
+  nextApprovalOptionId,
   referenceEnding,
   removeBranch,
   removeStep,
@@ -122,6 +123,7 @@ describe('routine document edits', () => {
       outputAssignments: { normalized_email: 'email' },
     })
     const renamed = renameSlot(withBindings, 'email', 'Customer email')
+    expect(renamed.information[0]!.stableSlotId).toBe('email')
     expect(renamed.information[0]!.key).toBe('customer_email')
     expect(renamed.steps[0]!.instruction).toContainEqual({ kind: 'slotReference', key: 'customer_email', source: '{{slot.customer_email}}' })
     expect(renamed.steps[0]!.inputBindings?.recipient).toEqual({ kind: 'variableRef', ref: 'customer_email' })
@@ -199,6 +201,16 @@ describe('routine document edits', () => {
     })
     const form = routineToForm(draftAsRoutine(draft))
     expect(form.steps.find((step) => step.stableStepId === 'step_3')?.transitions.map((transition) => transition.guardKind)).toEqual(['field', 'llm'])
+  })
+
+  it('allocates approval option ids without colliding after deletion', () => {
+    const options = [
+      { id: 'approve', label: 'Approve', description: null },
+      { id: 'option_3', label: 'Later', description: null },
+    ]
+
+    expect(nextApprovalOptionId(options)).toBe('option_1')
+    expect(nextApprovalOptionId([...options, { id: 'option_1', label: 'First', description: null }])).toBe('option_2')
   })
 })
 

@@ -1,14 +1,15 @@
 ---
 title: "Portable Routine Markdown"
 description: "The normative markdown format for deterministic routine authoring and API round trips."
-last_updated: 2026-07-14
+last_updated: 2026-08-18
 ---
 
 # Portable Routine Markdown
 
-Portable routine markdown is the deterministic text form for a routine definition.
-The parser in `@radioso/routine-markdown` is the contract. The dashboard prose
-editor and the portable routine API use the same parser and serializer.
+Portable routine markdown is the deterministic interchange format for a routine
+definition. The parser in `@radioso/routine-markdown` is the contract. Dashboard
+exports and imports, portable routine endpoints, and portable agent packages use
+the same parser and serializer.
 
 This is not the `draft-assist` prose feature. Portable markdown is parsed without
 an LLM call.

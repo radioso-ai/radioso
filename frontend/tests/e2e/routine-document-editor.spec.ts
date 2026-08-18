@@ -29,8 +29,6 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await page.getByRole("button", { name: "New routine" }).click();
 
   await page.getByLabel("Name", { exact: true }).fill("Check order eligibility");
-  await page.getByLabel("Activation trigger", { exact: true }).fill("When a customer asks whether an order is eligible.");
-  await page.getByRole("tab", { name: "Document" }).click();
 
   const documentEditor = page.getByRole("article", { name: "Routine document editor" });
   await expect(documentEditor).toBeVisible();

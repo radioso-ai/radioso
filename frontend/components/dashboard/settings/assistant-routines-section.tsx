@@ -19,7 +19,6 @@ import {
   RotateCcw,
   Route,
   Send,
-  Sparkles,
   Trash2,
   WandSparkles,
 } from 'lucide-react'
@@ -29,7 +28,6 @@ import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-e
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
-import { RoutineProseTab } from '@/components/dashboard/settings/routine-prose-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
@@ -85,11 +83,11 @@ import {
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import { createEmptyRoutineProseDraft, routineToChipDoc } from '@/lib/routine-prose'
+import { routineToBlockDoc } from '@/lib/routine-prose'
 
 // A blank routine for the Form tab: one empty step the author fills in, no transitions
-// yet, and a single complete terminal. The Prose tab starts from the steps-stripped
-// variant (an empty document) so the editor shows its placeholder.
+// yet, and a single complete terminal. The Document tab replaces the seed step when the
+// author adds their first real one.
 const emptyRoutineDraft = (): RoutineDefinitionDraft => ({
   name: '',
   activation: { triggerDescription: '', gateRef: null, priority: 0 },
@@ -159,6 +157,18 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
   return null
 }
 
+// The projection takes authoring drafts; a persisted definition carries extra identity
+// fields the strict editing schema rejects, so pick the draft subset before projecting.
+const definitionToDraft = (routine: RoutineDefinition): RoutineDefinitionDraft => ({
+  name: routine.name,
+  activation: routine.activation,
+  slots: routine.slots,
+  steps: routine.steps,
+  transitions: routine.transitions,
+  terminals: routine.terminals,
+  ...(routine.completionExport ? { completionExport: routine.completionExport } : {}),
+})
+
 const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefinition | null): RoutineDefinition => ({
   ...draft,
   id: routine?.id ?? 'local-draft',
@@ -179,23 +189,44 @@ const headerFromDraft = (draft: RoutineDefinitionDraft | RoutineDefinition | Rou
   },
 })
 
-const emptyProseDraftFromHeader = (header: RoutineDraftHeader): RoutineDefinitionDraft =>
-  createEmptyRoutineProseDraft({
-    name: header.name,
-    triggerDescription: header.activation.triggerDescription,
+const draftWithHeader = (draft: RoutineDefinitionDraft, header: RoutineDraftHeader): RoutineDefinitionDraft => ({
+  ...draft,
+  name: header.name.trim(),
+  activation: {
+    ...draft.activation,
+    triggerDescription: header.activation.triggerDescription.trim(),
     priority: Number.parseInt(header.activation.priority, 10) || 0,
     reentryMode: header.activation.reentryMode,
-  })
+  },
+})
 
-const isBlankFormDraft = (draft: RoutineDefinitionDraft): boolean =>
-  draft.slots.length === 0 &&
-  draft.steps.length === 1 &&
-  draft.transitions.length === 0 &&
-  !draft.completionExport?.enabled &&
-  draft.steps[0]?.kind === 'chat' &&
-  !draft.steps[0]?.instruction.trim() &&
-  !draft.steps[0]?.toolRef &&
-  !draft.steps[0]?.actionType
+const mergeDocumentHeaderChange = (
+  nextDraft: RoutineDefinitionDraft,
+  previousDraft: RoutineDefinitionDraft | null,
+  currentHeader: RoutineDraftHeader,
+): RoutineDefinitionDraft => {
+  // Before the first emit the document was seeded from the current header state, so the
+  // header itself is the baseline; using the emitted draft as its own baseline would make
+  // the first edit undetectable and revert it.
+  const previousHeader = previousDraft ? headerFromDraft(previousDraft) : currentHeader
+  const nextHeader = headerFromDraft(nextDraft)
+  return draftWithHeader(nextDraft, {
+    // The document has no name editor, so the header always owns the name; comparing the
+    // doc-emitted name would wipe a typed name with the seed's empty string.
+    name: currentHeader.name,
+    activation: {
+      triggerDescription: nextHeader.activation.triggerDescription !== previousHeader.activation.triggerDescription
+        ? nextHeader.activation.triggerDescription
+        : currentHeader.activation.triggerDescription,
+      priority: nextHeader.activation.priority !== previousHeader.activation.priority
+        ? nextHeader.activation.priority
+        : currentHeader.activation.priority,
+      reentryMode: nextHeader.activation.reentryMode !== previousHeader.activation.reentryMode
+        ? nextHeader.activation.reentryMode
+        : currentHeader.activation.reentryMode,
+    },
+  })
+}
 
 const routineStatusLabel = (status: RoutineDefinition['status']) => {
   switch (status) {
@@ -229,7 +260,7 @@ const currentBrowserUrlMatches = (href: string) => {
 type NewRoutineRecovery = {
   draft: RoutineDefinitionDraft
   header: RoutineDraftHeader
-  viewMode: 'prose' | 'document' | 'form'
+  viewMode: 'document' | 'form'
 }
 
 const newRoutineRecoveryKey = (agentId: string) => `radioso:routine-new-draft:${agentId}`
@@ -240,11 +271,13 @@ const readNewRoutineRecovery = (agentId: string): NewRoutineRecovery | null => {
   if (!value) return null
   try {
     const parsed = JSON.parse(value) as Partial<NewRoutineRecovery>
-    if (!parsed.draft || !parsed.header || (parsed.viewMode !== 'prose' && parsed.viewMode !== 'document' && parsed.viewMode !== 'form')) return null
+    if (!parsed.draft || !parsed.header) return null
+    // Recoveries written before the Prose tab retired map onto the Document view.
+    const viewMode = parsed.viewMode === 'form' ? 'form' : 'document'
     return {
       draft: parsed.draft,
       header: parsed.header,
-      viewMode: parsed.viewMode,
+      viewMode,
     }
   } catch {
     return null
@@ -527,18 +560,17 @@ function RoutineEditorScreen({
   const [editingRoutine, setEditingRoutine] = useState<RoutineDefinition | null>(null)
   const [allRoutines, setAllRoutines] = useState<RoutineDefinition[]>([])
   const [form, setForm] = useState<RoutineFormState | null>(null)
-  const [proseSource, setProseSource] = useState<RoutineDefinitionDraft | null>(null)
-  const [proseDraft, setProseDraft] = useState<RoutineDefinitionDraft | null>(null)
   // The Document tab owns a block document locally, then projects each edit back through
   // draftFromBlockDoc. Keeping that projection here makes save/validate/publish use the
-  // same shared draft path as the Form and Prose tabs.
+  // same shared draft path as the Form tab.
   const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
-  const [proseKey, setProseKey] = useState(0)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
-  const [viewMode, setViewMode] = useState<'prose' | 'document' | 'form'>('prose')
+  const [viewMode, setViewMode] = useState<'document' | 'form'>('document')
+  // The Document editor owns its state while mounted; flows that replace the whole draft
+  // in place (draft assist) bump this nonce so the editor remounts on the new draft.
+  const [documentSessionNonce, setDocumentSessionNonce] = useState(0)
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
-  const [proseLocalValidationError, setProseLocalValidationError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
   const [isDraftingRoutine, setIsDraftingRoutine] = useState(false)
@@ -598,29 +630,20 @@ function RoutineEditorScreen({
     [versionHistory],
   )
   const activeRoutineDraft = useMemo(() => {
-    if (viewMode === 'prose' && proseDraft) return proseDraft
-    if (viewMode === 'document' && documentDraft) return documentDraft
+    if (viewMode === 'document' && documentDraft) return draftWithHeader(documentDraft, draftHeader)
     return form ? formToRoutineDraft(form, { header: draftHeader }) : null
-  }, [documentDraft, draftHeader, form, proseDraft, viewMode])
+  }, [documentDraft, draftHeader, form, viewMode])
   const activeRoutineDraftSignature = useMemo(
     () => activeRoutineDraft ? JSON.stringify(activeRoutineDraft) : null,
     [activeRoutineDraft],
   )
   const activeRoutineDraftError = useMemo(
     () => {
-      if (viewMode === 'prose') {
-        if (!draftHeader.name.trim()) return 'Name is required.'
-        if (!draftHeader.activation.triggerDescription.trim()) return 'Activation trigger is required.'
-        if (proseLocalValidationError) return proseLocalValidationError
-      }
       return activeRoutineDraft ? draftError(activeRoutineDraft) : 'Routine draft is not ready.'
     },
-    [activeRoutineDraft, draftHeader.activation.triggerDescription, draftHeader.name, proseLocalValidationError, viewMode],
+    [activeRoutineDraft],
   )
-  const nameLocalValidationError = viewMode === 'prose' && !draftHeader.name.trim() ? 'Name is required.' : null
-  const triggerLocalValidationError = viewMode === 'prose' && draftHeader.name.trim() && !draftHeader.activation.triggerDescription.trim()
-    ? 'Activation trigger is required.'
-    : null
+  const nameLocalValidationError = !draftHeader.name.trim() ? 'Name is required.' : null
   const isValidationCurrent = Boolean(activeRoutineDraftSignature && validatedDraftSignature === activeRoutineDraftSignature)
   const validationStatus = activeRoutineDraftError || (isValidationCurrent && validation && !validation.ok)
     ? 'invalid'
@@ -632,7 +655,7 @@ function RoutineEditorScreen({
     () => isValidationCurrent ? validation?.diagnostics ?? [] : [],
     [isValidationCurrent, validation?.diagnostics],
   )
-  // The Form editor anchors a diagnostic list against each artifact it renders; the prose
+  // The Form editor anchors a diagnostic list against each artifact it renders; the Document
   // editor renders none of them. Whatever is left over — a genuinely routine-scoped
   // diagnostic, one naming an artifact this view does not show, or one in a location form
   // the editor has no site for — surfaces here, so no diagnostic can block publish while
@@ -705,7 +728,6 @@ function RoutineEditorScreen({
 
       setValidation(null)
       setValidatedDraftSignature(null)
-      setProseLocalValidationError(null)
       setError(null)
 
       if (routineRouteId === 'new') {
@@ -725,12 +747,8 @@ function RoutineEditorScreen({
         setAllRoutines([])
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
-        setProseSource(isBlankFormDraft(nextDraft) ? emptyProseDraftFromHeader(nextHeader) : nextDraft)
-        setProseDraft(null)
         setDocumentDraft(null)
-        setProseLocalValidationError(null)
-        setProseKey((key) => key + 1)
-        setViewMode(recovered?.viewMode ?? 'prose')
+        setViewMode(recovered?.viewMode ?? 'document')
         setIsLoading(false)
         return
       }
@@ -740,9 +758,7 @@ function RoutineEditorScreen({
       setEditingRoutineId(routineRouteId)
       setEditingRoutine(null)
       setForm(null)
-      setProseSource(null)
       setDocumentDraft(null)
-      setProseLocalValidationError(null)
       setIsLoading(true)
       void Promise.all([
         routinesApi.getRoutine(agentId, routineRouteId),
@@ -756,17 +772,14 @@ function RoutineEditorScreen({
           setAllRoutines(listResponse.routines)
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
-          setProseSource(response.routine)
-          setProseDraft(null)
           setDocumentDraft(null)
-          setProseLocalValidationError(null)
-          setProseKey((key) => key + 1)
           setValidatedDraftSignature(null)
           routineEditorDirtyRef.current = false
-          // Prose-representable drafts open in the prose editor; advanced routines and
           // read-only (non-draft) versions open in the strict Form tab.
           const editable = response.routine.status === 'draft'
-          setViewMode(editable && routineToChipDoc(response.routine) ? 'prose' : 'form')
+          // Document-representable drafts open in the Document view; anything the
+          // projection cannot express falls back to the Form view.
+          setViewMode(editable && routineToBlockDoc(definitionToDraft(response.routine)).ok ? 'document' : 'form')
         })
         .catch((loadError) => {
           if (!active) return
@@ -782,23 +795,10 @@ function RoutineEditorScreen({
     }
   }, [agentId, routineRouteId])
 
-  const synchronizeView = (nextView: 'prose' | 'document' | 'form') => {
+  const synchronizeView = (nextView: 'document' | 'form') => {
     if (nextView === viewMode) return
-    if (nextView !== 'prose' && proseDraft && proseDraft.steps.length > 0) {
-      setForm(routineToForm(draftAsRoutine(proseDraft, editingRoutine)))
-      if (nextView === 'document') setDocumentDraft(proseDraft)
-    }
     if (nextView === 'document' && form) {
       setDocumentDraft(formToRoutineDraft(form, { header: draftHeader }))
-    }
-    if (nextView === 'prose' && form) {
-      // Re-seed prose from the current form draft; routineToChipDoc inside the prose tab
-      // decides whether it's representable (else it shows the "edit in Form" fallback).
-      const formDraft = formToRoutineDraft(form, { header: draftHeader })
-      setProseSource(isBlankFormDraft(formDraft) ? emptyProseDraftFromHeader(draftHeader) : formDraft)
-      setProseDraft(null)
-      setProseLocalValidationError(null)
-      setProseKey((key) => key + 1)
     }
     setViewMode(nextView)
   }
@@ -829,11 +829,7 @@ function RoutineEditorScreen({
       if (refreshEditor) {
         setDraftHeader(headerFromDraft(response.routine))
         setForm(routineToForm(response.routine))
-        setProseSource(response.routine)
-        setProseDraft(null)
         setDocumentDraft(null)
-        setProseLocalValidationError(null)
-        setProseKey((key) => key + 1)
       }
       setValidation(response.validation)
       setValidatedDraftSignature(draftSignature)
@@ -949,11 +945,7 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setProseSource(response.routine)
-      setProseDraft(null)
       setDocumentDraft(null)
-      setProseLocalValidationError(null)
-      setProseKey((key) => key + 1)
       setValidation(null)
       setValidatedDraftSignature(null)
       markSaved()
@@ -989,11 +981,7 @@ function RoutineEditorScreen({
       ])
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setProseSource(response.routine)
-      setProseDraft(null)
       setDocumentDraft(null)
-      setProseLocalValidationError(null)
-      setProseKey((key) => key + 1)
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
     } finally {
@@ -1028,11 +1016,7 @@ function RoutineEditorScreen({
       mergeLoadedRoutine(response.routine)
       setDraftHeader(headerFromDraft(response.routine))
       setForm(routineToForm(response.routine))
-      setProseSource(response.routine)
-      setProseDraft(null)
       setDocumentDraft(null)
-      setProseLocalValidationError(null)
-      setProseKey((key) => key + 1)
     } catch (restoreError) {
       setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
     } finally {
@@ -1044,16 +1028,6 @@ function RoutineEditorScreen({
     routineEditorDirtyRef.current = true
     setForm((current) => current ? updater(current) : current)
   }
-
-  const handleProseDraftChange = useCallback((draft: RoutineDefinitionDraft | null) => {
-    routineEditorDirtyRef.current = true
-    setProseDraft(draft)
-  }, [])
-
-  const handleProseHeaderChange = useCallback((update: (header: RoutineDraftHeader) => RoutineDraftHeader) => {
-    routineEditorDirtyRef.current = true
-    setDraftHeader(update)
-  }, [])
 
   const loadAssistedDraft = useCallback(async () => {
     const prose = draftAssistProse.trim()
@@ -1067,13 +1041,11 @@ function RoutineEditorScreen({
       routineEditorDirtyRef.current = true
       setDraftHeader(nextHeader)
       setForm(routineToForm(draftAsRoutine(response.draft, editingRoutine)))
-      setProseSource(response.draft)
-      setProseDraft(null)
-      setProseLocalValidationError(null)
-      setProseKey((key) => key + 1)
       setValidation(response.validation)
       setValidatedDraftSignature(nextSignature)
-      setViewMode(routineToChipDoc(response.draft) ? 'prose' : 'form')
+      setDocumentDraft(null)
+      setDocumentSessionNonce((nonce) => nonce + 1)
+      setViewMode(routineToBlockDoc(response.draft).ok ? 'document' : 'form')
       setDraftAssistDialogOpen(false)
     } catch (draftError) {
       setError(getApiErrorMessage(draftError, 'Failed to draft routine from procedure.'))
@@ -1337,19 +1309,12 @@ function RoutineEditorScreen({
                   rows={2}
                   disabled={isReadOnly}
                 />
-                {triggerLocalValidationError ? <p className="text-xs text-destructive" role="status">{triggerLocalValidationError}</p> : null}
               </div> : null}
             </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
-            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'prose' | 'document' | 'form')}>
+            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'document' | 'form')}>
               <TabsList aria-label="Routine editor view">
-                {/* The chip editor has no read-only mode; the Document tab is the reader
-                    surface for published and archived routines. */}
-                <TabsTrigger value="prose" disabled={isReadOnly}>
-                  <Sparkles className="h-4 w-4" />
-                  Prose
-                </TabsTrigger>
                 <TabsTrigger value="document">
                   <FileText className="h-4 w-4" />
                   Document
@@ -1361,19 +1326,6 @@ function RoutineEditorScreen({
               </TabsList>
             </Tabs>
 
-            {viewMode === 'prose' && proseSource ? (
-              <RoutineProseTab
-                key={proseKey}
-                source={proseSource}
-                header={draftHeader}
-                webhookDestinations={webhookDestinations}
-                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-                webhookDestinationsError={webhookDestinationsError}
-                onDraftChange={handleProseDraftChange}
-                onHeaderChange={handleProseHeaderChange}
-                onLocalValidationError={setProseLocalValidationError}
-              />
-            ) : null}
 
             {viewMode === 'form' ? (
               <RoutineFormEditor
@@ -1391,15 +1343,16 @@ function RoutineEditorScreen({
 
             {viewMode === 'document' && activeRoutineDraft ? (
               <RoutineDocumentTab
-                key={`${agentId}:${routineRouteId}`}
+                key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
                 isReadOnly={isReadOnly}
                 diagnostics={validationDiagnostics}
                 onDraftChange={(nextDraft) => {
+                  const mergedDraft = mergeDocumentHeaderChange(nextDraft, documentDraft, draftHeader)
                   routineEditorDirtyRef.current = true
-                  setDocumentDraft(nextDraft)
-                  setForm(routineToForm(draftAsRoutine(nextDraft, editingRoutine)))
-                  setDraftHeader(headerFromDraft(nextDraft))
+                  setDocumentDraft(mergedDraft)
+                  setForm(routineToForm(draftAsRoutine(mergedDraft, editingRoutine)))
+                  setDraftHeader(headerFromDraft(mergedDraft))
                 }}
               />
             ) : null}

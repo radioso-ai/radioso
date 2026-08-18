@@ -1,9 +1,11 @@
 import type { WebsiteCrawlJobRecord, WebsiteCrawlJobRepositoryPort } from "../../db/repositories/websiteCrawlJobRepository.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
+import type { WebsiteCrawlJobDispatcherPort } from "./jobDispatcher.js";
 import { WebsiteCrawlerService, type WebsiteCrawlerDocumentIngestionPort, type WebsiteCrawlerAuditPort } from "./service.js";
 
 export class WebsiteCrawlWorker {
+  private static readonly DEFAULT_SLICE_DURATION_MS = 240_000;
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   // Tracks the currently in-flight tick (claim + process) so that stop() can
@@ -16,12 +18,14 @@ export class WebsiteCrawlWorker {
   constructor(private readonly dependencies: {
     repository: WebsiteCrawlJobRepositoryPort;
     provider?: WebsiteCrawlerProvider;
+    dispatcher: WebsiteCrawlJobDispatcherPort;
     documentIngestionService: WebsiteCrawlerDocumentIngestionPort;
     auditService?: WebsiteCrawlerAuditPort;
     logger: AppLogger;
     pollIntervalMs?: number;
     jobLeaseMs?: number;
     cancellationPollMs?: number;
+    sliceDurationMs?: number;
   }) {}
 
   async start(): Promise<void> {
@@ -101,12 +105,14 @@ export class WebsiteCrawlWorker {
 
   private async runTracked<T>(work: () => Promise<T>): Promise<T> {
     const promise = work();
-    this.activeJob = promise.finally(() => {
+    this.activeJob = promise;
+    try {
+      return await promise;
+    } finally {
       if (this.activeJob === promise) {
         this.activeJob = null;
       }
-    });
-    return promise;
+    }
   }
 
   private scheduleNextTick(delayMs = this.dependencies.pollIntervalMs ?? 5_000): void {
@@ -158,6 +164,7 @@ export class WebsiteCrawlWorker {
       cancelled = true;
       abortController.abort();
     });
+    let releasedForContinuation = false;
 
     try {
       const service = new WebsiteCrawlerService({
@@ -171,6 +178,7 @@ export class WebsiteCrawlWorker {
         workspaceId: job.workspaceId,
         url: job.requestedUrl,
         limit: job.limit,
+        maxDurationMs: this.dependencies.sliceDurationMs ?? WebsiteCrawlWorker.DEFAULT_SLICE_DURATION_MS,
         signal: abortController.signal,
         policy: job.policy,
         checkpoint: job.checkpoint,
@@ -182,8 +190,40 @@ export class WebsiteCrawlWorker {
       if (cancelled) {
         return;
       }
+      if (result.outcome === "yielded") {
+        releasedForContinuation = await this.dependencies.repository.releaseForContinuation(job.id, job.claimedAt!);
+        if (!releasedForContinuation) {
+          return;
+        }
+        this.dependencies.logger.info(
+          {
+            role: "website-crawl-worker",
+            jobId: job.id,
+            workspaceId: job.workspaceId,
+            attemptCount: job.attemptCount,
+          },
+          "Website crawl slice yielded; dispatching continuation",
+        );
+        await this.dependencies.dispatcher.dispatch({
+          jobId: job.id,
+          workspaceId: job.workspaceId,
+        });
+        return;
+      }
       await this.dependencies.repository.markCompleted(job.id, result as unknown as Record<string, unknown>);
     } catch (error) {
+      if (releasedForContinuation) {
+        this.dependencies.logger.error(
+          {
+            role: "website-crawl-worker",
+            jobId: job.id,
+            workspaceId: job.workspaceId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          "Website crawl continuation dispatch failed",
+        );
+        throw error;
+      }
       if (cancelled) {
         return;
       }

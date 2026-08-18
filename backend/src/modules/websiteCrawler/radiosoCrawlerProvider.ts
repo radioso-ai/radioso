@@ -43,50 +43,98 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
     const { crawlSiteStream } = await import("@radioso/crawler");
     const config = resolveWebsiteCrawlerConfig();
     const seedPendingUrls = getSeedPendingUrls(request);
-    await crawlSiteStream({
-      baseUrl: request.url,
-      pageLimit: request.limit,
-      pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
-      userAgent: config.userAgent,
-      includeUrlPatterns: request.policy?.includeUrlPatterns,
-      excludeUrlPatterns: request.policy?.excludeUrlPatterns,
-      preserveContentLinks: request.policy?.preserveContentLinks,
-      validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
-      seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
-      seedPendingUrls,
-      includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
-      signal: request.signal,
-      onCandidateUrl: async (decision) => {
-        if (decision.decision !== "accepted" || !decision.canonicalUrl) {
-          return;
-        }
-        await request.onCheckpointEvent?.({
-          type: "discovered",
-          url: decision.canonicalUrl,
-          canonicalUrl: decision.canonicalUrl,
-        });
-      },
-      onResult: async (page) => {
-        await request.onCheckpointEvent?.({
-          type: "processing",
-          url: page.frontierUrl,
-          canonicalUrl: page.url,
-        });
-        await onPage(toWebsiteCrawlPage(page));
-        await request.onCheckpointEvent?.({
-          type: "processed",
-          url: page.frontierUrl,
-          canonicalUrl: page.url,
-        });
-      },
-    });
+    const slice = createCrawlSliceSignal(request.signal, request.maxDurationMs);
+    try {
+      await crawlSiteStream({
+        baseUrl: request.url,
+        pageLimit: request.limit,
+        pageConcurrency: DEFAULT_PAGE_CONCURRENCY,
+        userAgent: config.userAgent,
+        includeUrlPatterns: request.policy?.includeUrlPatterns,
+        excludeUrlPatterns: request.policy?.excludeUrlPatterns,
+        preserveContentLinks: request.policy?.preserveContentLinks,
+        validateNavigationUrl: (url) => assertPublicWebsiteUrl(url),
+        seedDiscoveredUrls: request.checkpoint?.discoveredUrls,
+        seedPendingUrls,
+        includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
+        signal: slice.signal,
+        onCandidateUrl: async (decision) => {
+          if (decision.decision !== "accepted" || !decision.canonicalUrl) {
+            return;
+          }
+          await request.onCheckpointEvent?.({
+            type: "discovered",
+            url: decision.canonicalUrl,
+            canonicalUrl: decision.canonicalUrl,
+          });
+        },
+        onResult: async (page) => {
+          await request.onCheckpointEvent?.({
+            type: "processing",
+            url: page.frontierUrl,
+            canonicalUrl: page.url,
+          });
+          await onPage(toWebsiteCrawlPage(page));
+          await request.onCheckpointEvent?.({
+            type: "processed",
+            url: page.frontierUrl,
+            canonicalUrl: page.url,
+          });
+        },
+      });
+      request.signal?.throwIfAborted();
+    } catch (error) {
+      request.signal?.throwIfAborted();
+      if (!slice.expired()) {
+        throw error;
+      }
+    } finally {
+      slice.dispose();
+    }
 
     return {
       provider: PROVIDER_NAME,
       status: "completed",
+      outcome: slice.expired() ? "yielded" : "completed",
     };
   }
 }
+
+const createCrawlSliceSignal = (
+  requestSignal: AbortSignal | undefined,
+  maxDurationMs: number | undefined,
+): { signal: AbortSignal | undefined; expired: () => boolean; dispose: () => void } => {
+  if (!maxDurationMs) {
+    return {
+      signal: requestSignal,
+      expired: () => false,
+      dispose: () => undefined,
+    };
+  }
+
+  const controller = new AbortController();
+  let sliceExpired = false;
+  const abortFromRequest = () => controller.abort(requestSignal?.reason);
+  if (requestSignal?.aborted) {
+    abortFromRequest();
+  } else {
+    requestSignal?.addEventListener("abort", abortFromRequest, { once: true });
+  }
+  const timer = setTimeout(() => {
+    sliceExpired = true;
+    controller.abort(new Error("Website crawl execution slice expired"));
+  }, maxDurationMs);
+  timer.unref?.();
+
+  return {
+    signal: controller.signal,
+    expired: () => sliceExpired,
+    dispose: () => {
+      clearTimeout(timer);
+      requestSignal?.removeEventListener("abort", abortFromRequest);
+    },
+  };
+};
 
 export const createRadiosoCrawlerUtilityProvider = () => ({
   async fetchPageWithScreenshot(url: string, options?: {

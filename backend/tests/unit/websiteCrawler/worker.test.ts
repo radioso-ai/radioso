@@ -98,6 +98,83 @@ describe("website crawl worker", () => {
     }));
   });
 
+  it("requeues and dispatches a continuation when a crawl slice yields", async () => {
+    const job = createJob();
+    const releaseForContinuation = vi.fn().mockResolvedValue(true);
+    const markCompleted = vi.fn().mockResolvedValue(undefined);
+    const markFailed = vi.fn().mockResolvedValue(undefined);
+    const dispatch = vi.fn().mockResolvedValue(undefined);
+    const crawl = vi.fn().mockResolvedValue({
+      provider: "test-crawler",
+      outcome: "yielded",
+      pages: [],
+    });
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+        claimNext: vi.fn().mockResolvedValue(job),
+        releaseForContinuation,
+        markCompleted,
+        markFailed,
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      provider: { name: "test-crawler", crawl },
+      dispatcher: { dispatch },
+      documentIngestionService: { ingest: vi.fn() } as never,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+      sliceDurationMs: 240_000,
+    });
+
+    await expect(worker.runOnce()).resolves.toBe(true);
+
+    expect(crawl).toHaveBeenCalledWith(expect.objectContaining({
+      maxDurationMs: 240_000,
+    }));
+    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt);
+    expect(dispatch).toHaveBeenCalledWith({
+      jobId: job.id,
+      workspaceId: job.workspaceId,
+    });
+    expect(markCompleted).not.toHaveBeenCalled();
+    expect(markFailed).not.toHaveBeenCalled();
+  });
+
+  it("leaves a yielded job queued and retries delivery when continuation dispatch fails", async () => {
+    const job = createJob();
+    const releaseForContinuation = vi.fn().mockResolvedValue(true);
+    const markFailed = vi.fn().mockResolvedValue(undefined);
+    const dispatchError = new Error("queue unavailable");
+    const worker = new WebsiteCrawlWorker({
+      repository: {
+        releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+        claimNext: vi.fn().mockResolvedValue(job),
+        releaseForContinuation,
+        markCompleted: vi.fn(),
+        markFailed,
+        updateCheckpoint: vi.fn().mockResolvedValue(undefined),
+        releasePausedClaim: vi.fn().mockResolvedValue(undefined),
+      } as never,
+      provider: {
+        name: "test-crawler",
+        crawl: vi.fn().mockResolvedValue({
+          provider: "test-crawler",
+          outcome: "yielded",
+          pages: [],
+        }),
+      },
+      dispatcher: { dispatch: vi.fn().mockRejectedValue(dispatchError) },
+      documentIngestionService: { ingest: vi.fn() } as never,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+      sliceDurationMs: 240_000,
+    });
+
+    await expect(worker.runOnce()).rejects.toThrow("queue unavailable");
+
+    expect(releaseForContinuation).toHaveBeenCalledWith(job.id, job.claimedAt);
+    expect(markFailed).not.toHaveBeenCalled();
+  });
+
   it("awaits the in-flight crawl when stop() is called mid-job so the row is not left in processing", async () => {
     const job = createJob();
     const markCompleted = vi.fn().mockResolvedValue(undefined);

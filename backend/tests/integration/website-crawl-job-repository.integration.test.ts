@@ -106,6 +106,38 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
     await expect(repository.findById(job.id)).resolves.toBeNull();
   });
 
+  it("requeues a yielded claim only when the caller still owns that claim", async () => {
+    const job = await repository.create({
+      accountId,
+      workspaceId,
+      sourceId,
+      requestedUrl: "https://example.com/yielded",
+      limit: 100,
+    });
+    await database.query("UPDATE website_crawl_jobs SET available_at = $2 WHERE id = $1", [
+      job.id,
+      new Date("2026-05-11T10:00:00.000Z"),
+    ]);
+    const claimedAt = new Date("2026-05-11T10:01:00.000Z");
+    await repository.claimById(job.id, claimedAt);
+
+    await expect(
+      repository.releaseForContinuation(job.id, new Date("2026-05-11T10:00:59.000Z")),
+    ).resolves.toBe(false);
+    await expect(repository.releaseForContinuation(job.id, claimedAt)).resolves.toBe(true);
+
+    const yielded = await repository.findById(job.id);
+    expect(yielded).toMatchObject({
+      status: "queued",
+      claimedAt: null,
+      lastError: null,
+    });
+    await expect(repository.claimById(job.id, new Date("2026-05-11T10:02:00.000Z"))).resolves.toMatchObject({
+      status: "processing",
+      attemptCount: 2,
+    });
+  });
+
   it("pauses active source jobs, resumes unclaimed jobs, and releases paused claims", async () => {
     const claimedJob = await repository.create({
       accountId,

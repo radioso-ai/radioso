@@ -748,6 +748,39 @@ describe("website crawler service", () => {
     expect(result.status).toBe("completed");
   });
 
+  it("returns a yielded slice without publishing terminal source or audit state", async () => {
+    const auditService = { record: vi.fn() };
+    const updateSourceSyncState = vi.fn();
+    const service = new WebsiteCrawlerService({
+      provider: {
+        name: "stream-crawler",
+        crawl: vi.fn(),
+        crawlStream: vi.fn().mockResolvedValue({
+          provider: "stream-crawler",
+          outcome: "yielded",
+        }),
+      },
+      documentIngestionService: {
+        ingest: vi.fn(),
+        resolveSource: vi.fn().mockResolvedValue({ id: "source-1" }),
+        updateSourceSyncState,
+      },
+      auditService,
+      assertCrawlUrlAllowed: async () => undefined,
+    });
+
+    const result = await service.crawlAndPublish({
+      workspaceId: "workspace-1",
+      url: "https://example.com",
+      limit: 100,
+      maxDurationMs: 240_000,
+    });
+
+    expect(result.outcome).toBe("yielded");
+    expect(updateSourceSyncState).not.toHaveBeenCalled();
+    expect(auditService.record).not.toHaveBeenCalled();
+  });
+
   it("passes request cancellation signals into the abstract provider", async () => {
     const controller = new AbortController();
     const crawl = vi.fn().mockResolvedValue({

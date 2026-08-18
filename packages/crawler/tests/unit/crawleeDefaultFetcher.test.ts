@@ -91,6 +91,39 @@ describe("default Crawlee fetcher", () => {
     expect(validateNavigationUrl).toHaveBeenCalledWith(`${baseUrl}/`);
   });
 
+  it("does not report an intentionally aborted in-flight page as failed", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200).end();
+    });
+    servers.push(server);
+    const controller = new AbortController();
+    let notifyFetchStarted!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => {
+      notifyFetchStarted = resolve;
+    });
+
+    const crawl = crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      signal: controller.signal,
+      fetchPage: async (_url, options) => {
+        notifyFetchStarted();
+        await new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
+        });
+        throw new Error("unreachable");
+      },
+    });
+    await fetchStarted;
+    controller.abort(new Error("slice expired"));
+
+    await expect(crawl).resolves.toEqual([]);
+  });
+
   it("aborts a same-scope redirect when the navigation validator rejects the target", async () => {
     const hits: string[] = [];
     const { server, baseUrl } = await listen((req, res) => {

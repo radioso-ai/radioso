@@ -153,4 +153,57 @@ describe("RadiosoCrawlerProvider", () => {
       includeBaseUrl: false,
     }));
   });
+
+  it("yields a streaming crawl when its execution slice expires", async () => {
+    vi.useFakeTimers();
+    mocks.crawlSiteStream.mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {
+      if (!signal) {
+        return { pages: 0 };
+      }
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+      return { pages: 0 };
+    });
+
+    try {
+      const provider = new RadiosoCrawlerProvider();
+      const resultPromise = provider.crawlStream({
+        url: "https://example.com",
+        limit: 100,
+        maxDurationMs: 240_000,
+      }, async () => {});
+
+      await vi.advanceTimersByTimeAsync(240_000);
+
+      await expect(resultPromise).resolves.toMatchObject({
+        provider: "radioso-crawler",
+        outcome: "yielded",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not turn caller cancellation into a yielded slice", async () => {
+    const controller = new AbortController();
+    mocks.crawlSiteStream.mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {
+      signal?.throwIfAborted();
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return { pages: 0 };
+    });
+
+    const provider = new RadiosoCrawlerProvider();
+    const resultPromise = provider.crawlStream({
+      url: "https://example.com",
+      limit: 100,
+      maxDurationMs: 240_000,
+      signal: controller.signal,
+    }, async () => {});
+    controller.abort(new Error("job cancelled"));
+
+    await expect(resultPromise).rejects.toThrow("job cancelled");
+  });
 });

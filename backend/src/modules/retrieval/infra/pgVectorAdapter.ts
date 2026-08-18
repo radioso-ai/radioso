@@ -14,6 +14,10 @@ import {
 } from "../domain/vectorAdapter.js";
 import { compilePgChunkFilter } from "./pgChunkFilter.js";
 import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
+import {
+  buildChunkEmbeddingDistanceExpression,
+  buildChunkEmbeddingIndexSql,
+} from "./chunkEmbeddingVectorIndex.js";
 
 const PGVECTOR_CAPABILITIES: VectorIndexCapabilities = {
   backend: "pgvector",
@@ -113,6 +117,11 @@ implements VectorAdapter {
       ) {
         throw new Error("embedding_space_definition_conflict");
       }
+      // A width without its partial HNSW index falls back to a full scan of every
+      // embedding in the workspace. Creating it here keeps index lifecycle with
+      // space lifecycle, so a newly activated width is indexed without a migration.
+      // IF NOT EXISTS makes this idempotent across restarts and replicas.
+      await this.database.query(buildChunkEmbeddingIndexSql(input.space.dimensions));
       this.preparedSpaces.set(input.space.id, {
         dimensions: input.space.dimensions,
         distanceMetric: input.space.distanceMetric,
@@ -160,13 +169,20 @@ implements VectorAdapter {
   ): Promise<VectorCandidate[]> {
     assertSearchInput(input);
 
+    // The width is emitted as a SQL literal rather than a bind parameter. The
+    // per-width HNSW index is partial on `dimensions = <n>`; Postgres can prove that
+    // predicate against a parameter while it still builds custom plans, but once a
+    // prepared statement switches to a generic plan the value is unknown and the
+    // proof fails, silently dropping the index. A literal keeps index matching
+    // independent of plan caching. assertSearchInput has already validated the
+    // space, and the expression builder re-checks the width is an integer.
+    const width = input.space.dimensions;
+    const { operand, queryCast } = buildChunkEmbeddingDistanceExpression(width, "$3");
     const params: unknown[] = [
       input.workspaceId,
       input.space.id,
-      input.space.dimensions,
       serializeVector(input.queryVector),
       input.minimumScore,
-      input.topK,
     ];
     const portableFilterClause = compilePgChunkFilter(
       {
@@ -182,14 +198,26 @@ implements VectorAdapter {
       params,
     );
 
+    params.push(input.topK);
+    const limitPlaceholder = `$${params.length}`;
+
+    // Nearest-first with a LIMIT is the only shape an ANN index can answer. The
+    // previous shape scored every eligible row before filtering, which the planner
+    // could not serve from an index at all. Ordering by distance and applying the
+    // score threshold afterwards is equivalent: score is monotonically decreasing
+    // in distance, so thresholding only ever removes the tail of the ranking. The
+    // CTE is deliberately not MATERIALIZED — that barrier would block the index.
     const rows = await this.database.query<CandidateRow>(
-      `WITH eligible AS MATERIALIZED (
+      `WITH nearest AS (
          SELECT
            ce.chunk_id,
            c.document_id,
            ce.embedding_space_id,
            ce.canonical_version,
-           ce.embedding
+           GREATEST(
+             -1.0,
+             LEAST(1.0, 1.0 - (ce.${operand} <=> ${queryCast}))
+           ) AS score
          FROM chunk_embeddings ce
          JOIN chunks c
            ON c.workspace_id = ce.workspace_id
@@ -199,24 +227,14 @@ implements VectorAdapter {
           AND d.id = c.document_id
          WHERE ce.workspace_id = $1
            AND ce.embedding_space_id = $2
-           AND ce.dimensions = $3
+           AND ce.dimensions = ${width}
            AND ce.document_revision = d.revision
            AND ${retrievableDocumentPredicateSql("d")}
            ${portableFilterClause}
            ${retrievalEnabledClause}
            ${expiryClause}
-       ),
-       scored AS (
-         SELECT
-           chunk_id,
-           document_id,
-           embedding_space_id,
-           canonical_version,
-           GREATEST(
-             -1.0,
-             LEAST(1.0, 1.0 - (embedding <=> $4::vector))
-           ) AS score
-         FROM eligible
+         ORDER BY ce.${operand} <=> ${queryCast}
+         LIMIT ${limitPlaceholder}
        )
        SELECT
          chunk_id,
@@ -224,10 +242,9 @@ implements VectorAdapter {
          embedding_space_id,
          canonical_version,
          score
-       FROM scored
-       WHERE score >= $5
-       ORDER BY score DESC, chunk_id ASC
-       LIMIT $6`,
+       FROM nearest
+       WHERE score >= $4
+       ORDER BY score DESC, chunk_id ASC`,
       params,
     );
 

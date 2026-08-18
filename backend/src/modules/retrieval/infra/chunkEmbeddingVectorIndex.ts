@@ -1,0 +1,63 @@
+// Single source of truth for how a chunk_embeddings vector of a given width is
+// indexed and compared.
+//
+// `chunk_embeddings.embedding` is a typeless `vector` column so one table can hold
+// several embedding widths. A typeless column cannot carry an HNSW index directly,
+// so each width gets its own partial expression index over a fixed-width cast. An
+// expression index is only used when the query's ORDER BY expression is textually
+// equivalent to the indexed expression, so the index definition and the query must
+// be generated from the same rule — otherwise the index is silently ignored and
+// every search degrades to a full scan.
+
+// pgvector refuses an HNSW index on a `vector` wider than this ("column cannot have
+// more than 2000 dimensions for hnsw index"). Above it, halfvec (half precision) is
+// the supported route.
+export const VECTOR_HNSW_MAX_DIMENSIONS = 2000;
+
+// Mirrors chunk_embeddings_dimensions_check in the schema.
+const MAX_DIMENSIONS = 16_000;
+
+const assertIndexableDimensions = (dimensions: number): number => {
+  if (
+    !Number.isInteger(dimensions)
+    || dimensions < 1
+    || dimensions > MAX_DIMENSIONS
+  ) {
+    throw new Error(
+      `invalid_embedding_dimension: ${dimensions} is not an integer in 1..${MAX_DIMENSIONS}`,
+    );
+  }
+  return dimensions;
+};
+
+const vectorTypeFor = (dimensions: number): "vector" | "halfvec" =>
+  dimensions <= VECTOR_HNSW_MAX_DIMENSIONS ? "vector" : "halfvec";
+
+export const buildChunkEmbeddingIndexName = (dimensions: number): string =>
+  `chunk_embeddings_hnsw_${assertIndexableDimensions(dimensions)}_idx`;
+
+/**
+ * The indexed operand and the matching cast for the query parameter. Both sides of
+ * the `<=>` must use the same type, and the operand must appear verbatim in the
+ * index definition for the planner to match it.
+ */
+export const buildChunkEmbeddingDistanceExpression = (
+  dimensions: number,
+  queryParameter: string,
+): { operand: string; queryCast: string } => {
+  const width = assertIndexableDimensions(dimensions);
+  const type = vectorTypeFor(width);
+  return {
+    operand: `embedding::${type}(${width})`,
+    queryCast: `${queryParameter}::${type}(${width})`,
+  };
+};
+
+export const buildChunkEmbeddingIndexSql = (dimensions: number): string => {
+  const width = assertIndexableDimensions(dimensions);
+  const type = vectorTypeFor(width);
+  const { operand } = buildChunkEmbeddingDistanceExpression(width, "$1");
+  return `CREATE INDEX IF NOT EXISTS ${buildChunkEmbeddingIndexName(width)} `
+    + `ON chunk_embeddings USING hnsw ((${operand}) ${type}_cosine_ops) `
+    + `WHERE dimensions = ${width}`;
+};

@@ -39,6 +39,24 @@ const resolvedDescription = (
   return { status: "resolved", entity: description.entity, input: description.input };
 };
 
+/**
+ * The resolved entity may *refine* the declared handoff subject, never *redirect* it.
+ *
+ * describeEntity answers "what is this call operating on", which is not the same question as
+ * "where should the operator go afterwards". They coincide for a reader like agent_configuration,
+ * whose output is the agent it resolved. They diverge whenever an entity is only a parameter:
+ * propose_directive resolves the target agent but produces a proposal, and eval/quality resolve an
+ * agent to filter by while producing eval cases and quality turns. Letting the resolved entity win
+ * unconditionally sent the operator to the agent page after drafting a proposal.
+ *
+ * Matching on type keeps the refinement (a resolved id makes the link specific) without the
+ * redirect, and needs no extra declaration beyond the dashboardSubject a descriptor already has.
+ */
+const handoffSubject = (
+  declared: CopilotEntityReference,
+  resolved: CopilotEntityReference | null,
+): CopilotEntityReference => (resolved && resolved.type === declared.type ? resolved : declared);
+
 /** Shared by permission denial and genuine absence, so the two stay indistinguishable to callers. */
 const unresolved = (workspaceKey: string, dashboardSubject: CopilotEntityReference) => ({
   dashboardUrl: buildCopilotDashboardLink(workspaceKey, dashboardSubject),
@@ -99,7 +117,7 @@ export const enrichCopilotToolCatalog = (
           ...output,
           dashboardUrl: buildCopilotDashboardLink(
             workspaceKey,
-            resolution.entity ?? descriptor.dashboardSubject,
+            handoffSubject(descriptor.dashboardSubject, resolution.entity),
           ),
         };
       },

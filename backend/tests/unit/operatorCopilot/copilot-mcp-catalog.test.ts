@@ -124,6 +124,37 @@ describe("MCP-compatible copilot catalog", () => {
   });
 });
 
+describe("dashboard handoff subject", () => {
+  const linkedDescriptor = (
+    dashboardSubject: { type: string },
+    resolvedEntity: { type: string; id: string; agentId?: string },
+  ): CopilotToolDescriptor<{ name: string }> => ({
+    ...descriptor(async () => ({ kind: "resolved", entity: resolvedEntity, input: { name: "Support" } })),
+    dashboardSubject: dashboardSubject as never,
+  });
+
+  const linkFor = async (dashboardSubject: { type: string }, resolvedEntity: { type: string; id: string; agentId?: string }) => {
+    const [tool] = enrichCopilotToolCatalog([linkedDescriptor(dashboardSubject, resolvedEntity)], {
+      resolveWorkspaceKey: async () => "acme",
+    });
+    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Support" }, {} as never);
+    return (result as { dashboardUrl: string }).dashboardUrl;
+  };
+
+  it("lets a resolved entity make the declared subject more specific", async () => {
+    expect(await linkFor({ type: "agent" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/agents/agent-1");
+  });
+
+  it("does not let a resolved parameter redirect the handoff to a different surface", async () => {
+    // propose_directive resolves the target agent to rewrite its input, but produces a proposal.
+    // eval and quality resolve an agent to filter by. Preferring the resolved entity sent the
+    // operator to the agent page after drafting a proposal, instead of to the proposal.
+    expect(await linkFor({ type: "proposal" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/copilot");
+    expect(await linkFor({ type: "eval" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/eval");
+    expect(await linkFor({ type: "quality_turn" }, { type: "agent", id: "agent-1" })).toBe("/w/acme/quality");
+  });
+});
+
 describe("copilot dashboard links", () => {
   it("matches the dashboard workspace route shapes", () => {
     expect(buildCopilotDashboardLink("acme", { type: "workspace" })).toBe("/w/acme/agents");

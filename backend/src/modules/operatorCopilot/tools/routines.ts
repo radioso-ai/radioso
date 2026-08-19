@@ -49,7 +49,7 @@ export interface RoutineDefinitionCopilotToolDependencies {
 
 export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "agent" }, requiredPermission: "workspace.agents.read",
+    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermission: "workspace.agents.read",
     description: "List an agent's routines or read one routine in portable Markdown form.",
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({

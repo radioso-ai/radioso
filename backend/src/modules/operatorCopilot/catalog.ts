@@ -62,7 +62,10 @@ export const enrichCopilotToolCatalog = (
       outputSchema: linkedOutputSchema,
       invoke: async (input, agentContext) => {
         const workspaceKey = await deps.resolveWorkspaceKey(context.workspaceId);
-        if (context.permissions && !context.permissions.has(descriptor.requiredPermission)) {
+        // Fails closed: an absent permission set is treated as holding nothing, not as a reason to
+        // skip the check. Every current caller supplies one, but this guard exists for transports
+        // that do not pre-filter the catalog, and those are the ones most likely to omit it.
+        if (!context.permissions?.has(descriptor.requiredPermission)) {
           return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
 

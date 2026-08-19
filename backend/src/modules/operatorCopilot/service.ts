@@ -179,16 +179,7 @@ export class OperatorCopilotService {
       );
       for await (const trace of stream.events) {
         if (trace.kind === "tool_call_validated") {
-          const described = await descriptors.get(trace.toolName)?.describeEntity?.(trace.input, {
-            workspaceId: input.workspaceId,
-            accountId: input.accountId,
-            operatorUserId: input.operatorUserId,
-            permissions: input.permissions,
-            pageContext: input.pageContext,
-          });
-          const describedEntity = described && "kind" in described
-            ? described.kind === "resolved" ? described.entity : null
-            : described;
+          const describedEntity = await this.describeActivityEntity(descriptors.get(trace.toolName), trace.input, input);
           if (describedEntity) entitiesByToolCall.set(trace.callId, describedEntity);
         }
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
@@ -219,6 +210,34 @@ export class OperatorCopilotService {
       if (!terminalPersisted) await reservation.release();
       await this.deps.repository.finishTurn({ id: conversation.id, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
       yield { event: "done", data: {} };
+    }
+  }
+
+  /**
+   * Best-effort label for the activity event shown while a tool runs. Descriptors resolve names
+   * through DB-backed ports, and this runs in the service's own stream loop rather than inside the
+   * runtime's tool-invocation handling — so an exception here would escape to the turn's catch and
+   * persist the whole turn as failed *before the tool was even invoked*. A missing entity is
+   * already a normal outcome for this path, so a failed lookup degrades to exactly that.
+   */
+  private async describeActivityEntity(
+    descriptor: CopilotToolDescriptor | undefined,
+    toolInput: unknown,
+    input: { workspaceId: string; accountId: string; operatorUserId: string; permissions?: ReadonlySet<string>; pageContext: CopilotPageContext },
+  ): Promise<CopilotEntityReference | null> {
+    try {
+      const described = await descriptor?.describeEntity?.(toolInput, {
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        operatorUserId: input.operatorUserId,
+        permissions: input.permissions,
+        pageContext: input.pageContext,
+      });
+      if (!described) return null;
+      if (!("kind" in described)) return described;
+      return described.kind === "resolved" ? described.entity : null;
+    } catch {
+      return null;
     }
   }
 

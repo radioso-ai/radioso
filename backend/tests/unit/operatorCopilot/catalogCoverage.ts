@@ -61,7 +61,15 @@ const wave3IngestionSettings = deferred(
 );
 const wave4Serving = deferred("Deferred to Wave 4 serving work: operator serving controls need an explicit runtime safety model.");
 const wave5WorkspaceConfig = deferred("Deferred to Wave 5 workspace configuration: these settings need bounded, operator-confirmed configuration flows.");
-const identityOrSecrets = permanent("Permanent exclusion: identity, authorization, and secret-bearing administration are not an operator-copilot surface.");
+// A permanent exclusion is the strongest claim this map makes — it is what a future implementer
+// reads to decide whether something may be built at all. These were previously one bucket reasoned
+// as "identity, authorization, and secret-bearing administration", which conflated four unrelated
+// grounds and twice misfiled a harmless read (see listWorkspaceProviderCredentials, corrected when
+// workspace_settings landed). Each ground is now stated separately so a wrong permanent is visible.
+const secretBearingRead = permanent("Permanent exclusion: the response carries secret material itself, so it must never enter a model context.");
+const identityAdministration = permanent("Permanent exclusion: Ray does not administer identity, accounts, or authorization.");
+const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
+const tokenIntegrationSurface = permanent("Permanent exclusion: this serves workspace-token integration clients, not the operator dashboard surface Ray runs on.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
@@ -84,15 +92,23 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "acceptAccountInvitation",
   ], authOrRegistration),
   ...coverage([
+    "getWorkspaceApiToken",
+    "getAgentContextVariableSigningKey",
+  ], secretBearingRead),
+  ...coverage([
     "createAdditionalOrganization",
+    "switchAccount",
+  ], identityAdministration),
+  ...coverage([
     "listAccessibleAccounts",
     "listAccountUsers",
-    "switchAccount",
-    "getWorkspaceApiToken",
-    "getWorkspaceMcpContext",
-    "getAgentContextVariableSigningKey",
-    "listAgentMcpConverseGrants",
-  ], identityOrSecrets),
+  ], accountScope),
+  ...coverage(["getWorkspaceMcpContext"], tokenIntegrationSurface),
+  // Grant metadata, not grant tokens: this endpoint documents its own response as "returned without
+  // token material". Its siblings listMcpConnections and getMcpConnection are already agent_skills
+  // reads, so treating the grants as a permanent secret boundary was inconsistent on its face.
+  // Issuing, rotating and revoking grants remain never-list under access_grants.
+  ...coverage(["listAgentMcpConverseGrants"], wave2BehaviorAuthoring),
   ...coverage(["deleteWorkspace"], neverListExclusion("workspace_delete")),
   ...coverage([
     "createAccountInvitation",

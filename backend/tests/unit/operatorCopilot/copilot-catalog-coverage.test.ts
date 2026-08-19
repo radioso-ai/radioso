@@ -6,10 +6,36 @@ import { catalogCoverage } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
 
 describe("operator copilot catalog coverage", () => {
-  // Ratchet: this may only ever decrease as tools land. It went 131 -> 133 once, when ingestion
-  // settings were reclassified from a permanent exclusion to Wave 3 planned work — an honest
-  // increase in the backlog, not deferred scope creep.
-  const maxDeferredCatalogExclusions = 128;
+  // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
+  // of a wrong *permanent* exclusion, not deferred scope creep:
+  //   131 -> 133  ingestion settings, which Wave 3 will make proposable
+  //   128 -> 129  listAgentMcpConverseGrants, documented as carrying no token material, whose
+  //               siblings listMcpConnections/getMcpConnection are already agent_skills reads
+  // (133 fell to 128 in between, when workspace_settings covered six settings reads.)
+  const maxDeferredCatalogExclusions = 129;
+
+  it("states each permanent exclusion's own ground rather than one conflated reason", () => {
+    // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
+    // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds
+    // apart so a harmless read cannot be filed under "secret-bearing" again.
+    const reasonFor = (operationId: string) => {
+      const entry = catalogCoverage[operationId];
+      return typeof entry === "string" ? "" : entry.reason;
+    };
+
+    expect(reasonFor("getWorkspaceApiToken")).toContain("carries secret material");
+    expect(reasonFor("switchAccount")).toContain("does not administer identity");
+    expect(reasonFor("listAccountUsers")).toContain("account-scoped");
+    expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
+
+    // Grant metadata carries no token material and its siblings are already readable, so it is
+    // planned work rather than a boundary. Issuing and revoking grants stay never-list.
+    expect(catalogCoverage.listAgentMcpConverseGrants).toMatchObject({ disposition: "deferred" });
+    expect(catalogCoverage.issueAgentMcpConverseGrant).toMatchObject({
+      disposition: "permanent",
+      neverListEntry: "access_grants",
+    });
+  });
 
   it("maps agent and routine discovery operations to the completed family readers", () => {
     expect(catalogCoverage).toMatchObject({

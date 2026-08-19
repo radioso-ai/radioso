@@ -135,6 +135,10 @@ class StubConversationRepository implements ConversationRepositoryPort {
 class StubMessageRepository implements MessageRepositoryPort {
   constructor(private readonly messages: MessageRecord[]) {}
 
+  async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
+    return this.messages.find((message) => message.workspaceId === workspaceId && message.id === messageId) ?? null;
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return this.messages.filter((message) =>
       message.workspaceId === workspaceId && message.conversationId === conversationId);

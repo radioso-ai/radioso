@@ -15,13 +15,25 @@ import {
   type CopilotProposal,
   type CopilotRepositoryPort,
 } from "../../../src/modules/operatorCopilot/public.js";
-import { createUs3CopilotTools } from "../../../src/modules/operatorCopilot/tools.js";
+import { createAgentSettingProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/agents.js";
+import { createDirectiveProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/directives.js";
+import { createRoutineProposalCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
 
 const workspaceId = randomUUID();
 const accountId = randomUUID();
 const operatorUserId = randomUUID();
 const agentId = randomUUID();
 const directiveId = randomUUID();
+
+type ProposalToolDependencies = Parameters<typeof createDirectiveProposalCopilotTools>[0]
+  & Parameters<typeof createRoutineProposalCopilotTools>[0]
+  & Parameters<typeof createAgentSettingProposalCopilotTools>[0];
+
+const createProposalTools = (deps: ProposalToolDependencies) => [
+  ...createDirectiveProposalCopilotTools(deps),
+  ...createRoutineProposalCopilotTools(deps),
+  ...createAgentSettingProposalCopilotTools(deps),
+];
 
 describe("US3 copilot proposals", () => {
   it("emits a proposal after its completed draft tool call and associates it with the persisted copilot message", async () => {
@@ -82,7 +94,7 @@ describe("US3 copilot proposals", () => {
     const createProposal = vi.fn(async (input: Parameters<MemoryProposalRepository["createProposal"]>[0]) => ({
       id: randomUUID(), ...input, messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
-    const descriptors = createUs3CopilotTools({
+    const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalAdapters: [
         {
@@ -105,6 +117,12 @@ describe("US3 copilot proposals", () => {
     });
     const context = { workspaceId, accountId, operatorUserId, copilotConversationId: "conversation-1", pageContext: { view: "agent" as const, agentId, conversationId: null, selection: null, entities: [] } };
 
+    expect(descriptors.map(({ name, shape }) => ({ name, shape }))).toEqual([
+      { name: "propose_directive", shape: "propose" },
+      { name: "propose_routine", shape: "propose" },
+      { name: "propose_agent_setting", shape: "propose" },
+    ]);
+
     await descriptors.find((descriptor) => descriptor.name === "propose_directive")?.createTool(context).invoke({ directiveId, intent: "Do not recommend competitors" }, {} as never);
     await descriptors.find((descriptor) => descriptor.name === "propose_agent_setting")?.createTool(context).invoke({ settingKey: "retrievalEnabled", value: false }, {} as never);
 
@@ -119,7 +137,7 @@ describe("US3 copilot proposals", () => {
     }));
     const payload = { name: "Return intake", steps: [] };
     const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics." }));
-    const descriptors = createUs3CopilotTools({
+    const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalAdapters: [
         { targetType: "directive", readVersionToken: vi.fn(), preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() },
@@ -229,10 +247,12 @@ describe("US3 copilot proposals", () => {
 
 const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
   name,
+  shape: "propose" as const,
   uiLabel: "Drafting a directive",
   description: "Draft",
   requiredPermission,
   contributingModule: "operatorCopilot",
+  dashboardSubject: { type: "proposal" },
   inputSchema: z.object({}),
   outputSchema: z.object({}),
   createTool: () => ({ name, description: "Draft", inputSchema: z.object({}), outputSchema: z.object({}), invoke: vi.fn() }),

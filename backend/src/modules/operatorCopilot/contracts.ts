@@ -33,6 +33,8 @@ export interface CopilotToolInvocationContext {
   readonly workspaceId: string;
   readonly accountId: string;
   readonly operatorUserId: string;
+  /** Present for transport-facing catalog calls so entity lookup cannot bypass tool permissions. */
+  readonly permissions?: ReadonlySet<string>;
   /** Internal copilot thread identity; distinct from pageContext.conversationId. */
   readonly copilotConversationId?: string;
   readonly pageContext: CopilotPageContext;
@@ -40,8 +42,26 @@ export interface CopilotToolInvocationContext {
 
 export interface CopilotEntityReference {
   readonly type: string;
-  readonly id: string;
+  readonly id?: string;
+  readonly label?: string;
+  readonly agentId?: string;
 }
+
+export type CopilotEntityDescription<TInput> =
+  | CopilotEntityReference
+  | {
+      readonly kind: "resolved";
+      readonly entity: CopilotEntityReference;
+      /** The entity-owning descriptor may replace a human name with its stable id. */
+      readonly input: TInput;
+    }
+  | {
+      readonly kind: "ambiguous";
+      readonly candidates: ReadonlyArray<CopilotEntityReference>;
+    }
+  | {
+      readonly kind: "not_found";
+    };
 
 /** Narrow audit port owned by the copilot consumer. */
 export interface CopilotAuditPort {
@@ -105,15 +125,32 @@ export interface CopilotAgentSettingProposalAdapter extends CopilotProposalAdapt
 
 export interface CopilotToolDescriptor<TInput = unknown, TOutput = unknown> {
   readonly name: string;
+  readonly shape: CopilotToolShape;
   readonly uiLabel: string;
   readonly description: string;
   readonly inputSchema: ZodType<TInput>;
   readonly outputSchema: ZodType<TOutput>;
   readonly requiredPermission: AccountPermission;
   readonly contributingModule: string;
+  /** Default dashboard handoff for this tool's collection or owning subject. */
+  readonly dashboardSubject: CopilotEntityReference;
   createTool(context: CopilotToolInvocationContext): AgentTool<TInput, TOutput>;
-  describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityReference | null;
+  describeEntity?(input: TInput, context?: CopilotToolInvocationContext): CopilotEntityDescription<TInput> | null | Promise<CopilotEntityDescription<TInput> | null>;
 }
+
+/**
+ * The write and cost semantics of a catalog tool. This remains independent of
+ * any transport so future MCP administration can consume the same taxonomy.
+ */
+export type CopilotToolShape =
+  /** No state change and no meaningful compute cost. */
+  | "read"
+  /** No persisted state change, but incurs real compute cost. */
+  | "probe"
+  /** Persists a reversible, idempotent change that is not customer-visible. */
+  | "act"
+  /** Drafts an operator-confirmed change to live agent or workspace behavior. */
+  | "propose";
 
 export type CopilotSseEvent =
   | { readonly event: "conversation"; readonly data: { conversationId: string; turnId: string } }

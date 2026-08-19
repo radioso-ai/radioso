@@ -11,19 +11,19 @@ describe("operator copilot SSE trace mapping", () => {
       {
         kind: "tool_call_completed",
         stepIndex: 1,
-        toolName: "conversation_trace",
+        toolName: "conversation_transcript",
         callId: "call-1",
         output: { transcript: "private customer content" },
         resultTokens: 22,
         latencyMs: 8,
         at: 1,
       },
-      new Map([["conversation_trace", "Reading conversation trace"]]),
+      new Map([["conversation_transcript", "Reading conversation transcript"]]),
     );
 
     expect(event).toEqual({
       event: "activity",
-      data: { toolCallId: "call-1", tool: "Reading conversation trace", stage: "completed" },
+      data: { toolCallId: "call-1", tool: "Reading conversation transcript", stage: "completed" },
     });
     expect(JSON.stringify(event)).not.toContain("private customer content");
   });

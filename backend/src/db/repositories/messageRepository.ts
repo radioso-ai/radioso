@@ -46,6 +46,7 @@ export interface ConversationMessageSummary {
 }
 
 export interface MessageRepositoryPort {
+  findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null>;
   listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]>;
   listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
   countByConversationId(workspaceId: string, conversationId: string): Promise<number>;
@@ -190,6 +191,16 @@ export const mapMessageRow = (row: MessageRow): MessageRecord => ({
 
 export class MessageRepository implements MessageRepositoryPort {
   constructor(private readonly db: Db) {}
+
+  async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
+    const row = await this.db
+      .selectFrom("messages")
+      .select(messageColumns)
+      .where("workspace_id", "=", workspaceId)
+      .where("id", "=", messageId)
+      .executeTakeFirst();
+    return row ? mapMessageRow(row as MessageRow) : null;
+  }
 
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     const rows = await this.db

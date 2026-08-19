@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { boundConversationPayload, CONVERSATION_PAYLOAD_CHAR_BUDGET } from "../../../src/modules/operatorCopilot/boundedPayload.js";
+import {
+  boundConversationPayload,
+  boundTurnTracePayload,
+  CONVERSATION_PAYLOAD_CHAR_BUDGET,
+} from "../../../src/modules/operatorCopilot/tools/chatPayloadBounds.js";
 
 describe("boundConversationPayload", () => {
   it("returns small payloads compacted but structurally intact", () => {
@@ -15,6 +19,13 @@ describe("boundConversationPayload", () => {
     });
     expect((bounded.note as string).length).toBe(501);
     expect((bounded.items as number[]).length).toBe(40);
+    expect(bounded.truncation).toMatchObject({
+      truncated: true,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ path: "$.note", reason: "string_length" }),
+        expect.objectContaining({ path: "$.items", reason: "array_length" }),
+      ]),
+    });
   });
 
   it("drops debug envelopes from the oldest messages first until under budget", () => {
@@ -35,6 +46,12 @@ describe("boundConversationPayload", () => {
     expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(CONVERSATION_PAYLOAD_CHAR_BUDGET);
     expect(messages[0].debug).toBeUndefined();
     expect(messages[0].debugOmitted).toBe(true);
+    expect(bounded.truncation).toMatchObject({
+      truncated: true,
+      entries: expect.arrayContaining([
+        expect.objectContaining({ path: "$.messages[0].debug", reason: "budget_omitted" }),
+      ]),
+    });
     expect(messages.at(-1)?.debug).toBeDefined();
     expect(messages.every((message) => typeof message.content === "string")).toBe(true);
   });
@@ -48,5 +65,34 @@ describe("boundConversationPayload", () => {
     const messages = bounded.messages as Array<Record<string, unknown>>;
     expect(messages.length).toBe(20);
     expect(messages[0].id).toBe("m40");
+  });
+
+  it("marks a deep trace truncation at the field that was shortened", () => {
+    const bounded = boundTurnTracePayload({
+      conversationId: "c1",
+      message: {
+        id: "m1",
+        debug: {
+          turnTrace: {
+            spine: {
+              stages: [{
+                id: "compose",
+                outputs: { modelReasoning: "x".repeat(20_000) },
+              }],
+            },
+          },
+        },
+      },
+    });
+
+    expect(bounded.truncation).toMatchObject({
+      truncated: true,
+      entries: expect.arrayContaining([
+        expect.objectContaining({
+          path: "$.message.debug.turnTrace.spine.stages[0].outputs.modelReasoning",
+          reason: "string_length",
+        }),
+      ]),
+    });
   });
 });

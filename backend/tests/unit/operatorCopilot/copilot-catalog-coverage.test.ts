@@ -2,15 +2,66 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { catalogCoverage } from "../../../src/modules/operatorCopilot/catalogCoverage.js";
+import { catalogCoverage } from "./catalogCoverage.js";
 import { copilotProposalOperationIds } from "../../../src/app/http/openapi/paths/copilotPaths.js";
 
 describe("operator copilot catalog coverage", () => {
+  // Ratchet: this may only ever decrease as tools land. Every increase so far has been a correction
+  // of a wrong *permanent* exclusion, not deferred scope creep:
+  //   131 -> 133  ingestion settings, which Wave 3 will make proposable
+  //   128 -> 129  listAgentMcpConverseGrants, documented as carrying no token material, whose
+  //               siblings listMcpConnections/getMcpConnection are already agent_skills reads
+  // (133 fell to 128 in between, when workspace_settings covered six settings reads; 129 fell to
+  // 126 when the routine portable-document routes were removed upstream.)
+  const maxDeferredCatalogExclusions = 126;
+
+  it("states each permanent exclusion's own ground rather than one conflated reason", () => {
+    // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
+    // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds
+    // apart so a harmless read cannot be filed under "secret-bearing" again.
+    const reasonFor = (operationId: string) => {
+      const entry = catalogCoverage[operationId];
+      return typeof entry === "string" ? "" : entry.reason;
+    };
+
+    expect(reasonFor("getWorkspaceApiToken")).toContain("carries secret material");
+    expect(reasonFor("switchAccount")).toContain("does not administer identity");
+    expect(reasonFor("listAccountUsers")).toContain("account-scoped");
+    expect(reasonFor("getWorkspaceMcpContext")).toContain("workspace-token integration clients");
+
+    // Grant metadata carries no token material and its siblings are already readable, so it is
+    // planned work rather than a boundary. Issuing and revoking grants stay never-list.
+    expect(catalogCoverage.listAgentMcpConverseGrants).toMatchObject({ disposition: "deferred" });
+    expect(catalogCoverage.issueAgentMcpConverseGrant).toMatchObject({
+      disposition: "permanent",
+      neverListEntry: "access_grants",
+    });
+  });
+
   it("maps agent and routine discovery operations to the completed family readers", () => {
     expect(catalogCoverage).toMatchObject({
       listAgents: "agent_configuration",
       listAgentDirectives: "agent_configuration",
       listAgentRoutines: "routine_definition",
+    });
+  });
+
+  it("maps conversation history operations to the bounded transcript reader", () => {
+    expect(catalogCoverage).toMatchObject({
+      getHistoryConversation: "conversation_transcript",
+      tailHistoryConversation: "conversation_transcript",
+      getLegacyHistoryConversation: "conversation_transcript",
+    });
+  });
+
+  it("maps safe workspace settings reads to the workspace settings reader", () => {
+    expect(catalogCoverage).toMatchObject({
+      getPlatformSettings: "workspace_settings",
+      getSettingsRetrievalDefaults: "workspace_settings",
+      getIngestionSettings: "workspace_settings",
+      getGeneralSettings: "workspace_settings",
+      listWorkspaceProviderCredentials: "workspace_settings",
+      getWorkspaceLlmModels: "workspace_settings",
     });
   });
 
@@ -27,7 +78,38 @@ describe("operator copilot catalog coverage", () => {
     // that generation step and exact again once artifacts are refreshed.
     expect(Object.keys(catalogCoverage).sort()).toEqual([...new Set([...operationIds, ...copilotProposalOperationIds])].sort());
     for (const entry of Object.values(catalogCoverage)) {
-      expect(typeof entry === "string" || ("excluded" in entry && entry.excluded.trim().length > 0)).toBe(true);
+      expect(typeof entry === "string" || ("reason" in entry && entry.reason.trim().length > 0)).toBe(true);
+    }
+  });
+
+  it("does not expand the deferred catalog backlog", () => {
+    const deferredExclusionCount = Object.values(catalogCoverage)
+      .filter((entry): entry is Exclude<typeof entry, string> => typeof entry !== "string")
+      .filter((entry) => entry.disposition === "deferred")
+      .length;
+
+    expect(deferredExclusionCount).toBeLessThanOrEqual(maxDeferredCatalogExclusions);
+  });
+
+  it("cites the never-list for permanent copilot boundaries", () => {
+    expect(catalogCoverage).toMatchObject({
+      deleteWorkspace: { disposition: "permanent", neverListEntry: "workspace_delete" },
+      createAccountInvitation: { disposition: "permanent", neverListEntry: "member_management" },
+      setWorkspaceGrant: { disposition: "permanent", neverListEntry: "access_grants" },
+      rotateWorkspaceApiToken: { disposition: "permanent", neverListEntry: "secret_rotation" },
+      setWorkspaceProviderCredential: { disposition: "permanent", neverListEntry: "provider_credential_writes" },
+      replyToConversation: { disposition: "permanent", neverListEntry: "unattended_live_customer_reply" },
+    });
+  });
+
+  it("defers ingestion settings rather than excluding them, while keeping the embedding-model guard visible", () => {
+    // The never-list entry covers the embedding-model switch inside a future proposal, not the whole
+    // endpoint: Wave 3 makes ingestion settings proposable, and cancelling a pending model change is
+    // a safe de-escalation rather than a boundary.
+    for (const operationId of ["updateIngestionSettings", "cancelPendingEmbeddingModel"]) {
+      const entry = catalogCoverage[operationId];
+      expect(entry).toMatchObject({ disposition: "deferred" });
+      expect(typeof entry === "string" ? "" : entry.reason).toContain("Embedding-model changes require");
     }
   });
 });

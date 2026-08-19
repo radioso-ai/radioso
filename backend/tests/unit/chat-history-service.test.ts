@@ -115,6 +115,28 @@ describe("chat history service ownership read surface", () => {
     expect(detail.ownership).toBeUndefined();
   });
 
+  it("omits turn latency unless the caller opts in", async () => {
+    // The public/embed chat surface shares this read method, and its presenter forwards
+    // unrecognised fields, so anything added unconditionally to the turn mapper silently becomes
+    // public API without an OpenAPI or SDK change. Latency is an operator diagnostic.
+    const { conversationRepository, messageRepository, service } = createService();
+    const conversation = await conversationRepository.create("workspace-1");
+    await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "user",
+      content: "hello",
+    });
+
+    const publicRead = await service.getConversation("workspace-1", conversation.id, detailInput);
+    expect(publicRead.messages[0]).not.toHaveProperty("latencyMs");
+
+    const operatorRead = await service.getConversation("workspace-1", conversation.id, detailInput, {
+      includeLatency: true,
+    });
+    expect(operatorRead.messages[0]).toHaveProperty("latencyMs");
+  });
+
   it("omits ownership from detail when the conversation is AI-owned (no row)", async () => {
     const { conversationRepository, service } = createService();
     const conversation = await conversationRepository.create("workspace-1");

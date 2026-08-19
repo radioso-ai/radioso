@@ -349,8 +349,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     proposalAdapters: copilotProposalAdapters,
     prompt: loadPromptTemplate("copilot/system.md"),
     tools: createCopilotToolCatalog({
-      agentService,
-      routineDefinitionService,
+      agentService: {
+        get: agentService.get.bind(agentService),
+        listExisting: agentService.listExisting.bind(agentService),
+        resolve: agentService.resolve.bind(agentService),
+      },
+      routineDefinitionService: {
+        get: routineDefinitionService.get.bind(routineDefinitionService),
+        list: routineDefinitionService.list.bind(routineDefinitionService),
+      },
       chatHistoryService: chat.chatHistoryService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
@@ -360,6 +367,33 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       documentSourceStatusService: repositories.documentSourceRepository,
       agentSkillsService,
       skillCapabilityRegistry,
+      workspaceRepository: repositories.workspaceRepository,
+      workspaceSettings: {
+        async getRetrievalDefaults(workspaceId) {
+          return retrievalDefaultsProvider.getDefaults(workspaceId);
+        },
+        async getIngestionSettings(workspaceId) {
+          return settings.ingestionSettingsService.getForWorkspace(workspaceId);
+        },
+        async listLlmModels(workspaceId) {
+          return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
+        },
+        async getProviderCredentialHealth(workspaceId) {
+          return {
+            encryptionConfigured: workspaceProviderCredentialsService.isEncryptionConfigured(),
+            credentials: await workspaceProviderCredentialsService.listConfigured(workspaceId),
+            envProviderAvailability: {
+              openai: Boolean(env.OPENAI_API_KEY),
+              "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
+              gemini: Boolean(env.GEMINI_API_KEY),
+              claude: Boolean(env.ANTHROPIC_API_KEY),
+            },
+          };
+        },
+        async getGeneralSettings(workspaceId) {
+          return platformSettingsService.getForWorkspace(workspaceId);
+        },
+      },
       proposalRepository: repositories.copilotRepository,
       proposalAdapters: copilotProposalAdapters,
       auditService: infrastructure.auditService,

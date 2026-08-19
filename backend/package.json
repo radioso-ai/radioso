@@ -40,7 +40,7 @@
     "db:types": "bash ./scripts/generate-kysely-types.sh",
     "db:types:check": "bash ./scripts/generate-kysely-types.sh --check",
     "lint": "pnpm run lint:boundaries && pnpm run lint:no-raw-sql",
-    "lint:boundaries": "depcruise --config dependency-cruiser.config.cjs src",
+    "lint:boundaries": "depcruise --config dependency-cruiser.config.cjs src && node scripts/checkCopilotBoundary.mjs",
     "lint:no-raw-sql": "node scripts/checkNoRawSql.mjs",
     "start": "pnpm run start:http",
     "start:http": "node ./dist/src/httpServer.js",

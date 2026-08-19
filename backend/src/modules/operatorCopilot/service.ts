@@ -179,12 +179,7 @@ export class OperatorCopilotService {
       );
       for await (const trace of stream.events) {
         if (trace.kind === "tool_call_validated") {
-          const describedEntity = descriptors.get(trace.toolName)?.describeEntity?.(trace.input, {
-            workspaceId: input.workspaceId,
-            accountId: input.accountId,
-            operatorUserId: input.operatorUserId,
-            pageContext: input.pageContext,
-          });
+          const describedEntity = await this.describeActivityEntity(descriptors.get(trace.toolName), trace.input, input);
           if (describedEntity) entitiesByToolCall.set(trace.callId, describedEntity);
         }
         const event = mapCopilotTraceEvent(trace, labels, entitiesByToolCall);
@@ -218,6 +213,34 @@ export class OperatorCopilotService {
     }
   }
 
+  /**
+   * Best-effort label for the activity event shown while a tool runs. Descriptors resolve names
+   * through DB-backed ports, and this runs in the service's own stream loop rather than inside the
+   * runtime's tool-invocation handling — so an exception here would escape to the turn's catch and
+   * persist the whole turn as failed *before the tool was even invoked*. A missing entity is
+   * already a normal outcome for this path, so a failed lookup degrades to exactly that.
+   */
+  private async describeActivityEntity(
+    descriptor: CopilotToolDescriptor | undefined,
+    toolInput: unknown,
+    input: { workspaceId: string; accountId: string; operatorUserId: string; permissions?: ReadonlySet<string>; pageContext: CopilotPageContext },
+  ): Promise<CopilotEntityReference | null> {
+    try {
+      const described = await descriptor?.describeEntity?.(toolInput, {
+        workspaceId: input.workspaceId,
+        accountId: input.accountId,
+        operatorUserId: input.operatorUserId,
+        permissions: input.permissions,
+        pageContext: input.pageContext,
+      });
+      if (!described) return null;
+      if (!("kind" in described)) return described;
+      return described.kind === "resolved" ? described.entity : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async openConversation(input: { workspaceId: string; operatorUserId: string; conversationId: string | null; message: string }): Promise<CopilotConversation | "running" | null> {
     if (input.conversationId) {
       return this.deps.repository.acquireTurn({ id: input.conversationId, workspaceId: input.workspaceId, operatorUserId: input.operatorUserId });
@@ -234,7 +257,7 @@ export class OperatorCopilotService {
   private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, labels: ReadonlyMap<string, string>): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => input.permissions.has(descriptor.requiredPermission))
-      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, pageContext: input.pageContext }) as AgentTool);
+      .map((descriptor) => descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, copilotConversationId: input.copilotConversationId, permissions: input.permissions, pageContext: input.pageContext }) as AgentTool);
   }
 
   private async buildPriorTranscript(conversationId: string): Promise<string | null> {

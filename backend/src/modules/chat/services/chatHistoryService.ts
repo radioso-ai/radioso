@@ -169,6 +169,7 @@ export interface ChatConversationTurn {
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
   answerFeedbackEntries?: ChatAnswerFeedbackEntry[];
+  latencyMs?: number;
   debug?: ChatConversationTurnDebug;
   /**
    * Set only when the conversation is read with `includeTurnFailureDebug` (the
@@ -214,6 +215,17 @@ export interface ChatConversationDetail {
   nextCursor: string | null;
   tailCursor: string | null;
   messages: ChatConversationTurn[];
+  ownership?: ChatConversationOwnership;
+}
+
+/**
+ * Message-scoped operator diagnostic. It intentionally works for user messages:
+ * unanswered turns store their failure fact on the user message because there is
+ * no assistant message to attach it to.
+ */
+export interface ChatConversationTurnDetail {
+  conversationId: string;
+  message: ChatConversationTurn;
   ownership?: ChatConversationOwnership;
 }
 
@@ -924,6 +936,10 @@ export class ChatHistoryService {
       // DASHBOARD-only operator diagnostic. The public/embed visitor path calls this
       // method directly and must never set it.
       includeTurnFailureDebug?: boolean;
+      // OFF by default: turn latency is an operator performance diagnostic, and it is not part
+      // of the public chat contract. The public/embed visitor path shares this method, and its
+      // presenter forwards unrecognised fields, so an ungated field here becomes public API.
+      includeLatency?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1002,6 +1018,7 @@ export class ChatHistoryService {
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
+        ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
@@ -1012,11 +1029,79 @@ export class ChatHistoryService {
     };
   }
 
+  async getConversationTurn(
+    workspaceId: string,
+    messageId: string,
+    options: {
+      includeAnswerFeedback?: boolean;
+      includeOwnership?: boolean;
+      includeTurnFailureDebug?: boolean;
+    } = {},
+  ): Promise<ChatConversationTurnDetail> {
+    const message = await this.messageRepository.findByIdAndWorkspaceId(workspaceId, messageId);
+    if (!message) {
+      throw notFound("Conversation message not found");
+    }
+
+    const isAssistant = message.role === "assistant";
+    const isUser = message.role === "user";
+    const [auditEvents, turnFailureEvents, feedbackByAssistantMessageId, ownershipRecord] = await Promise.all([
+      isAssistant
+        ? this.auditEventRepository.listChatTurnEventsByAssistantMessageIds(
+            workspaceId,
+            message.conversationId,
+            [message.id],
+          )
+        : Promise.resolve([]),
+      options.includeTurnFailureDebug && isUser
+        ? this.auditEventRepository.listUnansweredChatAnswerEventsByUserMessageIds(
+            workspaceId,
+            message.conversationId,
+            [message.id],
+          )
+        : Promise.resolve([]),
+      options.includeAnswerFeedback && isAssistant
+        ? this.answerFeedbackHistoryProvider.listByAssistantMessageIds(workspaceId, [message.id])
+        : Promise.resolve(new Map<string, ChatAnswerFeedbackEntry[]>()),
+      options.includeOwnership
+        ? this.conversationOwnership.load(message.conversationId)
+        : Promise.resolve(null),
+    ]);
+    const artifacts = isAssistant ? this.buildArtifactsIndex(auditEvents).get(message.id) : undefined;
+    const debug = isAssistant ? this.buildDebugIndex(auditEvents, [message]).get(message.id) : undefined;
+    const turnFailure = isUser
+      ? this.buildTurnFailureIndex(turnFailureEvents).get(message.id)
+      : undefined;
+
+    return {
+      conversationId: message.conversationId,
+      message: {
+        id: message.id,
+        role: message.role,
+        source: message.source ?? deriveMessageSourceFromRole(message.role),
+        content: message.content,
+        createdAt: toIsoString(message.createdAt),
+        inputMetadata: message.inputMetadata,
+        citations: artifacts?.citations,
+        answerSegments: artifacts?.answerSegments,
+        suggestions: artifacts?.suggestions,
+        answerFeedbackEntries: feedbackByAssistantMessageId.get(message.id),
+        latencyMs: message.totalLatencyMs,
+        debug,
+        turnFailure,
+        operatorDisplayName: operatorDisplayNameFrom(message),
+      },
+      ...(ownershipRecord?.state === "human_owned"
+        ? { ownership: toChatConversationOwnership(ownershipRecord) }
+        : {}),
+    };
+  }
+
   async tailConversation(
     workspaceId: string,
     conversationId: string,
     input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean } = {},
+    options: { includeOwnership?: boolean; includeLatency?: boolean } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1035,7 +1120,7 @@ export class ChatHistoryService {
     ]);
 
     return {
-      messages: messages.map((message) => this.toLightweightConversationTurn(message)),
+      messages: messages.map((message) => this.toLightweightConversationTurn(message, options.includeLatency === true)),
       cursor: latestCursor,
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1043,7 +1128,7 @@ export class ChatHistoryService {
     };
   }
 
-  private toLightweightConversationTurn(message: MessageRecord): ChatConversationTurn {
+  private toLightweightConversationTurn(message: MessageRecord, includeLatency: boolean): ChatConversationTurn {
     return {
       id: message.id,
       role: message.role,
@@ -1051,6 +1136,7 @@ export class ChatHistoryService {
       content: message.content,
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
+      ...(includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }

@@ -44,6 +44,7 @@ describe("copilot chat readers", () => {
       includeAnswerFeedback: true,
       includeOwnership: true,
       includeTurnFailureDebug: true,
+      includeLatency: true,
     });
   });
 
@@ -97,6 +98,7 @@ describe("copilot chat readers", () => {
       includeAnswerFeedback: true,
       includeOwnership: true,
       includeTurnFailureDebug: true,
+      includeLatency: true,
     });
     expect(result.transcript.messages[0]).toMatchObject({
       answerOutcome: "retrieval.answer",

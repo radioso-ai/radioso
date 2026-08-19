@@ -8,6 +8,8 @@ import { createAgentConfigurationCopilotTools } from "../../../src/modules/opera
 import { createChatCopilotTools } from "../../../src/modules/operatorCopilot/tools/chat.js";
 import { createDocumentSearchCopilotTools } from "../../../src/modules/operatorCopilot/tools/documents.js";
 import { createRoutineDefinitionCopilotTools } from "../../../src/modules/operatorCopilot/tools/routines.js";
+import { createCopilotToolDescriptors } from "../../../src/modules/operatorCopilot/tools/index.js";
+import { copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
 import { buildDescriptors, dependencies } from "./copilot-tools-test-helpers.js";
 
 const context = {
@@ -16,6 +18,68 @@ const context = {
   operatorUserId: "operator-1",
   pageContext: { view: "evals" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] },
 };
+
+// These two exercise the REAL composition barrel rather than re-wiring the factories by hand.
+// The other suites build descriptors factory-by-factory, which means they wire dependencies
+// correctly themselves and can never catch the barrel wiring them wrongly — which is exactly how
+// a dead tool and a dead name-resolution path both reached main.
+const realCatalog = () => {
+  const stub = () => vi.fn(async () => { throw new Error("not exercised: these tests only resolve entities"); });
+  const agentService = {
+    listExisting: vi.fn(async () => [{ id: "agent-1", name: "Support" }]),
+    resolve: stub(),
+    get: stub(),
+  };
+  return createCopilotToolDescriptors({
+    agentService,
+    routineDefinitionService: { list: stub(), get: stub() },
+    chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
+    documentSearchService: { search: stub() },
+    documentStatusService: { summarize: stub() },
+    evalResultsService: { listWithLatestRun: stub() },
+    qualitySignalsService: { getQualityStats: stub(), listLowQualityTurns: stub() },
+    audiencePulseService: { read: stub() },
+    agentSkillsService: { list: stub() },
+    skillCapabilityTargets: { list: stub() },
+    workspaceSettings: {
+      getRetrievalDefaults: stub(), getIngestionSettings: stub(), listLlmModels: stub(),
+      getProviderCredentialHealth: stub(), getGeneralSettings: stub(),
+    },
+    proposalRepository: { createProposal: stub() },
+    proposalAdapters: (["directive", "agent_setting", "routine"] as const).map((targetType) => ({
+      targetType, draft: stub(), preview: stub(), applyIfVersionMatches: stub(),
+    })),
+    auditService: { record: stub() },
+  } as unknown as Parameters<typeof createCopilotToolDescriptors>[0]);
+};
+
+describe("copilot catalog wiring", () => {
+  it("requires only permissions the turn route actually resolves", () => {
+    // A descriptor whose permission is missing from the route's list is filtered out of every
+    // live turn and is unreachable in production, while unit tests that inject permissions
+    // directly still pass. workspace_settings shipped dead this way.
+    const missing = realCatalog()
+      .filter((descriptor) => !(copilotToolPermissions as ReadonlyArray<string>).includes(descriptor.requiredPermission))
+      .map((descriptor) => `${descriptor.name} needs ${descriptor.requiredPermission}`);
+
+    expect(missing).toEqual([]);
+  });
+
+  it("gives every name-resolving descriptor the agent lookup it needs", async () => {
+    // agentLookup is optional on the factories, so omitting it in the barrel is not a type error:
+    // describeEntity just returns not_found for every name. Tools advertising agentName silently
+    // stopped resolving "show eval results for Support" this way.
+    const unresolved: string[] = [];
+    for (const descriptor of realCatalog()) {
+      const shape = (descriptor.inputSchema as { shape?: Record<string, unknown> }).shape;
+      if (!shape?.agentName || !descriptor.describeEntity) continue;
+      const described = await descriptor.describeEntity({ agentName: "Support" }, context);
+      if (described && "kind" in described && described.kind === "not_found") unresolved.push(descriptor.name);
+    }
+
+    expect(unresolved).toEqual([]);
+  });
+});
 
 describe("copilot catalog shape", () => {
   it("classifies every family reader as a read", () => {

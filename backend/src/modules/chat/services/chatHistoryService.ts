@@ -936,6 +936,10 @@ export class ChatHistoryService {
       // DASHBOARD-only operator diagnostic. The public/embed visitor path calls this
       // method directly and must never set it.
       includeTurnFailureDebug?: boolean;
+      // OFF by default: turn latency is an operator performance diagnostic, and it is not part
+      // of the public chat contract. The public/embed visitor path shares this method, and its
+      // presenter forwards unrecognised fields, so an ungated field here becomes public API.
+      includeLatency?: boolean;
     } = {},
   ): Promise<ChatConversationDetail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1014,7 +1018,7 @@ export class ChatHistoryService {
         answerSegments: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.answerSegments : undefined,
         suggestions: message.role === "assistant" ? artifactsByAssistantMessageId.get(message.id)?.suggestions : undefined,
         answerFeedbackEntries: message.role === "assistant" ? feedbackByAssistantMessageId.get(message.id) : undefined,
-        latencyMs: message.totalLatencyMs,
+        ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
         debug: message.role === "assistant" ? debugByAssistantMessageId.get(message.id) : undefined,
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
@@ -1097,7 +1101,7 @@ export class ChatHistoryService {
     workspaceId: string,
     conversationId: string,
     input: { cursor?: string; limit: number },
-    options: { includeOwnership?: boolean } = {},
+    options: { includeOwnership?: boolean; includeLatency?: boolean } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
 
@@ -1116,7 +1120,7 @@ export class ChatHistoryService {
     ]);
 
     return {
-      messages: messages.map((message) => this.toLightweightConversationTurn(message)),
+      messages: messages.map((message) => this.toLightweightConversationTurn(message, options.includeLatency === true)),
       cursor: latestCursor,
       ...(ownershipRecord?.state === "human_owned"
         ? { ownership: toChatConversationOwnership(ownershipRecord) }
@@ -1124,7 +1128,7 @@ export class ChatHistoryService {
     };
   }
 
-  private toLightweightConversationTurn(message: MessageRecord): ChatConversationTurn {
+  private toLightweightConversationTurn(message: MessageRecord, includeLatency: boolean): ChatConversationTurn {
     return {
       id: message.id,
       role: message.role,
@@ -1132,7 +1136,7 @@ export class ChatHistoryService {
       content: message.content,
       createdAt: toIsoString(message.createdAt),
       inputMetadata: message.inputMetadata,
-      latencyMs: message.totalLatencyMs,
+      ...(includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
     };
   }

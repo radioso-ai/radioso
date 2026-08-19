@@ -3838,6 +3838,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     });
   }
 
+  async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
+    for (const messages of this.items.values()) {
+      const message = messages.find((candidate) => candidate.workspaceId === workspaceId && candidate.id === messageId);
+      if (message) return message;
+    }
+    return null;
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }

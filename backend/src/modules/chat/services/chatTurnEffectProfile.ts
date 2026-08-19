@@ -73,6 +73,9 @@ const createEphemeralConversationRepository = (): ConversationRepositoryPort => 
 });
 
 const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
+  async findByIdAndWorkspaceId() {
+    return null;
+  },
   async listByConversationId() {
     return [];
   },

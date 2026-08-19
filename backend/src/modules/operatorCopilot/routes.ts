@@ -10,7 +10,12 @@ import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
-const toolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read"] as const;
+/**
+ * The permissions resolved per turn and handed to the catalog filter. A descriptor whose
+ * requiredPermission is absent here is silently dropped from every live turn, so this list must
+ * cover the whole catalog — asserted by copilot-catalog-shape.test.ts.
+ */
+export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read"] as const;
 
 export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | "authService" | "workspaceSessionService" | "accountAccessService" | "llmCapabilityResolver" | "operatorCopilotService">): Router => {
   const router = Router();
@@ -79,7 +84,7 @@ export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | 
       if (!(await availability(dependencies, res)).available) { res.status(503).json({ reason: "no_llm_capability" }); return; }
       const { workspaceId, accountId, userId, principal } = sessionLocals(res);
       const permissions = new Set<string>();
-      for (const permission of toolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
+      for (const permission of copilotToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
       await sendCopilotSse(res, dependencies.operatorCopilotService.runTurn({ workspaceId, accountId, operatorUserId: userId, conversationId: req.body.conversationId, message: req.body.message, pageContext: req.body.pageContext, permissions }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }

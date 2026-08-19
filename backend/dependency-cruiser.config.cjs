@@ -42,6 +42,18 @@ module.exports = {
       },
     },
     {
+      name: "no-domain-module-imports-operator-copilot",
+      severity: "error",
+      comment:
+        "Operator copilot is the broadest-knowledge backend module. Domain modules must not depend on it; application composition, HTTP, server, and repository adapters may continue to wire or expose it.",
+      from: {
+        path: "^src/modules/(?!operatorCopilot)",
+      },
+      to: {
+        path: "^src/modules/operatorCopilot",
+      },
+    },
+    {
       name: "no-direct-crawler-package-imports",
       severity: "error",
       comment:

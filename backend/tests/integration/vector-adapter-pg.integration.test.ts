@@ -187,6 +187,30 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
     );
   };
 
+  it("drops a width's index once no rows of that width remain", async () => {
+    const indexNames = async (): Promise<string[]> => {
+      const rows = await database.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+         WHERE tablename = 'chunk_embeddings' AND indexname LIKE 'chunk_embeddings_hnsw_%'
+         ORDER BY indexname`,
+      );
+      return rows.map((row) => row.indexname);
+    };
+
+    // prepareSpace creates the index for the space's width.
+    const space = await createSpace(7);
+    await adapter.admin.prepareSpace({ space });
+    expect(await indexNames()).toContain("chunk_embeddings_hnsw_7_idx");
+
+    // With no rows of that width, the index earns nothing but planning time.
+    await database.query("DELETE FROM chunk_embeddings");
+    await expect(adapter.admin.dropUnusedIndexes()).resolves.toBeGreaterThan(0);
+    expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
+
+    // Idempotent: a second sweep finds nothing left to do.
+    await expect(adapter.admin.dropUnusedIndexes()).resolves.toBe(0);
+  });
+
   it("declares both search modes, since the width decides which one answers", async () => {
     await expect(adapter.capabilities.getCapabilities()).resolves.toEqual({
       backend: "pgvector",

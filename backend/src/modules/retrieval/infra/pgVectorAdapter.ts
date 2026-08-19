@@ -16,7 +16,9 @@ import { compilePgChunkFilter } from "./pgChunkFilter.js";
 import { retrievableDocumentPredicateSql } from "./documentRetrievalEligibility.js";
 import {
   buildChunkEmbeddingDistanceExpression,
+  buildChunkEmbeddingIndexDropSql,
   buildChunkEmbeddingIndexSql,
+  parseChunkEmbeddingIndexWidth,
 } from "./chunkEmbeddingVectorIndex.js";
 
 const PGVECTOR_CAPABILITIES: VectorIndexCapabilities = {
@@ -135,6 +137,35 @@ implements VectorAdapter {
         dimensions: input.space.dimensions,
         distanceMetric: input.space.distanceMetric,
       });
+    },
+    // Index lifecycle mirrors prepareSpace: a width's index exists only while rows of
+    // that width do. Retiring an embedding space leaves its index matching nothing,
+    // and Postgres still considers every index when planning, so a workspace that
+    // changes model repeatedly would accumulate a permanent planning cost. Safe to
+    // call at any time — a width whose rows return gets its index back from
+    // prepareSpace before the next write lands.
+    dropUnusedIndexes: async (): Promise<number> => {
+      const indexes = await this.database.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+         WHERE tablename = 'chunk_embeddings' AND indexname LIKE 'chunk_embeddings_hnsw_%'`,
+      );
+      let dropped = 0;
+      for (const { indexname } of indexes) {
+        const width = parseChunkEmbeddingIndexWidth(indexname);
+        if (width === null) {
+          continue;
+        }
+        const [stillUsed] = await this.database.query<{ present: number }>(
+          "SELECT 1 AS present FROM chunk_embeddings WHERE dimensions = $1 LIMIT 1",
+          [width],
+        );
+        if (stillUsed) {
+          continue;
+        }
+        await this.database.query(buildChunkEmbeddingIndexDropSql(width));
+        dropped += 1;
+      }
+      return dropped;
     },
     resetSpace: async (
       input: { spaceId: string; workspaceId?: string },

@@ -49,6 +49,18 @@ const vectorTypeFor = (dimensions: number): "vector" | "halfvec" =>
 export const buildChunkEmbeddingIndexName = (dimensions: number): string =>
   `chunk_embeddings_hnsw_${assertIndexableDimensions(dimensions)}_idx`;
 
+// Matches the names this module generates, so unused indexes can be found in the
+// catalog and their width recovered without a separate bookkeeping table.
+export const CHUNK_EMBEDDING_INDEX_NAME_PATTERN = /^chunk_embeddings_hnsw_(\d+)_idx$/;
+
+export const parseChunkEmbeddingIndexWidth = (indexName: string): number | null => {
+  const width = CHUNK_EMBEDDING_INDEX_NAME_PATTERN.exec(indexName)?.[1];
+  return width === undefined ? null : Number(width);
+};
+
+export const buildChunkEmbeddingIndexDropSql = (dimensions: number): string =>
+  `DROP INDEX IF EXISTS ${buildChunkEmbeddingIndexName(dimensions)}`;
+
 /**
  * The indexed operand and the matching cast for the query parameter. Both sides of
  * the `<=>` must use the same type, and the operand must appear verbatim in the

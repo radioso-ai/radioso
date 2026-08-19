@@ -3,7 +3,7 @@
 import { createContext, useContext, type ReactNode } from 'react'
 
 import type { RoutineSlotType } from '@/lib/api-types'
-import type { ChipDocVariable } from '@/lib/routine-prose'
+import type { ChipDocVariable } from '@radioso/routine-document'
 
 // Lets a chip (rendered deep inside the Lexical document) read and set the type of the
 // variable it references, which is owned by the editor screen's state. Keeps the type

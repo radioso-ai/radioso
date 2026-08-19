@@ -211,7 +211,7 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
   });
 });
 
-test("an existing routine opens in prose (outline retired) and toggles to form", async ({ page }) => {
+test("an existing routine opens in the Document view and toggles to form", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],

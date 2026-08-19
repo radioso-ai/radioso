@@ -6,7 +6,7 @@ import { ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListC
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
 import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
-import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
+import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@radioso/routine-document'
 
 export const instructionIsEmpty = (segments: RoutineBlockInstructionSegment[]) =>
   segments.every((segment) => segment.kind === 'text' && !segment.text.trim())

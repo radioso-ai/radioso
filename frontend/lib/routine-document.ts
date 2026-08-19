@@ -1,7 +1,6 @@
-import { instructionToBlockSegments } from '@radioso/routine-markdown'
+import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@radioso/routine-document'
 
 import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
-import { formatConditionLabel, formatSlotFilledLabel, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const TARGET_MESSAGE_LIMIT = 40
 

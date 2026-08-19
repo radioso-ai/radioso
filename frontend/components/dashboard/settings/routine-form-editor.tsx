@@ -49,7 +49,7 @@ import {
   type RoutineStepForm,
 } from '@/lib/routine-form'
 import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
-import type { RoutineSkillBindingState } from '@/lib/routine-prose'
+import type { RoutineSkillBindingState } from '@radioso/routine-document'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['llm', 'slot_filled', 'outcome', 'counter', 'default']

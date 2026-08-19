@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { routineSkillCatalogApi, type SkillAuthoringDescriptor, type SkillAuthoringInput } from '@/lib/api-routine-skill-catalog'
-import type { RoutineInputBinding, RoutineSkillBindingState, RoutineStepMode } from '@/lib/routine-prose'
+import type { RoutineInputBinding, RoutineSkillBindingState, RoutineStepMode } from '@radioso/routine-document'
 
 type RoutineSkillCatalogState = {
   agentId: string

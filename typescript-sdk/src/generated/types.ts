@@ -976,24 +976,6 @@ export interface paths {
         patch: operations["updateAgentRoutine"];
         trace?: never;
     };
-    "/api/v1/agents/{agentId}/routines/{routineId}/portable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get a routine definition as portable markdown */
-        get: operations["getAgentRoutinePortableDocument"];
-        /** Update a draft routine definition from portable markdown */
-        put: operations["updateAgentRoutinePortableDocument"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/agents/{agentId}/routines/draft-assist": {
         parameters: {
             query?: never;
@@ -1005,40 +987,6 @@ export interface paths {
         put?: never;
         /** Draft a routine definition from operator procedure prose */
         post: operations["draftAgentRoutineFromProcedure"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/agents/{agentId}/routines/portable": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create a draft routine definition from portable markdown */
-        post: operations["createAgentRoutinePortableDocument"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/routines/portable/canonicalize": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Canonicalize portable routine markdown without persistence */
-        post: operations["canonicalizeRoutinePortableDocument"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4283,22 +4231,6 @@ export interface components {
         RoutineDefinitionValidateResponse: {
             validation: components["schemas"]["RoutineValidationResult"];
         };
-        PortableRoutineDocumentEnvelope: {
-            grammarVersion: number;
-            content: string;
-        };
-        PortableRoutineDocumentCreateResponse: components["schemas"]["PortableRoutineDocumentEnvelope"] & {
-            /** Format: uuid */
-            routineId: string;
-        };
-        PortableRoutineParseDiagnostic: {
-            line: number;
-            code: string;
-            message: string;
-        };
-        PortableRoutineParseDiagnosticsResponse: {
-            diagnostics: components["schemas"]["PortableRoutineParseDiagnostic"][];
-        };
         RoutineDraftAssistResponse: {
             draft: {
                 name: string;
@@ -4402,7 +4334,6 @@ export interface components {
             error: "Routine definition is invalid";
             validation: components["schemas"]["RoutineValidationResult"];
         };
-        PortableRoutineSaveRejectedResponse: components["schemas"]["RoutineDefinitionPublishRejectedResponse"] | components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
         SkillAuthoringInput: {
             key: string;
             /** @enum {string} */
@@ -9866,119 +9797,6 @@ export interface operations {
             };
         };
     };
-    getAgentRoutinePortableDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Portable routine document returned */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition cannot be represented as portable markdown */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
-                };
-            };
-        };
-    };
-    updateAgentRoutinePortableDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-                routineId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-            };
-        };
-        responses: {
-            /** @description Portable routine document updated and returned in canonical form */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-                };
-            };
-            /** @description Portable markdown grammar validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent or routine definition not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid or cannot be represented as portable markdown */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineSaveRejectedResponse"];
-                };
-            };
-        };
-    };
     draftAgentRoutineFromProcedure: {
         parameters: {
             query?: never;
@@ -10032,119 +9850,6 @@ export interface operations {
             };
             /** @description Routine draft could not be generated */
             422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    createAgentRoutinePortableDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agentId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-            };
-        };
-        responses: {
-            /** @description Draft routine definition created from portable markdown */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineDocumentCreateResponse"];
-                };
-            };
-            /** @description Portable markdown grammar validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Agent not found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine name and version already exist for this agent */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Routine definition is invalid or cannot be represented as portable markdown */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineSaveRejectedResponse"];
-                };
-            };
-        };
-    };
-    canonicalizeRoutinePortableDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-            };
-        };
-        responses: {
-            /** @description Portable routine document returned in canonical form */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineDocumentEnvelope"];
-                };
-            };
-            /** @description Portable markdown grammar validation failed */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["PortableRoutineParseDiagnosticsResponse"];
-                };
-            };
-            /** @description Authentication required */
-            401: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -193,23 +193,6 @@ normal answering when it finishes.
 Use the test to check the trigger, information collection, skill bindings,
 branches, endings, and handoffs before publishing.
 
-## Exchange a routine as portable markdown
-
-Portable routine markdown is the routine interchange format. Use an export to
-write a routine as markdown, then use an import to read that document into a
-routine. The portable endpoints and portable agent packages use the same format,
-which makes it useful for repository-based workflows and moving a routine between
-agents.
-
-The format carries the routine body, name, trigger, priority, reentry, completion
-export, terminal ids and messages, and value types and flags. It carries skill
-names rather than internal ids. Importing into another agent presents an
-**unknown skill** marker for a name that needs a matching capability.
-
-For the exact grammar and canonical form, see
-[Portable Routine Markdown](./portable-routine-markdown.md). For endpoint usage,
-see [Portable Routines API](./portable-routines-api.md).
-
 ## Completion export
 
 The **Completion export** panel lets a routine send its collected values to a

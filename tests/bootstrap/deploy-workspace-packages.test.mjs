@@ -13,7 +13,9 @@ test("production Dockerfiles include compiled routine workspace packages", async
     readRepoFile("infra/frontend.Dockerfile"),
   ]);
 
-  for (const packageName of ["routine-definition", "routine-markdown"]) {
+  // The backend compiles routine definitions; only the dashboard renders the routine
+  // document, so the projection package ships in the frontend image alone.
+  for (const packageName of ["routine-definition"]) {
     assert.match(
       backendDockerfile,
       new RegExp(`COPY packages/${packageName}/package\\.json ./packages/${packageName}/package\\.json`),
@@ -26,7 +28,11 @@ test("production Dockerfiles include compiled routine workspace packages", async
       backendDockerfile,
       new RegExp(`COPY --chown=node:node --from=build /app/packages/${packageName}/dist ./packages/${packageName}/dist`),
     );
+  }
 
+  assert.doesNotMatch(backendDockerfile, /packages\/routine-document/);
+
+  for (const packageName of ["routine-definition", "routine-document"]) {
     assert.match(
       frontendDockerfile,
       new RegExp(`COPY packages/${packageName}/package\\.json ./packages/${packageName}/package\\.json`),
@@ -46,5 +52,5 @@ test("staging deploy runs when routine workspace packages change", async () => {
   const deployStaging = await readRepoFile(".github/workflows/deploy-staging.yml");
 
   assert.match(deployStaging, /packages\/routine-definition\/\*\*/);
-  assert.match(deployStaging, /packages\/routine-markdown\/\*\*/);
+  assert.match(deployStaging, /packages\/routine-document\/\*\*/);
 });

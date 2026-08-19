@@ -84,7 +84,7 @@ import {
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import { routineToBlockDoc } from '@/lib/routine-prose'
+import { routineToBlockDoc } from '@radioso/routine-document'
 
 // A blank routine for the Form tab: one empty step the author fills in, no transitions
 // yet, and a single complete terminal. The Document tab replaces the seed step when the

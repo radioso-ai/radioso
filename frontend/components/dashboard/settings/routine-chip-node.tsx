@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
-import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
+import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@radioso/routine-document'
 
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 

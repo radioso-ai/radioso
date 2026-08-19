@@ -1,5 +1,5 @@
 import type { components, operations } from '../../typescript-sdk/src/generated/types'
-import type { RoutineInputBinding } from '@radioso/routine-markdown'
+import type { RoutineInputBinding } from '@radioso/routine-document'
 import { API_BASE } from './api-client'
 import {
   readRetrievalSkillSettingsOverride,

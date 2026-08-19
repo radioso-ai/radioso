@@ -26,6 +26,7 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       queryEmbeddingDurationMs: input.activeEmbeddingDurationMs,
       semanticRetrievalAvailability: input.semanticRetrievalAvailability,
       semanticRetrievalFailureReason: input.semanticRetrievalFailureReason,
+      degradedRetrievalChannels: input.degradedRetrievalChannels,
       retrievalSkipped: false,
       parsedQuery: input.activeParsedQuery,
       appliedConstraints: input.appliedConstraints,

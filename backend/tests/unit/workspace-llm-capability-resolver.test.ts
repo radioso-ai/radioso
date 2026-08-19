@@ -13,10 +13,10 @@ import {
 } from "../../src/shared/infra/llm/providerTypes.js";
 
 const envConfig: ResolvedLlmConfig = {
-  chat: { capability: "chat", provider: "openai", model: "gpt-5.2", apiKey: "env-openai" },
-  rewrite: { capability: "rewrite", provider: "openai", model: "gpt-5.2", apiKey: "env-openai" },
-  rerank: { capability: "rerank", provider: "openai", model: "gpt-5-mini", apiKey: "env-openai" },
-  embeddings: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small", apiKey: "env-openai" },
+  chat: { capability: "chat", provider: "openai", model: "gpt-5.2" },
+  rewrite: { capability: "rewrite", provider: "openai", model: "gpt-5.2" },
+  rerank: { capability: "rerank", provider: "openai", model: "gpt-5-mini" },
+  embeddings: { capability: "embeddings", provider: "openai", model: "text-embedding-3-small" },
   embeddingProviderConfigs: [],
 };
 
@@ -198,7 +198,6 @@ describe("WorkspaceLlmCapabilityResolver", () => {
         capability: "chat",
         provider: "openai-compatible",
         model: "compat-model",
-        apiKey: "env-compat",
         baseUrl: "https://compat.example.com",
       },
     };
@@ -212,6 +211,40 @@ describe("WorkspaceLlmCapabilityResolver", () => {
 
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
     expect(config.baseUrl).toBe("https://compat.example.com");
+  });
+
+  it("preserves the exact openai-compatible endpoint from a capability override", async () => {
+    const compatibleDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      embeddings: {
+        capability: "embeddings",
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-b.example.com/v1",
+      },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: compatibleDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai-compatible": "ws-compat-key" }),
+      envKeys: envKeyResolver({}),
+      envBaseUrls: { "openai-compatible": "https://endpoint-b.example.com/v1" },
+    });
+
+    const config = await resolver.resolve("embeddings", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-a.example.com/v1",
+      },
+    });
+
+    expect(config).toMatchObject({
+      provider: "openai-compatible",
+      apiKey: "ws-compat-key",
+      baseUrl: "https://endpoint-a.example.com/v1",
+    });
   });
 
   it("rewrite/rerank capabilities ignore capabilityOverride from agent (workspace-level only)", async () => {

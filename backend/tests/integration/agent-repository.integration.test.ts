@@ -223,6 +223,49 @@ describeIntegration("AgentRepository (Postgres)", () => {
     expect(reread?.sourceScope).toEqual({ mode: "all" });
   });
 
+  it("does not rewrite source links when an unrelated patch follows source deletion", async () => {
+    const deletedSourceId = randomUUID();
+    await database.query(
+      `INSERT INTO document_sources (id, workspace_id, kind, name) VALUES ($1, $2, $3, $4)`,
+      [deletedSourceId, workspaceId, "manual_upload", "Deleted source"],
+    );
+    const agent = await repository.create(workspaceId, {
+      name: "Stale source scope",
+      sourceScope: { mode: "selected", sourceIds: [deletedSourceId] },
+    });
+    await database.query(
+      `INSERT INTO agent_skills (
+         id, workspace_id, agent_id, skill_name, kind, target_type,
+         target_id, config, invocation_mode, enabled
+       )
+       VALUES ($1, $2, $3, 'answer', 'retrieve', 'source_scope', NULL, $4::jsonb, 'default_answer', true)`,
+      [
+        randomUUID(),
+        workspaceId,
+        agent.id,
+        JSON.stringify({
+          sourceScope: { sourceIds: [deletedSourceId] },
+          suggestedQuestionsEnabled: true,
+          exposedInputs: { query: true },
+        }),
+      ],
+    );
+
+    // Deleting the source cascades the relational link, while the retrieve-skill JSON
+    // remains stale until the operator explicitly edits retrieval scope.
+    await database.query(`DELETE FROM document_sources WHERE id = $1`, [deletedSourceId]);
+
+    const updated = await repository.update(agent.id, workspaceId, {
+      surfaceSettings: {
+        websiteEmbed: {
+          allowedOrigins: ["https://new.example.com"],
+        },
+      },
+    });
+
+    expect(updated.surfaceSettings.websiteEmbed.allowedOrigins).toEqual(["https://new.example.com"]);
+  });
+
   it("update rejects a stale optimistic-concurrency token", async () => {
     const created = await repository.create(workspaceId, { name: "Concurrent" });
     await expect(

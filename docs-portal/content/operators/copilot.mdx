@@ -1,0 +1,143 @@
+---
+title: "Ray"
+description: "Use Ray in the dashboard to investigate agent behavior with page context, selected text, and linked activity."
+last_updated: 2026-08-18
+---
+
+# Ray
+
+Ray, your operator copilot, helps you investigate an agent without leaving the dashboard. Ask why a
+conversation received a particular answer, why retrieval did not run, which
+trace stage produced a refusal, which documents failed to process, or which
+skills an agent can reach. Ray reads the workspace data available to
+your operator session and streams its findings as it works.
+
+When you ask about configuration, Ray can discover the workspace's agents and
+read the selected agent's settings, authored directives, and built-in answer
+directives. It can also list that agent's routines and inspect a routine's
+authored definition, so questions about overlapping directives or a routine
+that never triggers can start from the agent name rather than an internal id.
+
+Ray sees document titles, processing status, and failure reasons rather than
+document text, and it sees the names of a skill's settings rather than their
+values. So it can tell you that a webhook skill has no connection configured,
+without reading the token you would put there.
+
+## Open the panel
+
+Ray is available on every dashboard view. Choose **Ray** in the top bar, or
+press **Cmd/Ctrl+J**. Ray stays available while you move between Activity,
+Agents, Knowledge Base, Eval, and Quality.
+
+The panel puts the conversation first:
+
+- **The thread** shows your question, Ray's streamed answer, the activity behind
+  the answer, and any entities Ray read during the turn.
+- **Looking at** sits above the thread and names the dashboard view and agent
+  Ray uses as context. Expand it to see the customer conversation and the other
+  entities currently on screen.
+- The **conversation menu** in the panel header holds your saved Ray threads.
+  Open it to start a **New conversation**, switch to a **Recent conversation**,
+  or **Delete** the current one.
+
+The full-page **Ray** view shows the same thread with the conversation list and
+context rail alongside it, which gives more room for a longer investigation.
+
+## Ask about what you see
+
+The panel captures the dashboard context that is already on screen. A selected
+conversation row, agent, routine, eval case, or trace stage can be included in
+the next turn, with display names shown in the context rail.
+
+To ask about a particular sentence, select the text in the dashboard. Choose
+**Ask Ray** beside the selection. Ray opens with the text quoted in the
+composer and sends it as selected context, limited to 2,000 characters.
+
+When a turn reads a specific conversation, agent, or routine, the answer shows
+a **Read during this turn** chip. Choose a chip to open the matching dashboard
+surface. If the current screen has no display name for an entity, the chip uses
+its id so the link remains useful.
+
+On an empty thread, suggested questions adapt to the view and focused entity.
+For example, a focused conversation offers to explain what happened in that
+conversation.
+
+## Review proposals
+
+When Ray identifies a configuration change, it can draft a proposal for a
+directive, an agent setting, or a routine. The proposal card names the target,
+summarizes the change, and shows the current and proposed values before
+anything is written. Expand **Show changes** to inspect the field-level diff.
+
+Applying a routine proposal creates a draft routine. Review and publish it in
+the routine editor.
+
+Operators with `workspace.agents.manage` can choose **Apply** and confirm the
+change. Ray sends the confirmed proposal through the same guarded
+management service used by the dashboard. Operators with read access can
+review or dismiss a pending proposal; the Apply action is available only when
+their session can manage agents.
+
+Each proposal is checked against the target version captured while it was
+drafted. If the target changed in the meantime, the card becomes **Stale** and
+explains that the change was not applied. Ask Ray to draft the change again
+so the proposal reflects the current configuration. Applied proposals link to
+the target entity, while failed proposals show the reason returned by the
+management service.
+
+## Follow a running turn
+
+While Ray works, activity lines show the UI-safe capability label and its
+stage. For example, **Reading conversation trace — started** becomes
+**completed** when that read finishes. After the turn completes, the timeline
+collapses to a one-line summary; choose it to inspect the individual reads. A
+failed activity stays visible so you can distinguish an incomplete
+investigation from a successful one.
+
+The answer carries a terminal outcome:
+
+- **Completed** means the turn reached its normal end.
+- **Budget exhausted** means Ray returned its partial findings after its
+  runtime budget ran out.
+- **Turn failed** means the turn could not complete. Read the visible activity
+  and error state before retrying. Choose **Retry** to send the same question
+  again with the current page context.
+
+Only one turn runs in a Ray conversation at a time. The composer is
+disabled while a turn is active, and a conversation that is already running
+shows the same locked state when you open it.
+
+## Manage conversations
+
+Your Ray conversations are separate from customer Activity, quality, and
+history views. Return to Ray to resume a saved thread. Use **Delete** in
+the thread header and confirm to remove the selected conversation and its
+messages.
+
+Ray is available to operators with `workspace.agents.read`. It uses the
+dashboard session, so workspace API bearer tokens cannot start a Ray turn.
+When the workspace has no resolved LLM capability, Ray shows a provider
+setup state with a link to **Settings → Providers**.
+
+## Common failure modes
+
+- **The Ray entry is missing** — your session does not hold
+  `workspace.agents.read` for the active workspace.
+- **Provider setup appears** — configure or select an LLM under **Settings →
+  Providers**, then return to Ray.
+- **A turn remains locked** — another turn is still running in that
+  conversation. Select a different Ray conversation or wait for the
+  running turn to finish.
+- **A tool activity fails** — Ray continues where it can and marks the
+  affected turn honestly. The answer identifies the data it could not access.
+- **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
+  to prepare the change again and review the updated diff.
+
+## Read next
+
+- [Human takeover](/operators/human-takeover) — investigate a customer
+  conversation and take ownership when a person needs to reply.
+- [Test your agent in the workbench](/guides/workbench) — run an agent turn
+  directly and inspect its customer-facing trace.
+- [Evaluate answer quality](/guides/evals) — turn a known behavior into a
+  repeatable quality check.

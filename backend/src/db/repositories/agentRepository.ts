@@ -553,6 +553,11 @@ export interface AgentUpdateOptions {
   expectedUpdatedAt?: Date;
 }
 
+export interface AgentDirectiveUpdateOptions {
+  expectedUpdatedAt?: Date;
+  expectedAgentUpdatedAt?: Date;
+}
+
 export interface AgentRepositoryPort {
   create(workspaceId: string, input: AgentInput): Promise<AgentRecord>;
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<AgentRecord | null>;
@@ -562,8 +567,8 @@ export interface AgentRepositoryPort {
   listByWorkspaceId(workspaceId: string): Promise<AgentRecord[]>;
   update(agentId: string, workspaceId: string, input: AgentInput, options?: AgentUpdateOptions): Promise<AgentRecord>;
   listDirectives(agentId: string, workspaceId: string): Promise<AuthoredDirective[]>;
-  createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective>;
-  updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>): Promise<AuthoredDirective>;
+  createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
+  updateDirective(agentId: string, workspaceId: string, directiveId: string, input: Partial<AuthoredDirectiveInput>, options?: AgentDirectiveUpdateOptions): Promise<AuthoredDirective>;
   deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean>;
   repointRoutineScopeTags?(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult>;
   setDefault(workspaceId: string, agentId: string): Promise<void>;
@@ -718,7 +723,9 @@ export class AgentRepository implements AgentRepositoryPort {
       if (!row) {
         throw conflict("Agent was updated by another writer; reload before saving again");
       }
-      await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      if (input.sourceScope !== undefined) {
+        await this.replaceSourceScope(trx, agentId, normalized.sourceScope);
+      }
       const syncedDefaultRetrieveSkill = await this.syncDefaultRetrieveSkill(trx, agentId, normalized);
       return mapAgent({
         ...row,
@@ -741,12 +748,20 @@ export class AgentRepository implements AgentRepositoryPort {
     return result.rows.map(mapDirectiveRow);
   }
 
-  async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput): Promise<AuthoredDirective> {
+  async createDirective(agentId: string, workspaceId: string, input: AuthoredDirectiveInput, options: AgentDirectiveUpdateOptions = {}): Promise<AuthoredDirective> {
     const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse(input);
     return this.db.transaction().execute(async (trx) => {
       let result: { rows: AgentDirectiveRow[] };
       try {
         result = await sql<AgentDirectiveRow>`
+          WITH matched_agent AS (
+            UPDATE agents
+            SET updated_at = ${currentTimestamp()}
+            WHERE id = ${agentId}
+              AND workspace_id = ${workspaceId}
+              AND (${options.expectedAgentUpdatedAt ?? null}::timestamptz IS NULL OR date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${options.expectedAgentUpdatedAt ?? null}::timestamptz))
+            RETURNING id
+          )
           INSERT INTO agent_directives (
             agent_id,
             name,
@@ -765,7 +780,7 @@ export class AgentRepository implements AgentRepositoryPort {
             metadata
           )
           SELECT
-            agents.id,
+            matched_agent.id,
             ${directive.name},
             ${directive.condition.kind},
             ${directive.condition.kind === "contextual" ? directive.condition.description : null},
@@ -780,9 +795,7 @@ export class AgentRepository implements AgentRepositoryPort {
             ${toJsonb(directive.binding)},
             ${toJsonb(directive.lifecycle)},
             ${toJsonb(directive.metadata)}
-          FROM agents
-          WHERE agents.id = ${agentId}
-            AND agents.workspace_id = ${workspaceId}
+          FROM matched_agent
           RETURNING *
         `.execute(trx);
       } catch (error) {
@@ -793,7 +806,7 @@ export class AgentRepository implements AgentRepositoryPort {
       }
       const row = result.rows[0];
       if (!row) {
-        throw notFound("Agent not found");
+        throw options.expectedAgentUpdatedAt ? conflict("Agent was updated by another writer; reload before saving again") : notFound("Agent not found");
       }
       return mapDirectiveRow(row);
     });
@@ -804,10 +817,11 @@ export class AgentRepository implements AgentRepositoryPort {
     workspaceId: string,
     directiveId: string,
     input: Partial<AuthoredDirectiveInput>,
+    options: AgentDirectiveUpdateOptions = {},
   ): Promise<AuthoredDirective> {
     const existing = (await this.listDirectives(agentId, workspaceId)).find((directive) => directive.id === directiveId);
     if (!existing) {
-      throw notFound("Directive not found");
+      throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
     }
     const directive: NormalizedAuthoredDirectiveInput = authoredDirectiveInputSchema.parse({
       name: input.name ?? existing.name,
@@ -827,8 +841,9 @@ export class AgentRepository implements AgentRepositoryPort {
     let rows: AgentDirectiveRow[];
     try {
       const result = await sql<AgentDirectiveRow>`
-        UPDATE agent_directives
-        SET name = ${directive.name},
+        WITH updated_directive AS (
+          UPDATE agent_directives
+          SET name = ${directive.name},
             condition_kind = ${directive.condition.kind},
             condition_description = ${directive.condition.kind === "contextual" ? directive.condition.description : null},
             action = ${directive.action},
@@ -843,12 +858,23 @@ export class AgentRepository implements AgentRepositoryPort {
             lifecycle = ${toJsonb(directive.lifecycle)},
             metadata = ${toJsonb(directive.metadata)},
             updated_at = ${currentTimestamp()}
-        FROM agents
-        WHERE agent_directives.id = ${directiveId}
-          AND agent_directives.agent_id = ${agentId}
-          AND agents.id = agent_directives.agent_id
-          AND agents.workspace_id = ${workspaceId}
-        RETURNING agent_directives.*
+          FROM agents
+          WHERE agent_directives.id = ${directiveId}
+            AND agent_directives.agent_id = ${agentId}
+            AND agents.id = agent_directives.agent_id
+            AND agents.workspace_id = ${workspaceId}
+            AND (${options.expectedUpdatedAt ?? null}::timestamptz IS NULL OR date_trunc('milliseconds', agent_directives.updated_at) = date_trunc('milliseconds', ${options.expectedUpdatedAt ?? null}::timestamptz))
+          RETURNING agent_directives.*
+        ), touched_agent AS (
+          UPDATE agents
+          SET updated_at = ${currentTimestamp()}
+          FROM updated_directive
+          WHERE agents.id = updated_directive.agent_id
+          RETURNING agents.id
+        )
+        SELECT updated_directive.*
+        FROM updated_directive
+        INNER JOIN touched_agent ON touched_agent.id = updated_directive.agent_id
       `.execute(this.db);
       rows = result.rows;
     } catch (error) {
@@ -859,21 +885,31 @@ export class AgentRepository implements AgentRepositoryPort {
     }
     const row = rows[0];
     if (!row) {
-      throw notFound("Directive not found");
+      throw options.expectedUpdatedAt ? conflict("Directive was updated by another writer; reload before saving again") : notFound("Directive not found");
     }
     return mapDirectiveRow(row);
   }
 
   async deleteDirective(agentId: string, workspaceId: string, directiveId: string): Promise<boolean> {
-    const result = await sql`
-      DELETE FROM agent_directives
-      USING agents
-      WHERE agent_directives.id = ${directiveId}
-        AND agent_directives.agent_id = ${agentId}
-        AND agents.id = agent_directives.agent_id
-        AND agents.workspace_id = ${workspaceId}
+    const result = await sql<{ deleted: boolean }>`
+      WITH deleted_directive AS (
+        DELETE FROM agent_directives
+        USING agents
+        WHERE agent_directives.id = ${directiveId}
+          AND agent_directives.agent_id = ${agentId}
+          AND agents.id = agent_directives.agent_id
+          AND agents.workspace_id = ${workspaceId}
+        RETURNING agent_directives.agent_id
+      ), touched_agent AS (
+        UPDATE agents
+        SET updated_at = ${currentTimestamp()}
+        FROM deleted_directive
+        WHERE agents.id = deleted_directive.agent_id
+        RETURNING agents.id
+      )
+      SELECT EXISTS(SELECT 1 FROM touched_agent) AS deleted
     `.execute(this.db);
-    return (result.numAffectedRows ?? 0n) > 0n;
+    return result.rows[0]?.deleted ?? false;
   }
 
   async repointRoutineScopeTags(input: RepointRoutineScopeTagsInput): Promise<RepointRoutineScopeTagsResult> {

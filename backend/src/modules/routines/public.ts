@@ -76,6 +76,13 @@ export {
   type RoutineDefinitionServiceOptions,
 } from "./service.js";
 export {
+  PORTABLE_GRAMMAR_VERSION,
+  projectRoutineToPortableDocument,
+  routineToPortableDocument,
+  type PortableRoutineDocumentEnvelope,
+  type PortableRoutineDocumentProjectionResult,
+} from "./portableDocument.js";
+export {
   RoutineDraftAssistService,
   routineDraftAssistActionCatalogEntrySchema,
   routineDraftAssistRequestSchema,

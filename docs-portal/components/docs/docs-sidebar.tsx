@@ -1,159 +1,118 @@
 'use client'
 
 import { Search } from 'lucide-react'
-import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useId, useState } from 'react'
 
+import { filterGroups, useDocsNav, type NavGroup } from '@/components/docs/docs-nav'
 import { Input } from '@radioso/ui/input'
 import { cn } from '@radioso/ui/utils'
 
-type NavItem = {
-  title: string
-  href: string
-}
-
-type NavSection = {
-  title: string
-  items: NavItem[]
-}
-
-const navigation: NavSection[] = [
-  {
-    title: 'Why Radioso',
-    items: [
-      { title: 'Overview', href: '/why-radioso' },
-      { title: 'Grounded answers', href: '/why-radioso/grounded-answers' },
-      { title: 'Use cases', href: '/why-radioso/use-cases' },
-    ],
-  },
-  {
-    title: 'Getting Started',
-    items: [
-      { title: 'Run locally in 5 minutes', href: '/quickstarts/run-locally' },
-      { title: 'Embed on your website', href: '/quickstarts/website-embed' },
-      { title: 'API first success', href: '/quickstarts/api-first-success' },
-    ],
-  },
-  {
-    title: 'Guides',
-    items: [
-      { title: 'Authentication', href: '/guides/authentication' },
-      { title: 'Document upload', href: '/guides/document-upload' },
-      { title: 'Retrieval tuning', href: '/guides/retrieval-tuning' },
-    ],
-  },
-  {
-    title: 'API',
-    items: [
-      { title: 'Overview', href: '/api' },
-      { title: 'Auth and sessions', href: '/api/auth-and-sessions' },
-      { title: 'Accounts and users', href: '/api/accounts-and-users' },
-      { title: 'Workspaces and tokens', href: '/api/workspaces-and-tokens' },
-      { title: 'Documents and search', href: '/api/documents-and-search' },
-      { title: 'Chat and history', href: '/api/chat-and-history' },
-      { title: 'Public chat and embed', href: '/api/public-chat-and-embed' },
-      { title: 'Settings', href: '/api/settings' },
-      { title: 'Connectors and webhooks', href: '/api/connectors-and-webhooks' },
-      { title: 'API reference', href: '/api-reference' },
-    ],
-  },
-  {
-    title: 'SDK',
-    items: [
-      { title: 'TypeScript getting started', href: '/sdk/typescript-getting-started' },
-      { title: 'Basic usage', href: '/sdk/basic-usage' },
-      { title: 'Retrieval settings', href: '/sdk/retrieval-settings' },
-    ],
-  },
-  {
-    title: 'Architecture',
-    items: [
-      { title: 'Overview', href: '/architecture' },
-      { title: 'Retrieval pipeline', href: '/architecture/retrieval-pipeline' },
-      { title: 'Document processing lifecycle', href: '/architecture/document-processing-lifecycle' },
-      { title: 'Deployment topology', href: '/architecture/deployment-topology' },
-    ],
-  },
-  {
-    title: 'Operators',
-    items: [
-      { title: 'Deployment', href: '/operators/deployment' },
-      { title: 'Document processing', href: '/operators/document-processing' },
-    ],
-  },
-]
-
-export function DocsSidebar({
-  onSearchChange,
-  searchQuery,
+export function DocsNavTree({
+  groups,
+  onNavigate,
 }: {
-  onSearchChange: (value: string) => void
-  searchQuery: string
+  groups: NavGroup[]
+  onNavigate?: () => void
 }) {
   const pathname = usePathname()
-  const query = searchQuery.trim().toLowerCase()
-  const sections = query
-    ? navigation
-        .map((section) => ({
-          ...section,
-          items: section.items.filter((item) => item.title.toLowerCase().includes(query)),
-        }))
-        .filter((section) => section.items.length > 0)
-    : navigation
+
+  if (groups.length === 0) {
+    return (
+      <p className="px-3 py-2 text-sm text-sidebar-foreground/60" role="status">
+        No pages match your search.
+      </p>
+    )
+  }
 
   return (
-    <aside className="sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block">
-      <div className="px-5 pb-4 pt-6">
-        <Link href="/" className="mb-5 flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-foreground text-background">
-            <Image src="/radioso-icon.svg" alt="" width={22} height={22} priority className="h-[22px] w-[22px]" />
-          </div>
-          <div className="leading-tight">
-            <div className="text-sm font-semibold text-sidebar-foreground">Radioso Docs</div>
-            <div className="text-xs text-sidebar-foreground/55">Conversational agents platform</div>
-          </div>
-        </Link>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground/50" />
-          <Input
-            placeholder="Search docs"
-            value={searchQuery}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onSearchChange(e.target.value)}
-            className="h-9 bg-background/60 pl-9 text-sm"
-          />
-        </div>
-      </div>
-      <nav className="px-3 pb-8">
-        {sections.map((section) => (
-          <div key={section.title} className="mb-5">
-            <div className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/50">
-              {section.title}
+    <>
+      {groups.map((group) => (
+        <div key={group.key} className="mb-5">
+          {group.title ? (
+            <div className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/55">
+              {group.title}
             </div>
-            <ul className="space-y-0.5">
-              {section.items.map((item) => {
-                const active = pathname === item.href
-                return (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      aria-current={active ? 'page' : undefined}
-                      className={cn(
-                        'relative block rounded-md px-3 py-1.5 text-sm transition-colors',
-                        'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-secondary before:transition-transform before:content-[""]',
-                        active
-                          ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground before:scale-y-100'
-                          : 'text-sidebar-foreground/75 before:scale-y-0 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
-                      )}
-                    >
-                      {item.title}
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        ))}
+          ) : null}
+          <ul className="space-y-0.5">
+            {group.items.map((item) => {
+              const active = pathname === item.href
+
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    aria-current={active ? 'page' : undefined}
+                    {...(item.external ? { target: '_blank', rel: 'noreferrer' } : null)}
+                    className={cn(
+                      'relative block rounded-md px-3 py-1.5 text-sm transition-colors',
+                      'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-primary before:transition-transform before:content-[""]',
+                      active
+                        ? 'bg-primary/10 font-medium text-primary before:scale-y-100'
+                        : 'text-sidebar-foreground/75 before:scale-y-0 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
+                    )}
+                  >
+                    {item.title}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      ))}
+    </>
+  )
+}
+
+export function DocsNavSearch({
+  value,
+  onChange,
+  className,
+}: {
+  value: string
+  onChange: (value: string) => void
+  className?: string
+}) {
+  const id = useId()
+
+  return (
+    <div className={cn('relative', className)}>
+      <label htmlFor={id} className="sr-only">
+        Search documentation
+      </label>
+      <Search
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-sidebar-foreground/50"
+      />
+      <Input
+        id={id}
+        type="search"
+        placeholder="Search docs"
+        value={value}
+        onChange={(event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value)}
+        className="h-9 bg-background/60 pl-9 text-sm"
+      />
+    </div>
+  )
+}
+
+export function DocsSidebar() {
+  const [searchQuery, setSearchQuery] = useState('')
+  const nav = useDocsNav()
+  const groups = filterGroups(nav?.groups ?? [], searchQuery)
+
+  return (
+    <aside
+      aria-label="Documentation"
+      className="docs-subtle-scrollbar sticky top-0 hidden h-screen w-72 shrink-0 overflow-y-auto border-r border-sidebar-border bg-sidebar text-sidebar-foreground xl:block"
+    >
+      <div className="px-5 pb-4 pt-6">
+        <DocsNavSearch value={searchQuery} onChange={setSearchQuery} />
+      </div>
+      <nav aria-label="Documentation pages" className="px-3 pb-12">
+        <DocsNavTree groups={groups} />
       </nav>
     </aside>
   )

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { branchIsImplicitFallThrough, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, sanitizeDraftContentForSave } from '@/lib/routine-document'
-import type { RoutineBlockBranch } from '@radioso/routine-document'
+import type { RoutineBlockBranch } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
   const slots = new Map([['email', 'Customer email'], ['attempts', 'Attempts'], ['order_total', 'Order total'], ['placed_at', 'Placed at'], ['is_member', 'Member']])

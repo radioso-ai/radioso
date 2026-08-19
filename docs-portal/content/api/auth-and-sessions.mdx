@@ -1,6 +1,7 @@
 ---
 title: Auth and sessions
 description: Check registration availability, register, log in, and join an organization by invitation.
+last_updated: 2026-08-17
 ---
 
 import { Steps } from 'nextra/components'
@@ -18,19 +19,21 @@ Check registration availability before presenting open signup. Registration crea
 
 ### Establish the session
 
-After registration, verify the email address. Login and invitation acceptance return a session cookie. Password reset confirmation also returns a session cookie after a valid reset.
+When registration reports that verification is required, verify the email address and then log in. Development registration can report that verification is complete and return the session cookie directly. Invitation acceptance and password reset confirmation also return session cookies.
 
 ### Use the session for account and workspace routes
 
 Once the cookie is stored, use it for workspace management and token reveal flows.
 </Steps>
 
-Registration does not establish browser or cookie-jar state. Login, invitation acceptance, and password reset confirmation do. These session flows are separate from the workspace token flow used by the SDK.
+Production registration does not establish browser or cookie-jar state. Development auto-verification establishes the session during registration; login, invitation acceptance, and password reset confirmation do the same in their respective flows. These session flows are separate from the workspace token flow used by the SDK.
+
+Examples below call `https://api.radioso.ai`, the hosted EU instance. Use `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting — `http://localhost:8080` for a local deployment.
 
 ## Check registration availability
 
 ```bash
-curl -sS http://localhost:8080/api/v1/auth/registration
+curl -sS https://api.radioso.ai/api/v1/auth/registration
 ```
 
 The endpoint returns `{ "available": true }` or `{ "available": false }` and uses `Cache-Control: no-store` because availability can change as the server is initialized.
@@ -45,12 +48,12 @@ Use registration when `GET /api/v1/auth/registration` reports that open registra
 curl -sS \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword","organizationName":"Acme"}' \
-  http://localhost:8080/api/v1/auth/register
+  https://api.radioso.ai/api/v1/auth/register
 ```
 
 `organizationName` is optional. The required fields are `email` and `password`.
 
-Registration returns account and default workspace bootstrap data, sends a verification email, and does not set a session cookie. The response includes `requiresEmailVerification: true`.
+Registration returns account and default workspace bootstrap data plus `requiresEmailVerification`. Production returns `true`, sends a verification email, and does not set a session cookie. The documented development stack returns `false`, persists the new password user's verification state, and sets the session cookie immediately.
 
 On an initialized open-source server, registration returns `403` with `code: "forbidden"`. An organization owner or admin must invite the new user instead. Invitation acceptance joins the existing organization and does not create another one.
 
@@ -76,7 +79,7 @@ Use login when the account already exists.
 curl -sS -c cookies.txt \
   -H 'Content-Type: application/json' \
   -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/login
+  https://api.radioso.ai/api/v1/auth/login
 ```
 
 The login request can also include `preferredWorkspaceId` or `preferredAccountId` when you want to restore a known context.
@@ -92,7 +95,7 @@ The accept request establishes a session for the joined account.
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+The [API Reference](/api-reference) lists the fields on each register, login, and invitation payload.
 
 ```text
 GET  /api/v1/auth/registration

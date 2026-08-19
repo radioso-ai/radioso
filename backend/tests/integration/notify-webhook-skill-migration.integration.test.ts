@@ -26,37 +26,51 @@ const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolea
   }
 };
 
+const isolatedDatabaseUrl = (baseUrl: string, databaseName: string): string => {
+  const url = new URL(baseUrl);
+  url.pathname = `/${databaseName}`;
+  return url.toString();
+};
+
 const describeIfDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl) ? describe : describe.skip;
 
 describeIfDatabase("notify and completion-export skill migration", () => {
+  const isolatedName = `mig111_${randomUUID().replace(/-/g, "")}`;
+  let admin: Database;
   let database: Database;
   let accountRepository: AccountRepository;
   let workspaceRepository: WorkspaceRepository;
   let agentRepository: AgentRepository;
   let routineRepository: RoutineDefinitionRepository;
-  let migrationSql: string;
+  let migration111Sql: string;
+  let correctionMigrationSql: string;
 
   beforeAll(async () => {
-    database = new Database(integrationDatabaseUrl!);
+    admin = new Database(integrationDatabaseUrl!);
+    await admin.execute(`CREATE DATABASE "${isolatedName}"`);
+    database = new Database(isolatedDatabaseUrl(integrationDatabaseUrl!, isolatedName));
     accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database.kysely);
     agentRepository = new AgentRepository(database.kysely);
     routineRepository = new RoutineDefinitionRepository(database.kysely);
+    await database.execute(
+      "CREATE TABLE schema_migrations (filename TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())",
+    );
     // Full schema, then re-apply 111 after seeding legacy contact/webhook-export settings so we
     // exercise its (idempotent) projection — mirrors the other migration projection tests.
     await runAllTestMigrations(database);
-    migrationSql = await readFile(path.join(testMigrationsPath, "111_notify_and_completion_export_skills.sql"), "utf8");
+    migration111Sql = await readFile(path.join(testMigrationsPath, "111_notify_and_completion_export_skills.sql"), "utf8");
+    correctionMigrationSql = await readFile(path.join(testMigrationsPath, "142_completion_export_skill_published_target.sql"), "utf8");
   });
 
   afterAll(async () => {
-    // Remove rows of kinds added by 094 so a later test file's runAllTestMigrations re-run on the
-    // shared integration DB does not trip migration 108's pre-094 kind CHECK against leftover data.
     try {
-      await database.execute(
-        "DELETE FROM agent_skills WHERE kind IN ('retrieve', 'notify') OR skill_name IN ('contact_human', 'completion_export')",
-      );
+      await database?.close();
     } finally {
-      await database.close();
+      if (admin) {
+        await admin.execute(`DROP DATABASE IF EXISTS "${isolatedName}" WITH (FORCE)`).catch(() => undefined);
+        await admin.close();
+      }
     }
   });
 
@@ -84,7 +98,7 @@ describeIfDatabase("notify and completion-export skill migration", () => {
        VALUES ($1, $2, 'Completion Export', 'https://example.test/webhook', 'ciphertext', 'test-key')`,
       [destinationId, workspace.id],
     );
-    await routineRepository.createDraft(agent.id, {
+    const completionExportDraft = await routineRepository.createDraft(agent.id, {
       name: "Exporting routine",
       activation: { triggerDescription: "Start export", gateRef: null, priority: 1, reentryMode: "always" },
       slots: [],
@@ -106,9 +120,10 @@ describeIfDatabase("notify and completion-export skill migration", () => {
         destinationRef: destinationId,
       },
     });
+    await routineRepository.publish(agent.id, completionExportDraft.id);
 
-    await database.pool.query(migrationSql);
-    await database.pool.query(migrationSql);
+    await database.pool.query(migration111Sql);
+    await database.pool.query(migration111Sql);
 
     const rows = await database.query<{
       skill_name: string;
@@ -149,6 +164,105 @@ describeIfDatabase("notify and completion-export skill migration", () => {
     });
   });
 
+  it("corrects an untouched 111 target without overwriting a later skill edit", async () => {
+    const account = await accountRepository.create({
+      name: "Completion Export Published Migration",
+      email: `completion-export-published-${randomUUID()}@example.com`,
+      passwordHash: "hash",
+    });
+    const workspace = await workspaceRepository.create(account.id, "Completion Export Published Migration");
+    const agent = await agentRepository.create(workspace.id, {
+      name: "Completion Export Published Agent",
+      webhookExportsEnabled: true,
+    });
+    const publishedDestinationId = randomUUID();
+    const draftDestinationId = randomUUID();
+    const userEditedDestinationId = randomUUID();
+    await database.execute(
+      `INSERT INTO workspace_webhook_destinations (
+         id, workspace_id, name, url, secret_ciphertext, encryption_key_id
+       )
+       VALUES
+         ($1, $2, 'Published completion export', 'https://example.test/published', 'ciphertext', 'test-key'),
+         ($3, $2, 'Draft completion export', 'https://example.test/draft', 'ciphertext', 'test-key'),
+         ($4, $2, 'User edited completion export', 'https://example.test/user-edited', 'ciphertext', 'test-key')`,
+      [publishedDestinationId, workspace.id, draftDestinationId, userEditedDestinationId],
+    );
+    const draftInput = (name: string, destinationRef: string) => ({
+      name,
+      activation: { triggerDescription: "Start export", gateRef: null, priority: 1, reentryMode: "always" as const },
+      slots: [],
+      steps: [{
+        stableStepId: "start",
+        kind: "chat" as const,
+        instruction: "Ask.",
+        toolRef: null,
+        actionType: null,
+        captureKey: null,
+        metadata: {},
+        ordinal: 0,
+      }],
+      transitions: [{ fromStep: "start", toRef: "done", guardKind: "default" as const, guardText: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "complete" as const, instruction: "Done.", ordinal: 0 }],
+      completionExport: { enabled: true, triggerKinds: ["complete"] as Array<"complete">, destinationRef },
+    });
+    const publishedDraft = await routineRepository.createDraft(
+      agent.id,
+      draftInput("Published completion export", publishedDestinationId),
+    );
+    await routineRepository.publish(agent.id, publishedDraft.id);
+    const newerDraft = await routineRepository.createDraft(
+      agent.id,
+      draftInput("Newer draft completion export", draftDestinationId),
+    );
+    await database.execute(
+      "UPDATE routine_definition SET updated_at = NOW() + INTERVAL '1 minute' WHERE id = $1",
+      [newerDraft.id],
+    );
+
+    await database.pool.query(migration111Sql);
+    await database.execute(
+      "INSERT INTO schema_migrations (filename) VALUES ('111_notify_and_completion_export_skills.sql')",
+    );
+
+    const [seededSkill] = await database.query<{ target_id: string }>(
+      "SELECT target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'completion_export'",
+      [agent.id],
+    );
+    expect(seededSkill).toEqual({ target_id: publishedDestinationId });
+
+    await database.execute(
+      `UPDATE agent_skills
+       SET target_id = $1,
+           updated_at = (
+             SELECT applied_at - INTERVAL '1 second'
+             FROM schema_migrations
+             WHERE filename = '111_notify_and_completion_export_skills.sql'
+           )
+       WHERE agent_id = $2 AND skill_name = 'completion_export'`,
+      [draftDestinationId, agent.id],
+    );
+    await database.pool.query(correctionMigrationSql);
+
+    const [correctedSkill] = await database.query<{ target_id: string }>(
+      "SELECT target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'completion_export'",
+      [agent.id],
+    );
+    expect(correctedSkill).toEqual({ target_id: publishedDestinationId });
+
+    await database.execute(
+      "UPDATE agent_skills SET target_id = $1, updated_at = NOW() WHERE agent_id = $2 AND skill_name = 'completion_export'",
+      [userEditedDestinationId, agent.id],
+    );
+    await database.pool.query(correctionMigrationSql);
+
+    const [userEditedSkill] = await database.query<{ target_id: string }>(
+      "SELECT target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'completion_export'",
+      [agent.id],
+    );
+    expect(userEditedSkill).toEqual({ target_id: userEditedDestinationId });
+  });
+
   it("fails instead of overwriting an existing non-notify contact_human skill", async () => {
     const account = await accountRepository.create({
       name: "US4 Conflict Migration",
@@ -176,7 +290,7 @@ describeIfDatabase("notify and completion-export skill migration", () => {
       [randomUUID(), workspace.id, agent.id, destinationId],
     );
 
-    await expect(database.pool.query(migrationSql)).rejects.toThrow(/non-notify skill named "contact_human"/);
+    await expect(database.pool.query(migration111Sql)).rejects.toThrow(/non-notify skill named "contact_human"/);
 
     const [row] = await database.query<{ kind: string; target_id: string }>(
       `SELECT kind, target_id FROM agent_skills WHERE agent_id = $1 AND skill_name = 'contact_human'`,

@@ -478,8 +478,10 @@ Related docs and specs:
 
 Owns authored, standing behavioral steering: `condition → action` rules the
 assistant matches per turn and injects into answer composition. Directives steer,
-they never act — no executor, no dispatch, no outputs. Distinct from Skills,
-which act.
+they never act: a match contributes its action text to that turn's instructions,
+plus an optional `binding` naming a skill — staged as a tool for the agentic
+loop, or selected as the turn's acting skill when that skill is turn-capable.
+Skills act.
 
 Should not depend on any other domain module (not chat, skills, or retrieval).
 Chat answer turns pass route-scoped directive candidates and the configured
@@ -867,6 +869,21 @@ Primary paths:
 - `frontend/tests/unit/`
 - `frontend/tests/e2e/`
 
+Agent settings and channels entry points:
+
+- `frontend/lib/dashboard-areas.ts` — nav areas and section ids; the Web chat
+  page is section id `web-chat`, reached at `?tab=channels&anchor=web-chat`
+- `frontend/components/dashboard/settings/assistant-profile-section.tsx` —
+  exports `AssistantProfileSection`, owning the Profile page: Name, Instructions,
+  Model, and Answers. It is section id `profile`, reached at
+  `?tab=behavior&anchor=assistant-profile`
+- `frontend/components/dashboard/settings/chat-channel-section.tsx` — exports
+  `ChatChannelSection`, owning the Web chat page: Look, Wording, Footer, and the
+  Where it runs placements (public link and website widget) beside a live preview
+- `frontend/components/dashboard/settings/website-embed-settings-controller.tsx`
+  — owns the website widget placement and persistence of every `websiteEmbed*`
+  settings key
+
 Useful searches:
 
 - `rg "api[A-Z]|fetchJson|workspace" frontend/lib frontend/components`
@@ -882,6 +899,8 @@ Focused checks:
 - `cd frontend && pnpm test`
 - `cd frontend && pnpm run lint`
 - `cd frontend && pnpm run test:e2e`
+- `cd frontend && pnpm exec vitest run tests/unit/assistant-profile-section.test.tsx tests/unit/chat-channel-logo-field.test.tsx`
+- `cd frontend && pnpm exec playwright test tests/e2e/website-embed-allow-all-origins.spec.ts tests/e2e/public-launch-grant-last-used.spec.ts`
 
 Related docs and specs:
 

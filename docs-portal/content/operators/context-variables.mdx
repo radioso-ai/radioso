@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-07-24
+last_updated: 2026-08-07
 ---
 
 # Context variables
@@ -10,7 +10,7 @@ Context variables let an agent use structured visitor context during a turn.
 They are meant for facts such as the current page, visitor identity, cart,
 order status, account tier, or another value supplied by the host system.
 
-The key point is that operators configure declarations and agent wiring. Runtime
+Operators configure declarations and agent wiring. Runtime
 values come from the host backend or a resolver.
 
 ## Built-in context
@@ -37,9 +37,16 @@ In practice this means answers to general questions are not influenced by
 whatever page the visitor happens to be on, and page content cannot inject
 instructions into unrelated turns.
 
-Newer embeds also advertise this capability explicitly as
-`clientContextCapabilities["page.read"]`, with a mode of `metadata` or
-`content`. Older embeds keep working: their page payload is gated the same way.
+Page capability resolution works in two modes. When a message omits
+`clientContextCapabilities`, Radioso infers the capability from whichever
+`pageContext` fields are populated — full page `content` resolves to mode
+`content`, a URL, title, or locale alone resolves to mode `metadata`. When a
+message includes `clientContextCapabilities["page.read"]` with an explicit
+`available` flag and `mode`, Radioso treats it as an advertised claim and
+negotiates it against the `pageContext` actually supplied, narrowing to
+`metadata` unless both agree on `content`, and withholding the capability
+entirely when the advertised claim says `available: false`. Both modes go
+through the same relevance gate.
 
 ## Host-defined variables
 
@@ -197,3 +204,7 @@ Open a conversation in Activity and inspect the assistant turn. When context
 variables were resolved for that turn, the debug panel shows a read-only
 **Visitor context** block. Sensitive values are already redacted by the backend
 before they reach the dashboard.
+
+## Read next
+
+- [Deployment](/operators/deployment) — where `WORKSPACE_TOKEN_SECRET`, which derives the signing key above, is set as a required secret.

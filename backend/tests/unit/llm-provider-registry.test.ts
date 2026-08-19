@@ -9,6 +9,9 @@ import type {
   TextGenerationClient,
   TextGenerationRequest,
 } from "../../src/shared/infra/llm/providerTypes.js";
+import type {
+  LlmCapabilityResolveInput,
+} from "../../src/shared/infra/llm/capabilityResolver.js";
 import {
   endpointScopeFingerprint,
 } from "../../src/shared/infra/llm/embeddingProviderResolver.js";
@@ -30,6 +33,21 @@ afterEach(() => {
 });
 
 describe("llm provider config", () => {
+  it("resolves provider and model metadata without requiring provider credentials", () => {
+    const config = resolveLlmConfig({});
+
+    expect(config.chat).toEqual({
+      capability: "chat",
+      provider: "openai",
+      model: "gpt-5.4-mini",
+    });
+    expect(config.embeddings).toEqual({
+      capability: "embeddings",
+      provider: "openai",
+      model: "text-embedding-3-small",
+    });
+  });
+
   it("derives provider-neutral capability config from legacy OpenAI env vars", () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
@@ -42,26 +60,23 @@ describe("llm provider config", () => {
       capability: "chat",
       provider: "openai",
       model: "gpt-5-mini",
-      apiKey: "openai-key",
     });
     expect(config.rewrite).toMatchObject({
       capability: "rewrite",
       provider: "openai",
       model: "gpt-5-mini",
-      apiKey: "openai-key",
     });
     expect(config.rerank).toMatchObject({
       capability: "rerank",
       provider: "openai",
       model: "gpt-4.1-mini",
-      apiKey: "openai-key",
     });
     expect(config.embeddings).toMatchObject({
       capability: "embeddings",
       provider: "openai",
       model: "text-embedding-3-small",
-      apiKey: "openai-key",
     });
+    expect(config.providerApiKeys).toMatchObject({ openai: "openai-key" });
   });
 
   it("resolves provider-neutral overrides independently per capability", () => {
@@ -87,26 +102,28 @@ describe("llm provider config", () => {
       capability: "chat",
       provider: "gemini",
       model: "gemini-2.5-flash",
-      apiKey: "gemini-key",
     });
     expect(config.rewrite).toMatchObject({
       capability: "rewrite",
       provider: "claude",
       model: "claude-sonnet-4-5",
-      apiKey: "anthropic-key",
     });
     expect(config.rerank).toMatchObject({
       capability: "rerank",
       provider: "openai-compatible",
       model: "gpt-oss-20b",
-      apiKey: "compat-key",
       baseUrl: "https://llm.example/v1",
     });
     expect(config.embeddings).toMatchObject({
       capability: "embeddings",
       provider: "openai",
       model: "text-embedding-3-large",
-      apiKey: "openai-key",
+    });
+    expect(config.providerApiKeys).toMatchObject({
+      openai: "openai-key",
+      "openai-compatible": "compat-key",
+      gemini: "gemini-key",
+      claude: "anthropic-key",
     });
   });
 
@@ -114,7 +131,6 @@ describe("llm provider config", () => {
     const geminiConfig = resolveLlmConfig({
       LLM_PROVIDER: "gemini",
       GEMINI_API_KEY: "gemini-key",
-      OPENAI_API_KEY: "openai-key",
       OPENAI_CHAT_MODEL: "gpt-5.2",
       OPENAI_VECTOR_MODEL: "text-embedding-3-small",
     });
@@ -132,8 +148,20 @@ describe("llm provider config", () => {
       model: "gemini-2.5-flash",
     });
     expect(geminiConfig.embeddings).toMatchObject({
-      provider: "openai",
+      provider: "gemini",
+      model: "gemini-embedding-001",
+    });
+
+    const compatibleConfig = resolveLlmConfig({
+      LLM_PROVIDER: "openai-compatible",
+      OPENAI_COMPATIBLE_API_KEY: "compat-key",
+      OPENAI_COMPATIBLE_BASE_URL: "https://llm.example/v1",
+    });
+
+    expect(compatibleConfig.embeddings).toMatchObject({
+      provider: "openai-compatible",
       model: "text-embedding-3-small",
+      baseUrl: "https://llm.example/v1",
     });
 
     const claudeConfig = resolveLlmConfig({
@@ -164,6 +192,128 @@ describe("llm provider config", () => {
 });
 
 describe("LlmProviderRegistry", () => {
+  it("constructs without credentials and reports a structured error on first text inference", async () => {
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}));
+    const pipeline = registry.createChatInferencePipeline();
+
+    const failure = await pipeline.complete({
+      prompt: "hello",
+      operation: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "answer:0",
+      },
+    }).catch((error) => error);
+
+    expect(failure).toMatchObject({
+      statusCode: 503,
+      code: "provider_misconfigured",
+      details: {
+        kind: "missing_api_key",
+        provider: "openai",
+        capability: "chat",
+      },
+    });
+  });
+
+  it("constructs embeddings without credentials and reports a structured error on first use", async () => {
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}));
+
+    const failure = await registry.createEmbeddingGateway().embedTexts(["hello"], {
+      usageContext: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "embedding",
+        operation: "embedding",
+        attemptKey: "embedding:0",
+      },
+    }).catch((error) => error);
+
+    expect(failure).toMatchObject({
+      statusCode: 503,
+      code: "provider_misconfigured",
+      details: {
+        kind: "missing_api_key",
+        provider: "openai",
+        capability: "embeddings",
+      },
+    });
+  });
+
+  it("resolves workspace credentials while preserving static pipeline metadata", async () => {
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        capability: "chat" as const,
+        provider: "openai" as const,
+        model: "gpt-5.4-mini",
+        apiKey: "workspace-openai-key",
+      })),
+    };
+    vi.stubGlobal("fetch", async () => Response.json({
+      choices: [{ message: { content: "hello" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    }));
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}), undefined, { resolver });
+    const pipeline = registry.createChatInferencePipeline();
+
+    await expect(pipeline.complete({
+      prompt: "hello",
+      operation: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: "answer:0",
+      },
+    })).resolves.toMatchObject({ text: "hello" });
+    expect(pipeline.metadata).toMatchObject({ provider: "openai", model: "gpt-5.4-mini" });
+    expect(resolver.resolve).toHaveBeenCalledWith("chat", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai",
+        model: "gpt-5.4-mini",
+      },
+    });
+  });
+
+
+  it("uses a workspace credential for embedding inference when the environment has no key", async () => {
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        capability: "embeddings" as const,
+        provider: "openai" as const,
+        model: "text-embedding-3-small",
+        apiKey: "workspace-openai-key",
+      })),
+    };
+    const encodedEmbedding = Buffer.alloc(1536 * Float32Array.BYTES_PER_ELEMENT);
+    encodedEmbedding.writeFloatLE(1, 0);
+    vi.stubGlobal("fetch", async () => Response.json({
+      data: [{ index: 0, embedding: encodedEmbedding.toString("base64") }],
+      usage: { prompt_tokens: 1, total_tokens: 1 },
+    }));
+    const registry = new LlmProviderRegistry(resolveLlmConfig({}), undefined, { resolver });
+
+    await expect(registry.createEmbeddingGateway().embedTexts(["hello"], {
+      usageContext: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "embedding",
+        operation: "embedding",
+        attemptKey: "embedding:0",
+      },
+    })).resolves.toEqual([[1, ...new Array(1535).fill(0)]]);
+    expect(resolver.resolve).toHaveBeenCalledWith("embeddings", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai",
+        model: "text-embedding-3-small",
+      },
+    });
+  });
+
   it("rejects claude embeddings before use", () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",
@@ -523,21 +673,45 @@ describe("LlmProviderRegistry", () => {
       });
     });
 
+    const resolver = {
+      resolve: vi.fn(async (_capability: string, input: LlmCapabilityResolveInput) => ({
+        capability: "embeddings" as const,
+        provider: input.capabilityOverride?.provider ?? endpointB.provider,
+        model: input.capabilityOverride?.model ?? endpointB.model,
+        apiKey: "workspace-endpoint-key",
+        baseUrl: input.capabilityOverride?.baseUrl ?? endpointB.baseUrl,
+      })),
+    };
     const registry = new LlmProviderRegistry({
       ...baseConfig,
       embeddings: endpointB,
       embeddingProviderConfigs: [endpointB, endpointA],
-    });
+    }, undefined, { resolver });
     const gateway = registry.createEmbeddingGateway();
 
     await expect(gateway.embedTexts(["hello"], {
       model: "text-embedding-3-small",
       provider: "openai-compatible",
       endpointScopeFingerprint: endpointScopeFingerprint(endpointA),
+      usageContext: {
+        workspaceId: "ws-1",
+        requestId: "req-1",
+        surface: "embedding",
+        operation: "embedding",
+        attemptKey: "embedding:0",
+      },
     })).resolves.toHaveLength(1);
     expect(requestedUrls).toEqual([
       "https://endpoint-a.example/v1/embeddings",
     ]);
+    expect(resolver.resolve).toHaveBeenCalledWith("embeddings", {
+      workspaceId: "ws-1",
+      capabilityOverride: {
+        provider: "openai-compatible",
+        model: "text-embedding-3-small",
+        baseUrl: "https://endpoint-a.example/v1",
+      },
+    });
 
     await expect(gateway.embedTexts(["hello"], {
       model: "text-embedding-3-small",
@@ -570,6 +744,37 @@ describe("LlmProviderRegistry", () => {
       taskType: "RETRIEVAL_DOCUMENT",
       content: {
         parts: [{ text: "Radioso embedding compatibility probe." }],
+      },
+    });
+  });
+
+  it("resolves workspace credentials when probing an embedding transition", async () => {
+    const resolver = {
+      resolve: vi.fn(async () => ({
+        capability: "embeddings" as const,
+        provider: "gemini" as const,
+        model: "gemini-embedding-001",
+        apiKey: "workspace-gemini-key",
+      })),
+    };
+    vi.stubGlobal("fetch", async () => Response.json({
+      embedding: { values: [1, ...new Array(3071).fill(0)] },
+    }));
+
+    const config = resolveLlmConfig({
+      LLM_EMBEDDING_PROVIDER: "gemini",
+      LLM_EMBEDDING_MODEL: "gemini-embedding-001",
+    });
+
+    await expect(new LlmProviderRegistry(config, undefined, { resolver })
+      .createEmbeddingModelProbe("gemini-embedding-001", "gemini")
+      .probe("workspace-1")).resolves.toMatchObject({ vectors: [expect.any(Array)] });
+
+    expect(resolver.resolve).toHaveBeenCalledWith("embeddings", {
+      workspaceId: "workspace-1",
+      capabilityOverride: {
+        provider: "gemini",
+        model: "gemini-embedding-001",
       },
     });
   });

@@ -1,6 +1,6 @@
 # Radioso TypeScript SDK
 
-Talk to a Radioso workspace from TypeScript or JavaScript: documents, chat, retrieval, and agent authoring, all through one typed client authenticated with a workspace API token.
+Talk to a Radioso agent from TypeScript or JavaScript, and author what it runs under — the directives that steer it, the routines that carry a flow across turns, the skills it dispatches, and the documents it answers from. One typed client, authenticated with a workspace API token.
 
 ## Install
 
@@ -56,11 +56,25 @@ pnpm run build
 ## Public Surface
 
 - `createRadiosoClient({ baseUrl, apiToken })`
-- `client.settings.getIngestion()`
-- `client.settings.updateIngestion(...)`
-- `client.settings.reprocessIngestion(...)`
-- `client.settings.getGeneral()`
-- `client.settings.updateGeneral(...)`
+
+### Conversation
+
+- `client.chat.create(...)`
+- `client.chat.stream(...)`
+- `client.chat.listHistory(...)`
+- `client.chat.getHistoryConversation(...)`
+
+### Agent authoring
+
+- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, skillCatalog
+- `client.agents.directives.*` — list, draft, create, update, delete
+- `client.agents.contextVariables.*` — list, upsert, delete, getSigningKey (per-agent enablement)
+- `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)
+- `client.agents.skills.*` and `client.agents.{emailSkills,externalSkills,webhookSkills,slackSkills}.*` — skill bindings per capability
+- `client.agents.mcpConnections.*` and `client.agents.mcpConverseGrants.*` — external MCP connections and converse grants
+
+### Documents and settings
+
 - `client.documents.list(...)`
 - `client.documents.create(...)`
 - `client.documents.importFile(...)`
@@ -72,19 +86,11 @@ pnpm run build
 - `client.documents.getHistory(...)`
 - `client.documents.reprocess(...)`
 - `client.documents.reprocessSource(...)`
-- `client.chat.create(...)`
-- `client.chat.listHistory(...)`
-- `client.chat.getHistoryConversation(...)`
-- `client.chat.stream(...)`
-
-### Agent authoring
-
-- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, skillCatalog
-- `client.agents.directives.*` — list, draft, create, update, delete
-- `client.agents.contextVariables.*` — list, upsert, delete, getSigningKey (per-agent enablement)
-- `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)
-- `client.agents.skills.*` and `client.agents.{emailSkills,externalSkills,webhookSkills,slackSkills}.*` — skill bindings per capability
-- `client.agents.mcpConnections.*` and `client.agents.mcpConverseGrants.*` — external MCP connections and converse grants
+- `client.settings.getIngestion()`
+- `client.settings.updateIngestion(...)`
+- `client.settings.reprocessIngestion(...)`
+- `client.settings.getGeneral()`
+- `client.settings.updateGeneral(...)`
 
 ## Contract Refresh
 

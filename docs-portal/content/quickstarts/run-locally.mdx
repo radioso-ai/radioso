@@ -1,6 +1,7 @@
 ---
 title: Run locally in 5 minutes
 description: Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question.
+last_updated: 2026-08-17
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -27,8 +28,8 @@ This is the bootstrap path, and it does the fiddly parts for you. It:
 
 - checks local prerequisites
 - creates or reuses `.env`
-- offers to store an AI provider key; enter one now or add it later in the app under Settings → Credentials
-- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, and `PUBLIC_CHAT_SESSION_SECRET`
+- offers to store AI provider credentials; Claude setup also asks which supported provider should create document embeddings, and every key can be added later under Settings → Credentials
+- generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, `PUBLIC_CHAT_SESSION_SECRET`, and `WORKER_TASK_AUTH_TOKEN`
 - configures uploaded document storage to use the local filesystem by default
 - builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose
 - waits until the frontend and backend are reachable
@@ -62,11 +63,11 @@ Start the local embed harness and verify both an approved origin and a blocked o
 ## Verify first success in the app
 
 1. Open `http://localhost:3000`
-2. On a new server, register the first user. Otherwise, sign in or accept an invitation
+2. On a new server, register the first user. Development verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation
 3. Upload a document or let the starter documents finish processing
 4. Ask one suggested question
 
-While the worker chews through your upload, the Documents list is where you watch it happen. A document is only a retrieval candidate once its status reads Ready.
+The worker takes a moment to chew through your upload. Give it until the status reads Ready, and the document is fair game for a retrieval test.
 
 ![The Documents list with four uploaded files, each showing a green Ready status, so you can tell processing has finished before you test chat](/screenshots/dashboard-knowledge-documents.png)
 
@@ -100,7 +101,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-Registration creates the open-source server's sole organization and default workspace. It returns workspace bootstrap data and sends a verification email, but does not set a session cookie. Verify the email address, then log in. Local mail delivery logs messages unless you configure a Resend API key, so if no email arrives, read the backend logs.
+Registration creates the open-source server's sole organization and default workspace. The development stack returns `requiresEmailVerification: false` and sets the session cookie immediately. Production returns `requiresEmailVerification: true`, sends a verification email, and waits for verification before login.
 
 After the first organization exists, open-source registration availability is `false`. Later users join the existing organization by invitation. Enterprise Edition keeps open registration available and supports additional organizations. In either edition, authorized users can create more workspaces inside an organization.
 
@@ -128,6 +129,7 @@ Local bootstrap tunes the stack for a fast look, not for mirroring every product
 
 - uploaded source files are stored on the local filesystem
 - Docker Compose runs the app, API, worker, and Postgres together
+- newly registered password users are verified automatically and signed in
 
 <Callout type="info" emoji="i">
   Local setup is built for quick evaluation. When you move to production, storage, dispatch, and secrets are the surfaces that change.
@@ -137,7 +139,7 @@ Local bootstrap tunes the stack for a fast look, not for mirroring every product
 
 - If the stack starts but answers fail, the usual cause is missing or invalid provider credentials in `.env`.
 - If upload works but chat ignores the new document, processing is probably still running. Check the document's status before you blame retrieval.
-- If auth links don't arrive by email, read the backend logs first, because local mail defaults to log mode.
+- Production auth mail needs a delivery driver such as Resend. Development registration does not send a verification message because it verifies the new account automatically.
 
 ## What to do next
 

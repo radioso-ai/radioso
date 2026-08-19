@@ -6,6 +6,7 @@ import {
   routineDefinitionDraftInputSchema,
   routineGuardProvenance,
   routineInputBindingSchema,
+  routineValidationCodes,
   routineSlotSchema,
   routineStepSchema,
   routineTerminalSchema,
@@ -47,6 +48,11 @@ const validTerminal = {
 } as const;
 
 describe("routine definition schemas", () => {
+  it("exports the validation-code vocabulary used by routine hosts", () => {
+    expect(routineValidationCodes).toContain("unknown_context_variable");
+    expect(routineValidationCodes).toContain("node_id_collision");
+  });
+
   it("exports the stable identifier grammar used by route ids", () => {
     expect(routineIdentifierPattern.test("ineligible-case")).toBe(true);
     expect(routineIdentifierPattern.test("v2.flow-check")).toBe(true);

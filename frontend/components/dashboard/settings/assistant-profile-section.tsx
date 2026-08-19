@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Bot } from 'lucide-react'
+import { UserRound } from 'lucide-react'
 
 import { AssistantLocaleCombobox } from '@/components/dashboard/settings/assistant-locale-combobox'
+import { BlockHeading } from '@/components/dashboard/settings/block-heading'
 import { ModelPicker } from '@/components/dashboard/settings/model-picker'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -60,16 +62,7 @@ const INSTRUCTION_PRESETS: InstructionPreset[] = [
   },
 ]
 
-function SubsectionHeading({ title, description }: { title: string; description?: string }) {
-  return (
-    <div className="space-y-0.5">
-      <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-    </div>
-  )
-}
-
-function AgentChatModelOverrideSubsection({
+function ChatModelOverrideBlock({
   value,
   onChange,
 }: {
@@ -126,11 +119,11 @@ function AgentChatModelOverrideSubsection({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border p-3">
+    <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <SubsectionHeading
-          title="Chat model override"
-          description="Pick the provider and model for this agent's chat calls. Leave empty to inherit the workspace default."
+        <BlockHeading
+          title="Model"
+          description="The provider and model behind this agent's chat calls. Leave it empty to follow the workspace default."
         />
         {enabled ? (
           <Button type="button" size="sm" variant="ghost" onClick={() => onChange(null)}>
@@ -183,25 +176,28 @@ function AgentChatModelOverrideSubsection({
   )
 }
 
-export interface AssistantBehaviorSectionProps {
+export interface AssistantProfileSectionProps {
   anonSettings: GeneralSettings
   assistantBehaviorSettings: AssistantBehaviorSettings
   assistantLocaleInput: string
+  // Operator-only internal label is per-agent; hidden in workspace general settings.
+  showInternalName?: boolean
   onAssistantSettingChange: <K extends keyof GeneralSettings>(key: K, value: GeneralSettings[K]) => void
   onAssistantLocaleInputChange: (value: string) => void
   onAssistantBehaviorDraft: (updater: (current: AssistantBehaviorSettings) => AssistantBehaviorSettings) => void
   isAnonSaving: boolean
 }
 
-export function AssistantBehaviorSection({
+export function AssistantProfileSection({
   anonSettings,
   assistantBehaviorSettings,
   assistantLocaleInput,
+  showInternalName = false,
   onAssistantSettingChange,
   onAssistantLocaleInputChange,
   onAssistantBehaviorDraft,
   isAnonSaving,
-}: AssistantBehaviorSectionProps) {
+}: AssistantProfileSectionProps) {
   const [pendingPreset, setPendingPreset] = useState<InstructionPreset | null>(null)
   const [presetDraft, setPresetDraft] = useState('')
   const hasPersonaText = assistantBehaviorSettings.customInstruction.trim().length > 0
@@ -229,54 +225,97 @@ export function AssistantBehaviorSection({
 
   return (
     <SettingsCard
-      id="assistant-behavior"
-      icon={<Bot className="h-5 w-5 text-primary" />}
-      title="Assistant behavior"
-      description="The agent's always-on persona and instructions — how it answers and opens every conversation. For rules that should only apply in specific situations, use Directives."
+      id="assistant-profile"
+      icon={<UserRound className="h-5 w-5 text-primary" />}
+      title="Profile"
+      description="Who this agent is and how it answers by default — its name, its standing instructions, the model behind it, and what every reply carries. For rules that should only apply in specific situations, use Directives."
     >
-      <div className="space-y-6">
-        <div className="space-y-2">
-          <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
-            Instructions for the assistant
-          </Label>
-          {!hasPersonaText ? (
-            <div className="flex flex-wrap gap-2">
-              {INSTRUCTION_PRESETS.map((preset) => (
-                <Button
-                  key={preset.label}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => openPreset(preset)}
-                >
-                  {preset.label}
-                </Button>
-              ))}
+      <div className="space-y-8">
+        <div className="space-y-4">
+          <BlockHeading
+            title="Name"
+            description="What visitors call this agent, and what you call it in the dashboard."
+          />
+          <div className="space-y-2">
+            <Label htmlFor="assistantName" className="text-foreground">Assistant name</Label>
+            <Input
+              id="assistantName"
+              value={anonSettings.assistantName}
+              maxLength={200}
+              onChange={(event) => onAssistantSettingChange('assistantName', event.target.value)}
+              placeholder="e.g. Marta"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shown as the chat title. Falls back to the workspace name when left blank.
+            </p>
+          </div>
+
+          {showInternalName ? (
+            <div className="space-y-2">
+              <Label htmlFor="agentInternalName" className="text-foreground">Internal name</Label>
+              <Input
+                id="agentInternalName"
+                value={anonSettings.internalName ?? ''}
+                maxLength={200}
+                onChange={(event) => onAssistantSettingChange('internalName', event.target.value)}
+                placeholder="e.g. Claudio (IT)"
+              />
+              <p className="text-xs text-muted-foreground">
+                Only you see this — it labels the agent in your dashboard to tell look-alikes
+                apart. Visitors always see the assistant name above.
+              </p>
             </div>
           ) : null}
-          <Textarea
-            id="assistantAnswerInstruction"
-            value={assistantBehaviorSettings.customInstruction}
-            onChange={(event) =>
-              onAssistantBehaviorDraft((current) => ({
-                ...current,
-                customInstruction: event.target.value.slice(0, INSTRUCTION_MAX_LENGTH),
-              }))
-            }
-            placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
-            rows={4}
+        </div>
+
+        <div className="space-y-4">
+          <BlockHeading
+            title="Instructions"
+            description="The always-on persona applied to every answer this agent gives."
           />
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>
-              Sets the purpose, scope, and tone applied to every answer.
-              {!hasPersonaText ? ' Pick a preset to start.' : ''}
-            </span>
-            <span>{assistantBehaviorSettings.customInstruction.length} / {INSTRUCTION_MAX_LENGTH}</span>
+          <div className="space-y-2">
+            <Label htmlFor="assistantAnswerInstruction" className="text-foreground">
+              Instructions for the assistant
+            </Label>
+            {!hasPersonaText ? (
+              <div className="flex flex-wrap gap-2">
+                {INSTRUCTION_PRESETS.map((preset) => (
+                  <Button
+                    key={preset.label}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => openPreset(preset)}
+                  >
+                    {preset.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            <Textarea
+              id="assistantAnswerInstruction"
+              value={assistantBehaviorSettings.customInstruction}
+              onChange={(event) =>
+                onAssistantBehaviorDraft((current) => ({
+                  ...current,
+                  customInstruction: event.target.value.slice(0, INSTRUCTION_MAX_LENGTH),
+                }))
+              }
+              placeholder="e.g. Help visitors choose the right course. Be concise, practical, and concrete."
+              rows={4}
+            />
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                Sets the purpose, scope, and tone applied to every answer.
+                {!hasPersonaText ? ' Pick a preset to start.' : ''}
+              </span>
+              <span>{assistantBehaviorSettings.customInstruction.length} / {INSTRUCTION_MAX_LENGTH}</span>
+            </div>
           </div>
         </div>
 
         {assistantBehaviorSettings.chatModelOverride !== undefined ? (
-          <AgentChatModelOverrideSubsection
+          <ChatModelOverrideBlock
             value={assistantBehaviorSettings.chatModelOverride}
             onChange={(next) =>
               onAssistantBehaviorDraft((current) => ({ ...current, chatModelOverride: next }))
@@ -284,78 +323,84 @@ export function AssistantBehaviorSection({
           />
         ) : null}
 
-        <div className="divide-y divide-border rounded-lg border border-border">
-          <div className="flex items-start justify-between gap-4 p-3">
-            <div className="min-w-0">
-              <Label htmlFor="citationDisplayEnabled" className="text-foreground">
-                Show source citations
-              </Label>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Show the documents an answer is grounded in on public chat and embeds. Sources appear there but are
-                never clickable — only their links are exposed. Your dashboard chat has its own display toggle.
-              </p>
-            </div>
-            <Switch
-              id="citationDisplayEnabled"
-              checked={assistantBehaviorSettings.citationDisplayEnabled}
-              onCheckedChange={(checked) =>
-                onAssistantBehaviorDraft((current) => ({
-                  ...current,
-                  citationDisplayEnabled: checked,
-                }))
-              }
-            />
-          </div>
-          <div className="flex items-start justify-between gap-4 p-3">
-            <div className="min-w-0">
-              <Label htmlFor="assistantLinkUtmEnabled" className="text-foreground">
-                Assistant link attribution
-              </Label>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Add Radioso UTM parameters to URLs the assistant includes in answers.
-              </p>
-            </div>
-            <Switch
-              id="assistantLinkUtmEnabled"
-              checked={assistantBehaviorSettings.assistantLinkUtmEnabled}
-              onCheckedChange={(checked) =>
-                onAssistantBehaviorDraft((current) => ({
-                  ...current,
-                  assistantLinkUtmEnabled: checked,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-3 p-3">
-            <div className="flex items-start justify-between gap-4">
+        <div className="space-y-4">
+          <BlockHeading
+            title="Answers"
+            description="What every reply carries, and how a conversation opens."
+          />
+          <div className="divide-y divide-border rounded-lg border border-border">
+            <div className="flex items-start justify-between gap-4 p-3">
               <div className="min-w-0">
-                <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">
-                  Proactive first greeting
+                <Label htmlFor="citationDisplayEnabled" className="text-foreground">
+                  Show source citations
                 </Label>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  Whether a brand-new chat opens with an assistant-first greeting.
+                  Show the documents an answer is grounded in on public chat and embeds. Sources appear there but are
+                  never clickable — only their links are exposed. Your dashboard chat has its own display toggle.
                 </p>
               </div>
               <Switch
-                id="proactiveGreetingEnabled"
-                checked={anonSettings.proactiveGreetingEnabled}
-                onCheckedChange={(checked) => onAssistantSettingChange('proactiveGreetingEnabled', checked)}
-                disabled={isAnonSaving}
+                id="citationDisplayEnabled"
+                checked={assistantBehaviorSettings.citationDisplayEnabled}
+                onCheckedChange={(checked) =>
+                  onAssistantBehaviorDraft((current) => ({
+                    ...current,
+                    citationDisplayEnabled: checked,
+                  }))
+                }
               />
             </div>
-            {anonSettings.proactiveGreetingEnabled ? (
-              <div className="space-y-2">
-                <Label htmlFor="assistantDefaultLocale" className="text-foreground">Fallback greeting language</Label>
-                <AssistantLocaleCombobox
-                  id="assistantDefaultLocale"
-                  value={assistantLocaleInput}
-                  onChange={onAssistantLocaleInputChange}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Used only when we can&apos;t detect the visitor&apos;s language. Replies still follow the visitor&apos;s message.
+            <div className="flex items-start justify-between gap-4 p-3">
+              <div className="min-w-0">
+                <Label htmlFor="assistantLinkUtmEnabled" className="text-foreground">
+                  Assistant link attribution
+                </Label>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Add Radioso UTM parameters to URLs the assistant includes in answers.
                 </p>
               </div>
-            ) : null}
+              <Switch
+                id="assistantLinkUtmEnabled"
+                checked={assistantBehaviorSettings.assistantLinkUtmEnabled}
+                onCheckedChange={(checked) =>
+                  onAssistantBehaviorDraft((current) => ({
+                    ...current,
+                    assistantLinkUtmEnabled: checked,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-3 p-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <Label htmlFor="proactiveGreetingEnabled" className="text-foreground">
+                    Proactive first greeting
+                  </Label>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Whether a brand-new chat opens with an assistant-first greeting.
+                  </p>
+                </div>
+                <Switch
+                  id="proactiveGreetingEnabled"
+                  checked={anonSettings.proactiveGreetingEnabled}
+                  onCheckedChange={(checked) => onAssistantSettingChange('proactiveGreetingEnabled', checked)}
+                  disabled={isAnonSaving}
+                />
+              </div>
+              {anonSettings.proactiveGreetingEnabled ? (
+                <div className="space-y-2">
+                  <Label htmlFor="assistantDefaultLocale" className="text-foreground">Fallback greeting language</Label>
+                  <AssistantLocaleCombobox
+                    id="assistantDefaultLocale"
+                    value={assistantLocaleInput}
+                    onChange={onAssistantLocaleInputChange}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Used only when we can&apos;t detect the visitor&apos;s language. Replies still follow the visitor&apos;s message.
+                  </p>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

@@ -27,6 +27,7 @@
     "@lexical/react": "^0.45.0",
     "@lexical/rich-text": "^0.45.0",
     "@lexical/utils": "^0.45.0",
+    "@radioso/routine-definition": "workspace:*",
     "@radioso/routine-document": "workspace:*",
     "@radioso/ui": "workspace:*",
     "@radix-ui/react-alert-dialog": "1.1.15",

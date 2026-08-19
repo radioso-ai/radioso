@@ -6,6 +6,7 @@ import type { ErrorEvent } from "../errors/errorTypes.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
+import { WORKER_TASK_AUTH_HEADER_LOWERCASE } from "../infra/workerTaskAuth.js";
 
 export const createLogger = (level = process.env.NODE_ENV === "production" ? "info" : "debug") =>
   pino({
@@ -165,6 +166,7 @@ const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string
 
 const httpLoggerRedactPaths = [
   ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
+  httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
   httpHeaderRedactPath("req", "x-workspace-id"),
   ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
   // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.

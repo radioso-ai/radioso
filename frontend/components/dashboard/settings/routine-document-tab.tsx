@@ -39,7 +39,7 @@ import {
   updateSlot,
   updateStep,
 } from '@/lib/routine-document-edits'
-import { draftFromBlockDoc, fieldGuardOpNeedsUnit, fieldGuardOpNeedsValue, ROUTINE_FIELD_GUARD_UNITS, routineToBlockDoc, slugifyVariableKey, type ProseParagraph, type ProseSegment, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockStep, type RoutineInputBinding } from '@radioso/routine-document'
+import { draftFromBlockDoc, fieldGuardOpNeedsUnit, fieldGuardOpNeedsValue, ROUTINE_FIELD_GUARD_UNITS, routineToBlockDoc, slugifyVariableKey, type ProseParagraph, type ProseSegment, type RoutineBlockBranch, type RoutineBlockDoc, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineBlockStep, type RoutineInputBinding } from '@/lib/routine-prose'
 
 const slotTypes: RoutineSlotType[] = ['text', 'number', 'boolean', 'email', 'date']
 const guardKinds: RoutineGuardKind[] = ['field', 'slot_filled', 'outcome', 'counter', 'default']

@@ -5,6 +5,7 @@ services:
       dockerfile: infra/backend.dev.Dockerfile
     environment:
       NODE_ENV: development
+      AUTH_AUTO_VERIFY_EMAIL: "true"
       CHOKIDAR_USEPOLLING: "true"
     volumes:
       - ./package.json:/app/package.json:ro
@@ -16,6 +17,7 @@ services:
       - radioso_backend_node_modules:/app/backend/node_modules
       - radioso_crawler_node_modules:/app/packages/crawler/node_modules
       - radioso_document_parser_node_modules:/app/packages/document-parser/node_modules
+      - radioso_pnpm_store:/pnpm/store
     command: ["backend-dev-entrypoint.sh", "dev:http"]
 
   backend-worker:
@@ -38,6 +40,7 @@ services:
       - radioso_backend_node_modules:/app/backend/node_modules
       - radioso_crawler_node_modules:/app/packages/crawler/node_modules
       - radioso_document_parser_node_modules:/app/packages/document-parser/node_modules
+      - radioso_pnpm_store:/pnpm/store
     command: ["backend-dev-entrypoint.sh", "dev:worker"]
 
   backend-crawler-worker:
@@ -60,6 +63,7 @@ services:
       - radioso_backend_node_modules:/app/backend/node_modules
       - radioso_crawler_node_modules:/app/packages/crawler/node_modules
       - radioso_document_parser_node_modules:/app/packages/document-parser/node_modules
+      - radioso_pnpm_store:/pnpm/store
     command: ["backend-dev-entrypoint.sh", "dev:crawler-worker"]
 
   frontend:
@@ -83,6 +87,7 @@ services:
       - radioso_frontend_node_modules:/app/frontend/node_modules
       - radioso_ui_node_modules:/app/packages/ui/node_modules
       - radioso_frontend_next:/app/frontend/.next
+      - radioso_pnpm_store:/pnpm/store
 
 volumes:
   radioso_workspace_node_modules:
@@ -92,3 +97,6 @@ volumes:
   radioso_frontend_node_modules:
   radioso_ui_node_modules:
   radioso_frontend_next:
+  # Persists the pnpm content-addressable store across boots so the runtime
+  # dependency reinstall does not re-download packages on every `run-dev.sh`.
+  radioso_pnpm_store:

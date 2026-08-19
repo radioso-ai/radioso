@@ -1,6 +1,7 @@
 ---
 title: Authentication
 description: Session, API token, public-chat, and Enterprise embed access patterns in Radioso.
+last_updated: 2026-08-17
 ---
 
 import { Steps } from 'nextra/components'
@@ -30,7 +31,7 @@ Use `GET /api/v1/auth/registration` to check whether open registration is availa
 
 On an empty open-source server, the first registration creates the server's sole organization and default workspace. Open registration then closes, and later users join the existing organization by invitation. Enterprise Edition keeps open registration available and lets signed-in users create additional organizations. Authorized users can create additional workspaces in either edition; the edition boundary applies to organizations, not workspaces.
 
-Registration sends a verification email and does not set a session cookie. The backend sets the cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address.
+Production registration sends a verification email and does not set a session cookie. The documented development entrypoints enable automatic verification for newly registered password users and return the session cookie immediately. The backend also sets the cookie on successful login, invitation acceptance, and password reset confirmation. Open-source Radioso includes password reset and email verification endpoints, and normal sign-in requires a verified email address; development registration satisfies that requirement by persisting the verification state rather than bypassing login checks.
 
 ## Workspace API tokens
 

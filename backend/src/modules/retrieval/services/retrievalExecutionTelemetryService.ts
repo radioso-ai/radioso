@@ -15,7 +15,12 @@ import type { TelemetryService } from "../../../shared/observability/telemetry/t
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalShapeResolver.js";
 import type { SkillCallerSurface } from "../../skills/public.js";
-import { RETRIEVAL_TRACE_SPAN_NAMES, type TraceAttributes } from "./retrievalPipelineStages.js";
+import {
+  RETRIEVAL_TRACE_SPAN_NAMES,
+  formatDegradedChannels,
+  type DegradableRetrievalChannel,
+  type TraceAttributes,
+} from "./retrievalPipelineStages.js";
 
 const traceActiveSpan = async <T>(
   name: string,
@@ -60,6 +65,7 @@ export class RetrievalExecutionTelemetryService {
       | "query_embedding_unavailable"
       | "vector_search_unavailable"
       | null;
+    degradedRetrievalChannels?: DegradableRetrievalChannel[];
     retrievalSkipped?: boolean;
     parsedQuery?: ParsedQueryInterpretation;
     appliedConstraints?: AppliedConstraint[];
@@ -137,6 +143,7 @@ export class RetrievalExecutionTelemetryService {
           retrievalInvoked: input.execution?.retrievalInvoked ?? input.retrievalSkipped !== true,
           semanticRetrievalAvailability: input.semanticRetrievalAvailability,
           semanticRetrievalFailureReason: input.semanticRetrievalFailureReason,
+          degradedRetrievalChannels: input.degradedRetrievalChannels,
           skillName: skillDiagnostic?.skillName,
           shapeName: input.shapeSelection?.shapeName,
           queryShape: input.shapeSelection?.queryShape,
@@ -149,6 +156,7 @@ export class RetrievalExecutionTelemetryService {
           fallback_applied: diagnostics.fallbackApplied ? "true" : "false",
           semantic_availability: input.semanticRetrievalAvailability ?? "unknown",
           semantic_failure_reason: input.semanticRetrievalFailureReason ?? "none",
+          degraded_channels: formatDegradedChannels(input.degradedRetrievalChannels) ?? "unknown",
           execution_surface: input.execution?.surface ?? "unknown",
           execution_path: input.execution?.path ?? "unknown",
           skill_name: skillDiagnostic?.skillName ?? "unknown",
@@ -179,6 +187,7 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.fallback.applied": fallbackApplied,
   "retrieval.semantic.availability": input.semanticRetrievalAvailability,
   "retrieval.semantic.failure_reason": input.semanticRetrievalFailureReason,
+  "retrieval.degraded_channels": formatDegradedChannels(input.degradedRetrievalChannels),
   "retrieval.skipped": input.retrievalSkipped ?? false,
   "retrieval.candidates.semantic_original.count": boundedTraceCount(input.originalCandidateCount),
   "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(input.rewrittenCandidateCount),

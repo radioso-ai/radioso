@@ -12,6 +12,10 @@ export const defaultAgentId = "67acb0c8-caad-4a1b-9fef-70cbca3f7d12";
 export const nowIso = "2026-04-26T12:00:00.000Z";
 
 type AuthoredDirectiveFixture = ApiSchemas["AuthoredDirective"];
+// What a spec has to state to seed a directive: the rest is filled from the same defaults the
+// API applies.
+export type AuthoredDirectiveDraftFixture =
+  Partial<AuthoredDirectiveFixture> & Pick<AuthoredDirectiveFixture, "id" | "name" | "action">;
 type BuiltInDirectiveFixture = ApiSchemas["BuiltInDirective"];
 export type ContextVariableFixture = ApiSchemas["ContextVariable"];
 export type AgentContextVariableEnablementFixture = ApiSchemas["AgentContextVariableEnablement"];
@@ -778,7 +782,7 @@ export const installDashboardApiMocks = async (
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
     directiveUpdates?: DirectiveMutationFixture[];
-    directives?: AuthoredDirectiveFixture[];
+    directives?: AuthoredDirectiveDraftFixture[];
     builtIns?: BuiltInDirectiveFixture[];
     contextVariables?: ContextVariableFixture[];
     contextVariableEnablements?: AgentContextVariableEnablementFixture[];
@@ -858,7 +862,7 @@ export const installDashboardApiMocks = async (
   const settingsUpdates = options.settingsUpdates;
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
-  let directives = options.directives ?? [];
+  let directives: AuthoredDirectiveFixture[] = (options.directives ?? []).map(buildDirective);
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
   const directiveUpdates = options.directiveUpdates;
@@ -1751,6 +1755,7 @@ export const installDashboardApiMocks = async (
           name: body.name,
           condition: body.condition,
           action: body.action,
+          binding: body.binding ?? null,
           priority: body.priority ?? null,
           dependsOn: body.dependsOn ?? [],
           excludes: body.excludes ?? [],

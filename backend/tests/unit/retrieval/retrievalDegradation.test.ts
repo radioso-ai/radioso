@@ -170,6 +170,90 @@ describe("retrieval semantic degradation", () => {
     expect(result.retrievalBranches[0]?.semanticSearched).toBe(true);
   });
 
+  it("continues with semantic candidates when lexical search fails", async () => {
+    const semanticChunk = { ...lexicalChunk, chunkId: "chunk-semantic" };
+    const lexicalSearch = {
+      search: vi.fn().mockRejectedValue(new Error("canceling statement due to statement timeout")),
+    };
+    const stage = new CandidateRetrievalStageService(
+      {
+        embedQueries: vi.fn().mockResolvedValue({
+          space: { id: "space-active", dimensions: 3, distanceMetric: "cosine" },
+          vectors: [[0.1, 0.2, 0.3]],
+        }),
+      },
+      { search: vi.fn().mockResolvedValue([semanticChunk]) } as never,
+      lexicalSearch as never,
+      { hydrate: vi.fn().mockResolvedValue([semanticChunk]) } as never,
+    );
+
+    const result = await stage.execute(input as never);
+
+    expect(result.lexicalContexts).toEqual([]);
+    expect(result.degradedRetrievalChannels).toContain("lexical");
+    // Semantic must be unaffected: a lexical outage is not a vector outage.
+    expect(result.semanticRetrievalAvailability).toBe("available");
+    expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
+      "retrieval.degraded_channels": "lexical",
+    });
+  });
+
+  it("continues when the temporal structured lookup fails", async () => {
+    const temporalInput = {
+      ...input,
+      rewrittenQuery: {
+        ...input.rewrittenQuery,
+        structuredResult: {
+          queryShape: "event_date_lookup",
+          temporalQueryMode: "listing",
+        },
+      },
+    };
+    const stage = new CandidateRetrievalStageService(
+      {
+        embedQueries: vi.fn().mockResolvedValue({
+          space: { id: "space-active", dimensions: 3, distanceMetric: "cosine" },
+          vectors: [[0.1, 0.2, 0.3]],
+        }),
+      },
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      { search: vi.fn().mockResolvedValue([lexicalChunk]) } as never,
+      { hydrate: vi.fn().mockResolvedValue([]) } as never,
+      {
+        findUpcoming: vi.fn().mockRejectedValue(
+          new Error("canceling statement due to statement timeout"),
+        ),
+      } as never,
+    );
+
+    const result = await stage.execute(temporalInput as never);
+
+    expect(result.temporalContexts).toEqual([]);
+    expect(result.degradedRetrievalChannels).toContain("temporal");
+    expect(result.lexicalContexts).toEqual([lexicalChunk]);
+  });
+
+  it("reports no degraded channels when every channel succeeds", async () => {
+    const stage = new CandidateRetrievalStageService(
+      {
+        embedQueries: vi.fn().mockResolvedValue({
+          space: { id: "space-active", dimensions: 3, distanceMetric: "cosine" },
+          vectors: [[0.1, 0.2, 0.3]],
+        }),
+      },
+      { search: vi.fn().mockResolvedValue([]) } as never,
+      { search: vi.fn().mockResolvedValue([lexicalChunk]) } as never,
+      { hydrate: vi.fn().mockResolvedValue([]) } as never,
+    );
+
+    const result = await stage.execute(input as never);
+
+    expect(result.degradedRetrievalChannels).toEqual([]);
+    expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
+      "retrieval.degraded_channels": "none",
+    });
+  });
+
   it("records only bounded semantic availability and failure codes in diagnostics", async () => {
     const events: unknown[] = [];
     const telemetry = new RetrievalExecutionTelemetryService({

@@ -96,5 +96,15 @@ export type ProseSegment =
 
 export type ProseParagraph = { headingLevel?: 1; segments: ProseSegment[] };
 
+export type ProseTerminal = { id?: string; instruction?: string | null };
+export type ProseTerminalConfig = { complete?: ProseTerminal | null; handoff?: ProseTerminal | null };
+
+// Where a token failed to parse, so a caller can point at the line.
+export type ParseDiagnostic = {
+  line: number;
+  code: string;
+  message: string;
+};
+
 export const OUTCOME_GUARD_REF = "__outcome__";
 export const SLOT_FILLED_GUARD_REF = "__filled__";

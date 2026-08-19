@@ -1,22 +1,59 @@
 ---
-title: Use cases
-description: "Common Radioso use cases: customer-facing agents, internal knowledge, API workflows, and MCP clients."
+title: "Use cases"
+description: "Jobs a Radioso agent completes end to end: customer support, product onboarding, lead qualification, and internal help — on one agent."
+last_updated: 2026-08-07
 ---
 
 # Use cases
 
-## Customer-facing agent
+Radioso teams usually start with one job — the support bot that keeps disappointing people, or the assistant a new product needs on launch day. Then they notice the same agent can do the next job, because the documents, the rules, and the flows are already there. What follows is that progression, in the order it normally happens.
 
-Use Radioso when you want a customer-facing agent that answers from controlled workspace content instead of improvising from model priors. Anonymous public chat is available as a public surface. The hosted website widget is available in Enterprise Edition.
+Each of these describes a job the agent finishes, not a corpus it can search.
 
-## Internal team agent
+## Answer support questions and finish the ticket
 
-Use workspace-scoped agents, documents, and settings when different teams or customers need isolated behavior and content.
+The first job for most teams. A customer asks something your docs already answer, and the agent answers it with a citation they can click. That part is grounding, and it works on day one because the material already exists.
 
-## API-driven agent workflow
+The half that matters more is what happens when the answer is not enough. A refund request, a plan change, a "my order never arrived" — those need a **routine**: collect the order id, call the skill that looks it up in your system over MCP, branch on what came back, and either complete the action or hand the conversation to a teammate with the transcript intact. You author that flow in plain language.
 
-Use the API or SDK when you want Radioso to sit behind your own UI, workflow, or automation.
+Around it, **directives** hold the line on how the agent behaves: be exact about policy numbers, never promise a delivery date, slow down when the customer sounds upset. They match by meaning, so one rule covers every language your customers write in.
 
-## MCP-grounded knowledge access
+When the agent should stop, it stops. A handoff transfers ownership to a person, the agent goes quiet, and the operator picks it up in the dashboard **Activity** screen. See [Human takeover](/operators/human-takeover).
 
-Use the MCP server when an external client should search documents, ask grounded questions, or inspect workspace capabilities without owning Radioso assistant history.
+## Onboard a new customer through the steps
+
+Onboarding is a checklist that people abandon. An agent can carry it instead: confirm who they are, collect the two or three values setup needs, walk them through the configuration your docs describe, and check they got a working result before it closes the conversation.
+
+This is a routine with variables and branches, plus an **approval gate** wherever a step deserves a human's decision before it happens. The gate suspends the flow, waits for the operator's choice, and resumes — the conversation stays with the agent throughout.
+
+Because publishing a routine creates an immutable version, you can change the onboarding flow without disturbing anyone mid-way through it. Conversations already running keep the version they started on.
+
+## Qualify a lead and route it to sales
+
+The agent on your marketing site is already answering questions about what the product does. It can also find out whether the person asking is someone your sales team wants to talk to.
+
+Author a routine that asks the qualifying questions in the natural place in the conversation, records the answers as typed variables, and finishes by posting a signed payload to a webhook destination — into your CRM, your Slack, your queue. Where a person should take the conversation instead, the routine ends in a handoff.
+
+You control the tone with directives rather than a wall of prompt text: what the agent may claim about pricing, when to offer a call, what it should never say about a customer you have not announced.
+
+## Help your own team from inside your tools
+
+The same agent answers your team, not only your customers. Engineers reach it from an MCP client in their editor; a support lead queries it from the API behind an internal dashboard; anyone can open the public chat link.
+
+Radioso's [MCP server](/guides/mcp-server) exposes two surfaces with different scopes. Workspace document tools (`search_documents`, `answer_grounded`, `create_document`, and the rest) authenticate with a workspace API token and work across the whole workspace, retrieval-only, with no agent persona attached. The agent converse surface binds a client to one agent — its persona, directives, and routines — through a per-agent grant, so a tool like Cursor can hold an actual conversation instead of just querying documents.
+
+Internal help is where the "one agent" part pays off. The onboarding routine you wrote for customers is the one your solutions engineer walks a prospect through. The refund policy your support agent cites is the same document, with the same citation, in every one of those places.
+
+## One agent, every surface
+
+Every job above runs on the same agent, reachable five ways: the web app, the REST API, the TypeScript SDK, an MCP client, and a website embed. Anonymous public chat is available as a public surface. The website widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
+
+Update a document, publish a new routine version, or add a directive, and every surface picks it up. One debug loop covers all of them: each turn records which directive steered it, which skill it dispatched, and which routine step it was on.
+
+## Read next
+
+- [Guided autonomy](/why-radioso/guided-autonomy) — how the rules bound what the agent may do
+- [What agents can do](/why-radioso/capabilities) — directives, routines, actions, and handoff in detail
+- [MCP server](/guides/mcp-server) — connect clients to workspace document tools or an agent conversation surface
+- [Authoring routines](/guides/authoring-routines) — write and publish your first flow
+- [Embed on your website](/quickstarts/website-embed) — put the agent in front of customers

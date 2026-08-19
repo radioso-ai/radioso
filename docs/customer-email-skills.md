@@ -9,8 +9,8 @@ last_updated: 2026-06-23
 Customer email connections are workspace-owned outbound mail resources. They are
 separate from Radioso transactional email.
 
-The key point is that password reset, email verification, invitations, and other
-product messages still use `backend/src/modules/mail/`. Customer email
+Password reset, email verification, invitations, and other product messages go
+through `backend/src/modules/mail/`. Customer email
 connections are for customer-authorized outbound email that can later be exposed
 as constrained agent skills.
 
@@ -112,7 +112,7 @@ The unified skill endpoints are:
 - `PATCH /api/v1/agents/{agentId}/skills/{skillId}`
 - `DELETE /api/v1/agents/{agentId}/skills/{skillId}`
 
-The per-type email routes below also work and operate on the same `agent_skills` records. The unified `/skills` endpoints above are the primary surface:
+Email skills are also reachable through the per-type routes below. Both families read and write the same `agent_skills` rows, and `/skills` is the surface to build against:
 
 - `GET /api/v1/agents/{agentId}/email-skills`
 - `POST /api/v1/agents/{agentId}/email-skills`
@@ -141,7 +141,7 @@ The connection, skill, OAuth, and activity paths are complete. The provider
 adapter that talks to Gmail or Microsoft Graph is not wired. The current
 build uses a mock provider for both `google_mail` and `microsoft_graph_mail`.
 
-The key point is that no real email is sent. The mock provider accepts every
+No real email is sent. The mock provider accepts every
 draft and send request and returns a placeholder message id. So a `drafted` or
 `sent` outcome means the request passed validation and reached the provider
 step, not that a message was delivered. Activity receipts are not proof of
@@ -193,7 +193,7 @@ The activity endpoint is:
 It can be filtered by agent, connection, skill definition, outcome, and date
 range.
 
-The key point is that activity is not a message archive. Radioso does not retain
+Activity is a receipt log, not a message archive. Radioso does not retain
 full message bodies by default. Activity records also do not store OAuth access
 tokens, refresh tokens, client secrets, cookies, connection strings, raw provider
 credentials, or raw provider error payloads.

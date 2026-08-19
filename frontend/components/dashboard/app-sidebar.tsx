@@ -40,6 +40,8 @@ interface AppSidebarProps {
   routeState: DashboardRouteState
   /** The active section's nested sub-navigation, rendered under its rail row. */
   areaSubNav?: ReactNode
+  /** The "Ask Ray" input, rendered at the top of the sidebar above the nav. */
+  askRaySlot?: ReactNode
 }
 
 // Activity sits first and is visually separated from the build/config sections below —
@@ -52,7 +54,7 @@ const navItems = [
   { id: 'settings' as const, label: 'Settings', icon: Settings },
 ]
 
-export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: AppSidebarProps) {
+export function AppSidebar({ accountId, currentView, routeState, areaSubNav, askRaySlot }: AppSidebarProps) {
   const { user } = useAuth()
   const { activeWorkspace, activeWorkspaceId } = useWorkspace()
   const inboxCount = useInboxCount()
@@ -67,6 +69,7 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
       </SidebarHeader>
 
       <SidebarContent>
+        {askRaySlot ? <div className="px-2 pt-2">{askRaySlot}</div> : null}
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -80,6 +83,11 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                 // "Agents" row. Until areaSubNav is ready (e.g. workspace still loading) we
                 // keep the plain row so the entry never collapses to an empty gap.
                 const isAgentsPicker = item.id === 'agents' && isActive && Boolean(areaSubNav)
+                const navState: DashboardRouteState = {
+                  section: item.id,
+                  workspaceId: activeWorkspaceId ?? undefined,
+                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                }
 
                 return (
                   <SidebarMenuItem
@@ -87,13 +95,9 @@ export function AppSidebar({ accountId, currentView, routeState, areaSubNav }: A
                     className={item.id === 'activity' ? 'mb-1 border-b border-sidebar-border pb-1' : undefined}
                   >
                     {isAgentsPicker ? null : (
-                      <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                        <Link
-                          href={buildDashboardHref(accountId, {
-                            section: item.id,
-                            workspaceId: activeWorkspaceId ?? undefined,
-                            workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                          })}
+                        <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                          <Link
+                            href={buildDashboardHref(accountId, navState)}
                         >
                           <item.icon className="w-4 h-4" />
                           <span>{item.label}</span>

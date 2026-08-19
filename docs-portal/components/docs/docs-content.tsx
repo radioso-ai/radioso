@@ -14,8 +14,11 @@ const sdkExamples = [
     filename: 'app.ts',
     code: `import { createRadiosoClient } from '@radioso/typescript-sdk'
 
+// baseUrl defaults to https://api.radioso.ai. Set it to
+// https://api-us.radioso.ai for the US instance, or to your own
+// origin when you self-host. A token only works against the
+// instance that issued it.
 const client = createRadiosoClient({
-  baseUrl: 'http://localhost:8080',
   apiToken: process.env.RADIOSO_API_TOKEN!,
 })
 
@@ -29,7 +32,7 @@ console.log(response.answer)`,
   {
     language: 'curl',
     label: 'cURL',
-    code: `curl -sS -X POST http://localhost:8080/api/v1/assistant/chat \\
+    code: `curl -sS -X POST https://api.radioso.ai/api/v1/assistant/chat \\
   -H "Authorization: Bearer $RADIOSO_API_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"message":"What does the FAQ say about uploaded content?","stream":false}'`,
@@ -65,13 +68,24 @@ export function DocsContent() {
           <span>Early preview</span>
         </div>
         <h1 className="sr-only">Radioso documentation</h1>
+        {/* The lockup is a fixed-colour mark, so it needs a per-scheme asset
+            rather than a filter: the light one disappears on the dark canvas. */}
         <Image
           src="/radioso-lockup.svg"
           alt="Radioso"
           width={1173}
           height={300}
           priority
-          className="h-auto w-full max-w-[420px]"
+          className="h-auto w-full max-w-[420px] dark:hidden"
+        />
+        <Image
+          src="/radioso-lockup-dark.svg"
+          alt=""
+          aria-hidden="true"
+          width={1173}
+          height={300}
+          priority
+          className="hidden h-auto w-full max-w-[420px] dark:block"
         />
         <p className="mt-6 max-w-3xl text-xl leading-relaxed text-muted-foreground">
           Grounded answers, traceable citations, and workspace-scoped controls for teams that need to defend what their assistants say.

@@ -24,7 +24,7 @@ import {
   ROUTINE_SLOT_TYPES,
   type ChipDocVariable,
   type RoutineFieldGuardValue,
-} from '@radioso/routine-document'
+} from '@/lib/routine-prose'
 
 // A structured, decided-in-code comparison the author builds in a dialog. Shared by the
 // prose toolbar (insert a new check) and a decided-by-AI condition chip (promote it to a

@@ -5,7 +5,7 @@ description: Read and update ingestion, public-surface, credentials, and model s
 
 # Settings
 
-Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models.
+Settings are workspace-scoped. They control how Radioso processes documents, presents public surfaces, stores provider credentials, and selects models. Authenticate with the workspace token, and send the request to the host that issued it ([Workspaces and tokens](/api/workspaces-and-tokens)).
 
 Retrieval configuration is not a workspace setting. It lives on each agent's `retrieval.answer` skill settings. The settings API exposes read-only retrieval defaults so the agent Skills tab can show inherited values for unset fields.
 
@@ -121,7 +121,7 @@ This payload covers user-facing workspace behavior such as:
 - `websiteEmbedCopy`
 - `websiteEmbedExpertOverrides`
 
-<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat settings remain separate from the hosted widget routes.
+<span style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid rgba(79, 70, 229, 0.35)', borderRadius: '999px', padding: '0.125rem 0.55rem', fontSize: '0.72rem', fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#4f46e5', background: 'rgba(79, 70, 229, 0.08)' }}>Enterprise Edition</span> Website widget token rotation and hosted widget customization require the website-embed surface extension. Public chat has its own keys and its own rotation endpoint, so the two placements are enabled and rotated independently even though the dashboard configures both on the agent's **Web chat** page.
 
 Public link and embed token rotation use explicit endpoints:
 
@@ -230,9 +230,9 @@ was written.
 
 ## LLM model selection
 
-Workspaces choose which provider and model are used for each capability (chat, query rewrite, rerank). Resolution at request time walks: agent override (chat only) → workspace preference → env default. API keys come from the workspace credential first, then the matching environment variable.
+Workspaces choose which provider and model are used for each LLM job — chat, query rewrite, rerank. (This is a model-selection job slot, distinct from a skill's `capability` field elsewhere in this API, such as `retrieve` or `email` — see [Agents and skills](/api/agents-and-skills).) Resolution at request time walks: agent override (chat only) → workspace preference → env default. API keys come from the workspace credential first, then the matching environment variable.
 
-`GET /api/v1/settings/llm-models` returns the current preferences. `null` for a capability means "inherit env default":
+`GET /api/v1/settings/llm-models` returns the current preferences. `null` for a job means "inherit env default":
 
 ```json
 {
@@ -242,7 +242,7 @@ Workspaces choose which provider and model are used for each capability (chat, q
 }
 ```
 
-`PUT /api/v1/settings/llm-models` is a merge-update. Send only the capabilities you want to change. Pass `null` to clear a capability and fall back to the env default. The response echoes the full resolved preferences.
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response echoes the full resolved preferences.
 
 ```json
 {
@@ -257,7 +257,7 @@ For per-agent chat model overrides, set `chatModelOverride` on the agent through
 
 ## Endpoint reference
 
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
+Every settings group takes a different body, and the [API Reference](/api-reference) documents each one.
 
 ```text
 GET /api/v1/settings/retrieval-defaults

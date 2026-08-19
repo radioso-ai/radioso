@@ -122,6 +122,11 @@ describe("openapi contract", () => {
       responses: { "200": expect.any(Object) },
     });
     expect(paths["/api/v1/auth/register"]?.post?.responses).toHaveProperty("403");
+    expect(document.components?.schemas?.RegisterResponse).toMatchObject({
+      properties: {
+        requiresEmailVerification: { type: "boolean" },
+      },
+    });
     expect(paths["/api/v1/account/accounts"]?.post).toMatchObject({
       operationId: "createAdditionalOrganization",
       responses: {
@@ -220,6 +225,19 @@ describe("openapi contract", () => {
     expect(operation?.responses).toHaveProperty("200");
     expect(operation?.responses).toHaveProperty("400");
     expect(operation?.responses).toHaveProperty("401");
+  });
+
+  it("advertises the hosted production servers before local development, and a Radioso-branded title", () => {
+    const document = createOpenApiDocument();
+
+    expect(document.info.title).toBe("Radioso API");
+    expect(document.info.description).toEqual(expect.any(String));
+    expect(document.info.description).not.toMatch(/radioso backend/i);
+    expect(document.servers).toEqual([
+      { url: "https://api.radioso.ai", description: "Production" },
+      { url: "https://api-us.radioso.ai", description: "Production (US)" },
+      { url: "http://localhost:8080", description: "Local development" },
+    ]);
   });
 
   it("advertises dashboard and public conversation tail response shapes", () => {

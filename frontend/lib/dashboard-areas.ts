@@ -25,14 +25,12 @@ export function activeArea(routeState: Pick<DashboardRouteState, 'section'>): Da
 
 export type AgentSectionId =
   | 'chat'
-  | 'identity'
-  | 'behavior'
+  | 'profile'
   | 'directives'
   | 'routines'
   | 'skills'
   | 'context-variables'
-  | 'public-chat-link'
-  | 'website-embed'
+  | 'web-chat'
   | 'api-channel'
   | 'mcp-channel'
   | 'slack-channel'
@@ -43,14 +41,12 @@ type AgentSectionRoute = { agentTab: AgentTab; anchor?: string }
 
 const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   chat: { agentTab: 'chat' },
-  identity: { agentTab: 'behavior', anchor: 'assistant-identity' },
-  behavior: { agentTab: 'behavior', anchor: 'assistant-behavior' },
+  profile: { agentTab: 'behavior', anchor: 'assistant-profile' },
   directives: { agentTab: 'behavior', anchor: 'assistant-directives' },
   routines: { agentTab: 'behavior', anchor: 'assistant-routines' },
   skills: { agentTab: 'behavior', anchor: 'assistant-skills' },
   'context-variables': { agentTab: 'behavior', anchor: 'assistant-context-variables' },
-  'public-chat-link': { agentTab: 'channels', anchor: 'public-chat-link' },
-  'website-embed': { agentTab: 'channels', anchor: 'website-embed' },
+  'web-chat': { agentTab: 'channels', anchor: 'web-chat' },
   'api-channel': { agentTab: 'channels', anchor: 'api-channel' },
   'mcp-channel': { agentTab: 'channels', anchor: 'mcp-channel' },
   'slack-channel': { agentTab: 'channels', anchor: 'slack-channel' },
@@ -58,9 +54,25 @@ const AGENT_SECTION_ROUTES: Record<AgentSectionId, AgentSectionRoute> = {
   danger: { agentTab: 'behavior', anchor: 'agent-danger-zone' },
 }
 
+const ASSISTANT_ANCHORS: Record<string, AgentSectionId> = {
+  'assistant-profile': 'profile',
+  // The agent's name and its answering behavior are one page, so both anchors
+  // resolve to the page that configures them together.
+  'assistant-identity': 'profile',
+  'assistant-behavior': 'profile',
+  'assistant-directives': 'directives',
+  'assistant-routines': 'routines',
+  'assistant-skills': 'skills',
+  'assistant-context-variables': 'context-variables',
+  'agent-danger-zone': 'danger',
+}
+
 const CHANNEL_ANCHORS: Record<string, AgentSectionId> = {
-  'public-chat-link': 'public-chat-link',
-  'website-embed': 'website-embed',
+  'web-chat': 'web-chat',
+  // The public link and the website widget are two placements of one chat surface,
+  // so both anchors resolve to the page that configures them together.
+  'public-chat-link': 'web-chat',
+  'website-embed': 'web-chat',
   'api-channel': 'api-channel',
   'mcp-channel': 'mcp-channel',
   'slack-channel': 'slack-channel',
@@ -82,13 +94,7 @@ export function agentSectionFromRoute(routeState: Pick<DashboardRouteState, 'age
     return 'chat'
   }
   if (tab === 'channels') {
-    return (anchor && CHANNEL_ANCHORS[anchor]) || 'public-chat-link'
+    return (anchor && CHANNEL_ANCHORS[anchor]) || 'web-chat'
   }
-  if (anchor === 'assistant-behavior') return 'behavior'
-  if (anchor === 'assistant-skills') return 'skills'
-  if (anchor === 'assistant-context-variables') return 'context-variables'
-  if (anchor === 'assistant-directives') return 'directives'
-  if (anchor === 'assistant-routines') return 'routines'
-  if (anchor === 'agent-danger-zone') return 'danger'
-  return 'identity'
+  return (anchor && ASSISTANT_ANCHORS[anchor]) || 'profile'
 }

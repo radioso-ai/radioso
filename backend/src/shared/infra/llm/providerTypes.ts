@@ -89,6 +89,8 @@ export interface EmbeddingClientOptions {
   purpose?: EmbeddingPurpose;
   provider?: EmbeddingProviderImplementation;
   endpointScopeFingerprint?: string;
+  /** Internal routing context used to resolve workspace-scoped credentials lazily. */
+  workspaceId?: string;
 }
 
 export interface TextGenerationClient {
@@ -107,12 +109,18 @@ export interface LlmCapabilityConfig extends LlmProviderMetadata {
   baseUrl?: string;
 }
 
+/** Boot-safe provider/model defaults. Credentials are attached only when a call starts. */
+export interface LlmCapabilityDefault extends LlmProviderMetadata {
+  baseUrl?: string;
+}
+
 export interface ResolvedLlmConfig {
-  chat: LlmCapabilityConfig;
-  rewrite: LlmCapabilityConfig;
-  rerank: LlmCapabilityConfig;
-  embeddings: LlmCapabilityConfig;
-  embeddingProviderConfigs: LlmCapabilityConfig[];
+  chat: LlmCapabilityDefault;
+  rewrite: LlmCapabilityDefault;
+  rerank: LlmCapabilityDefault;
+  embeddings: LlmCapabilityDefault;
+  embeddingProviderConfigs: LlmCapabilityDefault[];
+  providerApiKeys?: Partial<Record<LlmProviderName, string>>;
 }
 
 import { AppError } from "../../domain/errors.js";

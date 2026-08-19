@@ -10,6 +10,9 @@ const meta = {
   'why-radioso': {
     title: 'Why Radioso',
   },
+  concepts: {
+    title: 'Concepts',
+  },
   quickstarts: {
     title: 'Quickstarts',
   },

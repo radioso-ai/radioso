@@ -1,10 +1,20 @@
 # Radioso
 # <img src="./frontend/public/radioso-icon.svg" alt="Radioso logo" width="44" align="center" />
-## Self-hosted conversational agents, grounded in your data and following your rules.
+## Self-hosted conversational agents that answer, act, and hand off — inside the rules you set.
 
-Run one script and you have a conversational agent that answers from what you actually gave it, follows the flows you define, and behaves the way you tell it to — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
+Run one script and you have a conversational agent that takes a request and sees it through: it carries a task across turns until the work is done, answers grounded in what you actually gave it, and hands off to a person when a turn calls for one — self-hosted, multi-provider, API-first. No framework wiring, no canvas to drag nodes around. Your data, your rules, your infrastructure.
 
 Every message runs through a plain loop: read it, decide what the turn needs, do that, write the reply. The interesting part is what you plug into the loop — grounded retrieval, your own behavioral rules, multi-turn flows — and that is what the rest of this document is about.
+
+---
+
+## Guided autonomy
+
+Radioso agents reason freely about how to help, inside rules you author. You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own. We call that guided autonomy, and it is the whole design.
+
+It shows up as three things, in this order. The agent **answers** — grounded in the sources you gave it, cited back to them. It **acts** — skills and routines carry a request across turns until the work is done. It **hands off** — to a person who picks up the whole conversation, with the routine it was running and the skills it called marked inline. Directives steer all three: standing rules that are matched by meaning, in any language, and applied on every turn.
+
+Control stays with you. Radioso is open source and runs in your cloud or on your own infrastructure, and every turn records which directive steered it, which skill it dispatched, and which routine step it was on.
 
 ---
 
@@ -16,11 +26,11 @@ Every message runs through a plain loop: read it, decide what the turn needs, do
 ./run-dev.sh
 ```
 
-The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. On a new open-source installation, register the first user to create the server's organization and default workspace. Add a key if you skipped it, upload a document, and ask a question.
+The bootstrap generates secrets and starts the full stack. It offers to set an AI provider key; enter one now or press Enter to skip and add it in the app. OpenAI, OpenAI-compatible, and Gemini use the same provider for text and embeddings; Claude setup asks which supported provider should create document embeddings. On a new open-source installation, register the first user to create the server's organization and default workspace. The development stack verifies that new account and signs it in automatically. Add a key if you skipped it, upload a document, and ask a question — the answer comes back cited to the document it came from. Then give the agent a Notify Human skill on its Skills tab, named `contact_human`, with a recipient email. Ask to speak to a person and the built-in contact routine takes over: it collects an email and a message, sends it to that recipient, and confirms. That is the shape of every agent here — answer, act, hand off. [Authoring routines](./docs/authoring-routines.md) covers building your own.
 
 In the Docker development stack, frontend and backend source changes are bind-mounted into the containers. TypeScript backend changes restart automatically, and backend prompt markdown under `backend/prompts/` is re-read on each request in development without a container restart.
 
-By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on port 5432. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
+By default the Docker stack uses the Compose project name `radioso` and publishes the app on port 3000, the API on port 8080, and Postgres on `127.0.0.1:5432`. The database stays reachable from the local host and the Compose network without accepting connections on public host interfaces. To run more than one local stack, set a distinct `COMPOSE_PROJECT_NAME` together with `RADIOSO_FRONTEND_PORT`, `RADIOSO_BACKEND_PORT`, and `RADIOSO_POSTGRES_PORT` before running `./run-dev.sh`. In Conductor workspaces, `./run-dev.sh` uses the workspace `CONDUCTOR_PORT` allocation automatically.
 
 For Enterprise Edition development, run:
 
@@ -55,11 +65,11 @@ It works through a product-independent contract. The reusable turn vocabulary li
 
 The assistant works with three kinds of unit on a turn.
 
-- A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, not a privileged step.
+- A **skill** is something the assistant *does* — grounded retrieval, a lookup, a submission. A skill is dispatched through one port and returns a result. Retrieval is the `retrieval.answer` skill, reached the same way as every other capability.
 - A **directive** is a standing rule that shapes *how* the assistant behaves. It pairs a condition with an action: when the condition holds, the action is added to the turn's instructions. A directive is matched and added to the prompt; it is never dispatched and returns nothing. For example: when the customer sounds anxious, slow down and confirm before acting.
-- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. The built-in "contact a human" flow — collect an email, collect a message, submit, confirm — is itself an authored routine.
+- A **routine** is a stateful, multi-turn flow that carries a task across turns — collecting the values it needs, taking an action, and confirming. Unlike a skill or directive, a routine is **authored as data**: an operator builds it in the agent's Routines settings, and the platform compiles it into a graph the engine runs and resumes turn to turn. Radioso ships one written the same way: the built-in contact flow — collect an email, collect a message, submit, confirm — is routine data registered at application composition rather than stored per agent, so it is available to every agent that enables a `contact_human` notify skill.
 
-The key point: **skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
+**Skills act, directives steer, routines carry a flow across turns.** Directives and skill-emitted guidance share one steering type, so the composer reads a single ordered set rather than two separate channels.
 
 Condition matching is never a keyword list, because Radioso is multilingual. A condition that depends on the situation is judged by the model, by meaning, in any language.
 
@@ -93,9 +103,9 @@ For the full model, see [Assistant turn spine](./docs/architecture/assistant-tur
               │
       ┌───────┴───────┐
       │ Routines      │  an active flow projects a
-      │ stateful      │  directive each turn (and can
-      │ multi-turn    │  drive a skill)
-      │ flows         │
+      │ stateful      │  directive each turn, and can
+      │ multi-turn    │  drive a skill, take an action,
+      │ flows         │  or hand off to a person
       └───────────────┘
 
    ═════════════════════════════════════════════════════════════
@@ -107,7 +117,7 @@ For the full model, see [Assistant turn spine](./docs/architecture/assistant-tur
                     └──────────────────────────────────┘
 ```
 
-Every surface — the web app, REST API, SDK, MCP clients, and the website embed — hands its turn to the same conversation engine. Selection chooses which skills to run, steered by the directives that matched this turn; dispatch runs them; compose merges their outcomes with the steering into a reply. Skills are a set you extend: `retrieval.answer` reads the chunks and vectors a background worker has ingested into Postgres with `pgvector`, but it sits alongside document search, plain assistant chat, and any skill you register. Directives are standing rules that shape selection and the reply. A routine is a stateful, multi-turn flow that expresses itself each turn by projecting its current step into a directive, and can drive a skill as it advances. The headless retrieval, SDK, and MCP surfaces can also call retrieval directly when no assistant behavior is wanted.
+Every surface — the web app, REST API, SDK, MCP clients, and the website embed — hands its turn to the same conversation engine. Selection chooses which skills to run, steered by the directives that matched this turn; dispatch runs them; compose merges their outcomes with the steering into a reply. Skills are a set you extend: document search, plain assistant chat, any skill you register, and `retrieval.answer`, which reads the chunks and vectors a background worker has ingested into Postgres with `pgvector`. Retrieval is one skill in that set, not a privileged step. The headless retrieval, SDK, and MCP surfaces can also call retrieval directly when no assistant behavior is wanted. Directives are standing rules that shape selection and the reply. A routine is a stateful, multi-turn flow that expresses itself each turn by projecting its current step into a directive, and can drive a skill as it advances — that is how a request is carried across turns to an action taken or a handoff to a person.
 
 Postgres is the system of record for everything, not just vectors: accounts, settings, conversations, and audit events live there too. Uploaded source files use the local filesystem in local development and GCS in cloud deployments. Ingestion runs in a background worker so uploads don't block the request path. The frontend, API, and worker all run in Docker Compose locally and on Cloud Run in production.
 
@@ -123,13 +133,13 @@ One naming note: the persona you configure is an **agent**; the chat surface you
 
 1. Run `./run-dev.sh`.
 2. Open `http://localhost:3000`.
-3. On a new installation, register the first user. Otherwise, sign in or accept an invitation.
+3. On a new installation, register the first user. The development stack verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation.
 4. If you skipped the provider key at startup, add one under Settings → Credentials. Chat and document processing both need a provider key.
 5. Let Radioso seed the starter documents for the workspace.
 6. Wait for document processing to finish.
 7. Ask one of the suggested questions in chat.
 
-On an empty open-source server, the first registration creates the server's organization and default workspace, then sends a verification email. After that, open registration closes: organization owners and admins invite later users into the existing organization. Enterprise Edition keeps open registration and additional organization creation. Registration does not create a session; verify the email address and then sign in. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` when you want hosted transactional email delivery; local development defaults to log output when no Resend key is configured.
+On an empty open-source server, the first registration creates the server's organization and default workspace. `./run-dev.sh` enables development-only automatic verification, so a newly registered password user receives a session immediately and no verification message is sent. Production registration sends a verification email and creates no session until the address is verified. After the first open-source registration, organization owners and admins invite later users into the existing organization; Enterprise Edition keeps open registration and additional organization creation. Password reset and email verification are part of the open-source auth API. Set `MAIL_DRIVER`, `MAIL_FROM_EMAIL`, `MAIL_FROM_NAME`, and `RESEND_MAIL_API_KEY` for production transactional email delivery.
 
 The organization limit does not limit workspaces. Authorized users can create additional workspaces inside the existing organization in either edition.
 
@@ -154,7 +164,7 @@ curl -sS \
   http://localhost:8080/api/v1/auth/register
 ```
 
-The response includes `workspaceId` and `workspacePublicRouteKey`, sends a verification email, and does not set a session cookie. Verify the email address, then log in to save a session cookie:
+The response includes `workspaceId`, `workspacePublicRouteKey`, and `requiresEmailVerification`. In the development stack that flag is `false` and the response sets a session cookie. Production returns `true`, sends a verification email, and requires verification before login. When verification is required, log in after following the email link:
 
 ```bash
 curl -sS -c cookies.txt \
@@ -300,7 +310,7 @@ Cursor can use either same-host merged mode or a local standalone server. Claude
 
 Embed a Radioso chat widget on any website. One script tag, pasted on any page of an approved origin, opens a Radioso-hosted chat iframe — no backend work required on the host site, and origin policy stays under your control. The widget, its theming, and origin approval are part of the open-source build; Enterprise Edition adds human-contact routing on top.
 
-The channels settings screen shows whether public chat and website embed launch credentials are active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
+The **Web chat** page under an agent's Channels section holds both placements — the public link and the website widget — and shows whether each launch credential is active, plus when each was last used. If a link or install code is exposed, rotate the credential: the old one stops launching new sessions the moment the token changes.
 
 ---
 
@@ -354,7 +364,7 @@ Fused planning is standard behavior and requires no configuration.
 
 Document ingestion always creates a durable PostgreSQL processing job first. Worker dispatch controls how the API wakes worker services after that durable job exists.
 
-Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, and `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`.
+Local runs default to `WORKER_DISPATCH_DRIVER=noop`, which keeps the worker polling the database. Google Cloud deployments can use `WORKER_DISPATCH_DRIVER=cloud-tasks` with `WORKER_TASKS_QUEUE_LOCATION`, `WORKER_TASKS_QUEUE_NAME`, `WORKER_TASKS_CRAWL_QUEUE_NAME`, `WORKER_TASKS_SERVICE_URL`, `WORKER_TASKS_INVOKER_SERVICE_ACCOUNT`, and `WORKER_TASK_AUTH_TOKEN`. Cloud Tasks and Scheduler send that shared secret in `X-Radioso-Worker-Token` alongside Google OIDC; proxies in front of a self-hosted task server must preserve the header. Generate a random value of at least 32 characters and give the backend, document worker, and crawler worker the same value.
 
 Broker-based deployments can use `WORKER_DISPATCH_DRIVER=amqp` with a RabbitMQ-compatible AMQP 0-9-1 broker:
 
@@ -427,6 +437,8 @@ Full configuration reference, API docs, retrieval tuning guide, and deployment d
 
 ## Contributing
 
+Contributions are welcome. Run `./run-dev.sh` to get a full local stack, then read [CONTRIBUTING.md](./CONTRIBUTING.md) for the per-package test targets, the `pnpm run ci:local` check to run before you open a pull request, and the Conventional Commits format the history uses.
+
 ```
 backend/         Express API and background document worker
 frontend/        Next.js application
@@ -436,7 +448,7 @@ infra/           Docker Compose and Terraform
 docs/            Product and SDK guides
 ```
 
-Run `./run-dev.sh` to get a full local stack. Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
+Found a security vulnerability? Report it privately — see [SECURITY.md](./SECURITY.md). By taking part you agree to the [Code of Conduct](./CODE_OF_CONDUCT.md). Detailed setup and follow-on guides are indexed in [docs/README.md](./docs/README.md).
 
 ---
 

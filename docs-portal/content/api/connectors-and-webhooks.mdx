@@ -5,7 +5,7 @@ description: "Read connector state, save connector config, enable or disable con
 
 # Connectors and webhooks
 
-Connectors link a workspace to external systems. The exact config shape depends on the connector type.
+Connectors link a workspace to external systems. The exact config shape depends on the connector type. The connector routes take a workspace token and answer on the host that issued it — see [Workspaces and tokens](/api/workspaces-and-tokens).
 
 ## How it works
 
@@ -75,8 +75,6 @@ For WordPress, the connector creates its source record before it calls the WordP
 A workspace WordPress connector accepts one configured site. Companion-plugin webhooks include a signed site URL, and Radioso rejects events when that URL or the post permalink does not belong to the configured site. Changing the WordPress site URL rotates the generated webhook secret; copy the new secret into the plugin settings for the new site.
 
 ## Endpoint reference
-
-Exact request and response schemas for these routes live in the [API Reference](/api-reference).
 
 ```text
 GET  /api/v1/connectors

@@ -1,4 +1,4 @@
-import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@radioso/routine-document'
+import { formatConditionLabel, formatSlotFilledLabel, instructionToBlockSegments, type RoutineBlockBranch, type RoutineBlockEnding, type RoutineBlockGuard, type RoutineBlockInstructionSegment, type RoutineInputBinding } from '@/lib/routine-prose'
 
 import type { RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api-types'
 

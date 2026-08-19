@@ -501,6 +501,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_NAME: undefined,
       WORKER_TASKS_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_TASK_AUTH_TOKEN: undefined,
       WORKER_AMQP_URL: undefined,
       WORKER_AMQP_QUEUE_NAME: undefined,
       WORKER_AMQP_PREFETCH: 1,
@@ -517,6 +518,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_NAME: undefined,
       WORKER_TASKS_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_TASK_AUTH_TOKEN: undefined,
       WORKER_AMQP_URL: "amqp://localhost:5672",
       WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
       WORKER_AMQP_PREFETCH: 2,
@@ -542,6 +544,7 @@ describe("default application composition", () => {
       WORKER_TASKS_SERVICE_URL: "https://backend.example.com",
       WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
       WORKER_AMQP_URL: undefined,
       WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
       WORKER_AMQP_QUEUE_NAME: undefined,
@@ -565,6 +568,7 @@ describe("default application composition", () => {
       queueName: "radioso-website-crawls",
       workerServiceUrl: "https://crawler-worker.example.com",
       invokerServiceAccountEmail: "radioso-invoker@example.com",
+      workerTaskAuthToken: "0123456789abcdef0123456789abcdef",
       logger: createLogger() as any,
     });
 
@@ -599,6 +603,7 @@ describe("default application composition", () => {
         WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
         WORKER_TASKS_CRAWL_SERVICE_URL: "https://crawler-worker.example.com",
         WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+        WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
         WORKER_AMQP_URL: undefined,
         WORKER_AMQP_QUEUE_NAME: undefined,
         WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -642,6 +647,7 @@ describe("default application composition", () => {
       WORKER_TASKS_SERVICE_URL: "https://document-worker.example.com",
       WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "radioso-invoker@example.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
       WORKER_AMQP_URL: undefined,
       WORKER_AMQP_QUEUE_NAME: undefined,
       WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -669,6 +675,7 @@ describe("default application composition", () => {
       WORKER_TASKS_SERVICE_URL: undefined,
       WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_TASK_AUTH_TOKEN: undefined,
       WORKER_AMQP_URL: "amqp://localhost:5672",
       WORKER_AMQP_QUEUE_NAME: "radioso-document-jobs",
       WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -693,6 +700,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_LOCATION: undefined,
       WORKER_TASKS_SERVICE_URL: undefined,
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+      WORKER_TASK_AUTH_TOKEN: undefined,
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
@@ -706,6 +714,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_LOCATION: "us-central1",
       WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "invoker@example.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
@@ -719,6 +728,7 @@ describe("default application composition", () => {
       WORKER_TASKS_QUEUE_LOCATION: "us-central1",
       WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
       WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "invoker@example.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
       ACTION_DISPATCH_TASK_QUEUE_NAME: "radioso-conversation-actions",
     }, createLogger() as any);
 

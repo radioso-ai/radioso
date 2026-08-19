@@ -41,7 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APPROVAL_OPTION_LIMIT } from '@/lib/routine-approval'
 import type { RoutineFieldGuardOp, RoutineFieldGuardUnit, RoutineSlotType } from '@/lib/api-types'
-import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@radioso/routine-document'
+import { OUTCOME_GUARD_REF, ROUTINE_SLOT_TYPES, SLOT_FILLED_GUARD_REF, slugifyVariableKey, type ApprovalDocOption, type RoutineInputBinding, type RoutineSkillBindingState, type RoutineStepMode } from '@/lib/routine-prose'
 
 import { useRoutineVariables } from '@/components/dashboard/settings/routine-variables-context'
 
@@ -474,7 +474,7 @@ function EndDialog({
 
 function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: RoutineChipKind; refId: string; label: string }): JSX.Element {
   const [editor] = useLexicalComposerContext()
-  const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables } = useRoutineVariables()
+  const { getType, setType, getRequired, setRequired, getMutable, setMutable, variables, supportsStepBindings } = useRoutineVariables()
   const type = kind === 'variable' ? getType(refId) : null
   const skillCatalog = useSkillDescriptor(refId, label)
 
@@ -703,7 +703,10 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         skillName={refId}
         label={resolvedLabel}
         bindingState={isCatalogOpen ? draftBindingState : bindingState}
-        availableVariables={variables.map((variable) => variable.id)}
+        // Outside a routine there is no step to bind, so the popover names the skill instead
+        // of offering input/output wiring that has nowhere to land.
+        showStepBindings={supportsStepBindings}
+        availableVariables={supportsStepBindings ? variables.map((variable) => variable.id) : []}
         open={isCatalogOpen}
         onOpenChange={handleCatalogOpenChange}
         onBindingStateChange={updateDraftBindingState}

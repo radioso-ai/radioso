@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "${RADIOSO_POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${RADIOSO_POSTGRES_PORT:-5432}:5432"
     volumes:
       - radioso_postgres_data:/var/lib/postgresql/data
       - ./backend/src/db/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro

@@ -28,7 +28,7 @@ test("active section's sub-nav nests inline in the rail; other sections stay col
   // Switching sections collapses the previous section's items and reveals the new one's.
   await sidebar.getByRole("link", { name: "Agents" }).click();
   await expect(sidebar.getByRole("link", { name: "Ingestion" })).toHaveCount(0);
-  await expect(sidebar.getByRole("link", { name: "Behavior" })).toBeVisible();
+  await expect(sidebar.getByRole("link", { name: "Profile" })).toBeVisible();
   await expect(sidebar.getByRole("link", { name: "Skills" })).toBeVisible();
 
   // In the Agents section the agent picker replaces the "Agents" row (no redundant entry).

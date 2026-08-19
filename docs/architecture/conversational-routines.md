@@ -29,7 +29,7 @@ Radioso has three kinds of unit the assistant works with on a turn.
   routine is active it steers each turn by projecting its current step into a
   directive, so it reuses the same steering path rather than a separate one.
 
-The key point: skills act, directives steer, routines carry a flow across turns.
+Skills act, directives steer, routines carry a flow across turns.
 
 ## What a routine is made of
 
@@ -192,8 +192,7 @@ extracted from that turn's message.
 ## Activation and clarification
 
 Routine activation evaluates all eligible routine triggers together in one ranked
-model call. The engine no longer asks each routine, one by one, whether it wants
-the turn.
+model call.
 
 The ranked activation input is the latest user message plus the full eligible
 routine list. Each routine contributes its trigger description and authored

@@ -2623,6 +2623,132 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/copilot/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check operator copilot availability
+         * @description Dashboard session only; bearer API tokens are rejected.
+         */
+        get: operations["getCopilotAvailability"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List an operator's copilot conversations */
+        get: operations["listCopilotConversations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/conversations/{conversationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a copilot conversation */
+        get: operations["getCopilotConversation"];
+        put?: never;
+        post?: never;
+        /** Delete a copilot conversation */
+        delete: operations["deleteCopilotConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a streaming read-only copilot turn
+         * @description Returns the fixed copilot SSE event stream. Dashboard session only; bearer API tokens are rejected.
+         */
+        post: operations["createCopilotTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a copilot proposal preview */
+        get: operations["getCopilotProposal"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply a pending copilot proposal */
+        post: operations["applyCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/copilot/proposals/{proposalId}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss a pending copilot proposal */
+        post: operations["dismissCopilotProposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -2914,8 +3040,7 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
             workspacePublicRouteKey: string;
-            /** @enum {boolean} */
-            requiresEmailVerification: true;
+            requiresEmailVerification: boolean;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -4381,6 +4506,11 @@ export interface components {
                 surface: string;
                 text: string;
             };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
+            };
             branding?: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
@@ -5473,6 +5603,11 @@ export interface components {
                 brandText: string;
                 surface: string;
                 text: string;
+            };
+            copy?: {
+                [key: string]: {
+                    [key: string]: string;
+                };
             };
             branding?: {
                 hidePoweredBy: boolean;
@@ -6655,7 +6790,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Account created and verification required before sign-in */
+            /** @description Account created; email verification may be required before sign-in */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -17592,6 +17727,356 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+        };
+    };
+    getCopilotAvailability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Availability */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        available: boolean;
+                        /** @enum {string} */
+                        reason: "ok" | "no_llm_capability";
+                        canManage: boolean;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listCopilotConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conversations: {
+                            /** Format: uuid */
+                            id: string;
+                            title: string | null;
+                            /** @enum {string} */
+                            status: "idle" | "running";
+                            createdAt: string;
+                            updatedAt: string;
+                        }[];
+                    };
+                };
+            };
+        };
+    };
+    getCopilotConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        title: string | null;
+                        /** @enum {string} */
+                        status: "idle" | "running";
+                        messages: ({
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "operator";
+                            content: string;
+                            createdAt: string;
+                        } | {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            role: "copilot";
+                            content: string;
+                            createdAt: string;
+                            /** @enum {string} */
+                            outcome: "completed" | "budget_exhausted" | "failed";
+                            activity: {
+                                tool: string;
+                                /** @enum {string} */
+                                outcome: "completed" | "failed";
+                                entity?: {
+                                    type: string;
+                                    id: string;
+                                };
+                            }[];
+                            proposals: {
+                                /** Format: uuid */
+                                id: string;
+                                /** @enum {string} */
+                                targetType: "directive" | "agent_setting" | "routine";
+                                targetLabel: string;
+                                summary: string;
+                                /** @enum {string} */
+                                status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                                reason?: string | null;
+                            }[];
+                        })[];
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    deleteCopilotConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createCopilotTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: uuid */
+                    conversationId: string | null;
+                    message: string;
+                    pageContext: {
+                        /** @enum {string|null} */
+                        view: "activity" | "history" | "agent" | "documents" | "workbench" | "quality" | "evals" | "copilot" | "other" | null;
+                        /** Format: uuid */
+                        agentId: string | null;
+                        /** Format: uuid */
+                        conversationId: string | null;
+                        selection?: string | null;
+                        entities?: {
+                            /** @enum {string} */
+                            type: "agent" | "conversation" | "routine" | "directive" | "document" | "evalCase";
+                            id: string;
+                            label: string;
+                            focused: boolean;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description SSE stream */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Conversation already running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No LLM capability */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        id: string;
+                        /** @enum {string} */
+                        targetType: "directive" | "agent_setting" | "routine";
+                        targetRef?: unknown;
+                        target: {
+                            /** @enum {string} */
+                            type: "directive" | "agent_setting" | "routine";
+                            ref?: unknown;
+                        };
+                        targetLabel: string;
+                        /** @enum {string} */
+                        status: "pending" | "applied" | "dismissed" | "failed" | "stale";
+                        preview: {
+                            targetLabel: string;
+                            current?: unknown;
+                            proposed?: unknown;
+                        };
+                        currentVersionMatches: boolean;
+                        reason?: string | null;
+                        appliedRef?: unknown;
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    applyCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "applied" | "stale" | "failed";
+                        appliedRef?: unknown;
+                        reason?: string | null;
+                    };
+                };
+            };
+            /** @description Missing agent management permission */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    dismissCopilotProposal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposalId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Proposal outcome */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "dismissed";
+                    };
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Proposal is not pending */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

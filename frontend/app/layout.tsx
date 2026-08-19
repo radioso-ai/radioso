@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     default: 'Radioso',
     template: '%s · Radioso',
   },
-  description: 'The platform for building and running conversational agents.',
+  description: 'Self-hosted conversational agents that answer, act, and hand off — inside the rules you author.',
   icons: {
     shortcut: '/favicon.ico',
     icon: '/radioso-icon.svg',

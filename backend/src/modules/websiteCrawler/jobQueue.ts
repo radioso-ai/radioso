@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import { WORKER_TASK_AUTH_HEADER } from "../../shared/infra/workerTaskAuth.js";
 import type {
   WebsiteCrawlJobDispatchRequest,
   WebsiteCrawlJobDispatcherPort,
@@ -63,6 +64,7 @@ export class CloudTasksWebsiteCrawlJobDispatcher implements WebsiteCrawlJobDispa
     queueName: string;
     workerServiceUrl: string;
     invokerServiceAccountEmail: string;
+    workerTaskAuthToken: string;
     logger: AppLogger;
   }) {
     this.client = options.client ?? new CloudTasksClient();
@@ -79,6 +81,7 @@ export class CloudTasksWebsiteCrawlJobDispatcher implements WebsiteCrawlJobDispa
           url: this.targetUrl,
           headers: {
             "Content-Type": "application/json",
+            [WORKER_TASK_AUTH_HEADER]: this.options.workerTaskAuthToken,
           },
           body: toBase64Json(toWebsiteCrawlJobQueueMessage(input)),
           oidcToken: {

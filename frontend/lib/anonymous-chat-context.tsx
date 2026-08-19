@@ -42,6 +42,7 @@ import {
   type ActivityTrace,
   type SkillStreamPayload,
   type WebsiteEmbedPageContext,
+  type WebsiteEmbedCopyPacks,
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
@@ -118,6 +119,7 @@ interface AnonymousChatContextValue {
   assistantLinkUtmEnabled: boolean
   citationDisplayEnabled: boolean
   assistantTheme: WebsiteEmbedThemeOverrides | null
+  assistantCopyPacks: WebsiteEmbedCopyPacks
   branding: AgentBrandingSettings | null
   intakeActions: PublicChatIntakeAction[]
   isLoading: boolean
@@ -151,19 +153,6 @@ const getErrorResponse = (error: unknown): ErrorResponse['error'] | null => {
   }
 
   return null
-}
-
-const getErrorMessage = (error: unknown) => {
-  const structuredError = getErrorResponse(error)
-  if (structuredError) {
-    return structuredError.message
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return 'Sorry, something went wrong. Please try again.'
 }
 
 const isRateLimitError = (error: unknown): { message: string; retryAfterSeconds: number } | null => {
@@ -342,6 +331,7 @@ export function AnonymousChatProvider({
   const [assistantLinkUtmEnabled, setAssistantLinkUtmEnabled] = useState(true)
   const [citationDisplayEnabled, setCitationDisplayEnabled] = useState(true)
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
+  const [assistantCopyPacks, setAssistantCopyPacks] = useState<WebsiteEmbedCopyPacks>({})
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
@@ -383,6 +373,7 @@ export function AnonymousChatProvider({
       setAssistantLinkUtmEnabled(session.assistantLinkUtmEnabled ?? true)
       setCitationDisplayEnabled(session.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(session.theme))
+      setAssistantCopyPacks(session.copy ?? {})
       setBranding(session.branding ?? null)
       setIntakeActions(session.intakeActions ?? [])
       return session
@@ -514,6 +505,7 @@ export function AnonymousChatProvider({
     setAssistantLinkUtmEnabled(true)
     setCitationDisplayEnabled(true)
     setAssistantTheme(null)
+    setAssistantCopyPacks({})
     setBranding(null)
     setIntakeActions([])
     setConversationId(undefined)
@@ -531,6 +523,7 @@ export function AnonymousChatProvider({
       setAssistantLinkUtmEnabled(response.assistantLinkUtmEnabled ?? true)
       setCitationDisplayEnabled(response.citationDisplayEnabled ?? true)
       setAssistantTheme(deriveThemeOverridesFromModel(response.theme))
+      setAssistantCopyPacks(response.copy ?? {})
       setBranding(response.branding ?? null)
       setIntakeActions(response.intakeActions ?? [])
 
@@ -1120,7 +1113,6 @@ export function AnonymousChatProvider({
             return
           }
 
-          const errorMessage = getErrorMessage(error)
           onAnalyticsEvent?.({
             event: 'chat.failed',
             subjectType: resolvedConversationId ? 'conversation' : undefined,
@@ -1135,9 +1127,13 @@ export function AnonymousChatProvider({
             restoreMessageSuggestions(
               prev.map((message) => {
                 if (message.id !== assistantMessageId) return message
+                // Content stays as-is: whatever streamed before the failure is kept,
+                // and an empty body is left empty. The visitor-facing failure copy is
+                // rendered by the view, which owns the resolved locale pack and the
+                // operator's copy overrides. Backend error text is never shown here —
+                // it is untranslated and can carry internal detail.
                 return {
                   ...message,
-                  content: message.content || errorMessage,
                   status: 'error' as const,
                   answerSegments: undefined,
                   suggestions: undefined,
@@ -1204,6 +1200,7 @@ export function AnonymousChatProvider({
       assistantLinkUtmEnabled,
       citationDisplayEnabled,
       assistantTheme,
+      assistantCopyPacks,
       branding,
       intakeActions,
       isLoading,
@@ -1227,6 +1224,7 @@ export function AnonymousChatProvider({
       assistantLinkUtmEnabled,
       citationDisplayEnabled,
       assistantTheme,
+      assistantCopyPacks,
       branding,
       intakeActions,
       isLoading,

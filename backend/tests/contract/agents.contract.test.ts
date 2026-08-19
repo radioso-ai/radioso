@@ -488,6 +488,12 @@ describe("agents contract", () => {
           hidePoweredBy: false,
           privacyPolicyUrl,
         },
+        theme: {
+          brand: "#5b3df5",
+          brandText: "#ffffff",
+          surface: "#17142b",
+          text: "#f8f7ff",
+        },
       })
       .expect(200);
     expect(updated.body.branding).toEqual({
@@ -507,7 +513,15 @@ describe("agents contract", () => {
     const settings = await request(app)
       .put("/api/v1/settings/general")
       .set(adminSessionHeaders(session))
-      .send({ anonymousChatEnabled: true })
+      .send({
+        anonymousChatEnabled: true,
+        websiteEmbedCopy: {
+          en: {
+            publicChatEmptyTitle: "How can we help?",
+            startPrompt: "Ask Aurora Support",
+          },
+        },
+      })
       .expect(200);
     const anonymousChatToken = new URL(settings.body.anonymousChatUrl).pathname.split("/").at(-1);
     expect(anonymousChatToken).toBeTruthy();
@@ -520,6 +534,18 @@ describe("agents contract", () => {
       hidePoweredBy: false,
       privacyPolicyUrl,
     });
+    expect(publicSession.body.copy).toEqual({
+      en: {
+        publicChatEmptyTitle: "How can we help?",
+        startPrompt: "Ask Aurora Support",
+      },
+    });
+    expect(publicSession.body.theme).toEqual({
+      brand: "#5b3df5",
+      brandText: "#ffffff",
+      surface: "#17142b",
+      text: "#f8f7ff",
+    });
 
     const historyList = await request(app)
       .get(`/api/v1/public/chat/${anonymousChatToken}?limit=1`)
@@ -528,6 +554,18 @@ describe("agents contract", () => {
     expect(historyList.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+    });
+    expect(historyList.body.copy).toEqual({
+      en: {
+        publicChatEmptyTitle: "How can we help?",
+        startPrompt: "Ask Aurora Support",
+      },
+    });
+    expect(historyList.body.theme).toEqual({
+      brand: "#5b3df5",
+      brandText: "#ffffff",
+      surface: "#17142b",
+      text: "#f8f7ff",
     });
   });
 
@@ -1589,10 +1627,22 @@ describe("agents contract", () => {
       .put(`/api/v1/agents/${agentId}`)
       .set("Authorization", authorization)
       .send({
+        theme: {
+          brand: "#123456",
+          brandText: "#ffffff",
+          surface: "#f8fafc",
+          text: "#102030",
+        },
         surfaceSettings: {
           websiteEmbed: {
             enabled: true,
             allowedOrigins: ["https://host.example.com"],
+            theme: {
+              brand: "#abcdef",
+              brandText: "#111111",
+              surface: "#ffffff",
+              text: "#222222",
+            },
           },
         },
       })
@@ -1614,6 +1664,12 @@ describe("agents contract", () => {
       .expect(200);
     expect(fromAllowed.headers["cache-control"]).toContain("public");
     expect(fromAllowed.headers["vary"]).toContain("Origin");
+    expect(fromAllowed.body.theme).toEqual({
+      brand: "#123456",
+      brandText: "#ffffff",
+      surface: "#f8fafc",
+      text: "#102030",
+    });
 
     const fromAllowedEnglish = await request(app)
       .get(`/api/v1/public/chat/${embedToken}/embed-config`)

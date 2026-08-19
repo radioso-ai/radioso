@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
-import type { ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
+/**
+ * Minimal message shape this scroll manager reads. Any chat message with an id,
+ * a role, and an optional streaming status satisfies it, so the hook is not
+ * coupled to one surface's message schema (customer thread, Ray copilot, etc.).
+ */
+export interface ChatScrollMessage {
+  id: string
+  role: string
+  status?: string
+}
 
 const NEAR_BOTTOM_THRESHOLD_PX = 96
 const PROGRAMMATIC_SCROLL_GUARD_MS_AUTO = 120
@@ -42,7 +51,7 @@ export function useChatScroll({
   sentinelRef,
   pinUserMessage = true,
 }: {
-  messages: ChatThreadMessage[]
+  messages: ChatScrollMessage[]
   containerRef?: RefObject<HTMLElement | null>
   sentinelRef: RefObject<HTMLElement | null>
   pinUserMessage?: boolean

@@ -1,5 +1,6 @@
 const meta = {
   index: 'Overview',
+  'guided-autonomy': 'Guided autonomy',
   capabilities: 'What agents can do',
   'grounded-answers': 'Grounded answers',
   'use-cases': 'Use cases',

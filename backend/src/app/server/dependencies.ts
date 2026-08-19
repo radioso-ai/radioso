@@ -5,11 +5,11 @@ import {
   type ApplicationModule,
 } from "../composition/index.js";
 import { AgentService, AgentSurfaceExtensionRegistry } from "../../modules/agents/public.js";
-import { InMemoryPublicConversationEventBus } from "../../modules/chat/composition.js";
+import { InMemoryPublicConversationEventBus, PostgresAudiencePulseHistorySource } from "../../modules/chat/composition.js";
 import { createFacetExtractionWorker, FacetExtractionService } from "../../modules/facets/composition.js";
 import { RoutineTriggerEmbeddingService } from "../../modules/routines/public.js";
 import { resolveEmbedConfigCacheInvalidator } from "../composition/builtIn/cloudCdnEmbedConfigCacheInvalidator.js";
-import { createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
+import { ContextualStructuredInferenceFactory, createRewriteTierStructuredInferenceFactory } from "../../shared/infra/llm/contextualGateways.js";
 import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
@@ -31,6 +31,7 @@ import {
   buildRoutineAuthoringServices,
   buildSkillCatalogServices,
 } from "./builders/skillsRoutines.js";
+import { buildAudiencePulseService } from "./builders/audiencePulse.js";
 import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
@@ -38,6 +39,12 @@ import { createConnectorIngestionPort } from "../../modules/connectors/services/
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
+import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
+import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
+import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
+import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -309,6 +316,55 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     evalSuiteService,
     operatorReplyService,
   } = evalServices;
+  const qualitySignalsService = new QualityTurnsService(
+    infrastructure.database.kysely,
+    new SkillCatalogOutcomeSource(skillCatalogService),
+    undefined,
+    {
+      getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
+        evalMessageCaseService.lookupVerifications(workspaceId, assistantMessageIds),
+    },
+  );
+  const audiencePulseService = buildAudiencePulseService({
+    kysely: infrastructure.database.kysely,
+    llmCapabilityResolver,
+    usageEventRecorder: infrastructure.usageEventRecorder,
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    auditService: infrastructure.auditService,
+    logger,
+    telemetryService: infrastructure.telemetryService,
+    abuseControlService: chat.abuseControlService,
+    embeddingBindingResolver,
+  });
+  const copilotProposalAdapters = [
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
+    createAgentSettingCopilotProposalAdapter({ agentService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+  ] as const;
+  const operatorCopilotService = new OperatorCopilotService({
+    repository: repositories.copilotRepository,
+    capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
+    usageLimitPolicy: infrastructure.usageLimitPolicy,
+    auditService: infrastructure.auditService,
+    proposalAdapters: copilotProposalAdapters,
+    prompt: loadPromptTemplate("copilot/system.md"),
+    tools: createCopilotToolCatalog({
+      agentService,
+      routineDefinitionService,
+      chatHistoryService: chat.chatHistoryService,
+      documentSearchService: retrieval.documentSearchService,
+      evalResultsService: evalCaseService,
+      qualitySignalsService,
+      audiencePulseService,
+      documentStatusService: documents.documentIngestionService,
+      documentSourceStatusService: repositories.documentSourceRepository,
+      agentSkillsService,
+      skillCapabilityRegistry,
+      proposalRepository: repositories.copilotRepository,
+      proposalAdapters: copilotProposalAdapters,
+      auditService: infrastructure.auditService,
+    }),
+  });
   // Per-message facet extraction (topic census). `composition.facetExtraction` lets a
   // host override the extractor entirely (mirroring `chunkingProvider` /
   // `websiteCrawlerProvider`); the OSS default below uses the cheap `"rewrite"` model
@@ -438,6 +494,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatInferencePipeline,
+    operatorCopilotService,
+    qualitySignalsService,
+    audiencePulseService,
+    copilotRepository: repositories.copilotRepository,
     crawlerProvider,
     assertPublicWebsiteUrl,
     websiteCrawlerLimits: (() => {

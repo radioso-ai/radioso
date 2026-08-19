@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-08-07
+last_updated: 2026-08-10
 ---
 
 # Conversational Directives
@@ -22,7 +22,7 @@ Radioso has two kinds of unit the assistant works with on a turn.
 - A **Directive** is something that shapes *how* the assistant behaves. It is
   matched and added to the prompt. It is never dispatched and returns nothing.
 
-The key point is the distinction: Skills act, Directives steer. A Directive has
+Skills act, Directives steer. A Directive has
 no executor and produces no output. If a rule needs to *do* something, it is a
 Skill, not a Directive.
 
@@ -89,6 +89,14 @@ binding them would render an empty reply; authoring rejects them with a
 descriptive error. Agent config import preserves the binding by name even if the
 target agent does not currently have that skill.
 
+A directive shapes what the agent says next, so only a skill that can produce
+or feed that reply — an external MCP skill or a retrieval skill — qualifies for
+binding. Posting to Slack, sending an email, calling a webhook, or notifying a
+human is a routine's job: give the routine an activation condition that matches
+the same situation, and add the action skill as a step. The directive and the
+routine can cover the same trigger; the directive steers the reply, the routine
+step performs the send.
+
 When several matched directives have bindings, Radioso chooses one winner:
 
 1. higher directive priority wins; `null` priority ranks as `50`
@@ -130,17 +138,21 @@ and lifespan when it merges the two sources.
 
 A directive resolves against the others two ways, one soft and one hard.
 
-- **Priority (soft).** An author may set a priority (0–100; `null` defers to a
-  default). The matched rules are rendered in priority order, and the steering
-  prompt tells the model that when two of them genuinely conflict it should
-  follow the one listed earlier. Nothing is dropped — priority only steers which
-  guidance wins a tussle, and the model makes the judgment, so it is best-effort.
-  Built-in answer directives occupy the mid-range (currently 60–90), so an
-  authored directive can be ranked above them.
+- **Priority (soft).** An author may set a priority (0–100); leaving it unset
+  defaults to 50. The matched rules are rendered in priority order, and the
+  steering prompt tells the model that when two of them genuinely conflict it
+  should follow the one listed earlier. Nothing is dropped — priority only
+  steers which guidance wins a tussle, and the model makes the judgment, so it
+  is best-effort. The built-in answer directives sit at `inline-supported-links`
+  90, `represent-organization` 80, and `concise-readable-formatting` 60
+  (`backend/src/modules/directives/defaultAnswerDirectives.ts`). The agent
+  editor's Priority field shows this scale so an author can rank a new
+  directive above, between, or below them.
 - **Replaces (hard).** `excludes` deterministically removes the named directives
   from the matched set before rendering. In the agent editor this is surfaced as
   **Replaces** — "when this directive applies, cancel these and run instead" —
-  and the per-built-in **Override** button is a shortcut that pre-selects that
+  a searchable picker where each selected directive shows as a removable pill.
+  The per-built-in **Override** button is a shortcut that pre-selects that
   built-in. Use it when a built-in's behavior must be gone for sure, not merely
   outranked.
 
@@ -154,19 +166,27 @@ grows:
 - `dependsOn` — this directive applies only if all named directives also apply
   this turn. Dropping a dependency cascades to its dependents.
 
-The key point: relationships are resolved after the capability filter, so a
+Relationships resolve after the capability filter, so a
 directive the agent is not authorized for can neither exclude nor satisfy
 another. Each drop is recorded in the turn trace with its reason.
 
 ## Adding a directive
 
-A directive is added in two places:
+A built-in directive is added in two places:
 
 - a catalog entry that declares its condition and action, and
 - registration in the agent's standing set at composition.
 
 Nothing in the chat turn or the retrieval and skills modules needs to change.
 The assistant's behavior changes by adding a rule, not by editing the turn loop.
+
+An operator adds a directive to one agent from the agent editor's directive
+dialog, no code involved. The fields are **Name**, **When this applies**
+(`Always`, or `In a specific situation`, which opens a **Situation** field for
+the condition's description), **Instruction** (the steering text — the
+`action` field described above; the label reads "Instruction" because it
+states what the agent should do when the directive fires), **Replaces**, and
+**Priority**.
 
 ## Practical implication
 

@@ -85,6 +85,43 @@ const value = 1
     expect(html).toContain('Hours: 9 - 5 - weekdays only')
   })
 
+  it('keeps an ordered list intact when its items contain " - " dashes', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent
+        content={'1. Keep it short - avoid stacking - unless asked\n2. Prefer action - like "Book" - over vague verbs'}
+      />,
+    )
+
+    // One ordered list with two items — not several single-item lists, which would
+    // each restart numbering and render "1." for every point.
+    expect((html.match(/<ol/g) || []).length).toBe(1)
+    expect((html.match(/<li/g) || []).length).toBe(2)
+    expect(html).not.toContain('<ul')
+  })
+
+  it('keeps numbering correct when each numbered item has flush-left sub-bullets', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent
+        content={'1. First topic\n- detail a\n- detail b\n1. Second topic\n- detail c\n1. Third topic\n- detail d'}
+      />,
+    )
+
+    // One ordered list numbering 1, 2, 3 with the bullets nested under each item —
+    // not three single-item lists that each restart at "1.".
+    expect((html.match(/<ol/g) || []).length).toBe(1)
+    expect((html.match(/<ul/g) || []).length).toBe(3)
+  })
+
+  it('does not nest a separate bullet list that follows a paragraph after a numbered list', () => {
+    const html = renderToStaticMarkup(
+      <AssistantMarkdownContent content={'1. First\n2. Second\n\nNotes:\n\n- note a\n- note b'} />,
+    )
+
+    // The paragraph ends the ordered list, so the bullets remain a top-level list.
+    expect((html.match(/<ol/g) || []).length).toBe(1)
+    expect((html.match(/<ul/g) || []).length).toBe(1)
+  })
+
   it('keeps a link whose label contains " - " intact instead of breaking it into a list', () => {
     const html = renderToStaticMarkup(
       <AssistantMarkdownContent

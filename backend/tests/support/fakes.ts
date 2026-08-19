@@ -2272,6 +2272,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
       documentCount: documents.length,
       readyDocumentCount: documents.filter((item) => item.status === "ready").length,
       pendingDocumentCount: documents.filter((item) => item.status === "queued" || item.status === "processing").length,
+      failedDocumentCount: documents.filter((item) => item.status === "failed").length,
       sampleDocumentCount: sampleDocuments.length,
       sampleDocumentSlugs: sampleDocuments
         .map((item) => item.metadata.sampleSlug)
@@ -2444,6 +2445,23 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
         contentSizeBytes: item.contentSizeBytes ?? null,
         contentSize: item.contentSizeBytes ?? item.sourceSizeBytes ?? null,
       }));
+  }
+
+  async listSummariesByStatus(
+    workspaceId: string,
+    statuses: ReadonlyArray<string>,
+    input: { limit: number },
+  ): Promise<DocumentSummaryRecord[]> {
+    const matching = [...this.items.values()]
+      .filter((item) => item.workspaceId === workspaceId && statuses.includes(item.status))
+      .sort((a, b) => (b.updatedAt.getTime() - a.updatedAt.getTime()) || b.id.localeCompare(a.id))
+      .slice(0, input.limit);
+    const summaries = new Map(
+      (await this.listSummariesByIdsAndWorkspaceId(workspaceId, matching.map((item) => item.id)))
+        .map((summary) => [summary.id, summary]),
+    );
+
+    return matching.flatMap((item) => summaries.get(item.id) ?? []);
   }
 
   async listSummaryPageByWorkspaceId(

@@ -695,6 +695,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
           }).assistantLogo ?? Boolean((res.locals as { assistantLogoAvailable?: boolean }).assistantLogoAvailable),
         ),
         theme: (res.locals as { assistantTheme?: unknown }).assistantTheme,
+        copy: (res.locals as { assistantCopy?: unknown }).assistantCopy,
         branding: (res.locals as { assistantBranding?: unknown }).assistantBranding,
         assistantLinkUtmEnabled: Boolean((res.locals as { assistantLinkUtmEnabled?: boolean }).assistantLinkUtmEnabled ?? true),
         citationDisplayEnabled: Boolean((res.locals as { citationDisplayEnabled?: boolean }).citationDisplayEnabled ?? true),

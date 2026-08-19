@@ -47,6 +47,7 @@ import {
   formatWebsiteEmbedRateLimitRetry,
   getWebsiteEmbedCopy,
   getWebsiteEmbedTheme,
+  resolveWebsiteEmbedCopyPack,
   shouldUseWebsiteEmbedCompactKeyboardLayout,
   shouldUseWebsiteEmbedNarrowLayout,
   type WebsiteEmbedCopyOverrides,
@@ -546,7 +547,6 @@ function PublicChatContent({
   themeOverrides?: WebsiteEmbedThemeOverrides | null
   surface: PublicChatSurface
 }) {
-  const copy = getWebsiteEmbedCopy(localeOverride, copyOverrides)
   const [input, setInput] = useState('')
   const viewportLayout = useWebsiteEmbedViewportLayout()
   const isCompactKeyboardLayout = surface === 'embed' && viewportLayout.isCompactKeyboardLayout
@@ -560,6 +560,7 @@ function PublicChatContent({
     assistantLinkUtmEnabled,
     citationDisplayEnabled,
     assistantTheme,
+    assistantCopyPacks,
     branding,
     intakeActions,
     isLoading,
@@ -577,6 +578,14 @@ function PublicChatContent({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const resolvedCopyOverrides = useMemo(
+    () => ({ ...resolveWebsiteEmbedCopyPack(assistantCopyPacks, localeOverride), ...copyOverrides }),
+    [assistantCopyPacks, copyOverrides, localeOverride],
+  )
+  const copy = useMemo(
+    () => getWebsiteEmbedCopy(localeOverride, resolvedCopyOverrides),
+    [localeOverride, resolvedCopyOverrides],
+  )
   const resolvedWorkspaceName = workspaceName ?? initialWorkspaceName ?? copy.embeddedChatTitle
   const resolvedAvatarUrl = assistantAvatarUrl ?? avatarUrl
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
@@ -588,7 +597,18 @@ function PublicChatContent({
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
   const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
-  const visibleMessages = messages
+  // A turn that failed before producing any text renders the localized failure copy.
+  // Resolving it here (rather than in the chat context) keeps the string on the same
+  // path as every other visitor-facing string: built-in locale pack, then the agent's
+  // copy pack, then operator overrides.
+  const visibleMessages = useMemo(
+    () => messages.map((message) => (
+      message.status === 'error' && !message.content
+        ? { ...message, content: copy.publicChatMessageFailedMessage }
+        : message
+    )),
+    [copy.publicChatMessageFailedMessage, messages],
+  )
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout

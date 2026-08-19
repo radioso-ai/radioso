@@ -1,0 +1,86 @@
+---
+title: "Guided autonomy"
+description: "How a Radioso agent reasons about how to help while the directives, routines, and handoff rules you author decide what it may do."
+---
+
+# Guided autonomy
+
+A Radioso agent works out how to help a person on its own. The rules you write decide what it may do while it does that. We call this guided autonomy, and it is the reason we built the product.
+
+> You don't have to enumerate every path in advance, and you don't have to accept whatever the model decides on its own.
+
+That sentence is the whole design. You author the standing rules, the multi-step flows worth pinning down, and the point where a person should take the conversation. Between those, the agent reasons. When you want a stretch of behavior nailed down exactly, you write a rule and it is nailed down exactly.
+
+## Directives steer every turn
+
+A **directive** is an authored rule that pairs a condition with an action. When the condition holds, the action is added to the agent's instructions for that turn.
+
+> When the customer sounds anxious, slow down and confirm before acting.
+
+There are two kinds of condition. An `always` directive applies on every turn and is resolved without a model call. A `contextual` directive is judged by the model, which returns a confidence, and it applies at or above a confidence threshold.
+
+Matching is by meaning, never by a keyword list, because Radioso is multilingual. Write the rule once in the language you think in, and it steers conversations held in any other one.
+
+Directives steer; they do not execute. A directive has no executor and produces no output. If a rule needs to *do* something — look up an order, post to a system — that is a skill, and a directive can be bound to one so the skill is available on the turns where the rule matched.
+
+You get two levers over which rule wins a tussle:
+
+- **Priority** (0–100) orders the guidance. Nothing is dropped, and the model still makes the judgment, so priority is best-effort. Built-in answer directives sit in the middle of the range, so an authored rule can rank above them.
+- **Replaces** is the deterministic one. It removes the named directives from the matched set before the turn is rendered — the way you take a built-in out of play and run your own rule instead.
+
+Each match is recorded in the turn trace with the reason it applied, and so is each directive dropped by a relationship rule. When an answer surprises you, the trace tells you which rule shaped it.
+
+## Routines carry a flow across turns
+
+A **routine** is a multi-step flow the agent runs across turns. It collects the values it needs, calls a skill, branches on what happened, and finishes or hands off to a person.
+
+You write it in plain language. Where a step needs structure, you drop in a chip: type `@` for a value to collect (`@email`, `@order_id`), `#` for a skill to call. Chips also cover conditions, outcomes, approvals, handoffs, endings, and bounded jumps. Values use `@`, capabilities use `#`, and you never type curly braces or arrows.
+
+The platform compiles that draft into the graph the engine runs and resumes turn to turn. You author the routine; the graph is derived from it.
+
+A branch written as an exact comparison is marked **Rule** and behaves the same way every time. A branch written as prose is marked **AI decides**. The marker comes from the chips on the line rather than the words, so it reads the same in any language — which means you can see, at a glance, exactly which decisions you delegated to the model and which you fixed. That is guided autonomy in one screen.
+
+Backward jumps are bounded, so a loop always ends. The canonical shape is "try twice, then hand off."
+
+An **approval gate** suspends the routine, waits for an operator's decision, and resumes; the conversation stays AI-owned throughout. A gate offers between two and eight choices, and at least two because an approval is a real decision — an operator has to be able to decline, not only rubber-stamp. That is different from a handoff, which ends the routine and transfers the conversation to a person.
+
+The lifecycle is **validate**, then **publish**. Validation reports problems in author terms: an unreachable step, an undeclared variable, a tool step naming a skill the agent does not have. Publishing creates an immutable version, and new conversations use it. Conversations already running keep the version they started on, so nobody mid-flow gets swapped onto new steps. Draft routines run only in the operator-only test chat; publishing is the only way to make a routine live.
+
+Re-entry is yours to choose per routine: once per conversation (the default), every time it matches, or let the agent decide whether to resume the existing run, start fresh, or leave it finished.
+
+## Handoff happens because you asked for it
+
+Handoff is request-driven. The agent does not decide on its own to transfer a conversation to a person. Exactly two things start one:
+
+- a routine reaches a `handoff` terminal, including through an authored branch such as one for an annoyed customer
+- an agent with `handoffOnRetrievalMiss` turned on hits a grounded miss with no context; this is per-agent and off by default
+
+Both notify an operator through the contact-delivery transport and record an ownership audit event. The notice carries conversation, workspace, agent, routine, and step ids plus a dashboard path for opening the conversation. It carries no prompts, completions, retrieved content, slot values, or credentials.
+
+Every conversation is either `ai_owned` or `human_owned`. While a conversation is human-owned, the agent stays quiet: no routines, no retrieval, no skill dispatch, no answer model call. Visitor messages are still saved, so the operator sees everything that arrived. Before a teammate replies, the visitor gets one short waiting line, generated in the conversation's own language.
+
+Operators work in the dashboard **Activity** screen or through authenticated endpoints under `/api/v1/conversations`. The **Needs attention** tab is the inbox, and escalations — an approval to decide, a handoff waiting or held — sort to the top. The conversation view shows the full transcript with message attribution and an action bar to take over, reply, hand back, and resolve a pending decision.
+
+A human reply is saved as an assistant-role message with `source: human_agent` and the operator's display name, so the visitor can see who is answering. The agent stays suppressed until an operator explicitly hands the conversation back; after that, the next visitor message follows the normal path again.
+
+## The control model belongs to you
+
+Guided autonomy is only worth something if the rules are yours to hold. The Radioso core is open source under the Apache License 2.0, and PostgreSQL is the system of record for all of it — agents, documents, chunks, vectors, routines, directives, conversations, audit events. Run it on your own infrastructure and the whole control model sits inside your perimeter. The files under `ee/` are Radioso Enterprise Edition, commercial source-available software governed by `ee/LICENSE`.
+
+## Where the edges are
+
+The honest limits, so you can plan around them:
+
+- A directive shapes a reply; it never performs a task on its own. Action skills such as webhook, Slack, email, and notify settle with outputs rather than user-facing text, so authoring rejects binding them to a directive.
+- Priority is best-effort steering. When you need a guarantee, use **Replaces**, which is deterministic.
+- Contextual matching is an enhancement on top of the deterministic set. If it is unavailable, the turn still answers, steered by its `always` directives alone.
+- While a routine is driving the flow, skill bindings on directives are inert; the routine's own steps decide what runs.
+- Routines with more than one handoff are authored in the Form view; the prose editor carries at most one.
+- A backward jump has to declare a maximum count so the runtime can bound the loop.
+
+## Read next
+
+- [What agents can do](/why-radioso/capabilities) — the four capabilities and how they fit together
+- [Authoring routines](/guides/authoring-routines) — the prose editor, chips, validation, and publishing, step by step
+- [Human takeover](/operators/human-takeover) — ownership, the operator console, and the takeover API
+- [Grounded answers](/why-radioso/grounded-answers) — how the answering half stays checkable

@@ -147,6 +147,20 @@ import { buildErrorSinks } from "../../src/shared/errors/buildErrorSinks.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { loadPromptTemplate } from "../../src/shared/infra/prompts/promptLoader.js";
+import {
+  OperatorCopilotService,
+  type CopilotConversation,
+  type CopilotMessage,
+  type CopilotProposal,
+  type CopilotRepositoryPort,
+} from "../../src/modules/operatorCopilot/public.js";
+import {
+  AgenticCapabilityRunner,
+  DefaultAgentRuntime,
+  TextRoutedToolCallingGateway,
+} from "../../src/shared/agent-runtime/index.js";
+import { createCopilotToolCatalog } from "../../src/app/composition/copilotToolCatalog.js";
+import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../../src/app/composition/copilotProposalAdapters.js";
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
@@ -280,6 +294,7 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   RADIOSO_MCP_SIGNING_SECRET: "smoke-signing-secret",
   SESSION_TTL_HOURS: 168,
+  AUTH_AUTO_VERIFY_EMAIL: false,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
@@ -305,6 +320,7 @@ export const createTestEnv = (): Env => ({
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
+  WORKER_TASK_AUTH_TOKEN: undefined,
   WORKER_AMQP_URL: undefined,
   WORKER_AMQP_QUEUE_NAME: undefined,
   WORKER_AMQP_CRAWL_QUEUE_NAME: undefined,
@@ -1643,9 +1659,55 @@ export const createTestDependencies = (overrides: {
     workbenchReplayRunner as any,
     logger,
   );
+  const evalCaseService = new EvalCaseService(evalRepository);
+  const qualitySignalsService = {
+    getQualityStats: async () => ({ backlog: {} }),
+    listLowQualityTurns: async () => ({ items: [] }),
+  };
+  const audiencePulseService = {
+    read: async () => ({ kind: "not_generated" }),
+    refresh: async () => ({ kind: "not_generated" }),
+    readEvidenceAnchor: async () => null,
+  } as unknown as AppDependencies["audiencePulseService"];
+  const copilotRepository = new InMemoryCopilotRepository();
+  const copilotProposalAdapters = [
+    createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService }),
+    createAgentSettingCopilotProposalAdapter({ agentService }),
+    createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
+  ] as const;
+  const operatorCopilotService = new OperatorCopilotService({
+    repository: copilotRepository,
+    capabilityRunner: new AgenticCapabilityRunner({
+      runtime: new DefaultAgentRuntime({ gateway: new TextRoutedToolCallingGateway(chatInferencePipeline) }),
+    }),
+    usageLimitPolicy,
+    auditService,
+    proposalAdapters: copilotProposalAdapters,
+    prompt: loadPromptTemplate("copilot/system.md"),
+    tools: createCopilotToolCatalog({
+      agentService,
+      routineDefinitionService,
+      chatHistoryService,
+      documentSearchService,
+      evalResultsService: evalCaseService,
+      qualitySignalsService,
+      audiencePulseService,
+      documentStatusService: documentIngestionService,
+      documentSourceStatusService: documentSourceRepository,
+      agentSkillsService,
+      skillCapabilityRegistry,
+      proposalRepository: copilotRepository,
+      proposalAdapters: copilotProposalAdapters,
+      auditService,
+    }),
+  });
   const dependencies: AppDependencies = {
     env,
     logger,
+    operatorCopilotService,
+    qualitySignalsService: qualitySignalsService as any,
+    audiencePulseService,
+    copilotRepository,
     metricsRegistry,
     telemetryService,
     errorReportingService: persistentErrorReportingService,
@@ -1778,7 +1840,7 @@ export const createTestDependencies = (overrides: {
     retrievalDefaultsProvider,
     evalSnapshotService,
     evalMessageCaseService,
-    evalCaseService: new EvalCaseService(evalRepository),
+    evalCaseService,
     evalRunService,
     evalSuiteService: new EvalSuiteService(evalRepository, evalRunService, logger),
     platformSettingsService,
@@ -2005,3 +2067,115 @@ const hashTerm = (term: string): number => {
 
   return hash;
 };
+
+class InMemoryCopilotRepository implements CopilotRepositoryPort {
+  private conversations: CopilotConversation[] = [];
+  private messages: CopilotMessage[] = [];
+  private proposals: CopilotProposal[] = [];
+
+  async createConversation(input: { workspaceId: string; operatorUserId: string; title: string | null }): Promise<CopilotConversation> {
+    const timestamp = new Date();
+    const conversation: CopilotConversation = {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      operatorUserId: input.operatorUserId,
+      title: input.title,
+      status: "idle",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    this.conversations.push(conversation);
+    return conversation;
+  }
+
+  async findConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | null> {
+    return (
+      this.conversations.find(
+        (conversation) =>
+          conversation.id === input.id &&
+          conversation.workspaceId === input.workspaceId &&
+          conversation.operatorUserId === input.operatorUserId,
+      ) ?? null
+    );
+  }
+
+  async listConversations(input: { workspaceId: string; operatorUserId: string }): Promise<ReadonlyArray<CopilotConversation>> {
+    return this.conversations
+      .filter((conversation) => conversation.workspaceId === input.workspaceId && conversation.operatorUserId === input.operatorUserId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+  }
+
+  async deleteConversation(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<boolean> {
+    const existing = await this.findConversation(input);
+    if (!existing) return false;
+    this.conversations = this.conversations.filter((conversation) => conversation.id !== existing.id);
+    this.messages = this.messages.filter((message) => message.conversationId !== existing.id);
+    return true;
+  }
+
+  async createMessage(input: Omit<CopilotMessage, "id" | "createdAt">): Promise<CopilotMessage> {
+    const message: CopilotMessage = { ...input, id: randomUUID(), createdAt: new Date() };
+    this.messages.push(message);
+    return message;
+  }
+
+  async listMessages(input: { conversationId: string }): Promise<ReadonlyArray<CopilotMessage>> {
+    return this.messages.filter((message) => message.conversationId === input.conversationId).map((message) => ({
+      ...message,
+      proposals: this.proposals.filter((proposal) => proposal.messageId === message.id).map((proposal) => ({
+        id: proposal.id,
+        targetType: proposal.targetType,
+        targetLabel: (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : proposal.targetType === "agent_setting" && proposal.targetRef && typeof proposal.targetRef === "object" && "settingKey" in proposal.targetRef && typeof proposal.targetRef.settingKey === "string" ? proposal.targetRef.settingKey : "",
+        summary: proposal.payload && typeof proposal.payload === "object" && "rationale" in proposal.payload && typeof proposal.payload.rationale === "string" ? proposal.payload.rationale : (proposal.targetType === "directive" || proposal.targetType === "routine") && proposal.payload && typeof proposal.payload === "object" && "name" in proposal.payload && typeof proposal.payload.name === "string" ? proposal.payload.name : "",
+        status: proposal.status,
+        reason: proposal.reason ?? null,
+      })),
+    }));
+  }
+
+  async acquireTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotConversation | "running" | null> {
+    const conversation = await this.findConversation(input);
+    if (!conversation) return null;
+    if (conversation.status === "running") return "running";
+    return this.replaceStatus(conversation, "running");
+  }
+
+  async finishTurn(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<void> {
+    const conversation = await this.findConversation(input);
+    if (conversation) this.replaceStatus(conversation, "idle");
+  }
+
+  async createProposal(input: Omit<CopilotProposal, "id" | "messageId" | "status" | "appliedRef" | "createdAt" | "updatedAt">): Promise<CopilotProposal> {
+    const createdAt = new Date();
+    const proposal: CopilotProposal = { ...input, id: randomUUID(), messageId: null, status: "pending", reason: null, appliedRef: null, createdAt, updatedAt: createdAt };
+    this.proposals.push(proposal);
+    return proposal;
+  }
+
+  async findProposal(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    return this.proposals.find((proposal) => proposal.id === input.id && proposal.workspaceId === input.workspaceId && proposal.operatorUserId === input.operatorUserId) ?? null;
+  }
+
+  async attachProposalsToMessage(input: { proposalIds: ReadonlyArray<string>; messageId: string; conversationId: string }): Promise<void> {
+    this.proposals = this.proposals.map((proposal) => input.proposalIds.includes(proposal.id) && proposal.conversationId === input.conversationId ? { ...proposal, messageId: input.messageId, updatedAt: new Date() } : proposal);
+  }
+
+  async updateProposalOutcome(input: { id: string; workspaceId: string; operatorUserId: string; status: CopilotProposal["status"]; appliedRef?: unknown | null; reason?: string | null }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    if (!proposal || proposal.status !== "pending") return null;
+    const updated = { ...proposal, status: input.status, reason: input.reason ?? null, appliedRef: input.appliedRef ?? null, updatedAt: new Date() };
+    this.proposals[this.proposals.indexOf(proposal)] = updated;
+    return updated;
+  }
+
+  async claimProposalApply(input: { id: string; workspaceId: string; operatorUserId: string }): Promise<CopilotProposal | null> {
+    const proposal = await this.findProposal(input);
+    return proposal?.status === "pending" ? proposal : null;
+  }
+
+  private replaceStatus(conversation: CopilotConversation, status: CopilotConversation["status"]): CopilotConversation {
+    const next: CopilotConversation = { ...conversation, status, updatedAt: new Date() };
+    this.conversations[this.conversations.indexOf(conversation)] = next;
+    return next;
+  }
+}

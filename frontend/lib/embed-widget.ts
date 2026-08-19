@@ -38,6 +38,7 @@ export interface WebsiteEmbedCopy {
   publicChatOpenNewTabLabel: string
   publicChatDisclaimerTemplate: string
   publicChatRateLimitRetryTemplate: string
+  publicChatMessageFailedMessage: string
   skillReceiptSubmittedLabel: string
   skillReceiptFailedLabel: string
 }
@@ -89,7 +90,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   embeddedChatStartingMessage: 'Summoning {name}...',
   publicChatSubtitle: '',
   publicChatEmptyTitle: 'Start a conversation',
-  publicChatEmptyMessage: 'Ask a question and get an AI-powered answer.',
+  publicChatEmptyMessage: 'Tell me how I can help.',
   startPrompt: 'Ask a question...',
   publicChatUnavailableTitle: 'Chat Unavailable',
   publicChatUnavailableMessage: 'This chat link is no longer active. Please contact the workspace administrator for access.',
@@ -103,6 +104,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatOpenNewTabLabel: 'Open in new tab',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
+  publicChatMessageFailedMessage: 'Sorry, something went wrong. Please try again.',
   skillReceiptSubmittedLabel: 'Submitted',
   skillReceiptFailedLabel: "Couldn't submit",
 }
@@ -152,6 +154,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatOpenNewTabLabel',
   'publicChatDisclaimerTemplate',
   'publicChatRateLimitRetryTemplate',
+  'publicChatMessageFailedMessage',
   'skillReceiptSubmittedLabel',
   'skillReceiptFailedLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
@@ -287,6 +290,42 @@ export const normalizeWebsiteEmbedPageContextMode = (value: string | null | unde
 
 export const sanitizeWebsiteEmbedCopyOverrides = (input: unknown): WebsiteEmbedCopyOverrides =>
   sanitizeStringOverrides<keyof WebsiteEmbedCopy>(input, COPY_OVERRIDE_KEYS, 280) as WebsiteEmbedCopyOverrides
+
+/**
+ * Select the persisted wording pack for a public surface. This mirrors the
+ * launcher's exact-then-base matching so a shared link and embedded widget use
+ * the same operator wording for a visitor locale.
+ */
+export const resolveWebsiteEmbedCopyPack = (
+  copyPacks: Record<string, unknown> | null | undefined,
+  locale: string | null | undefined,
+): WebsiteEmbedCopyOverrides => {
+  if (!copyPacks || typeof copyPacks !== 'object') {
+    return {}
+  }
+
+  const findPack = (candidate: string) => {
+    const normalizedCandidate = candidate.trim().toLowerCase()
+    return Object.entries(copyPacks).find(([key, value]) =>
+      key.trim().toLowerCase() === normalizedCandidate && value && typeof value === 'object' && !Array.isArray(value),
+    )?.[1]
+  }
+
+  const normalizedLocale = locale?.trim().toLowerCase()
+  const candidates = normalizedLocale
+    ? [normalizedLocale, normalizedLocale.split('-')[0], 'default', 'en']
+    : ['default', 'en']
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    const pack = findPack(candidate)
+    if (pack) {
+      return sanitizeWebsiteEmbedCopyOverrides(pack)
+    }
+  }
+
+  return {}
+}
 
 export const sanitizeWebsiteEmbedThemeOverrides = (input: unknown): WebsiteEmbedThemeOverrides =>
   sanitizeStringOverrides<keyof WebsiteEmbedTheme>(input, THEME_OVERRIDE_KEYS, 160) as WebsiteEmbedThemeOverrides

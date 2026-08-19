@@ -1,69 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
-import {
-  BellRing,
-  Cable,
-  DatabaseZap,
-  Mail,
-  MessageSquareText,
-  Pencil,
-  Trash2,
-  Webhook,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Pencil, Trash2 } from 'lucide-react'
 
 import { useRegisterAddSkillAction } from '@/components/dashboard/shared/skills-header-action'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
 import { getApiErrorMessage } from '@/lib/api-error'
+import { directivesApi } from '@/lib/api-directives'
+import { routinesApi } from '@/lib/api-routines'
 import { agentSkillsApi, type AgentSkill, type AgentSkillCapabilityId, type AgentSkillCreateInput, type SkillCapabilityDescriptor } from '@/lib/api-skills'
 import { cn } from '@/lib/utils'
+import { CapabilityPicker } from './CapabilityPicker'
 import { SkillForm } from './SkillForm'
 import { formatCapabilityLabel, formatInvocationMode } from './skill-form-model'
-
-const capabilityIcons: Record<AgentSkillCapabilityId, { icon: LucideIcon; tone: string }> = {
-  retrieve: {
-    icon: DatabaseZap,
-    tone: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-950/50 dark:text-emerald-300',
-  },
-  mcp_tool: {
-    icon: Cable,
-    tone: 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/50 dark:text-blue-300',
-  },
-  email: {
-    icon: Mail,
-    tone: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/50 dark:text-rose-300',
-  },
-  slack_post: {
-    icon: MessageSquareText,
-    tone: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/50 dark:text-violet-300',
-  },
-  webhook_call: {
-    icon: Webhook,
-    tone: 'border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-900/70 dark:bg-cyan-950/50 dark:text-cyan-300',
-  },
-  notify: {
-    icon: BellRing,
-    tone: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/50 dark:text-amber-300',
-  },
-}
-
-const defaultCapabilityIcon = {
-  icon: Wrench,
-  tone: 'border-border bg-background text-muted-foreground',
-}
+import { countSkillUsage, describeSkillUsage, NO_SKILL_USAGE, type SkillUsage } from './skill-usage'
 
 const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDescriptor[]) => {
   const capability = capabilities.find((candidate) => candidate.id === skill.capability)
@@ -77,97 +31,6 @@ const targetLabel = (skill: AgentSkill, capabilities: readonly SkillCapabilityDe
 const enabledTone = (enabled: boolean) =>
   enabled ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
 
-const unavailableReasonLabel = (capability: SkillCapabilityDescriptor) => {
-  if (capability.unavailableReason === 'no_connection') {
-    return 'Needs connection'
-  }
-  return capability.unavailableReason ?? 'Unavailable'
-}
-
-const capabilityDescription = (capability: SkillCapabilityDescriptor) => {
-  const inputCount = capability.inputSchema.source === 'static' && Array.isArray(capability.inputSchema.schema.fields)
-    ? capability.inputSchema.schema.fields.length
-    : null
-  const targetSummary = (capability.requiresTarget ?? true)
-    ? `${capability.targets.length} ${capability.targets.length === 1 ? 'target' : 'targets'}`
-    : 'Config-only'
-  const inputSummary = inputCount === null
-    ? 'Discovered inputs'
-    : `${inputCount} ${inputCount === 1 ? 'input' : 'inputs'}`
-  return `${targetSummary} · ${inputSummary}`
-}
-
-function CapabilityPicker({
-  open,
-  capabilities,
-  onOpenChange,
-  onSelect,
-}: {
-  open: boolean
-  capabilities: SkillCapabilityDescriptor[]
-  onOpenChange: (open: boolean) => void
-  onSelect: (capabilityId: AgentSkillCapabilityId) => void
-}) {
-  const visibleCapabilities = capabilities
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>Add new skill</DialogTitle>
-          <DialogDescription>
-            Choose the capability type to configure. Connection-backed capabilities unlock when their setup exists.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {visibleCapabilities.map((capability) => {
-            const enabled = capability.available
-            const icon = capabilityIcons[capability.id] ?? defaultCapabilityIcon
-            const CapabilityIcon = icon.icon
-            return (
-              <button
-                key={capability.id}
-                type="button"
-                disabled={!enabled}
-                onClick={() => onSelect(capability.id)}
-                className={cn(
-                  'flex aspect-square min-h-36 flex-col justify-between rounded-md border p-4 text-left transition-colors',
-                  enabled
-                    ? 'border-border bg-background hover:border-primary/60 hover:bg-muted/30'
-                    : 'cursor-not-allowed border-border/70 bg-muted/20 text-muted-foreground opacity-70',
-                )}
-              >
-                <span className="space-y-3">
-                  <span className={cn(
-                    'inline-flex h-9 w-9 items-center justify-center rounded-md border',
-                    enabled ? icon.tone : 'border-border bg-background text-muted-foreground',
-                  )}>
-                    <CapabilityIcon className="h-4 w-4" />
-                  </span>
-                  <span className="block">
-                    <span className="block text-sm font-medium text-foreground">{formatCapabilityLabel(capability.id)}</span>
-                    <span className="mt-1 block text-xs text-muted-foreground">{capabilityDescription(capability)}</span>
-                  </span>
-                </span>
-                <span className="mt-3 flex items-center justify-between gap-2 text-xs">
-                  {enabled ? (
-                    <Badge variant="secondary">Ready</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-muted-foreground">{unavailableReasonLabel(capability)}</Badge>
-                  )}
-                  {!enabled && (capability.requiresTarget ?? true) ? (
-                    <span className="text-muted-foreground">Connections</span>
-                  ) : null}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 export function SkillList({ agentId }: { agentId: string }) {
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [capabilities, setCapabilities] = useState<SkillCapabilityDescriptor[]>([])
@@ -178,23 +41,46 @@ export function SkillList({ agentId }: { agentId: string }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [editingSkill, setEditingSkill] = useState<AgentSkill | null>(null)
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<AgentSkillCapabilityId | null>(null)
+  // Null while the referencing surfaces are unread or unreadable: a partial count would report a
+  // used skill as an orphan, which is worse than saying nothing.
+  const [usage, setUsage] = useState<Map<string, SkillUsage> | null>(null)
+  const loadVersion = useRef(0)
+
+  const loadUsage = useCallback(async (version: number) => {
+    const [directiveResult, routineResult] = await Promise.allSettled([
+      directivesApi.listDirectives(agentId),
+      routinesApi.listRoutines(agentId),
+    ])
+    if (version !== loadVersion.current) return
+    if (directiveResult.status !== 'fulfilled' || routineResult.status !== 'fulfilled') {
+      setUsage(null)
+      return
+    }
+    setUsage(countSkillUsage(directiveResult.value.directives, routineResult.value.routines))
+  }, [agentId])
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current
     setIsLoading(true)
     setError(null)
+    void loadUsage(version)
     try {
       const [capabilityResponse, skillResponse] = await Promise.all([
         agentSkillsApi.getSkillCapabilities(agentId),
         agentSkillsApi.listSkills(agentId),
       ])
+      if (version !== loadVersion.current) return
       setCapabilities(capabilityResponse.capabilities)
       setSkills(skillResponse.skills)
     } catch (loadError) {
+      if (version !== loadVersion.current) return
       setError(getApiErrorMessage(loadError, 'Failed to load skills.'))
     } finally {
-      setIsLoading(false)
+      if (version === loadVersion.current) {
+        setIsLoading(false)
+      }
     }
-  }, [agentId])
+  }, [agentId, loadUsage])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -305,6 +191,7 @@ export function SkillList({ agentId }: { agentId: string }) {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {targetLabel(skill, capabilities)} · {formatInvocationMode(skill.invocationMode)}
+                    {usage ? ` · ${describeSkillUsage(usage.get(skill.name) ?? NO_SKILL_USAGE)}` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

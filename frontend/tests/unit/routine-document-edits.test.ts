@@ -25,7 +25,7 @@ import {
   updateStep,
 } from '@/lib/routine-document-edits'
 import { routineToForm } from '@/lib/routine-form'
-import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockDoc } from '@radioso/routine-document'
+import { draftFromBlockDoc, routineToBlockDoc, type RoutineBlockDoc } from '@/lib/routine-prose'
 import type { RoutineDefinition, RoutineDefinitionDraft } from '@/lib/api'
 
 const source = () => {

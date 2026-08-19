@@ -17,18 +17,30 @@ const isEntityResolution = (
 ): description is Exclude<CopilotEntityDescription<unknown>, CopilotEntityReference> =>
   "kind" in description;
 
+/**
+ * Discriminated on status rather than on whether a candidate list is present: "no match" and
+ * "several matches" both carry zero-or-more candidates, so any attempt to tell them apart from the
+ * list itself collapses them — an empty array is truthy, and a not_found then reads as an ambiguity
+ * with nothing to choose between.
+ */
+type CopilotEntityResolution =
+  | { readonly status: "resolved"; readonly entity: CopilotEntityReference | null; readonly input: unknown }
+  | { readonly status: "ambiguous"; readonly candidates: ReadonlyArray<CopilotEntityReference> }
+  | { readonly status: "not_found" };
+
 const resolvedDescription = (
   description: CopilotEntityDescription<unknown> | null,
   input: unknown,
-): { entity: CopilotEntityReference | null; input: unknown; candidates: ReadonlyArray<CopilotEntityReference> | null } => {
-  if (!description) return { entity: null, input, candidates: null };
-  if (!isEntityResolution(description)) return { entity: description, input, candidates: null };
-  if (description.kind === "ambiguous") return { entity: null, input, candidates: description.candidates };
-  if (description.kind === "not_found") return { entity: null, input, candidates: [] };
-  return { entity: description.entity, input: description.input, candidates: null };
+): CopilotEntityResolution => {
+  if (!description) return { status: "resolved", entity: null, input };
+  if (!isEntityResolution(description)) return { status: "resolved", entity: description, input };
+  if (description.kind === "ambiguous") return { status: "ambiguous", candidates: description.candidates };
+  if (description.kind === "not_found") return { status: "not_found" };
+  return { status: "resolved", entity: description.entity, input: description.input };
 };
 
-const deniedResolution = (workspaceKey: string, dashboardSubject: CopilotEntityReference) => ({
+/** Shared by permission denial and genuine absence, so the two stay indistinguishable to callers. */
+const unresolved = (workspaceKey: string, dashboardSubject: CopilotEntityReference) => ({
   dashboardUrl: buildCopilotDashboardLink(workspaceKey, dashboardSubject),
   resolution: { status: "not_found" as const, candidates: [] },
 });
@@ -51,14 +63,19 @@ export const enrichCopilotToolCatalog = (
       invoke: async (input, agentContext) => {
         const workspaceKey = await deps.resolveWorkspaceKey(context.workspaceId);
         if (context.permissions && !context.permissions.has(descriptor.requiredPermission)) {
-          return deniedResolution(workspaceKey, descriptor.dashboardSubject);
+          return unresolved(workspaceKey, descriptor.dashboardSubject);
         }
 
         const description = descriptor.describeEntity
           ? await descriptor.describeEntity(input, context)
           : null;
         const resolution = resolvedDescription(description, input);
-        if (resolution.candidates) {
+        // Deliberately the same shape a permission denial returns: an operator who may not read an
+        // entity must not be able to tell it apart from one that does not exist.
+        if (resolution.status === "not_found") {
+          return unresolved(workspaceKey, descriptor.dashboardSubject);
+        }
+        if (resolution.status === "ambiguous") {
           return {
             dashboardUrl: buildCopilotDashboardLink(workspaceKey, descriptor.dashboardSubject),
             resolution: {

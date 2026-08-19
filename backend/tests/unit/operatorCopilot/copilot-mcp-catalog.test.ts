@@ -54,6 +54,23 @@ describe("MCP-compatible copilot catalog", () => {
     expect(JSON.stringify(result)).not.toContain("Secret support agent");
   });
 
+  it("reports an unmatched name as not_found rather than an ambiguity with nothing to choose from", async () => {
+    // Regression: not_found and ambiguous were both flattened to a candidate list and told apart by
+    // `if (candidates)`. An empty array is truthy, so a missing entity surfaced as
+    // `status: "ambiguous", candidates: []` — sending the client into a disambiguation path with no
+    // options, and making "no match" indistinguishable from "several matches".
+    const [tool] = enrichCopilotToolCatalog([descriptor(async () => ({ kind: "not_found" }))], {
+      resolveWorkspaceKey: async () => "acme",
+    });
+
+    const result = await tool!.createTool(context(new Set(["workspace.agents.read"]))).invoke({ name: "Nonexistent" }, {} as never);
+
+    expect(result).toEqual({
+      dashboardUrl: "/w/acme/agents",
+      resolution: { status: "not_found", candidates: [] },
+    });
+  });
+
   it("returns same-name candidates as a normal result instead of choosing one", async () => {
     const [tool] = enrichCopilotToolCatalog([descriptor(async () => ({
       kind: "ambiguous",

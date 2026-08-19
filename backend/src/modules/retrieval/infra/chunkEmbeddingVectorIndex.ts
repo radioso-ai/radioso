@@ -14,6 +14,11 @@
 // the supported route.
 export const VECTOR_HNSW_MAX_DIMENSIONS = 2000;
 
+// halfvec has its own, higher ceiling — "column cannot have more than 4000 dimensions
+// for hnsw index". Both limits verified against pgvector 0.8.5. A width beyond this
+// cannot be HNSW-indexed at all, so it is searched exactly at full precision.
+export const HALFVEC_HNSW_MAX_DIMENSIONS = 4000;
+
 // Mirrors chunk_embeddings_dimensions_check in the schema.
 const MAX_DIMENSIONS = 16_000;
 
@@ -30,8 +35,16 @@ const assertIndexableDimensions = (dimensions: number): number => {
   return dimensions;
 };
 
+export const isHnswIndexable = (dimensions: number): boolean =>
+  assertIndexableDimensions(dimensions) <= HALFVEC_HNSW_MAX_DIMENSIONS;
+
+// Half precision is only worth taking where it buys an index. Beyond the halfvec
+// ceiling there is no index to match, so the comparison stays at full precision.
 const vectorTypeFor = (dimensions: number): "vector" | "halfvec" =>
-  dimensions <= VECTOR_HNSW_MAX_DIMENSIONS ? "vector" : "halfvec";
+  dimensions <= VECTOR_HNSW_MAX_DIMENSIONS
+    || dimensions > HALFVEC_HNSW_MAX_DIMENSIONS
+    ? "vector"
+    : "halfvec";
 
 export const buildChunkEmbeddingIndexName = (dimensions: number): string =>
   `chunk_embeddings_hnsw_${assertIndexableDimensions(dimensions)}_idx`;
@@ -53,8 +66,16 @@ export const buildChunkEmbeddingDistanceExpression = (
   };
 };
 
-export const buildChunkEmbeddingIndexSql = (dimensions: number): string => {
+/**
+ * DDL for the width's partial HNSW index, or null when the width is beyond what
+ * pgvector can HNSW-index. Callers skip index creation in that case and fall back to
+ * exact search, which stays correct — only slower.
+ */
+export const buildChunkEmbeddingIndexSql = (dimensions: number): string | null => {
   const width = assertIndexableDimensions(dimensions);
+  if (!isHnswIndexable(width)) {
+    return null;
+  }
   const type = vectorTypeFor(width);
   const { operand } = buildChunkEmbeddingDistanceExpression(width, "$1");
   return `CREATE INDEX IF NOT EXISTS ${buildChunkEmbeddingIndexName(width)} `

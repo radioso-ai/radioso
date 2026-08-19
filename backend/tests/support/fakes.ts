@@ -3306,7 +3306,7 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   // model; the operator backfill that consumes it is covered by an integration test
   // against Postgres.
   async listWorkspaceCanonicalEmbeddingGaps(): Promise<
-    Array<{ workspaceId: string; missingChunks: number }>
+    Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
   > {
     return [];
   }

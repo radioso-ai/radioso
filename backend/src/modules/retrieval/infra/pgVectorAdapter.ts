@@ -30,7 +30,11 @@ const PGVECTOR_CAPABILITIES: VectorIndexCapabilities = {
     "expiry",
   ],
   maxBatchSize: 1_000,
-  searchModes: ["exact"],
+  // Both modes are reachable and the width decides which. Up to pgvector's HNSW
+  // ceiling a partial index answers the search approximately; above it, and before
+  // a width's index exists, the same query is served by an exact scan. Declaring
+  // only "exact" would misreport recall for every indexed width.
+  searchModes: ["exact", "accelerated"],
   consistency: "transactional",
 };
 
@@ -121,7 +125,12 @@ implements VectorAdapter {
       // embedding in the workspace. Creating it here keeps index lifecycle with
       // space lifecycle, so a newly activated width is indexed without a migration.
       // IF NOT EXISTS makes this idempotent across restarts and replicas.
-      await this.database.query(buildChunkEmbeddingIndexSql(input.space.dimensions));
+      // Widths past pgvector's HNSW ceiling have no index to build; the space stays
+      // usable on exact search, which is why this does not reject the space.
+      const indexSql = buildChunkEmbeddingIndexSql(input.space.dimensions);
+      if (indexSql) {
+        await this.database.query(indexSql);
+      }
       this.preparedSpaces.set(input.space.id, {
         dimensions: input.space.dimensions,
         distanceMetric: input.space.distanceMetric,

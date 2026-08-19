@@ -41,12 +41,15 @@ BEGIN
         'ON chunk_embeddings USING hnsw ((embedding::vector(%s)) vector_cosine_ops) '
         'WHERE dimensions = %s',
         width, width, width);
-    ELSE
+    ELSIF width <= 4000 THEN
       EXECUTE format(
         'CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_%s_idx '
         'ON chunk_embeddings USING hnsw ((embedding::halfvec(%s)) halfvec_cosine_ops) '
         'WHERE dimensions = %s',
         width, width, width);
     END IF;
+    -- halfvec carries its own HNSW ceiling of 4000 dimensions. Wider embeddings
+    -- cannot be indexed at all, so they are left to exact search rather than
+    -- issuing DDL that Postgres rejects.
   END LOOP;
 END $$;

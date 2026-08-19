@@ -94,6 +94,38 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     expect(await gapFor()).toBe(1);
   });
 
+  it("flags a workspace with no embedding profile as not actionable", async () => {
+    await insertChunk(0);
+
+    const gaps = await repository.listWorkspaceCanonicalEmbeddingGaps();
+    const gap = gaps.find((entry) => entry.workspaceId === workspaceId);
+
+    // Coverage enqueueing joins workspace_embedding_profiles, so without that row the
+    // backfill produces no jobs. The flag is what stops that looking like success.
+    expect(gap?.hasEmbeddingProfile).toBe(false);
+  });
+
+  it("marks a workspace actionable once it has an embedding profile", async () => {
+    await insertChunk(0);
+    await database.query(
+      `INSERT INTO workspace_embedding_profiles (workspace_id, active_embedding_space_id)
+       VALUES ($1, $2)
+       ON CONFLICT (workspace_id) DO UPDATE SET active_embedding_space_id = EXCLUDED.active_embedding_space_id`,
+      [workspaceId, spaceId],
+    );
+
+    const gaps = await repository.listWorkspaceCanonicalEmbeddingGaps();
+    const gap = gaps.find((entry) => entry.workspaceId === workspaceId);
+
+    expect(gap?.hasEmbeddingProfile).toBe(true);
+    expect(gap?.missingChunks).toBe(1);
+
+    await database.query(
+      "DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1",
+      [workspaceId],
+    );
+  });
+
   it("omits a workspace entirely once every chunk is projected", async () => {
     const chunkId = await insertChunk(0);
     await database.query(

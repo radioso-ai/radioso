@@ -187,7 +187,7 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
     );
   };
 
-  it("declares exact, transactional cosine capabilities for variable dimensions", async () => {
+  it("declares both search modes, since the width decides which one answers", async () => {
     await expect(adapter.capabilities.getCapabilities()).resolves.toEqual({
       backend: "pgvector",
       dimensionRanges: [{ min: 1, max: 16_000 }],
@@ -199,7 +199,10 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
         "expiry",
       ],
       maxBatchSize: 1_000,
-      searchModes: ["exact"],
+      // Widths within pgvector's HNSW ceiling are answered approximately from a
+      // partial index; wider ones, and any width before its index exists, fall back
+      // to an exact scan of the same query.
+      searchModes: ["exact", "accelerated"],
       consistency: "transactional",
     });
   });

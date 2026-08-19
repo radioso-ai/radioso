@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  HALFVEC_HNSW_MAX_DIMENSIONS,
   VECTOR_HNSW_MAX_DIMENSIONS,
   buildChunkEmbeddingIndexName,
   buildChunkEmbeddingIndexSql,
@@ -14,29 +15,47 @@ import {
 
 describe("chunk embedding vector index", () => {
   it("uses vector ops at or below the pgvector HNSW dimension cap", () => {
-    const sql = buildChunkEmbeddingIndexSql(1536);
+    const sql = buildChunkEmbeddingIndexSql(1536) ?? "";
     expect(sql).toContain("USING hnsw ((embedding::vector(1536)) vector_cosine_ops)");
     expect(sql).toContain("WHERE dimensions = 1536");
   });
 
   it("switches to halfvec above the cap, which vector HNSW cannot index", () => {
     expect(VECTOR_HNSW_MAX_DIMENSIONS).toBe(2000);
-    const sql = buildChunkEmbeddingIndexSql(3072);
+    const sql = buildChunkEmbeddingIndexSql(3072) ?? "";
     expect(sql).toContain("USING hnsw ((embedding::halfvec(3072)) halfvec_cosine_ops)");
     expect(sql).toContain("WHERE dimensions = 3072");
   });
 
   it("builds the boundary width with vector, not halfvec", () => {
-    expect(buildChunkEmbeddingIndexSql(2000)).toContain("embedding::vector(2000)");
-    expect(buildChunkEmbeddingIndexSql(2001)).toContain("embedding::halfvec(2001)");
+    expect(buildChunkEmbeddingIndexSql(2000) ?? "").toContain("embedding::vector(2000)");
+    expect(buildChunkEmbeddingIndexSql(2001) ?? "").toContain("embedding::halfvec(2001)");
+  });
+
+  it("stops indexing above the halfvec ceiling instead of emitting DDL that fails", () => {
+    // pgvector: "column cannot have more than 4000 dimensions for hnsw index".
+    expect(HALFVEC_HNSW_MAX_DIMENSIONS).toBe(4000);
+    expect(buildChunkEmbeddingIndexSql(4000) ?? "").toContain("embedding::halfvec(4000)");
+    expect(buildChunkEmbeddingIndexSql(4001)).toBeNull();
+    expect(buildChunkEmbeddingIndexSql(16_000)).toBeNull();
+  });
+
+  it("compares at full precision where no index can exist", () => {
+    // Half precision is only worth taking when it buys an index.
+    expect(buildChunkEmbeddingDistanceExpression(3072, "$4").operand)
+      .toBe("embedding::halfvec(3072)");
+    expect(buildChunkEmbeddingDistanceExpression(4001, "$4").operand)
+      .toBe("embedding::vector(4001)");
+    expect(buildChunkEmbeddingDistanceExpression(16_000, "$4").queryCast)
+      .toBe("$4::vector(16000)");
   });
 
   it("derives the query distance expression from the same rule as the index", () => {
-    for (const dimensions of [768, 1536, 2000, 2001, 3072]) {
+    for (const dimensions of [768, 1536, 2000, 2001, 3072, 4000]) {
       const { operand, queryCast } = buildChunkEmbeddingDistanceExpression(dimensions, "$4");
       // The operand must appear verbatim inside the index definition, or the
       // planner cannot match the two.
-      expect(buildChunkEmbeddingIndexSql(dimensions)).toContain(`(${operand})`);
+      expect(buildChunkEmbeddingIndexSql(dimensions) ?? "").toContain(`(${operand})`);
       expect(queryCast).toContain("$4");
     }
   });
@@ -73,7 +92,7 @@ describe("chunk embedding vector index", () => {
       expect(rendered, `migration branch for ${branch}`).toContain(
         normalize(`embedding::${branch}(${width})`),
       );
-      expect(normalize(buildChunkEmbeddingIndexSql(width))).toContain(rendered);
+      expect(normalize(buildChunkEmbeddingIndexSql(width) ?? "")).toContain(rendered);
     }
   });
 

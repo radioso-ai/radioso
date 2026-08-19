@@ -18,6 +18,10 @@ import { EmbeddingCoverageReconciler } from "../src/modules/embeddingProfiles/se
  * a standalone run. The work is idempotent: jobs target chunks that are missing a
  * canonical row, so re-running enqueues nothing once coverage is complete.
  *
+ * A workspace with no `workspace_embedding_profiles` row cannot be enqueued, because
+ * coverage joins that table. Those are reported separately and the script exits
+ * non-zero, rather than reporting a gap it silently leaves untouched.
+ *
  *   pnpm exec tsx ./scripts/backfillEmbeddingCoverage.ts --dry-run
  *   pnpm exec tsx ./scripts/backfillEmbeddingCoverage.ts
  */
@@ -37,16 +41,38 @@ const main = async (): Promise<void> => {
       return;
     }
 
+    const actionable = gaps.filter((gap) => gap.hasEmbeddingProfile);
+    const blocked = gaps.filter((gap) => !gap.hasEmbeddingProfile);
     const totalMissing = gaps.reduce((sum, gap) => sum + gap.missingChunks, 0);
     console.log(
       `${gaps.length} workspace(s) with ${totalMissing} chunk(s) missing canonical embeddings:`,
     );
     for (const gap of gaps) {
-      console.log(`  ${gap.workspaceId}  ${gap.missingChunks}`);
+      const suffix = gap.hasEmbeddingProfile ? "" : "   [no embedding profile]";
+      console.log(`  ${gap.workspaceId}  ${gap.missingChunks}${suffix}`);
+    }
+
+    if (blocked.length > 0) {
+      // Coverage enqueueing joins workspace_embedding_profiles, so these workspaces
+      // would silently produce zero jobs. Choosing an embedding space for them is a
+      // configuration decision, made by setting the workspace's embedding model.
+      console.log(
+        `\n${blocked.length} workspace(s) have no embedding profile and cannot be `
+        + "backfilled until one exists. Set the embedding model for each, then re-run:",
+      );
+      for (const gap of blocked) {
+        console.log(`  ${gap.workspaceId}  ${gap.missingChunks} chunk(s)`);
+      }
     }
 
     if (dryRun) {
       console.log("\n--dry-run: no work enqueued.");
+      return;
+    }
+
+    if (actionable.length === 0) {
+      console.log("\nNothing to enqueue.");
+      process.exitCode = blocked.length > 0 ? 1 : 0;
       return;
     }
 
@@ -57,7 +83,7 @@ const main = async (): Promise<void> => {
     const reconciler = new EmbeddingCoverageReconciler(jobs);
     let enqueued = 0;
     let skipped = 0;
-    for (const gap of gaps) {
+    for (const gap of actionable) {
       const outcome = await reconciler.reconcileWorkspace(gap.workspaceId);
       enqueued += outcome.enqueued;
       skipped += outcome.skipped;
@@ -70,13 +96,18 @@ const main = async (): Promise<void> => {
       `\nEnqueued ${enqueued} job(s), skipped ${skipped}. `
       + "The document worker drains these by polling; re-run --dry-run to check progress.",
     );
+    if (blocked.length > 0) {
+      process.exitCode = 1;
+    }
   } finally {
     await database.close();
   }
 };
 
 main()
-  .then(() => process.exit(0))
+  // Preserve the exit code set for workspaces that could not be backfilled, so a
+  // partial run is visible to whatever is driving the script.
+  .then(() => process.exit(process.exitCode ?? 0))
   .catch((error) => {
     console.error(error);
     process.exit(1);

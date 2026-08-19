@@ -68,7 +68,7 @@ export interface DocumentProcessingJobRepositoryPort {
     generation: string;
   }): Promise<number>;
   listWorkspaceCanonicalEmbeddingGaps(): Promise<
-    Array<{ workspaceId: string; missingChunks: number }>
+    Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
   >;
   reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
@@ -481,15 +481,25 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   // per workspace, so this reports where that work is still outstanding — chiefly
   // for operators running the one-time backfill after upgrading.
   async listWorkspaceCanonicalEmbeddingGaps(): Promise<
-    Array<{ workspaceId: string; missingChunks: number }>
+    Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
   > {
-    const result = await sql<{ workspace_id: string; missing_chunks: string }>`
+    // hasEmbeddingProfile decides whether the gap is actionable. Coverage enqueueing
+    // joins workspace_embedding_profiles, so a workspace without one yields no jobs;
+    // reporting the flag keeps that from looking like a successful no-op run.
+    const result = await sql<{
+      workspace_id: string;
+      missing_chunks: string;
+      has_embedding_profile: boolean;
+    }>`
       SELECT c.workspace_id,
-             COUNT(*) AS missing_chunks
+             COUNT(*) AS missing_chunks,
+             BOOL_OR(p.workspace_id IS NOT NULL) AS has_embedding_profile
       FROM chunks c
       LEFT JOIN chunk_embeddings ce
         ON ce.workspace_id = c.workspace_id
        AND ce.chunk_id = c.id
+      LEFT JOIN workspace_embedding_profiles p
+        ON p.workspace_id = c.workspace_id
       WHERE ce.chunk_id IS NULL
       GROUP BY c.workspace_id
       ORDER BY COUNT(*) DESC
@@ -498,6 +508,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     return result.rows.map((row) => ({
       workspaceId: row.workspace_id,
       missingChunks: Number(row.missing_chunks),
+      hasEmbeddingProfile: row.has_embedding_profile,
     }));
   }
 

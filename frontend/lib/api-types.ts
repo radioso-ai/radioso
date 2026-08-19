@@ -1,15 +1,5 @@
 import type { components, operations } from '../../typescript-sdk/src/generated/types'
-import type {
-  RoutineFieldGuardOp,
-  RoutineFieldGuardUnit,
-  RoutineGuardKind,
-  RoutineReentryMode,
-  RoutineSlotType,
-  RoutineStepKind,
-  RoutineTerminalKind,
-  RoutineValidationCode,
-} from '@radioso/routine-definition'
-import type { RoutineInputBinding } from '@radioso/routine-markdown'
+import type { RoutineInputBinding } from '@radioso/routine-document'
 import { API_BASE } from './api-client'
 import {
   readRetrievalSkillSettingsOverride,
@@ -30,7 +20,9 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
     }
   : never
 export type RegisterRequest = ApiSchemas['RegisterRequest']
-export type RegisterResponse = ApiSchemas['RegisterResponse']
+export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
+  requiresEmailVerification?: boolean
+}
 export type RegistrationAvailabilityResponse = ApiSchemas['RegistrationAvailabilityResponse']
 export type LoginRequest = ApiSchemas['LoginRequest']
 export type LoginResponse = ApiSchemas['LoginResponse']
@@ -49,7 +41,6 @@ export type RetrievalDefaults = Omit<ApiSchemas['RetrievalDefaultsResponse'], 'm
 export type AgentChatModelOverride = NonNullable<ApiSchemas['ConversationAgent']['chatModelOverride']>
 export type AgentContactRequestDelivery = ApiSchemas['AgentContactRequestDelivery']
 export type DirectiveCondition = ApiSchemas['AuthoredDirectiveCondition']
-export type DirectiveBinding = ApiSchemas['AuthoredDirectiveBinding']
 export type Directive = ApiSchemas['AuthoredDirective']
 export type BuiltInDirective = ApiSchemas['BuiltInDirective']
 export type DirectiveCreateRequest = ApiSchemas['AuthoredDirectiveCreateRequest']
@@ -72,17 +63,16 @@ export type AgentContextVariableEnablementResponse = ApiSchemas['AgentContextVar
 export type AgentContextVariableEnablementListResponse = ApiSchemas['AgentContextVariableEnablementListResponse']
 
 export type RoutineDefinitionStatus = ApiSchemas['RoutineDefinition']['status']
-export type {
-  RoutineFieldGuardOp,
-  RoutineFieldGuardUnit,
-  RoutineGuardKind,
-  RoutineReentryMode,
-  RoutineSlotType,
-  RoutineStepKind,
-  RoutineTerminalKind,
-  RoutineValidationCode,
-}
+export type RoutineSlotType = 'text' | 'number' | 'boolean' | 'email' | 'date'
+export type RoutineStepKind = 'chat' | 'tool' | 'action' | 'approval'
 export type ApprovalOption = NonNullable<ApiSchemas['RoutineDefinition']['steps'][number]['options']>[number]
+export type RoutineGuardKind = 'llm' | 'default' | 'slot_filled' | 'outcome' | 'counter' | 'field'
+export type RoutineReentryMode = 'once_per_conversation' | 'always' | 'semantic'
+export type RoutineFieldGuardOp =
+  | 'is_true' | 'is_false' | 'equals' | 'not_equals' | 'in' | 'is_present' | 'is_absent'
+  | 'gt' | 'gte' | 'lt' | 'lte' | 'older_than' | 'within'
+export type RoutineFieldGuardUnit = 'days' | 'weeks' | 'months' | 'years'
+export type RoutineTerminalKind = 'complete' | 'handoff'
 // Binding kinds come from the shared definition package so the frontend dialect
 // cannot drift from the wire contract again (this type was stale after spec 097
 // added contextVariableRef, which silently excluded context-bound routines).
@@ -91,6 +81,11 @@ export type RoutineStepMetadata = {
   outputAssignments?: Record<string, string>
   mode?: 'typed' | 'untyped'
 } & Record<string, unknown>
+// Derived from the wire contract rather than restated, so a new backend validation code
+// cannot go missing here. The hand-written union had already drifted, dropping
+// unknown_context_variable.
+export type RoutineValidationCode = ApiSchemas['RoutineValidationResult']['diagnostics'][number]['code']
+
 export type RoutineValidationDiagnostic = {
   code: RoutineValidationCode
   location: string
@@ -293,7 +288,6 @@ export interface PublicChatIntakeAction {
 export type PublicChatSessionResponse = ApiSchemas['PublicChatSessionResponse'] & {
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
-  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 
@@ -529,7 +523,6 @@ export type ChatHistoryListResponse = ApiSchemas['ChatHistoryListResponse'] & {
   assistantBootstrapActive?: boolean
   assistantLinkUtmEnabled?: boolean
   citationDisplayEnabled?: boolean
-  copy?: WebsiteEmbedCopyPacks
   intakeActions?: PublicChatIntakeAction[]
 }
 

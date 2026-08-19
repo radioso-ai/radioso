@@ -88,7 +88,7 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible();
   await expect(page.getByText("Name is required.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
   await expect(page.getByLabel("Name")).toBeVisible();
@@ -194,7 +194,8 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
 
   await expect(page.getByRole("dialog", { name: "Draft with AI" })).toHaveCount(0);
   await expect(page.getByLabel("Name")).toHaveValue("assisted-contact");
-  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks for a person to follow up.");
+  // Document mode owns the trigger; the document shows it under Starts when.
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Visitor asks for a person to follow up.");
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
 
@@ -210,7 +211,7 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
   });
 });
 
-test("an existing routine opens in prose (outline retired) and toggles to form", async ({ page }) => {
+test("an existing routine opens in the Document view and toggles to form", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
@@ -220,22 +221,22 @@ test("an existing routine opens in prose (outline retired) and toggles to form",
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
 
-  // Outline is retired; a prose-representable routine opens in the Prose tab.
+  // Prose and Outline are retired; a representable routine opens in the Document view.
   await expect(page.getByRole("tab", { name: "Outline" })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByRole("tab", { name: "Prose" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
 
-  // The routine's chat step loaded as inline prose with its variable as a chip.
-  const editor = page.getByRole("textbox", { name: "Routine", exact: true });
+  // The routine's chat step reads as a sentence with its variable as a chip.
+  const editor = page.getByRole("article", { name: "Routine document editor" });
   await expect(editor).toContainText("Ask for");
   await expect(editor).toContainText("so the team can follow up");
-  await expect(page.locator('[data-routine-chip="variable"]')).toBeVisible();
 
   // Toggling to the Form tab preserves the step instruction.
   await page.getByRole("tab", { name: "Form" }).click();
   await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
 });
 
-test("a routine with custom completion copy opens in Prose with terminal copy preserved", async ({ page }) => {
+test("a routine with custom completion copy opens in Document with terminal copy preserved", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
@@ -244,8 +245,7 @@ test("a routine with custom completion copy opens in Prose with terminal copy pr
       id: "55555555-5555-4555-9555-000000000302",
       status: "draft",
       version: 1,
-      // A custom completion message the prose editor can't show — must edit in Form so it
-      // isn't silently overwritten on load+save.
+      // A custom completion message; the Document view shows it as the routine's ending.
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Thanks, we will be in touch.", ordinal: 0 }],
     }],
   });
@@ -253,8 +253,8 @@ test("a routine with custom completion copy opens in Prose with terminal copy pr
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
 
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveAttribute("data-state", "active");
-  await expect(page.getByLabel("Completion message")).toHaveValue("Thanks, we will be in touch.");
+  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Thanks, we will be in touch.");
 });
 
 test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {
@@ -287,9 +287,12 @@ test("agent routines revise and publish a new version without duplicating the li
   await expect(page.getByText("draft revision")).toBeVisible();
 
   await page.getByRole("button", { name: "Edit Collect pricing intake" }).click();
-  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks about pricing or wants a quote.");
-  await page.getByLabel("Activation trigger").fill("Visitor asks about pricing, quotes, or plans.");
-  await expect(page.getByLabel("Activation trigger")).toHaveValue("Visitor asks about pricing, quotes, or plans.");
+  // Document mode owns the trigger; edit it through the Starts when row.
+  const revisionEditor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(revisionEditor).toContainText("Visitor asks about pricing or wants a quote.");
+  await revisionEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await revisionEditor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks about pricing, quotes, or plans.");
+  await revisionEditor.getByRole("button", { name: "Done", exact: true }).click();
   await expect.poll(() => routineUpdates.some((update) => {
     const body = update.body as { activation?: { triggerDescription?: string } } | undefined;
     return update.method === "PATCH" && body?.activation?.triggerDescription === "Visitor asks about pricing, quotes, or plans.";

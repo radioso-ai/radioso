@@ -65,6 +65,12 @@ const main = async (): Promise<void> => {
       }
     }
 
+    // Blocked workspaces are the reason to exit non-zero, and --dry-run is the form
+    // an operator reaches for first, so the signal has to survive that path too.
+    if (blocked.length > 0) {
+      process.exitCode = 1;
+    }
+
     if (dryRun) {
       console.log("\n--dry-run: no work enqueued.");
       return;
@@ -72,7 +78,6 @@ const main = async (): Promise<void> => {
 
     if (actionable.length === 0) {
       console.log("\nNothing to enqueue.");
-      process.exitCode = blocked.length > 0 ? 1 : 0;
       return;
     }
 
@@ -96,9 +101,6 @@ const main = async (): Promise<void> => {
       `\nEnqueued ${enqueued} job(s), skipped ${skipped}. `
       + "The document worker drains these by polling; re-run --dry-run to check progress.",
     );
-    if (blocked.length > 0) {
-      process.exitCode = 1;
-    }
   } finally {
     await database.close();
   }

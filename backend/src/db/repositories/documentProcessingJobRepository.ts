@@ -483,26 +483,59 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   async listWorkspaceCanonicalEmbeddingGaps(): Promise<
     Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
   > {
-    // hasEmbeddingProfile decides whether the gap is actionable. Coverage enqueueing
-    // joins workspace_embedding_profiles, so a workspace without one yields no jobs;
+    // Mirrors reconcileEmbeddingProfileJobsForWorkspace's notion of coverage, or the
+    // report disagrees with the work it is meant to describe. A canonical row only
+    // counts when it belongs to a target space (active or pending) at the document's
+    // current revision, so rows left behind by an earlier space or an older revision
+    // are gaps rather than coverage. Document eligibility is applied for the same
+    // reason: the reconciler never enqueues documents it would not serve.
+    //
+    // hasEmbeddingProfile decides whether the gap is actionable — enqueueing joins
+    // workspace_embedding_profiles, so a workspace without one yields no jobs, and
     // reporting the flag keeps that from looking like a successful no-op run.
     const result = await sql<{
       workspace_id: string;
       missing_chunks: string;
       has_embedding_profile: boolean;
     }>`
-      SELECT c.workspace_id,
-             COUNT(*) AS missing_chunks,
-             BOOL_OR(p.workspace_id IS NOT NULL) AS has_embedding_profile
-      FROM chunks c
-      LEFT JOIN chunk_embeddings ce
-        ON ce.workspace_id = c.workspace_id
-       AND ce.chunk_id = c.id
-      LEFT JOIN workspace_embedding_profiles p
-        ON p.workspace_id = c.workspace_id
-      WHERE ce.chunk_id IS NULL
-      GROUP BY c.workspace_id
-      ORDER BY COUNT(*) DESC
+      WITH targets AS (
+        SELECT p.workspace_id, spaces.embedding_space_id
+        FROM workspace_embedding_profiles p
+        CROSS JOIN LATERAL (
+          SELECT DISTINCT embedding_space_id
+          FROM (VALUES
+            (p.active_embedding_space_id),
+            (p.pending_embedding_space_id)
+          ) AS candidates(embedding_space_id)
+          WHERE embedding_space_id IS NOT NULL
+        ) spaces
+      ),
+      eligible_chunks AS (
+        SELECT c.workspace_id, c.id AS chunk_id, d.revision
+        FROM chunks c
+        JOIN documents d
+          ON d.workspace_id = c.workspace_id
+         AND d.id = c.document_id
+        WHERE d.status = 'ready'
+          AND d.retrieval_enabled = TRUE
+          AND (d.retrieval_expires_at IS NULL OR d.retrieval_expires_at > NOW())
+      )
+      SELECT ec.workspace_id,
+             COUNT(DISTINCT ec.chunk_id) AS missing_chunks,
+             BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile
+      FROM eligible_chunks ec
+      LEFT JOIN targets t ON t.workspace_id = ec.workspace_id
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM chunk_embeddings ce
+        WHERE ce.workspace_id = ec.workspace_id
+          AND ce.chunk_id = ec.chunk_id
+          AND ce.document_revision = ec.revision
+          AND (t.embedding_space_id IS NULL
+               OR ce.embedding_space_id = t.embedding_space_id)
+      )
+      GROUP BY ec.workspace_id
+      ORDER BY COUNT(DISTINCT ec.chunk_id) DESC
     `.execute(this.db);
 
     return result.rows.map((row) => ({

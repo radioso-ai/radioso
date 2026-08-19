@@ -202,8 +202,12 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
     await adapter.admin.prepareSpace({ space });
     expect(await indexNames()).toContain("chunk_embeddings_hnsw_7_idx");
 
-    // With no rows of that width, the index earns nothing but planning time.
-    await database.query("DELETE FROM chunk_embeddings");
+    // Scoped to this test's own space: the integration database is shared, so an
+    // unscoped delete would strip rows other suites depend on.
+    await database.query(
+      "DELETE FROM chunk_embeddings WHERE embedding_space_id = $1",
+      [space.id],
+    );
     await expect(adapter.admin.dropUnusedIndexes()).resolves.toBeGreaterThan(0);
     expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
 

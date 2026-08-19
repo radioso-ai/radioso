@@ -20,6 +20,7 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const spaceId = randomUUID();
+  const staleSpaceId = randomUUID();
   let documentId: string;
 
   beforeAll(async () => {
@@ -37,6 +38,12 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
        VALUES ($1, $2, $3, 'openai', 'text-embedding-3-small', 1536, 'cosine', 'none', 'active')`,
       [spaceId, `gap-fp-${spaceId}`, `gap-scope-${spaceId}`],
     );
+    await database.query(
+      `INSERT INTO embedding_spaces
+         (id, identity_fingerprint, endpoint_scope_fingerprint, provider, model, dimensions, distance_metric, normalization, status)
+       VALUES ($1, $2, $3, 'openai', 'text-embedding-3-small', 1536, 'cosine', 'none', 'active')`,
+      [staleSpaceId, `gap-fp-${staleSpaceId}`, `gap-scope-${staleSpaceId}`],
+    );
   });
 
   beforeEach(async () => {
@@ -50,7 +57,7 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
   });
 
   afterAll(async () => {
-    await database.query("DELETE FROM embedding_spaces WHERE id = $1", [spaceId])
+    await database.query("DELETE FROM embedding_spaces WHERE id = ANY($1)", [[spaceId, staleSpaceId]])
       .catch(() => undefined);
     await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
     await database.close().catch(() => undefined);
@@ -92,6 +99,58 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     );
 
     expect(await gapFor()).toBe(1);
+  });
+
+  const bindProfile = async (): Promise<void> => {
+    await database.query(
+      `INSERT INTO workspace_embedding_profiles (workspace_id, active_embedding_space_id)
+       VALUES ($1, $2)
+       ON CONFLICT (workspace_id) DO UPDATE SET active_embedding_space_id = EXCLUDED.active_embedding_space_id`,
+      [workspaceId, spaceId],
+    );
+  };
+
+  const insertCanonical = async (
+    chunkId: string,
+    options: { spaceId?: string; revision?: number } = {},
+  ): Promise<void> => {
+    await database.query(
+      `INSERT INTO chunk_embeddings
+         (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
+       VALUES ($1, $2, $3, $4, 1, 1536,
+               (SELECT array_agg(0.1)::vector FROM generate_series(1, 1536)), 'hash')`,
+      [workspaceId, chunkId, options.spaceId ?? spaceId, options.revision ?? 1],
+    );
+  };
+
+  it("still counts a chunk whose only canonical row belongs to another space", async () => {
+    const chunkId = await insertChunk(0);
+    await bindProfile();
+    await insertCanonical(chunkId, { spaceId: staleSpaceId });
+
+    // Coverage means a row for the active or pending space; a leftover row from a
+    // space the workspace has moved off is a gap, not coverage.
+    expect(await gapFor()).toBe(1);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("still counts a chunk whose canonical row is for an older document revision", async () => {
+    const chunkId = await insertChunk(0);
+    await bindProfile();
+    await database.query("UPDATE documents SET revision = 2 WHERE id = $1", [documentId]);
+    await insertCanonical(chunkId, { revision: 1 });
+
+    expect(await gapFor()).toBe(1);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("ignores chunks in documents the reconciler would not serve", async () => {
+    await insertChunk(0);
+    await bindProfile();
+    await database.query("UPDATE documents SET retrieval_enabled = FALSE WHERE id = $1", [documentId]);
+
+    expect(await gapFor()).toBe(0);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
   });
 
   it("flags a workspace with no embedding profile as not actionable", async () => {

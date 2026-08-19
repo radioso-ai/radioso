@@ -745,6 +745,359 @@ CREATE TABLE public.chunk_embeddings (
     CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
     CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
     CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+)
+PARTITION BY HASH (workspace_id);
+
+
+--
+-- Name: chunk_embeddings_p0; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p0 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p1; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p1 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p10; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p10 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p11; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p11 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p12; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p12 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p13; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p13 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p14; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p14 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p15; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p15 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p2; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p2 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p3; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p3 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p4; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p4 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p5; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p5 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p6; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p6 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p7; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p7 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p8; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p8 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
+);
+
+
+--
+-- Name: chunk_embeddings_p9; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chunk_embeddings_p9 (
+    workspace_id uuid NOT NULL,
+    chunk_id uuid NOT NULL,
+    embedding_space_id uuid NOT NULL,
+    document_revision integer NOT NULL,
+    canonical_version bigint NOT NULL,
+    dimensions integer NOT NULL,
+    embedding public.vector NOT NULL,
+    content_hash text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT chunk_embeddings_canonical_version_check CHECK ((canonical_version >= 1)),
+    CONSTRAINT chunk_embeddings_check CHECK ((public.vector_dims(embedding) = dimensions)),
+    CONSTRAINT chunk_embeddings_dimensions_check CHECK (((dimensions >= 1) AND (dimensions <= 16000))),
+    CONSTRAINT chunk_embeddings_document_revision_check CHECK ((document_revision >= 1))
 );
 
 
@@ -2530,6 +2883,118 @@ CREATE TABLE public.workspaces (
 
 
 --
+-- Name: chunk_embeddings_p0; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p0 FOR VALUES WITH (modulus 16, remainder 0);
+
+
+--
+-- Name: chunk_embeddings_p1; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p1 FOR VALUES WITH (modulus 16, remainder 1);
+
+
+--
+-- Name: chunk_embeddings_p10; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p10 FOR VALUES WITH (modulus 16, remainder 10);
+
+
+--
+-- Name: chunk_embeddings_p11; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p11 FOR VALUES WITH (modulus 16, remainder 11);
+
+
+--
+-- Name: chunk_embeddings_p12; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p12 FOR VALUES WITH (modulus 16, remainder 12);
+
+
+--
+-- Name: chunk_embeddings_p13; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p13 FOR VALUES WITH (modulus 16, remainder 13);
+
+
+--
+-- Name: chunk_embeddings_p14; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p14 FOR VALUES WITH (modulus 16, remainder 14);
+
+
+--
+-- Name: chunk_embeddings_p15; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p15 FOR VALUES WITH (modulus 16, remainder 15);
+
+
+--
+-- Name: chunk_embeddings_p2; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p2 FOR VALUES WITH (modulus 16, remainder 2);
+
+
+--
+-- Name: chunk_embeddings_p3; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p3 FOR VALUES WITH (modulus 16, remainder 3);
+
+
+--
+-- Name: chunk_embeddings_p4; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p4 FOR VALUES WITH (modulus 16, remainder 4);
+
+
+--
+-- Name: chunk_embeddings_p5; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p5 FOR VALUES WITH (modulus 16, remainder 5);
+
+
+--
+-- Name: chunk_embeddings_p6; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p6 FOR VALUES WITH (modulus 16, remainder 6);
+
+
+--
+-- Name: chunk_embeddings_p7; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p7 FOR VALUES WITH (modulus 16, remainder 7);
+
+
+--
+-- Name: chunk_embeddings_p8; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p8 FOR VALUES WITH (modulus 16, remainder 8);
+
+
+--
+-- Name: chunk_embeddings_p9; Type: TABLE ATTACH; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings ATTACH PARTITION public.chunk_embeddings_p9 FOR VALUES WITH (modulus 16, remainder 9);
+
+
+--
 -- Name: chunks_p0; Type: TABLE ATTACH; Schema: public; Owner: -
 --
 
@@ -2838,6 +3303,134 @@ ALTER TABLE ONLY public.bootstrap_greeting_cache
 
 ALTER TABLE ONLY public.chunk_embeddings
     ADD CONSTRAINT chunk_embeddings_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p0 chunk_embeddings_p0_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p0
+    ADD CONSTRAINT chunk_embeddings_p0_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p10 chunk_embeddings_p10_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p10
+    ADD CONSTRAINT chunk_embeddings_p10_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p11 chunk_embeddings_p11_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p11
+    ADD CONSTRAINT chunk_embeddings_p11_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p12 chunk_embeddings_p12_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p12
+    ADD CONSTRAINT chunk_embeddings_p12_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p13 chunk_embeddings_p13_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p13
+    ADD CONSTRAINT chunk_embeddings_p13_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p14 chunk_embeddings_p14_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p14
+    ADD CONSTRAINT chunk_embeddings_p14_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p15 chunk_embeddings_p15_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p15
+    ADD CONSTRAINT chunk_embeddings_p15_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p1 chunk_embeddings_p1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p1
+    ADD CONSTRAINT chunk_embeddings_p1_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p2 chunk_embeddings_p2_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p2
+    ADD CONSTRAINT chunk_embeddings_p2_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p3 chunk_embeddings_p3_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p3
+    ADD CONSTRAINT chunk_embeddings_p3_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p4 chunk_embeddings_p4_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p4
+    ADD CONSTRAINT chunk_embeddings_p4_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p5 chunk_embeddings_p5_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p5
+    ADD CONSTRAINT chunk_embeddings_p5_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p6 chunk_embeddings_p6_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p6
+    ADD CONSTRAINT chunk_embeddings_p6_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p7 chunk_embeddings_p7_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p7
+    ADD CONSTRAINT chunk_embeddings_p7_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p8 chunk_embeddings_p8_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p8
+    ADD CONSTRAINT chunk_embeddings_p8_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p9 chunk_embeddings_p9_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chunk_embeddings_p9
+    ADD CONSTRAINT chunk_embeddings_p9_pkey PRIMARY KEY (workspace_id, chunk_id, embedding_space_id);
 
 
 --
@@ -3938,6 +4531,244 @@ CREATE INDEX audit_events_workspace_type_created_id_idx ON public.audit_events U
 
 
 --
+-- Name: idx_chunk_embeddings_chunk; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_chunk_embeddings_chunk ON ONLY public.chunk_embeddings USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p0_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p0_workspace_id_chunk_id_idx ON public.chunk_embeddings_p0 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: idx_chunk_embeddings_space; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_chunk_embeddings_space ON ONLY public.chunk_embeddings USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p0_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p0_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p0 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p10_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p10_workspace_id_chunk_id_idx ON public.chunk_embeddings_p10 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p10_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p10_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p10 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p11_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p11_workspace_id_chunk_id_idx ON public.chunk_embeddings_p11 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p11_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p11_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p11 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p12_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p12_workspace_id_chunk_id_idx ON public.chunk_embeddings_p12 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p12_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p12_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p12 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p13_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p13_workspace_id_chunk_id_idx ON public.chunk_embeddings_p13 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p13_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p13_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p13 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p14_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p14_workspace_id_chunk_id_idx ON public.chunk_embeddings_p14 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p14_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p14_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p14 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p15_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p15_workspace_id_chunk_id_idx ON public.chunk_embeddings_p15 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p15_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p15_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p15 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p1_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p1_workspace_id_chunk_id_idx ON public.chunk_embeddings_p1 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p1_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p1_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p1 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p2_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p2_workspace_id_chunk_id_idx ON public.chunk_embeddings_p2 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p2_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p2_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p2 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p3_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p3_workspace_id_chunk_id_idx ON public.chunk_embeddings_p3 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p3_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p3_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p3 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p4_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p4_workspace_id_chunk_id_idx ON public.chunk_embeddings_p4 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p4_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p4_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p4 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p5_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p5_workspace_id_chunk_id_idx ON public.chunk_embeddings_p5 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p5_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p5_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p5 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p6_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p6_workspace_id_chunk_id_idx ON public.chunk_embeddings_p6 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p6_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p6_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p6 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p7_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p7_workspace_id_chunk_id_idx ON public.chunk_embeddings_p7 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p7_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p7_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p7 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p8_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p8_workspace_id_chunk_id_idx ON public.chunk_embeddings_p8 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p8_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p8_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p8 USING btree (workspace_id, embedding_space_id);
+
+
+--
+-- Name: chunk_embeddings_p9_workspace_id_chunk_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p9_workspace_id_chunk_id_idx ON public.chunk_embeddings_p9 USING btree (workspace_id, chunk_id);
+
+
+--
+-- Name: chunk_embeddings_p9_workspace_id_embedding_space_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chunk_embeddings_p9_workspace_id_embedding_space_id_idx ON public.chunk_embeddings_p9 USING btree (workspace_id, embedding_space_id);
+
+
+--
 -- Name: chunks_embedding_hnsw_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4764,20 +5595,6 @@ CREATE INDEX idx_assistant_answer_triage_workspace_state ON public.assistant_ans
 
 
 --
--- Name: idx_chunk_embeddings_chunk; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_chunk_embeddings_chunk ON public.chunk_embeddings USING btree (workspace_id, chunk_id);
-
-
---
--- Name: idx_chunk_embeddings_space; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_chunk_embeddings_space ON public.chunk_embeddings USING btree (workspace_id, embedding_space_id);
-
-
---
 -- Name: idx_connector_configs_connector_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5545,6 +6362,342 @@ CREATE INDEX skill_intake_states_workspace_conversation_idx ON public.skill_inta
 --
 
 CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
+
+
+--
+-- Name: chunk_embeddings_p0_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p0_pkey;
+
+
+--
+-- Name: chunk_embeddings_p0_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p0_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p0_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p0_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p10_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p10_pkey;
+
+
+--
+-- Name: chunk_embeddings_p10_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p10_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p10_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p10_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p11_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p11_pkey;
+
+
+--
+-- Name: chunk_embeddings_p11_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p11_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p11_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p11_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p12_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p12_pkey;
+
+
+--
+-- Name: chunk_embeddings_p12_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p12_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p12_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p12_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p13_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p13_pkey;
+
+
+--
+-- Name: chunk_embeddings_p13_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p13_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p13_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p13_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p14_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p14_pkey;
+
+
+--
+-- Name: chunk_embeddings_p14_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p14_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p14_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p14_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p15_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p15_pkey;
+
+
+--
+-- Name: chunk_embeddings_p15_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p15_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p15_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p15_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p1_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p1_pkey;
+
+
+--
+-- Name: chunk_embeddings_p1_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p1_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p1_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p1_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p2_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p2_pkey;
+
+
+--
+-- Name: chunk_embeddings_p2_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p2_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p2_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p2_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p3_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p3_pkey;
+
+
+--
+-- Name: chunk_embeddings_p3_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p3_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p3_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p3_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p4_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p4_pkey;
+
+
+--
+-- Name: chunk_embeddings_p4_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p4_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p4_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p4_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p5_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p5_pkey;
+
+
+--
+-- Name: chunk_embeddings_p5_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p5_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p5_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p5_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p6_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p6_pkey;
+
+
+--
+-- Name: chunk_embeddings_p6_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p6_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p6_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p6_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p7_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p7_pkey;
+
+
+--
+-- Name: chunk_embeddings_p7_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p7_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p7_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p7_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p8_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p8_pkey;
+
+
+--
+-- Name: chunk_embeddings_p8_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p8_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p8_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p8_workspace_id_embedding_space_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p9_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.chunk_embeddings_pkey ATTACH PARTITION public.chunk_embeddings_p9_pkey;
+
+
+--
+-- Name: chunk_embeddings_p9_workspace_id_chunk_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_chunk ATTACH PARTITION public.chunk_embeddings_p9_workspace_id_chunk_id_idx;
+
+
+--
+-- Name: chunk_embeddings_p9_workspace_id_embedding_space_id_idx; Type: INDEX ATTACH; Schema: public; Owner: -
+--
+
+ALTER INDEX public.idx_chunk_embeddings_space ATTACH PARTITION public.chunk_embeddings_p9_workspace_id_embedding_space_id_idx;
 
 
 --
@@ -6631,7 +7784,7 @@ ALTER TABLE ONLY public.bootstrap_greeting_cache
 -- Name: chunk_embeddings chunk_embeddings_embedding_space_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.chunk_embeddings
+ALTER TABLE public.chunk_embeddings
     ADD CONSTRAINT chunk_embeddings_embedding_space_id_fkey FOREIGN KEY (embedding_space_id) REFERENCES public.embedding_spaces(id) ON DELETE RESTRICT;
 
 
@@ -6639,7 +7792,7 @@ ALTER TABLE ONLY public.chunk_embeddings
 -- Name: chunk_embeddings chunk_embeddings_workspace_id_chunk_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.chunk_embeddings
+ALTER TABLE public.chunk_embeddings
     ADD CONSTRAINT chunk_embeddings_workspace_id_chunk_id_fkey FOREIGN KEY (workspace_id, chunk_id) REFERENCES public.chunks(workspace_id, id) ON DELETE CASCADE;
 
 

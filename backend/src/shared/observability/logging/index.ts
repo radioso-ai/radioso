@@ -153,8 +153,8 @@ export const initializeOpenTelemetryLogging = (config: OpenTelemetryLoggingConfi
       config.logger,
     );
     const processor = config.logExporter
-      ? new SimpleLogRecordProcessor(exporter)
-      : new BatchLogRecordProcessor(exporter);
+      ? new SimpleLogRecordProcessor({ exporter })
+      : new BatchLogRecordProcessor({ exporter });
     const minimumLevel = config.minimumLevel ?? "info";
     const provider = new LoggerProvider({
       resource: resourceFromAttributes(safeTraceAttributes({

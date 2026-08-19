@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { StdioServerTransport } from "@modelcontextprotocol/server";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 
 import { loadStdioConfig, STDIO_COMPAT_SIGNING_SECRET } from "../config.js";
 import { createRadiosoMcpServer } from "../server.js";

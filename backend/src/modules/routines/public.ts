@@ -76,13 +76,10 @@ export {
   type RoutineDefinitionServiceOptions,
 } from "./service.js";
 export {
-  canonicalizePortableRoutineDocument,
-  parsePortableRoutineDocument,
+  PORTABLE_GRAMMAR_VERSION,
   projectRoutineToPortableDocument,
   routineToPortableDocument,
-  type PortableRoutineDocumentCanonicalizeResult,
   type PortableRoutineDocumentEnvelope,
-  type PortableRoutineDocumentParseResult,
   type PortableRoutineDocumentProjectionResult,
 } from "./portableDocument.js";
 export {

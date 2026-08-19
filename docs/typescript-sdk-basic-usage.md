@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-08-04
+last_updated: 2026-08-18
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -257,33 +257,36 @@ provision an agent, then chat with it, without a session cookie.
 
 ### Routines
 
-Routines are the multi-step flows an agent follows. Author them as portable
-markdown, or as relational definitions.
+Routines are the multi-step flows an agent follows. Define one as a graph of
+steps, transitions, and terminals, then publish it.
 
-Create a routine from portable markdown and publish it:
+Create a routine and publish it:
 
 ```ts
-const draft = await client.agents.routines.createPortable(agentId, {
-  grammarVersion: 1,
-  content: [
-    "---",
-    "name: Book a demo",
-    "trigger: the visitor asks for a demo",
-    "---",
-    "Ask for their @work_email.",
-    "Then call #book_demo and confirm the time.",
-  ].join("\n"),
+const draft = await client.agents.routines.create(agentId, {
+  name: "Book a demo",
+  activation: { triggerDescription: "the visitor asks for a demo", priority: 50 },
+  slots: [
+    { stableSlotId: "work_email", key: "work_email", type: "email", required: true, ordinal: 0 },
+  ],
+  steps: [
+    { stableStepId: "collect", kind: "collect", ordinal: 0, instruction: "Ask for their work email." },
+    { stableStepId: "book", kind: "tool", toolRef: "book_demo", ordinal: 1, instruction: "Book the demo and confirm the time." },
+  ],
+  transitions: [
+    { fromStep: "collect", toRef: "book", guardKind: "default", ordinal: 0 },
+    { fromStep: "book", toRef: "done", guardKind: "default", ordinal: 1 },
+  ],
+  terminals: [
+    { stableStepId: "done", kind: "complete", instruction: "Confirm the booking.", ordinal: 0 },
+  ],
 });
 
-await client.agents.routines.publish(agentId, draft.routineId);
+await client.agents.routines.publish(agentId, draft.routine.id);
 ```
 
-Read the portable document back, or normalize one without saving:
-
-```ts
-const current = await client.agents.routines.getPortable(agentId, routineId);
-const normalized = await client.routines.canonicalizePortable(current);
-```
+Validation runs on save and again on publish, so a routine that references an
+unknown skill or leaves a step unreachable is rejected before it can run.
 
 List, validate, and manage lifecycle:
 

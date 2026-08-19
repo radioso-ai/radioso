@@ -44,29 +44,16 @@ export type ParsedProseDoc = {
   hadFrontmatter: boolean
 }
 
-export type ParseSuccess = {
-  ok: true
-  grammarVersion: typeof GRAMMAR_VERSION
-  doc: ParsedProseDoc
-}
-
-export type ParseFailure = {
-  ok: false
-  diagnostics: ParseDiagnostic[]
-}
-
-export type ParseResult = ParseSuccess | ParseFailure
-
-export type CanonicalizeResult =
-  | { ok: true; grammarVersion: typeof GRAMMAR_VERSION; content: string }
-  | ParseFailure
-
-export const GRAMMAR_VERSION = 1
 const FRONTMATTER_KEYS = new Set(['grammar', 'name', 'trigger', 'vars', 'reentry', 'priority', 'export', 'end', 'handoff'])
 const EXPORT_TRIGGER_KINDS = new Set(['complete', 'handoff'])
 
 // The chip fields the token serializer reads. Both a ProseSegment chip and a live
 // ChipNode project onto this, so copy (node) and serialize (segment) share one encoder.
+// Frontmatter still records the grammar the serializer wrote, so a stored document
+// identifies its own shape. It is no longer a public contract: nothing outside this
+// module reads or negotiates it.
+const GRAMMAR_VERSION = 1
+
 export type ChipTokenInput = {
   chipKind: ProseChipKind
   refId: string
@@ -1135,41 +1122,4 @@ const readFrontmatterDiagnostics = (text: string): { version: number; bodyStart:
   const bodyStart = cursor < lines.length ? cursor + 1 : cursor
   diagnostics.push(...readBodyBracketDiagnostics(lines, bodyStart))
   return { version, bodyStart, diagnostics }
-}
-
-export const parse = (
-  content: string,
-  options: { resolveSkill?: (name: string) => boolean } = {},
-): ParseResult => {
-  const version = readFrontmatterDiagnostics(content)
-  if (version.diagnostics.length > 0) return { ok: false, diagnostics: version.diagnostics }
-  return {
-    ok: true,
-    grammarVersion: GRAMMAR_VERSION,
-    doc: parseProseDoc(content, options.resolveSkill ?? (() => false)),
-  }
-}
-
-export const serialize = serializeProseDoc
-
-export const canonicalize = (
-  content: string,
-  options: { resolveSkill?: (name: string) => boolean } = {},
-): CanonicalizeResult => {
-  const parsed = parse(content, options)
-  if (!parsed.ok) return parsed
-  return {
-    ok: true,
-    grammarVersion: GRAMMAR_VERSION,
-    content: serializeProseDoc({
-      name: parsed.doc.name ?? '',
-      trigger: parsed.doc.trigger ?? '',
-      reentryMode: parsed.doc.reentryMode,
-      priority: parsed.doc.priority,
-      completionExport: parsed.doc.completionExport,
-      terminals: parsed.doc.terminals,
-      variables: parsed.doc.variables,
-      paragraphs: parsed.doc.paragraphs,
-    }),
-  }
 }

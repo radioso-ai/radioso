@@ -11,8 +11,9 @@ describe("operator copilot catalog coverage", () => {
   //   131 -> 133  ingestion settings, which Wave 3 will make proposable
   //   128 -> 129  listAgentMcpConverseGrants, documented as carrying no token material, whose
   //               siblings listMcpConnections/getMcpConnection are already agent_skills reads
-  // (133 fell to 128 in between, when workspace_settings covered six settings reads.)
-  const maxDeferredCatalogExclusions = 129;
+  // (133 fell to 128 in between, when workspace_settings covered six settings reads; 129 fell to
+  // 126 when the routine portable-document routes were removed upstream.)
+  const maxDeferredCatalogExclusions = 126;
 
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks

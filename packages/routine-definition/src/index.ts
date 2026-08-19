@@ -72,6 +72,12 @@ const slotKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/u;
 const trimmedText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength);
 
+const editingText = (maxLength: number) =>
+  z.string().trim().max(maxLength);
+
+const editingOptionalText = (maxLength: number) =>
+  z.string().trim().max(maxLength).optional().nullable().transform((value) => value ?? null);
+
 const optionalTrimmedText = (maxLength: number) =>
   z.string().trim().min(1).max(maxLength).optional().nullable().transform((value) => value ?? null);
 
@@ -92,11 +98,28 @@ const optionalCaptureKeySchema = z.string()
   .optional()
   .nullable();
 
-export const routineApprovalOptionSchema = z.object({
+const routineApprovalOptionSharedFields = {
   id: stableIdSchema,
-  label: trimmedText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
-  description: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.approvalOptionDescription),
+};
+
+const routineApprovalOptionSchemaFor = <TDescription extends z.ZodTypeAny, TLabel extends z.ZodTypeAny>(
+  description: TDescription,
+  label: TLabel,
+) => z.object({
+  ...routineApprovalOptionSharedFields,
+  label,
+  description,
 }).strict();
+
+export const routineApprovalOptionSchema = routineApprovalOptionSchemaFor(
+  optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.approvalOptionDescription),
+  trimmedText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
+);
+
+const routineApprovalOptionEditingSchema = routineApprovalOptionSchemaFor(
+  editingOptionalText(ROUTINE_DEFINITION_LIMITS.approvalOptionDescription),
+  editingText(ROUTINE_DEFINITION_LIMITS.approvalOptionLabel),
+);
 const routineVariableNameSchema = trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern);
 
 export const routineInputBindingSchema = z.discriminatedUnion("kind", [
@@ -122,12 +145,16 @@ export const routineStepMetadataSchema = z.object({
   mode: routineStepModeSchema.optional(),
 }).passthrough();
 
-export const routineSlotSchema = z.object({
+const routineSlotSharedFields = {
   stableSlotId: stableIdSchema,
   key: trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern),
   type: z.enum(routineSlotTypes),
   required: z.boolean(),
-  description: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.slotDescription),
+};
+
+const routineSlotSchemaFor = <TDescription extends z.ZodTypeAny>(description: TDescription) => z.object({
+  ...routineSlotSharedFields,
+  description,
   ordinal: z.number().int().min(0),
   // Whether the captured value may be corrected after the routine completes (issue #746).
   // Optional (like `description`): absent means immutable. "Absent = false" is applied at
@@ -136,17 +163,37 @@ export const routineSlotSchema = z.object({
   mutable: z.boolean().optional(),
 }).strict();
 
-export const routineStepSchema = z.object({
+export const routineSlotSchema = routineSlotSchemaFor(
+  optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.slotDescription),
+);
+
+const routineSlotEditingSchema = routineSlotSchemaFor(
+  editingOptionalText(ROUTINE_DEFINITION_LIMITS.slotDescription),
+);
+
+const routineStepSharedFields = {
   stableStepId: stableIdSchema,
   kind: z.enum(routineStepKinds),
-  instruction: trimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
   toolRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.toolRef),
   actionType: optionalAuthoringParamText(ROUTINE_DEFINITION_LIMITS.actionType),
   captureKey: optionalCaptureKeySchema,
-  options: z.array(routineApprovalOptionSchema).max(ROUTINE_DEFINITION_LIMITS.approvalOptionCount).optional(),
   ordinal: z.number().int().min(0),
   metadata: routineStepMetadataSchema.optional().default({}),
-}).strict().superRefine((step, ctx) => {
+};
+
+const routineStepSchemaFor = <
+  TInstruction extends z.ZodTypeAny,
+  TOptions extends z.ZodTypeAny,
+>(instruction: TInstruction, options: TOptions) => z.object({
+  ...routineStepSharedFields,
+  instruction,
+  options,
+}).strict();
+
+export const routineStepSchema = routineStepSchemaFor(
+  trimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
+  z.array(routineApprovalOptionSchema).max(ROUTINE_DEFINITION_LIMITS.approvalOptionCount).optional(),
+).superRefine((step, ctx) => {
   const hasCaptureKey = step.captureKey !== undefined && step.captureKey !== null;
   const options = step.options;
   const hasOptions = options !== undefined;
@@ -210,18 +257,30 @@ export const routineStepSchema = z.object({
   }
 });
 
+const routineStepEditingSchema = routineStepSchemaFor(
+  editingText(ROUTINE_DEFINITION_LIMITS.instruction),
+  z.array(routineApprovalOptionEditingSchema).max(ROUTINE_DEFINITION_LIMITS.approvalOptionCount).optional(),
+);
+
 const fieldGuardValueSchema = z.union([
   z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.fieldValue),
   z.number(),
   z.boolean(),
 ]);
 
-export const routineTransitionSchema = z.object({
+const routineTransitionSharedFields = {
   fromStep: stableIdSchema,
   toRef: stableIdSchema,
   guardKind: z.enum(routineGuardKinds),
-  guardText: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.guardText),
-  outcomeStatus: optionalStructuredParamText(ROUTINE_DEFINITION_LIMITS.stableId),
+};
+
+const routineTransitionSchemaFor = <
+  TGuardText extends z.ZodTypeAny,
+  TOutcomeStatus extends z.ZodTypeAny,
+>(guardText: TGuardText, outcomeStatus: TOutcomeStatus) => z.object({
+  ...routineTransitionSharedFields,
+  guardText,
+  outcomeStatus,
   counterLimit: z.number().int().positive().optional().nullable(),
   // Field guard params (guardKind === "field"): branch deterministically on a resolved
   // value — a skill output field or a captured slot — via `fieldOp`.
@@ -234,18 +293,44 @@ export const routineTransitionSchema = z.object({
   ordinal: z.number().int().min(0),
 }).strict();
 
-export const routineTerminalSchema = z.object({
+export const routineTransitionSchema = routineTransitionSchemaFor(
+  optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.guardText),
+  optionalStructuredParamText(ROUTINE_DEFINITION_LIMITS.stableId),
+);
+
+const routineTransitionEditingSchema = routineTransitionSchemaFor(
+  editingOptionalText(ROUTINE_DEFINITION_LIMITS.guardText),
+  editingOptionalText(ROUTINE_DEFINITION_LIMITS.stableId),
+);
+
+const routineTerminalSharedFields = {
   stableStepId: stableIdSchema,
   kind: z.enum(routineTerminalKinds),
-  instruction: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
+};
+
+const routineTerminalSchemaFor = <TInstruction extends z.ZodTypeAny>(instruction: TInstruction) => z.object({
+  ...routineTerminalSharedFields,
+  instruction,
   ordinal: z.number().int().min(0),
 }).strict();
 
-export const routineCompletionExportSchema = z.object({
+export const routineTerminalSchema = routineTerminalSchemaFor(
+  optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.instruction),
+);
+
+const routineTerminalEditingSchema = routineTerminalSchemaFor(
+  editingOptionalText(ROUTINE_DEFINITION_LIMITS.instruction),
+);
+
+const routineCompletionExportFields = {
   enabled: z.boolean().default(false),
   triggerKinds: z.array(z.enum(routineCompletionExportTriggerKinds)).default([]),
   destinationRef: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.destinationRef).default(""),
-}).strict().superRefine((value, ctx) => {
+};
+
+const createRoutineCompletionExportSchema = () => z.object(routineCompletionExportFields).strict();
+
+export const routineCompletionExportSchema = createRoutineCompletionExportSchema().superRefine((value, ctx) => {
   if (!value.enabled) {
     return;
   }
@@ -265,20 +350,59 @@ export const routineCompletionExportSchema = z.object({
   }
 });
 
-export const routineDefinitionDraftInputSchema = z.object({
-  name: trimmedText(ROUTINE_DEFINITION_LIMITS.name),
+const routineDefinitionDraftSchema = <
+  TName extends z.ZodTypeAny,
+  TTriggerDescription extends z.ZodTypeAny,
+  TSlots extends z.ZodTypeAny,
+  TSteps extends z.ZodTypeAny,
+  TTransitions extends z.ZodTypeAny,
+  TTerminals extends z.ZodTypeAny,
+  TCompletionExport extends z.ZodTypeAny,
+>(
+  name: TName,
+  triggerDescription: TTriggerDescription,
+  slots: TSlots,
+  steps: TSteps,
+  transitions: TTransitions,
+  terminals: TTerminals,
+  completionExport: TCompletionExport,
+) => z.object({
+  name,
   activation: z.object({
-    triggerDescription: trimmedText(ROUTINE_DEFINITION_LIMITS.triggerDescription),
+    triggerDescription,
     gateRef: optionalTrimmedText(ROUTINE_DEFINITION_LIMITS.gateRef),
     priority: z.number().int(),
     reentryMode: z.enum(routineReentryModes).default("once_per_conversation"),
   }).strict(),
-  slots: z.array(routineSlotSchema).default([]),
-  steps: z.array(routineStepSchema).min(1),
-  transitions: z.array(routineTransitionSchema).default([]),
-  terminals: z.array(routineTerminalSchema).min(1),
-  completionExport: routineCompletionExportSchema.optional(),
+  slots,
+  steps,
+  transitions,
+  terminals,
+  completionExport,
 }).strict();
+
+// Fields added to the persistence draft schema must be classified as strict or
+// lenient here so editing surfaces can represent every valid mid-edit state.
+export const routineDefinitionDraftInputSchema = routineDefinitionDraftSchema(
+  trimmedText(ROUTINE_DEFINITION_LIMITS.name),
+  trimmedText(ROUTINE_DEFINITION_LIMITS.triggerDescription),
+  z.array(routineSlotSchema).default([]),
+  z.array(routineStepSchema).min(1),
+  z.array(routineTransitionSchema).default([]),
+  z.array(routineTerminalSchema).min(1),
+  routineCompletionExportSchema.optional(),
+);
+
+/** The editing superset of a draft — what an authoring surface may hold mid-edit. */
+export const routineDefinitionDraftEditingInputSchema = routineDefinitionDraftSchema(
+  editingText(ROUTINE_DEFINITION_LIMITS.name),
+  editingText(ROUTINE_DEFINITION_LIMITS.triggerDescription),
+  z.array(routineSlotEditingSchema).default([]),
+  z.array(routineStepEditingSchema).default([]),
+  z.array(routineTransitionEditingSchema).default([]),
+  z.array(routineTerminalEditingSchema).default([]),
+  createRoutineCompletionExportSchema().optional(),
+);
 
 export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend({
   id: z.string().min(1),
@@ -319,4 +443,6 @@ export type RoutineDefinitionDraftInput = z.infer<typeof routineDefinitionDraftI
 // (e.g. activation.reentryMode is optional here, required post-parse). Authoring
 // surfaces that construct drafts by hand must target this, not the parsed type.
 export type RoutineDefinitionDraftAuthoringInput = z.input<typeof routineDefinitionDraftInputSchema>;
+export type RoutineDefinitionDraftEditingInput = z.infer<typeof routineDefinitionDraftEditingInputSchema>;
+export type RoutineDefinitionDraftEditingAuthoringInput = z.input<typeof routineDefinitionDraftEditingInputSchema>;
 export type RoutineDefinition = z.infer<typeof routineDefinitionSchema>;

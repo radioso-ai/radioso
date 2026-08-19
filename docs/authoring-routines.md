@@ -1,505 +1,208 @@
 ---
 title: "Authoring Routines"
-description: "How to create and edit routines in the dashboard using the prose and form editors, bind skill inputs/outputs, copy a routine to text, and manage lifecycle."
-last_updated: 2026-07-02
+description: "Create and edit dashboard routines in Document and Form views, connect skills, test drafts, and manage their lifecycle."
+last_updated: 2026-08-18
 ---
 
 # Authoring Routines
 
-A routine is a multi-step flow your agent runs across turns. It can collect
-values, call a skill, branch on what happened, and finish or hand off to a
-person.
+A routine carries an agent through a multi-step task across turns. It can collect
+information, call skills, take a branch, finish with a message, or hand the
+conversation to a person.
 
-You manage routines in the agent's **Routines** settings. The settings section
-shows one row per routine lineage, not one row per version. Choose **New
-routine** or select an existing routine to open the editor screen.
+Open an agent's **Routines** settings to manage its routines. The list has one
+row for each routine lineage. Choose **New routine** for a draft, or select a
+routine to open its editor.
 
-The editor has two views of the same routine draft:
+The editor presents one draft in two views:
 
-- **Prose** - the primary view. You write the routine in plain language and
-  insert inline chips for the parts that need structure.
-- **Form** - a strict, lower-level view for routines the prose editor cannot
-  show. Switching views re-projects the same draft; it does not create a copy.
+- **Document** is the primary authoring view. It reads as the flow the agent
+  follows, with controls alongside the information that makes each step work.
+- **Form** is the structural view. It exposes routine fields directly for
+  detailed inspection and shapes that benefit from explicit fields.
 
-The graph the engine runs is compiled from that draft. You do not draw or edit
-the graph directly.
+Switching views re-projects the same draft. The engine compiles the draft into
+the graph it runs; authors work with the routine rather than drawing that graph.
 
 For the runtime model behind routines, see
 [Conversational routines](./architecture/conversational-routines.md).
 
 ## Start a routine
 
-Open an agent, go to **Routines**, and choose **New routine**. Radioso opens a
-separate editor screen for the draft. To edit an existing routine, select it
-from the same list. A routine that the prose editor cannot represent opens in
-the **Form** view instead.
+Open **Routines** and choose **New routine**. At the top of the editor, set:
 
-At the top of the editor, set:
+- **Name** — the name shown in settings.
+- **Priority** — the tie-breaker when several routines match a turn.
+- **Reentry** — how the routine behaves after it finishes in a conversation.
+- **Activation trigger** — a plain-language account of when the routine starts.
 
-- **Name** - the routine name shown in settings.
-- **Priority** - the tie-breaker when more than one routine could start.
-- **Reentry** - what happens after the routine finishes in a conversation.
-- **Activation trigger** - a plain-language description of when the routine
-  should start.
-
-The trigger is judged by meaning, not by a keyword list. Write it the way an
-operator would describe the task.
+Write the trigger as an operator would describe the task. Radioso judges its
+meaning, so “customer reports coffee that arrived damaged, stale, or wrong”
+gives the agent useful context.
 
 ### Reentry
 
-A routine can finish more than once in the same conversation. The reentry
-setting decides whether a finished routine can start again. It does not change
-the trigger; it only controls what happens after a run completes.
-
-There are three options:
-
-- **Once per conversation** - the default. After the routine completes, it does
-  not start again in that conversation. Use this for tasks that should happen a
-  single time, such as capturing a lead.
-- **Every time it matches** - the routine can start again after it completes.
-  Use this for repeatable tasks, such as looking up an order.
-- **Let the assistant decide** - after the routine completes, the assistant reads
-  the next message and chooses what to do: resume the same run keeping what it
-  already collected, start a fresh run, or leave it finished. Use this for tasks
-  that a visitor may continue or repeat in different ways.
-
-The default is the cautious one: a routine keeps running once per conversation
-until you change this setting.
-
-## Write the routine in prose
-
-In the **Prose** view, write the routine the way you would explain it to a
-teammate. Each line is one step. The default flow runs the steps in order and
-finishes at the end.
-
-To add structure, type `@` (a variable) or `#` (a skill), or use the toolbar to
-insert a chip. A chip is an inline reference, not raw syntax. Each kind has its
-own colour:
-
-- **Variable** (`@name`) - a value the routine collects, such as `@email` or
-  `@order_id`. Type `@` to insert one. It compiles to a typed slot. The variable
-  name is the slot key, so `@email` in a step is stored as a structured
-  reference, not literal text. When a step asks for a variable, the routine waits
-  on that step until the user provides it, then stores the answer under that name
-  before moving on. You do not need a branch to make a collection step wait.
-- **Skill** (`#name`) - a skill the routine calls. Type `#` and the menu lists the
-  skills the agent actually has, so you pick one instead of guessing its name.
-  (`@` is for values, `#` is for capabilities.) The skill
-  is still defined for the agent elsewhere; here you choose it and decide how its
-  inputs are filled. A skill chip whose name the agent does not have is shown as
-  **unknown skill**, so a typo or a forward reference is easy to spot. A step that
-  contains a skill chip becomes a tool step the runtime dispatches through the
-  shared skill port. Click the chip to see its inputs and outcomes and to bind
-  them (see [Bind a skill's inputs and outputs](#bind-a-skills-inputs-and-outputs)).
-- **Handoff** - a branch target that ends the routine by escalating to a person.
-- **End** - a branch target that completes the routine.
-- **Approval** - a gate that pauses for a human to choose one of several options,
-  then continues down the matching branch. Insert it from **More → Approval** in
-  the toolbar (see [Approval gates](#approval-gates)).
-- **Condition** - a decided-in-code comparison on a variable. Build it from the
-  **Condition** toolbar button (see below).
-- **Outcome** - a branch on the result of the skill step before it. Insert it from
-  **More → Outcome** in the toolbar on a branch line after a skill step, and give the
-  result status (for example `succeeded` or `failed`); the branch fires when the
-  skill returns that status (see [Branch on a skill outcome](#branch-on-a-skill-outcome)).
-- **Action** - turns the line into an action step that emits an outbox action (an
-  email to a teammate, a webhook, a Slack post) when the routine reaches it, then
-  continues. Insert it from **More → Action** in the toolbar and name the action type
-  (for example `contact.send`). The line's prose is the step instruction.
-- **Step title** - names a step so a jump can target it. Use the **Step** toolbar
-  button to turn the current line into a titled step; its title becomes a stable
-  id, and the following lines are that step's instruction. Untitled lines are
-  still steps - only a jump target needs a title.
-- **Jump** - a branch target that sends the routine to another named step. Use the
-  **Jump** toolbar button: choose the target step; to loop back to an earlier step,
-  tick **Loop back** and set a max count. A backward jump must be bounded so the
-  loop always ends (the count compiles to a `counter` guard).
-
-Chips carry the structure; prose carries the instruction. You never type curly
-braces or arrows.
-
-### Variable types and flags
-
-A variable has a type: `text`, `number`, `boolean`, `email`, or `date`. The type
-is shown on the variable chip. Click the chip to change it, or set it inside the
-**Condition** dialog when you build a comparison. The type decides which exact
-comparisons are available.
-
-The same chip menu carries two flags:
-
-- **Optional** - by default a variable is required, and a step that asks for it
-  waits until the user provides it. Mark it optional when the routine can finish
-  without that value.
-- **Editable after completion** - see the next section.
-
-Both flags are also available in the Form view; the prose chip menu and the form
-edit the same slot.
-
-A name identifies one thing. Once a name is used by a chip, the `@` menu will not
-let a second chip of a different kind reuse it.
-
-### Editable after completion
-
-A variable can be marked **editable after completion**, either from its chip menu
-in the Prose view or from the Form view. This controls one thing: whether the
-visitor can correct that value after the routine has finished, without running the
-whole routine again.
-
-When a variable is editable and the visitor's next message changes it, the
-assistant updates the stored value in place and confirms the change. The new value
-must still match the variable's type — for example, a corrected email must be a
-valid email. A variable that is not marked editable cannot be changed this way.
+A routine can finish more than once in a conversation. Reentry decides what a
+later matching message does:
+
+- **Once per conversation** — the default. Use this for one-time tasks such as
+  capturing a lead.
+- **Every time it matches** — use this for repeatable tasks such as looking up
+  an order.
+- **Let the assistant decide** — the agent chooses whether to resume the run,
+  start a fresh one, or leave the completed run in place.
 
-The default is off. Turn it on only for values a visitor may reasonably want to
-fix, such as an email or a date.
+## Document view
 
-## Steps and branches
+**Document** lays a routine out from top to bottom: a **Starts when** line,
+**Information**, numbered steps, branch rows, and endings. A skill step includes
+a **uses → sets** line so its input bindings and assigned outputs remain visible
+in the flow.
 
-A line with no target chip is a step:
-
-- A plain line is a chat step.
-- A line that contains a skill chip is a tool step that calls that skill.
-- An approval step pauses the routine until an authorized workspace member
-  resolves it. The routine stores a pending decision, replies that it is awaiting
-  review, and does not run the gated step until the decision is approved.
-
-A line that carries a **Handoff** or **End** chip is a branch from the current
-step. The branch's guard - what decides whether it is taken - comes from the
-line:
-
-- If the line carries a **Condition** chip, the branch is **decided in code**: a
-  typed comparison evaluated before the model is consulted.
-- Otherwise the line's prose is the guard, **decided by the AI**.
-
-In practice, "if the order is older than 6 months, hand off; otherwise continue"
-is one step, one condition chip, and a handoff chip on the branch line.
-
-### Decided in code vs decided by the AI
-
-Use the **Condition** toolbar button to build a comparison:
-
-1. Pick the variable.
-2. Pick its type if it is not already set.
-3. Pick the check. The checks depend on the type - for example `is`, `is one
-   of`, and `is present` for text; `is greater than` for numbers; `is older
-   than` and `is within the last` for dates.
-4. Enter the value (and unit, for relative-date checks).
-
-A **tool** step calls a skill. In the **Form** view, the skill field offers the
-agent's skills and flags a name the agent does not have. The step branches on the
-skill's outcome. Add or edit skills from the agent's **Skills** list. Each skill
-is a named capability instance, such as `retrieve`, `email`, `slack_post`,
-`webhook_call`, `mcp_tool`, or `notify`.
-
-Every branch line shows how it is decided. A branch with a condition chip - or a
-capped loop back to an earlier step - is marked **Rule**: an exact comparison
-that behaves the same every time. A branch with only prose is marked **AI
-decides**: the model reads the description and uses judgment, which is what you
-want for fuzzy cases like "the customer seems unsure." The marker is derived from
-the chips on the line, not from the words, so it reads the same in any language.
-
-In practice: use a **Rule** for invariants - amounts, dates, whether a required
-value is present. Use **AI decides** when the fork depends on meaning rather than
-an exact value.
-
-## Bind a skill's inputs and outputs
-
-Open a skill chip, or the skill row in the **Form** view, to see what the skill
-takes and returns. The panel lists the skill's **inputs** - each with a type and
-whether it is required - and its **outcomes**, the results you can branch on.
-
-For each input you choose where its value comes from:
-
-- **A fixed value** - a literal you type, such as a channel name or a flag. It is
-  the same on every run.
-- **A variable** - a value the routine already holds: a slot it collected from the
-  user, or an output an earlier skill step produced. You pick the variable by
-  name.
-
-The binding lives on the step, inside the routine: you set it where the skill is
-used, not in the skill's own settings.
-
-You can also assign a skill's **outputs** to variables. Give an output a variable
-name, and later steps can read it - in a branch condition, or as the input to
-another skill.
-
-In practice, a refund step might bind its `order_id` input to the `@order_id`
-slot you collected, set `channel` to a fixed value, and store the returned
-`refund_id` in a variable that a later message reads back to the user.
-
-A required input must resolve to a literal, or to a variable that is always set
-before the step runs. If it cannot, validation reports it (see below).
-
-## Branch on a skill outcome
-
-A skill step returns a result status - its **outcome** - such as `succeeded` or
-`failed`. An outcome branch forks on that status: it fires when the skill the
-step ran returns the status you name.
-
-In **Prose**, put the branch on a line after a skill step, click the **Outcome**
-toolbar button, and type the status. Statuses the agent's skills declare are
-offered as suggestions, but any status is allowed. Add a target on the same line
-(End, Handoff, or a step) the way you would for any branch.
-
-The outcome branch must sit on a line after a skill step - the status comes from
-that step's result. Validation reports an outcome branch that is not on a skill
-step.
-
-In practice: issue a refund, then branch on `failed` to hand off to a person and
-let the default path continue when it succeeds.
-
-## Continue once slots are provided
-
-A **slot-filled** branch fires once the slots it names are present. It is a
-rule - decided in code, before the model is consulted - that gates the routine on
-having collected the values it needs.
-
-In **Prose**, put the branch on its own line, click **More → When filled** in the toolbar, pick the slots that must be present, and add a target on the same line
-(End, Handoff, or a step) the way you would for any branch. It shows as a
-**when … provided** chip. Routines that use one edit in **Prose** as well as in
-the **Form** view, so Prose stays a complete authoring surface for the whole
-routine. When you copy a routine as text, the branch is written as
-`[filled @slot_a, @slot_b]`.
-
-## Branch rows
-
-A branch row sends the routine from the current step to another step or end.
-
-Each row has:
-
-- **Condition** - optional prose for when this row should match.
-- **Target** - the step or end to go to.
-- **Max N** - an optional counter limit for retries or loops.
-- **Outcome status** - shown only on steps that contain a known action.
-
-Row order is precedence: the first matching branch wins. Put the default branch
-last by leaving its condition, outcome status, and counter limit empty.
-
-The Form view infers the stored guard from the row:
-
-- A row with **Max N** becomes a `counter` branch.
-- A row with **Outcome status** becomes an `outcome` branch.
-- A row with **Condition** becomes an `llm` branch.
-- A row with none of those fields becomes a `default` branch.
-
-A `default` branch has two roles. If it is the only branch, it is the normal next
-path. If it sits after conditioned branches, it is the last path when the others
-do not match.
-
-### Approval gates
-
-Use an **approval gate** before a step with side effects, such as sending a
-webhook or issuing a refund: it pauses the routine for a human to choose one of
-several options, then continues down the branch for that choice. (An approval
-gate is different from a handoff: a handoff *ends* the routine and transfers the
-conversation to a person, while an approval gate *suspends* the routine, waits
-for a decision, and resumes - the conversation stays AI-owned.)
-
-An approval gate has two to eight **choices**. A gate must offer at least two,
-because an approval is a real decision: the operator must be able to decline (or
-take a different path, such as asking the customer for more detail), not only
-rubber-stamp. New gates start seeded with **Approve** and **Decline**. Each
-choice routes to its own step or terminal, and Radioso builds the deterministic
-decision branch for it. The gate also has a **decision name** - a short id the
-chosen choice is recorded under (default `decision`); you only need to change it
-if a later step reads the result, for example branching on `refund_decision.id is
-approve`. Every choice needs a target.
-
-A choice can route anywhere a branch can. To let an operator ask for more
-information rather than approve or decline, add a choice (for example "Ask for
-receipt") that routes to a step which requests it and loops back to the gate.
-
-Author an approval gate in either editor:
-
-- **Prose** - click **More → Approval** in the toolbar. In the dialog, set each
-  choice's label and where it continues (a titled step, **End**, or **Handoff**).
-  The chip carries the whole gate, so the routing lives on the chip rather than
-  on separate branch lines.
-- **Form** - set a step's kind to **approval**. Add one row per choice, each with
-  a label and a **continue to** target. The form synthesizes the decision guards
-  from those targets.
-
-To **name** a gate, put a **Step** heading on the line above it (for example
-"Manager approval"). The heading titles the gate itself - it does not add an extra
-step - so the gate reads clearly and another branch can **Jump** to it by name.
-
-When a conversation reaches the approval gate, the routine is suspended. The
-assistant replies with the approval-step message, and Radioso creates a pending
-decision that surfaces in the **Needs attention** inbox, where it shows one
-button per choice. A dashboard operator picks one; the routine resumes down the
-branch for that choice. If the chosen step has a side effect, that side effect is still
-dispatched by the routine action outbox - the decision only records the choice
-and resumes the routine.
-
-A branch can jump to any step, not only the next one. A forward jump can skip
-steps when a condition makes them unnecessary. A backward jump, including a jump
-back to the same step, creates a loop and must use **Max N** so the runtime can
-bound how many times that branch is taken.
-
-For a retry loop, put the counter on the row that loops back. When the counter is
-exhausted, that row stops matching and the routine takes the default branch from
-the same step. In practice, "try twice, then hand off" is a counter branch back
-to the retry step plus a default branch to a handoff end.
-
-## Branch or guidance
-
-Use this rule when deciding whether to create a branch:
-
-- If you want the routine to go somewhere else, add a branch row and choose a
-  **Target**.
-- If you only want to guide the assistant inside the current step, keep it as a
-  sentence in **Instruction**.
-
-In other words: want a branch, give it a target. Want guidance, keep it in the
-step.
-
-## Ends and handoff
-
-A routine finishes in one of two ways:
-
-- An **End** chip completes the routine.
-- A **Handoff** chip ends the routine by escalating to a person.
-
-The default flow ends at a normal completion, so a simple linear routine needs
-no end chip. Use end and handoff chips on branch lines when a condition should
-finish or escalate early.
-
-The **Completion message** field below the editor sets what the agent says at the
-routine's default (fall-through) ending; leave it blank to use the default. When
-the routine can hand off, a **Handoff message** field sets what it says as it
-escalates. The Form view edits the same messages in its terminal rows.
-
-### More than one ending
-
-A branch can finish at its own **named ending** with its own completion message —
-for example an eligible refund finishes one way and an ineligible one finishes
-with a different explanation. Click an **End** chip and choose **Name & message…**
-to give that ending a name and its own copy; the chip then reads as a named
-ending. Leave the name blank to reset it to the routine's default ending.
-
-Copied as text, a named ending is written `-> end:<name> ("its message")`; the
-plain `-> end` is the default ending.
-
-Routines with **more than one handoff** are still authored in the **Form** view;
-prose supports at most one handoff.
-
-## Validate and publish
-
-Use **Validate** before publishing. Validation reports problems in author terms,
-such as:
-
-- a branch target that no longer exists
-- a step that cannot reach an end
-- a variable used in an instruction but not declared
-- a tool step that names no skill, or names a skill the agent does not have
-- a required skill input that nothing fills
-- a skill input bound to a value whose type does not fit, or to a variable the
-  routine never sets
-- a comparison on a variable that does not exist, or a type that does not fit
-  the check
-- a completion-export webhook skill that points at an unknown webhook destination
-
-Use **Save draft** to keep work in progress. Use **Publish** to create an
-immutable version that the chat runtime can run.
-
-## Test a draft before publishing
-
-You do not have to publish a routine to see how it behaves. On a saved draft,
-choose **Test draft** to slide out a live test chat in a drawer over the editor —
-so you stay on the routine while you try it. In that chat the draft is eligible to
-activate, run turn by turn, and hand back to normal answering when it ends —
-exactly as it would after publishing, but without publishing it.
-
-- The test conversation is separate from your other test chats, so a draft under
-  test never mixes into them.
-- **Test draft** runs the last **saved** draft. Save your edits first, then test.
-- Only the draft you opened is made eligible; the agent's already-published
-  routines still run alongside it, just as they would in production.
-- This is an operator-only tool on the authenticated dashboard. Draft routines are
-  never eligible in real end-user conversations — publishing remains the only way
-  to make a routine live.
-
-Use this to confirm the trigger fires when you expect, that steps collect what
-they should, that branches go where you intend, and that the routine ends or hands
-off correctly, before committing to a published version.
-
-## Copy a routine to text
-
-You can copy a routine out of the **Prose** view and paste it back later without
-losing its chips. Select the whole routine (Select All) and copy; Radioso puts
-the whole routine on the clipboard as plain text, including the name and trigger.
-Paste it into a note, a document, or a message — anywhere you keep text.
-(Copying only part of the prose copies that selection as ordinary text, the way
-any editor does.)
-
-In practice the text is portable routine markdown: the same deterministic format
-accepted by the portable routines API. It uses frontmatter for routine-level
-fields and simple markers instead of chips:
-
-- a variable or skill is `@name`
-- a step title is a line starting with `# `
-- an end is `-> end`, a handoff is `-> handoff`, and a jump is `-> step:<id>`
-- a decided-in-code check is `[if amount >= 100]`
-- a skill-outcome branch is `[outcome failed]`
-- a slot-filled branch is `[filled @email, @order_id]`
-- an action step is `[action contact.send]`
-- an approval gate is `[approval key: approve="Approve" -> end, deny="Deny" -> handoff]`,
-  and the inline decision form is `[decision key: approve="Approve", deny="Deny"]`
-- a skill binding can be `#lookup[in email=@email, locale=ctx.page_locale]`
-
-Every element a routine can use has a marker, so any routine the prose editor can
-open copies as portable text.
-
-To restore the routine, paste the text back into the prose editor. The markers
-become chips again, and the name and trigger fill in from the text. The text
-carries the body, the name, the trigger, priority, reentry, completion export,
-primary completion and handoff terminal ids and messages, and each variable's
-type and flags.
-
-The text carries names, not internal ids. Pasting into the same agent resolves
-every skill cleanly. Pasting into a different agent that does not have a referenced
-skill leaves that step's skill marked **unknown skill**, the same as typing a
-skill the agent lacks — point it at a skill the agent has, then validate.
-
-For the exact format, see [Portable Routine Markdown](./portable-routine-markdown.md).
-For repository-based workflows, see [Portable Routines API](./portable-routines-api.md).
+Edit the **Starts when** line directly. Add information, steps, branches, and
+endings where they belong in the flow. That proximity makes the decision behind
+each transition easy to review with the instructions it follows.
+
+### Capture information
+
+Write a step instruction in plain language and type `@` when the agent needs a
+value, such as `@order_number` or `@email`. The value appears in
+**Information**, where you choose its type: `text`, `number`, `boolean`,
+`email`, or `date`.
+
+When a step asks for a value, the routine waits for the visitor's reply, stores
+it under that name, then continues. A type controls the comparisons available
+on a later branch. In **Information**, you can also mark a value:
+
+- **Optional** when the flow may reach an ending while the value remains empty.
+- **Editable after completion** when a visitor may correct it after the routine
+  finishes, such as an email address or a date.
+
+An `@` reference uses the same stored value throughout the routine. A skill
+output can also supply a value that later steps and branches read.
+
+### Add steps and connect skills
+
+Use the **+ Step** menu to add a **chat**, **skill**, **approval**, or **action**
+step. Chat steps guide the conversation. Skill steps call a capability available
+to the agent, such as `retrieve`, `email`, `webhook_call`, or `mcp_tool`. Action
+steps emit an outbox action, such as `contact.send`, then continue through the
+flow.
+
+Select a skill step to configure its **uses → sets** bindings. Each required
+input receives either a fixed value or an `@` value already held by the routine.
+Assign a skill output to an `@` value when another step or branch needs it.
+For example, a refund step can use `@order_id`, set `channel` to `support`, and
+store the result as `@refund_id` for its final message.
+
+A skill name with no matching capability on the agent appears as **unknown
+skill**. Choose the intended skill, then validate the draft.
+
+### Shape branches with condition rows
+
+Add a condition row beneath a step to decide where the routine goes next. Each
+row names its target: another step, a **Finish** ending, or a **Hand off** ending.
+Rows run in order, so place the general path after the more specific paths.
+
+Choose the decision mode on the row:
+
+- **Rule** makes an exact, typed check, such as `amount is greater than 100`,
+  `email is present`, a skill outcome of `failed`, or a bounded retry count.
+- **AI decides** gives the agent a condition to judge in context, such as
+  “the customer seems unsure.”
+
+Use **Rule** for stable facts like amounts, dates, present values, skill
+outcomes, and retry limits. Use **AI decides** when the choice depends on the
+meaning of the conversation. A backward target includes **Max N** so the loop
+has a bounded number of passes.
+
+A skill step can also branch on an outcome status, such as `succeeded` or
+`failed`. The outcome row belongs under the skill that produces that status.
+For a collection checkpoint, add a slot-filled rule that waits for the selected
+`@` values before taking its target.
+
+### Add approval decisions
+
+Use an approval step before a consequential action, such as issuing a refund or
+sending a webhook. The step pauses the routine and presents a workspace member
+with a set of choices in **Needs attention**. Their selection sends the routine
+along that choice's decision edge.
+
+Add an approval step from **+ Step**, give the decision a clear name, and add two
+to eight choices. Every choice has a label and a target: another step, **Finish**,
+or **Hand off**. The initial **Approve** and **Decline** choices suit many flows;
+you can add choices such as **Ask for receipt** to collect information before the
+decision returns to the gate.
+
+The agent replies with the approval-step message while the decision awaits a
+workspace member. When someone chooses an option, the routine resumes at the
+choice target and keeps its collected information.
+
+### Finish or hand off
+
+An ending row completes the routine with **Finish** or sends it to a person with
+**Hand off**. Set the message the agent delivers for each ending. Use named
+endings when different paths require distinct completion messages, such as an
+eligible refund and an ineligible refund.
+
+The routine's **Completion message** controls its default finish. Its **Handoff
+message** controls the standard escalation reply. A named ending carries its own
+message and appears as a target in the branch rows that reach it.
+
+### Read validation notes
+
+The editor validates while you work. A note appears next to the row or field that
+needs attention, keeping the issue beside the part of the flow you edit. Common
+notes identify a missing branch target, a step that has no path to an ending, an
+unset required skill input, a value whose type conflicts with a comparison, or a
+missing webhook destination for completion export.
+
+Choose **Save draft** to keep work in progress. **Publish** creates the immutable
+version that the chat runtime runs after the draft validates cleanly.
 
 ## Form view
 
-**Form** is the strict, lower-level editor. Use it to inspect or adjust the
-underlying draft fields, and to author shapes the prose editor cannot show.
+**Form** is the strict, lower-level view of the same draft. Use it when you want
+to inspect or adjust the stored routine shape directly, including multiple
+handoff terminals and activation gates.
 
 The form exposes:
 
-- slots, including whether each slot is **Required**
-- step ids and step kind: `chat`, `tool`, `action`, or `approval`
-- for an `approval` step, its choices (each with a branch target) and decision name
-- transition guard kind: `llm`, `default`, `slot_filled`, `outcome`, or
+- slots, including **Required** and editable-after-completion settings
+- step ids and kinds: `chat`, `tool`, `action`, and `approval`
+- skill inputs, outputs, and approval choices with their decision targets
+- transition guard kinds: `llm`, `default`, `slot_filled`, `outcome`, and
   `counter`
-- terminal kind and message: `complete` or `handoff`
-- completion export through a `webhook_call` skill
+- terminal kinds and messages: `complete` and `handoff`
+- completion-export settings through a `webhook_call` skill
 
-A routine that uses a shape the **Prose** view can't express yet - more than one
-handoff, or an activation gate - opens in **Form** automatically. The **Prose**
-tab shows a short note pointing you to **Form** for that routine. (Optional and
-editable-after-completion slots, custom completion or handoff messages, custom
-terminal ids, slot-filled branches, outcome branches, named approval gates,
-more than one completion, named endings with their own messages, action steps,
-and completion export are all authored in **Prose** too.)
+Use Form when the exact stored fields are the clearest way to review a routine's
+structure. The Document and Form views edit the same slots, steps, transitions,
+and terminals.
 
-### Completion export
+## Test a draft before publishing
 
-You turn completion export on from the **Completion export** panel below the
-editor, in either the **Prose** or the **Form** view: enable it, pick a workspace
-webhook destination, and choose which terminal kinds (`complete`, `handoff`)
-trigger it. When the routine reaches a matching terminal, it sends the collected
-slot data to that destination.
+On a saved draft, choose **Test draft** to open a live test chat over the editor.
+The draft can activate and run turn by turn in that conversation, then returns to
+normal answering when it finishes.
 
-The destination itself is a workspace webhook destination, surfaced to routines
-through a `webhook_call` skill, commonly named `completion_export`. The routine
-runtime invokes that skill when a published routine reaches a matching terminal.
+- **Test draft** uses the latest saved draft; save after a change before testing.
+- The test conversation stays separate from your other test chats.
+- The selected draft joins the agent's published routines for that test chat.
 
-The stored routine shape still contains completion export metadata:
+Use the test to check the trigger, information collection, skill bindings,
+branches, endings, and handoffs before publishing.
+
+## Completion export
+
+The **Completion export** panel lets a routine send its collected values to a
+workspace webhook destination when it reaches selected terminal kinds. Enable
+the export, choose the destination, then select `complete`, `handoff`, or both.
+
+The routine uses a `webhook_call` skill, commonly named `completion_export`, to
+reach the destination. The stored configuration identifies the destination by
+its stable id, so a destination name can change while routines continue to point
+at the same destination.
 
 ```json
 {
@@ -511,76 +214,35 @@ The stored routine shape still contains completion export metadata:
 }
 ```
 
-`destinationRef` is the stable id of a workspace webhook destination. It is not
-the destination name or URL. A destination can be renamed without breaking
-routines that reference it.
-
-When completion export is enabled through the skill, validation and publish check
-that the destination exists in the same workspace. If it does not, the routine
-gets a diagnostic on `completionExport.destinationRef`. Deleting a destination is
-also blocked while a published routine references it.
-
-When a routine reaches a terminal whose kind appears in `triggerKinds`, the
-runtime emits a `webhook.send` action. The action worker resolves the
-destination, signs the JSON body with the destination secret, and posts it over
-the existing action outbox. Delivery uses the same public-host SSRF guard as
-outbound contact webhooks.
-
-Webhook export is gated by the `completion_export` skill. If that skill is
-disabled, the worker records a terminal skip instead of retrying. Missing or
-deleted destinations are also terminal skips; transient transport failures retry
-through the action outbox.
+When the terminal matches `triggerKinds`, the runtime emits a `webhook.send`
+action. The action worker resolves the destination, signs the JSON body with its
+secret, and delivers it through the action outbox.
 
 ### Handoff notifications
 
-When a routine reaches a `handoff` terminal, the chat turn still renders the
-routine-authored reply. In the same turn commit, Radioso requests human ownership
-for the conversation and enqueues a `handoff.notify` action.
-
-The action payload contains conversation, workspace, agent, and triggering user
-message ids, the handoff reason, the routine and step ids, and a dashboard path
-for opening the conversation. It does not include prompts, completions,
-retrieved content, slot values, credentials, or connection strings.
-
-`handoff.notify` uses the same contact-delivery configuration as `contact.send`.
-The action worker resolves the configured recipients or workspace owner fallback
-and sends a neutral notice that a conversation needs a human operator. It uses
-the existing routine action outbox, so lease, retry, idempotency, and failure
-semantics are unchanged.
+When a routine reaches a `handoff` terminal, the chat turn sends the routine's
+reply, requests human ownership of the conversation, and queues a
+`handoff.notify` action. The notice gives operators the conversation, workspace,
+agent, and routine context they need to open the conversation in the dashboard.
 
 ## Lifecycle and versions
 
-A routine can have four statuses:
+Routine versions have four statuses:
 
-- `draft` - editable work in progress.
-- `published` - the active version used for new conversations.
-- `superseded` - an older published version replaced by a newer one.
-- `archived` - a retired version that does not activate for new conversations.
+- `draft` — editable work in progress.
+- `published` — the active version for new conversations.
+- `superseded` — a published version replaced by a later version.
+- `archived` — a version kept outside the active set.
 
-Published, superseded, and archived versions are read-only and open in the
-**Form** view. Choose **Edit revision** on a published routine to create or open
-the lineage's draft revision. Publishing that draft makes the draft row the new
-immutable published version in place, keeping its id and assigned version. The
-previous published version is marked `superseded`.
+Published, superseded, and archived versions open in **Form** view. Choose
+**Edit revision** on a published routine to create or open its draft revision.
+Publishing that revision makes it the immutable active version while the prior
+version becomes `superseded`.
 
-The routine list shows the lineage once. It shows the current state, the active
-version number, and a **draft revision** badge when a published routine has a
-pending draft. Older versions are available in the editor's version history.
-
-Use **Archive** to retire the active published version. You do not need to publish
-a new version first. Archive is available directly on the routine's row in the
-list, and from an open revision draft. Archiving a routine that has a pending
-draft revision also discards that draft, since the routine is being retired.
-Archived routines move to the collapsed archived section and do not start in new
-conversations. Use **Restore** to make an archived routine active again when no
-other version in the lineage is published.
-
-A draft that was never published cannot be archived. Use **Delete draft** to
-remove it.
-
-Conversations already running keep the version they started on. If a routine is
-superseded or archived while a visitor is mid-flow, that visitor continues on the
-pinned version; new conversations only consider the current `published` version.
+Use **Archive** to take an active routine out of the starting set. **Restore**
+returns an archived routine to the active set when its lineage has no published
+version. A conversation already running a routine keeps its pinned version;
+later conversations use the current published version.
 
 The authoring API exposes the same lifecycle:
 

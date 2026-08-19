@@ -65,23 +65,28 @@ describe("chunk embedding vector index", () => {
     expect(buildChunkEmbeddingIndexName(3072)).toBe("chunk_embeddings_hnsw_3072_idx");
   });
 
-  it("keeps migration 145 building the same DDL as the module", async () => {
+  it.each([
+    "145_chunk_embeddings_hnsw_indexes.sql",
+    "146_chunk_embeddings_hash_partitions.sql",
+  ])("keeps %s building the same DDL as the module", async (migrationFile) => {
     const { readFile } = await import("node:fs/promises");
     const migration = await readFile(
-      new URL(
-        "../../../src/db/migrations/145_chunk_embeddings_hnsw_indexes.sql",
-        import.meta.url,
-      ),
+      new URL(`../../../src/db/migrations/${migrationFile}`, import.meta.url),
       "utf8",
     );
-    // Reduce the migration's format() templates to concrete DDL for a sample width
-    // on each side of the 2000-dimension cap, then compare against the module.
+    // Select the format() templates that build hnsw DDL by content rather than by
+    // position: migration 146 also uses EXECUTE format() to create its partitions.
     const normalize = (sql: string) => sql.toLowerCase().replace(/\s+/g, " ").trim();
+    const templates = migration
+      .split("EXECUTE format(")
+      .slice(1)
+      .map((chunk) => chunk.split(");")[0] ?? "")
+      .filter((chunk) => chunk.toLowerCase().includes("hnsw"));
+    expect(templates.length, `${migrationFile} hnsw branches`).toBe(2);
+
     for (const width of [1536, 3072]) {
       const branch = width <= 2000 ? "vector" : "halfvec";
-      const template = migration
-        .split("EXECUTE format(")[width <= 2000 ? 1 : 2]
-        ?.split(");")[0] ?? "";
+      const template = templates.find((chunk) => chunk.includes(`::${branch}(%s)`)) ?? "";
       const rendered = normalize(
         template
           .replace(/'\s*\n?\s*'/g, "")
@@ -89,7 +94,7 @@ describe("chunk embedding vector index", () => {
           .replaceAll("%s", String(width))
           .split("',")[0],
       );
-      expect(rendered, `migration branch for ${branch}`).toContain(
+      expect(rendered, `${migrationFile} branch for ${branch}`).toContain(
         normalize(`embedding::${branch}(${width})`),
       );
       expect(normalize(buildChunkEmbeddingIndexSql(width) ?? "")).toContain(rendered);

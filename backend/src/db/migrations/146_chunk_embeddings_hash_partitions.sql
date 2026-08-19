@@ -86,6 +86,36 @@ ALTER TABLE chunk_embeddings
 CREATE INDEX idx_chunk_embeddings_chunk ON chunk_embeddings USING btree (workspace_id, chunk_id);
 CREATE INDEX idx_chunk_embeddings_space ON chunk_embeddings USING btree (workspace_id, embedding_space_id);
 
--- Per-width HNSW indexes are recreated by PgVectorAdapter.prepareSpace, which runs
--- before the next write for a space. Rebuilding them here would duplicate the width
--- rule that chunkEmbeddingVectorIndex.ts owns.
+-- Rebuild the per-width HNSW indexes. Replacing the table drops the indexes that
+-- migration 145 created, and prepareSpace only restores them when a space next has
+-- work to reconcile — a workspace that is fully projected and not ingesting would
+-- otherwise sit unindexed indefinitely, which is precisely the state this change
+-- exists to fix. Declared on the parent so each partition inherits its own index.
+--
+-- The width rule is shared with migration 145 and chunkEmbeddingVectorIndex.ts;
+-- a unit test pins all of them to the same expression.
+DO $$
+DECLARE
+  widths integer[];
+  width integer;
+BEGIN
+  SELECT array_agg(DISTINCT dimensions ORDER BY dimensions)
+    INTO widths
+    FROM chunk_embeddings;
+
+  FOREACH width IN ARRAY COALESCE(widths, ARRAY[]::integer[]) LOOP
+    IF width <= 2000 THEN
+      EXECUTE format(
+        'CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_%s_idx '
+        'ON chunk_embeddings USING hnsw ((embedding::vector(%s)) vector_cosine_ops) '
+        'WHERE dimensions = %s',
+        width, width, width);
+    ELSIF width <= 4000 THEN
+      EXECUTE format(
+        'CREATE INDEX IF NOT EXISTS chunk_embeddings_hnsw_%s_idx '
+        'ON chunk_embeddings USING hnsw ((embedding::halfvec(%s)) halfvec_cosine_ops) '
+        'WHERE dimensions = %s',
+        width, width, width);
+    END IF;
+  END LOOP;
+END $$;

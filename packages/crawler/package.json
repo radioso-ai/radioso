@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "cheerio": "1.2.0",
-    "crawlee": "^3.16.0"
+    "crawlee": "^3.18.1"
   },
   "optionalDependencies": {
     "playwright": "^1.60.0"

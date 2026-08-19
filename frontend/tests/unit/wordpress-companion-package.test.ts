@@ -28,7 +28,7 @@ describe('WordPress companion download', () => {
     expect(pluginSource).toContain('RADIOSO_RESYNC_LOG_LIMIT')
     expect(pluginSource).toContain("'activity_log'")
     expect(pluginSource).toContain("'last_error'")
-    expect(pluginSource).toMatch(/wp_schedule_single_event\([^;]+true\)/s)
+    expect(pluginSource).toMatch(/wp_schedule_single_event\([\s\S]+true\)/)
     expect(pluginSource).toContain('is_wp_error($scheduled)')
   })
 

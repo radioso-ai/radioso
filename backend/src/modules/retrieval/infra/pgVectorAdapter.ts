@@ -131,7 +131,9 @@ implements VectorAdapter {
       // usable on exact search, which is why this does not reject the space.
       const indexSql = buildChunkEmbeddingIndexSql(input.space.dimensions);
       if (indexSql) {
-        await this.database.query(indexSql);
+        await this.withWidthLock(input.space.dimensions, async (client) => {
+          await client.query(indexSql);
+        });
       }
       this.preparedSpaces.set(input.space.id, {
         dimensions: input.space.dimensions,
@@ -155,15 +157,23 @@ implements VectorAdapter {
         if (width === null) {
           continue;
         }
-        const [stillUsed] = await this.database.query<{ present: number }>(
-          "SELECT 1 AS present FROM chunk_embeddings WHERE dimensions = $1 LIMIT 1",
-          [width],
-        );
-        if (stillUsed) {
-          continue;
+        // Emptiness is re-checked under the same lock prepareSpace takes, so a space
+        // being prepared for this width cannot have its index dropped from under it
+        // between the check and the drop.
+        const removed = await this.withWidthLock(width, async (client) => {
+          const stillUsed = await client.query(
+            "SELECT 1 FROM chunk_embeddings WHERE dimensions = $1 LIMIT 1",
+            [width],
+          );
+          if ((stillUsed.rowCount ?? 0) > 0) {
+            return false;
+          }
+          await client.query(buildChunkEmbeddingIndexDropSql(width));
+          return true;
+        });
+        if (removed) {
+          dropped += 1;
         }
-        await this.database.query(buildChunkEmbeddingIndexDropSql(width));
-        dropped += 1;
       }
       return dropped;
     },
@@ -204,6 +214,26 @@ implements VectorAdapter {
 
   constructor(private readonly database: Database) {}
 
+  /**
+   * Serializes index lifecycle for one embedding width. Creation and the emptiness
+   * check that precedes a drop contend on the same advisory key, so the two cannot
+   * interleave and leave a populated width unindexed.
+   */
+  private async withWidthLock<T>(
+    dimensions: number,
+    callback: (client: {
+      query(sql: string, params?: unknown[]): Promise<{ rowCount: number | null }>;
+    }) => Promise<T>,
+  ): Promise<T> {
+    return this.database.withTransaction(async (client) => {
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`chunk_embeddings_hnsw_width:${dimensions}`],
+      );
+      return callback(client);
+    });
+  }
+
   private async searchExact(
     input: VectorCandidateSearchInput,
   ): Promise<VectorCandidate[]> {
@@ -243,10 +273,17 @@ implements VectorAdapter {
 
     // Nearest-first with a LIMIT is the only shape an ANN index can answer. The
     // previous shape scored every eligible row before filtering, which the planner
-    // could not serve from an index at all. Ordering by distance and applying the
-    // score threshold afterwards is equivalent: score is monotonically decreasing
-    // in distance, so thresholding only ever removes the tail of the ranking. The
-    // CTE is deliberately not MATERIALIZED — that barrier would block the index.
+    // could not serve from an index at all. Moving the score threshold after the
+    // ordering preserves the ranking, because score decreases monotonically with
+    // distance and thresholding only removes its tail. The CTE is deliberately not
+    // MATERIALIZED — that barrier would block the index.
+    //
+    // Two things are not preserved, both deliberate. Where the index is used the
+    // result is approximate rather than exhaustive. And widths in the halfvec band
+    // compare at half precision, which can reorder near-identical neighbours; that
+    // is the price of those widths being indexable at all. Ties at the LIMIT
+    // boundary are therefore resolved arbitrarily — the outer sort orders only the
+    // rows the inner query kept.
     const rows = await this.database.query<CandidateRow>(
       `WITH nearest AS (
          SELECT

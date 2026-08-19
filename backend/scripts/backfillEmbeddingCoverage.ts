@@ -47,9 +47,28 @@ const main = async (): Promise<void> => {
     console.log(
       `${gaps.length} workspace(s) with ${totalMissing} chunk(s) missing canonical embeddings:`,
     );
+    const stuck = gaps.filter((gap) => gap.hasEmbeddingProfile && gap.failedJobs > 0);
     for (const gap of gaps) {
-      const suffix = gap.hasEmbeddingProfile ? "" : "   [no embedding profile]";
+      const notes = [
+        gap.hasEmbeddingProfile ? null : "no embedding profile",
+        gap.failedJobs > 0 ? `${gap.failedJobs} failed job(s)` : null,
+      ].filter(Boolean);
+      const suffix = notes.length > 0 ? `   [${notes.join(", ")}]` : "";
       console.log(`  ${gap.workspaceId}  ${gap.missingChunks}${suffix}`);
+    }
+
+    if (stuck.length > 0) {
+      // Enqueueing suppresses inserts on the profile-job unique key, which a job
+      // that has exhausted its attempts still holds. Re-running cannot clear these;
+      // the failed jobs have to be resolved or retired first.
+      console.log(
+        `\n${stuck.length} workspace(s) have embedding_profile jobs in a failed `
+        + "state. Those hold the job key, so re-running enqueues nothing for them "
+        + "until the failures are resolved:",
+      );
+      for (const gap of stuck) {
+        console.log(`  ${gap.workspaceId}  ${gap.failedJobs} failed job(s)`);
+      }
     }
 
     if (blocked.length > 0) {
@@ -65,9 +84,9 @@ const main = async (): Promise<void> => {
       }
     }
 
-    // Blocked workspaces are the reason to exit non-zero, and --dry-run is the form
-    // an operator reaches for first, so the signal has to survive that path too.
-    if (blocked.length > 0) {
+    // A gap the script cannot move is the reason to exit non-zero, and --dry-run is
+    // the form an operator reaches for first, so the signal survives that path too.
+    if (blocked.length > 0 || stuck.length > 0) {
       process.exitCode = 1;
     }
 

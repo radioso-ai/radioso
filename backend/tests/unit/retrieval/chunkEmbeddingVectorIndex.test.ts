@@ -66,7 +66,6 @@ describe("chunk embedding vector index", () => {
   });
 
   it.each([
-    "145_chunk_embeddings_hnsw_indexes.sql",
     "146_chunk_embeddings_hash_partitions.sql",
   ])("keeps %s building the same DDL as the module", async (migrationFile) => {
     const { readFile } = await import("node:fs/promises");

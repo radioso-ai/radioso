@@ -208,11 +208,14 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
       "DELETE FROM chunk_embeddings WHERE embedding_space_id = $1",
       [space.id],
     );
-    await expect(adapter.admin.dropUnusedIndexes()).resolves.toBeGreaterThan(0);
+    // Assert on this test's own width rather than the return count: the sweep is
+    // global by design, so a count could be satisfied by an unrelated index.
+    await adapter.admin.dropUnusedIndexes();
     expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
 
-    // Idempotent: a second sweep finds nothing left to do.
-    await expect(adapter.admin.dropUnusedIndexes()).resolves.toBe(0);
+    // Idempotent for this width: a second sweep leaves it absent, not recreated.
+    await adapter.admin.dropUnusedIndexes();
+    expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
   });
 
   it("declares both search modes, since the width decides which one answers", async () => {

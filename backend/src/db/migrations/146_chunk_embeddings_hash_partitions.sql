@@ -17,11 +17,13 @@
 -- old), and moduli may coexist on one table. Only the unpartitioned-to-partitioned
 -- step needs a full copy, which is why it happens here rather than later.
 --
--- Cost note: this rebuilds the table inside the migration transaction, so the copy
--- holds a lock for its duration. chunk_embeddings is empty or near-empty wherever
--- canonical projection has not been backfilled yet, making this effectively free; a
--- deployment that has already accumulated many canonical rows should expect it to
--- take proportionally longer.
+-- Cost note: this rebuilds the table inside the migration transaction, which holds
+-- ACCESS EXCLUSIVE for the copy, the foreign-key validation, and the index builds,
+-- and the migration runner disables statement and lock timeouts for migration
+-- bodies. chunk_embeddings is empty or near-empty wherever canonical projection has
+-- not been backfilled, making this effectively free there; a deployment holding many
+-- canonical rows should expect writes to block for the duration and may prefer to
+-- run this during a maintenance window.
 
 ALTER TABLE chunk_embeddings RENAME TO chunk_embeddings_unpartitioned;
 
@@ -73,8 +75,9 @@ FROM chunk_embeddings_unpartitioned;
 
 DROP TABLE chunk_embeddings_unpartitioned;
 
--- Foreign keys are declared after the copy so the insert does not revalidate rows
--- that were already referentially sound in the table being replaced.
+-- Foreign keys are declared after the copy so the insert itself runs unconstrained.
+-- ADD CONSTRAINT validates existing rows, so both statements scan the copied data
+-- inside this transaction; that cost scales with table size like the copy above.
 ALTER TABLE chunk_embeddings
   ADD CONSTRAINT chunk_embeddings_embedding_space_id_fkey
   FOREIGN KEY (embedding_space_id) REFERENCES embedding_spaces(id) ON DELETE RESTRICT;

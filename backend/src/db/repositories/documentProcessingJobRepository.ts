@@ -68,7 +68,12 @@ export interface DocumentProcessingJobRepositoryPort {
     generation: string;
   }): Promise<number>;
   listWorkspaceCanonicalEmbeddingGaps(): Promise<
-    Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
+    Array<{
+      workspaceId: string;
+      missingChunks: number;
+      hasEmbeddingProfile: boolean;
+      failedJobs: number;
+    }>
   >;
   reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
@@ -481,7 +486,12 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
   // per workspace, so this reports where that work is still outstanding — chiefly
   // for operators running the one-time backfill after upgrading.
   async listWorkspaceCanonicalEmbeddingGaps(): Promise<
-    Array<{ workspaceId: string; missingChunks: number; hasEmbeddingProfile: boolean }>
+    Array<{
+      workspaceId: string;
+      missingChunks: number;
+      hasEmbeddingProfile: boolean;
+      failedJobs: number;
+    }>
   > {
     // Mirrors reconcileEmbeddingProfileJobsForWorkspace's notion of coverage, or the
     // report disagrees with the work it is meant to describe. A canonical row only
@@ -493,10 +503,15 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     // hasEmbeddingProfile decides whether the gap is actionable — enqueueing joins
     // workspace_embedding_profiles, so a workspace without one yields no jobs, and
     // reporting the flag keeps that from looking like a successful no-op run.
+    // failedJobs matters because enqueueing suppresses inserts on the profile-job
+    // unique key. A job that has exhausted its attempts keeps that key, so the gap
+    // it represents can never be re-enqueued — the report would otherwise show work
+    // that no number of re-runs will move.
     const result = await sql<{
       workspace_id: string;
       missing_chunks: string;
       has_embedding_profile: boolean;
+      failed_jobs: string;
     }>`
       WITH targets AS (
         SELECT p.workspace_id, spaces.embedding_space_id
@@ -522,7 +537,12 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       )
       SELECT ec.workspace_id,
              COUNT(DISTINCT ec.chunk_id) AS missing_chunks,
-             BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile
+             BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile,
+             (SELECT COUNT(*)
+                FROM document_processing_jobs j
+               WHERE j.workspace_id = ec.workspace_id
+                 AND j.kind = 'embedding_profile'
+                 AND j.status = 'failed') AS failed_jobs
       FROM eligible_chunks ec
       LEFT JOIN targets t ON t.workspace_id = ec.workspace_id
       WHERE NOT EXISTS (
@@ -542,6 +562,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       workspaceId: row.workspace_id,
       missingChunks: Number(row.missing_chunks),
       hasEmbeddingProfile: row.has_embedding_profile,
+      failedJobs: Number(row.failed_jobs),
     }));
   }
 

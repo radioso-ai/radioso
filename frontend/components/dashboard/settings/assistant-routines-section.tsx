@@ -789,11 +789,10 @@ function RoutineEditorScreen({
           setDocumentDraft(null)
           setValidatedDraftSignature(null)
           routineEditorDirtyRef.current = false
-          // read-only (non-draft) versions open in the strict Form tab.
-          const editable = response.routine.status === 'draft'
-          // Document-representable drafts open in the Document view; anything the
-          // projection cannot express falls back to the Form view.
-          setViewMode(editable && routineToBlockDoc(definitionToDraft(response.routine)).ok ? 'document' : 'form')
+          // Every representable routine opens in the Document view, editable or not: its rest
+          // state is the read surface a published version wants. Only a routine the projection
+          // cannot express falls back to the Form view, which shows the raw graph.
+          setViewMode(routineToBlockDoc(definitionToDraft(response.routine)).ok ? 'document' : 'form')
         })
         .catch((loadError) => {
           if (!active) return

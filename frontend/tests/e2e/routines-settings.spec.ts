@@ -257,6 +257,33 @@ test("a routine with custom completion copy opens in Document with terminal copy
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Thanks, we will be in touch.");
 });
 
+test("a published routine opens in the Document reader, not the structural form", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000401",
+      status: "published",
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: /Collect pricing intake published v1/ }).click();
+
+  // Reading a published routine is what the document's rest state is for, so a version that
+  // can no longer be edited still opens there rather than dropping to the structural form.
+  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
+
+  // It renders as the reader: the routine reads as prose, with no editing affordances.
+  const reader = page.getByRole("article", { name: "Routine document" });
+  await expect(reader).toBeVisible();
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toHaveCount(0);
+  await expect(reader).toContainText("Ask for");
+  await expect(reader).toContainText("so the team can follow up");
+});
+
 test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 

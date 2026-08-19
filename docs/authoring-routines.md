@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in Document and Form views, connect skills, test drafts, and manage their lifecycle."
-last_updated: 2026-08-18
+last_updated: 2026-08-19
 ---
 
 # Authoring Routines
@@ -62,6 +62,9 @@ in the flow.
 Edit the **Starts when** line directly. Add information, steps, branches, and
 endings where they belong in the flow. That proximity makes the decision behind
 each transition easy to review with the instructions it follows.
+
+A published or archived version opens here too, as a read-only document. That
+rest state is the version a colleague reads to learn what the agent does.
 
 ### Capture information
 

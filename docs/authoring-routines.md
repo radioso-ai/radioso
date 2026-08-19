@@ -66,6 +66,10 @@ each transition easy to review with the instructions it follows.
 A published or archived version opens here too, as a read-only document. That
 rest state is the version a colleague reads to learn what the agent does.
 
+Open a step by its number to change what it does — **Ask or tell**, **Call a
+skill**, **Dispatch an action**, or **Approval**. The instruction you wrote stays
+with the step, and an approval gets its Approve and Decline choices seeded.
+
 ### Capture information
 
 Write a step instruction in plain language and type `@` when the agent needs a
@@ -172,7 +176,8 @@ handoff terminals and activation gates.
 The form exposes:
 
 - slots, including **Required** and editable-after-completion settings
-- step ids and kinds: `chat`, `tool`, `action`, and `approval`
+- step ids, which the document leaves alone because they name a step to the
+  compiler rather than to a reader
 - skill inputs, outputs, and approval choices with their decision targets
 - transition guard kinds: `llm`, `default`, `slot_filled`, `outcome`, and
   `counter`

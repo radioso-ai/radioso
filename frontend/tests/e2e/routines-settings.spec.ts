@@ -257,6 +257,40 @@ test("a routine with custom completion copy opens in Document with terminal copy
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Thanks, we will be in touch.");
 });
 
+test("a step changes kind in place in the Document view", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000501", status: "draft", version: 1 }],
+    routineSkillCatalog: [{
+      skillName: "orders.lookup",
+      displayName: "Look up order",
+      category: "external_mcp",
+      inputs: [],
+      outcomes: [],
+      hasDataOutputs: false,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+
+  // A step that was written as a question becomes a skill call without being deleted and
+  // rebuilt, so the instruction the author wrote survives the change.
+  await documentEditor.getByLabel("Step 1 kind").selectOption("tool");
+  await documentEditor.getByLabel("ask_email catalog item").selectOption("orders.lookup");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor).toContainText("Ask for");
+
+  await page.getByRole("tab", { name: "Form" }).click();
+  await expect(page.getByLabel("Step 1 kind")).toContainText("tool");
+  await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
+});
+
 test("a published routine opens in the Document reader, not the structural form", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

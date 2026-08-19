@@ -304,6 +304,45 @@ export const updateApproval = (doc: RoutineBlockDoc, stepId: string, patch: { in
 
 export const updateActivation = (doc: RoutineBlockDoc, patch: Partial<RoutineBlockDoc['activation']>): RoutineBlockDoc => ({ ...copy(doc), activation: { ...doc.activation, ...copy(patch) } })
 
+// Convert a step in place. A kind owns its catalog reference and its decision fields, so
+// switching kinds clears the ones the new kind cannot carry — leaving them behind would save
+// fields the validator rejects. The instruction and any branch the author wrote are theirs,
+// not the kind's, so both survive the change.
+export const changeStepKind = (doc: RoutineBlockDoc, stepId: string, kind: RoutineStepKind): RoutineBlockDoc => {
+  const next = copy(doc)
+  const step = next.steps.find((candidate) => candidate.stableStepId === stepId)
+  if (!step || step.kind === kind) return next
+
+  const wasApproval = step.kind === 'approval'
+  const previousCaptureKey = step.captureKey ?? null
+
+  step.kind = kind
+  step.toolRef = kind === 'tool' ? step.toolRef ?? '' : null
+  step.actionType = kind === 'action' ? step.actionType ?? '' : null
+
+  if (kind === 'approval') {
+    // Seed a usable decision so the step is savable without the author hunting for the
+    // fields a decision needs.
+    step.captureKey = step.captureKey?.trim() ? step.captureKey : 'decision'
+    if (!step.options || step.options.length === 0) {
+      step.options = [
+        { id: 'approve', label: 'Approve', description: null },
+        { id: 'decline', label: 'Decline', description: null },
+      ]
+    }
+    return syncApprovalBranches(next, stepId)
+  }
+
+  step.captureKey = null
+  step.options = undefined
+  if (wasApproval && previousCaptureKey) {
+    // The option edges guard on `<captureKey>.id`, which no step captures any more.
+    const staleRefs = [approvalCaptureFieldRef(previousCaptureKey)]
+    step.branches = step.branches.filter((branch) => !isApprovalOptionBranch(branch, staleRefs))
+  }
+  return next
+}
+
 export const updateStep = (doc: RoutineBlockDoc, stepId: string, patch: Partial<RoutineBlockStep>): RoutineBlockDoc => ({
   ...copy(doc), steps: doc.steps.map((step) => step.stableStepId === stepId ? { ...copy(step), ...copy(patch) } : copy(step)),
 })

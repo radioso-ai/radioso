@@ -6,6 +6,7 @@ import {
   addSlot,
   addStep,
   changeBranchGuardKind,
+  changeStepKind,
   createEndingForBranch,
   moveStep,
   nextApprovalOptionId,
@@ -55,6 +56,82 @@ const pristineSeed = () => {
 }
 
 describe('routine document edits', () => {
+  describe('changing a step kind', () => {
+    it('turns a chat step into a tool step awaiting a skill', () => {
+      const edited = changeStepKind(source(), 'ask_email', 'tool')
+      const step = edited.steps.find((candidate) => candidate.stableStepId === 'ask_email')
+
+      expect(step).toMatchObject({ kind: 'tool', toolRef: '' })
+      // The instruction is the author's writing, not a property of the kind, so it survives.
+      expect(step?.instruction).toEqual(source().steps[0]?.instruction)
+    })
+
+    it('turns a chat step into an action step awaiting an action type', () => {
+      const step = changeStepKind(source(), 'ask_email', 'action').steps[0]
+
+      expect(step).toMatchObject({ kind: 'action', actionType: '' })
+      expect(step?.toolRef ?? null).toBeNull()
+    })
+
+    it('drops the previous kind\'s catalog reference when switching between them', () => {
+      const asTool = changeStepKind(source(), 'ask_email', 'tool')
+      const withRef = updateStep(asTool, 'ask_email', { toolRef: 'lookup_account' })
+
+      const asAction = changeStepKind(withRef, 'ask_email', 'action')
+
+      // A tool reference means nothing to an action step; leaving it would save a field the
+      // kind cannot use and the validator rejects.
+      expect(asAction.steps[0]?.toolRef ?? null).toBeNull()
+      expect(asAction.steps[0]).toMatchObject({ kind: 'action', actionType: '' })
+    })
+
+    it('seeds a usable decision when a step becomes an approval', () => {
+      const edited = changeStepKind(source(), 'ask_email', 'approval')
+      const step = edited.steps[0]
+
+      expect(step?.kind).toBe('approval')
+      expect(step?.captureKey).toBe('decision')
+      expect(step?.options?.map((option) => option.label)).toEqual(['Approve', 'Decline'])
+      // Each option is a decision edge, so the branches the backend requires exist already.
+      expect(step?.branches).toHaveLength(2)
+    })
+
+    it('removes the synthesized decision edges when a step stops being an approval', () => {
+      const approval = changeStepKind(source(), 'ask_email', 'approval')
+      expect(approval.steps[0]?.branches).toHaveLength(2)
+
+      const backToChat = changeStepKind(approval, 'ask_email', 'chat')
+
+      // Those branches guard on `<captureKey>.id`, which no longer exists once the step is
+      // not an approval; keeping them would fail validation with an unknown reference.
+      expect(backToChat.steps[0]?.branches).toHaveLength(0)
+      expect(backToChat.steps[0]?.captureKey ?? null).toBeNull()
+      expect(backToChat.steps[0]?.options ?? null).toBeNull()
+    })
+
+    it('keeps a branch the author wrote when the kind changes', () => {
+      const branched = addBranch(source(), 'ask_email', 'llm')
+      expect(branched.steps[0]?.branches).toHaveLength(1)
+
+      const edited = changeStepKind(branched, 'ask_email', 'tool')
+
+      expect(edited.steps[0]?.branches).toHaveLength(1)
+    })
+
+    it('leaves the document alone for an unknown step', () => {
+      const doc = source()
+      expect(changeStepKind(doc, 'missing_step', 'tool')).toEqual(doc)
+    })
+
+    it('still compiles to a saveable draft after a kind change', () => {
+      const edited = changeStepKind(source(), 'ask_email', 'approval')
+
+      const draft = draftFromBlockDoc(edited)
+
+      expect(draft.steps[0]).toMatchObject({ kind: 'approval', captureKey: 'decision' })
+    })
+  })
+
   it('replaces a pristine seed step when adding a step', () => {
     const edited = addStep(pristineSeed(), 'approval')
 

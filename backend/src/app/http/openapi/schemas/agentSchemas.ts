@@ -532,37 +532,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-  const PortableRoutineDocumentEnvelopeSchema = registry.register(
-    "PortableRoutineDocumentEnvelope",
-    z.object({
-      grammarVersion: z.number().int(),
-      content: z.string(),
-    }),
-  );
-
-  const PortableRoutineDocumentCreateResponseSchema = registry.register(
-    "PortableRoutineDocumentCreateResponse",
-    PortableRoutineDocumentEnvelopeSchema.extend({
-      routineId: z.string().uuid(),
-    }),
-  );
-
-  const PortableRoutineParseDiagnosticSchema = registry.register(
-    "PortableRoutineParseDiagnostic",
-    z.object({
-      line: z.number().int().min(1),
-      code: z.string(),
-      message: z.string(),
-    }),
-  );
-
-  const PortableRoutineParseDiagnosticsResponseSchema = registry.register(
-    "PortableRoutineParseDiagnosticsResponse",
-    z.object({
-      diagnostics: z.array(PortableRoutineParseDiagnosticSchema),
-    }),
-  );
-
   const RoutineDraftAssistResponseSchema = registry.register(
     "RoutineDraftAssistResponse",
     z.object({
@@ -577,14 +546,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       error: z.literal("Routine definition is invalid"),
       validation: RoutineValidationResultSchema,
     }),
-  );
-
-  const PortableRoutineSaveRejectedResponseSchema = registry.register(
-    "PortableRoutineSaveRejectedResponse",
-    z.union([
-      RoutineDefinitionPublishRejectedResponseSchema,
-      PortableRoutineParseDiagnosticsResponseSchema,
-    ]),
   );
 
   const SkillAuthoringInputSchema = registry.register(
@@ -717,11 +678,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineDefinitionLifecycleResponseSchema,
     RoutineDefinitionPublishResponseSchema,
     RoutineDefinitionPublishRejectedResponseSchema,
-    PortableRoutineSaveRejectedResponseSchema,
-    PortableRoutineDocumentEnvelopeSchema,
-    PortableRoutineDocumentCreateResponseSchema,
-    PortableRoutineParseDiagnosticSchema,
-    PortableRoutineParseDiagnosticsResponseSchema,
     RoutineSkillCatalogResponseSchema,
     RoutineDirectiveScopeOrphanSchema,
     SkillAuthoringDescriptorSchema,

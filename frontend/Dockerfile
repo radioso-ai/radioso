@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY frontend/package.json ./frontend/package.json
 COPY packages/routine-definition/package.json ./packages/routine-definition/package.json
-COPY packages/routine-markdown/package.json ./packages/routine-markdown/package.json
+COPY packages/routine-document/package.json ./packages/routine-document/package.json
 COPY packages/ui/package.json ./packages/ui/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
   pnpm install --frozen-lockfile --filter radioso-frontend...
@@ -20,7 +20,7 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY frontend ./frontend
 COPY packages/routine-definition ./packages/routine-definition
-COPY packages/routine-markdown ./packages/routine-markdown
+COPY packages/routine-document ./packages/routine-document
 COPY packages/ui ./packages/ui
 COPY typescript-sdk ./typescript-sdk
 RUN pnpm --dir frontend run build
@@ -34,7 +34,7 @@ ENV BACKEND_INTERNAL_URL=$BACKEND_INTERNAL_URL
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/frontend ./frontend
 COPY --from=builder /app/packages/routine-definition ./packages/routine-definition
-COPY --from=builder /app/packages/routine-markdown ./packages/routine-markdown
+COPY --from=builder /app/packages/routine-document ./packages/routine-document
 COPY --from=builder /app/packages/ui ./packages/ui
 RUN chown -R node:node /app
 USER node

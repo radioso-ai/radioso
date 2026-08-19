@@ -48,29 +48,6 @@ describe("authoring resources", () => {
     expect(init.method).toBe("POST");
   });
 
-  it("round-trips a portable routine document through PUT", async () => {
-    const envelope = { grammarVersion: 1, content: "# Routine" };
-    const { client, fetchMock } = makeClient(async () => jsonResponse(envelope));
-
-    await client.agents.routines.updatePortable("agent-1", "r1", envelope);
-
-    const { url, init } = lastRequest(fetchMock);
-    expect(url).toBe("https://api.example.com/api/v1/agents/agent-1/routines/r1/portable");
-    expect(init.method).toBe("PUT");
-    expect(init.body).toBe(JSON.stringify(envelope));
-  });
-
-  it("canonicalizes a portable document at the workspace-scoped route", async () => {
-    const envelope = { grammarVersion: 1, content: "# Routine" };
-    const { client, fetchMock } = makeClient(async () => jsonResponse(envelope));
-
-    await client.routines.canonicalizePortable(envelope);
-
-    const { url, init } = lastRequest(fetchMock);
-    expect(url).toBe("https://api.example.com/api/v1/routines/portable/canonicalize");
-    expect(init.method).toBe("POST");
-  });
-
   it("creates a directive under the agent directives route", async () => {
     const { client, fetchMock } = makeClient(async () => jsonResponse({ directive: { id: "d1" } }, 201));
 

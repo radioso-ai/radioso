@@ -129,7 +129,7 @@ export function slugifyVariableKey(name: string): string {
   return /^[a-z_]/.test(safe) ? safe : `_${safe}`
 }
 
-const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+export const SLOT_REFERENCE = /\{\{\s*slot\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
 
 // A variable carried on the chip document. `required`/`mutable` are omitted in the common
 // case (required, non-mutable) so the bare `{ id, name, type }` shape round-trips unchanged;

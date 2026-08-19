@@ -1,31 +1,22 @@
 import {
-  GRAMMAR_VERSION,
-  canonicalize,
-  draftFromChipDoc,
-  parse,
   readProseTerminals,
   routineToChipDoc,
   serializeProseDoc,
   type ParseDiagnostic,
-  type ProseTerminalConfig,
   type ProseParagraph,
-} from "@radioso/routine-markdown";
+} from "@radioso/routine-document";
 
-import type { RoutineCompletionExport, RoutineDefinition, RoutineDefinitionDraftAuthoringInput } from "./domain.js";
+import type { RoutineDefinition } from "./domain.js";
+
+// The routine text projection the operator copilot reads. One direction only: a routine
+// becomes readable text. Nothing parses that text back, so the grammar version records what
+// the serializer wrote rather than a contract a caller negotiates.
+export const PORTABLE_GRAMMAR_VERSION = 1;
 
 export interface PortableRoutineDocumentEnvelope {
   grammarVersion: number;
   content: string;
 }
-
-export type PortableRoutineDocumentParseResult =
-  // Pre-parse authoring shape: the service Zod-parses (applying defaults) on save.
-  | { ok: true; draft: RoutineDefinitionDraftAuthoringInput }
-  | { ok: false; diagnostics: ParseDiagnostic[] };
-
-export type PortableRoutineDocumentCanonicalizeResult =
-  | { ok: true; envelope: PortableRoutineDocumentEnvelope }
-  | { ok: false; diagnostics: ParseDiagnostic[] };
 
 export type PortableRoutineDocumentProjectionResult =
   | { ok: true; envelope: PortableRoutineDocumentEnvelope }
@@ -103,7 +94,7 @@ export const projectRoutineToPortableDocument = (routine: RoutineDefinition): Po
   return {
     ok: true,
     envelope: {
-      grammarVersion: GRAMMAR_VERSION,
+      grammarVersion: PORTABLE_GRAMMAR_VERSION,
       content: serializeProseDoc({
         name: routine.name,
         trigger: routine.activation.triggerDescription,
@@ -126,68 +117,3 @@ export const routineToPortableDocument = (routine: RoutineDefinition): PortableR
   return result.envelope;
 };
 
-export const parsePortableRoutineDocument = (
-  envelope: PortableRoutineDocumentEnvelope,
-  options: {
-    existingGateRef?: string | null;
-    existingCompletionExport?: RoutineCompletionExport | null;
-    existingTerminals?: ProseTerminalConfig | null;
-  } = {},
-): PortableRoutineDocumentParseResult => {
-  if (envelope.grammarVersion !== GRAMMAR_VERSION) {
-    return { ok: false, diagnostics: [unsupportedEnvelopeVersion(envelope.grammarVersion)] };
-  }
-
-  const parsed = parse(envelope.content);
-  if (!parsed.ok) {
-    return { ok: false, diagnostics: parsed.diagnostics };
-  }
-
-  const terminals: ProseTerminalConfig | undefined = parsed.doc.terminals || options.existingTerminals
-    ? {
-        complete: parsed.doc.terminals?.complete ?? options.existingTerminals?.complete ?? null,
-        handoff: parsed.doc.terminals?.handoff ?? options.existingTerminals?.handoff ?? null,
-      }
-    : undefined;
-
-  const draft = draftFromChipDoc({
-    name: parsed.doc.name ?? "",
-    trigger: parsed.doc.trigger ?? "",
-    priority: parsed.doc.priority,
-    reentryMode: parsed.doc.reentryMode,
-    variables: parsed.doc.variables,
-    blocks: bodyBlocksFromParagraphs(parsed.doc.paragraphs),
-    terminals,
-    completionExport: parsed.doc.completionExport ?? options.existingCompletionExport ?? null,
-  });
-
-  return {
-    ok: true,
-    draft: {
-      ...draft,
-      activation: {
-        ...draft.activation,
-        gateRef: options.existingGateRef ?? null,
-      },
-    },
-  };
-};
-
-export const canonicalizePortableRoutineDocument = (
-  envelope: PortableRoutineDocumentEnvelope,
-): PortableRoutineDocumentCanonicalizeResult => {
-  if (envelope.grammarVersion !== GRAMMAR_VERSION) {
-    return { ok: false, diagnostics: [unsupportedEnvelopeVersion(envelope.grammarVersion)] };
-  }
-  const result = canonicalize(envelope.content);
-  if (!result.ok) {
-    return { ok: false, diagnostics: result.diagnostics };
-  }
-  return {
-    ok: true,
-    envelope: {
-      grammarVersion: result.grammarVersion,
-      content: result.content,
-    },
-  };
-};

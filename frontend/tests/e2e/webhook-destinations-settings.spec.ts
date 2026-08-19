@@ -78,10 +78,12 @@ test("routine editor configures completion export with destination dropdown and 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
 
   await page.getByRole("button", { name: "New routine" }).click();
+  // The Form view shows the full header, including the trigger the Document view edits
+  // through its Starts when row.
+  await page.getByRole("tab", { name: "Form" }).click();
   await page.getByLabel("Name").fill("Collect pricing intake");
   await page.getByLabel("Priority").fill("20");
   await page.getByLabel("Activation trigger").fill("Visitor asks about pricing or wants a quote.");
-  await page.getByRole("tab", { name: "Form" }).click();
 
   await page.getByRole("button", { name: "Add slot" }).click();
   await page.getByLabel("Slot 1 key").fill("email");

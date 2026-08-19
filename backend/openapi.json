@@ -4278,11 +4278,6 @@
                     "approval"
                   ]
                 },
-                "instruction": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
                 "toolRef": {
                   "type": [
                     "string",
@@ -4307,39 +4302,6 @@
                   "minLength": 1,
                   "maxLength": 120,
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                },
-                "options": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                      },
-                      "label": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120
-                      },
-                      "description": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "minLength": 1,
-                        "maxLength": 500
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "label"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "maxItems": 8
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4446,13 +4408,51 @@
                     }
                   },
                   "default": {}
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
                 }
               },
               "required": [
                 "stableStepId",
                 "kind",
-                "instruction",
-                "ordinal"
+                "ordinal",
+                "instruction"
               ],
               "additionalProperties": false
             },
@@ -4800,11 +4800,6 @@
                     "approval"
                   ]
                 },
-                "instruction": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
                 "toolRef": {
                   "type": [
                     "string",
@@ -4829,39 +4824,6 @@
                   "minLength": 1,
                   "maxLength": 120,
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                },
-                "options": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                      },
-                      "label": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120
-                      },
-                      "description": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "minLength": 1,
-                        "maxLength": 500
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "label"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "maxItems": 8
                 },
                 "ordinal": {
                   "type": "integer",
@@ -4968,13 +4930,51 @@
                     }
                   },
                   "default": {}
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
                 }
               },
               "required": [
                 "stableStepId",
                 "kind",
-                "instruction",
-                "ordinal"
+                "ordinal",
+                "instruction"
               ],
               "additionalProperties": false
             },
@@ -5402,11 +5402,6 @@
                     "approval"
                   ]
                 },
-                "instruction": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 4000
-                },
                 "toolRef": {
                   "type": [
                     "string",
@@ -5431,39 +5426,6 @@
                   "minLength": 1,
                   "maxLength": 120,
                   "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                },
-                "options": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120,
-                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                      },
-                      "label": {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 120
-                      },
-                      "description": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "minLength": 1,
-                        "maxLength": 500
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "label"
-                    ],
-                    "additionalProperties": false
-                  },
-                  "maxItems": 8
                 },
                 "ordinal": {
                   "type": "integer",
@@ -5570,13 +5532,51 @@
                     }
                   },
                   "default": {}
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 4000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120,
+                        "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                      },
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "description": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "label"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 8
                 }
               },
               "required": [
                 "stableStepId",
                 "kind",
-                "instruction",
-                "ordinal"
+                "ordinal",
+                "instruction"
               ],
               "additionalProperties": false
             },
@@ -5950,74 +5950,6 @@
           "validation"
         ]
       },
-      "PortableRoutineDocumentEnvelope": {
-        "type": "object",
-        "properties": {
-          "grammarVersion": {
-            "type": "integer"
-          },
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "grammarVersion",
-          "content"
-        ]
-      },
-      "PortableRoutineDocumentCreateResponse": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-          },
-          {
-            "type": "object",
-            "properties": {
-              "routineId": {
-                "type": "string",
-                "format": "uuid"
-              }
-            },
-            "required": [
-              "routineId"
-            ]
-          }
-        ]
-      },
-      "PortableRoutineParseDiagnostic": {
-        "type": "object",
-        "properties": {
-          "line": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "line",
-          "code",
-          "message"
-        ]
-      },
-      "PortableRoutineParseDiagnosticsResponse": {
-        "type": "object",
-        "properties": {
-          "diagnostics": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PortableRoutineParseDiagnostic"
-            }
-          }
-        },
-        "required": [
-          "diagnostics"
-        ]
-      },
       "RoutineDraftAssistResponse": {
         "type": "object",
         "properties": {
@@ -6141,11 +6073,6 @@
                         "approval"
                       ]
                     },
-                    "instruction": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 4000
-                    },
                     "toolRef": {
                       "type": [
                         "string",
@@ -6170,39 +6097,6 @@
                       "minLength": 1,
                       "maxLength": 120,
                       "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
-                    },
-                    "options": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120,
-                            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
-                          },
-                          "label": {
-                            "type": "string",
-                            "minLength": 1,
-                            "maxLength": 120
-                          },
-                          "description": {
-                            "type": [
-                              "string",
-                              "null"
-                            ],
-                            "minLength": 1,
-                            "maxLength": 500
-                          }
-                        },
-                        "required": [
-                          "id",
-                          "label"
-                        ],
-                        "additionalProperties": false
-                      },
-                      "maxItems": 8
                     },
                     "ordinal": {
                       "type": "integer",
@@ -6309,13 +6203,51 @@
                         }
                       },
                       "default": {}
+                    },
+                    "instruction": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 4000
+                    },
+                    "options": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120,
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"
+                          },
+                          "label": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "description": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "minLength": 1,
+                            "maxLength": 500
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "label"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 8
                     }
                   },
                   "required": [
                     "stableStepId",
                     "kind",
-                    "instruction",
-                    "ordinal"
+                    "ordinal",
+                    "instruction"
                   ],
                   "additionalProperties": false
                 },
@@ -6568,16 +6500,6 @@
         "required": [
           "error",
           "validation"
-        ]
-      },
-      "PortableRoutineSaveRejectedResponse": {
-        "oneOf": [
-          {
-            "$ref": "#/components/schemas/RoutineDefinitionPublishRejectedResponse"
-          },
-          {
-            "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
-          }
         ]
       },
       "SkillAuthoringInput": {
@@ -19660,176 +19582,6 @@
         }
       }
     },
-    "/api/v1/agents/{agentId}/routines/{routineId}/portable": {
-      "get": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Get a routine definition as portable markdown",
-        "operationId": "getAgentRoutinePortableDocument",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Portable routine document returned",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Routine definition cannot be represented as portable markdown",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Update a draft routine definition from portable markdown",
-        "operationId": "updateAgentRoutinePortableDocument",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "routineId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Portable routine document updated and returned in canonical form",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Portable markdown grammar validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent or routine definition not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Routine definition is invalid or cannot be represented as portable markdown",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineSaveRejectedResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/agents/{agentId}/routines/draft-assist": {
       "post": {
         "tags": [
@@ -19906,159 +19658,6 @@
           },
           "422": {
             "description": "Routine draft could not be generated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/agents/{agentId}/routines/portable": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Create a draft routine definition from portable markdown",
-        "operationId": "createAgentRoutinePortableDocument",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "agentId",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Draft routine definition created from portable markdown",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineDocumentCreateResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Portable markdown grammar validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Agent not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Routine name and version already exist for this agent",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Routine definition is invalid or cannot be represented as portable markdown",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineSaveRejectedResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/routines/portable/canonicalize": {
-      "post": {
-        "tags": [
-          "Agents"
-        ],
-        "summary": "Canonicalize portable routine markdown without persistence",
-        "operationId": "canonicalizeRoutinePortableDocument",
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Portable routine document returned in canonical form",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineDocumentEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Portable markdown grammar validation failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PortableRoutineParseDiagnosticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
             "content": {
               "application/json": {
                 "schema": {

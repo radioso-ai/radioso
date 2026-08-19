@@ -25,7 +25,7 @@ on:
       - packages/conversation-tools/**
       - packages/document-parser/**
       - packages/routine-definition/**
-      - packages/routine-markdown/**
+      - packages/routine-document/**
       - scripts/sync-ee-frontend-routes.mjs
   workflow_dispatch:
 

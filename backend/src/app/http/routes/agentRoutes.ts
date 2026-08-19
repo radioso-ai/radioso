@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
-import { readProseTerminals } from "@radioso/routine-markdown";
 
 import type { AppDependencies } from "../../server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
@@ -9,17 +8,6 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
-import {
-  parsePortableRoutineDocument,
-  projectRoutineToPortableDocument,
-  type PortableRoutineDocumentEnvelope,
-} from "../../../modules/routines/portableDocument.js";
-import {
-  portableRoutineDocumentEnvelopeSchema,
-  portableValidationRejectedResponse,
-  recordPortableRoutineFailure,
-  sendPortableDiagnostics,
-} from "./routinePortableRoutes.js";
 import {
   agentSurfacePositions,
   authoredDirectiveInputSchema,
@@ -453,120 +441,6 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       next(error);
     }
   });
-
-  router.get("/:agentId/routines/:routineId/portable", workspaceSession, agentRead, async (req, res, next) => {
-    try {
-      const { workspaceId } = res.locals as { workspaceId: string };
-      const parsed = agentRoutineParamsSchema.parse(req.params);
-      const routine = await dependencies.routineDefinitionService.get(workspaceId, parsed.agentId, parsed.routineId);
-      const portable = projectRoutineToPortableDocument(routine);
-      if (!portable.ok) {
-        recordPortableRoutineFailure(dependencies, "read", portable.diagnostics);
-        sendPortableDiagnostics(res, portable.diagnostics, 422);
-        return;
-      }
-      res.status(200).json(portable.envelope);
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  router.post(
-    "/:agentId/routines/portable",
-    workspaceSession,
-    agentManage,
-    validateBody(portableRoutineDocumentEnvelopeSchema),
-    async (req, res, next) => {
-      try {
-        const { workspaceId } = res.locals as { workspaceId: string };
-        const parsed = agentParamsSchema.parse(req.params);
-        const portable = parsePortableRoutineDocument(req.body as PortableRoutineDocumentEnvelope);
-        if (!portable.ok) {
-          recordPortableRoutineFailure(dependencies, "create", portable.diagnostics);
-          sendPortableDiagnostics(res, portable.diagnostics);
-          return;
-        }
-        const validation = await dependencies.routineDefinitionService.validate(
-          workspaceId,
-          parsed.agentId,
-          { input: portable.draft },
-        );
-        if (!validation.ok) {
-          recordPortableRoutineFailure(dependencies, "create", validation.diagnostics);
-          res.status(422).json(portableValidationRejectedResponse(validation));
-          return;
-        }
-        const result = await dependencies.routineDefinitionService.createDraft(workspaceId, parsed.agentId, portable.draft);
-        const projected = projectRoutineToPortableDocument(result.routine);
-        if (!projected.ok) {
-          recordPortableRoutineFailure(dependencies, "create", projected.diagnostics);
-          sendPortableDiagnostics(res, projected.diagnostics, 422);
-          return;
-        }
-        res.status(201).json({
-          routineId: result.routine.id,
-          ...projected.envelope,
-        });
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
-
-  router.put(
-    "/:agentId/routines/:routineId/portable",
-    workspaceSession,
-    agentManage,
-    validateBody(portableRoutineDocumentEnvelopeSchema),
-    async (req, res, next) => {
-      try {
-        const { workspaceId } = res.locals as { workspaceId: string };
-        const parsed = agentRoutineParamsSchema.parse(req.params);
-        const existing = await dependencies.routineDefinitionService.get(workspaceId, parsed.agentId, parsed.routineId);
-        const portable = parsePortableRoutineDocument(req.body as PortableRoutineDocumentEnvelope, {
-          existingGateRef: existing.activation.gateRef,
-          existingCompletionExport: existing.completionExport ?? null,
-          existingTerminals: readProseTerminals(existing),
-        });
-        if (!portable.ok) {
-          recordPortableRoutineFailure(dependencies, "update", portable.diagnostics);
-          sendPortableDiagnostics(res, portable.diagnostics);
-          return;
-        }
-        const validation = await dependencies.routineDefinitionService.validate(
-          workspaceId,
-          parsed.agentId,
-          { input: portable.draft },
-        );
-        if (!validation.ok) {
-          recordPortableRoutineFailure(dependencies, "update", validation.diagnostics);
-          res.status(422).json(portableValidationRejectedResponse(validation));
-          return;
-        }
-        const result = await dependencies.routineDefinitionService.updateDraft(
-          workspaceId,
-          parsed.agentId,
-          parsed.routineId,
-          portable.draft,
-        );
-        const projected = projectRoutineToPortableDocument({
-          ...result.routine,
-          activation: {
-            ...result.routine.activation,
-            gateRef: null,
-          },
-        });
-        if (!projected.ok) {
-          recordPortableRoutineFailure(dependencies, "update", projected.diagnostics);
-          sendPortableDiagnostics(res, projected.diagnostics, 422);
-          return;
-        }
-        res.status(200).json(projected.envelope);
-      } catch (error) {
-        next(error);
-      }
-    },
-  );
 
   router.post(
     "/:agentId/routines/draft-assist",

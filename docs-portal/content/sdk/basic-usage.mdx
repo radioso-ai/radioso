@@ -257,15 +257,29 @@ Agents use the retrieval pipeline through their default-answer `retrieve` skill.
 
 Authoring surfaces are available with a workspace API token. A script can build and configure an agent the same way the dashboard does, then chat with it, using one token. Authoring calls are namespaced under `client.agents.*` and take the agent id first.
 
-Author a routine as portable markdown and publish it:
+Define a routine as a graph of steps, transitions, and terminals, then publish it. Validation runs on save and again on publish, so a routine that references an unknown skill or leaves a step unreachable is rejected before it can run.
 
 ```ts
-const draft = await client.agents.routines.createPortable(agentId, {
-  grammarVersion: 1,
-  content: '---\nname: Book a demo\ntrigger: the visitor asks for a demo\n---\nAsk for their @work_email.\nThen call #book_demo and confirm the time.',
+const draft = await client.agents.routines.create(agentId, {
+  name: 'Book a demo',
+  activation: { triggerDescription: 'the visitor asks for a demo', priority: 50 },
+  slots: [
+    { stableSlotId: 'work_email', key: 'work_email', type: 'email', required: true, ordinal: 0 },
+  ],
+  steps: [
+    { stableStepId: 'collect', kind: 'collect', ordinal: 0, instruction: 'Ask for their work email.' },
+    { stableStepId: 'book', kind: 'tool', toolRef: 'book_demo', ordinal: 1, instruction: 'Book the demo and confirm the time.' },
+  ],
+  transitions: [
+    { fromStep: 'collect', toRef: 'book', guardKind: 'default', ordinal: 0 },
+    { fromStep: 'book', toRef: 'done', guardKind: 'default', ordinal: 1 },
+  ],
+  terminals: [
+    { stableStepId: 'done', kind: 'complete', instruction: 'Confirm the booking.', ordinal: 0 },
+  ],
 })
 
-await client.agents.routines.publish(agentId, draft.routineId)
+await client.agents.routines.publish(agentId, draft.routine.id)
 ```
 
 Create a directive that steers behavior by condition:

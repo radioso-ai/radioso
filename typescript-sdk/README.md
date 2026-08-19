@@ -66,8 +66,7 @@ pnpm run build
 
 ### Agent authoring
 
-- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, and the portable-markdown round-trip (`getPortable`, `updatePortable`, `createPortable`, `skillCatalog`)
-- `client.routines.canonicalizePortable(...)` — normalize a portable routine document without saving it
+- `client.agents.routines.*` — list, get, create, update, delete, archive, restore, publish, revise, validate, draftAssist, skillCatalog
 - `client.agents.directives.*` — list, draft, create, update, delete
 - `client.agents.contextVariables.*` — list, upsert, delete, getSigningKey (per-agent enablement)
 - `client.contextVariables.*` — list, create, get, update, delete, getValue, upsertValue, deleteValue (workspace definitions and values)

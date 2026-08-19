@@ -10,8 +10,6 @@ export type RoutineDefinitionSaveResponse = components["schemas"]["RoutineDefini
 export type RoutineDefinitionLifecycleResponse = components["schemas"]["RoutineDefinitionLifecycleResponse"];
 export type RoutineDefinitionPublishResponse = components["schemas"]["RoutineDefinitionPublishResponse"];
 export type RoutineDefinitionValidateResponse = components["schemas"]["RoutineDefinitionValidateResponse"];
-export type PortableRoutineDocumentEnvelope = components["schemas"]["PortableRoutineDocumentEnvelope"];
-export type PortableRoutineDocumentCreateResponse = components["schemas"]["PortableRoutineDocumentCreateResponse"];
 export type RoutineDraftAssistRequest = components["schemas"]["RoutineDraftAssistRequest"];
 export type RoutineDraftAssistResponse = components["schemas"]["RoutineDraftAssistResponse"];
 export type RoutineSkillCatalogResponse = components["schemas"]["RoutineSkillCatalogResponse"];
@@ -19,7 +17,7 @@ export type RoutineSkillCatalogResponse = components["schemas"]["RoutineSkillCat
 const routinesBase = (agentId: string): string =>
   `/api/v1/agents/${encodeURIComponent(agentId)}/routines`;
 
-/** Agent-scoped routine authoring: relational definitions, lifecycle, and the portable-markdown round-trip. */
+/** Agent-scoped routine authoring: relational definitions and lifecycle. */
 export const createRoutinesResource = (config: InternalClientConfig) => ({
   list: (agentId: string): Promise<RoutineDefinitionListResponse> =>
     requestJson(config, { method: "GET", path: routinesBase(agentId) }),
@@ -74,29 +72,6 @@ export const createRoutinesResource = (config: InternalClientConfig) => ({
       path: `${routinesBase(agentId)}/${encodeURIComponent(routineId)}/validate`,
     }),
 
-  getPortable: (agentId: string, routineId: string): Promise<PortableRoutineDocumentEnvelope> =>
-    requestJson(config, {
-      method: "GET",
-      path: `${routinesBase(agentId)}/${encodeURIComponent(routineId)}/portable`,
-    }),
-
-  updatePortable: (
-    agentId: string,
-    routineId: string,
-    body: PortableRoutineDocumentEnvelope,
-  ): Promise<PortableRoutineDocumentEnvelope> =>
-    requestJson(config, {
-      method: "PUT",
-      path: `${routinesBase(agentId)}/${encodeURIComponent(routineId)}/portable`,
-      body,
-    }),
-
-  createPortable: (
-    agentId: string,
-    body: PortableRoutineDocumentEnvelope,
-  ): Promise<PortableRoutineDocumentCreateResponse> =>
-    requestJson(config, { method: "POST", path: `${routinesBase(agentId)}/portable`, body }),
-
   draftAssist: (agentId: string, body: RoutineDraftAssistRequest): Promise<RoutineDraftAssistResponse> =>
     requestJson(config, { method: "POST", path: `${routinesBase(agentId)}/draft-assist`, body }),
 
@@ -105,10 +80,6 @@ export const createRoutinesResource = (config: InternalClientConfig) => ({
       method: "GET",
       path: `/api/v1/agents/${encodeURIComponent(agentId)}/routine-skill-catalog`,
     }),
-
-  /** Canonicalize a portable routine document without persisting it (workspace-scoped, not agent-bound). */
-  canonicalizePortable: (body: PortableRoutineDocumentEnvelope): Promise<PortableRoutineDocumentEnvelope> =>
-    requestJson(config, { method: "POST", path: "/api/v1/routines/portable/canonicalize", body }),
 });
 
 export type RoutinesResource = ReturnType<typeof createRoutinesResource>;

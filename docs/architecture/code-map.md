@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-08-05
+last_updated: 2026-08-18
 ---
 
 # Code Map
@@ -532,8 +532,8 @@ Public surfaces and contracts:
 
 - `backend/src/modules/routines/public.ts` (definition types, compiler, validator)
 - `packages/routine-definition` (shared definition schemas and types)
-- `packages/routine-markdown` (portable markdown parser, serializer, and chip-document mapping)
-- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore and portable markdown sub-resources)
+- `packages/routine-document` (routine block-document projection and shared guard/condition labeling for the Document editor)
+- `backend/src/app/http/routes/agentRoutes.ts` (`/api/v1/agents/:agentId/routines` CRUD/validate/publish/revise/archive/restore)
 - `packages/conversation-contract/index.d.ts` (the `Routine` graph and guards the compiler targets)
 - `packages/conversation-defaults/src/routineRegistry.ts` (ranked one-call
   activation over registered `{ routine, trigger: { description, priority } }`
@@ -555,7 +555,7 @@ Focused checks:
 
 Related docs and specs:
 
-- [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md), [Portable Routine Markdown](../portable-routine-markdown.md), [Portable Routines API](../portable-routines-api.md)
+- [Conversational Routines](conversational-routines.md), [Authoring routines](../authoring-routines.md)
 - `specs/082-routines-as-data/`, `specs/069-conversation-routines/`
 
 ## Settings

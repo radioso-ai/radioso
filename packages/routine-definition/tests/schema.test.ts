@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  routineDefinitionDraftEditingInputSchema,
   routineIdentifierPattern,
   routineDefinitionDraftInputSchema,
   routineGuardProvenance,
@@ -87,6 +88,97 @@ describe("routine definition schemas", () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("accepts mid-edit drafts without weakening persistence validation", () => {
+    const baseDraft = {
+      name: "Order support",
+      activation: { triggerDescription: "When a customer asks about an order", gateRef: null, priority: 0 },
+      slots: [],
+      transitions: [],
+      terminals: [validTerminal],
+    };
+    const midEditDrafts = [
+      {
+        ...baseDraft,
+        steps: [{ stableStepId: "chat", kind: "chat", instruction: "", toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
+      },
+      {
+        ...baseDraft,
+        activation: { ...baseDraft.activation, triggerDescription: "" },
+        steps: [validStep],
+      },
+      {
+        ...baseDraft,
+        steps: [{ stableStepId: "approve", kind: "approval", instruction: "Approve the refund", toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
+      },
+      {
+        ...baseDraft,
+        steps: [{ stableStepId: "select-tool", kind: "tool", instruction: "Look up the order", toolRef: null, actionType: null, captureKey: null, options: [], ordinal: 0, metadata: {} }],
+      },
+    ];
+
+    for (const draft of midEditDrafts) {
+      expect(routineDefinitionDraftEditingInputSchema.safeParse(draft).success).toBe(true);
+      expect(routineDefinitionDraftInputSchema.safeParse(draft).success).toBe(false);
+    }
+  });
+
+  it("accepts empty optional content fields only in the editing schema", () => {
+    const baseDraft = {
+      name: "Order support",
+      activation: { triggerDescription: "When a customer asks about an order", gateRef: null, priority: 0 },
+      slots: [],
+      steps: [validStep],
+      transitions: [],
+      terminals: [validTerminal],
+    };
+    const emptyFieldDrafts = [
+      {
+        field: "terminals[].instruction",
+        draft: { ...baseDraft, terminals: [{ ...validTerminal, instruction: "" }] },
+      },
+      {
+        field: "transitions[].guardText",
+        draft: {
+          ...baseDraft,
+          transitions: [{ fromStep: "lookup", toRef: "done", guardKind: "default", guardText: "", outcomeStatus: null, counterLimit: null, ordinal: 0 }],
+        },
+      },
+      {
+        field: "transitions[].outcomeStatus",
+        draft: {
+          ...baseDraft,
+          transitions: [{ fromStep: "lookup", toRef: "done", guardKind: "outcome", guardText: null, outcomeStatus: "", counterLimit: null, ordinal: 0 }],
+        },
+      },
+      {
+        field: "slots[].description",
+        draft: { ...baseDraft, slots: [{ ...validSlot, description: "" }] },
+      },
+      {
+        field: "steps[].options[].description",
+        draft: {
+          ...baseDraft,
+          steps: [{
+            stableStepId: "approve",
+            kind: "approval",
+            instruction: "Approve the refund",
+            toolRef: null,
+            actionType: null,
+            captureKey: "decision",
+            options: [{ id: "yes", label: "Yes", description: "" }, { id: "no", label: "No", description: null }],
+            ordinal: 0,
+            metadata: {},
+          }],
+        },
+      },
+    ];
+
+    for (const { field, draft } of emptyFieldDrafts) {
+      expect(routineDefinitionDraftEditingInputSchema.safeParse(draft).success, field).toBe(true);
+      expect(routineDefinitionDraftInputSchema.safeParse(draft).success, field).toBe(false);
+    }
   });
 
   it("rejects invalid slot keys", () => {

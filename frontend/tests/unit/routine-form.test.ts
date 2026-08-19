@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RoutineDefinition, RoutineValidationDiagnostic } from '@/lib/api'
+import type { RoutineDefinition, RoutineDefinitionDraft, RoutineValidationDiagnostic } from '@/lib/api'
 import {
   buildCompletionExportPayloadPreview,
   createEmptyRoutineForm,
@@ -13,6 +13,7 @@ import {
   routineToForm,
   type DiagnosticTarget,
   type RoutineFormState,
+  renderedDraftTargets,
 } from '@/lib/routine-form'
 
 const routine = {
@@ -54,6 +55,11 @@ const routine = {
     guardText: null,
     outcomeStatus: null,
     counterLimit: null,
+    fieldRef: null,
+    fieldOp: null,
+    fieldValue: null,
+    fieldValues: null,
+    fieldUnit: null,
     ordinal: 0,
   }],
   terminals: [{
@@ -75,6 +81,11 @@ describe('routine form transforms', () => {
       guardText: '',
       outcomeStatus: '',
       counterLimit: '',
+      fieldRef: null,
+      fieldOp: null,
+      fieldValue: null,
+      fieldValues: null,
+      fieldUnit: null,
     }])
     expect(formToRoutineDraft(form)).toEqual({
       name: routine.name,
@@ -144,6 +155,11 @@ describe('routine form transforms', () => {
           guardText: null,
           outcomeStatus: null,
           counterLimit: null,
+          fieldRef: null,
+          fieldOp: null,
+          fieldValue: null,
+          fieldValues: null,
+          fieldUnit: null,
           ordinal: 0,
         },
         {
@@ -153,6 +169,11 @@ describe('routine form transforms', () => {
           guardText: null,
           outcomeStatus: null,
           counterLimit: null,
+          fieldRef: null,
+          fieldOp: null,
+          fieldValue: null,
+          fieldValues: null,
+          fieldUnit: null,
           ordinal: 1,
         },
       ],
@@ -176,6 +197,58 @@ describe('routine form transforms', () => {
       actionType: 'contact.send',
     })
     expect(formToRoutineDraft(form).transitions).toEqual(actionRoutine.transitions)
+  })
+
+  it('preserves field guard parameters through the opaque form projection', () => {
+    const fieldGuardDraft: RoutineDefinitionDraft = {
+      name: 'Route qualified lead',
+      activation: {
+        triggerDescription: 'A visitor requests a quote',
+        priority: 5,
+        reentryMode: 'always',
+      },
+      slots: [],
+      steps: [{
+        stableStepId: 'qualify',
+        kind: 'chat',
+        instruction: 'Qualify the visitor.',
+        toolRef: null,
+        ordinal: 0,
+        metadata: {},
+      }],
+      transitions: [{
+        fromStep: 'qualify',
+        toRef: 'complete',
+        guardKind: 'field',
+        guardText: null,
+        outcomeStatus: null,
+        counterLimit: null,
+        fieldRef: 'lead.score',
+        fieldOp: 'within',
+        fieldValue: 14,
+        fieldValues: ['hot', 'warm'],
+        fieldUnit: 'days',
+        ordinal: 0,
+      }],
+      terminals: [{
+        stableStepId: 'complete',
+        kind: 'complete',
+        instruction: null,
+        ordinal: 0,
+      }],
+    }
+    const fieldGuardRoutine: RoutineDefinition = {
+      ...fieldGuardDraft,
+      id: 'routine-field-guard',
+      lineageId: 'lineage-field-guard',
+      agentId: 'agent-1',
+      status: 'draft',
+      version: 1,
+      createdAt: '2026-04-26T12:00:00.000Z',
+      updatedAt: '2026-04-26T12:00:00.000Z',
+    }
+
+    expect(formToRoutineDraft(routineToForm(fieldGuardRoutine)).transitions).toEqual(fieldGuardDraft.transitions)
   })
 
   it('normalizes legacy fork steps and unconditioned guards from older payloads', () => {
@@ -292,6 +365,11 @@ describe('routine form transforms', () => {
           guardText: null,
           outcomeStatus: null,
           counterLimit: null,
+          fieldRef: null,
+          fieldOp: null,
+          fieldValue: null,
+          fieldValues: null,
+          fieldUnit: null,
           ordinal: 2,
         },
       ],
@@ -605,5 +683,24 @@ describe('routine diagnostic anchoring', () => {
 
     expect(targets).not.toContainEqual({ scope: 'completionExport', id: 'destinationRef' })
     expect(routineLevelDiagnostics([diagnostic], targets)).toEqual([diagnostic])
+  })
+})
+
+describe('renderedDraftTargets', () => {
+  it('claims every draft artifact the Document tab renders', () => {
+    const targets = renderedDraftTargets({
+      name: 'X',
+      activation: { triggerDescription: 't', priority: 0 },
+      slots: [{ stableSlotId: 'email', key: 'email', type: 'email', required: true, description: null, ordinal: 0 }],
+      steps: [{ stableStepId: 'step_1', kind: 'chat', instruction: 'x', toolRef: null, actionType: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: 'step_1', toRef: 'end_1', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+      terminals: [{ stableStepId: 'end_1', kind: 'complete', instruction: null, ordinal: 0 }],
+    })
+    expect(targets).toEqual(expect.arrayContaining([
+      { scope: 'slot', id: 'email' },
+      { scope: 'step', id: 'step_1' },
+      { scope: 'step', id: 'end_1' },
+      { scope: 'transition', id: 'step_1->end_1' },
+    ]))
   })
 })

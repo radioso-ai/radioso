@@ -58,17 +58,6 @@ export const createOpenApiDocument = (
     delete document.components.securitySchemes.anonymousSessionCookie;
   }
 
-  const portableSaveRejected = document.components?.schemas?.PortableRoutineSaveRejectedResponse;
-  if (
-    portableSaveRejected
-    && typeof portableSaveRejected === "object"
-    && "anyOf" in portableSaveRejected
-    && !("oneOf" in portableSaveRejected)
-  ) {
-    portableSaveRejected.oneOf = portableSaveRejected.anyOf;
-    delete portableSaveRejected.anyOf;
-  }
-
   const publicChatPaths = [
     "/api/v1/public/chat/{token}",
     "/api/v1/public/chat/{token}/history/{conversationId}",

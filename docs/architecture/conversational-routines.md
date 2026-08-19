@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-06-19
+last_updated: 2026-08-18
 ---
 
 # Conversational Routines
@@ -102,12 +102,9 @@ exit) is left exactly as authored.
 
 ## Text routine formats
 
-Portable routine markdown is the public deterministic text format for authoring
-and API round trips. See [Portable Routine Markdown](../portable-routine-markdown.md).
-
-Some older routine document fixtures still use a compact internal notation for
-golden tests, debugging, and diffs. That fixture notation is not the public
-authoring contract.
+Routine definitions travel as JSON over the routines API. Some routine document
+fixtures use a compact internal notation for golden tests, debugging, and diffs.
+That fixture notation is not the public authoring contract.
 
 The fixture serializer is canonical, so reflowing text on serialize is expected.
 The format uses grammar tokens, not localized product copy.

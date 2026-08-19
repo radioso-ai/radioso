@@ -88,8 +88,6 @@ export type {
   RoutineDefinitionLifecycleResponse,
   RoutineDefinitionPublishResponse,
   RoutineDefinitionValidateResponse,
-  PortableRoutineDocumentEnvelope,
-  PortableRoutineDocumentCreateResponse,
   RoutineDraftAssistRequest,
   RoutineDraftAssistResponse,
   RoutineSkillCatalogResponse,
@@ -253,9 +251,6 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       mcpConverseGrants,
     },
     contextVariables,
-    routines: {
-      canonicalizePortable: routines.canonicalizePortable,
-    },
     documents: {
       list: (query?: Parameters<GeneratedRadiosoClient["listDocuments"]>[0]) => generated.listDocuments(query),
       create: (body: Parameters<GeneratedRadiosoClient["createDocument"]>[0]) => generated.createDocument(body),

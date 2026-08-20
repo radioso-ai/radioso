@@ -7,18 +7,18 @@ export const DIRECTIVES_BEHAVIOR = {
   // A contextual directive is injected only when the matcher's confidence is at
   // or above this threshold. Composition-owned default; never tuned per phrase.
   contextualMatchConfidenceThreshold: 0.5,
-  // Bounds on how much matched directive steering renders into the answer
-  // prompt. Unbounded concatenation dilutes compliance and bloats the prompt as
-  // the standing set grows; these caps keep the highest-signal directives and
-  // record the rest in the turn trace (no silent drops). Composition-owned.
+  // Bounds on how much contextual directive steering renders into the answer
+  // prompt. Always directives and their matched dependencies bypass these caps.
+  // The contextual caps keep the highest-signal remainder and record every drop
+  // in the turn trace. Composition-owned.
   steeringBound: {
-    // Cap on rendered directives, ranked by matcher confidence × priority.
+    // Cap on contextual directives, ranked by matcher confidence × priority.
     // Lower-ranked matches beyond the cap are dropped, not rendered.
     maxRenderedDirectives: 8,
-    // Approximate token ceiling for the rendered steering block (~4 chars/token,
-    // the repo-standard estimate). Directives fill greedily in rank order; those
-    // that would overflow are dropped whole, never truncated mid-action.
-    renderedTokenBudget: 1_200,
+    // Approximate token ceiling for contextual steering (~4 chars/token, the
+    // repo-standard estimate). Contextual directives fill greedily in rank order;
+    // those that would overflow are dropped whole, never truncated mid-action.
+    renderedTokenBudget: 2_400,
     // Matcher recall degrades when a single call scores a large candidate set.
     // Above this candidate count the runtime emits a debug warning for builders.
     matcherCandidateWarningThreshold: 40,

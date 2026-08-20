@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-08-10
+last_updated: 2026-08-21
 ---
 
 # Conversational Directives
@@ -47,7 +47,11 @@ On each turn the assistant:
 1. Matches the agent's standing directives against the turn.
 2. Drops any directive the agent lacks the required capability for.
 3. Resolves any skill binding on the matched directives.
-4. Renders the matched actions into the answer prompt as steering.
+4. Renders every matched `always` action and its matched dependencies into the
+   answer prompt as steering.
+5. Ranks the contextual matches by confidence and priority, then renders the
+   highest-signal set that fits the contextual count and token limits. The turn
+   trace records every contextual match held back by either limit.
 
 A directive condition is one of two kinds:
 

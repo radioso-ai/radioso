@@ -41,6 +41,11 @@ export type RoutineBlockEnding = Omit<DraftTerminal, 'ordinal'> & {
 export type RoutineBlockBranchTarget =
   | { kind: 'step'; stableStepId: string }
   | { kind: 'ending'; terminalId: string; ending?: RoutineBlockEnding }
+  // A transition naming an id that no longer exists. A draft saves without semantic
+  // validation, so a step deleted through the API or an older row can leave one behind.
+  // Representing it keeps the routine readable and lets the author retarget it in place,
+  // rather than sending the whole document to a lower-level view over one broken edge.
+  | { kind: 'unresolved'; toRef: string }
 
 export type RoutineBlockBranch = {
   guard: RoutineBlockGuard
@@ -158,9 +163,6 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
     if (!stepIds.has(transition.fromStep)) {
       return diagnostic('unknown_transition_source', `Transition source "${transition.fromStep}" does not name a step.`)
     }
-    if (!stepIds.has(transition.toRef) && !terminalIds.has(transition.toRef)) {
-      return diagnostic('unknown_transition_target', `Transition from "${transition.fromStep}" targets unknown id "${transition.toRef}".`)
-    }
   }
 
   const terminalById = new Map(terminals.map((terminal) => [terminal.stableStepId, terminal]))
@@ -175,7 +177,9 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
       const terminal = terminalById.get(transition.toRef)
       const target: RoutineBlockBranchTarget = terminal
         ? { kind: 'ending', terminalId: terminal.stableStepId, ending: { ...terminal } }
-        : { kind: 'step', stableStepId: transition.toRef }
+        : stepIds.has(transition.toRef)
+          ? { kind: 'step', stableStepId: transition.toRef }
+          : { kind: 'unresolved', toRef: transition.toRef }
       const guard: RoutineBlockGuard = guardKind === 'slot_filled'
         ? { ...guardFields, kind: guardKind, provenance: routineGuardProvenance(guardKind), slotKeys: slotKeysFromGuardText(guardFields.guardText) }
         : { ...guardFields, kind: guardKind, provenance: routineGuardProvenance(guardKind) }
@@ -208,6 +212,14 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
 
 const terminalFromTarget = (target: RoutineBlockBranchTarget): RoutineBlockEnding | undefined =>
   target.kind === 'ending' ? target.ending : undefined
+
+// Saving preserves an unresolved edge exactly as it was read. The document shows the
+// author that it points nowhere; only choosing a target rewrites it.
+const branchToRef = (target: RoutineBlockBranchTarget): string => {
+  if (target.kind === 'step') return target.stableStepId
+  if (target.kind === 'ending') return target.terminalId
+  return target.toRef
+}
 
 export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftAuthored {
   const endings = [
@@ -243,7 +255,7 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
         const { kind, provenance: _provenance, slotKeys, ...guard } = branch.guard
         return {
           fromStep: step.stableStepId,
-          toRef: branch.target.kind === 'step' ? branch.target.stableStepId : branch.target.terminalId,
+          toRef: branchToRef(branch.target),
           guardKind: kind,
           ...guard,
           guardText: canonicalSlotFilledGuardText(slotKeys),
@@ -253,7 +265,7 @@ export function draftFromBlockDoc(doc: RoutineBlockDoc): RoutineDefinitionDraftA
       const { kind, provenance: _provenance, ...guard } = branch.guard
       return {
         fromStep: step.stableStepId,
-        toRef: branch.target.kind === 'step' ? branch.target.stableStepId : branch.target.terminalId,
+        toRef: branchToRef(branch.target),
         guardKind: kind,
         ...guard,
         ordinal: transitionOrdinal++,

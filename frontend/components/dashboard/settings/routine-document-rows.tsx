@@ -1,7 +1,7 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
@@ -76,6 +76,11 @@ function BranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: R
   if (branch.target.kind === 'step') {
     const number = index?.stepNumbers.get(branch.target.stableStepId)
     return <span>go to {number ? `step ${number}` : branch.target.stableStepId}</span>
+  }
+  if (branch.target.kind === 'unresolved') {
+    // Say what is wrong in the reader's terms. The id is the only clue to what used to be
+    // here, so it stays visible for whoever has to pick the replacement.
+    return <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />goes nowhere — “{branch.target.toRef}” no longer exists</span>
   }
   const ending = branch.target.ending ?? index?.endings.get(branch.target.terminalId)
   if (ending) return <EndingPhrase ending={ending} muted={!branch.target.ending} />

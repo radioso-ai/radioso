@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import type { AppDependencies } from "../../app/server/types.js";
 import { requireSession, type SessionDependencies } from "../../app/http/middleware/requireSession.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import type { UsageDetailsServicePort, UsageTrendsServicePort } from "./contracts/index.js";
@@ -15,7 +14,7 @@ const usageTrendsQuerySchema = z.object({
   agentId: z.string().uuid().optional(),
 });
 
-export type UsageTrendsRouteDependencies = SessionDependencies & Pick<AppDependencies, "accountAccessService">;
+export type UsageTrendsRouteDependencies = SessionDependencies;
 
 const parseQuery = (value: unknown): z.infer<typeof usageTrendsQuerySchema> => {
   const parsed = usageTrendsQuerySchema.safeParse(value);

@@ -17,7 +17,12 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   reporter: "list",
-  timeout: 30_000,
+  // CI serves a prebuilt bundle, so 30s is the test's own budget and a real signal. A local
+  // run serves `next dev`, where the first visit to a route compiles it on demand — a cost
+  // that lands inside whichever test happens to arrive first, and grows with the number of
+  // workers competing for it. Holding local runs to the CI budget makes a cold server report
+  // compilation as unrelated test failures, so local gets room for it instead.
+  timeout: process.env.CI ? 30_000 : 90_000,
   use: {
     baseURL,
     trace: "on-first-retry",

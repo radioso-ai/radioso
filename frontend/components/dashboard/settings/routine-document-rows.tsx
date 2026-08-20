@@ -1,10 +1,11 @@
 'use client'
 
 import { useContext, type ReactNode } from 'react'
-import { ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleDashed, CornerUpRight, GitBranch, ListChecks, Wrench } from 'lucide-react'
 
 import { findRoutineSkillDescriptor, RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { branchIsImplicitFallThrough, documentTextToSegments, formatBindingLine, guardToSentence } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockDoc, RoutineBlockEnding, RoutineBlockInstructionSegment, RoutineBlockSlot, RoutineBlockStep } from '@/lib/routine-prose'
 
@@ -76,6 +77,11 @@ function BranchTarget({ branch, index }: { branch: RoutineBlockBranch; index?: R
   if (branch.target.kind === 'step') {
     const number = index?.stepNumbers.get(branch.target.stableStepId)
     return <span>go to {number ? `step ${number}` : branch.target.stableStepId}</span>
+  }
+  if (branch.target.kind === 'unresolved') {
+    // Say what is wrong in the reader's terms. The id is the only clue to what used to be
+    // here, so it stays visible for whoever has to pick the replacement.
+    return <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-400"><AlertTriangle className="h-3.5 w-3.5" />goes nowhere — “{branch.target.toRef}” no longer exists</span>
   }
   const ending = branch.target.ending ?? index?.endings.get(branch.target.terminalId)
   if (ending) return <EndingPhrase ending={ending} muted={!branch.target.ending} />
@@ -150,14 +156,17 @@ export function RoutineStepRow({ step, stepIndex, slotNames, index, nextStepId =
   return <li className="py-3 first:pt-0 last:pb-0"><div className="flex items-start gap-3">{number}<div className="min-w-0 flex-1"><div className="flex items-center gap-2 text-sm font-medium text-foreground">{step.kind === 'approval' ? <ListChecks className="h-4 w-4" /> : <Wrench className="h-4 w-4" />}<button type="button" aria-label={label} onClick={onEditStep} disabled={!editable} className="group text-left disabled:cursor-default"><span>{label}</span><EditHint editable={editable} /></button></div>{editing === 'step' ? <div className="mt-2 rounded-md border border-border bg-muted/30 p-3">{stepEditor}</div> : <div className="mt-1">{instruction}</div>}{details}</div></div></li>
 }
 
-export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, renderEditor, notesFor }: {
+export function RoutineEndingsSection({ endings, editable = false, editingEndingId, onEdit, onAdd, renderEditor, notesFor }: {
   endings: RoutineBlockEnding[]
   editable?: boolean
   editingEndingId?: string | null
   onEdit?: (ending: RoutineBlockEnding) => void
+  onAdd?: (kind: RoutineBlockEnding['kind']) => void
   renderEditor?: (ending: RoutineBlockEnding) => ReactNode
   notesFor?: (ending: RoutineBlockEnding) => string[] | undefined
 }) {
-  if (endings.length === 0) return null
-  return <section aria-labelledby="routine-document-endings"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}{editingEndingId === ending.stableStepId ? null : <DiagnosticNotes notes={notesFor?.(ending)} />}</li>)}</ul></section>
+  // An author with no spare endings still needs somewhere to add one, so the section shows
+  // its heading and controls even when the list is empty.
+  if (endings.length === 0 && !editable) return null
+  return <section aria-labelledby="routine-document-endings"><div className="flex items-center justify-between"><h3 id="routine-document-endings" className="text-sm font-semibold text-foreground">Endings</h3>{editable && onAdd ? <div className="flex gap-1"><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('complete')}>Add finish</Button><Button type="button" size="sm" variant="ghost" onClick={() => onAdd('handoff')}>Add hand-off</Button></div> : null}</div><ul className="mt-2 divide-y divide-border">{endings.map((ending) => <li key={ending.stableStepId} className={editingEndingId === ending.stableStepId ? 'rounded-md border border-border bg-muted/30 p-3 text-sm' : 'py-3 text-sm'}>{editingEndingId === ending.stableStepId ? renderEditor?.(ending) : <button type="button" aria-label={`${ending.kind === 'complete' ? 'Finish' : 'Hand-off'} ending`} onClick={() => onEdit?.(ending)} disabled={!editable} className="group flex w-full items-center gap-2 text-left disabled:cursor-default"><EndingPhrase ending={ending} /><EditHint editable={editable} /></button>}{editingEndingId === ending.stableStepId ? null : <DiagnosticNotes notes={notesFor?.(ending)} />}</li>)}</ul></section>
 }

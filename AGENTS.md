@@ -99,7 +99,8 @@ pnpm run dev
 pnpm run build
 pnpm run lint
 pnpm test
-pnpm run test:e2e
+pnpm run test:e2e       # production server, matching CI
+pnpm run test:e2e:dev   # development server for rapid iteration
 ```
 
 Docs portal:

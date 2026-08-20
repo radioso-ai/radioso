@@ -187,7 +187,38 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
     );
   };
 
-  it("declares exact, transactional cosine capabilities for variable dimensions", async () => {
+  it("drops a width's index once no rows of that width remain", async () => {
+    const indexNames = async (): Promise<string[]> => {
+      const rows = await database.query<{ indexname: string }>(
+        `SELECT indexname FROM pg_indexes
+         WHERE tablename = 'chunk_embeddings' AND indexname LIKE 'chunk_embeddings_hnsw_%'
+         ORDER BY indexname`,
+      );
+      return rows.map((row) => row.indexname);
+    };
+
+    // prepareSpace creates the index for the space's width.
+    const space = await createSpace(7);
+    await adapter.admin.prepareSpace({ space });
+    expect(await indexNames()).toContain("chunk_embeddings_hnsw_7_idx");
+
+    // Scoped to this test's own space: the integration database is shared, so an
+    // unscoped delete would strip rows other suites depend on.
+    await database.query(
+      "DELETE FROM chunk_embeddings WHERE embedding_space_id = $1",
+      [space.id],
+    );
+    // Assert on this test's own width rather than the return count: the sweep is
+    // global by design, so a count could be satisfied by an unrelated index.
+    await adapter.admin.dropUnusedIndexes();
+    expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
+
+    // Idempotent for this width: a second sweep leaves it absent, not recreated.
+    await adapter.admin.dropUnusedIndexes();
+    expect(await indexNames()).not.toContain("chunk_embeddings_hnsw_7_idx");
+  });
+
+  it("declares both search modes, since the width decides which one answers", async () => {
     await expect(adapter.capabilities.getCapabilities()).resolves.toEqual({
       backend: "pgvector",
       dimensionRanges: [{ min: 1, max: 16_000 }],
@@ -199,7 +230,10 @@ describeIntegration("PgVectorAdapter exact candidate search", () => {
         "expiry",
       ],
       maxBatchSize: 1_000,
-      searchModes: ["exact"],
+      // Widths within pgvector's HNSW ceiling are answered approximately from a
+      // partial index; wider ones, and any width before its index exists, fall back
+      // to an exact scan of the same query.
+      searchModes: ["exact", "accelerated"],
       consistency: "transactional",
     });
   });

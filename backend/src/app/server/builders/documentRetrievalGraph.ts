@@ -204,6 +204,7 @@ export const buildDocumentRetrievalGraph = (input: {
     embeddingProfileProjectionCleanup: {
       resetWorkspaceSpace: ({ workspaceId, embeddingSpaceId }) =>
         pgVectorAdapter.admin.resetSpace({ workspaceId, spaceId: embeddingSpaceId }),
+      dropUnusedIndexes: () => pgVectorAdapter.admin.dropUnusedIndexes(),
     },
   });
   const retrievalDefaultsProvider = createSystemRetrievalDefaultsProvider();

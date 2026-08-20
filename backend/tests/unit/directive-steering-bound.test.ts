@@ -111,6 +111,37 @@ describe("boundSteeringMatches", () => {
     ]);
   });
 
+  it("keeps the full transitive dependency closure of an always directive", () => {
+    const withDependency = (
+      candidate: DirectiveMatch,
+      dependency: string,
+    ): DirectiveMatch => ({
+      ...candidate,
+      directive: { ...candidate.directive, dependsOn: [dependency] },
+    });
+    const leaf = match("leaf", { priority: 1, confidence: 1 });
+    const middle = withDependency(
+      match("middle", { priority: 2, confidence: 1 }),
+      "leaf",
+    );
+    const mandatory = withDependency(
+      match("mandatory", { priority: 90, deterministic: true }),
+      "middle",
+    );
+
+    const result = boundSteeringMatches([leaf, middle, mandatory], {
+      maxRenderedDirectives: 0,
+      renderedTokenBudget: 1,
+    });
+
+    expect(result.kept.map((candidate) => candidate.directive.name)).toEqual([
+      "leaf",
+      "middle",
+      "mandatory",
+    ]);
+    expect(result.dropped).toEqual([]);
+  });
+
   it("defaults an unset priority to a neutral weight rather than zero", () => {
     const matches = [
       match("zeroish", { priority: 1, confidence: 1 }), // score 1

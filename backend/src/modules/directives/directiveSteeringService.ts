@@ -40,7 +40,7 @@ export interface DirectiveSteerInput {
 }
 
 export interface DirectiveSteeringResult {
-  /** Ordered, bounded steering for the composer (capability-filtered). */
+  /** Ordered steering for the composer; only its contextual portion is bounded. */
   rules: SteeringRule[];
   /**
    * Matched, relationship-resolved directives, for the activity trace and turn

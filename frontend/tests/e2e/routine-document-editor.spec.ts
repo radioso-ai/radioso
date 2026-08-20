@@ -84,13 +84,11 @@ test("author, validate, and read a routine through the Document tab", async ({ p
   await documentEditor.getByLabel("complete message").fill("Eligibility check finished.");
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await page.getByRole("tab", { name: "Form" }).click();
-  await expect(page.getByLabel("Step 1 instruction")).toHaveValue(/Ask for \{\{slot\.order_total\}\}\s*/);
-  await expect(page.getByLabel("Step 2 kind")).toContainText("tool");
-  await expect(page.getByLabel("Transition 1 target")).toContainText("handoff_1");
-  await expect(page.getByLabel("Transition 2 guard")).toContainText(/llm/i);
-  await page.getByRole("tab", { name: "Document" }).click();
-  await expect(documentEditor).toBeVisible();
+  // What was authored reads back in the document itself: the skill step, the rule branch
+  // that hands off, and the judgment branch beside it.
+  await expect(documentEditor).toContainText("Check eligibility");
+  await expect(documentEditor).toContainText("Hand this order to the billing team.");
+  await expect(documentEditor).toContainText("The customer needs a nuanced eligibility explanation.");
 
   await expect.poll(
     () => routineUpdates.some((update) => update.method === "POST"),

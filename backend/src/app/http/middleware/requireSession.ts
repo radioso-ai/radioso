@@ -1,12 +1,15 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { unauthorized } from "../../../shared/domain/errors.js";
-import type { AppDependencies } from "../../server/types.js";
+import type { Env } from "../../config/env.js";
+import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
+import type { AuthService } from "../../../modules/auth/services/authService.js";
 
-export type SessionDependencies = Pick<
-  AppDependencies,
-  "env" | "authService" | "accountAccessService"
->;
+export interface SessionDependencies {
+  env: Env;
+  authService: AuthService;
+  accountAccessService: AccountAccessService;
+}
 
 export const requireSession = (
   dependencies: SessionDependencies,

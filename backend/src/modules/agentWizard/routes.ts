@@ -3,11 +3,15 @@ import { z } from "zod";
 
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
-import type { AppDependencies } from "../../app/server/types.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import { AgentWizardError, type AgentWizardProgressEvent, type AgentWizardService } from "./service.js";
 
-type RouteDependencies = WorkspaceSessionDependencies & Pick<AppDependencies, "abuseControlService" | "accountAccessService">;
+type RouteDependencies = WorkspaceSessionDependencies & {
+  abuseControlService: {
+    enforce(input: { scope: string; subjectKey: string; limit: number; windowMs: number; blockMs?: number }): Promise<unknown>;
+  };
+  accountAccessService: WorkspaceSessionDependencies["accountAccessService"];
+};
 
 const parseBody = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const parsed = schema.safeParse(value);

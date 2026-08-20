@@ -2,13 +2,21 @@ import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
 import type { AuthenticatedPrincipal } from "../../../modules/account/services/accountAccessService.js";
-import type { AppDependencies } from "../../server/types.js";
-import { createRateLimitMiddleware } from "./rateLimit.js";
+import type { Env } from "../../config/env.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitAbuseControlPort,
+  type RateLimitAuditPort,
+} from "./rateLimit.js";
 
-export type ExpensiveAuthenticatedRateLimiterDependencies = Pick<
-  AppDependencies,
-  "env" | "abuseControlService" | "auditService"
->;
+export interface ExpensiveAuthenticatedRateLimiterDependencies {
+  env: Pick<Env,
+    | "EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS"
+    | "EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS"
+  >;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
+}
 
 const SCOPE = "api.expensive_authenticated";
 

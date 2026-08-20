@@ -36,6 +36,7 @@ import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
+import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
@@ -261,6 +262,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const connectorManagementService = new ConnectorManagementService({
+    database: infrastructure.database,
+    registry: connectorRegistry,
+  });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
@@ -525,6 +530,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
+    connectorManagementService,
     connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatInferencePipeline,

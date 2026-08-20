@@ -185,6 +185,71 @@ describe("RadiosoCrawlerProvider", () => {
     }
   });
 
+  it("does not mask checkpoint callback failures after its execution slice expires", async () => {
+    vi.useFakeTimers();
+    const checkpointError = new Error("checkpoint persistence failed");
+    mocks.crawlSiteStream.mockImplementation(async ({
+      signal,
+      onCandidateUrl,
+    }: {
+      signal?: AbortSignal;
+      onCandidateUrl: (decision: { decision: "accepted"; canonicalUrl: string }) => Promise<void>;
+    }) => {
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      await onCandidateUrl({
+        decision: "accepted",
+        canonicalUrl: "https://example.com/docs",
+      });
+      return { pages: 0 };
+    });
+
+    try {
+      const provider = new RadiosoCrawlerProvider();
+      const resultPromise = provider.crawlStream({
+        url: "https://example.com",
+        limit: 100,
+        maxDurationMs: 240_000,
+        onCheckpointEvent: vi.fn().mockRejectedValue(checkpointError),
+      }, async () => {});
+      const rejection = expect(resultPromise).rejects.toBe(checkpointError);
+
+      await vi.advanceTimersByTimeAsync(240_000);
+
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not mask unrelated crawler failures after its execution slice expires", async () => {
+    vi.useFakeTimers();
+    const crawlerError = new Error("crawler cleanup failed");
+    mocks.crawlSiteStream.mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {
+      await new Promise<void>((resolve) => {
+        signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      throw crawlerError;
+    });
+
+    try {
+      const provider = new RadiosoCrawlerProvider();
+      const resultPromise = provider.crawlStream({
+        url: "https://example.com",
+        limit: 100,
+        maxDurationMs: 240_000,
+      }, async () => {});
+      const rejection = expect(resultPromise).rejects.toBe(crawlerError);
+
+      await vi.advanceTimersByTimeAsync(240_000);
+
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not turn caller cancellation into a yielded slice", async () => {
     const controller = new AbortController();
     mocks.crawlSiteStream.mockImplementation(async ({ signal }: { signal?: AbortSignal }) => {

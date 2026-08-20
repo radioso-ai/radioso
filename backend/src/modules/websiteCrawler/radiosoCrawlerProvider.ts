@@ -44,6 +44,21 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
     const config = resolveWebsiteCrawlerConfig();
     const seedPendingUrls = getSeedPendingUrls(request);
     const slice = createCrawlSliceSignal(request.signal, request.maxDurationMs);
+    const callbackFailure: { recorded: boolean; error: unknown } = {
+      recorded: false,
+      error: undefined,
+    };
+    const runCallback = async (callback: () => Promise<void>): Promise<void> => {
+      try {
+        await callback();
+      } catch (error) {
+        if (!callbackFailure.recorded) {
+          callbackFailure.recorded = true;
+          callbackFailure.error = error;
+        }
+        throw error;
+      }
+    };
     try {
       await crawlSiteStream({
         baseUrl: request.url,
@@ -59,33 +74,43 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
         includeBaseUrl: (request.checkpoint?.discoveredUrls.length ?? 0) === 0,
         signal: slice.signal,
         onCandidateUrl: async (decision) => {
-          if (decision.decision !== "accepted" || !decision.canonicalUrl) {
-            return;
-          }
-          await request.onCheckpointEvent?.({
-            type: "discovered",
-            url: decision.canonicalUrl,
-            canonicalUrl: decision.canonicalUrl,
+          await runCallback(async () => {
+            if (decision.decision !== "accepted" || !decision.canonicalUrl) {
+              return;
+            }
+            await request.onCheckpointEvent?.({
+              type: "discovered",
+              url: decision.canonicalUrl,
+              canonicalUrl: decision.canonicalUrl,
+            });
           });
         },
         onResult: async (page) => {
-          await request.onCheckpointEvent?.({
-            type: "processing",
-            url: page.frontierUrl,
-            canonicalUrl: page.url,
-          });
-          await onPage(toWebsiteCrawlPage(page));
-          await request.onCheckpointEvent?.({
-            type: "processed",
-            url: page.frontierUrl,
-            canonicalUrl: page.url,
+          await runCallback(async () => {
+            await request.onCheckpointEvent?.({
+              type: "processing",
+              url: page.frontierUrl,
+              canonicalUrl: page.url,
+            });
+            await onPage(toWebsiteCrawlPage(page));
+            await request.onCheckpointEvent?.({
+              type: "processed",
+              url: page.frontierUrl,
+              canonicalUrl: page.url,
+            });
           });
         },
       });
+      if (callbackFailure.recorded) {
+        throw callbackFailure.error;
+      }
       request.signal?.throwIfAborted();
     } catch (error) {
       request.signal?.throwIfAborted();
-      if (!slice.expired()) {
+      if (callbackFailure.recorded) {
+        throw callbackFailure.error;
+      }
+      if (!slice.isExpectedAbort(error)) {
         throw error;
       }
     } finally {
@@ -103,16 +128,23 @@ export class RadiosoCrawlerProvider implements WebsiteCrawlerProvider {
 const createCrawlSliceSignal = (
   requestSignal: AbortSignal | undefined,
   maxDurationMs: number | undefined,
-): { signal: AbortSignal | undefined; expired: () => boolean; dispose: () => void } => {
+): {
+  signal: AbortSignal | undefined;
+  expired: () => boolean;
+  isExpectedAbort: (error: unknown) => boolean;
+  dispose: () => void;
+} => {
   if (!maxDurationMs) {
     return {
       signal: requestSignal,
       expired: () => false,
+      isExpectedAbort: () => false,
       dispose: () => undefined,
     };
   }
 
   const controller = new AbortController();
+  const expirationReason = new Error("Website crawl execution slice expired");
   let sliceExpired = false;
   const abortFromRequest = () => controller.abort(requestSignal?.reason);
   if (requestSignal?.aborted) {
@@ -122,13 +154,14 @@ const createCrawlSliceSignal = (
   }
   const timer = setTimeout(() => {
     sliceExpired = true;
-    controller.abort(new Error("Website crawl execution slice expired"));
+    controller.abort(expirationReason);
   }, maxDurationMs);
   timer.unref?.();
 
   return {
     signal: controller.signal,
     expired: () => sliceExpired,
+    isExpectedAbort: (error) => sliceExpired && error === expirationReason,
     dispose: () => {
       clearTimeout(timer);
       requestSignal?.removeEventListener("abort", abortFromRequest);

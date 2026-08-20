@@ -49,6 +49,10 @@ const waitFor = async (
   }
 };
 
+const createDispatcher = () => ({
+  dispatch: vi.fn().mockResolvedValue(undefined),
+});
+
 describe("website crawl worker", () => {
   it("claims one crawl job and publishes provider pages through document ingestion", async () => {
     const job = createJob();
@@ -74,6 +78,7 @@ describe("website crawl worker", () => {
           }],
         }),
       },
+      dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest,
       } as never,
@@ -240,6 +245,7 @@ describe("website crawl worker", () => {
           };
         }),
       },
+      dispatcher: createDispatcher(),
       documentIngestionService: { ingest } as never,
       logger: { info: vi.fn(), error: vi.fn() } as never,
       pollIntervalMs: 10_000,
@@ -293,6 +299,7 @@ describe("website crawl worker", () => {
           pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
         }),
       },
+      dispatcher: createDispatcher(),
       documentIngestionService: { ingest } as never,
       logger: { info: vi.fn(), error: vi.fn() } as never,
       pollIntervalMs: 10_000,
@@ -356,6 +363,7 @@ describe("website crawl worker", () => {
     const worker = new WebsiteCrawlWorker({
       repository: repository as never,
       provider,
+      dispatcher: createDispatcher(),
       documentIngestionService: { ingest: vi.fn() } as never,
       logger: logger as never,
       pollIntervalMs: 10_000,
@@ -398,6 +406,7 @@ describe("website crawl worker", () => {
           pages: [{ sourceUrl: "https://example.com/a", title: "A", content: "Alpha" }],
         }),
       },
+      dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
       } as never,
@@ -442,6 +451,7 @@ describe("website crawl worker", () => {
     const worker = new WebsiteCrawlWorker({
       repository: repository as never,
       provider,
+      dispatcher: createDispatcher(),
       documentIngestionService: {
         ingest: vi.fn().mockResolvedValue({ documentId: "doc-1", status: "queued" }),
       } as never,
@@ -468,6 +478,7 @@ describe("website crawl worker", () => {
     };
     const worker = new WebsiteCrawlWorker({
       repository: repository as never,
+      dispatcher: createDispatcher(),
       documentIngestionService: {} as never,
       logger: {
         info: vi.fn(),

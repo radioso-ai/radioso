@@ -419,12 +419,15 @@ export class QueryRewriteService {
 
     const normalized = retrievalSubqueries
       .map((subquery, index) => {
-        const label = this.normalizeRetrievalSubqueryLabel(subquery?.label);
-        const semanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
-        const lexicalQuery = this.normalizeLexicalRewrite(subquery?.lexicalQuery ?? semanticQuery);
-        if (!label || !semanticQuery || !lexicalQuery) {
+        const normalizedSemanticQuery = this.normalizeRewrite(subquery?.semanticQuery);
+        const normalizedLexicalQuery = this.normalizeLexicalRewrite(subquery?.lexicalQuery);
+        const semanticQuery = normalizedSemanticQuery || this.normalizeRewrite(normalizedLexicalQuery);
+        const lexicalQuery = normalizedLexicalQuery || semanticQuery;
+        if (!semanticQuery || !lexicalQuery) {
           return null;
         }
+
+        const label = this.normalizeRetrievalSubqueryLabel(subquery?.label) ?? `Subquery ${index + 1}`;
 
         return {
           id: `subquery_${index + 1}`,
@@ -452,6 +455,7 @@ export class QueryRewriteService {
     }
 
     const normalized = value
+      .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\x00-\x1f\x7f]/g, " ")
       .replace(/https?:\/\/\S+|www\.\S+/gi, " ")
       .replace(/[`#*_~[\]{}]/g, "")

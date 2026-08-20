@@ -9,9 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Eye,
-  FileText,
   FlaskConical,
-  FormInput,
   History,
   MoreHorizontal,
   Pencil,
@@ -27,7 +25,6 @@ import { ChatWorkbenchDrawer } from '@/components/dashboard/workbench/chat-workb
 import { RoutineDiagnosticList } from '@/components/dashboard/settings/routine-editor-controls'
 import { RoutineDraftAssistDialog } from '@/components/dashboard/settings/routine-draft-assist-dialog'
 import { RoutineCompletionExportPanel } from '@/components/dashboard/settings/routine-completion-export-panel'
-import { RoutineFormEditor } from '@/components/dashboard/settings/routine-form-editor'
 import { RoutineDocumentTab } from '@/components/dashboard/settings/routine-document-tab'
 import { RoutineSkillCatalogProvider } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { RoutineVersionHistoryDrawer } from '@/components/dashboard/settings/routine-version-history-drawer'
@@ -58,11 +55,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
-import { customerEmailApi, type CustomerEmailSkillDefinition } from '@/lib/api-customer-email'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
   RoutinePublishRejectedError,
@@ -77,14 +71,13 @@ import {
 import { getRoutineLineageVersions, groupRoutineLineages, type RoutineLineageGroup } from '@/lib/routine-lineage'
 import {
   formToRoutineDraft,
-  renderedDiagnosticTargets,
   renderedDraftTargets,
   routineLevelDiagnostics,
+  buildCompletionExportPayloadPreview,
   routineToForm,
   type RoutineDraftHeader,
   type RoutineFormState,
 } from '@/lib/routine-form'
-import { routineToBlockDoc } from '@/lib/routine-prose'
 import { useCopilotEntity } from '@/lib/copilot-context'
 
 function CopilotRoutineEntity({ routine }: { routine: RoutineDefinition }) {
@@ -163,18 +156,6 @@ const draftError = (draft: RoutineDefinitionDraft): string | null => {
   }
   return null
 }
-
-// The projection takes authoring drafts; a persisted definition carries extra identity
-// fields the strict editing schema rejects, so pick the draft subset before projecting.
-const definitionToDraft = (routine: RoutineDefinition): RoutineDefinitionDraft => ({
-  name: routine.name,
-  activation: routine.activation,
-  slots: routine.slots,
-  steps: routine.steps,
-  transitions: routine.transitions,
-  terminals: routine.terminals,
-  ...(routine.completionExport ? { completionExport: routine.completionExport } : {}),
-})
 
 const draftAsRoutine = (draft: RoutineDefinitionDraft, routine?: RoutineDefinition | null): RoutineDefinition => ({
   ...draft,
@@ -267,7 +248,6 @@ const currentBrowserUrlMatches = (href: string) => {
 type NewRoutineRecovery = {
   draft: RoutineDefinitionDraft
   header: RoutineDraftHeader
-  viewMode: 'document' | 'form'
 }
 
 const newRoutineRecoveryKey = (agentId: string) => `radioso:routine-new-draft:${agentId}`
@@ -279,13 +259,7 @@ const readNewRoutineRecovery = (agentId: string): NewRoutineRecovery | null => {
   try {
     const parsed = JSON.parse(value) as Partial<NewRoutineRecovery>
     if (!parsed.draft || !parsed.header) return null
-    // Recoveries written before the Prose tab retired map onto the Document view.
-    const viewMode = parsed.viewMode === 'form' ? 'form' : 'document'
-    return {
-      draft: parsed.draft,
-      header: parsed.header,
-      viewMode,
-    }
+    return { draft: parsed.draft, header: parsed.header }
   } catch {
     return null
   }
@@ -573,7 +547,6 @@ function RoutineEditorScreen({
   // same shared draft path as the Form tab.
   const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
-  const [viewMode, setViewMode] = useState<'document' | 'form'>('document')
   // The Document editor owns its state while mounted; flows that replace the whole draft
   // in place (draft assist) bump this nonce so the editor remounts on the new draft.
   const [documentSessionNonce, setDocumentSessionNonce] = useState(0)
@@ -591,7 +564,6 @@ function RoutineEditorScreen({
   const [webhookDestinations, setWebhookDestinations] = useState<WebhookDestination[]>([])
   const [isWebhookDestinationsLoading, setIsWebhookDestinationsLoading] = useState(true)
   const [webhookDestinationsError, setWebhookDestinationsError] = useState<string | null>(null)
-  const [emailSkills, setEmailSkills] = useState<CustomerEmailSkillDefinition[]>([])
   const [error, setError] = useState<string | null>(null)
   const [deleteDraftDialogOpen, setDeleteDraftDialogOpen] = useState(false)
   const [testDrawerOpen, setTestDrawerOpen] = useState(false)
@@ -634,10 +606,6 @@ function RoutineEditorScreen({
     })
   }
 
-  const slotKeys = useMemo(
-    () => form?.slots.map((slot) => slot.key.trim()).filter(Boolean) ?? [],
-    [form],
-  )
   const isReadOnly = editingRoutine ? editingRoutine.status !== 'draft' : false
   const versionHistory = useMemo(
     () => getRoutineLineageVersions(allRoutines, editingRoutine?.lineageId),
@@ -648,9 +616,9 @@ function RoutineEditorScreen({
     [versionHistory],
   )
   const activeRoutineDraft = useMemo(() => {
-    if (viewMode === 'document' && documentDraft) return draftWithHeader(documentDraft, draftHeader)
+    if (documentDraft) return draftWithHeader(documentDraft, draftHeader)
     return form ? formToRoutineDraft(form, { header: draftHeader }) : null
-  }, [documentDraft, draftHeader, form, viewMode])
+  }, [documentDraft, draftHeader, form])
   const activeRoutineDraftSignature = useMemo(
     () => activeRoutineDraft ? JSON.stringify(activeRoutineDraft) : null,
     [activeRoutineDraft],
@@ -679,12 +647,8 @@ function RoutineEditorScreen({
   // the editor has no site for — surfaces here, so no diagnostic can block publish while
   // being invisible (FR-030).
   const renderedFormTargets = useMemo(
-    () => {
-      if (viewMode === 'form' && form) return renderedDiagnosticTargets(form)
-      if (viewMode === 'document' && activeRoutineDraft) return renderedDraftTargets(activeRoutineDraft)
-      return []
-    },
-    [activeRoutineDraft, form, viewMode],
+    () => activeRoutineDraft ? renderedDraftTargets(activeRoutineDraft) : [],
+    [activeRoutineDraft],
   )
   const routineDiagnostics = useMemo(
     () => routineLevelDiagnostics(validationDiagnostics, renderedFormTargets),
@@ -722,22 +686,6 @@ function RoutineEditorScreen({
   useEffect(() => {
     let active = true
     queueMicrotask(() => {
-      void customerEmailApi.listEmailSkills(agentId)
-        .then((response) => {
-          if (active) setEmailSkills(response.skills)
-        })
-        .catch(() => {
-          if (active) setEmailSkills([])
-        })
-    })
-    return () => {
-      active = false
-    }
-  }, [agentId])
-
-  useEffect(() => {
-    let active = true
-    queueMicrotask(() => {
       if (!active) return
       if (routineRouteId !== 'new' && currentRoutineIdRef.current === routineRouteId) {
         setIsLoading(false)
@@ -766,7 +714,6 @@ function RoutineEditorScreen({
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
         setDocumentDraft(null)
-        setViewMode(recovered?.viewMode ?? 'document')
         setIsLoading(false)
         return
       }
@@ -796,7 +743,6 @@ function RoutineEditorScreen({
           // Every representable routine opens in the Document view, editable or not: its rest
           // state is the read surface a published version wants. Only a routine the projection
           // cannot express falls back to the Form view, which shows the raw graph.
-          setViewMode(routineToBlockDoc(definitionToDraft(response.routine)).ok ? 'document' : 'form')
         })
         .catch((loadError) => {
           if (!active) return
@@ -811,14 +757,6 @@ function RoutineEditorScreen({
       active = false
     }
   }, [agentId, routineRouteId])
-
-  const synchronizeView = (nextView: 'document' | 'form') => {
-    if (nextView === viewMode) return
-    if (nextView === 'document' && form) {
-      setDocumentDraft(formToRoutineDraft(form, { header: draftHeader }))
-    }
-    setViewMode(nextView)
-  }
 
   const saveDraft = async ({ refreshEditor = true }: { refreshEditor?: boolean } = {}): Promise<RoutineDefinition | null> => {
     const draft = activeRoutineDraft
@@ -936,12 +874,8 @@ function RoutineEditorScreen({
 
   useEffect(() => {
     if (!isNewRoutine || !activeRoutineDraft) return
-    writeNewRoutineRecovery(agentId, {
-      draft: activeRoutineDraft,
-      header: draftHeader,
-      viewMode,
-    })
-  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine, viewMode])
+    writeNewRoutineRecovery(agentId, { draft: activeRoutineDraft, header: draftHeader })
+  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine])
 
   const publishDraft = async () => {
     if (!canPublishDraft) return
@@ -1122,11 +1056,6 @@ function RoutineEditorScreen({
     }
   }
 
-  const updateForm = (updater: (current: RoutineFormState) => RoutineFormState) => {
-    routineEditorDirtyRef.current = true
-    setForm((current) => current ? updater(current) : current)
-  }
-
   const loadAssistedDraft = useCallback(async () => {
     const prose = draftAssistProse.trim()
     if (!prose || isReadOnly) return
@@ -1143,7 +1072,6 @@ function RoutineEditorScreen({
       setValidatedDraftSignature(nextSignature)
       setDocumentDraft(null)
       setDocumentSessionNonce((nonce) => nonce + 1)
-      setViewMode(routineToBlockDoc(response.draft).ok ? 'document' : 'form')
       setDraftAssistDialogOpen(false)
     } catch (draftError) {
       setError(getApiErrorMessage(draftError, 'Failed to draft routine from procedure.'))
@@ -1392,54 +1320,13 @@ function RoutineEditorScreen({
                   {REENTRY_MODE_OPTIONS.find((option) => option.value === draftHeader.activation.reentryMode)?.hint}
                 </p>
               </div>
-              {viewMode !== 'document' ? <div className="space-y-1 sm:col-span-2">
-                <Label htmlFor="routineTrigger">Activation trigger</Label>
-                <Textarea
-                  id="routineTrigger"
-                  value={draftHeader.activation.triggerDescription}
-                  onChange={(event) => {
-                    routineEditorDirtyRef.current = true
-                    setDraftHeader((current) => ({
-                      ...current,
-                      activation: { ...current.activation, triggerDescription: event.target.value },
-                    }))
-                  }}
-                  rows={2}
-                  disabled={isReadOnly}
-                />
-              </div> : null}
-            </div>
+                          </div>
             <RoutineDiagnosticList diagnostics={routineDiagnostics} />
 
-            <Tabs value={viewMode} onValueChange={(value) => synchronizeView(value as 'document' | 'form')}>
-              <TabsList aria-label="Routine editor view">
-                <TabsTrigger value="document">
-                  <FileText className="h-4 w-4" />
-                  Document
-                </TabsTrigger>
-                <TabsTrigger value="form">
-                  <FormInput className="h-4 w-4" />
-                  Form
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
 
 
-            {viewMode === 'form' ? (
-              <RoutineFormEditor
-                form={form}
-                diagnostics={validationDiagnostics}
-                isPublished={isReadOnly}
-                slotKeys={slotKeys}
-                webhookDestinations={webhookDestinations}
-                isWebhookDestinationsLoading={isWebhookDestinationsLoading}
-                webhookDestinationsError={webhookDestinationsError}
-                emailSkills={emailSkills}
-                onChange={updateForm}
-              />
-            ) : null}
 
-            {viewMode === 'document' && activeRoutineDraft ? (
+            {activeRoutineDraft ? (
               <RoutineDocumentTab
                 key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
@@ -1460,9 +1347,10 @@ function RoutineEditorScreen({
               />
             ) : null}
 
-            {viewMode === 'document' && activeRoutineDraft && !isReadOnly ? (
+            {activeRoutineDraft && !isReadOnly ? (
               <RoutineCompletionExportPanel
                 idPrefix="document-completion-export"
+                payloadPreview={form ? buildCompletionExportPayloadPreview(form) : undefined}
                 value={activeRoutineDraft.completionExport ?? { enabled: false, triggerKinds: [], destinationRef: '' }}
                 onChange={(next) => {
                   routineEditorDirtyRef.current = true

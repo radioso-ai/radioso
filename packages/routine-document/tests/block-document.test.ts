@@ -246,10 +246,13 @@ describe('routine block document', () => {
       .toEqual([expect.objectContaining({ target: { kind: 'unresolved', toRef: 'missing' } })])
   })
 
-  it('returns diagnostics for duplicate stable ids', () => {
+  it('keeps a step and a terminal that collide, leaving the shared name unresolved', () => {
     const input = draft({ terminals: [{ stableStepId: 'collect', kind: 'complete', instruction: 'All done.', ordinal: 0 }] })
+    const projected = routineToBlockDoc(input)
+    if (!projected.ok) throw new Error('expected a document')
 
-    expect(routineToBlockDoc(input)).toEqual({ ok: false, diagnostics: [{ code: 'duplicate_stable_id', message: 'Duplicate stable id "collect" cannot be represented.' }] })
+    expect(projected.doc.steps.some((step) => step.stableStepId === 'collect')).toBe(true)
+    expect(projected.doc.steps.flatMap((step) => step.branches).every((branch) => branch.target.kind !== 'ending' || branch.target.terminalId !== 'collect')).toBe(true)
   })
 
   it('returns schema issue paths and messages for an invalid authoring draft', () => {
@@ -319,17 +322,19 @@ describe('a routine with an edge that points nowhere', () => {
     expect(saved.transitions.find((transition) => transition.fromStep === 'collect')?.toRef).toBe('deleted_step')
   })
 
-  it('still refuses a duplicate id, which no rendering can disambiguate', () => {
+  it('renders both steps when an id is used twice, so the author can rename one', () => {
     const projected = routineToBlockDoc(draft({
       steps: [
         { stableStepId: 'collect', kind: 'chat', instruction: 'First.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
         { stableStepId: 'collect', kind: 'chat', instruction: 'Second.', toolRef: null, actionType: null, ordinal: 1, metadata: {} },
       ],
-      transitions: [],
+      transitions: [{ fromStep: 'collect', toRef: 'collect', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
     }))
+    if (!projected.ok) throw new Error('expected a document')
 
-    expect(projected.ok).toBe(false)
-    if (projected.ok) throw new Error('expected a refusal')
-    expect(projected.diagnostics[0]?.code).toBe('duplicate_stable_id')
+    expect(projected.doc.steps).toHaveLength(2)
+    // The branch genuinely cannot say which of the two it means, so it resolves to neither
+    // and the reader shows it as pointing nowhere.
+    expect(projected.doc.steps[0]?.branches[0]?.target).toEqual({ kind: 'unresolved', toRef: 'collect' })
   })
 })

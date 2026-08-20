@@ -211,6 +211,81 @@ const renameGuardRef = (guard: RoutineBlockGuard, from: string, to: string): Rou
   return guard.kind === 'field' && guard.fieldRef === from ? { ...guard, fieldRef: to } : guard
 }
 
+// Every step and ending shares one name space, because a branch target names either
+// without saying which. A rename therefore checks both, and refuses rather than creating a
+// collision — two rows answering to one name is the single state no view can render, and
+// it is far easier to decline than to unpick afterwards.
+const nameIsTaken = (doc: RoutineBlockDoc, name: string, exceptId: string): boolean =>
+  doc.steps.some((step) => step.stableStepId !== exceptId && step.stableStepId === name)
+  || endingsOf(doc).some((ending) => ending.stableStepId !== exceptId && ending.stableStepId === name)
+
+const endingsOf = (doc: RoutineBlockDoc): RoutineBlockEnding[] => [
+  ...doc.unreferencedEndings,
+  ...doc.steps.flatMap((step) => step.branches.flatMap((branch) => branch.target.kind === 'ending' && branch.target.ending ? [branch.target.ending] : [])),
+]
+
+// Addressed by position, not by name: when two rows share a name, renaming one of them is
+// the repair, so the edit has to be able to say which one.
+export const renameStep = (doc: RoutineBlockDoc, stepIndex: number, name: string): RoutineBlockDoc => {
+  const stableStepId = doc.steps[stepIndex]?.stableStepId
+  const nextId = slugifyVariableKey(name)
+  if (!stableStepId || !nextId || nextId === stableStepId) return copy(doc)
+  if (nameIsTaken(doc, nextId, stableStepId)) return copy(doc)
+  const isDuplicated = doc.steps.filter((step) => step.stableStepId === stableStepId).length > 1
+  const next = copy(doc)
+  next.steps = next.steps.map((step, index) => ({
+    ...step,
+    stableStepId: index === stepIndex ? nextId : step.stableStepId,
+    // A branch that named the old id follows the rename — unless the name was shared, in
+    // which case it never resolved to this row and must not be silently pointed at it.
+    branches: step.branches.map((branch) => isDuplicated
+      ? branch
+      : branch.target.kind === 'step' && branch.target.stableStepId === stableStepId
+        ? { ...branch, target: { kind: 'step' as const, stableStepId: nextId } }
+        : branch.target.kind === 'unresolved' && branch.target.toRef === stableStepId
+          ? { ...branch, target: { kind: 'step' as const, stableStepId: nextId } }
+          : branch),
+  }))
+  return next
+}
+
+export const renameEnding = (doc: RoutineBlockDoc, terminalId: string, name: string): RoutineBlockDoc => {
+  const nextId = slugifyVariableKey(name)
+  if (!nextId || nextId === terminalId) return copy(doc)
+  if (!endingsOf(doc).some((ending) => ending.stableStepId === terminalId)) return copy(doc)
+  if (nameIsTaken(doc, nextId, terminalId)) return copy(doc)
+  const next = copy(doc)
+  next.unreferencedEndings = next.unreferencedEndings.map((ending) => ending.stableStepId === terminalId ? { ...ending, stableStepId: nextId } : ending)
+  next.steps = next.steps.map((step) => ({
+    ...step,
+    branches: step.branches.map((branch) => {
+      if (branch.target.kind === 'ending' && branch.target.terminalId === terminalId) {
+        const ending = branch.target.ending ? { ...branch.target.ending, stableStepId: nextId } : undefined
+        return { ...branch, target: { kind: 'ending' as const, terminalId: nextId, ...(ending ? { ending } : {}) } }
+      }
+      if (branch.target.kind === 'unresolved' && branch.target.toRef === terminalId) {
+        return { ...branch, target: { kind: 'ending' as const, terminalId: nextId } }
+      }
+      return branch
+    }),
+  }))
+  return next
+}
+
+// An ending a branch still points at cannot go: removing it would leave that branch aimed
+// at nothing, which is exactly the breakage the document exists to surface.
+export const endingReferences = (doc: RoutineBlockDoc, terminalId: string): string[] =>
+  doc.steps.flatMap((step) => step.branches.some((branch) => branch.target.kind === 'ending' && branch.target.terminalId === terminalId)
+    ? [step.stableStepId]
+    : [])
+
+export const removeEnding = (doc: RoutineBlockDoc, terminalId: string): RoutineBlockDoc => {
+  if (endingReferences(doc, terminalId).length > 0) return copy(doc)
+  const next = copy(doc)
+  next.unreferencedEndings = next.unreferencedEndings.filter((ending) => ending.stableStepId !== terminalId)
+  return next
+}
+
 export const addSlot = (doc: RoutineBlockDoc): RoutineBlockDoc => {
   const next = copy(doc)
   const key = nextId('slot', next.information.map((slot) => slot.key))

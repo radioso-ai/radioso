@@ -146,26 +146,32 @@ export function routineToBlockDoc(input: RoutineDefinitionDraftEditingAuthoringI
   const stepIds = new Set<string>()
   const terminalIds = new Set<string>()
 
-  for (const step of steps) {
-    if (stepIds.has(step.stableStepId) || terminalIds.has(step.stableStepId)) {
-      return diagnostic('duplicate_stable_id', `Duplicate stable id "${step.stableStepId}" cannot be represented.`)
-    }
-    stepIds.add(step.stableStepId)
+  // Steps and terminals share one id namespace. A name used twice makes every branch to it
+  // ambiguous, but refusing the whole document leaves the author with nowhere to fix it —
+  // and the backend already reports the collision as `node_id_collision`, which the reader
+  // anchors to the rows involved. So the document renders, and only the branches that
+  // genuinely cannot resolve are marked.
+  const collidedIds = new Set<string>()
+  for (const id of [...steps.map((step) => step.stableStepId), ...terminals.map((terminal) => terminal.stableStepId)]) {
+    if (stepIds.has(id) || terminalIds.has(id)) collidedIds.add(id)
+    stepIds.add(id)
   }
-  for (const terminal of terminals) {
-    if (terminalIds.has(terminal.stableStepId) || stepIds.has(terminal.stableStepId)) {
-      return diagnostic('duplicate_stable_id', `Duplicate stable id "${terminal.stableStepId}" cannot be represented.`)
-    }
-    terminalIds.add(terminal.stableStepId)
+  for (const terminal of terminals) terminalIds.add(terminal.stableStepId)
+  for (const id of collidedIds) {
+    stepIds.delete(id)
+    terminalIds.delete(id)
   }
 
   for (const transition of draft.transitions) {
-    if (!stepIds.has(transition.fromStep)) {
+    // A transition out of a collided id still leaves a real step; it is only its target
+    // that cannot be resolved. Check the steps themselves rather than the resolvable set.
+    if (!steps.some((step) => step.stableStepId === transition.fromStep)) {
       return diagnostic('unknown_transition_source', `Transition source "${transition.fromStep}" does not name a step.`)
     }
   }
 
-  const terminalById = new Map(terminals.map((terminal) => [terminal.stableStepId, terminal]))
+  // A collided id resolves to nothing on purpose: the branch cannot say which row it means.
+  const terminalById = new Map(terminals.filter((terminal) => !collidedIds.has(terminal.stableStepId)).map((terminal) => [terminal.stableStepId, terminal]))
   // Every branch that targets a terminal carries the full ending. Copies keep target edits
   // local: removing or retargeting one branch can never take the definition away from
   // another. The inverse mapping deduplicates by stable id, and edits patch every copy.

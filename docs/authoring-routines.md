@@ -1,6 +1,6 @@
 ---
 title: "Authoring Routines"
-description: "Create and edit dashboard routines in Document and Form views, connect skills, test drafts, and manage their lifecycle."
+description: "Create and edit dashboard routines in the Document view, connect skills, test drafts, and manage their lifecycle."
 last_updated: 2026-08-19
 ---
 
@@ -14,15 +14,10 @@ Open an agent's **Routines** settings to manage its routines. The list has one
 row for each routine lineage. Choose **New routine** for a draft, or select a
 routine to open its editor.
 
-The editor presents one draft in two views:
-
-- **Document** is the primary authoring view. It reads as the flow the agent
-  follows, with controls alongside the information that makes each step work.
-- **Form** is the structural view. It exposes routine fields directly for
-  detailed inspection and shapes that benefit from explicit fields.
-
-Switching views re-projects the same draft. The engine compiles the draft into
-the graph it runs; authors work with the routine rather than drawing that graph.
+The editor presents the draft as a **Document**: it reads as the flow the agent
+follows, with the controls for each part alongside the words that describe it.
+The engine compiles the draft into the graph it runs; authors work with the
+routine rather than drawing that graph.
 
 For the runtime model behind routines, see
 [Conversational routines](./architecture/conversational-routines.md).
@@ -167,27 +162,6 @@ missing webhook destination for completion export.
 Choose **Save draft** to keep work in progress. **Publish** creates the immutable
 version that the chat runtime runs after the draft validates cleanly.
 
-## Form view
-
-**Form** is the strict, lower-level view of the same draft. Use it when you want
-to inspect or adjust the stored routine shape directly, including multiple
-handoff terminals and activation gates.
-
-The form exposes:
-
-- slots, including **Required** and editable-after-completion settings
-- step ids, which the document leaves alone because they name a step to the
-  compiler rather than to a reader
-- skill inputs, outputs, and approval choices with their decision targets
-- transition guard kinds: `llm`, `default`, `slot_filled`, `outcome`, and
-  `counter`
-- terminal kinds and messages: `complete` and `handoff`
-- completion-export settings through a `webhook_call` skill
-
-Use Form when the exact stored fields are the clearest way to review a routine's
-structure. The Document and Form views edit the same slots, steps, transitions,
-and terminals.
-
 ## Test a draft before publishing
 
 On a saved draft, choose **Test draft** to open a live test chat over the editor.
@@ -242,7 +216,7 @@ Routine versions have four statuses:
 - `superseded` — a published version replaced by a later version.
 - `archived` — a version kept outside the active set.
 
-Published, superseded, and archived versions open in **Form** view. Choose
+Published, superseded, and archived versions open as a read-only document. Choose
 **Edit revision** on a published routine to create or open its draft revision.
 Publishing that revision makes it the immutable active version while the prior
 version becomes `superseded`.

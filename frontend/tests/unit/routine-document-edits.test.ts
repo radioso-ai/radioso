@@ -12,8 +12,11 @@ import {
   nextApprovalOptionId,
   referenceEnding,
   removeBranch,
+  removeEnding,
   removeStep,
+  renameEnding,
   renameSlot,
+  renameStep,
   replaceInstruction,
   slotReferences,
   targetBranchAtStep,
@@ -56,6 +59,61 @@ const pristineSeed = () => {
 }
 
 describe('routine document edits', () => {
+  describe('renaming the names the compiler uses', () => {
+    it('renames a step and moves every branch that pointed at it', () => {
+      const withBranch = targetBranchAtStep(addBranch(source(), 'ask_email', 'llm'), 'ask_email', 0, 'ask_email')
+
+      const edited = renameStep(withBranch, 0, 'collect_email')
+
+      expect(edited.steps[0]?.stableStepId).toBe('collect_email')
+      expect(edited.steps[0]?.branches[0]?.target).toEqual({ kind: 'step', stableStepId: 'collect_email' })
+    })
+
+    it('refuses a rename that would make two steps answer to one name', () => {
+      const twoSteps = addStep(source(), 'chat')
+      // Two rows answering to one name make every branch to it ambiguous, so the rename is
+      // refused rather than allowed and then unpicked.
+      expect(renameStep(twoSteps, 1, 'ask_email')).toEqual(twoSteps)
+    })
+
+    it('refuses a step name already taken by an ending', () => {
+      const doc = source()
+      const endingId = doc.unreferencedEndings[0]?.stableStepId ?? 'complete'
+
+      expect(renameStep(doc, 0, endingId)).toEqual(doc)
+    })
+
+    it('renames an ending and follows it from every branch that targets it', () => {
+      const branched = createEndingForBranch(addBranch(source(), 'ask_email', 'llm'), 'ask_email', 0, 'complete')
+      const target = branched.steps[0]?.branches[0]?.target
+      if (target?.kind !== 'ending') throw new Error('expected an ending target')
+
+      const edited = renameEnding(branched, target.terminalId, 'wrapped_up')
+
+      const renamed = edited.steps[0]?.branches[0]?.target
+      expect(renamed).toMatchObject({ kind: 'ending', terminalId: 'wrapped_up' })
+    })
+
+    it('removes an ending nothing points at', () => {
+      const doc = addEnding(source(), 'handoff')
+      const added = doc.unreferencedEndings.at(-1)!.stableStepId
+
+      const edited = removeEnding(doc, added)
+
+      expect(edited.unreferencedEndings.map((ending) => ending.stableStepId)).not.toContain(added)
+    })
+
+    it('keeps an ending a branch still needs', () => {
+      const branched = createEndingForBranch(addBranch(source(), 'ask_email', 'llm'), 'ask_email', 0, 'complete')
+      const target = branched.steps[0]?.branches[0]?.target
+      if (target?.kind !== 'ending') throw new Error('expected an ending target')
+
+      // Removing it would leave the branch pointing nowhere, which is the state the reader
+      // has to warn about — so the edit declines instead of creating one.
+      expect(removeEnding(branched, target.terminalId)).toEqual(branched)
+    })
+  })
+
   describe('changing a step kind', () => {
     it('turns a chat step into a tool step awaiting a skill', () => {
       const edited = changeStepKind(source(), 'ask_email', 'tool')

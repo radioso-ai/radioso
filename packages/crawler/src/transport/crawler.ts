@@ -490,6 +490,7 @@ export const crawlSite = async (params: Omit<CrawlSiteParams, "onResult">) => {
       results.push(page);
     }
   });
+  params.signal?.throwIfAborted();
   return results;
 };
 

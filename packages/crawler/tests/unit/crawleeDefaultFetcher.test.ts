@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { crawlSite } from "../../src/index.js";
+import { crawlSite, crawlSiteStream } from "../../src/index.js";
 
 const CRAWLER_MAX_FETCH_RESPONSE_BYTES = 25 * 1024 * 1024;
 const CRAWLER_MAX_DECOMPRESSED_BYTES = 50 * 1024 * 1024;
@@ -91,7 +91,7 @@ describe("default Crawlee fetcher", () => {
     expect(validateNavigationUrl).toHaveBeenCalledWith(`${baseUrl}/`);
   });
 
-  it("does not report an intentionally aborted in-flight page as failed", async () => {
+  it("does not report an intentionally aborted streaming page as failed", async () => {
     const { server, baseUrl } = await listen((req, res) => {
       if (req.url === "/robots.txt") {
         res.writeHead(404).end();
@@ -106,14 +106,18 @@ describe("default Crawlee fetcher", () => {
       notifyFetchStarted = resolve;
     });
 
-    const crawl = crawlSite({
+    const onResult = vi.fn();
+    const crawl = crawlSiteStream({
       baseUrl,
       pageLimit: 1,
       signal: controller.signal,
+      onResult,
       fetchPage: async (_url, options) => {
         notifyFetchStarted();
         await new Promise<void>((_resolve, reject) => {
-          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true });
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true
+          });
         });
         throw new Error("unreachable");
       },
@@ -121,7 +125,44 @@ describe("default Crawlee fetcher", () => {
     await fetchStarted;
     controller.abort(new Error("slice expired"));
 
-    await expect(crawl).resolves.toEqual([]);
+    await expect(crawl).resolves.toEqual({ pages: 0 });
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it("rejects an intentionally aborted batch crawl instead of returning partial success", async () => {
+    const { server, baseUrl } = await listen((req, res) => {
+      if (req.url === "/robots.txt") {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200).end();
+    });
+    servers.push(server);
+    const controller = new AbortController();
+    const abortReason = new Error("analysis timeout");
+    let notifyFetchStarted!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => {
+      notifyFetchStarted = resolve;
+    });
+
+    const crawl = crawlSite({
+      baseUrl,
+      pageLimit: 1,
+      signal: controller.signal,
+      fetchPage: async (_url, options) => {
+        notifyFetchStarted();
+        await new Promise<void>((_resolve, reject) => {
+          options?.signal?.addEventListener("abort", () => reject(options.signal?.reason), {
+            once: true
+          });
+        });
+        throw new Error("unreachable");
+      }
+    });
+    await fetchStarted;
+    controller.abort(abortReason);
+
+    await expect(crawl).rejects.toBe(abortReason);
   });
 
   it("aborts a same-scope redirect when the navigation validator rejects the target", async () => {

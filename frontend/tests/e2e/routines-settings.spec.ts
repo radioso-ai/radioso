@@ -323,6 +323,56 @@ test("editing while a publish is in flight does not strand the editor on a stale
   const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
   expect(publishIndex).toBeGreaterThanOrEqual(0);
   expect(routineUpdates.slice(publishIndex + 1).filter((update) => update.method === "PATCH")).toEqual([]);
+
+  // The typed name was never saved and now never can be, so the published view must show the
+  // version that exists rather than presenting the unsaved edit as published.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Collect pricing intake");
+  await expect(page.getByText(/Changes you made while it published were not included/)).toBeVisible();
+});
+
+test("a routine published in another tab leaves the editor synced, not stuck on a save error", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "draft", version: 1 }],
+  });
+
+  // Someone else publishes it between the service's draft check and its database update. The
+  // backend reports that race as a conflict, and the re-read returns a routine that is no
+  // longer a draft.
+  let published = false;
+  await page.route(/\/routines\/55555555-5555-4555-9555-000000000701$/, async (route) => {
+    if (route.request().method() === "PATCH") {
+      published = true;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "conflict", message: "Routine was published concurrently — revise it to continue editing" } }),
+      });
+      return;
+    }
+    if (route.request().method() === "GET" && published) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routine: { ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "published", version: 1 },
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake edited");
+
+  // The editor ends up describing the routine that exists, and says what to do about the
+  // change that did not land — not the API's rejection, which the author cannot act on.
+  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Revise it to keep editing/)).toBeVisible();
+  await expect(page.getByText("Routine was published concurrently — revise it to continue editing")).toHaveCount(0);
 });
 
 test("a published routine opens in the Document reader, not the structural form", async ({ page }) => {

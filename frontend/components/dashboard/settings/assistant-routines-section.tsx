@@ -61,7 +61,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { getApiErrorMessage } from '@/lib/api-error'
+import { getApiErrorMessage, getApiErrorStatus } from '@/lib/api-error'
 import { customerEmailApi, type CustomerEmailSkillDefinition } from '@/lib/api-customer-email'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import {
@@ -599,7 +599,7 @@ function RoutineEditorScreen({
   const currentRoutineIdRef = useRef<string | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
   const routineEditorDirtyRef = useRef(false)
-  const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
+  const { beginSave, isCurrentSave, markError, markSaved, resetSaveState } = useSettingsSaveStatus(onSaveStateChange)
   useCopilotEntity(
     'routine',
     isNewRoutine ? null : routineRouteId,
@@ -862,15 +862,18 @@ function RoutineEditorScreen({
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return null
       const message = getApiErrorMessage(saveError, 'Failed to save routine draft.')
+      setValidatedDraftSignature(null)
       // The routine left draft while this editor was open — published in another tab, or by
-      // someone else. The editor is showing a version that no longer exists, so re-read the
-      // routine and let its real status drive the screen instead of leaving a stale draft
-      // behind an error the author cannot act on.
-      if (editingRoutineId && /only draft routine definitions can be updated/i.test(message)) {
-        void reloadEditingRoutine(editingRoutineId)
+      // someone else. Re-read it so the screen describes the version that exists, and say so
+      // in terms the author can act on rather than repeating the API's rejection.
+      if (
+        editingRoutineId
+        && (getApiErrorStatus(saveError) === 409 || /only draft routine definitions can be updated/i.test(message))
+      ) {
+        void reloadEditingRoutine(editingRoutineId, message)
+        return null
       }
       setError(message)
-      setValidatedDraftSignature(null)
       markError(message)
       return null
     } finally {
@@ -878,22 +881,45 @@ function RoutineEditorScreen({
     }
   }
 
+  // Point every editing surface at one routine. The header, the form, and the document each
+  // hold their own copy of the draft, so a routine that changed underneath the editor has to
+  // replace all three or the screen keeps rendering the version that is gone.
+  const seedEditorFrom = (routine: RoutineDefinition) => {
+    setEditingRoutine(routine)
+    setEditingRoutineId(routine.id)
+    currentRoutineIdRef.current = routine.id
+    mergeLoadedRoutine(routine)
+    setDraftHeader(headerFromDraft(routine))
+    setForm(routineToForm(routine))
+    setDocumentDraft(null)
+    routineEditorDirtyRef.current = false
+  }
+
   // Re-read a routine the editor can no longer save into, so the header, the tab, and the
   // available actions all describe the version that actually exists.
-  const reloadEditingRoutine = async (routineId: string) => {
+  const reloadEditingRoutine = async (routineId: string, saveErrorMessage: string) => {
     try {
       const response = await routinesApi.getRoutine(agentId, routineId)
       if (currentRoutineIdRef.current !== routineId) return
-      setEditingRoutine(response.routine)
-      mergeLoadedRoutine(response.routine)
-      setDraftHeader(headerFromDraft(response.routine))
-      setForm(routineToForm(response.routine))
-      setDocumentDraft(null)
-      routineEditorDirtyRef.current = false
+      seedEditorFrom(response.routine)
+      // The reload succeeded, so the editor is in sync and there is no save left retrying.
+      // What remains is news: the change that did not land, and how to carry it forward.
+      resetSaveState()
+      setError(`This routine is now ${routineStatusLabel(response.routine.status)}, so your last change was not saved. Revise it to keep editing.`)
     } catch {
-      // The save error already says what went wrong; a failed re-read must not replace it.
+      if (currentRoutineIdRef.current !== routineId) return
+      setError(saveErrorMessage)
+      markError(saveErrorMessage)
     }
   }
+
+  // An in-flight lifecycle request closes over the render that started it, so comparing
+  // against the captured value would never see a later edit. The ref reads what the editor
+  // holds now.
+  const activeRoutineDraftSignatureRef = useRef(activeRoutineDraftSignature)
+  useEffect(() => {
+    activeRoutineDraftSignatureRef.current = activeRoutineDraftSignature
+  })
 
   const saveDraftRef = useRef(saveDraft)
   useEffect(() => {
@@ -930,6 +956,9 @@ function RoutineEditorScreen({
   const runPublish = async () => {
     const routine = await saveDraft()
     if (!routine) return
+    // What the editor held once the pre-publish save settled. Anything that differs from
+    // this when the publish returns was typed during the round trip.
+    const signatureAtPublish = activeRoutineDraftSignatureRef.current
     beginSave()
     setIsSaving(true)
     setError(null)
@@ -939,9 +968,12 @@ function RoutineEditorScreen({
       // result is the routine's real status, so a save that started meanwhile must not
       // discard it. Only leaving this routine can.
       if (currentRoutineIdRef.current !== routine.id) return
-      currentRoutineIdRef.current = response.routine.id
-      setEditingRoutine(response.routine)
-      setEditingRoutineId(response.routine.id)
+      // Inputs stay live during the round trip, so anything typed after the pre-publish save
+      // is not in the published version and cannot be added to it. Re-seeding from the
+      // response keeps the read-only view honest instead of presenting those edits as
+      // published; the notice below is how the author learns they need carrying forward.
+      const editedDuringPublish = activeRoutineDraftSignatureRef.current !== signatureAtPublish
+      seedEditorFrom(response.routine)
       setAllRoutines((current) => current
         .filter((item) => item.id !== routine.id)
         .map((item) => item.lineageId === response.routine.lineageId && item.status === 'published'
@@ -950,6 +982,9 @@ function RoutineEditorScreen({
         .concat(response.routine))
       setValidation(response.validation)
       markSaved()
+      if (editedDuringPublish) {
+        setError('Publishing captured the routine as it was when you pressed Publish. Changes you made while it published were not included — revise the routine to apply them.')
+      }
       const persistedHref = buildPersistedHref(response.routine.id)
       if (!currentBrowserUrlMatches(persistedHref)) {
         router.replace(persistedHref)

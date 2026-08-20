@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { boundSteeringMatches } from "../../src/modules/directives/public.js";
+import {
+  boundSteeringMatches,
+  defaultAnswerDirectives,
+} from "../../src/modules/directives/public.js";
 import type { DirectiveMatch } from "../../src/modules/directives/public.js";
+import { DIRECTIVES_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 const match = (
   name: string,
@@ -14,7 +18,9 @@ const match = (
 ): DirectiveMatch => ({
   directive: {
     name,
-    condition: { kind: "always" },
+    condition: overrides.deterministic
+      ? { kind: "always" }
+      : { kind: "contextual", description: `when ${name} applies` },
     action: overrides.action ?? `do ${name}`,
     ...(overrides.priority === undefined ? {} : { priority: overrides.priority }),
   },
@@ -46,17 +52,63 @@ describe("boundSteeringMatches", () => {
     expect(result.dropped).toEqual([{ directiveName: "low", reason: "top_k" }]);
   });
 
-  it("treats deterministic matches as fully confident when ranking", () => {
+  it("does not count always directives against the contextual top-k cap", () => {
     const matches = [
       match("probable", { priority: 90, confidence: 0.4 }), // score 36
-      match("always", { priority: 90, deterministic: true }), // score 90
+      match("always-a", { priority: 90, deterministic: true }),
+      match("always-b", { priority: 80, deterministic: true }),
     ];
     const result = boundSteeringMatches(matches, {
       maxRenderedDirectives: 1,
       renderedTokenBudget: 1_000_000,
     });
-    expect(result.kept.map((m) => m.directive.name)).toEqual(["always"]);
-    expect(result.dropped).toEqual([{ directiveName: "probable", reason: "top_k" }]);
+    expect(result.kept.map((m) => m.directive.name)).toEqual(["probable", "always-a", "always-b"]);
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("does not charge always directives to the contextual token budget", () => {
+    const matches = [
+      match("always", { priority: 90, deterministic: true, action: "a".repeat(4_000) }),
+      match("contextual-first", { priority: 80, confidence: 1, action: "x".repeat(160) }),
+      match("contextual-second", { priority: 70, confidence: 1, action: "y".repeat(160) }),
+    ];
+    const result = boundSteeringMatches(matches, {
+      maxRenderedDirectives: 100,
+      renderedTokenBudget: 55,
+    });
+    expect(result.kept.map((m) => m.directive.name)).toEqual(["always", "contextual-first"]);
+    expect(result.dropped).toEqual([
+      { directiveName: "contextual-second", reason: "token_budget" },
+    ]);
+  });
+
+  it("keeps matched dependencies of always directives outside the contextual caps", () => {
+    const dependency = match("contextual-dependency", {
+      priority: 1,
+      confidence: 1,
+      action: "x".repeat(160),
+    });
+    const mandatory: DirectiveMatch = {
+      ...match("always-dependent", { priority: 90, deterministic: true }),
+      directive: {
+        ...match("always-dependent", { priority: 90, deterministic: true }).directive,
+        dependsOn: ["contextual-dependency"],
+      },
+    };
+    const optional = match("higher-ranked-contextual", { priority: 90, confidence: 1 });
+
+    const result = boundSteeringMatches([dependency, mandatory, optional], {
+      maxRenderedDirectives: 0,
+      renderedTokenBudget: 1,
+    });
+
+    expect(result.kept.map((m) => m.directive.name)).toEqual([
+      "contextual-dependency",
+      "always-dependent",
+    ]);
+    expect(result.dropped).toEqual([
+      { directiveName: "higher-ranked-contextual", reason: "top_k" },
+    ]);
   });
 
   it("defaults an unset priority to a neutral weight rather than zero", () => {
@@ -98,6 +150,43 @@ describe("boundSteeringMatches", () => {
     });
     expect(result.kept.map((m) => m.directive.name)).toEqual(["huge"]);
     expect(result.dropped).toEqual([{ directiveName: "small", reason: "token_budget" }]);
+  });
+
+  it("never bounds always directives, including substantial authored correctness rules", () => {
+    const builtIns = defaultAnswerDirectives.map((directive) => ({
+      directive,
+      selectionMode: "deterministic" as const,
+      selectionReason: "built-in always directive",
+    }));
+    const matches = [
+      ...builtIns,
+      match("authored-concise-next-step", {
+        priority: 70,
+        deterministic: true,
+        action: "x".repeat(365),
+      }),
+      match("authored-channel-policy", {
+        priority: 70,
+        deterministic: true,
+        action: "x".repeat(330),
+      }),
+      match("authored-correctness-guard", {
+        priority: 70,
+        deterministic: true,
+        action: "x".repeat(2_467),
+      }),
+    ];
+
+    const result = boundSteeringMatches(matches, DIRECTIVES_BEHAVIOR.steeringBound);
+
+    expect(result.kept.map((candidate) => candidate.directive.name)).toEqual(
+      matches.map((candidate) => candidate.directive.name),
+    );
+    expect(result.dropped).toEqual([]);
+  });
+
+  it("uses a 2,400-token contextual steering allowance by default", () => {
+    expect(DIRECTIVES_BEHAVIOR.steeringBound.renderedTokenBudget).toBe(2_400);
   });
 
   it("returns survivors in input order so equal-priority ties stay stable", () => {

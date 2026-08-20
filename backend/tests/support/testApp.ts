@@ -94,6 +94,7 @@ import { WorkspaceService } from "../../src/modules/workspace/services/workspace
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import { ConnectorRegistry } from "../../src/modules/connectors/services/connectorRegistry.js";
+import { ConnectorManagementService } from "../../src/modules/connectors/services/connectorManagementService.js";
 import { createConnectorChatPort } from "../../src/modules/connectors/services/connectorChatPort.js";
 import { AbuseControlService } from "../../src/modules/security/services/abuseControlService.js";
 import { WorkspaceProviderCredentialsService } from "../../src/modules/security/credentials/services/workspaceProviderCredentialsService.js";
@@ -1897,6 +1898,10 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipRepository,
     messageRepository,
     connectorRegistry,
+    connectorManagementService: new ConnectorManagementService({
+      database: connectorDb as any,
+      registry: connectorRegistry,
+    }),
     connectorIngestionPort: {
       async ingest() { return { documentId: "test-doc", status: "queued" }; },
       async deleteByExternalId() { return false; },

@@ -53,6 +53,7 @@ import type { ConversationOwnershipRepository } from "../../db/repositories/conv
 import type { MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { ConnectorIngestionPort } from "@radioso/connector-api";
 import type { ConnectorRegistry } from "../../modules/connectors/services/connectorRegistry.js";
+import type { ConnectorManagementPort } from "../../modules/connectors/services/connectorManagementService.js";
 import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -213,6 +214,7 @@ export interface AppDependencies {
   >;
   messageRepository: MessageRepositoryPort;
   connectorRegistry: ConnectorRegistry;
+  connectorManagementService: ConnectorManagementPort;
   connectorIngestionPort: ConnectorIngestionPort;
   connectorDb: Database;
   chatInferencePipeline: ModelInferencePipeline;

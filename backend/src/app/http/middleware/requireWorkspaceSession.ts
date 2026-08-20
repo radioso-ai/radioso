@@ -1,15 +1,20 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { AppError, unauthorized } from "../../../shared/domain/errors.js";
-import type { AppDependencies } from "../../server/types.js";
+import type { Env } from "../../config/env.js";
+import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
+import type { AuthService } from "../../../modules/auth/services/authService.js";
+import type { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
 const BEARER_PREFIX = "Bearer ";
 
-export type WorkspaceSessionDependencies = Pick<
-  AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService"
->;
+export interface WorkspaceSessionDependencies {
+  env: Env;
+  authService: AuthService;
+  accountAccessService: AccountAccessService;
+  workspaceSessionService: WorkspaceSessionService;
+}
 
 export const requireWorkspaceSession = (dependencies: WorkspaceSessionDependencies): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {

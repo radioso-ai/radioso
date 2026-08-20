@@ -22,6 +22,9 @@ export interface EmbeddingProfileProjectionCleanupPort {
     workspaceId: string;
     embeddingSpaceId: string;
   }): Promise<void>;
+  // Runs after canonical rows are deleted, so a width that no longer has any rows
+  // stops costing query planning time. Returns how many indexes it removed.
+  dropUnusedIndexes(): Promise<number>;
 }
 
 export class EmbeddingProfileCleanupService {
@@ -63,6 +66,13 @@ export class EmbeddingProfileCleanupService {
         counts.alreadyCleaned += 1;
       }
     }
+    // Only after the delete transactions have committed can a width be observed as
+    // empty. Failing here must not undo a successful cleanup, so it is reported and
+    // retried on the next sweep rather than thrown.
+    if (counts.cleaned > 0) {
+      await this.projectionCleanup.dropUnusedIndexes().catch(() => 0);
+    }
+
     return counts;
   }
 }

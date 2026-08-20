@@ -48,9 +48,11 @@ implements EmbeddingTransitionIndexPreparationPort {
       backendKey: PGVECTOR_BACKEND_KEY,
       workspaceId: input.workspaceId,
       embeddingSpaceId: input.space.id,
-      // Pgvector exact search reads canonical chunk_embeddings in the same
-      // PostgreSQL system of record. No separate approximate-index build is
-      // required before this correctness-preserving route is usable.
+      // Pgvector reads canonical chunk_embeddings in the same PostgreSQL system of
+      // record, so a space is usable the moment its rows land — the per-width HNSW
+      // index is created alongside them and needs no separate build step to wait on.
+      // The recorded value stays exact_fallback because embedding transitions gate on
+      // canonical row coverage and checkpoints, not on search exactness.
       readiness: "exact_fallback",
     });
   }

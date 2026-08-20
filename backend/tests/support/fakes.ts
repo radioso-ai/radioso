@@ -3302,6 +3302,20 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     return { enqueued: 0, skipped: 0 };
   }
 
+  // Reports the canonical projection backlog, which this in-memory fake does not
+  // model; the operator backfill that consumes it is covered by an integration test
+  // against Postgres.
+  async listWorkspaceCanonicalEmbeddingGaps(): Promise<
+    Array<{
+      workspaceId: string;
+      missingChunks: number;
+      hasEmbeddingProfile: boolean;
+      failedJobs: number;
+    }>
+  > {
+    return [];
+  }
+
   async listQueuedEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
     embeddingSpaceId?: string;

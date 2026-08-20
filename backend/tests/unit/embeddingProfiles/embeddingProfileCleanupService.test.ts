@@ -26,6 +26,7 @@ describe("EmbeddingProfileCleanupService", () => {
     };
     const projectionCleanup = {
       resetWorkspaceSpace: vi.fn().mockResolvedValue(undefined),
+      dropUnusedIndexes: vi.fn().mockResolvedValue(0),
     };
     const now = new Date("2026-07-26T00:00:00.000Z");
 
@@ -63,6 +64,7 @@ describe("EmbeddingProfileCleanupService", () => {
     };
     const projectionCleanup = {
       resetWorkspaceSpace: vi.fn().mockResolvedValue(undefined),
+      dropUnusedIndexes: vi.fn().mockResolvedValue(0),
     };
 
     await expect(

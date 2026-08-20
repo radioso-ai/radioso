@@ -1,0 +1,103 @@
+---
+title: "Author a directive"
+description: "Give an agent a named rule for how it should reply, when that rule applies, and which other rules it replaces."
+---
+
+# Author a directive
+
+Use a directive when you want the agent to handle one kind of conversation in a
+particular way. For example: when a customer sounds anxious, slow down, confirm
+what they need, and do not rush them into a choice. The rule stays separate from
+the agent's general persona, so you can see, change, and test it on its own.
+
+A directive steers a reply. It is not a procedure and it does not perform an
+action. Use the agent's **Behavior** for a voice or rule that belongs on every
+answer; use a [routine](/guides/authoring-routines) when the request needs a
+sequence of steps, collected information, or an action such as a Slack post.
+
+In an agent's **Directives** settings, choose **New directive**.
+
+![The dashboard Directives screen with an authored directive "Shipping delay empathy" above the read-only built-in directives, each with an Override button.](/screenshots/dashboard-agent-directives.png)
+
+## Describe the rule
+
+Give the directive a short **Name** that helps your team recognize it later,
+such as `Anxious customer`. Then choose **When this applies**:
+
+- **Always** applies the instruction to every reply. Use it for a rule that is
+  narrower than the general Behavior, but still needs to be visible and
+  independently managed.
+- **In a specific situation** opens **Situation**. Describe the circumstance in
+  plain language, such as “the customer sounds worried about a missed delivery.”
+  Radioso matches the situation by meaning, so describe the situation rather
+  than trying to anticipate exact phrases.
+
+In **Instruction**, say how the agent should reply when the rule applies. Keep
+it concrete: “Acknowledge the delay, state only what the order data supports,
+and offer the next useful step.” This is guidance the agent follows, not a
+message it repeats word for word.
+
+## Decide how it fits with other rules
+
+**Priority** orders guidance when two matching directives disagree. It is a
+best-effort ordering for the agent rather than a way to remove another rule. A
+blank value is 50. The built-in answer directives are currently ranked at 90
+for supported links, 80 for representing the organization, and 60 for concise,
+readable formatting. Set a whole number from 0 to 100 when your rule needs to
+land above, between, or below those rules.
+
+Use **Replaces** when another directive must be absent while this one applies.
+It removes the selected directive from that reply, which is stronger than
+priority. Each built-in directive also has an **Override** button; it starts a
+new directive with that built-in already selected in **Replaces**. Use the
+shortcut when you need to author a replacement for a built-in, then finish the
+name, condition, instruction, and priority yourself.
+
+## Add a skill only when it helps answer
+
+Most directives do not need a skill. The instruction is the rule. If a matching
+reply needs an MCP tool or an extra pass over your knowledge, type `#` in the
+**Instruction** field and select an enabled, agent-selectable skill. A directive
+can have one such binding: it makes the skill available for the reply when the
+directive matches.
+
+### Why can't I bind a Slack, email, webhook, or notify skill?
+
+Those skills act outside the conversation and settle with an action result, not
+with the text the visitor should see. A directive needs a skill that can produce
+or inform that reply, so the editor offers MCP tools and knowledge retrieval
+instead. The message **“Acts instead of replying. Use it in a routine step.”**
+is a pointer to the right surface, not an error in your Slack configuration.
+
+For example, if a customer asks for a manager to follow up, create a routine
+whose activation describes that request. Add a Slack Post step to the routine,
+then set the routine's completion message to tell the customer what will happen
+next. You can also keep a directive for the same situation when its job is to
+shape the reply — for example, “Do not promise a response time.” The routine
+posts; the directive steers.
+
+## Check the rule in a conversation
+
+Save the directive, then open the [workbench](/guides/workbench) and try an
+example that should match. Inspect the turn's Directives node to confirm the
+rule applied and to see how it shaped the answer. Try a nearby example that
+should not match as well; a specific situation should not accidentally become a
+standing rule.
+
+## Common failure modes
+
+- The rule applies too broadly: make **Situation** describe the customer state
+  or request that should trigger it, rather than a topic word.
+- A built-in rule still affects the answer: use **Replaces** or **Override** if
+  it must be removed; priority only orders competing guidance.
+- Slack, email, webhook, or notify does not appear after `#`: add it as a
+  routine step. It acts, rather than producing the reply a directive needs.
+- A selected skill is unavailable: enable it and set its invocation mode to
+  **Agent selectable**, then reopen the directive.
+
+## Read next
+
+- [Author a routine](/guides/authoring-routines) — build the multi-step flow
+  that collects information or takes action.
+- [Test your agent in the workbench](/guides/workbench) — exercise a directive
+  in a live conversation and inspect the result.

@@ -6,10 +6,16 @@ import { badRequest } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
 import { createHttpTracingMiddleware } from "../http/middleware/tracingMiddleware.js";
 import type { AppDependencies } from "../server/types.js";
-import { createCrawlerWorkerTaskRoutes } from "./crawlerWorkerTaskRoutes.js";
+import {
+  createCrawlerWorkerTaskRoutes,
+  type CrawlerWorkerTaskRouteOptions,
+} from "./crawlerWorkerTaskRoutes.js";
 import { createWorkerTaskAuthMiddleware } from "./workerTaskAuthMiddleware.js";
 
-export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
+export const createCrawlerWorkerTaskApp = (
+  dependencies: AppDependencies,
+  routeOptions: CrawlerWorkerTaskRouteOptions = {},
+) => {
   const app = express();
 
   app.disable("x-powered-by");
@@ -29,7 +35,7 @@ export const createCrawlerWorkerTaskApp = (dependencies: AppDependencies) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
-  app.use(createCrawlerWorkerTaskRoutes(dependencies));
+  app.use(createCrawlerWorkerTaskRoutes(dependencies, routeOptions));
   app.use(createErrorHandler(dependencies.errorReportingService));
 
   return app;

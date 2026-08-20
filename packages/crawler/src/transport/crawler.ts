@@ -385,6 +385,9 @@ const crawlSiteInternal = async (params: CrawlSiteParams) => {
             }
           }
         } catch (error) {
+          if (signal?.aborted) {
+            return;
+          }
           const message = getErrorMessage(error);
           const metadata = readErrorMetadata(error);
           const result: CrawledPageResult = {
@@ -487,6 +490,7 @@ export const crawlSite = async (params: Omit<CrawlSiteParams, "onResult">) => {
       results.push(page);
     }
   });
+  params.signal?.throwIfAborted();
   return results;
 };
 

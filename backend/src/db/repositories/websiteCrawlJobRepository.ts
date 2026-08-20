@@ -127,6 +127,7 @@ export interface WebsiteCrawlJobRepositoryPort {
   pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
   resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult>;
   updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
+  releaseForContinuation(jobId: string, claimedAt: Date): Promise<boolean>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
@@ -262,6 +263,24 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       .where("id", "=", jobId)
       .where("status", "in", ["processing", "paused"])
       .execute();
+  }
+
+  async releaseForContinuation(jobId: string, claimedAt: Date): Promise<boolean> {
+    const result = await this.db
+      .updateTable("website_crawl_jobs")
+      .set({
+        status: "queued",
+        claimed_at: null,
+        available_at: currentTimestamp(),
+        last_error: null,
+        updated_at: currentTimestamp(),
+      })
+      .where("id", "=", jobId)
+      .where("status", "=", "processing")
+      .where("claimed_at", "=", claimedAt)
+      .executeTakeFirst();
+
+    return Number(result.numUpdatedRows) > 0;
   }
 
   async listForWorkspace(

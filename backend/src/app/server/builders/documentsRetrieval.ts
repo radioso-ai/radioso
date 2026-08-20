@@ -241,6 +241,7 @@ export const buildDocumentServices = (input: {
   const websiteCrawlWorker = new WebsiteCrawlWorker({
     repository: repositories.websiteCrawlJobRepository,
     provider: websiteCrawlerProvider,
+    dispatcher: websiteCrawlJobDispatcher,
     documentIngestionService,
     auditService,
     logger,

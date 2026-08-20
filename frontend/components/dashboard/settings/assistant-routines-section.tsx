@@ -581,6 +581,10 @@ function RoutineEditorScreen({
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(!isNewRoutine)
   const [isSaving, setIsSaving] = useState(false)
+  // Publish, revise, archive, and restore each move the routine to a status the editor
+  // cannot save into. They take a round trip, and `editingRoutine` only catches up when it
+  // returns, so autosave has to be told to hold rather than inferring it from status.
+  const [isLifecycleBusy, setIsLifecycleBusy] = useState(false)
   const [isDraftingRoutine, setIsDraftingRoutine] = useState(false)
   const [draftAssistDialogOpen, setDraftAssistDialogOpen] = useState(false)
   const [draftAssistProse, setDraftAssistProse] = useState('')
@@ -858,6 +862,13 @@ function RoutineEditorScreen({
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return null
       const message = getApiErrorMessage(saveError, 'Failed to save routine draft.')
+      // The routine left draft while this editor was open — published in another tab, or by
+      // someone else. The editor is showing a version that no longer exists, so re-read the
+      // routine and let its real status drive the screen instead of leaving a stale draft
+      // behind an error the author cannot act on.
+      if (editingRoutineId && /only draft routine definitions can be updated/i.test(message)) {
+        void reloadEditingRoutine(editingRoutineId)
+      }
       setError(message)
       setValidatedDraftSignature(null)
       markError(message)
@@ -867,18 +878,35 @@ function RoutineEditorScreen({
     }
   }
 
+  // Re-read a routine the editor can no longer save into, so the header, the tab, and the
+  // available actions all describe the version that actually exists.
+  const reloadEditingRoutine = async (routineId: string) => {
+    try {
+      const response = await routinesApi.getRoutine(agentId, routineId)
+      if (currentRoutineIdRef.current !== routineId) return
+      setEditingRoutine(response.routine)
+      mergeLoadedRoutine(response.routine)
+      setDraftHeader(headerFromDraft(response.routine))
+      setForm(routineToForm(response.routine))
+      setDocumentDraft(null)
+      routineEditorDirtyRef.current = false
+    } catch {
+      // The save error already says what went wrong; a failed re-read must not replace it.
+    }
+  }
+
   const saveDraftRef = useRef(saveDraft)
   useEffect(() => {
     saveDraftRef.current = saveDraft
   })
 
   useEffect(() => {
-    if (isLoading || isReadOnly || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
+    if (isLoading || isReadOnly || isLifecycleBusy || activeRoutineDraftError || !activeRoutineDraftSignature || isValidationCurrent) return
     const timeoutId = window.setTimeout(() => {
       void saveDraftRef.current({ refreshEditor: false })
     }, 1500)
     return () => window.clearTimeout(timeoutId)
-  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLoading, isReadOnly, isValidationCurrent])
+  }, [activeRoutineDraftError, activeRoutineDraftSignature, isLifecycleBusy, isLoading, isReadOnly, isValidationCurrent])
 
   useEffect(() => {
     if (!isNewRoutine || !activeRoutineDraft) return
@@ -891,14 +919,26 @@ function RoutineEditorScreen({
 
   const publishDraft = async () => {
     if (!canPublishDraft) return
+    setIsLifecycleBusy(true)
+    try {
+      await runPublish()
+    } finally {
+      setIsLifecycleBusy(false)
+    }
+  }
+
+  const runPublish = async () => {
     const routine = await saveDraft()
     if (!routine) return
-    const saveId = beginSave()
+    beginSave()
     setIsSaving(true)
     setError(null)
     try {
       const response = await routinesApi.publishRoutine(agentId, routine.id)
-      if (!isCurrentSave(saveId)) return
+      // Publishing is a lifecycle transition, not a save competing with other saves: its
+      // result is the routine's real status, so a save that started meanwhile must not
+      // discard it. Only leaving this routine can.
+      if (currentRoutineIdRef.current !== routine.id) return
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
       setEditingRoutineId(response.routine.id)
@@ -915,7 +955,7 @@ function RoutineEditorScreen({
         router.replace(persistedHref)
       }
     } catch (publishError) {
-      if (!isCurrentSave(saveId)) return
+      if (currentRoutineIdRef.current !== routine.id) return
       if (publishError instanceof RoutinePublishRejectedError) {
         setValidation(publishError.response.validation)
         setError('Routine is not ready to publish.')
@@ -926,7 +966,7 @@ function RoutineEditorScreen({
         markError(message)
       }
     } finally {
-      if (isCurrentSave(saveId)) setIsSaving(false)
+      if (currentRoutineIdRef.current === routine.id) setIsSaving(false)
     }
   }
 
@@ -946,6 +986,7 @@ function RoutineEditorScreen({
 
   const revisePublished = async () => {
     if (!editingRoutine || editingRoutine.status !== 'published') return
+    setIsLifecycleBusy(true)
     const saveId = beginSave()
     setIsSaving(true)
     setError(null)
@@ -972,12 +1013,14 @@ function RoutineEditorScreen({
       setError(message)
       markError(message)
     } finally {
+      setIsLifecycleBusy(false)
       if (isCurrentSave(saveId)) setIsSaving(false)
     }
   }
 
   const archivePublished = async () => {
     if (!editingRoutine || editingRoutine.status !== 'published') return
+    setIsLifecycleBusy(true)
     setIsSaving(true)
     setError(null)
     try {
@@ -999,11 +1042,13 @@ function RoutineEditorScreen({
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
     } finally {
       setIsSaving(false)
+      setIsLifecycleBusy(false)
     }
   }
 
   const archiveFromDraft = async () => {
     if (!publishedSibling) return
+    setIsLifecycleBusy(true)
     setIsSaving(true)
     setError(null)
     try {
@@ -1014,11 +1059,15 @@ function RoutineEditorScreen({
     } catch (archiveError) {
       setError(getApiErrorMessage(archiveError, 'Failed to archive routine.'))
       setIsSaving(false)
+      // Only released on failure: a success navigates away from this editor, and releasing
+      // the hold on the way out would let a queued autosave fire at the archived routine.
+      setIsLifecycleBusy(false)
     }
   }
 
   const restoreArchived = async () => {
     if (!editingRoutine || editingRoutine.status !== 'archived') return
+    setIsLifecycleBusy(true)
     setIsSaving(true)
     setError(null)
     try {
@@ -1034,6 +1083,7 @@ function RoutineEditorScreen({
       setError(getApiErrorMessage(restoreError, 'Failed to restore routine.'))
     } finally {
       setIsSaving(false)
+      setIsLifecycleBusy(false)
     }
   }
 

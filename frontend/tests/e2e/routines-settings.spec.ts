@@ -291,6 +291,40 @@ test("a step changes kind in place in the Document view", async ({ page }) => {
   await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
 });
 
+test("editing while a publish is in flight does not strand the editor on a stale draft", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000601", status: "draft", version: 1 }],
+  });
+
+  // Hold the publish open long enough for the 1.5s autosave timer to fire underneath it.
+  // That is the real race: the routine is published server-side while the editor still
+  // believes it is editing a draft.
+  await page.route(/\/routines\/[^/]+\/publish$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await route.fallback();
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  // Keep typing while it is in flight, which is what arms the autosave.
+  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake v2");
+
+  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Only draft routine definitions can be updated")).toHaveCount(0);
+
+  // No save may be attempted against the routine after it stopped being a draft.
+  const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
+  expect(publishIndex).toBeGreaterThanOrEqual(0);
+  expect(routineUpdates.slice(publishIndex + 1).filter((update) => update.method === "PATCH")).toEqual([]);
+});
+
 test("a published routine opens in the Document reader, not the structural form", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

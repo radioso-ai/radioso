@@ -114,15 +114,11 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
       requestedUrl: "https://example.com/yielded",
       limit: 100,
     });
-    await database.query("UPDATE website_crawl_jobs SET available_at = $2 WHERE id = $1", [
-      job.id,
-      new Date("2026-05-11T10:00:00.000Z"),
-    ]);
-    const claimedAt = new Date("2026-05-11T10:01:00.000Z");
+    const claimedAt = new Date(job.createdAt.getTime() + 60_000);
     await repository.claimById(job.id, claimedAt);
 
     await expect(
-      repository.releaseForContinuation(job.id, new Date("2026-05-11T10:00:59.000Z")),
+      repository.releaseForContinuation(job.id, new Date(claimedAt.getTime() - 1)),
     ).resolves.toBe(false);
     await expect(repository.releaseForContinuation(job.id, claimedAt)).resolves.toBe(true);
 
@@ -132,7 +128,7 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
       claimedAt: null,
       lastError: null,
     });
-    await expect(repository.claimById(job.id, new Date("2026-05-11T10:02:00.000Z"))).resolves.toMatchObject({
+    await expect(repository.claimById(job.id, new Date(claimedAt.getTime() + 60_000))).resolves.toMatchObject({
       status: "processing",
       attemptCount: 2,
     });

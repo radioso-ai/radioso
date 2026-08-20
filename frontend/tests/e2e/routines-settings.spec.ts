@@ -88,34 +88,43 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByRole("status", { name: "Routine has validation issues" })).toBeVisible();
   await expect(page.getByText("Name is required.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeDisabled();
-  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
-  await page.getByRole("tab", { name: "Form" }).click();
-  await expect(page.getByRole("tab", { name: "Form" })).toHaveAttribute("data-state", "active");
-  await expect(page.getByLabel("Name")).toBeVisible();
-  await page.getByLabel("Name").fill("Collect pricing intake");
-  await page.getByLabel("Priority").fill("20");
-  await page.getByLabel("Activation trigger").fill("Visitor asks about pricing or wants a quote.");
+  await expect(page.getByLabel("Name", { exact: true })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake");
 
-  await page.getByRole("button", { name: "Add slot" }).click();
-  await page.getByLabel("Slot 1 key").fill("email");
-  await page.getByLabel("Slot 1 type").click();
-  await page.getByRole("option", { name: "email" }).click();
-  await page.getByLabel("Slot 1 description").fill("Visitor email address");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks about pricing or wants a quote.");
+  await documentEditor.getByLabel("Priority", { exact: true }).fill("20");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await page.getByLabel("Step 1 id").fill("ask_email");
-  await page.getByLabel("Step 1 instruction").fill("Ask for ");
-  await page.getByLabel("Insert variable into step 1").click();
-  await page.getByRole("option", { name: "email" }).click();
-  await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}}");
-  await page.getByLabel("Step 1 instruction").fill("Ask for {{slot.email}} so the team can follow up.");
+  // A step with nothing written in it opens straight into its sentence, so the instruction
+  // comes first and the step's other controls follow.
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask for @email");
+  await page.getByRole("option", { name: /Create variable “email”/ }).click();
+  await instruction.pressSequentially("so the team can follow up.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await page.getByRole("button", { name: "Add transition" }).click();
-  await page.getByLabel("Transition 1 target").click();
-  await page.getByRole("option", { name: "complete" }).click();
-  await page.getByLabel("Transition 1 guard").click();
-  await page.getByRole("option", { name: "default" }).click();
-  await page.getByLabel("Terminal 1 id").fill("complete");
-  await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Condition", exact: true }).click();
+  await documentEditor.getByLabel("Rule kind").selectOption("default");
+  await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  await documentEditor.getByLabel("Step 1 id").fill("ask_email");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "email", exact: true }).click();
+  await documentEditor.getByLabel("Slot email type").selectOption("email");
+  await documentEditor.getByLabel("Slot email description").fill("Visitor email address");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByLabel("complete message").fill("Confirm the request was captured.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
@@ -127,7 +136,10 @@ test("agent routines settings create, validate, publish, and persist", async ({ 
   await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible();
   await expect.poll(() => routineUpdates.some((update) => update.method === "PUBLISH")).toBe(true);
 
-  const createUpdate = routineUpdates.find((update) => update.method === "POST");
+  // Authoring in the document saves as it goes, so the shape to pin is the last state
+  // written before publishing, not whichever partial draft the first autosave caught.
+  const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
+  const createUpdate = routineUpdates.slice(0, publishIndex).filter((update) => update.body).at(-1);
   expect(createUpdate).toMatchObject({
     body: {
       name: "Collect pricing intake",
@@ -199,9 +211,9 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
 
-  await page.getByRole("tab", { name: "Form" }).click();
-  await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}}.");
-  await expect(page.getByLabel("Step 2 action type")).toHaveValue("contact.send");
+  const assistedDocument = page.getByRole("article", { name: "Routine document editor" });
+  await expect(assistedDocument).toContainText("Ask for");
+  await expect(assistedDocument).toContainText("Send the contact request");
 
   expect(routineUpdates).toContainEqual({
     method: "ASSIST",
@@ -211,7 +223,7 @@ test("new routine can be authored from an AI procedure draft", async ({ page }) 
   });
 });
 
-test("an existing routine opens in the Document view and toggles to form", async ({ page }) => {
+test("an existing routine opens in the Document view", async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates: [],
@@ -221,19 +233,17 @@ test("an existing routine opens in the Document view and toggles to form", async
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
 
-  // Prose and Outline are retired; a representable routine opens in the Document view.
-  await expect(page.getByRole("tab", { name: "Outline" })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Prose" })).toHaveCount(0);
-  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
+  // The document is the only routine editor; no view switcher remains.
+  await expect(page.getByRole("tab")).toHaveCount(0);
 
   // The routine's chat step reads as a sentence with its variable as a chip.
   const editor = page.getByRole("article", { name: "Routine document editor" });
   await expect(editor).toContainText("Ask for");
   await expect(editor).toContainText("so the team can follow up");
 
-  // Toggling to the Form tab preserves the step instruction.
-  await page.getByRole("tab", { name: "Form" }).click();
-  await expect(page.getByLabel("Step 1 instruction")).toHaveValue("Ask for {{slot.email}} so the team can follow up.");
+  // The variable reads as its name, not as the stored token.
+  await expect(editor).toContainText("email");
+  await expect(editor).not.toContainText("{{slot.email}}");
 });
 
 test("a routine with custom completion copy opens in Document with terminal copy preserved", async ({ page }) => {
@@ -253,8 +263,148 @@ test("a routine with custom completion copy opens in Document with terminal copy
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
 
-  await expect(page.getByRole("tab", { name: "Document" })).toHaveAttribute("data-state", "active");
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Thanks, we will be in touch.");
+});
+
+test("a step changes kind in place in the Document view", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000501", status: "draft", version: 1 }],
+    routineSkillCatalog: [{
+      skillName: "orders.lookup",
+      displayName: "Look up order",
+      category: "external_mcp",
+      inputs: [],
+      outcomes: [],
+      hasDataOutputs: false,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+
+  // A step that was written as a question becomes a skill call without being deleted and
+  // rebuilt, so the instruction the author wrote survives the change.
+  await documentEditor.getByLabel("Step 1 kind").selectOption("tool");
+  await documentEditor.getByLabel("ask_email catalog item").selectOption("orders.lookup");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await expect(documentEditor).toContainText("Ask for");
+
+  await documentEditor.getByRole("button", { name: "Look up order", exact: true }).click();
+  await expect(documentEditor.getByLabel("Step 1 kind")).toHaveValue("tool");
+});
+
+test("editing while a publish is in flight does not strand the editor on a stale draft", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates,
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000601", status: "draft", version: 1 }],
+  });
+
+  // Hold the publish open long enough for the 1.5s autosave timer to fire underneath it.
+  // That is the real race: the routine is published server-side while the editor still
+  // believes it is editing a draft.
+  await page.route(/\/routines\/[^/]+\/publish$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    await route.fallback();
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await expect(page.getByRole("button", { name: "Publish", exact: true })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Publish", exact: true }).click();
+  // Keep typing while it is in flight, which is what arms the autosave.
+  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake v2");
+
+  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Only draft routine definitions can be updated")).toHaveCount(0);
+
+  // No save may be attempted against the routine after it stopped being a draft.
+  const publishIndex = routineUpdates.findIndex((update) => update.method === "PUBLISH");
+  expect(publishIndex).toBeGreaterThanOrEqual(0);
+  expect(routineUpdates.slice(publishIndex + 1).filter((update) => update.method === "PATCH")).toEqual([]);
+
+  // The typed name was never saved and now never can be, so the published view must show the
+  // version that exists rather than presenting the unsaved edit as published.
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Collect pricing intake");
+  await expect(page.getByText(/Changes you made while it published were not included/)).toBeVisible();
+});
+
+test("a routine published in another tab leaves the editor synced, not stuck on a save error", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{ ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "draft", version: 1 }],
+  });
+
+  // Someone else publishes it between the service's draft check and its database update. The
+  // backend reports that race as a conflict, and the re-read returns a routine that is no
+  // longer a draft.
+  let published = false;
+  await page.route(/\/routines\/55555555-5555-4555-9555-000000000701$/, async (route) => {
+    if (route.request().method() === "PATCH") {
+      published = true;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "conflict", message: "Routine was published concurrently — revise it to continue editing" } }),
+      });
+      return;
+    }
+    if (route.request().method() === "GET" && published) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routine: { ...baseRoutine, id: "55555555-5555-4555-9555-000000000701", status: "published", version: 1 },
+        }),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "Edit draft Collect pricing intake" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Collect pricing intake edited");
+
+  // The editor ends up describing the routine that exists, and says what to do about the
+  // change that did not land — not the API's rejection, which the author cannot act on.
+  await expect(page.getByText("published v1 (read-only)", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Revise it to keep editing/)).toBeVisible();
+  await expect(page.getByText("Routine was published concurrently — revise it to continue editing")).toHaveCount(0);
+});
+
+test("a published routine opens in the Document reader, not the structural form", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    routineUpdates: [],
+    routines: [{
+      ...baseRoutine,
+      id: "55555555-5555-4555-9555-000000000401",
+      status: "published",
+      version: 1,
+    }],
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: /Collect pricing intake published v1/ }).click();
+
+  // Reading a published routine is what the document's rest state is for.
+  // It renders as the reader: the routine reads as prose, with no editing affordances.
+  const reader = page.getByRole("article", { name: "Routine document" });
+  await expect(reader).toBeVisible();
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toHaveCount(0);
+  await expect(reader).toContainText("Ask for");
+  await expect(reader).toContainText("so the team can follow up");
 });
 
 test("agent routines revise and publish a new version without duplicating the lineage row", async ({ page }) => {

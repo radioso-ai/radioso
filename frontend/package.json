@@ -20,8 +20,9 @@
     "lint": "eslint .",
     "pretest": "pnpm run build:workspace-deps",
     "test": "vitest run",
-    "pretest:e2e": "pnpm run build:workspace-deps",
-    "test:e2e": "playwright test"
+    "pretest:e2e": "pnpm run build",
+    "test:e2e": "echo 'Running end-to-end tests against a production Next.js server.' && PLAYWRIGHT_SERVER_MODE=production playwright test",
+    "test:e2e:dev": "pnpm run build:workspace-deps && echo 'Running end-to-end tests against a development Next.js server.' && PLAYWRIGHT_SERVER_MODE=development playwright test"
   },
   "dependencies": {
     "@lexical/react": "^0.45.0",

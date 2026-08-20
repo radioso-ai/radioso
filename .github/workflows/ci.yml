@@ -349,10 +349,6 @@ jobs:
         working-directory: frontend
         run: pnpm run lint
 
-      - name: Build frontend
-        working-directory: frontend
-        run: pnpm run build
-
       - name: Test frontend unit suite
         working-directory: frontend
         run: pnpm test

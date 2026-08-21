@@ -37,6 +37,23 @@ it concrete: “Acknowledge the delay, state only what the order data supports,
 and offer the next useful step.” This is guidance the agent follows, not a
 message it repeats word for word.
 
+## Know which rules share the contextual allowance
+
+An **Always** directive is included on every reply without using the allowance
+for situation-specific rules. When its dependencies also match, that dependency
+chain stays with it outside the allowance. This keeps standing requirements in
+force even when several other directives match the same message.
+
+For **In a specific situation** directives, Radioso ranks the matches using
+their confidence and priority. It includes up to eight contextual directives
+whose combined instructions fit within an estimated 2,400-token allowance.
+Matches beyond either limit are held back and recorded in the turn trace.
+
+If an expected contextual directive is held back, make its **Situation** more
+specific or raise its **Priority** relative to the rules it competes with. Use
+**Always** only when the instruction genuinely belongs on every reply; it is a
+standing requirement, not a way to win contextual ranking.
+
 ## Decide how it fits with other rules
 
 **Priority** orders guidance when two matching directives disagree. It is a
@@ -90,6 +107,9 @@ standing rule.
   or request that should trigger it, rather than a topic word.
 - A built-in rule still affects the answer: use **Replaces** or **Override** if
   it must be removed; priority only orders competing guidance.
+- A contextual rule matched but did not shape the answer: inspect the turn
+  trace for a count or token-limit reason, then narrow its **Situation** or
+  raise its **Priority** relative to the other contextual rules.
 - Slack, email, webhook, or notify does not appear after `#`: add it as a
   routine step. It acts, rather than producing the reply a directive needs.
 - A selected skill is unavailable: enable it and set its invocation mode to

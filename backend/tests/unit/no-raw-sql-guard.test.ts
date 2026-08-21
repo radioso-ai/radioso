@@ -35,6 +35,7 @@ describe("no-raw-sql guard", () => {
         "modules/retrieval/infra/pgVectorAdapter.ts",
         "modules/retrieval/infra/vectorSearch.ts",
         "shared/infra/database.ts",
+        "shared/infra/postgresWorkspaceEventBus.ts",
       ].sort(),
     );
   });

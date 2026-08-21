@@ -1,10 +1,22 @@
 import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 
-import type { AppDependencies } from "../../server/types.js";
-import { createRateLimitMiddleware } from "./rateLimit.js";
+import type { Env } from "../../config/env.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitAbuseControlPort,
+  type RateLimitAuditPort,
+} from "./rateLimit.js";
 
-export type AnonymousRateLimiterDependencies = Pick<AppDependencies, "env" | "abuseControlService" | "auditService">;
+export interface AnonymousRateLimiterDependencies {
+  env: Pick<Env,
+    | "PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS"
+    | "PUBLIC_CHAT_RATE_LIMIT_WINDOW_MS"
+    | "PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS"
+  >;
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
+}
 
 const hashRateLimitPart = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32);
 

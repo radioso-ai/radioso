@@ -235,15 +235,24 @@ describe('routine block document', () => {
     expect(routineToBlockDoc(emitted)).toMatchObject({ ok: true })
   })
 
-  it('returns diagnostics instead of dropping an unresolved transition target', () => {
+  it('never drops an unresolved transition target', () => {
     const input = draft({ transitions: [{ fromStep: 'collect', toRef: 'missing', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }] })
-    expect(routineToBlockDoc(input)).toEqual({ ok: false, diagnostics: [{ code: 'unknown_transition_target', message: 'Transition from "collect" targets unknown id "missing".' }] })
+    const projected = routineToBlockDoc(input)
+    if (!projected.ok) throw new Error('expected a document')
+
+    // The edge is carried as unresolved rather than discarded, so nothing an author wrote
+    // disappears by opening the routine.
+    expect(projected.doc.steps.find((step) => step.stableStepId === 'collect')?.branches)
+      .toEqual([expect.objectContaining({ target: { kind: 'unresolved', toRef: 'missing' } })])
   })
 
-  it('returns diagnostics for duplicate stable ids', () => {
+  it('keeps a step and a terminal that collide, leaving the shared name unresolved', () => {
     const input = draft({ terminals: [{ stableStepId: 'collect', kind: 'complete', instruction: 'All done.', ordinal: 0 }] })
+    const projected = routineToBlockDoc(input)
+    if (!projected.ok) throw new Error('expected a document')
 
-    expect(routineToBlockDoc(input)).toEqual({ ok: false, diagnostics: [{ code: 'duplicate_stable_id', message: 'Duplicate stable id "collect" cannot be represented.' }] })
+    expect(projected.doc.steps.some((step) => step.stableStepId === 'collect')).toBe(true)
+    expect(projected.doc.steps.flatMap((step) => step.branches).every((branch) => branch.target.kind !== 'ending' || branch.target.terminalId !== 'collect')).toBe(true)
   })
 
   it('returns schema issue paths and messages for an invalid authoring draft', () => {
@@ -276,5 +285,56 @@ describe('routine block document', () => {
         expect(roundTrip(input).restored).toEqual(withDocumentOrdinals(input))
       },
     ), { numRuns: 50, seed: 100_714 })
+  })
+})
+
+describe('a routine with an edge that points nowhere', () => {
+  // A draft saves without semantic validation, so a step removed through the API or an
+  // older row can leave a transition naming an id that no longer exists. The document has
+  // to stay readable for the person who has to fix it.
+  const danglingDraft = () => draft({
+    transitions: [{
+      fromStep: 'collect', toRef: 'deleted_step', guardKind: 'default', guardText: null, outcomeStatus: null,
+      counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 7,
+    }],
+  })
+
+  it('still projects the routine instead of refusing it', () => {
+    const projected = routineToBlockDoc(danglingDraft())
+
+    expect(projected.ok).toBe(true)
+  })
+
+  it('marks the edge unresolved and keeps the id it named', () => {
+    const projected = routineToBlockDoc(danglingDraft())
+    if (!projected.ok) throw new Error('expected a document')
+
+    const branch = projected.doc.steps.find((step) => step.stableStepId === 'collect')?.branches[0]
+    expect(branch?.target).toEqual({ kind: 'unresolved', toRef: 'deleted_step' })
+  })
+
+  it('writes the unresolved edge back unchanged, so reading never repairs the data', () => {
+    const projected = routineToBlockDoc(danglingDraft())
+    if (!projected.ok) throw new Error('expected a document')
+
+    const saved = draftFromBlockDoc(projected.doc)
+
+    expect(saved.transitions.find((transition) => transition.fromStep === 'collect')?.toRef).toBe('deleted_step')
+  })
+
+  it('renders both steps when an id is used twice, so the author can rename one', () => {
+    const projected = routineToBlockDoc(draft({
+      steps: [
+        { stableStepId: 'collect', kind: 'chat', instruction: 'First.', toolRef: null, actionType: null, ordinal: 0, metadata: {} },
+        { stableStepId: 'collect', kind: 'chat', instruction: 'Second.', toolRef: null, actionType: null, ordinal: 1, metadata: {} },
+      ],
+      transitions: [{ fromStep: 'collect', toRef: 'collect', guardKind: 'default', guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
+    }))
+    if (!projected.ok) throw new Error('expected a document')
+
+    expect(projected.doc.steps).toHaveLength(2)
+    // The branch genuinely cannot say which of the two it means, so it resolves to neither
+    // and the reader shows it as pointing nowhere.
+    expect(projected.doc.steps[0]?.branches[0]?.target).toEqual({ kind: 'unresolved', toRef: 'collect' })
   })
 })

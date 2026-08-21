@@ -40,6 +40,17 @@ export interface CopilotWorkspaceSettingsPort {
     pendingEmbeddingModel: string | null;
     documentEnrichmentEnabled?: boolean;
   }>;
+  // How much of the workspace is actually reachable by semantic search. Answers the
+  // question behind most "why can't the agent find this?" reports without leaving the
+  // safe-read boundary: these are counts, not content.
+  getEmbeddingCoverage(workspaceId: string): Promise<{
+    eligibleChunks: number;
+    coveredChunks: number;
+    missingChunks: number;
+    hasEmbeddingProfile: boolean;
+    queuedJobs: number;
+    failedJobs: number;
+  }>;
   listLlmModels(workspaceId: string): Promise<ReadonlyArray<{
     capability: "chat" | "rewrite" | "rerank";
     provider: string;
@@ -116,6 +127,14 @@ const workspaceSettingsOutputSchema = z.object({
     pendingEmbeddingModel: z.string().nullable(),
     documentEnrichmentEnabled: z.boolean(),
   }).strict(),
+  embeddingCoverage: z.object({
+    eligibleChunks: z.number().int().nonnegative(),
+    coveredChunks: z.number().int().nonnegative(),
+    missingChunks: z.number().int().nonnegative(),
+    hasEmbeddingProfile: z.boolean(),
+    queuedJobs: z.number().int().nonnegative(),
+    failedJobs: z.number().int().nonnegative(),
+  }).strict(),
   llmModels: z.object({
     chat: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
     rewrite: z.object({ provider: z.string(), model: z.string() }).strict().nullable(),
@@ -159,20 +178,28 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
 }): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "workspace_settings", shape: "read", uiLabel: "Reading workspace settings", contributingModule: "settings", dashboardSubject: { type: "workspace_settings" }, requiredPermissions: ["workspace.settings.read"],
-    description: "Read safe workspace retrieval, ingestion, model, credential-health, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
+    description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
     inputSchema: workspaceSettingsInputSchema, outputSchema: workspaceSettingsOutputSchema,
     createTool: (context) => ({
       name: "workspace_settings",
-      description: "Read safe workspace retrieval, ingestion, model, credential-health, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
+      description: "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Tokens, secrets, credential values, and connection strings are excluded.",
       inputSchema: workspaceSettingsInputSchema,
       outputSchema: workspaceSettingsOutputSchema,
       invoke: async () => {
-        const [retrieval, ingestion, preferences, credentialHealth, general] = await Promise.all([
+        const [
+          retrieval,
+          ingestion,
+          preferences,
+          credentialHealth,
+          general,
+          embeddingCoverage,
+        ] = await Promise.all([
           deps.workspaceSettings.getRetrievalDefaults(context.workspaceId),
           deps.workspaceSettings.getIngestionSettings(context.workspaceId),
           deps.workspaceSettings.listLlmModels(context.workspaceId),
           deps.workspaceSettings.getProviderCredentialHealth(context.workspaceId),
           deps.workspaceSettings.getGeneralSettings(context.workspaceId),
+          deps.workspaceSettings.getEmbeddingCoverage(context.workspaceId),
         ]);
         const preferencesByCapability = new Map(preferences.map((preference) => [
           preference.capability,
@@ -218,6 +245,14 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
             embeddingModel: ingestion.embeddingModel,
             pendingEmbeddingModel: ingestion.pendingEmbeddingModel,
             documentEnrichmentEnabled: ingestion.documentEnrichmentEnabled ?? false,
+          },
+          embeddingCoverage: {
+            eligibleChunks: embeddingCoverage.eligibleChunks,
+            coveredChunks: embeddingCoverage.coveredChunks,
+            missingChunks: embeddingCoverage.missingChunks,
+            hasEmbeddingProfile: embeddingCoverage.hasEmbeddingProfile,
+            queuedJobs: embeddingCoverage.queuedJobs,
+            failedJobs: embeddingCoverage.failedJobs,
           },
           llmModels: {
             chat: preferencesByCapability.get("chat") ?? null,

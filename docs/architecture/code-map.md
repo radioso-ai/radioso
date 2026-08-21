@@ -432,7 +432,34 @@ Primary internals:
 - `backend/src/modules/retrieval/services/retrievalSearchService.ts`
 - `backend/src/modules/retrieval/services/retrievalAnswerService.ts`
 - `backend/src/modules/retrieval/infra/vectorSearch.ts`
+- `backend/src/modules/retrieval/infra/pgVectorAdapter.ts` (canonical
+  `chunk_embeddings` candidate search)
+- `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
+  HNSW index rule, shared by the index DDL and the query's `ORDER BY`)
 - `backend/src/modules/retrieval/infra/lexicalSearch.ts`
+
+Operator scripts:
+
+- `backend/scripts/backfillEmbeddingCoverage.ts` queues embedding work for
+  workspaces with missing chunks; `backend/scripts/verifyCanonicalVectorParity.ts`
+  compares the two vector search paths and measures index recall. Coverage counts
+  come from `getWorkspaceCanonicalEmbeddingCoverage` in
+  `backend/src/db/repositories/documentProcessingJobRepository.ts`, which shares
+  its definition of a covered chunk with the gap report the backfill reads. See
+  [Embedding Coverage](../embedding-coverage.md).
+
+Two vector stores, one being retired:
+
+- Chunk vectors live in both `chunks.embedding` / `chunks.embedding_unbounded` and
+  `chunk_embeddings`. Canonical is the one that supports more than one embedding
+  width; the legacy pair is being removed. `pnpm run lint:legacy-chunk-vectors`
+  (`backend/scripts/checkLegacyChunkVectorReaders.mjs`) holds the allowlist of files
+  still reading the legacy columns, each naming the step that removes it. Read new
+  code against `chunk_embeddings`. When the allowlist is empty the columns can be
+  dropped, and the guard goes with them.
+- Vectors only compare within one embedding space, so a reader that falls back from
+  canonical to legacy must do it for a whole batch, never per chunk —
+  `PostgresSenseEmbeddingReader` is the worked example.
 
 Useful searches:
 
@@ -451,6 +478,7 @@ Focused checks:
 Related docs and specs:
 
 - [Vector Search Indexing](./vector-search-indexing.md)
+- [Embedding Coverage](../embedding-coverage.md)
 - [Retrieval Pipeline](../../docs-portal/content/architecture/retrieval-pipeline.mdx)
 - [Agents and Skills](../../docs-portal/content/api/agents-and-skills.mdx)
 - `specs/058-retrieval-module-boundaries/`

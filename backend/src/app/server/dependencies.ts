@@ -381,6 +381,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         async getIngestionSettings(workspaceId) {
           return settings.ingestionSettingsService.getForWorkspace(workspaceId);
         },
+        async getEmbeddingCoverage(workspaceId) {
+          return repositories.documentProcessingJobRepository
+            .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+        },
         async listLlmModels(workspaceId) {
           return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
         },
@@ -472,6 +476,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     workspaceService: workspace.workspaceService,
     workspaceSummaryService: workspace.workspaceSummaryService,
     ingestionSettingsService: settings.ingestionSettingsService,
+    // Coverage counts share the job repository's definition of a projected chunk,
+    // because the number is read against the backlog that repository enqueues.
+    embeddingCoverageReport: repositories.documentProcessingJobRepository,
     chunkRepository: repositories.chunkRepository,
     documentRepository: repositories.documentRepository,
     documentIngestionService: documents.documentIngestionService,

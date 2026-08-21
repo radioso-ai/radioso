@@ -76,13 +76,20 @@ Both controls apply to every document type, including imported files and crawled
 
 In practice, an excluded or expired document is filtered out at candidate selection, so it will not appear in assistant answers, direct retrieval search, or the MCP grounded tools.
 
+## Embedding coverage
+
+A processed chunk is only a search candidate once it has an embedding filed under the workspace's current model. Settings → Providers shows the count on the Embeddings row — "14,989 of 19,318 chunks indexed" — and names the two states that stop it moving: jobs that failed keep their place in the queue and will not retry on their own, and a workspace with no embedding model set produces no indexing work at all.
+
+`GET /api/v1/settings/ingestion/embedding-coverage` returns the same counts for scripting. Eligible chunks are the ones retrieval would serve, so a document that is excluded, expired, or still processing is left out of both the covered and the total figure.
+
 ## First checks during incidents
 
 1. Confirm the API is still accepting uploads.
 2. Confirm the worker runtime is alive.
 3. Confirm source-file storage is reachable.
 4. Confirm embeddings are succeeding for new jobs.
-5. Confirm the queue is draining rather than growing.
+5. Confirm embedding coverage is climbing rather than parked with failed jobs.
+6. Confirm the queue is draining rather than growing.
 
 <Callout type="warning" emoji="!">
   Do not debug a missing answer from a fresh upload as a retrieval bug until processing has completed for that document revision.

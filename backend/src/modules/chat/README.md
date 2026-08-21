@@ -214,12 +214,11 @@ imports from `services/`.
   mid-routine (unlike eval *replay*, which must NOT seed it). Route:
   `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
   (workspace-session auth). Powers the workbench's "Continue in test chat".
-- Ray agent-turn probes: `contracts/agentTurnTest.ts` and
-  `services/agentTurnTestService.ts` run bounded non-streaming turns under the
-  `operator_copilot_probe` source channel. Probe conversations keep the routine,
-  pending-decision, clarification, and directive state needed for a follow-up;
-  the lifecycle suppresses external actions, ownership handoffs, customer
-  analytics, and summary regeneration.
+- Safe-test turns use the shared `TurnExecutionMode` to keep routine,
+  pending-decision, clarification, and directive state needed for a follow-up
+  while the lifecycle suppresses external actions, ownership handoffs, customer
+  analytics, and summary regeneration. Chat does not own the caller's identity,
+  provenance, or authorization policy; application composition supplies those.
 - Fused turn planning: `turnPlanService.ts` (one chat-tier `turn_planning` call
   + prompt `backend/prompts/chat/turn-planning.md`, strict parse and semantic
   validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

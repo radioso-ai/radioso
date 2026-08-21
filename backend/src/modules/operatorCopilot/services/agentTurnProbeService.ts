@@ -1,11 +1,11 @@
-import { badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import type {
-  AgentTurnTestInput,
-  AgentTurnTestPort,
-  AgentTurnTestResult,
-  AgentTurnTestServiceDependencies,
-} from "../contracts/agentTurnTest.js";
+  AgentTurnProbeServiceDependencies,
+  CopilotAgentTurnProbeInput,
+  CopilotAgentTurnProbePort,
+  CopilotAgentTurnProbeResult,
+} from "../contracts/agentTurnProbe.js";
 
 export { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 
@@ -13,15 +13,15 @@ const MAX_PREVIEW_ROUTINES = 20;
 const PREVIEW_ELIGIBLE_STATUSES = new Set(["draft", "published"]);
 
 const probeSourceOrigin = (input: Pick<
-  AgentTurnTestInput,
+  CopilotAgentTurnProbeInput,
   "operatorUserId" | "copilotConversationId"
 >): string =>
   `operator:${input.operatorUserId}:copilot_conversation:${input.copilotConversationId}`;
 
-export class AgentTurnTestService implements AgentTurnTestPort {
-  constructor(private readonly dependencies: AgentTurnTestServiceDependencies) {}
+export class AgentTurnProbeService implements CopilotAgentTurnProbePort {
+  constructor(private readonly dependencies: AgentTurnProbeServiceDependencies) {}
 
-  async testTurn(input: AgentTurnTestInput): Promise<AgentTurnTestResult> {
+  async testTurn(input: CopilotAgentTurnProbeInput): Promise<CopilotAgentTurnProbeResult> {
     const query = input.message.trim();
     if (!query) {
       throw badRequest("message is required");
@@ -35,7 +35,7 @@ export class AgentTurnTestService implements AgentTurnTestPort {
     const sourceOrigin = probeSourceOrigin(input);
     await this.preflight(input, sourceOrigin, previewRoutineIds);
 
-    const response = await this.dependencies.turnRunner.run({
+    return this.dependencies.turnRunner.run({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       agentId: input.agentId,
@@ -53,24 +53,9 @@ export class AgentTurnTestService implements AgentTurnTestPort {
         requestId: input.copilotConversationId,
       },
     });
-    const userMessageId = await this.findTurnUserMessageId(input.workspaceId, response);
-
-    return {
-      conversationId: response.conversationId,
-      userMessageId,
-      assistantMessageId: response.assistantMessageId,
-      agentId: response.agentId,
-      answer: response.answer,
-      citations: response.citations,
-      skillOutcome: response.skillOutcome,
-      answerOutcome: response.answerOutcome,
-      activitySummary: response.activitySummary,
-      activityTrace: response.activityTrace,
-      turnTrace: response.turnTrace,
-    };
   }
 
-  private async enforceAbuseControl(input: AgentTurnTestInput): Promise<void> {
+  private async enforceAbuseControl(input: CopilotAgentTurnProbeInput): Promise<void> {
     const scope = "api.expensive_authenticated";
     const subjectKey = `account:${input.accountId}:workspace:${input.workspaceId}:operator:${input.operatorUserId}`;
     try {
@@ -104,7 +89,7 @@ export class AgentTurnTestService implements AgentTurnTestPort {
   }
 
   private async preflight(
-    input: AgentTurnTestInput,
+    input: CopilotAgentTurnProbeInput,
     sourceOrigin: string,
     previewRoutineIds: readonly string[],
   ): Promise<void> {
@@ -138,24 +123,5 @@ export class AgentTurnTestService implements AgentTurnTestPort {
         throw notFound("Preview routine not found");
       }
     }
-  }
-
-  private async findTurnUserMessageId(
-    workspaceId: string,
-    response: { conversationId: string; assistantMessageId: string },
-  ): Promise<string> {
-    const assistantMessage = await this.dependencies.messageReader.findByIdAndWorkspaceId(
-      workspaceId,
-      response.assistantMessageId,
-    );
-    const userMessageId = assistantMessage?.metadata?.probeUserMessageId;
-    if (
-      assistantMessage?.role === "assistant" &&
-      typeof userMessageId === "string" &&
-      userMessageId.length > 0
-    ) {
-      return userMessageId;
-    }
-    throw serviceUnavailable("Test turn result is unavailable");
   }
 }

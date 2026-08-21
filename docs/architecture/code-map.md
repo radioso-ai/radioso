@@ -259,9 +259,12 @@ permission declarations, bounded tool projections, and dashboard handoff links.
 The module defines narrow consumer ports for the workspace capabilities Ray can
 use. Application composition supplies their implementations.
 
-Chat owns agent-turn probe execution and its probe effect policy. The
-operator-copilot tool owns the input contract, all-of permission gate, safe
-result projection, byte budget, and link back to the synthetic conversation.
+Operator Copilot owns agent-turn probe orchestration: operator provenance,
+abuse controls, agent and draft-routine validation, input contract, all-of
+permission gate, safe result projection, byte budget, and the link back to the
+synthetic conversation. Chat exposes only a generic safe-test execution mode
+and an internal persisted-turn receipt; it does not know about Ray or operator
+identity.
 Ray tools stay within the dashboard session surface; the standalone MCP server
 does not expose this catalog.
 
@@ -272,7 +275,8 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/index.ts` (catalog contributions)
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring)
-- `backend/src/modules/chat/contracts/agentTurnTest.ts` and `services/agentTurnTestService.ts` (probe execution boundary)
+- `backend/src/modules/operatorCopilot/contracts/agentTurnProbe.ts` and `services/agentTurnProbeService.ts` (probe orchestration boundary)
+- `backend/src/shared/domain/turnExecutionMode.ts` and `backend/src/modules/chat/services/chatService.ts` (generic safe-test execution seam)
 - `frontend/lib/api-copilot.ts`
 - `frontend/components/dashboard/copilot-panel.tsx` and `copilot-view.tsx`
 

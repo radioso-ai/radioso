@@ -453,7 +453,7 @@ describe("ChatSessionPreparer suggested-question settings", () => {
       workspaceId: "ws-1",
       agentId: agent.id,
       query: "Test safely",
-      effectProfile: "probe",
+      executionMode: "safe_test",
     });
 
     expect(resolveForAgent).not.toHaveBeenCalled();

@@ -34,7 +34,7 @@ import {
   type RegisteredChunk,
 } from "../../../modules/retrieval/public.js";
 import { NOTIFY_SKILLS_ADAPTER } from "../../../modules/notify/notifyExecutor.js";
-import type { ChatTurnEffectProfile } from "../../../shared/domain/chatTurnEffectProfile.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 
 export interface RepositoryAgentSkillTurnSkillProviderOptions {
@@ -45,7 +45,7 @@ export interface RepositoryAgentSkillTurnSkillProviderOptions {
 }
 
 const AGENT_SKILL_OUTCOME_KIND = "agent_skill";
-const PROBE_SUPPRESSION_REASON = "suppressed_for_probe";
+const SAFE_TEST_SUPPRESSION_REASON = "suppressed_for_safe_test";
 
 /**
  * Skill kinds a directive binding may claim a chat turn with. Only `external_mcp`
@@ -218,7 +218,7 @@ const executionForKind = (kind: AgentSkillKind): SkillExecution | undefined => {
   }
 };
 
-const probeMayInvoke = (
+const safeTestMayInvoke = (
   agentSkill: AgentSkillSpine,
   execution: SkillExecution,
 ): boolean =>
@@ -226,22 +226,22 @@ const probeMayInvoke = (
   execution.kind === "internal" &&
   execution.adapter === RETRIEVAL_ANSWER_ADAPTER;
 
-const shouldSuppressForProbe = (
-  effectProfile: ChatTurnEffectProfile | undefined,
+const shouldSuppressForSafeTest = (
+  executionMode: TurnExecutionMode | undefined,
   agentSkill: AgentSkillSpine,
   execution: SkillExecution,
-): boolean => effectProfile === "probe" && !probeMayInvoke(agentSkill, execution);
+): boolean => executionMode === "safe_test" && !safeTestMayInvoke(agentSkill, execution);
 
-const recordProbeSuppression = (
+const recordSafeTestSuppression = (
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
   kind: AgentSkillKind,
   surface: "turn" | "staged_tool",
 ): void => {
-  metricsRegistry?.incrementCounter("agent_skill_probe_dispatch_total", {
-    help: "Agent-skill executions suppressed by the probe effect policy.",
+  metricsRegistry?.incrementCounter("agent_skill_safe_test_dispatch_total", {
+    help: "Agent-skill executions suppressed by the safe-test execution policy.",
     labels: {
       outcome: "suppressed",
-      reason: PROBE_SUPPRESSION_REASON,
+      reason: SAFE_TEST_SUPPRESSION_REASON,
       skill_kind: kind,
       surface,
     },
@@ -275,7 +275,7 @@ const turnSkillForAgentSkill = (
   agentSkill: AgentSkillSpine,
   executorRegistry: SkillExecutorRegistry,
   throwIfCancelled: () => void,
-  effectProfile: ChatTurnEffectProfile | undefined,
+  executionMode: TurnExecutionMode | undefined,
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
@@ -287,9 +287,9 @@ const turnSkillForAgentSkill = (
       if (!skill.execution) {
         return settledFailure(session, agentSkill.skillName, "no_execution");
       }
-      if (shouldSuppressForProbe(effectProfile, agentSkill, skill.execution)) {
-        recordProbeSuppression(metricsRegistry, agentSkill.kind, "turn");
-        return settledFailure(session, agentSkill.skillName, PROBE_SUPPRESSION_REASON);
+      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "turn");
+        return settledFailure(session, agentSkill.skillName, SAFE_TEST_SUPPRESSION_REASON);
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
@@ -342,7 +342,7 @@ const stagedToolFactoryForAgentSkill = (
   session: PreparedSession,
   directiveNames: readonly string[],
   throwIfCancelled: () => void,
-  effectProfile: ChatTurnEffectProfile | undefined,
+  executionMode: TurnExecutionMode | undefined,
   metricsRegistry: Pick<MetricsRegistry, "incrementCounter"> | null | undefined,
 ): AgenticRetrievalToolFactory => ({ registry, snippetChars }) => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
@@ -360,13 +360,13 @@ const stagedToolFactoryForAgentSkill = (
       if (!skill.execution) {
         return { ok: false, skillName: agentSkill.skillName, directiveNames: [...directiveNames], error: "no_execution" };
       }
-      if (shouldSuppressForProbe(effectProfile, agentSkill, skill.execution)) {
-        recordProbeSuppression(metricsRegistry, agentSkill.kind, "staged_tool");
+      if (shouldSuppressForSafeTest(executionMode, agentSkill, skill.execution)) {
+        recordSafeTestSuppression(metricsRegistry, agentSkill.kind, "staged_tool");
         return {
           ok: false,
           skillName: agentSkill.skillName,
           directiveNames: [...directiveNames],
-          error: PROBE_SUPPRESSION_REASON,
+          error: SAFE_TEST_SUPPRESSION_REASON,
         };
       }
       const executor = executorRegistry.resolve(skill.execution);
@@ -476,7 +476,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           record,
           this.options.executorRegistry,
           throwIfCancelled,
-          session.effectProfile,
+          session.executionMode,
           this.options.metricsRegistry,
         ));
       }
@@ -496,7 +496,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
               currentSession,
               directiveNames,
               throwIfCancelled,
-              session.effectProfile,
+              session.executionMode,
               this.options.metricsRegistry,
             )]
           : [];

@@ -172,7 +172,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       metricsRegistry,
     });
     const session = sessionWithBinding("order_lookup");
-    session.effectProfile = "probe";
+    session.executionMode = "safe_test";
     const runtime = await provider.forSession(session);
     const selector = new ChatTurnSkillSelector(
       [defaultTurnSkill, ...runtime.turnSkills],
@@ -188,10 +188,10 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       skillName: "order_lookup",
       outcome: {
         status: "failed",
-        outputs: { skill: "order_lookup", reason: "suppressed_for_probe" },
+        outputs: { skill: "order_lookup", reason: "suppressed_for_safe_test" },
       },
     });
-    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_probe"');
+    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
     expect(metricsRegistry.renderPrometheus()).toContain('skill_kind="external_mcp"');
     expect(metricsRegistry.renderPrometheus()).not.toContain("order_lookup");
   });
@@ -219,7 +219,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
     });
     const session = sessionWithBinding("grounded_search");
-    session.effectProfile = "probe";
+    session.executionMode = "safe_test";
     const runtime = await provider.forSession(session);
     const tools = runtime.agenticRetrievalToolFactories(session).flatMap((factory) => factory({
       registry: { record: vi.fn(), resolve: vi.fn(), has: vi.fn() },
@@ -235,7 +235,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
     expect(output).toMatchObject({
       ok: false,
       skillName: "grounded_search",
-      error: "suppressed_for_probe",
+      error: "suppressed_for_safe_test",
     });
   });
 

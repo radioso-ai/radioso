@@ -2,6 +2,11 @@ import { z } from "zod";
 import { Buffer } from "node:buffer";
 
 import type { CopilotToolDescriptor } from "../contracts.js";
+import type {
+  CopilotAgentTurnProbePort,
+  CopilotAgentTurnProbeResult,
+} from "../contracts/agentTurnProbe.js";
+export type { CopilotAgentTurnProbePort } from "../contracts/agentTurnProbe.js";
 import { describeNamedAgent, requiredCopilotConversation, requiredPageAgent, type CopilotAgentLookupPort } from "./shared.js";
 
 const idSchema = z.string().uuid();
@@ -125,38 +130,6 @@ type AgentTurnProbeInput = z.infer<typeof agentTurnProbeInputSchema>;
 type AgentTurnProbeOutput = z.infer<typeof agentTurnProbeOutputSchema>;
 type AgentTurnProbeEnrichedOutput = z.infer<typeof agentTurnProbeEnrichedOutputSchema>;
 type ProbeOmission = AgentTurnProbeOutput["omissions"][number];
-
-export interface CopilotAgentTurnProbeResult {
-  readonly conversationId: string;
-  readonly userMessageId: string;
-  readonly assistantMessageId: string;
-  readonly agentId?: string;
-  readonly answer: string;
-  readonly citations?: ReadonlyArray<unknown>;
-  readonly skillOutcome?: string;
-  readonly answerOutcome?: string;
-  readonly activitySummary?: unknown;
-  readonly activityTrace?: unknown;
-  readonly turnTrace?: unknown;
-}
-
-/** Consumer-owned port: no chat service, repository, or transport types cross this boundary. */
-export interface CopilotAgentTurnProbePort {
-  testTurn(input: {
-    workspaceId: string;
-    accountId: string;
-    operatorUserId: string;
-    copilotConversationId: string;
-    agentId: string;
-    message: string;
-    conversationId?: string;
-    previewRoutineIds?: string[];
-    userExpectedLocale?: string;
-    inputMetadata?: z.infer<typeof userInputMetadataSchema>;
-    pageContext?: z.infer<typeof assistantPageContextSchema>;
-    clientContextCapabilities?: z.infer<typeof clientContextCapabilitiesSchema>;
-  }): Promise<CopilotAgentTurnProbeResult>;
-}
 
 export interface AgentTurnProbeCopilotToolDependencies {
   readonly agentLookup: CopilotAgentLookupPort;

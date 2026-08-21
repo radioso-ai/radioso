@@ -1,16 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationRecord } from "../../src/db/repositories/conversationRepository.js";
-import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
+import type { ConversationRecord } from "../../../src/db/repositories/conversationRepository.js";
 import {
-  AgentTurnTestService,
+  AgentTurnProbeService,
   OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
-} from "../../src/modules/chat/services/agentTurnTestService.js";
+} from "../../../src/modules/operatorCopilot/services/agentTurnProbeService.js";
 import type {
-  AgentTurnTestRoutineReader,
-  AgentTurnTestRunnerPort,
-} from "../../src/modules/chat/contracts/agentTurnTest.js";
-import type { ChatResponse } from "../../src/modules/chat/types/chatResponses.js";
+  AgentTurnProbeRoutineReader,
+  AgentTurnProbeRunnerPort,
+} from "../../../src/modules/operatorCopilot/contracts/agentTurnProbe.js";
 
 const ids = {
   workspace: "00000000-0000-4000-8000-000000000001",
@@ -23,15 +21,6 @@ const ids = {
   assistantMessage: "00000000-0000-4000-8000-000000000008",
   routine: "00000000-0000-4000-8000-000000000009",
 };
-
-const message = (input: Pick<MessageRecord, "id" | "role">): MessageRecord => ({
-  id: input.id,
-  conversationId: ids.conversation,
-  workspaceId: ids.workspace,
-  role: input.role,
-  content: input.role === "user" ? "Run the draft" : "Draft response",
-  createdAt: new Date("2026-08-21T12:00:00.000Z"),
-});
 
 const conversation = (overrides: Partial<ConversationRecord> = {}): ConversationRecord => ({
   id: ids.conversation,
@@ -65,7 +54,7 @@ const harness = (options: { existingConversation?: ConversationRecord | null } =
     }),
   };
   const routineReader = {
-    findById: vi.fn<AgentTurnTestRoutineReader["findById"]>(async () => {
+    findById: vi.fn<AgentTurnProbeRoutineReader["findById"]>(async () => {
       calls.push("routine");
       return { status: "draft" as const };
     }),
@@ -76,31 +65,25 @@ const harness = (options: { existingConversation?: ConversationRecord | null } =
     }),
   };
   const audit = { record: vi.fn(async () => {}) };
-  const runTurn = vi.fn<AgentTurnTestRunnerPort["run"]>(async () => {
+  const runTurn = vi.fn<AgentTurnProbeRunnerPort["run"]>(async () => {
       calls.push("turn");
       return {
         conversationId: ids.conversation,
+        userMessageId: ids.userMessage,
         agentId: ids.agent,
         assistantMessageId: ids.assistantMessage,
-        route: { type: "direct" as const, reason: "social_only" as const },
         answer: "Draft response",
         skillOutcome: "completed",
         answerOutcome: "routine_completed",
         citations: [],
         activitySummary: { execution: { surface: "assistant", path: "assistant_direct", retrievalInvoked: false } },
         activityTrace: { traceId: "trace-1", startedAt: "2026-08-21T12:00:00.000Z", stages: [], links: [] },
-      } as ChatResponse;
+      };
     });
   const turnRunner = {
     run: runTurn,
   };
-  const messageReader = {
-    findByIdAndWorkspaceId: vi.fn(async () => ({
-      ...message({ id: ids.assistantMessage, role: "assistant" }),
-      metadata: { probeUserMessageId: ids.userMessage },
-    })),
-  };
-  const service = new AgentTurnTestService({
+  const service = new AgentTurnProbeService({
     conversationReader,
     agentReader,
     routineReader,
@@ -108,7 +91,6 @@ const harness = (options: { existingConversation?: ConversationRecord | null } =
     audit,
     abusePolicy: { limit: 60, windowMs: 60_000 },
     turnRunner,
-    messageReader,
   });
   return { service, calls, conversationReader, routineReader, abuseControl, audit, turnRunner, runTurn };
 };
@@ -124,7 +106,7 @@ const input = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-describe("AgentTurnTestService", () => {
+describe("AgentTurnProbeService", () => {
   it("spends abuse-control budget before ownership and draft preflight, then runs the turn", async () => {
     const { service, calls, abuseControl, runTurn } = harness({
       existingConversation: conversation(),

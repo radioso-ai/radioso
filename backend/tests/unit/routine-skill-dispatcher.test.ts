@@ -114,7 +114,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
         skillNamed("opaque_probe_skill", { kind: "internal", adapter, enqueue: false }),
       ]),
       registry,
-      { effectProfile: "probe" },
+      { executionMode: "safe_test" },
     );
 
     const result = await dispatcher.dispatch({
@@ -126,7 +126,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(result).toEqual({
       status: "failed",
-      outputs: { skill: "opaque_probe_skill", reason: "suppressed_for_probe" },
+      outputs: { skill: "opaque_probe_skill", reason: "suppressed_for_safe_test" },
     });
   });
 
@@ -136,7 +136,7 @@ describe("RoutineSkillExecutorDispatcher", () => {
     const dispatcher = new RoutineSkillExecutorDispatcher(
       new StaticRoutineSkillResolver([skillNamed("opaque_probe_skill")]),
       registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome)),
-      { effectProfile: "probe", metricsRegistry },
+      { executionMode: "safe_test", metricsRegistry },
     );
 
     await dispatcher.dispatch({ skillName: "opaque_probe_skill", state: routineState({}), turn });
@@ -146,9 +146,9 @@ describe("RoutineSkillExecutorDispatcher", () => {
       "routine.id": "routine-1",
       "routine.step_id": "invoke_skill",
       "outcome.status": "failed",
-      "outcome.reason": "suppressed_for_probe",
+      "outcome.reason": "suppressed_for_safe_test",
     });
-    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_probe"');
+    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
   });
 
   it("resolves a skill by name, dispatches through the registry, and projects the outcome", async () => {

@@ -4,10 +4,9 @@ import type { AbuseControlPort } from "../../security/contracts/abuseControl.js"
 import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
-} from "../types/assistantApi.js";
-import type { ChatResponse } from "../types/chatResponses.js";
+} from "../../chat/contracts/index.js";
 
-export interface AgentTurnTestInput {
+export interface CopilotAgentTurnProbeInput {
   workspaceId: string;
   accountId: string;
   operatorUserId: string;
@@ -22,28 +21,25 @@ export interface AgentTurnTestInput {
   clientContextCapabilities?: AssistantClientContextCapabilities;
 }
 
-export interface AgentTurnTestResult extends Pick<
-  ChatResponse,
-  | "conversationId"
-  | "assistantMessageId"
-  | "agentId"
-  | "answer"
-  | "citations"
-  | "skillOutcome"
-  | "answerOutcome"
-  | "activitySummary"
-  | "activityTrace"
-  | "turnTrace"
-> {
+export interface CopilotAgentTurnProbeResult {
+  conversationId: string;
   userMessageId: string;
+  assistantMessageId: string;
+  agentId: string;
+  answer: string;
+  citations: ReadonlyArray<unknown>;
+  skillOutcome?: string;
+  answerOutcome?: string;
+  activitySummary?: unknown;
+  activityTrace?: unknown;
+  turnTrace?: unknown;
 }
 
-/** Native chat-side port. Operator-copilot can satisfy its consumer contract structurally. */
-export interface AgentTurnTestPort {
-  testTurn(input: AgentTurnTestInput): Promise<AgentTurnTestResult>;
+export interface CopilotAgentTurnProbePort {
+  testTurn(input: CopilotAgentTurnProbeInput): Promise<CopilotAgentTurnProbeResult>;
 }
 
-export interface AgentTurnTestRunnerInput {
+export interface AgentTurnProbeRunnerInput {
   workspaceId: string;
   accountId: string;
   agentId: string;
@@ -59,11 +55,11 @@ export interface AgentTurnTestRunnerInput {
   usageAttribution: ModelCallUsageAttribution;
 }
 
-export interface AgentTurnTestRunnerPort {
-  run(input: AgentTurnTestRunnerInput): Promise<ChatResponse>;
+export interface AgentTurnProbeRunnerPort {
+  run(input: AgentTurnProbeRunnerInput): Promise<CopilotAgentTurnProbeResult>;
 }
 
-export interface AgentTurnTestConversationReader {
+export interface AgentTurnProbeConversationReader {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{
     workspaceId: string;
     agentId: string | null;
@@ -72,29 +68,20 @@ export interface AgentTurnTestConversationReader {
   } | null>;
 }
 
-export interface AgentTurnTestAgentReader {
+export interface AgentTurnProbeAgentReader {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<unknown | null>;
 }
 
-export interface AgentTurnTestRoutineReader {
+export interface AgentTurnProbeRoutineReader {
   findById(agentId: string, routineId: string): Promise<{
     status: "draft" | "published" | "superseded" | "archived";
   } | null>;
 }
 
-export interface AgentTurnTestMessageReader {
-  findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<{
-    id: string;
-    role: "user" | "assistant" | "system";
-    metadata?: Record<string, unknown>;
-  } | null>;
-}
-
-export interface AgentTurnTestServiceDependencies {
-  conversationReader: AgentTurnTestConversationReader;
-  agentReader: AgentTurnTestAgentReader;
-  routineReader: AgentTurnTestRoutineReader;
-  messageReader: AgentTurnTestMessageReader;
+export interface AgentTurnProbeServiceDependencies {
+  conversationReader: AgentTurnProbeConversationReader;
+  agentReader: AgentTurnProbeAgentReader;
+  routineReader: AgentTurnProbeRoutineReader;
   abuseControl: AbuseControlPort;
   audit: {
     record(input: {
@@ -106,5 +93,5 @@ export interface AgentTurnTestServiceDependencies {
     }): Promise<unknown>;
   };
   abusePolicy: { limit: number; windowMs: number };
-  turnRunner: AgentTurnTestRunnerPort;
+  turnRunner: AgentTurnProbeRunnerPort;
 }

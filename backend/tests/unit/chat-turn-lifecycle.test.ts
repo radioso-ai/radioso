@@ -893,7 +893,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       presentation: presentation(),
       answerStartedAt: Date.now(),
       stream: false,
-      effectProfile: "probe",
+      executionMode: "safe_test",
       actions: [{ type: "contact.send", payload: { email: "visitor@example.com" } }],
       routineStateTransition: { kind: "clear", sessionId: "conv_1" },
       pendingDecisionTransition: {
@@ -923,10 +923,9 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(assistantTurnPersistence.completeAssistantTurn).toHaveBeenCalledOnce();
     const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0]![0];
     expect(persisted.actions).toBeUndefined();
-    expect(persisted.assistantMessage.metadata?.probeUserMessageId).toBe("msg_1");
-    // A probe has a synthetic, operator-only conversation. Its state transitions
-    // must survive into a follow-up test turn, without creating a customer-visible
-    // action or handoff.
+    expect(persisted.assistantMessage.metadata).not.toHaveProperty("probeUserMessageId");
+    // A safe-test conversation keeps state transitions for representative follow-up
+    // turns without creating a customer-visible action or handoff.
     expect(persisted.routineStateTransition).toEqual({ kind: "clear", sessionId: "conv_1" });
     expect(persisted.pendingDecisionTransition).toEqual({
       handle: "decision_1",

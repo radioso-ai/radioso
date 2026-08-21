@@ -127,7 +127,7 @@ import type { TurnRouter } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
 import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
-import type { ChatTurnEffectProfile } from "../contracts/chatTurnEffects.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import {
   isHumanOwned,
@@ -241,6 +241,37 @@ export interface ChatServiceOptions {
 
 interface TurnCoordinationState {
   lease?: ConversationTurnLease;
+}
+
+export interface ChatAnswerInput {
+  workspaceId: string;
+  agentId?: string | null;
+  accountId?: string;
+  conversationId?: string;
+  bootstrapGreetingId?: string;
+  query: string;
+  stream: boolean;
+  userExpectedLocale?: string | null;
+  inputMetadata?: UserMessageInputMetadata;
+  metadataFilter?: Record<string, unknown>;
+  pageContext?: AssistantPageContext | null;
+  clientContextCapabilities?: AssistantClientContextCapabilities;
+  sourceChannel?: string | null;
+  channelContext?: ConversationChannelContext | null;
+  chatSessionId?: string | null;
+  /** @deprecated Use chatSessionId. */
+  anonymousSessionId?: string | null;
+  sourceOrigin?: string | null;
+  verifiedCustomerId?: string | null;
+  verifiedIdentity?: Record<string, unknown> | null;
+  previewRoutineIds?: string[];
+  usageAttribution?: ModelCallUsageAttribution;
+  executionMode?: TurnExecutionMode;
+}
+
+export interface ChatTurnReceipt {
+  response: ChatResponse;
+  userMessageId: string;
 }
 
 export class ChatService {
@@ -720,31 +751,12 @@ export class ChatService {
     };
   }
 
-  async answer(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    accountId?: string;
-    conversationId?: string;
-    bootstrapGreetingId?: string;
-    query: string;
-    stream: boolean;
-    userExpectedLocale?: string | null;
-    inputMetadata?: UserMessageInputMetadata;
-    metadataFilter?: Record<string, unknown>;
-    pageContext?: AssistantPageContext | null;
-    clientContextCapabilities?: AssistantClientContextCapabilities;
-    sourceChannel?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    chatSessionId?: string | null;
-    /** @deprecated Use chatSessionId. */
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    verifiedCustomerId?: string | null;
-    verifiedIdentity?: Record<string, unknown> | null;
-    previewRoutineIds?: string[];
-    usageAttribution?: ModelCallUsageAttribution;
-    effectProfile?: ChatTurnEffectProfile;
-  }): Promise<ChatResponse> {
+  async answer(input: ChatAnswerInput): Promise<ChatResponse> {
+    return (await this.answerWithReceipt(input)).response;
+  }
+
+  /** Internal composition seam for callers that need the persisted input/output pair. */
+  async answerWithReceipt(input: ChatAnswerInput): Promise<ChatTurnReceipt> {
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
         ? this.conversationTurnRegistry.start(input.conversationId)
@@ -766,31 +778,11 @@ export class ChatService {
     }
   }
 
-  private async answerWithinTrace(input: {
-    workspaceId: string;
-    agentId?: string | null;
-    accountId?: string;
-    conversationId?: string;
-    bootstrapGreetingId?: string;
-    query: string;
-    stream: boolean;
-    userExpectedLocale?: string | null;
-    inputMetadata?: UserMessageInputMetadata;
-    metadataFilter?: Record<string, unknown>;
-    pageContext?: AssistantPageContext | null;
-    clientContextCapabilities?: AssistantClientContextCapabilities;
-    sourceChannel?: string | null;
-    channelContext?: ConversationChannelContext | null;
-    chatSessionId?: string | null;
-    /** @deprecated Use chatSessionId. */
-    anonymousSessionId?: string | null;
-    sourceOrigin?: string | null;
-    verifiedCustomerId?: string | null;
-    verifiedIdentity?: Record<string, unknown> | null;
-    previewRoutineIds?: string[];
-    usageAttribution?: ModelCallUsageAttribution;
-    effectProfile?: ChatTurnEffectProfile;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): Promise<ChatResponse> {
+  private async answerWithinTrace(
+    input: ChatAnswerInput,
+    coordination: TurnCoordinationState,
+    modelCallTrace: ModelCallTraceCollector,
+  ): Promise<ChatTurnReceipt> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
     const workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn");
@@ -821,7 +813,10 @@ export class ChatService {
           ...input,
           conversationId: session.conversation.id,
         });
-        return suppressedHumanOwnedResponse(session, waitingMessage);
+        return {
+          response: suppressedHumanOwnedResponse(session, waitingMessage),
+          userMessageId: session.userMessage.id,
+        };
       }
 
       const clarification = await this.resolvePendingForTurn(session, input.accountId);
@@ -878,7 +873,7 @@ export class ChatService {
           presentation: routineTurn.presentation,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
-          effectProfile: input.effectProfile,
+          executionMode: input.executionMode,
           engineTrace: routineTurn.engineTrace,
           modelCallTrace,
           actions,
@@ -892,7 +887,7 @@ export class ChatService {
         });
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
-        return completedTurn.response;
+        return { response: completedTurn.response, userMessageId: session.userMessage.id };
       }
 
       // The router is authoritative for fresh turns, but resolving a retrieval-sense
@@ -978,7 +973,7 @@ export class ChatService {
           presentation,
           answerStartedAt,
           stream: input.stream,
-          effectProfile: input.effectProfile,
+          executionMode: input.executionMode,
           engineTrace,
           modelCallTrace,
           actions: retrievalMissHandoff.actions,
@@ -989,7 +984,7 @@ export class ChatService {
         assistantMessageId = completedTurn.assistantMessageId;
         await usageReservation.commit();
 
-        return completedTurn.response;
+        return { response: completedTurn.response, userMessageId: session.userMessage.id };
       }
       const preparedTurn = await this.chatTurnAssembly.renderPreparedByEngine(session, {
         request: {
@@ -1024,7 +1019,7 @@ export class ChatService {
         presentation,
         answerStartedAt,
         stream: input.stream,
-        effectProfile: input.effectProfile,
+        executionMode: input.executionMode,
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,
@@ -1035,7 +1030,7 @@ export class ChatService {
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
 
-      return completedTurn.response;
+      return { response: completedTurn.response, userMessageId: session.userMessage.id };
     } catch (error) {
       let preferredError = error;
       try {

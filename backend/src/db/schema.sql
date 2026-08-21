@@ -2721,18 +2721,6 @@ ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_inde
 
 
 --
--- Name: workspace_push_version_seq; Type: SEQUENCE; Schema: public; Owner: -
---
-
-CREATE SEQUENCE public.workspace_push_version_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
 -- Name: website_crawl_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2826,6 +2814,18 @@ CREATE TABLE public.workspace_provider_credentials (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT workspace_provider_credentials_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))
 );
+
+
+--
+-- Name: workspace_push_version_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_push_version_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
 
 
 --

@@ -122,6 +122,26 @@ export const useWorkspaceEvents = (
     throw new Error('useWorkspaceEvents must be used within a WorkspaceEventsProvider')
   }
 
+  useWorkspaceEventsSubscription(context, changeKinds, onInvalidate)
+}
+
+/**
+ * Subscribe when rendered within the dashboard provider, otherwise keep the
+ * surface's reconcile polling active without opening another connection.
+ */
+export const useWorkspaceEventsOptional = (
+  changeKinds: readonly string[],
+  onInvalidate: () => void,
+): void => {
+  const context = useContext(WorkspaceEventsContext)
+  useWorkspaceEventsSubscription(context, changeKinds, onInvalidate)
+}
+
+const useWorkspaceEventsSubscription = (
+  context: WorkspaceEventsContextValue | null,
+  changeKinds: readonly string[],
+  onInvalidate: () => void,
+): void => {
   const onInvalidateRef = useRef(onInvalidate)
   useEffect(() => {
     onInvalidateRef.current = onInvalidate
@@ -129,6 +149,10 @@ export const useWorkspaceEvents = (
   const changeKindsKey = changeKinds.join('\u0000')
 
   useEffect(() => {
+    if (!context) {
+      return
+    }
+
     const kinds = changeKindsKey ? changeKindsKey.split('\u0000') : []
     return context.subscribe(kinds, () => onInvalidateRef.current())
   }, [changeKindsKey, context])

@@ -59,7 +59,7 @@ RUN if [ "$RADIOSO_EDITION" = "enterprise" ]; then \
 FROM deps AS build
 
 COPY backend/tsconfig.json ./backend/tsconfig.json
-COPY backend/tsconfig.build.json ./backend/tsconfig.build.json
+COPY backend/tsconfig.runtime.json ./backend/tsconfig.runtime.json
 COPY backend/openapi.json ./backend/openapi.json
 COPY backend/openapi.yaml ./backend/openapi.yaml
 COPY backend/prompts ./backend/prompts

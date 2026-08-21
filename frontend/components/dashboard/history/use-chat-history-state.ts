@@ -26,11 +26,19 @@ import { getPrimaryLeaf } from '@/lib/turn-trace'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { editionController } from '@/lib/edition-controller'
 import { mergeTailMessages } from '@/lib/conversation-tail'
+import { useWorkspaceEventsOptional } from '@/lib/workspace-events-context'
 import type { CitationOpenResult } from '@/components/dashboard/chat-citations'
 import type { HistoryFilter, HistoryListItem, SelectedHistoryItem } from './history-list'
 
 export const HISTORY_PAGE_SIZE = 50
 export const MESSAGE_WINDOW_SIZE = 50
+export const HISTORY_RECONCILE_INTERVAL_MS = 60_000
+
+const HISTORY_CHANGE_KINDS = [
+  'conversation.created',
+  'conversation.updated',
+  'search.created',
+] as const
 
 const buildHistoryLoadKey = (workspaceId: string | undefined, filter: HistoryFilter, page: number) =>
   `${workspaceId ?? ''}:${filter}:${page}`
@@ -236,10 +244,20 @@ export function useHistoryListState({
     }
   }, [allPage, contactPage, conversationPage, filter, routeState.workspaceId, searchPage])
 
+  useWorkspaceEventsOptional(HISTORY_CHANGE_KINDS, loadHistory)
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- History view fetches the current page after route/filter changes.
     void loadHistory()
   }, [loadHistory, accountId, routeState.workspaceId])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadHistory()
+    }, HISTORY_RECONCILE_INTERVAL_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [loadHistory])
 
   const conversationTotalPages = Math.max(1, Math.ceil(conversationTotal / HISTORY_PAGE_SIZE))
   const searchTotalPages = Math.max(1, Math.ceil(searchTotal / HISTORY_PAGE_SIZE))

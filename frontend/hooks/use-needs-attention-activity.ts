@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { chatApi } from '@/lib/api'
 import { hitlApi } from '@/lib/api-hitl'
@@ -16,6 +16,16 @@ import {
   qualityInboxPresentation,
   reduceQualityInboxSnapshot,
 } from '@/lib/needs-attention-quality'
+import { useWorkspaceEventsOptional } from '@/lib/workspace-events-context'
+
+const NEEDS_ATTENTION_RECONCILE_INTERVAL_MS = 60_000
+const NEEDS_ATTENTION_CHANGE_KINDS = [
+  'hitl.decision_created',
+  'hitl.decision_resolved',
+  'conversation.ownership_changed',
+  'quality.feedback_changed',
+  'quality.triage_changed',
+] as const
 
 interface UseNeedsAttentionActivityInput {
   /** Per-item keys of the inbox state currently shown to the operator (see `inboxItemKeys`). */
@@ -40,22 +50,31 @@ interface UseNeedsAttentionActivityInput {
 export const useNeedsAttentionActivity = ({
   baselineKeys,
   enabled = true,
-  intervalMs = 15000,
-  backgroundIntervalMs = 30000,
+  intervalMs = NEEDS_ATTENTION_RECONCILE_INTERVAL_MS,
+  backgroundIntervalMs = NEEDS_ATTENTION_RECONCILE_INTERVAL_MS,
 }: UseNeedsAttentionActivityInput): number => {
   const baselineSignature = baselineKeys === null ? null : baselineKeys.join('\u0000')
   const [latestState, setLatestState] = useState<{
     baselineSignature: string | null
     keys: string[] | null
   }>({ baselineSignature: null, keys: null })
+  const refreshRef = useRef<(() => void) | null>(null)
+  const refreshFromHint = useCallback(() => {
+    refreshRef.current?.()
+  }, [])
+
+  useWorkspaceEventsOptional(enabled ? NEEDS_ATTENTION_CHANGE_KINDS : [], refreshFromHint)
 
   useEffect(() => {
     if (!enabled) {
+      refreshRef.current = null
       return
     }
 
     let cancelled = false
     let timeoutId: ReturnType<typeof setTimeout> | undefined
+    let isPolling = false
+    let refreshQueued = false
     let latestDecisions: Parameters<typeof inboxItemKeys>[0] = []
     let latestConversations: Parameters<typeof inboxItemKeys>[1] = []
     let latestQualitySnapshot = createEmptyQualityInboxSnapshot()
@@ -81,6 +100,11 @@ export const useNeedsAttentionActivity = ({
     }
 
     const poll = async () => {
+      if (isPolling) {
+        refreshQueued = true
+        return
+      }
+      isPolling = true
       const [approvalsResult, conversationsResult, qualityResult] = await Promise.allSettled([
         hitlApi.listPendingDecisions(),
         chatApi.listChatHistory({
@@ -91,6 +115,7 @@ export const useNeedsAttentionActivity = ({
         loadQualityInboxSourceAttempts({ includeReviewSummary: false }),
       ])
       if (cancelled) {
+        isPolling = false
         return
       }
 
@@ -121,7 +146,13 @@ export const useNeedsAttentionActivity = ({
         })
       }
 
-      scheduleNextPoll()
+      isPolling = false
+      if (refreshQueued) {
+        refreshQueued = false
+        void poll()
+      } else {
+        scheduleNextPoll()
+      }
     }
 
     const handleVisibilityChange = () => {
@@ -139,6 +170,10 @@ export const useNeedsAttentionActivity = ({
     }
 
     // The view already loads on mount, so the first background poll waits a full interval.
+    refreshRef.current = () => {
+      clearPending()
+      void poll()
+    }
     scheduleNextPoll()
 
     if (typeof document !== 'undefined') {
@@ -147,6 +182,7 @@ export const useNeedsAttentionActivity = ({
 
     return () => {
       cancelled = true
+      refreshRef.current = null
       clearPending()
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange)

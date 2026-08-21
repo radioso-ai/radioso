@@ -5,7 +5,11 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { streamWorkspaceEvents, type WorkspaceEventsHandlers } from '@/lib/api-events'
-import { WorkspaceEventsProvider, useWorkspaceEvents } from '@/lib/workspace-events-context'
+import {
+  WorkspaceEventsProvider,
+  useWorkspaceEvents,
+  useWorkspaceEventsOptional,
+} from '@/lib/workspace-events-context'
 import { useWorkspace } from '@/lib/workspace-context'
 
 vi.mock('@/lib/api-events', () => ({
@@ -25,6 +29,11 @@ let connections: Array<{ handlers: WorkspaceEventsHandlers; signal: AbortSignal 
 
 function Probe({ changeKinds, onInvalidate }: { changeKinds: string[]; onInvalidate: () => void }) {
   useWorkspaceEvents(changeKinds, onInvalidate)
+  return null
+}
+
+function OptionalProbe({ onInvalidate }: { onInvalidate: () => void }) {
+  useWorkspaceEventsOptional(['document.status_changed'], onInvalidate)
   return null
 }
 
@@ -72,6 +81,17 @@ afterEach(() => {
 })
 
 describe('WorkspaceEventsProvider', () => {
+  it('allows optional subscribers outside the dashboard provider', () => {
+    const onInvalidate = vi.fn()
+
+    expect(() => {
+      act(() => {
+        root.render(<OptionalProbe onInvalidate={onInvalidate} />)
+      })
+    }).not.toThrow()
+    expect(streamWorkspaceEventsMock).not.toHaveBeenCalled()
+  })
+
   it('dispatches only matching change kinds', async () => {
     const onInvalidate = vi.fn()
     await renderProbe(['document.status_changed'], onInvalidate)

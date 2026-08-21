@@ -34,6 +34,7 @@ import { useWorkspaceOnboarding } from '@/lib/onboarding'
 import { LogoSpinner } from '@/components/ui/spinner'
 import { copilotApi, isCopilotApiErrorStatus, type CopilotAvailability } from '@/lib/api-copilot'
 import { CopilotContextProvider } from '@/lib/copilot-context'
+import { WorkspaceEventsProvider } from '@/lib/workspace-events-context'
 
 interface DashboardShellProps {
   accountId: string
@@ -170,6 +171,7 @@ export function DashboardShell({
     })
   ) {
     return (
+      <WorkspaceEventsProvider>
       <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
         <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
           <AppSidebar
@@ -191,6 +193,7 @@ export function DashboardShell({
           </SidebarInset>
         </SidebarProvider>
       </CopilotContextProvider>
+      </WorkspaceEventsProvider>
     )
   }
 
@@ -227,6 +230,7 @@ export function DashboardShell({
   )
 
   return (
+    <WorkspaceEventsProvider>
     <CopilotContextProvider key={activeWorkspaceId ?? 'workspace-loading'}>
       <SidebarProvider open onOpenChange={() => {}} className="h-svh min-h-0 overflow-hidden">
         <AppSidebar
@@ -276,5 +280,6 @@ export function DashboardShell({
         {!copilotPermissionDenied ? <CopilotSelectionAffordance /> : null}
       </SidebarProvider>
     </CopilotContextProvider>
+    </WorkspaceEventsProvider>
   )
 }

@@ -14,12 +14,21 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
       return;
     }
     requireWorkspaceSession(dependencies)(req, res, next);
-  }, (req, res) => {
+  }, async (req, res) => {
     const workspaceId = res.locals.workspaceId as string;
     let closed = false;
     connectionCount += 1;
     dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection opened");
+    const subscription = dependencies.workspaceEventBus.subscribe(workspaceId);
     initializeSse(res, "no-cache, no-transform");
+    // The ready frame triggers the client's refetch, so it must not be sent
+    // before the transport can deliver events — otherwise a change landing in
+    // that gap is invisible until the reconcile floor. Capped so an unreachable
+    // database still degrades to poll-only instead of a hung connection.
+    await Promise.race([
+      dependencies.workspaceEventBus.ready(),
+      new Promise<void>((resolve) => setTimeout(resolve, 2_000).unref?.()),
+    ]);
     writeSseEvent(res, "ready", { workspaceId });
     const heartbeat = setInterval(() => {
       if (!closed && !res.writableEnded) {
@@ -37,7 +46,7 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
     };
     req.on("close", cleanup);
     res.on("close", cleanup);
-    void sendSseIterable(res, dependencies.workspaceEventBus.subscribe(workspaceId), (event) => {
+    void sendSseIterable(res, subscription, (event) => {
       writeSseEvent(res, "push", event);
     }, { cancelOnClose: true }).catch((error) => {
       dependencies.logger.warn({ err: error }, "Workspace push SSE stream failed");

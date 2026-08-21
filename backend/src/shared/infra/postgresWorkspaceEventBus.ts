@@ -24,6 +24,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
   #reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
   #reconnectTimer?: NodeJS.Timeout;
   readonly #subscribers = new Set<Subscriber>();
+  #readyWaiters: Array<() => void> = [];
 
   constructor(
     private readonly database: Database,
@@ -32,14 +33,16 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
 
   async publish(event: WorkspaceEventPublish): Promise<void> {
     try {
+      // json_build_object cannot infer bind-parameter types (42P18), so every
+      // parameter carries an explicit ::text cast.
       await sql`
         select pg_notify(
           'workspace_push_events',
           json_build_object(
-            'resourceType', ${event.resourceType},
-            'resourceId', ${event.resourceId},
-            'workspaceId', ${event.workspaceId},
-            'changeKind', ${event.changeKind},
+            'resourceType', ${event.resourceType}::text,
+            'resourceId', ${event.resourceId}::text,
+            'workspaceId', ${event.workspaceId}::text,
+            'changeKind', ${event.changeKind}::text,
             'version', nextval('workspace_push_version_seq')
           )::text
         )
@@ -51,6 +54,22 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
         err: error,
       }, "Workspace push event publish failed");
     }
+  }
+
+  /**
+   * Resolves once the LISTEN connection is active, so a caller can order a
+   * "refetch now" signal after the point where no further events can be lost.
+   * Callers should cap the wait: while the database is unreachable this keeps
+   * pending until the reconnect loop succeeds (or the bus closes).
+   */
+  async ready(): Promise<void> {
+    if (this.#client || this.#closed) {
+      return;
+    }
+    void this.#connect();
+    await new Promise<void>((resolve) => {
+      this.#readyWaiters.push(resolve);
+    });
   }
 
   subscribe(workspaceId: string): AsyncIterable<PushEvent> {
@@ -96,6 +115,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
 
   async close(): Promise<void> {
     this.#closed = true;
+    this.#readyWaiters.splice(0).forEach((resolve) => resolve());
     if (this.#reconnectTimer) {
       clearTimeout(this.#reconnectTimer);
       this.#reconnectTimer = undefined;
@@ -141,6 +161,7 @@ export class PostgresWorkspaceEventBus implements WorkspaceEventBus {
       await client.query(`LISTEN ${CHANNEL}`);
       this.#client = client;
       this.#reconnectDelayMs = INITIAL_RECONNECT_DELAY_MS;
+      this.#readyWaiters.splice(0).forEach((resolve) => resolve());
       this.logger.info({ channel: CHANNEL }, "Workspace push listener connected");
     } catch (error) {
       await client.end().catch(() => undefined);

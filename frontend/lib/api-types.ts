@@ -199,6 +199,7 @@ export type RetrievalMetadataRuleCombinator = NonNullable<RetrievalMetadataRule[
 export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
+export type EmbeddingCoverage = ApiSchemas['EmbeddingCoverage']
 export type WorkspaceIngestionReprocessResponse = ApiSchemas['WorkspaceIngestionReprocessResponse']
 export type DocumentCreateRequest = ApiSchemas['DocumentCreateRequest']
 export type DocumentCreateResponse = ApiSchemas['DocumentOperationResponse']

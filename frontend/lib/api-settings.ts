@@ -9,6 +9,7 @@ import type {
   AgentSettings,
   AgentSettingsUpdate,
   AssistantBehaviorSettings,
+  EmbeddingCoverage,
   GeneralSettings,
   IngestionSettings,
   PlatformSettings,
@@ -51,6 +52,12 @@ export const settingsApi = {
 
   async getIngestionSettings(): Promise<IngestionSettings> {
     return request<IngestionSettings>("/settings/ingestion", {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async getEmbeddingCoverage(): Promise<EmbeddingCoverage> {
+    return request<EmbeddingCoverage>("/settings/ingestion/embedding-coverage", {
       method: "GET",
     }, { withApiToken: true })
   },

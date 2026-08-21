@@ -1,7 +1,7 @@
 ---
 title: "Embedding Model"
 description: "Workspace setting to choose the embedding model for creating search vectors supporting OpenAI and Google Gemini."
-last_updated: 2026-05-18
+last_updated: 2026-08-20
 ---
 
 # Embedding Model
@@ -42,6 +42,8 @@ When you confirm the change, Radioso saves the new model as a pending model and 
 If re-indexing cannot be queued, the pending model change is rolled back.
 
 You can cancel a pending model change. If some documents were already re-indexed with the cancelled model, reprocess existing documents to restore the active model.
+
+The line below the model shows how many of the workspace's chunks are indexed, so you can watch re-indexing progress rather than guess when it is done. If it stops short, the same line says why: jobs that failed will not retry on their own, and a workspace with no embedding model set produces no indexing work at all.
 
 ### Practical Implication
 

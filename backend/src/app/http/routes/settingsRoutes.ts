@@ -24,6 +24,7 @@ import {
   websiteEmbedTokenRotationPatch,
 } from "./settingsRouteMappers.js";
 import {
+  presentEmbeddingCoverage,
   presentGeneralSettings,
   presentIngestionSettings,
   presentRetrievalDefaults,
@@ -32,6 +33,7 @@ import {
 type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
   | "ingestionSettingsService"
+  | "embeddingCoverageReport"
   | "platformSettingsService"
   | "workspaceIngestionReprocessService"
   | "agentService"
@@ -86,6 +88,20 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
       const { workspaceId } = res.locals as { workspaceId: string };
       const settings = await dependencies.ingestionSettingsService.getForWorkspace(workspaceId);
       res.status(200).json(presentIngestionSettings(settings, supportedEmbeddingModels()));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Read-only progress of the canonical embedding projection. Kept off GET /ingestion
+  // so reading settings does not pay for a count over every chunk in the workspace,
+  // and because coverage is runtime state rather than a setting anyone can change.
+  router.get("/ingestion/embedding-coverage", workspaceSession, settingsRead, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const coverage = await dependencies.embeddingCoverageReport
+        .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+      res.status(200).json(presentEmbeddingCoverage(coverage));
     } catch (error) {
       next(error);
     }

@@ -102,24 +102,101 @@ export class PostgresSenseEmbeddingReader implements SenseEmbeddingReader {
     if (input.chunkIds.length === 0) {
       return new Map();
     }
-    // pgvector columns serialize to text for in-process distance math; the cast is a
-    // Postgres-specific fragment the builder can't express. `parsePgVector` maps the
-    // `[a,b,...]` literal back to numbers, unchanged from the raw-SQL behaviour.
+    // These vectors are compared against each other with cosine distance, which only
+    // means anything inside one embedding space. So the choice of source is all or
+    // nothing: canonical when it covers every chunk asked for, legacy otherwise. A
+    // per-chunk fallback would mix a re-embedded vector with a legacy one — different
+    // models, and potentially different widths — and yield confident nonsense.
+    const canonical = await this.readCanonicalEmbeddings(input);
+    if (canonical.size === new Set(input.chunkIds).size) {
+      return canonical;
+    }
+    return this.readLegacyEmbeddings(input);
+  }
+
+  /**
+   * Vectors from `chunk_embeddings`, pinned to the workspace's active embedding space
+   * and the document's current revision — the same row retrieval itself searches. A
+   * leftover row from a space the workspace has moved off is not coverage.
+   */
+  private async readCanonicalEmbeddings(
+    input: { workspaceId: string; chunkIds: string[] },
+  ): Promise<Map<string, number[]>> {
+    const rows = await this.db
+      .selectFrom("chunk_embeddings as ce")
+      .innerJoin("workspace_embedding_profiles as p", (join) =>
+        join
+          .onRef("p.workspace_id", "=", "ce.workspace_id")
+          .onRef("p.active_embedding_space_id", "=", "ce.embedding_space_id"))
+      .innerJoin("chunks as c", (join) =>
+        join
+          .onRef("c.workspace_id", "=", "ce.workspace_id")
+          .onRef("c.id", "=", "ce.chunk_id"))
+      .innerJoin("documents as d", (join) =>
+        join
+          .onRef("d.workspace_id", "=", "c.workspace_id")
+          .onRef("d.id", "=", "c.document_id"))
+      .select([
+        "ce.chunk_id as id",
+        sql<string | null>`ce.embedding::text`.as("embedding_text"),
+      ])
+      .where("ce.workspace_id", "=", input.workspaceId)
+      .whereRef("ce.document_revision", "=", "d.revision")
+      .where((eb) => anyOf(eb.ref("ce.chunk_id"), input.chunkIds, "uuid[]"))
+      .execute();
+    return toVectorMap(rows);
+  }
+
+  // pgvector columns serialize to text for in-process distance math; the cast is a
+  // Postgres-specific fragment the builder can't express. `parsePgVector` maps the
+  // `[a,b,...]` literal back to numbers.
+  private async readLegacyEmbeddings(
+    input: { workspaceId: string; chunkIds: string[] },
+  ): Promise<Map<string, number[]>> {
     const rows = await this.db
       .selectFrom("chunks")
       .select([
         "id",
+        "embedding_model",
         sql<string | null>`coalesce(embedding_unbounded::text, embedding::text)`.as("embedding_text"),
       ])
       .where("workspace_id", "=", input.workspaceId)
       .where((eb) => anyOf(eb.ref("id"), input.chunkIds, "uuid[]"))
       .execute();
-    return new Map(rows.flatMap((row) => {
-      const vector = parsePgVector(row.embedding_text);
-      return vector ? [[row.id, vector] as const] : [];
-    }));
+    return legacyRowsToSingleModelVectorMap(rows);
   }
 }
+
+export const legacyRowsToSingleModelVectorMap = (
+  rows: ReadonlyArray<{
+    id: string;
+    embedding_text: string | null;
+    embedding_model: string | null;
+  }>,
+): Map<string, number[]> => {
+  const parsed = rows.flatMap((row) => {
+    const vector = parsePgVector(row.embedding_text);
+    return vector ? [{ id: row.id, vector, model: row.embedding_model?.trim() }] : [];
+  });
+  const models = new Set(parsed.map((row) => row.model));
+
+  // Legacy rows do not carry the canonical space identity. Model metadata is the
+  // strongest remaining compatibility boundary, so ambiguity must disable sense
+  // distance calculations instead of producing a confident cross-model comparison.
+  if (models.size !== 1 || models.has(undefined) || models.has("")) {
+    return new Map();
+  }
+
+  return new Map(parsed.map((row) => [row.id, row.vector]));
+};
+
+const toVectorMap = (
+  rows: ReadonlyArray<{ id: string; embedding_text: string | null }>,
+): Map<string, number[]> =>
+  new Map(rows.flatMap((row) => {
+    const vector = parsePgVector(row.embedding_text);
+    return vector ? [[row.id, vector] as const] : [];
+  }));
 
 export class ModelSenseLabelGateway implements SenseLabelGateway {
   constructor(

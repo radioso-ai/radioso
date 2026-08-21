@@ -64,6 +64,8 @@ import {
 import type { Env } from "../../config/env.js";
 import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 import {
+  withConversationOwnershipPushEvents,
+  withConversationPushEvents,
   withChunkPushEvents,
   withDocumentPushEvents,
   withWebsiteCrawlPushEvents,
@@ -171,8 +173,12 @@ export const buildRepositories = (
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
   chunkRepository: options.workspaceEventBus ? withChunkPushEvents(chunkRepository, options.workspaceEventBus) : chunkRepository,
-  conversationRepository: new ConversationRepository(database.kysely),
-  conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
+  conversationRepository: options.workspaceEventBus
+    ? withConversationPushEvents(new ConversationRepository(database.kysely), options.workspaceEventBus)
+    : new ConversationRepository(database.kysely),
+  conversationOwnershipRepository: options.workspaceEventBus
+    ? withConversationOwnershipPushEvents(new ConversationOwnershipRepository(database.kysely), options.workspaceEventBus)
+    : new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
   documentRepository: options.workspaceEventBus ? withDocumentPushEvents(documentRepository, options.workspaceEventBus) : documentRepository,
   documentSourceRepository: new DocumentSourceRepository(database.kysely),

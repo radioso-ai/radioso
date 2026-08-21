@@ -59,6 +59,7 @@ import {
 } from "./groundingDiagnostic.js";
 import { validateQualityTriageUpdate } from "./domain/resolution.js";
 import { QualityTriageStore } from "./triageStore.js";
+import type { WorkspaceEventBus } from "../../shared/events/workspaceEventBus.js";
 
 type TurnRow = GroundingDiagnosticRow & {
   assistant_message_id: string;
@@ -129,6 +130,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     private readonly outcomeCatalog: QualityOutcomeCatalogPort,
     private readonly clock: Clock = systemClock,
     private readonly verificationSource?: QualityVerificationSourcePort,
+    private readonly workspaceEventBus?: WorkspaceEventBus,
   ) {}
 
   async listLowQualityTurns(workspaceId: string, input: ListLowQualityTurnsInput): Promise<LowQualityTurnsPage> {
@@ -514,11 +516,20 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
       resolution: input.resolution,
       legacyReason: input.legacyReason,
     });
-    return new QualityTriageStore(this.db).transition(workspaceId, {
+    const result = await new QualityTriageStore(this.db).transition(workspaceId, {
       assistantMessageId: input.assistantMessageId,
       ...update,
       updatedBy: input.updatedBy ?? null,
     });
+    if (result.kind === "updated") {
+      await this.workspaceEventBus?.publish({
+        resourceType: "quality",
+        resourceId: input.assistantMessageId,
+        workspaceId,
+        changeKind: "quality.triage_changed",
+      });
+    }
+    return result;
   }
 
   private async fetchComments(

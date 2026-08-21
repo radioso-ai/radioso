@@ -14,9 +14,9 @@ export const createAnswerFeedbackApplicationModule = (
   id: "radioso-answer-feedback",
   name: "Radioso Answer Feedback",
   register(context) {
-    context.registerAnswerFeedbackHistoryProvider(({ database }) => {
+    context.registerAnswerFeedbackHistoryProvider(({ database, workspaceEventBus }) => {
       if (!state.service) {
-        state.service = new AnswerFeedbackService(database);
+        state.service = new AnswerFeedbackService(database, workspaceEventBus);
       }
       return state.service;
     });
@@ -24,7 +24,7 @@ export const createAnswerFeedbackApplicationModule = (
       path: "/api/v1/answer-feedback",
       createRouter(dependencies) {
         if (!state.service) {
-          state.service = new AnswerFeedbackService(dependencies.connectorDb.kysely);
+          state.service = new AnswerFeedbackService(dependencies.connectorDb.kysely, dependencies.workspaceEventBus);
         }
         return createAnswerFeedbackRoutes(dependencies, state.service);
       },

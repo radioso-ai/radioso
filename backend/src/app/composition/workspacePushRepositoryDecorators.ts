@@ -1,3 +1,7 @@
+import type { ActionRequestRepository } from "../../db/repositories/actionRequestRepository.js";
+import type { ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
+import type { ConversationOwnershipRepository } from "../../db/repositories/conversationOwnershipRepository.js";
+import type { PendingDecisionRepository } from "../../db/repositories/pendingDecisionRepository.js";
 import type { WebsiteCrawlJobRepositoryPort } from "../../db/repositories/websiteCrawlJobRepository.js";
 import type { ChunkRepositoryPort, DocumentRepositoryPort } from "../../modules/documents/contracts/index.js";
 import type { WorkspaceEventBus, WorkspaceEventPublish } from "../../shared/events/workspaceEventBus.js";
@@ -31,6 +35,200 @@ export const withDocumentPushEvents = <T extends DocumentRepositoryPort>(reposit
             });
           }
           return document;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as T;
+};
+
+export const withConversationPushEvents = <T extends ConversationRepositoryPort>(repository: T, bus: WorkspaceEventBus): T => {
+  return new Proxy(repository, {
+    get(target, property) {
+      if (property === "create") {
+        return async (...args: Parameters<ConversationRepositoryPort["create"]>) => {
+          const conversation = await target.create(...args);
+          await publish(bus, {
+            resourceType: "conversation",
+            resourceId: conversation.id,
+            workspaceId: conversation.workspaceId,
+            changeKind: "conversation.created",
+          });
+          return conversation;
+        };
+      }
+      if (property === "touch") {
+        return async (...args: Parameters<ConversationRepositoryPort["touch"]>) => {
+          await target.touch(...args);
+          await publish(bus, {
+            resourceType: "conversation",
+            resourceId: args[0],
+            workspaceId: args[1],
+            changeKind: "conversation.updated",
+          });
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as T;
+};
+
+export const withConversationOwnershipPushEvents = <T extends Pick<
+  ConversationOwnershipRepository,
+  "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack"
+>>(repository: T, bus: WorkspaceEventBus): T => {
+  const publishOwnership = async (record: { conversationId: string; workspaceId: string } | null | undefined) => {
+    if (!record) {
+      return;
+    }
+    await publish(bus, {
+      resourceType: "conversation",
+      resourceId: record.conversationId,
+      workspaceId: record.workspaceId,
+      changeKind: "conversation.ownership_changed",
+    });
+  };
+
+  return new Proxy(repository, {
+    get(target, property) {
+      if (property === "requestHandoff") {
+        return async (...args: Parameters<ConversationOwnershipRepository["requestHandoff"]>) => {
+          const requestHandoff = target.requestHandoff as ConversationOwnershipRepository["requestHandoff"];
+          const result = await requestHandoff(...args);
+          await publishOwnership(result);
+          return result;
+        };
+      }
+      if (property === "takeOver" || property === "transfer" || property === "handBack") {
+        return async (...args: never[]) => {
+          const method = Reflect.get(target, property, target) as (...input: never[]) => Promise<{
+            ok: boolean;
+            record?: { conversationId: string; workspaceId: string } | null;
+          }>;
+          const result = await method(...args);
+          if (result.ok) {
+            await publishOwnership(result.record);
+          }
+          return result;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as T;
+};
+
+export const withActionRequestPushEvents = <T extends Pick<
+  ActionRequestRepository,
+  "claimPending" | "markDispatched" | "recordFailure"
+>>(repository: T, bus: WorkspaceEventBus): T => {
+  const claimedRows = new Map<string, { conversationId: string | null; workspaceId: string | null }>();
+  const publishDelivery = async (record: { conversationId: string | null; workspaceId: string | null } | null | undefined) => {
+    if (!record?.conversationId || !record.workspaceId) {
+      return;
+    }
+    await publish(bus, {
+      resourceType: "conversation",
+      resourceId: record.conversationId,
+      workspaceId: record.workspaceId,
+      changeKind: "conversation.contact_delivery_changed",
+    });
+  };
+
+  return new Proxy(repository, {
+    get(target, property) {
+      if (property === "claimPending") {
+        return async (...args: Parameters<ActionRequestRepository["claimPending"]>) => {
+          const claimPending = target.claimPending as ActionRequestRepository["claimPending"];
+          const rows = await claimPending.call(target, ...args);
+          for (const row of rows) {
+            claimedRows.set(row.id, row);
+          }
+          await Promise.all(rows.map(publishDelivery));
+          return rows;
+        };
+      }
+      if (property === "markDispatched") {
+        return async (...args: Parameters<ActionRequestRepository["markDispatched"]>) => {
+          const markDispatched = target.markDispatched as ActionRequestRepository["markDispatched"];
+          const transitioned = await markDispatched.call(target, ...args);
+          if (transitioned) {
+            await publishDelivery(claimedRows.get(args[0]));
+          }
+          claimedRows.delete(args[0]);
+          return transitioned;
+        };
+      }
+      if (property === "recordFailure") {
+        return async (...args: Parameters<ActionRequestRepository["recordFailure"]>) => {
+          const recordFailure = target.recordFailure as ActionRequestRepository["recordFailure"];
+          const outcome = await recordFailure.call(target, ...args);
+          if (outcome !== "superseded") {
+            await publishDelivery(claimedRows.get(args[0]));
+          }
+          // A retried row is re-claimed (and re-tracked) by the next drain pass,
+          // so dropping it here keeps the claim cache from growing unboundedly.
+          claimedRows.delete(args[0]);
+          return outcome;
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as T;
+};
+
+export const withPendingDecisionPushEvents = <T extends Pick<
+  PendingDecisionRepository,
+  "create" | "resolve" | "resolveInTransaction"
+>>(repository: T, bus: WorkspaceEventBus): T => {
+  const publishDecision = async (
+    record: { id: string; workspaceId: string } | null | undefined,
+    changeKind: "hitl.decision_created" | "hitl.decision_resolved",
+  ) => {
+    if (!record) {
+      return;
+    }
+    await publish(bus, {
+      resourceType: "hitl_decision",
+      resourceId: record.id,
+      workspaceId: record.workspaceId,
+      changeKind,
+    });
+  };
+
+  return new Proxy(repository, {
+    get(target, property) {
+      if (property === "create") {
+        return async (...args: Parameters<PendingDecisionRepository["create"]>) => {
+          const create = target.create as PendingDecisionRepository["create"];
+          const result = await create.call(target, ...args);
+          await publishDecision(result, "hitl.decision_created");
+          return result;
+        };
+      }
+      if (property === "resolve") {
+        return async (...args: Parameters<PendingDecisionRepository["resolve"]>) => {
+          const resolve = target.resolve as PendingDecisionRepository["resolve"];
+          const result = await resolve.call(target, ...args);
+          await publishDecision(result, "hitl.decision_resolved");
+          return result;
+        };
+      }
+      if (property === "resolveInTransaction") {
+        return async (...args: Parameters<PendingDecisionRepository["resolveInTransaction"]>) => {
+          let resolved: { id: string; workspaceId: string } | null = null;
+          const resolveInTransaction = target.resolveInTransaction as PendingDecisionRepository["resolveInTransaction"];
+          const result = await resolveInTransaction.call(target, args[0], async (record, db) => {
+            resolved = record;
+            return args[1](record, db);
+          });
+          if (resolved) {
+            await publishDecision(resolved, "hitl.decision_resolved");
+          }
+          return result;
         };
       }
       const value = Reflect.get(target, property, target);

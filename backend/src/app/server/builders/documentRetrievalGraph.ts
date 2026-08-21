@@ -35,6 +35,7 @@ import {
 } from "./integrations.js";
 import { buildWorkspaceServices } from "./accessAuth.js";
 import type { WorkspaceProviderCredentialsService } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 import type { Env } from "../../config/env.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */
@@ -45,6 +46,7 @@ export const buildDocumentRetrievalGraph = (input: {
   logger: AppLogger;
   repositories: ReturnType<typeof buildRepositories>;
   workspaceProviderCredentialsService: WorkspaceProviderCredentialsService;
+  workspaceEventBus: WorkspaceEventBus;
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger);
@@ -222,6 +224,7 @@ export const buildDocumentRetrievalGraph = (input: {
     skillSettingsResolver,
     telemetryService: infrastructure.telemetryService,
     usageEventRecorder: infrastructure.usageEventRecorder,
+    workspaceEventBus: input.workspaceEventBus,
   });
   const workspace = buildWorkspaceServices({
     accountMembershipRepository: repositories.accountMembershipRepository,

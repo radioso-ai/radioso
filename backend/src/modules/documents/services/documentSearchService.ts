@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 
 export type DocumentSearchActionType =
   | "open_document"
@@ -55,6 +56,7 @@ export class DocumentSearchService {
     private readonly documentRepository: DocumentRepositoryPort,
     private readonly retrievalPipeline: RetrievalPipelineService,
     private readonly auditService: AuditService,
+    private readonly workspaceEventBus?: WorkspaceEventBus,
   ) {}
 
   async search(input: {
@@ -129,6 +131,12 @@ export class DocumentSearchService {
       eventType: "document.search",
       eventStatus: "success",
       metadata,
+    });
+    await this.workspaceEventBus?.publish({
+      resourceType: "search",
+      resourceId: response.searchId,
+      workspaceId: input.workspaceId,
+      changeKind: "search.created",
     });
 
     return response;

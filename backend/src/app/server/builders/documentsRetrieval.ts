@@ -71,6 +71,7 @@ import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import type { Env } from "../../config/env.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 
 
@@ -303,6 +304,7 @@ export const buildRetrievalServices = (input: {
   skillSettingsResolver?: SkillSettingsResolver;
   telemetryService: TelemetryService;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
+  workspaceEventBus: WorkspaceEventBus;
 }) => {
   const retrieval = createDefaultRetrievalServices(input);
   const retrievalPipeline = buildRetrievalAnswerExecutor(retrieval.retrievalPipeline, input);
@@ -313,6 +315,7 @@ export const buildRetrievalServices = (input: {
       input.documentRepository,
       retrievalPipeline,
       input.auditService,
+      input.workspaceEventBus,
     ),
   };
 };

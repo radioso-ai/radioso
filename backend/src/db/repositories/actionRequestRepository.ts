@@ -150,14 +150,15 @@ export class ActionRequestRepository {
    * expired and whose row was reclaimed by another worker (now a higher `attempts`)
    * cannot mark that newer claim dispatched. No-op when the claim was superseded.
    */
-  async markDispatched(id: string, attempt: number): Promise<void> {
-    await this.db
+  async markDispatched(id: string, attempt: number): Promise<boolean> {
+    const result = await this.db
       .updateTable("routine_action_requests")
       .set({ status: "dispatched", updated_at: currentTimestamp() })
       .where("id", "=", id)
       .where("attempts", "=", attempt)
       .where("status", "=", "in_progress")
       .execute();
+    return result.length > 0;
   }
 
   /**

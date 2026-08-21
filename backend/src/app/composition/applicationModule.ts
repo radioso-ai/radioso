@@ -53,6 +53,7 @@ import type { TextChunkingProviderPort } from "../../modules/retrieval/public.js
 import type { ChatActionSuggestionProvider } from "../../modules/chat/services/actionSuggestions/chatActionSuggestionProvider.js";
 import type { WebhookDestinationRuntimePort } from "../../modules/webhooks/public.js";
 import type { Env } from "../config/env.js";
+import type { WorkspaceEventBus } from "../../shared/events/workspaceEventBus.js";
 import type { OauthProviderDefinition } from "../../modules/integrationOauth/public.js";
 
 export type ApplicationChatActionSuggestionProviderRegistration =
@@ -150,6 +151,7 @@ export type ApplicationAnswerFeedbackHistoryProviderRegistration =
   | ((context: {
       database: Db;
       logger: AppLogger;
+      workspaceEventBus: WorkspaceEventBus;
     }) => AnswerFeedbackHistoryProviderPort);
 
 export interface ApplicationDirectiveRegistration {

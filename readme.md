@@ -394,6 +394,12 @@ Website crawls run in a separate process from document chunking and embeddings. 
 
 Set `WEBSITE_CRAWLER_ENABLED=false` to disable the crawler entirely. The API hides the crawl routes (404), the dashboard hides the "Crawl Website" button, and the crawler worker entrypoints exit on startup so the container can be removed.
 
+### Live dashboard updates
+
+The dashboard keeps its operator views current without page reloads. Document and crawl status, the needs-attention count, and the activity list update within a few seconds of the underlying change: the backend publishes content-free invalidation hints over Postgres `LISTEN/NOTIFY`, each dashboard session holds one server-sent-events connection at `GET /api/v1/events`, and the affected view refetches through the same APIs it always uses. The hints carry only resource identity — conversation content and document text never cross this channel.
+
+Every view also keeps a slow background poll, so a deployment that blocks the event stream still converges; updates just take up to a minute instead of seconds. Set `WORKSPACE_PUSH_ENABLED=false` to turn the channel off entirely — the API returns 404 for `/api/v1/events` and the dashboard runs on that polling alone.
+
 ### Reverse proxy client IPs
 
 Radioso keeps Express `trust proxy` disabled by default. Set `TRUST_PROXY_HOPS` only when the backend runs behind trusted reverse proxies and rate limits must use the real client IP from `X-Forwarded-For`.

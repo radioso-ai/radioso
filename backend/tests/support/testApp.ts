@@ -205,6 +205,7 @@ import {
   type PublicChatActionAdvertiserPort,
 } from "../../src/modules/chat/services/publicChatActionAdvertiser.js";
 import { InMemoryPublicConversationEventBus } from "../../src/modules/chat/composition.js";
+import { InMemoryWorkspaceEventBus } from "../../src/shared/events/workspaceEventBus.js";
 import { NoopContactHistoryProvider, type ContactHistoryProviderPort } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { AnswerFeedbackHistoryProviderPort } from "../../src/modules/chat/services/answerFeedbackHistoryProvider.js";
 import {
@@ -261,6 +262,7 @@ export const createTestEnv = (): Env => ({
   PORT: 8080,
   TRUST_PROXY_HOPS: 0,
   OBSERVABILITY_ENABLED: true,
+  WORKSPACE_PUSH_ENABLED: true,
   OBSERVABILITY_SERVICE_NAME: "radioso-api",
   OBSERVABILITY_ENVIRONMENT: "test",
   OBSERVABILITY_VERSION: "test",
@@ -1592,6 +1594,7 @@ export const createTestDependencies = (overrides: {
   );
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
+  const workspaceEventBus = new InMemoryWorkspaceEventBus();
   const operatorReplyService = new OperatorReplyService({
     conversationRepository,
     messageRepository,
@@ -1752,6 +1755,7 @@ export const createTestDependencies = (overrides: {
     organizationCreationGuard,
     publicChatActionAdvertiser,
     publicConversationEventBus,
+    workspaceEventBus,
     contactHistoryProvider: overrides.contactHistoryProvider ?? new NoopContactHistoryProvider(),
     applicationRouteMounts: overrides.applicationRouteMounts ?? [],
     applicationModules: new ApplicationModuleCoordinator({

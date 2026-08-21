@@ -222,7 +222,7 @@ describe("website crawl worker", () => {
     };
     let providerStarted = false;
     const repository = {
-      releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+      releaseAllTimedOutClaims: vi.fn().mockResolvedValue([]),
       claimNext: vi.fn().mockResolvedValue(job),
       findById: vi.fn().mockImplementation(async () => (providerStarted ? null : job)),
       markCompleted,
@@ -270,7 +270,7 @@ describe("website crawl worker", () => {
     const markCompleted = vi.fn().mockResolvedValue(undefined);
     const worker = new WebsiteCrawlWorker({
       repository: {
-        releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+        releaseAllTimedOutClaims: vi.fn().mockResolvedValue([]),
         claimNext: vi.fn().mockResolvedValue(job),
         markCompleted,
         markFailed: vi.fn(),
@@ -303,7 +303,7 @@ describe("website crawl worker", () => {
     const pausedJob = { ...job, status: "paused" as const };
     const markCompleted = vi.fn().mockResolvedValue(undefined);
     const repository = {
-      releaseAllTimedOutClaims: vi.fn().mockResolvedValue(0),
+      releaseAllTimedOutClaims: vi.fn().mockResolvedValue([]),
       claimNext: vi.fn().mockResolvedValue(job),
       findById: vi.fn().mockResolvedValue(pausedJob),
       markCompleted,

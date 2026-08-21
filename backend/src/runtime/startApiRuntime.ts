@@ -105,6 +105,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         await dependencies.applicationModules.shutdownAll();
         await dependencies.connectorRegistry.shutdownAll();
       } finally {
+        await dependencies.workspaceEventBus?.close();
         await stopRuntimeTracing();
       }
     },

@@ -62,6 +62,12 @@ import {
   createDefaultTelemetrySinks,
 } from "../../composition/index.js";
 import type { Env } from "../../config/env.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
+import {
+  withChunkPushEvents,
+  withDocumentPushEvents,
+  withWebsiteCrawlPushEvents,
+} from "../../composition/workspacePushRepositoryDecorators.js";
 
 
 
@@ -151,18 +157,24 @@ export const buildRepositories = (
   options: {
     agentSurfaceExtensions?: AgentSurfaceExtensionRegistry;
     agentSkillSettings?: AgentSkillSettingsRegistry;
+    workspaceEventBus?: WorkspaceEventBus;
   } = {},
-) => ({
+) => {
+  const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+  const documentRepository = new DocumentRepository(database.kysely);
+  const websiteCrawlJobRepository = new WebsiteCrawlJobRepository(database.kysely);
+
+  return {
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
   accountRepository: new AccountRepository(database.kysely),
   accessGrantRepository: new AccessGrantRepository(database.kysely),
   agentRepository: new AgentRepository(database.kysely, options.agentSurfaceExtensions, options.agentSkillSettings),
   bootstrapGreetingCacheRepository: new BootstrapGreetingCacheRepository(database.kysely),
-  chunkRepository: new ChunkRepository(database, new PgVectorChunkStorage()),
+  chunkRepository: options.workspaceEventBus ? withChunkPushEvents(chunkRepository, options.workspaceEventBus) : chunkRepository,
   conversationRepository: new ConversationRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
-  documentRepository: new DocumentRepository(database.kysely),
+  documentRepository: options.workspaceEventBus ? withDocumentPushEvents(documentRepository, options.workspaceEventBus) : documentRepository,
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
   embeddingProfileRepository: new EmbeddingProfileRepository(database.kysely),
   facetExtractionJobRepository: new FacetExtractionJobRepository(database.kysely),
@@ -179,7 +191,7 @@ export const buildRepositories = (
   routineDefinitionRepository: new RoutineDefinitionRepository(database.kysely),
   sessionRepository: new SessionRepository(database.kysely),
   userRepository: new UserRepository(database.kysely),
-  websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
+  websiteCrawlJobRepository: options.workspaceEventBus ? withWebsiteCrawlPushEvents(websiteCrawlJobRepository, options.workspaceEventBus) : websiteCrawlJobRepository,
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceTokenRepository: new WorkspaceTokenRepository(database.kysely),
@@ -200,7 +212,8 @@ export const buildRepositories = (
   webhookSkillDefinitionRepository: new WebhookSkillDefinitionRepository(database.kysely),
   slackSkillDefinitionRepository: new SlackSkillDefinitionRepository(database.kysely),
   copilotRepository: new CopilotRepository(database.kysely),
-});
+  };
+};
 
 export const buildLogger = (): AppLogger => createLogger();
 

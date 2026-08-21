@@ -66,6 +66,7 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
       try {
         await dependencies.applicationModules.shutdownAll();
       } finally {
+        await dependencies.workspaceEventBus?.close();
         await stopRuntimeTracing();
       }
     },

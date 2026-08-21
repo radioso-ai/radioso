@@ -102,6 +102,7 @@ import type { OperatorCopilotService } from "../../modules/operatorCopilot/publi
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
 import type { AudiencePulsePort } from "../../modules/audiencePulse/composition.js";
+import type { WorkspaceEventBus } from "../../shared/events/workspaceEventBus.js";
 
 export interface AppDependencies {
   env: Env;
@@ -116,6 +117,7 @@ export interface AppDependencies {
   organizationCreationGuard: OrganizationCreationGuard;
   publicChatActionAdvertiser: PublicChatActionAdvertiserPort;
   publicConversationEventBus: PublicConversationEventBus;
+  workspaceEventBus: WorkspaceEventBus;
   contactHistoryProvider: ContactHistoryProviderPort;
   applicationRouteMounts: ApplicationRouteMount[];
   applicationModules: ApplicationModuleCoordinator;

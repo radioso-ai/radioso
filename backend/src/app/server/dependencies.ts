@@ -45,6 +45,8 @@ import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
 import { createAgentSettingCopilotProposalAdapter, createDirectiveCopilotProposalAdapter, createRoutineCopilotProposalAdapter } from "../composition/copilotProposalAdapters.js";
 import { QualityTurnsService, SkillCatalogOutcomeSource } from "../../modules/quality/composition.js";
+import { NoopWorkspaceEventBus } from "../../shared/events/workspaceEventBus.js";
+import { PostgresWorkspaceEventBus } from "../../shared/infra/postgresWorkspaceEventBus.js";
 
 export interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -65,7 +67,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSurfaceExtensions.register(extension);
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
-  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
+  const workspaceEventBus = env.WORKSPACE_PUSH_ENABLED
+    ? new PostgresWorkspaceEventBus(infrastructure.database, logger)
+    : new NoopWorkspaceEventBus();
+  if (!env.WORKSPACE_PUSH_ENABLED) {
+    logger.info({ enabled: false }, "Workspace push is disabled");
+  }
+  const repositories = buildRepositories(infrastructure.database, {
+    agentSurfaceExtensions,
+    agentSkillSettings,
+    workspaceEventBus,
+  });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
@@ -435,6 +447,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     organizationCreationGuard,
     publicChatActionAdvertiser: chat.publicChatActionAdvertiser,
     publicConversationEventBus,
+    workspaceEventBus,
     contactHistoryProvider: chat.contactHistoryProvider,
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,

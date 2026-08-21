@@ -22,7 +22,7 @@ describeIntegration("PostgresWorkspaceEventBus", () => {
     const subscribed = bus.subscribe("workspace-a")[Symbol.asyncIterator]();
     const otherWorkspace = bus.subscribe("workspace-b")[Symbol.asyncIterator]();
 
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await bus.ready();
     await bus.publish({
       resourceType: "document",
       resourceId: "document-1",

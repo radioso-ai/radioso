@@ -109,6 +109,10 @@ export {
   EmbeddingCoverageReconciler,
   type EmbeddingCoverageJobPort,
 } from "./services/embeddingCoverageReconciler.js";
+export type {
+  EmbeddingCoverageReadPort,
+  WorkspaceCanonicalEmbeddingCoverage,
+} from "./contracts/embeddingCoverage.js";
 export {
   EmbeddingProfileCleanupService,
   type EmbeddingProfileCleanupCandidate,

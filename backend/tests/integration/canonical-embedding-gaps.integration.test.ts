@@ -79,28 +79,6 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     return gaps.find((gap) => gap.workspaceId === workspaceId)?.missingChunks ?? 0;
   };
 
-  it("counts chunks that have no canonical embedding row", async () => {
-    await insertChunk(0);
-    await insertChunk(1);
-
-    expect(await gapFor()).toBe(2);
-  });
-
-  it("stops counting a chunk once it is projected into chunk_embeddings", async () => {
-    const chunkId = await insertChunk(0);
-    await insertChunk(1);
-
-    await database.query(
-      `INSERT INTO chunk_embeddings
-         (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
-       VALUES ($1, $2, $3, 1, 1, 1536,
-               (SELECT array_agg(0.1)::vector FROM generate_series(1, 1536)), 'hash')`,
-      [workspaceId, chunkId, spaceId],
-    );
-
-    expect(await gapFor()).toBe(1);
-  });
-
   const bindProfile = async (): Promise<void> => {
     await database.query(
       `INSERT INTO workspace_embedding_profiles (workspace_id, active_embedding_space_id)
@@ -122,6 +100,26 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
       [workspaceId, chunkId, options.spaceId ?? spaceId, options.revision ?? 1],
     );
   };
+
+  it("counts chunks that have no canonical embedding row", async () => {
+    await insertChunk(0);
+    await insertChunk(1);
+
+    expect(await gapFor()).toBe(2);
+  });
+
+  it("stops counting a chunk once it is projected into chunk_embeddings", async () => {
+    const chunkId = await insertChunk(0);
+    await insertChunk(1);
+    // The profile is what makes projection meaningful: a canonical row only counts as
+    // coverage when it belongs to a space the workspace targets.
+    await bindProfile();
+    await insertCanonical(chunkId);
+
+    expect(await gapFor()).toBe(1);
+
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
 
   it("still counts a chunk whose only canonical row belongs to another space", async () => {
     const chunkId = await insertChunk(0);
@@ -164,6 +162,40 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     expect(gap?.hasEmbeddingProfile).toBe(false);
   });
 
+  it("does not let a canonical row stand in for coverage when no profile exists", async () => {
+    const chunkId = await insertChunk(0);
+    await insertCanonical(chunkId, { spaceId: staleSpaceId });
+
+    // Coverage means a row for a space the workspace actually targets. Without a
+    // profile there are no target spaces, so a leftover row proves nothing: retrieval
+    // has no space to search and the backfill cannot enqueue anything. Reporting this
+    // as covered showed the dashboard "all chunks indexed" for a workspace whose
+    // documents were unreachable.
+    expect(await gapFor()).toBe(1);
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+    expect(coverage).toMatchObject({
+      eligibleChunks: 1,
+      coveredChunks: 0,
+      missingChunks: 1,
+      hasEmbeddingProfile: false,
+    });
+  });
+
+  it("keeps a no-profile workspace visible to the backfill's blocked report", async () => {
+    const chunkId = await insertChunk(0);
+    await insertCanonical(chunkId, { spaceId: staleSpaceId });
+
+    // backfillEmbeddingCoverage reads this list to name workspaces it cannot repair.
+    // A workspace that drops out of it is not reported as blocked — it is reported as
+    // nothing at all, and the script exits zero claiming coverage is complete.
+    const gaps = await repository.listWorkspaceCanonicalEmbeddingGaps();
+    const gap = gaps.find((entry) => entry.workspaceId === workspaceId);
+
+    expect(gap).toBeDefined();
+    expect(gap?.hasEmbeddingProfile).toBe(false);
+  });
+
   it("marks a workspace actionable once it has an embedding profile", async () => {
     await insertChunk(0);
     await database.query(
@@ -185,17 +217,144 @@ describeIntegration("canonical embedding coverage gaps (Postgres)", () => {
     );
   });
 
+  it("reports coverage with a denominator for one workspace", async () => {
+    const covered = await insertChunk(0);
+    await insertChunk(1);
+    await bindProfile();
+    await insertCanonical(covered);
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+
+    // The gap list has no denominator, so "4,329 outstanding" reads the same whether
+    // the workspace is nearly done or has not started. Progress needs both numbers.
+    expect(coverage).toMatchObject({
+      workspaceId,
+      eligibleChunks: 2,
+      coveredChunks: 1,
+      missingChunks: 1,
+      hasEmbeddingProfile: true,
+    });
+
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("agrees with the gap report on what counts as covered", async () => {
+    const chunkId = await insertChunk(0);
+    await bindProfile();
+    await insertCanonical(chunkId, { spaceId: staleSpaceId });
+
+    // Both reads must apply the same rule — a row for a space the workspace has moved
+    // off is not coverage — or the dashboard would show work the backfill still has to do.
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+    expect(coverage.missingChunks).toBe(await gapFor());
+    expect(coverage.coveredChunks).toBe(0);
+
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("reports complete coverage rather than an empty result once nothing is missing", async () => {
+    const chunkId = await insertChunk(0);
+    await bindProfile();
+    await insertCanonical(chunkId);
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+
+    expect(coverage.eligibleChunks).toBe(1);
+    expect(coverage.coveredChunks).toBe(1);
+    expect(coverage.missingChunks).toBe(0);
+
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("reports zeroes for a workspace with no retrievable chunks at all", async () => {
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+
+    expect(coverage).toMatchObject({
+      workspaceId,
+      eligibleChunks: 0,
+      coveredChunks: 0,
+      missingChunks: 0,
+      hasEmbeddingProfile: false,
+    });
+  });
+
+  it("counts the embedding_profile jobs still in flight for the workspace", async () => {
+    await insertChunk(0);
+    await bindProfile();
+    // The two jobs sit on different documents: the profile-job key is
+    // (document, revision, kind, space, generation), so a queued and a failed job for
+    // the same document and space cannot coexist — that collision is the very reason a
+    // failed job blocks its gap from being re-enqueued.
+    const secondDocumentId = randomUUID();
+    await database.query(
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision, metadata)
+       VALUES ($1, $2, 'Doc 2', 'content', 'content', 'ready', 1, '{}'::jsonb)`,
+      [secondDocumentId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, embedding, start_offset, end_offset, metadata)
+       VALUES ($1, $2, $3, 0, 'chunk text', 'chunk text',
+               (SELECT array_agg(0.1)::vector FROM generate_series(1, 1536)), 0, 10, '{}'::jsonb)`,
+      [randomUUID(), secondDocumentId, workspaceId],
+    );
+    await database.query(
+      `INSERT INTO document_processing_jobs
+         (id, document_id, workspace_id, document_revision, kind, status, embedding_space_id, workspace_profile_generation)
+       VALUES ($1, $2, $3, 1, 'embedding_profile', 'queued', $4, 1),
+              ($5, $6, $3, 1, 'embedding_profile', 'failed', $4, 1)`,
+      [randomUUID(), documentId, workspaceId, spaceId, randomUUID(), secondDocumentId],
+    );
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+
+    // A failed job holds the profile-job unique key, so its gap can never be
+    // re-enqueued. Surfacing the count is what separates "still working" from "stuck".
+    expect(coverage.queuedJobs).toBe(1);
+    expect(coverage.failedJobs).toBe(1);
+
+    await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1", [workspaceId]);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
+  it("does not count stale embedding_profile jobs as blocking current coverage", async () => {
+    await insertChunk(0);
+    await bindProfile();
+    await database.query(
+      `INSERT INTO document_processing_jobs
+         (id, document_id, workspace_id, document_revision, kind, status, embedding_space_id, workspace_profile_generation)
+       VALUES ($1, $2, $3, 1, 'embedding_profile', 'failed', $4, 1),
+              ($5, $2, $3, 1, 'embedding_profile', 'failed', $6, 1),
+              ($7, $2, $3, 1, 'embedding_profile', 'queued', $4, 2)`,
+      [
+        randomUUID(),
+        documentId,
+        workspaceId,
+        spaceId,
+        randomUUID(),
+        staleSpaceId,
+        randomUUID(),
+      ],
+    );
+
+    const coverage = await repository.getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+    const gaps = await repository.listWorkspaceCanonicalEmbeddingGaps();
+
+    expect(coverage.failedJobs).toBe(1);
+    expect(coverage.queuedJobs).toBe(0);
+    expect(gaps.find((gap) => gap.workspaceId === workspaceId)?.failedJobs).toBe(1);
+
+    await database.query("DELETE FROM document_processing_jobs WHERE workspace_id = $1", [workspaceId]);
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
+  });
+
   it("omits a workspace entirely once every chunk is projected", async () => {
     const chunkId = await insertChunk(0);
-    await database.query(
-      `INSERT INTO chunk_embeddings
-         (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
-       VALUES ($1, $2, $3, 1, 1, 1536,
-               (SELECT array_agg(0.1)::vector FROM generate_series(1, 1536)), 'hash')`,
-      [workspaceId, chunkId, spaceId],
-    );
+    await bindProfile();
+    await insertCanonical(chunkId);
 
     const gaps = await repository.listWorkspaceCanonicalEmbeddingGaps();
     expect(gaps.some((gap) => gap.workspaceId === workspaceId)).toBe(false);
+
+    await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]);
   });
 });

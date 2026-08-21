@@ -145,3 +145,46 @@ test("provider settings retain the active embedding model when transition startu
   await expect(embeddingsRow.getByText("Re-indexing", { exact: true })).toHaveCount(0);
   await expect(page.locator("#model-embeddings")).toContainText("OpenAI text-embedding-3-small");
 });
+
+test("provider settings show how far indexing has got and why it is stuck", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    ingestionSettings: baseIngestionSettings(),
+    embeddingCoverage: {
+      eligibleChunks: 19318,
+      coveredChunks: 14989,
+      missingChunks: 4329,
+      hasEmbeddingProfile: true,
+      queuedJobs: 0,
+      failedJobs: 3,
+    },
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+
+  // Without this line the only way to see indexing progress was to query the database.
+  const embeddingsRow = page.getByTestId("llm-model-row-embeddings");
+  await expect(embeddingsRow.getByTestId("embedding-coverage-summary")).toContainText(
+    "14,989 of 19,318 chunks indexed",
+  );
+  // Failed jobs hold their job key, so they never retry — the count is the difference
+  // between waiting and intervening.
+  await expect(embeddingsRow.getByTestId("embedding-coverage-summary")).toContainText(
+    "3 job(s) failed and will not retry on their own.",
+  );
+});
+
+test("provider settings stay quiet about coverage for a workspace with nothing indexed", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    ingestionSettings: baseIngestionSettings(),
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+
+  const embeddingsRow = page.getByTestId("llm-model-row-embeddings");
+  await expect(embeddingsRow.getByText("Workspace embedding model")).toBeVisible();
+  await expect(embeddingsRow.getByTestId("embedding-coverage-summary")).toHaveCount(0);
+});

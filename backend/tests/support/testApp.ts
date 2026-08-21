@@ -1711,6 +1711,10 @@ export const createTestDependencies = (overrides: {
         async getIngestionSettings(workspaceId) {
           return ingestionSettingsService.getForWorkspace(workspaceId);
         },
+        async getEmbeddingCoverage(workspaceId) {
+          return documentProcessingJobRepository
+            .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
+        },
         async listLlmModels(workspaceId) {
           return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
         },
@@ -1825,6 +1829,7 @@ export const createTestDependencies = (overrides: {
     workspaceService,
     workspaceSummaryService,
     ingestionSettingsService,
+    embeddingCoverageReport: documentProcessingJobRepository,
     chunkRepository,
     documentRepository,
     documentIngestionService,

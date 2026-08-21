@@ -340,6 +340,16 @@ describe("chunk repository", () => {
       createdAt,
       embeddingDimensions: 1536,
     });
+
+    // The width shown is the one semantic search compares against: the canonical row
+    // for the workspace's active embedding space, with the legacy columns only as a
+    // fallback. `chunks.embedding` is fixed at 1536, so reading it first would report
+    // the wrong number for a workspace on a wider model.
+    const sql = calls[0]?.sql ?? "";
+    expect(sql).toContain("FROM chunk_embeddings ce");
+    expect(sql).toContain("p.active_embedding_space_id = ce.embedding_space_id");
+    expect(sql).toContain("ce.document_revision = d.revision");
+    expect(sql.indexOf("ce.dimensions")).toBeLessThan(sql.indexOf("vector_dims(c.embedding_unbounded)"));
   });
 
   it("deletes by document and workspace when publishing a document revision", async () => {

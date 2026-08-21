@@ -122,4 +122,192 @@ describeIfDatabase("PostgresSenseEmbeddingReader", () => {
     await database.query("DELETE FROM workspaces WHERE id = $1 OR id = $2", [workspace.id, otherWorkspace.id]);
     await database.query("DELETE FROM accounts WHERE id = $1", [account.id]);
   });
+
+  // The vectors this reader returns are compared against each other with cosine
+  // distance, which is only meaningful inside one embedding space. That constraint is
+  // what shapes the canonical read below: it pins to the workspace's active space, and
+  // when canonical coverage is incomplete it falls back for the whole batch rather than
+  // per chunk. A per-chunk fallback would mix two spaces — of different widths, in the
+  // case that matters — and produce confident nonsense.
+  describe("canonical embeddings", () => {
+    const seed = async () => {
+      const accountRepository = new AccountRepository(database.kysely);
+      const workspaceRepository = new WorkspaceRepository(database.kysely);
+      const documentRepository = new DocumentRepository(database.kysely);
+      const chunkRepository = new ChunkRepository(database, new PgVectorChunkStorage());
+
+      const account = await accountRepository.create({
+        name: "Canonical Sense Org",
+        email: `canonical-sense-${randomUUID()}@example.com`,
+        passwordHash: "hash",
+      });
+      const workspace = await workspaceRepository.create(account.id, "Canonical Sense Workspace");
+      const document = await documentRepository.create({
+        workspaceId: workspace.id,
+        title: "Canonical Sense Guide",
+        sourceContent: "Canonical sense content.",
+        markdownContent: "Canonical sense content.",
+        status: "ready",
+      });
+
+      const firstChunkId = randomUUID();
+      const secondChunkId = randomUUID();
+      await chunkRepository.replaceForDocument(document.id, [
+        {
+          id: firstChunkId,
+          documentId: document.id,
+          workspaceId: workspace.id,
+          chunkIndex: 0,
+          content: "The first chunk.",
+          embedding: [1, 0, 0],
+          embeddingModel: "gemini-embedding-001",
+          startOffset: 0,
+          endOffset: 16,
+          createdAt: new Date(),
+        },
+        {
+          id: secondChunkId,
+          documentId: document.id,
+          workspaceId: workspace.id,
+          chunkIndex: 1,
+          content: "The second chunk.",
+          embedding: [0, 1, 0],
+          embeddingModel: "gemini-embedding-001",
+          startOffset: 16,
+          endOffset: 33,
+          createdAt: new Date(),
+        },
+      ]);
+
+      const activeSpaceId = randomUUID();
+      const otherSpaceId = randomUUID();
+      for (const spaceId of [activeSpaceId, otherSpaceId]) {
+        await database.query(
+          `INSERT INTO embedding_spaces
+             (id, identity_fingerprint, endpoint_scope_fingerprint, provider, model, dimensions, distance_metric, normalization, status)
+           VALUES ($1, $2, $3, 'openai', 'text-embedding-3-small', 3, 'cosine', 'none', 'active')`,
+          [spaceId, `sense-fp-${spaceId}`, `sense-scope-${spaceId}`],
+        );
+      }
+      await database.query(
+        `INSERT INTO workspace_embedding_profiles (workspace_id, active_embedding_space_id)
+         VALUES ($1, $2)`,
+        [workspace.id, activeSpaceId],
+      );
+
+      return { account, workspace, document, firstChunkId, secondChunkId, activeSpaceId, otherSpaceId };
+    };
+
+    const insertCanonical = async (input: {
+      workspaceId: string;
+      chunkId: string;
+      spaceId: string;
+      vector: number[];
+    }) => {
+      await database.query(
+        `INSERT INTO chunk_embeddings
+           (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
+         VALUES ($1, $2, $3, 1, 1, $4, $5::vector, 'hash')`,
+        [input.workspaceId, input.chunkId, input.spaceId, input.vector.length, `[${input.vector.join(",")}]`],
+      );
+    };
+
+    const cleanUp = async (accountId: string, workspaceId: string, spaceIds: string[]) => {
+      await database.query("DELETE FROM chunk_embeddings WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM workspace_embedding_profiles WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM chunks WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]).catch(() => undefined);
+      await database.query("DELETE FROM embedding_spaces WHERE id = ANY($1)", [spaceIds]).catch(() => undefined);
+      await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
+    };
+
+    it("prefers the canonical vector over the legacy column when coverage is complete", async () => {
+      const s = await seed();
+      // Deliberately different from the legacy values so the source is unambiguous.
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.secondChunkId, spaceId: s.activeSpaceId, vector: [0, 0, -1] });
+
+      const reader = new PostgresSenseEmbeddingReader(database.kysely);
+      const result = await reader.readChunkEmbeddings({
+        workspaceId: s.workspace.id,
+        chunkIds: [s.firstChunkId, s.secondChunkId],
+      });
+
+      expect(result.get(s.firstChunkId)).toEqual([0, 0, 1]);
+      expect(result.get(s.secondChunkId)).toEqual([0, 0, -1]);
+
+      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
+    });
+
+    it("falls back for the whole batch, never mixing spaces, when one chunk is uncovered", async () => {
+      const s = await seed();
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
+
+      const reader = new PostgresSenseEmbeddingReader(database.kysely);
+      const result = await reader.readChunkEmbeddings({
+        workspaceId: s.workspace.id,
+        chunkIds: [s.firstChunkId, s.secondChunkId],
+      });
+
+      // Both legacy, not one canonical and one legacy. This is the assertion that stops
+      // a mid-backfill workspace producing distances between two different models.
+      expect(result.get(s.firstChunkId)).toEqual([1, 0, 0]);
+      expect(result.get(s.secondChunkId)).toEqual([0, 1, 0]);
+
+      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
+    });
+
+    it("returns no legacy vectors when the fallback batch contains different models", async () => {
+      const s = await seed();
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.activeSpaceId, vector: [0, 0, 1] });
+      await database.query(
+        "UPDATE chunks SET embedding_model = 'text-embedding-3-small' WHERE id = $1",
+        [s.secondChunkId],
+      );
+
+      const reader = new PostgresSenseEmbeddingReader(database.kysely);
+      const result = await reader.readChunkEmbeddings({
+        workspaceId: s.workspace.id,
+        chunkIds: [s.firstChunkId, s.secondChunkId],
+      });
+
+      expect(result.size).toBe(0);
+
+      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
+    });
+
+    it("returns no legacy vectors when fallback model metadata is unresolved", async () => {
+      const s = await seed();
+      await database.query("UPDATE chunks SET embedding_model = '' WHERE id = $1", [s.secondChunkId]);
+
+      const reader = new PostgresSenseEmbeddingReader(database.kysely);
+      const result = await reader.readChunkEmbeddings({
+        workspaceId: s.workspace.id,
+        chunkIds: [s.firstChunkId, s.secondChunkId],
+      });
+
+      expect(result.size).toBe(0);
+
+      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
+    });
+
+    it("ignores canonical rows filed under a space the workspace is not using", async () => {
+      const s = await seed();
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.firstChunkId, spaceId: s.otherSpaceId, vector: [0, 0, 1] });
+      await insertCanonical({ workspaceId: s.workspace.id, chunkId: s.secondChunkId, spaceId: s.otherSpaceId, vector: [0, 0, -1] });
+
+      const reader = new PostgresSenseEmbeddingReader(database.kysely);
+      const result = await reader.readChunkEmbeddings({
+        workspaceId: s.workspace.id,
+        chunkIds: [s.firstChunkId, s.secondChunkId],
+      });
+
+      // A leftover space from an earlier model is not coverage; the legacy column is.
+      expect(result.get(s.firstChunkId)).toEqual([1, 0, 0]);
+      expect(result.get(s.secondChunkId)).toEqual([0, 1, 0]);
+
+      await cleanUp(s.account.id, s.workspace.id, [s.activeSpaceId, s.otherSpaceId]);
+    });
+  });
 });

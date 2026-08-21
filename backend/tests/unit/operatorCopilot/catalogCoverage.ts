@@ -45,6 +45,7 @@ const catalogToolCoverage = {
   getPlatformSettings: "workspace_settings",
   getSettingsRetrievalDefaults: "workspace_settings",
   getIngestionSettings: "workspace_settings",
+  getEmbeddingCoverage: "workspace_settings",
   getGeneralSettings: "workspace_settings",
   listWorkspaceProviderCredentials: "workspace_settings",
   getWorkspaceLlmModels: "workspace_settings",

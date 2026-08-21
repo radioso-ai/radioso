@@ -60,7 +60,7 @@ export function GET() {
               display: 'flex',
             }}
           >
-            Grounded answers you can defend.
+            {site.tagline}
           </div>
           <div style={{ fontSize: '34px', color: MUTED, maxWidth: '880px', display: 'flex' }}>
             {site.description}

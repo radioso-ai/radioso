@@ -56,6 +56,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.vectorIndexReconciler?.stop();
         await dependencies.applicationModules.shutdownAll();
       } finally {
+        await dependencies.workspaceEventBus?.close();
         await stopRuntimeTracing();
       }
     },

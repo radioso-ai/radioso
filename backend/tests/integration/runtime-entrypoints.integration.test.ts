@@ -24,6 +24,7 @@ const createEnv = (port: number): Env => ({
   PORT: port,
   TRUST_PROXY_HOPS: 0,
   OBSERVABILITY_ENABLED: true,
+  WORKSPACE_PUSH_ENABLED: true,
   OBSERVABILITY_SERVICE_NAME: "radioso-api",
   OBSERVABILITY_ENVIRONMENT: "test",
   OBSERVABILITY_VERSION: "test",

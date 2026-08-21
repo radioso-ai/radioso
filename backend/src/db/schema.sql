@@ -2721,6 +2721,18 @@ ALTER SEQUENCE public.vector_index_work_sequence_seq OWNED BY public.vector_inde
 
 
 --
+-- Name: workspace_push_version_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.workspace_push_version_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
 -- Name: website_crawl_jobs; Type: TABLE; Schema: public; Owner: -
 --
 

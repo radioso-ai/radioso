@@ -126,14 +126,14 @@ export interface WebsiteCrawlJobRepositoryPort {
   cancelBySourceId(sourceId: string, workspaceId: string): Promise<number>;
   pauseBySourceId(sourceId: string, workspaceId: string): Promise<WebsiteCrawlJobRecord[]>;
   resumePausedBySourceId(sourceId: string, workspaceId: string): Promise<ResumePausedWebsiteCrawlJobsResult>;
-  updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
+  updateCheckpoint(jobId: string, workspaceId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void>;
   claimNext(now?: Date): Promise<WebsiteCrawlJobRecord | null>;
   claimById(jobId: string, now?: Date): Promise<WebsiteCrawlJobRecord | null>;
-  releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
-  releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number>;
-  releasePausedClaim(jobId: string): Promise<void>;
-  markCompleted(jobId: string, result: Record<string, unknown>): Promise<void>;
-  markFailed(jobId: string, errorMessage: string): Promise<void>;
+  releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<WebsiteCrawlJobRecord | null>;
+  releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<WebsiteCrawlJobRecord[]>;
+  releasePausedClaim(jobId: string): Promise<WebsiteCrawlJobRecord | null>;
+  markCompleted(jobId: string, result: Record<string, unknown>): Promise<WebsiteCrawlJobRecord | null>;
+  markFailed(jobId: string, errorMessage: string): Promise<WebsiteCrawlJobRecord | null>;
 }
 
 export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort {
@@ -252,7 +252,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     };
   }
 
-  async updateCheckpoint(jobId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
+  async updateCheckpoint(jobId: string, workspaceId: string, checkpoint: WebsiteCrawlCheckpoint): Promise<void> {
     await this.db
       .updateTable("website_crawl_jobs")
       .set({
@@ -260,6 +260,7 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
         updated_at: currentTimestamp(),
       })
       .where("id", "=", jobId)
+      .where("workspace_id", "=", workspaceId)
       .where("status", "in", ["processing", "paused"])
       .execute();
   }
@@ -347,8 +348,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
     return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
-  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const result = await this.db
+  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<WebsiteCrawlJobRecord | null> {
+    const row = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         status: "queued",
@@ -359,13 +360,14 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       .where("id", "=", jobId)
       .where("status", "=", "processing")
       .where("claimed_at", "<=", claimedAtOrBefore)
+      .returning(websiteCrawlJobColumns)
       .executeTakeFirst();
 
-    return Number(result.numUpdatedRows) > 0;
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
-  async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<number> {
-    const result = await this.db
+  async releaseAllTimedOutClaims(claimedAtOrBefore: Date, errorMessage: string): Promise<WebsiteCrawlJobRecord[]> {
+    const rows = await this.db
       .updateTable("website_crawl_jobs")
       .set((eb) => ({
         status: eb
@@ -395,13 +397,14 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
           eb.and([eb("status", "=", "paused"), eb("resume_requested_at", "is not", null), eb("resume_requested_at", "<=", claimedAtOrBefore)]),
         ]),
       )
-      .executeTakeFirst();
+      .returning(websiteCrawlJobColumns)
+      .execute();
 
-    return Number(result.numUpdatedRows);
+    return rows.map((row) => mapWebsiteCrawlJob(row as WebsiteCrawlJobRow));
   }
 
-  async releasePausedClaim(jobId: string): Promise<void> {
-    await this.db
+  async releasePausedClaim(jobId: string): Promise<WebsiteCrawlJobRecord | null> {
+    const row = await this.db
       .updateTable("website_crawl_jobs")
       .set((eb) => ({
         status: eb.case().when("resume_requested_at", "is", null).then("paused").else("queued").end(),
@@ -412,11 +415,13 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       }))
       .where("id", "=", jobId)
       .where("status", "=", "paused")
-      .execute();
+      .returning(websiteCrawlJobColumns)
+      .executeTakeFirst();
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
-  async markCompleted(jobId: string, result: Record<string, unknown>): Promise<void> {
-    await this.db
+  async markCompleted(jobId: string, result: Record<string, unknown>): Promise<WebsiteCrawlJobRecord | null> {
+    const row = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         status: "completed",
@@ -428,11 +433,13 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "in", ["processing", "paused"])
-      .execute();
+      .returning(websiteCrawlJobColumns)
+      .executeTakeFirst();
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
-    await this.db
+  async markFailed(jobId: string, errorMessage: string): Promise<WebsiteCrawlJobRecord | null> {
+    const row = await this.db
       .updateTable("website_crawl_jobs")
       .set({
         status: "failed",
@@ -443,6 +450,8 @@ export class WebsiteCrawlJobRepository implements WebsiteCrawlJobRepositoryPort 
       })
       .where("id", "=", jobId)
       .where("status", "=", "processing")
-      .execute();
+      .returning(websiteCrawlJobColumns)
+      .executeTakeFirst();
+    return row ? mapWebsiteCrawlJob(row as WebsiteCrawlJobRow) : null;
   }
 }

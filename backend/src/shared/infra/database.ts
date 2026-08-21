@@ -1,5 +1,5 @@
 import type { Kysely } from "kysely";
-import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { Client, Pool, type PoolClient, type QueryResultRow } from "pg";
 
 import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
 import type { DB } from "./kysely/schema.js";
@@ -23,9 +23,11 @@ export interface DatabaseOptions {
 
 export class Database {
   readonly pool: Pool;
+  readonly #connectionString: string;
   #kysely?: Kysely<DB>;
 
   constructor(connectionString: string, options: DatabaseOptions = {}) {
+    this.#connectionString = connectionString;
     this.pool = new Pool({
       connectionString,
       max: options.poolMax,
@@ -37,6 +39,10 @@ export class Database {
       application_name: options.applicationName,
       keepAlive: true,
     });
+  }
+
+  createListenerClient(): Client {
+    return new Client({ connectionString: this.#connectionString });
   }
 
   /**

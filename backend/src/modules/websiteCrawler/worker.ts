@@ -132,9 +132,9 @@ export class WebsiteCrawlWorker {
       const leaseMs = this.dependencies.jobLeaseMs ?? 300_000;
       const cutoff = new Date(now.getTime() - leaseMs);
       const released = await this.dependencies.repository.releaseAllTimedOutClaims(cutoff, "claim_expired");
-      if (released > 0) {
+      if (released.length > 0) {
         this.dependencies.logger.warn(
-          { role: "website-crawl-worker", releasedCount: released },
+          { role: "website-crawl-worker", releasedCount: released.length },
           "Released stale processing crawl jobs back to queue",
         );
       }
@@ -175,7 +175,7 @@ export class WebsiteCrawlWorker {
         policy: job.policy,
         checkpoint: job.checkpoint,
         onCheckpoint: async (checkpoint) => {
-          await this.dependencies.repository.updateCheckpoint(job.id, checkpoint);
+          await this.dependencies.repository.updateCheckpoint(job.id, job.workspaceId, checkpoint);
         },
       });
       clearInterval(cancellationMonitor);

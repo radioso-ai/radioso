@@ -49,6 +49,7 @@ export const startCrawlerWorkerRuntime = async (
         await dependencies.websiteCrawlWorker.stop();
         await dependencies.applicationModules.shutdownAll();
       } finally {
+        await dependencies.workspaceEventBus?.close();
         await stopRuntimeTracing();
       }
     },

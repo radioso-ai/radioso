@@ -77,7 +77,7 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
     expect(claimed?.attemptCount).toBe(1);
 
     // updateCheckpoint only applies to processing/paused jobs, so it must run after the claim.
-    await repository.updateCheckpoint(job.id, {
+    await repository.updateCheckpoint(job.id, workspaceId, {
       discoveredUrls: ["https://example.com/docs"],
       queuedUrls: [],
       processingUrls: ["https://example.com/docs"],
@@ -172,10 +172,10 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
 
     await expect(
       repository.releaseTimedOutClaim(older.id, new Date("2026-05-11T09:59:00.000Z"), "too early"),
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
     await expect(
       repository.releaseTimedOutClaim(older.id, new Date("2026-05-11T10:00:00.000Z"), "claim expired"),
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({ id: older.id, status: "queued" });
 
     await repository.claimById(older.id, new Date("2026-05-11T10:02:00.000Z"));
     await repository.markFailed(older.id, "crawl failed");
@@ -229,7 +229,7 @@ describeIntegration("WebsiteCrawlJobRepository (Postgres)", () => {
 
     await expect(
       repository.releaseAllTimedOutClaims(new Date("2026-05-11T10:00:00.000Z"), "expired"),
-    ).resolves.toBe(3);
+    ).resolves.toHaveLength(3);
 
     const rows = await database.query<{ id: string; status: string; claimed_at: Date | null; last_error: string | null }>(
       `SELECT id, status, claimed_at, last_error FROM website_crawl_jobs WHERE workspace_id = $1`,

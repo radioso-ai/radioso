@@ -1,5 +1,7 @@
 import type { Response } from "express";
 
+import { initializeSse, sendSseIterable, writeSseEvent } from "./ssePresenter.js";
+
 import type {
   AnswerSegment,
   ChatCitation,
@@ -68,72 +70,54 @@ export const sendChatSse = (
   events: AsyncIterable<ChatStreamEvent>,
   options: { includeDebug?: boolean } = {},
 ): Promise<void> => {
-  let closed = false;
-  res.on("close", () => {
-    closed = true;
-  });
-
   const writeEvent = (event: ChatStreamEvent) => {
-    if (closed || res.writableEnded) {
+    if (res.writableEnded) {
       return;
     }
 
-    if (!res.headersSent) {
-      res.status(200);
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no");
-      res.flushHeaders();
-    }
+    initializeSse(res);
 
     if (event.type === "conversation") {
-      res.write("event: conversation\n");
-      res.write(`data: ${JSON.stringify({ conversationId: event.conversationId })}\n\n`);
+      writeSseEvent(res, "conversation", { conversationId: event.conversationId });
       return;
     }
 
     if (event.type === "status") {
-      res.write("event: status\n");
-      res.write(`data: ${JSON.stringify({ stage: event.stage })}\n\n`);
+      writeSseEvent(res, "status", { stage: event.stage });
       return;
     }
 
     if (event.type === "chunk") {
-      res.write("event: chunk\n");
-      res.write(`data: ${JSON.stringify({ text: event.text })}\n\n`);
+      writeSseEvent(res, "chunk", { text: event.text });
       return;
     }
 
     if (event.type === "cancelled") {
-      res.write("event: cancelled\n");
-      res.write(`data: ${JSON.stringify({
+      writeSseEvent(res, "cancelled", {
         conversationId: event.conversationId,
         reason: event.reason,
         stage: event.stage,
-      })}\n\n`);
+      });
       return;
     }
 
     if (event.type === "suggestions") {
-      res.write("event: suggestions\n");
-      res.write(`data: ${JSON.stringify({
+      writeSseEvent(res, "suggestions", {
         conversationId: event.conversationId,
         suggestions: event.suggestions,
-      })}\n\n`);
+      });
       return;
     }
 
     if (event.type === "skill") {
-      res.write("event: skill\n");
-      res.write(`data: ${JSON.stringify({
+      writeSseEvent(res, "skill", {
         conversationId: event.conversationId,
         skillName: event.skillName,
         phase: event.phase,
         display: event.display,
         localizedTitle: event.localizedTitle,
         receipt: event.receipt,
-      })}\n\n`);
+      });
       return;
     }
 
@@ -152,35 +136,15 @@ export const sendChatSse = (
       activityTrace: event.activityTrace,
       turnTrace: event.turnTrace,
     }, options);
-    res.write("event: done\n");
-    res.write(`data: ${JSON.stringify({
+    writeSseEvent(res, "done", {
       ...donePayload,
       // Forward the ownership ack so a streamed human-owned (suppressed) turn lets the
       // client drop the empty placeholder / render the waiting line, matching the
       // non-streaming response. Absent on normal turns, so this is a no-op for them.
       ...(event.ownership ? { ownership: event.ownership } : {}),
       ...(options.includeDebug && event.skill ? { skill: event.skill } : {}),
-    })}\n\n`);
+    });
   };
 
-  return (async () => {
-    const iterator = events[Symbol.asyncIterator]();
-
-    try {
-      let next = await iterator.next();
-
-      while (!next.done) {
-        writeEvent(next.value);
-        next = await iterator.next();
-      }
-    } finally {
-      if (closed && typeof iterator.return === "function") {
-        await iterator.return();
-      }
-
-      if (res.headersSent && !res.writableEnded) {
-        res.end();
-      }
-    }
-  })();
+  return sendSseIterable(res, events, writeEvent);
 };

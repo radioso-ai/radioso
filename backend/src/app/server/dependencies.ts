@@ -364,6 +364,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         list: routineDefinitionService.list.bind(routineDefinitionService),
       },
       chatHistoryService: chat.chatHistoryService,
+      agentTurnProbe: chat.agentTurnTestService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
       qualitySignalsService,

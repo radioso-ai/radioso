@@ -1,4 +1,14 @@
 export { AssistantChatService } from "./services/assistantChatService.js";
+export {
+  AgentTurnTestService,
+  OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
+} from "./services/agentTurnTestService.js";
+export type {
+  AgentTurnTestInput,
+  AgentTurnTestPort,
+  AgentTurnTestResult,
+  AgentTurnTestServiceDependencies,
+} from "./contracts/agentTurnTest.js";
 // Rolling conversation summary (#866): composed in app wiring, internals stay chat-owned.
 export {
   ConversationSummaryService,

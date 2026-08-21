@@ -55,6 +55,8 @@ import type { CapturedClarificationTransition } from "./clarification/deferredCl
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { ChatTurnEffectProfile } from "../contracts/chatTurnEffects.js";
+import { OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -554,6 +556,8 @@ export class ChatTurnLifecycle {
     presentation: ChatPresentedAnswer;
     answerStartedAt: number;
     stream: boolean;
+    /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
+    effectProfile?: ChatTurnEffectProfile;
     /**
      * The conversation engine's turn trace, present only when the engine ran the
      * turn (flag on). Recorded as audit-only observability alongside the
@@ -580,6 +584,7 @@ export class ChatTurnLifecycle {
     commitClarificationState?: () => Promise<void>;
     clarificationTransition?: CapturedClarificationTransition | null;
   }): Promise<CompletedAssistantTurn> {
+    const operatorProbe = input.effectProfile === "probe";
     const presentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
@@ -590,13 +595,32 @@ export class ChatTurnLifecycle {
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,
     });
+    const assistantMessageForPersistence = operatorProbe
+      ? {
+          ...presentation.assistantMessage,
+          metadata: {
+            ...presentation.assistantMessage.metadata,
+            probeUserMessageId: input.session.userMessage.id,
+          },
+        }
+      : presentation.assistantMessage;
 
     let assistantMessage: MessageRecord;
     const suspended = input.suspended === true;
-    const auditEvent = suspended
+    const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
       : this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
-    const ownershipAuditEvent = input.ownershipHandoff
+    const auditEvent = operatorProbe
+      ? {
+          ...baseAuditEvent,
+          metadata: {
+            ...baseAuditEvent.metadata,
+            effectProfile: "probe",
+            surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL,
+          },
+        }
+      : baseAuditEvent;
+    const ownershipAuditEvent = !operatorProbe && input.ownershipHandoff
       ? this.buildOwnershipHandoffAuditEvent({
           ...input.ownershipHandoff,
           workspaceId: input.workspaceId,
@@ -615,36 +639,39 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        actions: input.actions,
+        actions: operatorProbe ? undefined : input.actions,
+        // Probe conversations are synthetic and operator-only, so their
+        // conversation-local state is safe to retain for a representative
+        // follow-up turn. Product effects remain suppressed below.
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
-        assistantMessage: presentation.assistantMessage,
+        assistantMessage: assistantMessageForPersistence,
         auditEvent,
-        ownershipHandoff: input.ownershipHandoff,
+        ownershipHandoff: operatorProbe ? undefined : input.ownershipHandoff,
         ownershipAuditEvent,
-        additionalAuditEvent: input.additionalAuditEvent,
+        additionalAuditEvent: operatorProbe ? undefined : input.additionalAuditEvent,
         transaction: input.transaction,
       });
       this.auditService.logRecorded?.(auditEvent);
-      if (!suspended) {
+      if (!suspended && !operatorProbe) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
       }
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
       await this.enqueueTurnActions({
-        actions: input.actions,
+        actions: operatorProbe ? undefined : input.actions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
       });
       await input.commitRoutineState?.();
-      assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      assistantMessage = await this.messageRepository.create(assistantMessageForPersistence);
       if (input.pendingDecisionTransition && this.pendingDecisionRepository) {
         await this.pendingDecisionRepository.create(input.pendingDecisionTransition);
       }
-      if (input.ownershipHandoff && this.conversationOwnershipRepository) {
+      if (!operatorProbe && input.ownershipHandoff && this.conversationOwnershipRepository) {
         await this.conversationOwnershipRepository.requestHandoff({
           conversationId: input.session.conversation.id,
           workspaceId: input.workspaceId,
@@ -652,7 +679,10 @@ export class ChatTurnLifecycle {
         });
       }
       await input.commitClarificationState?.();
-      if (suspended) {
+      if (operatorProbe) {
+        await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
+        await this.auditService.record(auditEvent);
+      } else if (suspended) {
         await this.finalizeSuspendedAssistantTurn(presentation.successInput);
       } else {
         await this.finalizeAssistantTurn(presentation.successInput);
@@ -660,7 +690,7 @@ export class ChatTurnLifecycle {
       if (ownershipAuditEvent) {
         await this.auditService.record(ownershipAuditEvent);
       }
-      if (input.additionalAuditEvent) {
+      if (!operatorProbe && input.additionalAuditEvent) {
         await this.auditService.record(input.additionalAuditEvent);
       }
     }
@@ -697,7 +727,7 @@ export class ChatTurnLifecycle {
     // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
     // update self-heals on the next turn (each regeneration derives from current
     // state). The updater swallows its own failures; this .catch is a backstop.
-    if (this.conversationSummaryUpdater) {
+    if (this.conversationSummaryUpdater && !operatorProbe) {
       void this.conversationSummaryUpdater
         .refresh({
           workspaceId: input.workspaceId,
@@ -754,6 +784,7 @@ export class ChatTurnLifecycle {
       accountId?: string;
       conversationId?: string;
       stream: boolean;
+      effectProfile?: ChatTurnEffectProfile;
     },
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
@@ -799,8 +830,14 @@ export class ChatTurnLifecycle {
             })
           : undefined,
         errorMessage: error instanceof Error ? error.message : "Unknown error",
+        ...(input.effectProfile === "probe"
+          ? { effectProfile: "probe", surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL }
+          : {}),
       },
     });
+    if (input.effectProfile === "probe") {
+      return;
+    }
     try {
       await this.productAnalyticsService.track({
         eventName: "chat.failed",
@@ -837,6 +874,7 @@ export class ChatTurnLifecycle {
       accountId?: string;
       conversationId?: string;
       stream: boolean;
+      effectProfile?: ChatTurnEffectProfile;
     },
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
@@ -861,6 +899,9 @@ export class ChatTurnLifecycle {
         assistantMessageId: existingAssistantMessageId,
         stream: input.stream,
         supersededStage: supersededBy.stage,
+        ...(input.effectProfile === "probe"
+          ? { effectProfile: "probe", surface: OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL }
+          : {}),
       },
     });
   }

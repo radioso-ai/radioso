@@ -126,6 +126,8 @@ import {
 import type { TurnRouter } from "./turnRouter.js";
 import type { ResponseLanguageDetector } from "../../../shared/services/responseLanguageDetector.js";
 import type { HandoffWaitingMessageGenerator } from "../../../shared/services/handoffWaitingMessageGenerator.js";
+import type { ModelCallUsageAttribution } from "../../../shared/domain/modelCallUsageContext.js";
+import type { ChatTurnEffectProfile } from "../contracts/chatTurnEffects.js";
 import { pageReadCapabilityFromRequest } from "./pageRead/pageReadCapabilityResolver.js";
 import {
   isHumanOwned,
@@ -740,6 +742,8 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    usageAttribution?: ModelCallUsageAttribution;
+    effectProfile?: ChatTurnEffectProfile;
   }): Promise<ChatResponse> {
     const coordination: TurnCoordinationState = {
       lease: input.conversationId
@@ -784,6 +788,8 @@ export class ChatService {
     verifiedCustomerId?: string | null;
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
+    usageAttribution?: ModelCallUsageAttribution;
+    effectProfile?: ChatTurnEffectProfile;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector): Promise<ChatResponse> {
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
@@ -872,6 +878,7 @@ export class ChatService {
           presentation: routineTurn.presentation,
           answerStartedAt: routineStartedAt,
           stream: input.stream,
+          effectProfile: input.effectProfile,
           engineTrace: routineTurn.engineTrace,
           modelCallTrace,
           actions,
@@ -971,6 +978,7 @@ export class ChatService {
           presentation,
           answerStartedAt,
           stream: input.stream,
+          effectProfile: input.effectProfile,
           engineTrace,
           modelCallTrace,
           actions: retrievalMissHandoff.actions,
@@ -1016,6 +1024,7 @@ export class ChatService {
         presentation,
         answerStartedAt,
         stream: input.stream,
+        effectProfile: input.effectProfile,
         engineTrace,
         modelCallTrace,
         actions: retrievalMissHandoff.actions,

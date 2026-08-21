@@ -63,6 +63,7 @@ import {
   planAwareRoutineSlotCorrection,
   AgentConverseAudit,
   AgentConverseService,
+  AgentTurnTestService,
 } from "../../../modules/chat/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
 import { createDefaultActionDrainDispatcher } from "../../composition/defaultComposition.js";
@@ -659,6 +660,7 @@ export const buildChatServices = (input: {
     agentSkills: new AgentSkillRepository(input.database.kysely),
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
+    metricsRegistry: input.metricsRegistry,
   });
   const turnClarificationPolicy = {
     floor: 0,
@@ -865,8 +867,31 @@ export const buildChatServices = (input: {
       }),
     },
   );
+  const agentTurnTestService = new AgentTurnTestService({
+    conversationReader: input.conversationRepository,
+    agentReader: {
+      findByIdAndWorkspaceId: (agentId, workspaceId) =>
+        input.agentService.resolve(workspaceId, agentId),
+    },
+    routineReader: input.routineDefinitionRepository,
+    messageReader: input.messageRepository,
+    abuseControl: abuseControlService,
+    audit: input.auditService,
+    abusePolicy: {
+      limit: input.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: input.env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+    turnRunner: {
+      run: (turnInput) => chatService.answer({
+        ...turnInput,
+        stream: false,
+        effectProfile: "probe",
+      }),
+    },
+  });
 
   return {
+    agentTurnTestService,
     abuseControlService,
     answerPresentation,
     assistantChatService: new AssistantChatService(chatService, chatBootstrapService),

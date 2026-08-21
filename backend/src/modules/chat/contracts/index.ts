@@ -50,6 +50,12 @@ export type {
   ChatSuggestionKind,
 } from "../types/chatResponses.js";
 export type { PageReadCapability } from "../services/pageRead/pageReadDecision.js";
+export type {
+  AgentTurnTestInput,
+  AgentTurnTestPort,
+  AgentTurnTestResult,
+} from "./agentTurnTest.js";
+export type { ChatTurnEffectProfile } from "./chatTurnEffects.js";
 
 export interface ChatAnswerPort {
   answer(input: {

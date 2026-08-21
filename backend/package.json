@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm run build:workspace-deps && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "pnpm run build:workspace-deps && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.runtime.json && node ./scripts/copyNonTsAssets.mjs",
     "build:workspace-deps": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:crawler && pnpm run build:census && pnpm run build:mcp",
     "build:routine-definition": "pnpm --dir ../packages/routine-definition run build",
     "build:routine-document": "pnpm --dir ../packages/routine-document run build",

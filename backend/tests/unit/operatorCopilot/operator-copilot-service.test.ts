@@ -17,23 +17,26 @@ describe("OperatorCopilotService", () => {
     const commit = vi.fn(async () => {});
     const release = vi.fn(async () => {});
     const invoke = vi.fn(async () => ({ value: "safe" }));
+    const runStreaming = vi.fn((_request: unknown, _tools: ReadonlyArray<{ name: string }>) => ({
+      events: (async function* () {
+        yield { kind: "tool_call_invoked" as const, stepIndex: 0, toolName: "visible", callId: "call", at: 1 };
+        yield { kind: "tool_call_completed" as const, stepIndex: 0, toolName: "visible", callId: "call", output: { secret: "never stream" }, resultTokens: 1, latencyMs: 1, at: 2 };
+      })(),
+      result: Promise.resolve({ terminatedReason: "step_budget_exhausted" as const, finalMessage: "Partial result", stepsTaken: 6, toolResultTokensUsed: 1, wallTimeMs: 1 }),
+    }));
     const service = new OperatorCopilotService({
       repository,
-      capabilityRunner: {
-        runStreaming: () => ({
-          events: (async function* () {
-            yield { kind: "tool_call_invoked" as const, stepIndex: 0, toolName: "visible", callId: "call", at: 1 };
-            yield { kind: "tool_call_completed" as const, stepIndex: 0, toolName: "visible", callId: "call", output: { secret: "never stream" }, resultTokens: 1, latencyMs: 1, at: 2 };
-          })(),
-          result: Promise.resolve({ terminatedReason: "step_budget_exhausted" as const, finalMessage: "Partial result", stepsTaken: 6, toolResultTokensUsed: 1, wallTimeMs: 1 }),
-        }),
-      },
+      capabilityRunner: { runStreaming },
       usageLimitPolicy: { reserveAnswer: vi.fn(async () => ({ commit, release })), reserveDocument: vi.fn(), reserveIndexedStorage: vi.fn(), reserveMonthlyIndexedContent: vi.fn() },
       auditService: { record: vi.fn(async () => {}) },
       prompt: "system",
       tools: [
         tool("visible", "workspace.agents.read", invoke),
         tool("hidden", "workspace.history.read", vi.fn(async () => ({ value: "hidden" }))),
+        {
+          ...tool("partially_granted", "workspace.agents.read", vi.fn(async () => ({ value: "hidden" }))),
+          requiredPermissions: ["workspace.agents.read", "workspace.history.read"] as const,
+        },
       ],
       now: () => now,
     });
@@ -51,6 +54,7 @@ describe("OperatorCopilotService", () => {
     expect(commit).toHaveBeenCalledOnce();
     expect(release).not.toHaveBeenCalled();
     expect(invoke).not.toHaveBeenCalled();
+    expect(runStreaming.mock.calls[0]![1].map((candidate) => candidate.name)).toEqual(["visible"]);
     expect(repository.messages.at(-1)).toMatchObject({ role: "copilot", content: "Partial result", outcome: "budget_exhausted", activity: [{ tool: "Visible", outcome: "completed" }] });
   });
 
@@ -186,7 +190,7 @@ const tool = (name: string, requiredPermission: "workspace.agents.read" | "works
   description: "reader",
   inputSchema: z.object({}),
   outputSchema: z.object({ value: z.string() }),
-  requiredPermission,
+  requiredPermissions: [requiredPermission] as const,
   contributingModule: "test",
   dashboardSubject: { type: "workspace" },
   createTool: () => ({ name, description: "reader", inputSchema: z.object({}), outputSchema: z.object({ value: z.string() }), invoke }),

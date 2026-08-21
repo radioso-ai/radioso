@@ -25,6 +25,7 @@ import {
   RoutineStepRenderer,
   type RoutineRegistration,
   type WorkbenchReplayRunner,
+  AgentTurnTestService,
 } from "../../src/modules/chat/composition.js";
 import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
@@ -1586,6 +1587,23 @@ export const createTestDependencies = (overrides: {
     agentService,
   );
   const assistantChatService = new AssistantChatService(chatService, chatBootstrapService);
+  const agentTurnTestService = new AgentTurnTestService({
+    conversationReader: conversationRepository,
+    agentReader: {
+      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+    },
+    routineReader: routineDefinitionRepository,
+    messageReader: messageRepository,
+    abuseControl: abuseControlService,
+    audit: auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+    turnRunner: {
+      run: (input) => chatService.answer({ ...input, stream: false, effectProfile: "probe" }),
+    },
+  });
   // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
   const actionDispatchWorker = new ActionDispatchWorker(
     { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
@@ -1696,6 +1714,7 @@ export const createTestDependencies = (overrides: {
         list: routineDefinitionService.list.bind(routineDefinitionService),
       },
       chatHistoryService,
+      agentTurnProbe: agentTurnTestService,
       documentSearchService,
       evalResultsService: evalCaseService,
       qualitySignalsService,

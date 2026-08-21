@@ -250,7 +250,7 @@ const tool = (name: string, requiredPermission: "workspace.agents.manage") => ({
   shape: "propose" as const,
   uiLabel: "Drafting a directive",
   description: "Draft",
-  requiredPermission,
+  requiredPermissions: [requiredPermission] as const,
   contributingModule: "operatorCopilot",
   dashboardSubject: { type: "proposal" },
   inputSchema: z.object({}),

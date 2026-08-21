@@ -29,10 +29,10 @@ describe("copilot analytics readers", () => {
       ...createAudiencePulseCopilotTools({ audiencePulseService: { read } }),
     ];
 
-    expect(descriptors.map(({ name, requiredPermission, shape }) => ({ name, requiredPermission, shape }))).toEqual([
-      { name: "eval_results", requiredPermission: "workspace.retrieval.query", shape: "read" },
-      { name: "quality_signals", requiredPermission: "workspace.quality.read", shape: "read" },
-      { name: "audience_topics", requiredPermission: "workspace.quality.read", shape: "read" },
+    expect(descriptors.map(({ name, requiredPermissions, shape }) => ({ name, requiredPermissions, shape }))).toEqual([
+      { name: "eval_results", requiredPermissions: ["workspace.retrieval.query"], shape: "read" },
+      { name: "quality_signals", requiredPermissions: ["workspace.quality.read"], shape: "read" },
+      { name: "audience_topics", requiredPermissions: ["workspace.quality.read"], shape: "read" },
     ]);
 
     const evalResult = await descriptors[0].createTool(context).invoke({}, {} as never);

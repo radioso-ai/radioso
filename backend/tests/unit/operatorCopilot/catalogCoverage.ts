@@ -48,6 +48,7 @@ const catalogToolCoverage = {
   getGeneralSettings: "workspace_settings",
   listWorkspaceProviderCredentials: "workspace_settings",
   getWorkspaceLlmModels: "workspace_settings",
+  createAssistantChatResponse: "test_agent_turn",
 } as const;
 
 const wave2BehaviorAuthoring = deferred("Deferred to Wave 2 behavior authoring: Ray will create operator-confirmed proposals, not edit live behavior directly.");
@@ -276,7 +277,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage([
     "completeMcpConnectionOauth",
     "completeWorkspaceOauthCallback",
-    "createAssistantChatResponse",
     "upsertAnswerFeedback",
     "clearAnswerFeedback",
     "upsertPublicAnswerFeedback",

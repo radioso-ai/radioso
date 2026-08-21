@@ -43,6 +43,7 @@ import { mergeCrawlJobs, parseCrawlForm } from '@/lib/crawl-jobs'
 import { buildDashboardHref, type DashboardRouteState } from '@/lib/dashboard-routes'
 import { getSafeDocumentsPage } from '@/lib/documents-pagination'
 import { type WorkspaceOnboardingState } from '@/lib/onboarding'
+import { useWorkspaceEvents } from '@/lib/workspace-events-context'
 import {
   consumeAudiencePulseDraftSeed,
   formatDraftQuestionsAsMarkdown,
@@ -53,6 +54,10 @@ const PAGE_SIZE = 100
 const SUPPORTED_IMPORT_EXTENSIONS = '.pdf,.txt,.md,.markdown,.docx,.xlsx'
 const CRAWL_MAX_LIMIT = 1000
 const CRAWL_JOBS_SINCE_MINUTES = 30
+export const DOCUMENTS_RECONCILE_INTERVAL_MS = 45_000
+
+export const startDocumentsReconcileFloor = (onReconcile: () => void): number =>
+  window.setInterval(onReconcile, DOCUMENTS_RECONCILE_INTERVAL_MS)
 
 const EMPTY_FORM: DocumentEditorValues = {
   title: '',
@@ -317,6 +322,17 @@ export function DocumentsView({
   }, [accountId, routeState.workspaceId])
 
   const websiteCrawlerEnabled = onboarding.websiteCrawlerEnabled
+  const handleWorkspaceInvalidation = useCallback(() => {
+    void loadDocuments(currentPageRef.current, { background: true, reset: true })
+    if (websiteCrawlerEnabled) {
+      void loadCrawlJobs()
+    }
+  }, [loadCrawlJobs, loadDocuments, websiteCrawlerEnabled])
+
+  useWorkspaceEvents(
+    ['document.status_changed', 'crawl.status_changed', 'crawl.progress'],
+    handleWorkspaceInvalidation,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -351,21 +367,12 @@ export function DocumentsView({
   }, [routeState.documentsPage])
 
   useEffect(() => {
-    const hasActiveProcessing = documents.some((document) => {
-      const normalizedStatus = document.status.toLowerCase()
-      return normalizedStatus === 'queued' || normalizedStatus === 'processing'
+    const intervalId = startDocumentsReconcileFloor(() => {
+      void loadDocuments(currentPage, { background: true, reset: true })
     })
 
-    if (!hasActiveProcessing) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      void loadDocuments(currentPage, { background: true, reset: true })
-    }, 2000)
-
-    return () => window.clearTimeout(timeoutId)
-  }, [currentPage, documents, loadDocuments])
+    return () => window.clearInterval(intervalId)
+  }, [currentPage, loadDocuments])
 
   const visibleCrawlJobs = useMemo(
     () => crawlJobs.filter((job) => !dismissedCrawlJobIds.has(job.id)),
@@ -376,20 +383,12 @@ export function DocumentsView({
     if (!websiteCrawlerEnabled) {
       return
     }
-    const hasActiveCrawl = visibleCrawlJobs.some(
-      (job) => job.status === 'queued' || job.status === 'processing',
-    )
-
-    if (!hasActiveCrawl) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
+    const intervalId = startDocumentsReconcileFloor(() => {
       void loadCrawlJobs()
-    }, 2000)
+    })
 
-    return () => window.clearTimeout(timeoutId)
-  }, [loadCrawlJobs, visibleCrawlJobs, websiteCrawlerEnabled])
+    return () => window.clearInterval(intervalId)
+  }, [loadCrawlJobs, websiteCrawlerEnabled])
 
   useEffect(() => {
     const nextPage = getSafeDocumentsPage({

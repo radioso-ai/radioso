@@ -43,6 +43,7 @@ type SlackConnectorContext = ConnectorContext & {
   auditService?: Pick<AuditPort, "record">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
+  conversationOwnershipRepository?: Pick<ConversationOwnershipRepository, "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack">;
 };
 
 export class SlackPlugin implements ConnectorPlugin {
@@ -138,7 +139,7 @@ export class SlackPlugin implements ConnectorPlugin {
           identityResolver: operatorIdentityResolver,
           approvalDecisions: extendedContext.approvalDecisionService,
           pendingDecisions: new PendingDecisionRepository(db),
-          conversationOwnership: new ConversationOwnershipRepository(db),
+          conversationOwnership: extendedContext.conversationOwnershipRepository ?? new ConversationOwnershipRepository(db),
           operatorReplyService: extendedContext.operatorReplyService,
           slackViews: {
             open: async ({ installation, triggerId, view }) => {

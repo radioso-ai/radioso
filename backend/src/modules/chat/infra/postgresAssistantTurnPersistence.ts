@@ -18,6 +18,7 @@ import type { CapturedClarificationTransition } from "../services/clarification/
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
 import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -135,8 +136,8 @@ const applyRoutineStateTransition = async (
 const savePendingDecision = async (
   db: Db,
   input: PendingDecisionCreateInput,
-): Promise<void> => {
-  await sql`
+): Promise<string> => {
+  const result = await sql<{ id: string }>`
     INSERT INTO pending_decisions (
         handle,
         conversation_id,
@@ -165,7 +166,9 @@ const savePendingDecision = async (
         ${input.contentHash},
         ${input.deadline ?? null}
       )
+    RETURNING id
   `.execute(db);
+  return result.rows[0]!.id;
 };
 
 const saveClarificationState = async (
@@ -259,14 +262,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // interval-loop poller and the recovery sweep still drain the row.
     private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
     private readonly logger?: Pick<AppLogger, "warn">,
+    private readonly workspaceEventBus?: WorkspaceEventBus,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<MessageRecord> {
+    let pendingDecisionId: string | null = null;
     const run = async (db: Db): Promise<MessageRecord> => {
       await enqueueActions(db, input);
       await applyRoutineStateTransition(db, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
-        await savePendingDecision(db, input.pendingDecisionTransition);
+        pendingDecisionId = await savePendingDecision(db, input.pendingDecisionTransition);
       }
       if (input.ownershipHandoff) {
         await this.conversationOwnershipRepository.requestHandoff(
@@ -339,6 +344,15 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     const result = input.transaction
       ? await run(input.transaction)
       : await this.db.transaction().execute(async (trx) => run(trx));
+
+    if (pendingDecisionId) {
+      await this.workspaceEventBus?.publish({
+        resourceType: "hitl_decision",
+        resourceId: pendingDecisionId,
+        workspaceId: input.workspaceId,
+        changeKind: "hitl.decision_created",
+      });
+    }
 
     await this.requestActionDrain(input.actions);
     return result;

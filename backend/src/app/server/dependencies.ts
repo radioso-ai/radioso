@@ -122,6 +122,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
     workspaceProviderCredentialsService,
+    workspaceEventBus,
   });
   const {
     documents,
@@ -194,6 +195,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     productAnalyticsService: infrastructure.productAnalyticsService,
     publicConversationEventBus,
+    workspaceEventBus,
     routineDefinitionRepository: repositories.routineDefinitionRepository,
     customerEmailConnectionRepository: repositories.customerEmailConnectionRepository,
     emailSkillDefinitionRepository: repositories.emailSkillDefinitionRepository,
@@ -336,6 +338,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       getByAssistantMessageIds: (workspaceId, assistantMessageIds) =>
         evalMessageCaseService.lookupVerifications(workspaceId, assistantMessageIds),
     },
+    workspaceEventBus,
   );
   const audiencePulseService = buildAudiencePulseService({
     kysely: infrastructure.database.kysely,

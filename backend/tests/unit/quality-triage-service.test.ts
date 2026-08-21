@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
+import { InMemoryWorkspaceEventBus } from "../../src/shared/events/workspaceEventBus.js";
 import { stubOutcomeCatalog } from "../support/qualityOutcomeCatalog.js";
 
 class SequencedDb {
@@ -58,6 +59,40 @@ describe("QualityTurnsService triage transition", () => {
     )?.[1] ?? "";
     expect(auditColumns).toContain("resolution_reason");
     expect(auditColumns).not.toContain("resolution_note");
+  });
+
+  it("publishes quality.triage_changed after an accepted transition", async () => {
+    const db = new SequencedDb([[
+      {
+        state: "resolved",
+        version: 1,
+        resolution_reason: "knowledge_gap",
+        resolution_note: null,
+        legacy_reason: null,
+        closed_at: "2026-07-30T10:00:00.000Z",
+        updated_at: "2026-07-30T10:00:00.000Z",
+      },
+    ]]);
+    const bus = new InMemoryWorkspaceEventBus();
+    const events = bus.subscribe("11111111-1111-1111-1111-111111111111")[Symbol.asyncIterator]();
+    const service = new QualityTurnsService(db as never, stubOutcomeCatalog(), undefined, undefined, bus);
+
+    await service.setTriageState("11111111-1111-1111-1111-111111111111", {
+      assistantMessageId: "22222222-2222-2222-2222-222222222222",
+      state: "resolved",
+      expectedVersion: 0,
+      resolution: { reason: "knowledge_gap", note: null },
+    });
+
+    await expect(events.next()).resolves.toMatchObject({
+      value: {
+        resourceType: "quality",
+        resourceId: "22222222-2222-2222-2222-222222222222",
+        workspaceId: "11111111-1111-1111-1111-111111111111",
+        changeKind: "quality.triage_changed",
+      },
+    });
+    await events.return?.();
   });
 
   it("resolves the linked Eval case inside the accepted transition statement", async () => {

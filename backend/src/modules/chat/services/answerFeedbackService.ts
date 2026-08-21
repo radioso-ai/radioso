@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { anyOf, currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
 import type {
   AnswerFeedbackHistoryProviderPort,
   ChatAnswerFeedbackEntry,
@@ -81,7 +82,7 @@ const feedbackColumns = [
 ] as const;
 
 export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort {
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly workspaceEventBus?: WorkspaceEventBus) {}
 
   async upsert(input: {
     workspaceId: string;
@@ -130,7 +131,14 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
       .returning(feedbackColumns)
       .executeTakeFirstOrThrow();
 
-    return mapFeedbackRow(row as FeedbackRow);
+    const feedback = mapFeedbackRow(row as FeedbackRow);
+    await this.workspaceEventBus?.publish({
+      resourceType: "quality",
+      resourceId: input.assistantMessageId,
+      workspaceId: input.workspaceId,
+      changeKind: "quality.feedback_changed",
+    });
+    return feedback;
   }
 
   async clear(input: {
@@ -158,7 +166,16 @@ export class AnswerFeedbackService implements AnswerFeedbackHistoryProviderPort 
       .returning("id")
       .execute();
 
-    return { cleared: rows.length > 0 };
+    const cleared = rows.length > 0;
+    if (cleared) {
+      await this.workspaceEventBus?.publish({
+        resourceType: "quality",
+        resourceId: input.assistantMessageId,
+        workspaceId: input.workspaceId,
+        changeKind: "quality.feedback_changed",
+      });
+    }
+    return { cleared };
   }
 
   async listByAssistantMessageIds(

@@ -136,6 +136,11 @@ import type { McpConverseRouteDependencies, McpConverseRouteServices } from "../
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
 import { RoutineChatModelGateway } from "../../../modules/chat/services/routines/routineChatModelGateway.js";
+import type { WorkspaceEventBus } from "../../../shared/events/workspaceEventBus.js";
+import {
+  withActionRequestPushEvents,
+  withPendingDecisionPushEvents,
+} from "../../composition/workspacePushRepositoryDecorators.js";
 
 
 export const buildMcpConverseServices = (
@@ -200,6 +205,7 @@ export const buildChatServices = (input: {
   routineInvocableSkillNames: RoutineInvocableSkillNames;
   mailService: ReturnType<typeof buildInfrastructure>["mailService"];
   publicConversationEventBus: PublicConversationEventBus;
+  workspaceEventBus: WorkspaceEventBus;
   usageEventRecorder: ReturnType<typeof buildInfrastructure>["usageEventRecorder"];
   retrievalPipeline: RetrievalPipelinePort;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
@@ -414,6 +420,7 @@ export const buildChatServices = (input: {
       ? input.composition.answerFeedbackHistoryProviderRegistration({
           database: input.database.kysely,
           logger: input.logger,
+          workspaceEventBus: input.workspaceEventBus,
         })
       : input.composition.answerFeedbackHistoryProviderRegistration;
   const resolvedChatActionSuggestionProviders = input.composition.chatActionSuggestionProviders.map(
@@ -470,7 +477,10 @@ export const buildChatServices = (input: {
   // the outbox during the turn (`actionOutbox`); the worker drains and routes it to a
   // registered handler out of band (`actionDispatchWorker`). The two share one repository
   // so the same table backs the enqueue and the drain.
-  const actionOutbox = new ActionRequestRepository(input.database.kysely);
+  const actionOutbox = withActionRequestPushEvents(
+    new ActionRequestRepository(input.database.kysely),
+    input.workspaceEventBus,
+  );
   // The fallback (non-transactional) enqueue path — see `ChatTurnLifecycle`'s
   // `assistantTurnPersistence`-absent branch — also requests a drain once durable.
   const pushingActionOutbox = new DrainTriggeringActionOutbox(actionOutbox, actionDrainDispatcher, input.logger);
@@ -737,6 +747,7 @@ export const buildChatServices = (input: {
       input.conversationOwnershipRepository,
       actionDrainDispatcher,
       input.logger,
+      input.workspaceEventBus,
     ),
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
@@ -853,7 +864,7 @@ export const buildChatServices = (input: {
     logger: input.logger,
   });
   const approvalDecisionService = new ApprovalDecisionService(
-    new PendingDecisionRepository(input.database.kysely),
+    withPendingDecisionPushEvents(new PendingDecisionRepository(input.database.kysely), input.workspaceEventBus),
     chatService.asApprovalResumeRunner(),
     {
       resolveWorkspaceRole: (caller) => input.accountAccessService.resolveWorkspaceRole(caller),

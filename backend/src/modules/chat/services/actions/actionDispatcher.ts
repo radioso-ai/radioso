@@ -32,7 +32,9 @@ export interface ActionHandler {
 /** The narrow slice of the outbox the dispatcher drains. */
 export interface ActionOutboxConsumerPort {
   claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
-  markDispatched(id: string, attempt: number): Promise<void>;
+  // The dispatcher ignores the result; the repository reports whether the row
+  // transitioned so the push decorator can publish only real transitions.
+  markDispatched(id: string, attempt: number): Promise<unknown>;
   recordFailure(
     id: string,
     error: string,

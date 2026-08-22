@@ -21,6 +21,7 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Architecture Extension Points](./architecture-extension-points.md) - supported module boundaries, default composition, and extension rules
 - [API Contract Workflow](./api-contract-workflow.md) - backend OpenAPI, SDK, and MCP generated artifact update flow
 - [Human Takeover](./human-takeover.md) - operator API and ownership behavior for human-owned conversations
+- [Embedding Coverage](./embedding-coverage.md) - read how much of a workspace is indexed, repair what is missing, and verify vector search agrees
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
 - [Website Embed CDN](./website-embed-cdn.md) - how the embed widget assets are served from the CDN
 - [Slack Channel](./slack-channel.md) - Slack setup, self-host manifest, data flow, and curated-knowledge boundary

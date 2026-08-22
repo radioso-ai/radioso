@@ -146,8 +146,11 @@ imports from `services/`.
   `historyItemPresenter.ts`. History list reads take a `sourceScope`
   (`end_user` default | `operator_test` | `all`); the default excludes
   operator-driven test traffic (`shared/domain/conversationSource.ts` —
-  `OPERATOR_TEST_SOURCE_CHANNELS` = dashboard test chat + workbench replay) so an
-  operator's own testing never pollutes Activity, Quality, or Needs-Attention.
+  `OPERATOR_TEST_SOURCE_CHANNELS` = dashboard test chat + workbench replay + Ray
+  agent-turn probe) so an operator's own testing never pollutes Activity,
+  Quality, or Needs-Attention. The `operator_test` history scope uses the narrower
+  `WORKBENCH_TEST_SOURCE_CHANNELS`, keeping synthetic Ray probes out of reopenable
+  workbench history while retaining them for internal traceability.
   The same NULL-safe exclusion lives in `historyItemsRepository`,
   `conversationRepository`, `quality/service.ts`, and `pendingDecisionRepository`.
   `chatHistoryService.getConversation` is shared by the dashboard and the
@@ -211,6 +214,11 @@ imports from `services/`.
   mid-routine (unlike eval *replay*, which must NOT seed it). Route:
   `POST /api/v1/conversations/:id/fork` in `conversationOwnershipRoutes.ts`
   (workspace-session auth). Powers the workbench's "Continue in test chat".
+- Safe-test turns use the shared `TurnExecutionMode` to keep routine,
+  pending-decision, clarification, and directive state needed for a follow-up
+  while the lifecycle suppresses external actions, ownership handoffs, customer
+  analytics, and summary regeneration. Chat does not own the caller's identity,
+  provenance, or authorization policy; application composition supplies those.
 - Fused turn planning: `turnPlanService.ts` (one chat-tier `turn_planning` call
   + prompt `backend/prompts/chat/turn-planning.md`, strict parse and semantic
   validation) and `turnPlanCoordinator.ts` (gate, eligibility bounds from

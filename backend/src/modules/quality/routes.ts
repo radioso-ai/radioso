@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
 import { badRequest, notFound } from "../../shared/domain/errors.js";
 import type { QualityStatsServicePort, QualityTurnsServicePort } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
@@ -33,7 +33,7 @@ const statsQuerySchema = z.object({
 export type QualityServicePort = QualityTurnsServicePort & QualityStatsServicePort;
 
 export type QualityRouteDependencies = WorkspaceSessionDependencies
-  & Pick<AppDependencies, "accountAccessService" | "logger">;
+  & { logger: Pick<AppLogger, "info" | "warn"> };
 
 const csvOrArray = <T extends z.ZodTypeAny>(item: T) =>
   z.preprocess((value) => {

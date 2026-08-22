@@ -3,7 +3,13 @@ import { defineConfig, devices } from "@playwright/test";
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3210);
 const host = process.env.PLAYWRIGHT_HOST ?? "127.0.0.1";
 const baseURL = `http://${host}:${port}`;
-const webServerCommand = process.env.CI
+const serverMode = process.env.PLAYWRIGHT_SERVER_MODE ?? "production";
+
+if (serverMode !== "production" && serverMode !== "development") {
+  throw new Error(`PLAYWRIGHT_SERVER_MODE must be "production" or "development", received "${serverMode}"`);
+}
+
+const webServerCommand = serverMode === "production"
   ? `pnpm exec next start --port ${port} --hostname ${host}`
   : `pnpm exec next dev --webpack --port ${port} --hostname ${host}`;
 
@@ -11,7 +17,12 @@ export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: true,
   reporter: "list",
-  timeout: 30_000,
+  // CI serves a prebuilt bundle, so 30s is the test's own budget and a real signal. A local
+  // run serves `next dev`, where the first visit to a route compiles it on demand — a cost
+  // that lands inside whichever test happens to arrive first, and grows with the number of
+  // workers competing for it. Holding local runs to the CI budget makes a cold server report
+  // compilation as unrelated test failures, so local gets room for it instead.
+  timeout: process.env.CI ? 30_000 : 90_000,
   use: {
     baseURL,
     trace: "on-first-retry",
@@ -19,7 +30,7 @@ export default defineConfig({
   webServer: {
     command: webServerCommand,
     url: baseURL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: serverMode === "development",
     timeout: 120_000,
   },
   projects: [

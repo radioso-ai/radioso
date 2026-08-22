@@ -338,6 +338,17 @@ export const baseDocumentTypeCatalog = (): ApiSchemas["DocumentTypeCatalog"] => 
 
 export type DocumentTypeCatalogFixture = ReturnType<typeof baseDocumentTypeCatalog>;
 
+export const baseEmbeddingCoverage = (): ApiSchemas["EmbeddingCoverage"] => ({
+  eligibleChunks: 0,
+  coveredChunks: 0,
+  missingChunks: 0,
+  hasEmbeddingProfile: true,
+  queuedJobs: 0,
+  failedJobs: 0,
+});
+
+export type EmbeddingCoverageFixture = ReturnType<typeof baseEmbeddingCoverage>;
+
 export const baseWebhookDestination = (): WebhookDestinationFixture => ({
   id: "33333333-3333-4333-8333-333333333333",
   name: "crm-leads",
@@ -824,7 +835,6 @@ export const baseQualityStats = () => ({
   backlog: {
     negative_feedback: 7,
     grounding_gaps: 3,
-    slow_responses: 5,
     skill_failures: 2,
   },
   resolutionBreakdown: [],
@@ -874,6 +884,7 @@ export const installDashboardApiMocks = async (
     documentTypeCatalogUpdates?: unknown[];
     /** Rejects the first PUT with 409 and the current revision, as a concurrent save does. */
     documentTypeCatalogStaleRevision?: boolean;
+    embeddingCoverage?: EmbeddingCoverageFixture;
     usageTrends?: unknown;
     messageUsage?: unknown;
     messageUsageNextPage?: unknown;
@@ -2267,6 +2278,11 @@ export const installDashboardApiMocks = async (
         rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
       };
       await json(route, { ...llmModels, knownModelsByProvider });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/settings/ingestion/embedding-coverage") {
+      await json(route, options.embeddingCoverage ?? baseEmbeddingCoverage());
       return;
     }
 

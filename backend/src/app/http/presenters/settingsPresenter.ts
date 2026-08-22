@@ -8,6 +8,9 @@ import type {
 } from "../../../modules/settings/contracts/retrieval.js";
 import type { PlatformSettingsResource } from "../../../modules/settings/contracts/platform.js";
 import type { DocumentTypeCatalog } from "../../../modules/documentTypes/contracts/documentTypeCatalog.js";
+import type {
+  WorkspaceCanonicalEmbeddingCoverage,
+} from "../../../modules/embeddingProfiles/public.js";
 
 export const presentIngestionSettings = (
   settings: IngestionSettingsRecord,
@@ -15,6 +18,17 @@ export const presentIngestionSettings = (
 ) => ({
   ...settings,
   supportedEmbeddingModels,
+});
+
+export const presentEmbeddingCoverage = (
+  coverage: WorkspaceCanonicalEmbeddingCoverage,
+) => ({
+  eligibleChunks: coverage.eligibleChunks,
+  coveredChunks: coverage.coveredChunks,
+  missingChunks: coverage.missingChunks,
+  hasEmbeddingProfile: coverage.hasEmbeddingProfile,
+  queuedJobs: coverage.queuedJobs,
+  failedJobs: coverage.failedJobs,
 });
 
 export const presentGeneralSettings = (

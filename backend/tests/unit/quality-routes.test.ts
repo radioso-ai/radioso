@@ -49,7 +49,6 @@ const DEFAULT_STATS: QualityStats = {
   backlog: {
     negative_feedback: 3,
     grounding_gaps: 7,
-    slow_responses: 1,
     skill_failures: 0,
   },
   resolutionBreakdown: [],
@@ -518,12 +517,12 @@ describe("quality routes", () => {
 
     const response = await request(app)
       .get("/api/v1/quality/turns")
-      .query({ signal: "negative_feedback,grounding_gaps, slow_responses ,skill_failures" })
+      .query({ signal: "negative_feedback,grounding_gaps, skill_failures" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
-      signals: ["negative_feedback", "grounding_gaps", "slow_responses", "skill_failures"],
+      signals: ["negative_feedback", "grounding_gaps", "skill_failures"],
       limit: 25,
     });
   });
@@ -533,12 +532,12 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .get("/api/v1/quality/turns?signal=slow_responses&signal=skill_failures")
+      .get("/api/v1/quality/turns?signal=grounding_gaps&signal=skill_failures")
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
-      signals: ["slow_responses", "skill_failures"],
+      signals: ["grounding_gaps", "skill_failures"],
       limit: 25,
     });
   });

@@ -15,11 +15,11 @@ export const conciseReadableFormattingDirective: Directive = {
   description: "Default readable answer formatting for public assistant replies.",
   action: [
     "Prefer short paragraphs and answer directly.",
-    "Use bullets for options or steps and bold inline labels when they aid scanning.",
+    "Use bullets for options or steps and bold inline labels only when they aid scanning.",
     "Do not add headings unless the user asks for a structured report.",
     "Do not use tables unless the user asks for a comparison.",
-    "If the answer is simple, use plain prose rather than extra Markdown structure.",
-    "When sources support it, end with a natural next step or one focused clarifying question.",
+    "Keep simple answers in plain prose.",
+    "When supported and the turn remains open, end with one natural next step or focused question.",
   ].join(" "),
 };
 
@@ -28,10 +28,7 @@ export const representOrganizationDirective: Directive = {
   condition: { kind: "always" },
   priority: 80,
   description: "Speak as the represented organization for grounded retrieval answers.",
-  action: [
-    "Represent the organization as its assistant, not as an outsider reading documents.",
-    "State supported facts plainly in the organization's voice instead of saying they appear in retrieved material.",
-  ].join(" "),
+  action: "Speak as the organization, stating supported facts directly in its voice rather than as a report about retrieved material.",
 };
 
 export const inlineSupportedLinksDirective: Directive = {
@@ -40,17 +37,13 @@ export const inlineSupportedLinksDirective: Directive = {
   priority: 90,
   description: "Use available source URLs as inline links in grounded answers.",
   action: [
-    "When you name or reference a page, site, course, event, video, or resource that has a URL in the retrieved findings, link it inline with Markdown by turning the resource's own name into the link, within the sentence that mentions it. Never invent links.",
-    "The link text must be the resource's own name — the course, event, page, or video title exactly as you say it in the sentence — not a generic pointer phrase (for example 'course page', 'its page', 'this page', 'here', 'details', or 'read more') and not a phrase tacked onto the end of the sentence.",
-    "Do not tell the user to go to, open, use, submit, register, book, contact, download, read, or learn more from a supported page unless that named page or resource is supplied with an inline Markdown link to the supported URL.",
-    "Prefer linking each named resource over leaving it as plain text, but only ever as an inline link woven into the surrounding sentence.",
-    "When a named resource has a supported URL, link its name in place; never substitute a citation marker or a parenthetical gesture such as '(details on its page)' for the link.",
-    "Never gather links into a trailing list, a closing line, a sources or read-more block, a run of links separated by semicolons or commas, or any group that follows a citation marker — even when several resources are relevant, link each one in place instead.",
-    "Never leave a link, or a citation marker, alone on its own line.",
-    "If the user asks for a link, page, URL, source, or where to learn more and a supported URL exists, provide it as an inline Markdown link on the resource's name.",
-    "Use the resource's name as human-readable link text, such as [Kriya Yoga Retreat](https://example.com/retreat), never a generic label like [course page](https://example.com/retreat) and never [https://example.com/retreat](https://example.com/retreat).",
-    "Never print a bare/raw URL unless the user explicitly asks for the literal URL.",
-    "Include useful supported links that help the visitor continue, but do not invent links.",
+    "When a named page, site, course, event, video, or resource has a URL in the retrieved findings, link it inline with Markdown on the resource's own name, within the sentence that mentions it.",
+    "Prefer linking each named resource. The link text must be the resource's own name as human-readable link text, not a generic pointer phrase such as 'here' or 'details'.",
+    "If the user asks for a link or you direct them to open, use, register for, book, contact, download, or read a resource, include its supported inline link.",
+    "Never invent a link. Never print a bare/raw URL unless the user explicitly requests the literal URL.",
+    "Use the supported link; never substitute a citation marker or a parenthetical gesture.",
+    "Never gather links into a trailing list, closing line, sources or read-more block, run separated by semicolons or commas, or group that follows a citation marker.",
+    "Never leave a link or citation marker alone on its own line.",
   ].join(" "),
 };
 

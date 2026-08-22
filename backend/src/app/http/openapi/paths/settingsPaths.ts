@@ -275,6 +275,33 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/settings/ingestion/embedding-coverage",
+    tags: ["Settings"],
+    summary: "Get canonical embedding coverage for the authenticated workspace",
+    operationId: "getEmbeddingCoverage",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: {
+        description: "Embedding coverage returned",
+        content: {
+          "application/json": {
+            schema: schemas.EmbeddingCoverageSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/settings/document-types",
     tags: ["Settings"],
     summary: "Read the workspace document type catalog used by metadata extraction",

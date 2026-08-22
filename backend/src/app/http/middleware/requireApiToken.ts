@@ -1,9 +1,11 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { unauthorized } from "../../../shared/domain/errors.js";
-import type { AppDependencies } from "../../server/types.js";
+import type { AuthService } from "../../../modules/auth/services/authService.js";
 
-export type ApiTokenDependencies = Pick<AppDependencies, "authService">;
+export interface ApiTokenDependencies {
+  authService: Pick<AuthService, "authenticateApiToken">;
+}
 
 export const requireApiToken = (dependencies: ApiTokenDependencies): RequestHandler => {
   return async (req: Request, res: Response, next: NextFunction) => {

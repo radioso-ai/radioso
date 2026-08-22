@@ -118,6 +118,39 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
+  const EmbeddingCoverageSchema = registry.register(
+    "EmbeddingCoverage",
+    z.object({
+      eligibleChunks: z.number().int().openapi({
+        description:
+          "Chunks in documents retrieval serves: ready, retrieval-enabled and unexpired.",
+      }),
+      coveredChunks: z.number().int().openapi({
+        description:
+          "Of those, the chunks that have an embedding for the workspace's current model.",
+      }),
+      missingChunks: z.number().int(),
+      hasEmbeddingProfile: z.boolean().openapi({
+        description:
+          "False when the workspace has no embedding model set, which is what leaves"
+          + " missing chunks unrepairable.",
+      }),
+      queuedJobs: z.number().int().openapi({
+        description:
+          "Embedding work still in flight for the current model. Counts only jobs that"
+          + " would close part of the gap, so a queue draining down to zero means"
+          + " indexing is finishing rather than stalling.",
+      }),
+      failedJobs: z.number().int().openapi({
+        description:
+          "Embedding jobs for the current model that exhausted their attempts. These"
+          + " hold their job key, so the chunks behind them stay missing until the"
+          + " failures are resolved. Jobs left by a superseded model are not counted,"
+          + " because no re-run will ever move them.",
+      }),
+    }),
+  );
+
   const UpdateIngestionSettingsRequestSchema = registry.register(
     "UpdateIngestionSettingsRequest",
     documentedUpdateIngestionSettingsSchema,
@@ -452,6 +485,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     RetiredDocumentTypeFieldSchema,
     DocumentTypeCatalogSchema,
     UpdateDocumentTypeCatalogRequestSchema,
+    EmbeddingCoverageSchema,
     UpdateIngestionSettingsRequestSchema,
     ReprocessIngestionRequestSchema,
     RetrievalMetadataRuleSchema,

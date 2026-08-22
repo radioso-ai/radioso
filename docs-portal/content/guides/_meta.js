@@ -3,6 +3,7 @@ const meta = {
   'mcp-server': 'MCP server',
   'document-upload': 'Document upload',
   'document-metadata': 'Extract document metadata',
+  'authoring-directives': 'Author a directive',
   'authoring-routines': 'Author a routine',
   workbench: 'Test in the workbench',
   evals: 'Evaluate answer quality',

@@ -38,10 +38,11 @@ import { buildEvalServices } from "./builders/eval.js";
 import { noopOrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
 import { ContextVariableRepository } from "../../db/repositories/contextVariableRepository.js";
 import { createConnectorIngestionPort } from "../../modules/connectors/services/connectorIngestionPort.js";
+import { ConnectorManagementService } from "../../modules/connectors/services/connectorManagementService.js";
 import { resolveWebsiteCrawlerConfig } from "../../modules/websiteCrawler/config.js";
 import { assertPublicWebsiteUrl } from "../../modules/websiteCrawler/urlPolicy.js";
 import { createRadiosoCrawlerUtilityProvider } from "../../modules/websiteCrawler/radiosoCrawlerProvider.js";
-import { OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
+import { AgentTurnProbeService, OperatorCopilotService } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotToolCatalog } from "../composition/copilotToolCatalog.js";
@@ -271,6 +272,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
   });
   const connectorRegistry = buildConnectorRegistry({ composition, env, logger });
+  const connectorManagementService = new ConnectorManagementService({
+    database: infrastructure.database,
+    registry: connectorRegistry,
+  });
   const contextVariableRepository = new ContextVariableRepository(infrastructure.database.kysely);
 
   // Lazy-loaded crawler utility provider for EE agent wizard, also reused by
@@ -351,6 +356,41 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     createAgentSettingCopilotProposalAdapter({ agentService }),
     createRoutineCopilotProposalAdapter({ agentService, routineDraftAssistService, routineDefinitionService }),
   ] as const;
+  const agentTurnProbeService = new AgentTurnProbeService({
+    conversationReader: repositories.conversationRepository,
+    agentReader: {
+      findByIdAndWorkspaceId: (agentId, workspaceId) => agentService.resolve(workspaceId, agentId),
+    },
+    routineReader: repositories.routineDefinitionRepository,
+    abuseControl: chat.abuseControlService,
+    audit: infrastructure.auditService,
+    abusePolicy: {
+      limit: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_MAX_ATTEMPTS,
+      windowMs: env.EXPENSIVE_AUTHENTICATED_RATE_LIMIT_WINDOW_MS,
+    },
+    turnRunner: {
+      run: async (turnInput) => {
+        const receipt = await chat.chatService.answerWithReceipt({
+          ...turnInput,
+          stream: false,
+          executionMode: "safe_test",
+        });
+        return {
+          conversationId: receipt.response.conversationId,
+          userMessageId: receipt.userMessageId,
+          assistantMessageId: receipt.response.assistantMessageId,
+          agentId: receipt.response.agentId ?? turnInput.agentId,
+          answer: receipt.response.answer,
+          citations: receipt.response.citations ?? [],
+          skillOutcome: receipt.response.skillOutcome,
+          answerOutcome: receipt.response.answerOutcome,
+          activitySummary: receipt.response.activitySummary,
+          activityTrace: receipt.response.activityTrace,
+          turnTrace: receipt.response.turnTrace,
+        };
+      },
+    },
+  });
   const operatorCopilotService = new OperatorCopilotService({
     repository: repositories.copilotRepository,
     capabilityRunner: new AgenticCapabilityRunner({ runtime: new DefaultAgentRuntime({ gateway: llmRegistry.createToolCallingGateway(infrastructure.usageEventRecorder) }) }),
@@ -369,6 +409,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         list: routineDefinitionService.list.bind(routineDefinitionService),
       },
       chatHistoryService: chat.chatHistoryService,
+      agentTurnProbe: agentTurnProbeService,
       documentSearchService: retrieval.documentSearchService,
       evalResultsService: evalCaseService,
       qualitySignalsService,
@@ -384,6 +425,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         },
         async getIngestionSettings(workspaceId) {
           return settings.ingestionSettingsService.getForWorkspace(workspaceId);
+        },
+        async getEmbeddingCoverage(workspaceId) {
+          return repositories.documentProcessingJobRepository
+            .getWorkspaceCanonicalEmbeddingCoverage(workspaceId);
         },
         async listLlmModels(workspaceId) {
           return workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId);
@@ -479,6 +524,9 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentTypeCatalogService: settings.documentTypeCatalogService,
     metadataFieldSuggestionProvider,
     metadataRuleFieldReferenceProvider,
+    // Coverage counts share the job repository's definition of a projected chunk,
+    // because the number is read against the backlog that repository enqueues.
+    embeddingCoverageReport: repositories.documentProcessingJobRepository,
     chunkRepository: repositories.chunkRepository,
     documentRepository: repositories.documentRepository,
     documentIngestionService: documents.documentIngestionService,
@@ -538,6 +586,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationOwnershipRepository: repositories.conversationOwnershipRepository,
     messageRepository: repositories.messageRepository,
     connectorRegistry,
+    connectorManagementService,
     connectorIngestionPort,
     connectorDb: infrastructure.database,
     chatInferencePipeline,

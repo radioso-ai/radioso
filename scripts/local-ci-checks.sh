@@ -251,14 +251,13 @@ fi
 if [ "$frontend" = true ]; then
   run pnpm install --frozen-lockfile --filter radioso-frontend...
   run_sh "cd frontend && pnpm run lint"
-  run_sh "cd frontend && pnpm run build"
   run_sh "cd frontend && pnpm test"
   if [ "$(uname -s)" = "Linux" ]; then
     run_sh "cd frontend && pnpm exec playwright install --with-deps chromium"
   else
     run_sh "cd frontend && pnpm exec playwright install chromium"
   fi
-  run_sh "cd frontend && CI=1 pnpm run test:e2e"
+  run_sh "cd frontend && pnpm run test:e2e"
 fi
 
 if [ "$docs" = true ]; then

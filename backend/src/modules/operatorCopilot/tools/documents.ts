@@ -30,7 +30,7 @@ export interface DocumentStatusCopilotToolDependencies { readonly documentStatus
 
 export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "document_search", shape: "read", uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermission: "workspace.documents.read",
+    name: "document_search", shape: "read", uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
     createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => ({ results: boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }).results as Record<string, unknown>[] }) }),
@@ -39,7 +39,7 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
 
 export const createDocumentStatusCopilotTools = (deps: DocumentStatusCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "document_status", shape: "read", uiLabel: "Checking document status", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermission: "workspace.documents.read",
+    name: "document_status", shape: "read", uiLabel: "Checking document status", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Read knowledge base processing state: document counts by status, documents needing attention, and document source sync state. Returns titles, statuses, and failure reasons — never document content.",
     inputSchema: documentStatusInputSchema, outputSchema: documentStatusOutputSchema,
     createTool: (context) => ({

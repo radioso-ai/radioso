@@ -205,6 +205,7 @@ export interface OpenApiSchemaCatalog {
   RetiredDocumentTypeFieldSchema: z.ZodTypeAny;
   DocumentTypeCatalogSchema: z.ZodTypeAny;
   UpdateDocumentTypeCatalogRequestSchema: z.ZodTypeAny;
+  EmbeddingCoverageSchema: z.ZodTypeAny;
   ReprocessIngestionRequestSchema: z.ZodTypeAny;
   InvitationAcceptRequestSchema: z.ZodTypeAny;
   InvitationDetailsResponseSchema: z.ZodTypeAny;

@@ -983,6 +983,33 @@ components:
         - manualDocumentEnrichmentOverride
         - createdAt
         - updatedAt
+    EmbeddingCoverage:
+      type: object
+      properties:
+        eligibleChunks:
+          type: integer
+          description: "Chunks in documents retrieval serves: ready, retrieval-enabled and unexpired."
+        coveredChunks:
+          type: integer
+          description: Of those, the chunks that have an embedding for the workspace's current model.
+        missingChunks:
+          type: integer
+        hasEmbeddingProfile:
+          type: boolean
+          description: False when the workspace has no embedding model set, which is what leaves missing chunks unrepairable.
+        queuedJobs:
+          type: integer
+          description: Embedding work still in flight for the current model. Counts only jobs that would close part of the gap, so a queue draining down to zero means indexing is finishing rather than stalling.
+        failedJobs:
+          type: integer
+          description: Embedding jobs for the current model that exhausted their attempts. These hold their job key, so the chunks behind them stay missing until the failures are resolved. Jobs left by a superseded model are not counted, because no re-run will ever move them.
+      required:
+        - eligibleChunks
+        - coveredChunks
+        - missingChunks
+        - hasEmbeddingProfile
+        - queuedJobs
+        - failedJobs
     UpdateIngestionSettingsRequest:
       type: object
       properties:
@@ -8883,7 +8910,6 @@ components:
       enum:
         - negative_feedback
         - grounding_gaps
-        - slow_responses
         - skill_failures
     QualityStatsRange:
       type: string
@@ -8999,16 +9025,12 @@ components:
             grounding_gaps:
               type: integer
               minimum: 0
-            slow_responses:
-              type: integer
-              minimum: 0
             skill_failures:
               type: integer
               minimum: 0
           required:
             - negative_feedback
             - grounding_gaps
-            - slow_responses
             - skill_failures
           description: Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.
         resolutionBreakdown:
@@ -12024,6 +12046,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/settings/ingestion/embedding-coverage:
+    get:
+      tags:
+        - Settings
+      summary: Get canonical embedding coverage for the authenticated workspace
+      operationId: getEmbeddingCoverage
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Embedding coverage returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbeddingCoverage"
         "401":
           description: Authentication required
           content:
@@ -21377,9 +21420,9 @@ paths:
       parameters:
         - schema:
             type: string
-            description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+            description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
           required: false
-          description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `slow_responses`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
+          description: Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them.
           name: signal
           in: query
         - schema:

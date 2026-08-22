@@ -20,6 +20,7 @@ export function RoutineCompletionExportPanel({
   webhookDestinations,
   isLoading,
   error,
+  payloadPreview,
 }: {
   idPrefix: string
   value: RoutineCompletionExport
@@ -27,6 +28,9 @@ export function RoutineCompletionExportPanel({
   webhookDestinations: WebhookDestination[]
   isLoading: boolean
   error: string | null
+  // What the destination will receive. Shown beside the settings that shape it, so the
+  // author can see the effect of a slot or a trigger without leaving the panel.
+  payloadPreview?: Record<string, unknown>
 }) {
   const toggleTrigger = (kind: RoutineTerminalKind, checked: boolean) => {
     if (!checked && value.triggerKinds.length <= 1 && value.triggerKinds.includes(kind)) return
@@ -91,6 +95,14 @@ export function RoutineCompletionExportPanel({
               ))}
             </div>
           </div>
+          {payloadPreview ? (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium uppercase text-muted-foreground">Payload preview</p>
+              <pre className="overflow-x-auto rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+                {JSON.stringify(payloadPreview, null, 2)}
+              </pre>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

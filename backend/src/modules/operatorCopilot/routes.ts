@@ -1,23 +1,42 @@
 import { Router, type RequestHandler, type Response } from "express";
 import { z } from "zod";
 
-import type { AppDependencies } from "../../app/server/types.js";
+import type { Env } from "../../app/config/env.js";
 import { requireWorkspaceSession } from "../../app/http/middleware/requireWorkspaceSession.js";
+import type { WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
 import { validateBody } from "../../app/http/middleware/validate.js";
 import { forbidden, notFound, serviceUnavailable } from "../../shared/domain/errors.js";
+import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import { copilotTurnRequestSchema, type CopilotConversation, type CopilotMessage, type CopilotSseEvent, CopilotConflictError, CopilotNotFoundError } from "./public.js";
+import type { OperatorCopilotService } from "./public.js";
+import { hasAllCopilotToolPermissions } from "./catalog.js";
 
 const conversationParamsSchema = z.object({ conversationId: z.string().uuid() });
 const proposalParamsSchema = z.object({ proposalId: z.string().uuid() });
 /**
  * The permissions resolved per turn and handed to the catalog filter. A descriptor whose
- * requiredPermission is absent here is silently dropped from every live turn, so this list must
+ * requiredPermissions member is absent here is silently dropped from every live turn, so this list must
  * cover the whole catalog — asserted by copilot-catalog-shape.test.ts.
  */
-export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read"] as const;
+export const copilotToolPermissions = ["workspace.agents.read", "workspace.agents.manage", "workspace.chat.use", "workspace.history.read", "workspace.documents.read", "workspace.retrieval.query", "workspace.quality.read", "workspace.settings.read"] as const;
 
-export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | "authService" | "workspaceSessionService" | "accountAccessService" | "llmCapabilityResolver" | "operatorCopilotService">): Router => {
+export interface CopilotRouteDependencies extends WorkspaceSessionDependencies {
+  env: Env;
+  accountAccessService: WorkspaceSessionDependencies["accountAccessService"] & {
+    hasPermission(input: {
+      accountId: string;
+      userId: string;
+      principal: { type: "session_user"; userId: string };
+      workspaceId: string;
+      permission: typeof copilotToolPermissions[number];
+    }): Promise<boolean>;
+  };
+  llmCapabilityResolver: LlmCapabilityResolver;
+  operatorCopilotService: OperatorCopilotService;
+}
+
+export const createCopilotRoutes = (dependencies: CopilotRouteDependencies): Router => {
   const router = Router();
   const workspaceSession = requireWorkspaceSession(dependencies);
   const agentRead = requireWorkspacePermission(dependencies, "workspace.agents.read");
@@ -83,8 +102,10 @@ export const createCopilotRoutes = (dependencies: Pick<AppDependencies, "env" | 
     try {
       if (!(await availability(dependencies, res)).available) { res.status(503).json({ reason: "no_llm_capability" }); return; }
       const { workspaceId, accountId, userId, principal } = sessionLocals(res);
-      const permissions = new Set<string>();
-      for (const permission of copilotToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) permissions.add(permission);
+      const resolvedPermissions = new Set<string>();
+      for (const permission of copilotToolPermissions) if (await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission })) resolvedPermissions.add(permission);
+      const permissions = new Set(copilotToolPermissions.filter((permission) =>
+        hasAllCopilotToolPermissions([permission], resolvedPermissions)));
       await sendCopilotSse(res, dependencies.operatorCopilotService.runTurn({ workspaceId, accountId, operatorUserId: userId, conversationId: req.body.conversationId, message: req.body.message, pageContext: req.body.pageContext, permissions }));
     } catch (error) {
       if (error instanceof CopilotConflictError) { res.status(409).json({ code: "conflict" }); return; }
@@ -100,7 +121,7 @@ const sessionLocals = (res: Response): { workspaceId: string; accountId: string;
   const locals = res.locals as { workspaceId: string; accountId: string; userId: string; authPrincipal: { type: "session_user"; userId: string } };
   return { workspaceId: locals.workspaceId, accountId: locals.accountId, userId: locals.userId, principal: locals.authPrincipal };
 };
-const availability = async (dependencies: Pick<AppDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean }> => {
+const availability = async (dependencies: Pick<CopilotRouteDependencies, "accountAccessService" | "llmCapabilityResolver">, res: Response): Promise<{ available: boolean; reason: "ok" | "no_llm_capability"; canManage: boolean }> => {
   const { workspaceId, accountId, userId, principal } = sessionLocals(res);
   const canManage = await dependencies.accountAccessService.hasPermission({ accountId, userId, principal, workspaceId, permission: "workspace.agents.manage" });
   try {

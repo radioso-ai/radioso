@@ -10,6 +10,7 @@ import type {
   AgentSettingsUpdate,
   AssistantBehaviorSettings,
   DocumentTypeCatalog,
+  EmbeddingCoverage,
   GeneralSettings,
   IngestionSettings,
   UpdateDocumentTypeCatalogRequest,
@@ -53,6 +54,12 @@ export const settingsApi = {
 
   async getIngestionSettings(): Promise<IngestionSettings> {
     return request<IngestionSettings>("/settings/ingestion", {
+      method: "GET",
+    }, { withApiToken: true })
+  },
+
+  async getEmbeddingCoverage(): Promise<EmbeddingCoverage> {
+    return request<EmbeddingCoverage>("/settings/ingestion/embedding-coverage", {
       method: "GET",
     }, { withApiToken: true })
   },

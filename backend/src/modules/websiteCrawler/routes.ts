@@ -1,24 +1,26 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
 
-import type { AppDependencies } from "../../app/server/types.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../app/http/middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../../app/http/middleware/requirePermission.js";
-import { createRateLimitMiddleware } from "../../app/http/middleware/rateLimit.js";
+import {
+  createRateLimitMiddleware,
+  type RateLimitAbuseControlPort,
+  type RateLimitAuditPort,
+} from "../../app/http/middleware/rateLimit.js";
 import { resolveWebsiteCrawlerConfig } from "./config.js";
 import {
   WebsiteCrawlerBadRequestError,
   WebsiteCrawlerUnavailableError,
 } from "./errors.js";
 import type { WebsiteCrawlerProvider } from "./provider.js";
+import type { WebsiteCrawlJobService } from "./jobService.js";
 
-type RouteDependencies = WorkspaceSessionDependencies & Pick<
-  AppDependencies,
-  | "abuseControlService"
-  | "auditService"
-  | "websiteCrawlJobService"
-  | "websiteCrawlerProvider"
-> & {
+type RouteDependencies = WorkspaceSessionDependencies & {
+  abuseControlService: RateLimitAbuseControlPort;
+  auditService: RateLimitAuditPort;
+  websiteCrawlJobService: WebsiteCrawlJobService;
+  websiteCrawlerProvider?: WebsiteCrawlerProvider;
   assertCrawlUrlAllowed?: (url: string) => Promise<void>;
 };
 

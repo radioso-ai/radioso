@@ -384,7 +384,7 @@ describe("chat retrieval domain", () => {
     expect((result.structuredResult as { responseLanguage?: string } | undefined)?.responseLanguage).toBeUndefined();
   });
 
-  it("drops unsafe small classifier fields from rewrite output", async () => {
+  it("sanitizes unsafe small classifier fields without dropping executable retrieval branches", async () => {
     const service = new QueryRewriteService({
       async rewrite() {
         return {
@@ -438,6 +438,7 @@ describe("chat retrieval domain", () => {
     expect(result.structuredResult?.retrievalSubqueries?.map((subquery) => subquery.label)).toEqual([
       "Safe Kriya Yoga",
       "Ananda Kriya Yoga",
+      "Subquery 3",
     ]);
   });
 

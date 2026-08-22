@@ -62,4 +62,66 @@ describe("workspace events contract", () => {
     expect(frames).not.toContain("document-other");
     expect(frames).not.toContain("content");
   });
+
+  it("releases the subscription when the client disconnects while ready() is pending", async () => {
+    const { app, dependencies } = createTestApp();
+    const token = await issueTestToken(app, "workspace-events-close@example.com");
+
+    // Hold ready() open so we can disconnect strictly inside the await window,
+    // and observe whether the route releases the bus subscription on close.
+    let released = false;
+    let resolveReady: () => void = () => {};
+    const readyGate = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    const bus = dependencies.workspaceEventBus;
+    const realSubscribe = bus.subscribe.bind(bus);
+    bus.subscribe = (workspaceId: string) => {
+      const inner = realSubscribe(workspaceId);
+      return {
+        [Symbol.asyncIterator]() {
+          const iterator = inner[Symbol.asyncIterator]();
+          return {
+            next: () => iterator.next(),
+            return: async () => {
+              released = true;
+              return iterator.return ? iterator.return() : { done: true, value: undefined };
+            },
+          };
+        },
+      };
+    };
+    bus.ready = () => readyGate;
+
+    const server = app.listen(0);
+    await once(server, "listening");
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Test server did not bind a TCP port");
+    }
+
+    await new Promise<void>((resolve) => {
+      const stream = request({
+        host: "127.0.0.1",
+        port: address.port,
+        path: "/api/v1/events",
+        headers: { authorization: `Bearer ${token.token}` },
+      });
+      stream.on("response", (response) => {
+        expect(response.statusCode).toBe(200);
+        // Disconnect while ready() is still pending, then let ready() resolve.
+        stream.destroy();
+        setTimeout(() => {
+          resolveReady();
+          setTimeout(resolve, 50);
+        }, 100);
+      });
+      // A client-side abort after destroy() surfaces as an error; expected.
+      stream.on("error", () => {});
+      stream.end();
+    });
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    expect(released).toBe(true);
+  });
 });

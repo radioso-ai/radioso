@@ -2749,6 +2749,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream live workspace change notifications
+         * @description Long-lived server-sent stream of workspace resource-change hints for the dashboard. Emits a `ready` frame once the transport is live, then `push` frames carrying an invalidation hint `{ resourceType, resourceId, workspaceId, changeKind, version }` — identity only, never resource content; the client refetches the affected surface. Comment lines beginning with `:` are heartbeats. Returns 404 when workspace push is disabled.
+         */
+        get: operations["streamWorkspaceEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/evals/cases/by-source-message/{assistantMessageId}": {
         parameters: {
             query?: never;
@@ -18073,6 +18093,33 @@ export interface operations {
             };
             /** @description Proposal is not pending */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    streamWorkspaceEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server-sent workspace change notifications. Events include `ready` then `push`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            /** @description Workspace push is disabled */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

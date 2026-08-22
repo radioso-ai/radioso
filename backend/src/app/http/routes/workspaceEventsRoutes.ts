@@ -17,9 +17,30 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
   }, async (req, res) => {
     const workspaceId = res.locals.workspaceId as string;
     let closed = false;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
     connectionCount += 1;
     dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection opened");
     const subscription = dependencies.workspaceEventBus.subscribe(workspaceId);
+    const iterator = subscription[Symbol.asyncIterator]();
+    // Register teardown before the ready() await below: the client can
+    // disconnect during that window and Node emits 'close' only once, so a
+    // handler installed after the await would miss it and leak the subscription
+    // (unbounded queue growth in the bus), the heartbeat, and the connection
+    // count. Releasing the iterator here is what removes the bus subscriber.
+    const cleanup = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (heartbeat) {
+        clearInterval(heartbeat);
+      }
+      connectionCount -= 1;
+      void iterator.return?.();
+      dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection closed");
+    };
+    req.on("close", cleanup);
+    res.on("close", cleanup);
     initializeSse(res, "no-cache, no-transform");
     // The ready frame triggers the client's refetch, so it must not be sent
     // before the transport can deliver events — otherwise a change landing in
@@ -29,24 +50,16 @@ export const createWorkspaceEventsRoutes = (dependencies: AppDependencies): Rout
       dependencies.workspaceEventBus.ready(),
       new Promise<void>((resolve) => setTimeout(resolve, 2_000).unref?.()),
     ]);
+    if (closed || res.writableEnded) {
+      return;
+    }
     writeSseEvent(res, "ready", { workspaceId });
-    const heartbeat = setInterval(() => {
+    heartbeat = setInterval(() => {
       if (!closed && !res.writableEnded) {
         res.write(": heartbeat\n\n");
       }
     }, 25_000);
-    const cleanup = () => {
-      if (closed) {
-        return;
-      }
-      closed = true;
-      clearInterval(heartbeat);
-      connectionCount -= 1;
-      dependencies.logger.info({ workspaceId, connectionCount }, "Workspace push SSE connection closed");
-    };
-    req.on("close", cleanup);
-    res.on("close", cleanup);
-    void sendSseIterable(res, subscription, (event) => {
+    void sendSseIterable(res, { [Symbol.asyncIterator]: () => iterator }, (event) => {
       writeSseEvent(res, "push", event);
     }, { cancelOnClose: true }).catch((error) => {
       dependencies.logger.warn({ err: error }, "Workspace push SSE stream failed");

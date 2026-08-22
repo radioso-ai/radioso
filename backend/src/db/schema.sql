@@ -1828,6 +1828,21 @@ CREATE TABLE public.document_sources (
 
 
 --
+-- Name: document_type_catalogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_type_catalogs (
+    workspace_id uuid NOT NULL,
+    revision bigint DEFAULT 1 NOT NULL,
+    types jsonb DEFAULT '[]'::jsonb NOT NULL,
+    retired_fields jsonb DEFAULT '[]'::jsonb NOT NULL,
+    disabled_built_in_types jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: documents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2064,7 +2079,8 @@ CREATE TABLE public.ingestion_settings (
     embedding_model text DEFAULT 'text-embedding-3-small'::text NOT NULL,
     pending_embedding_model text,
     document_enrichment_enabled boolean DEFAULT false NOT NULL,
-    revision bigint DEFAULT 1 NOT NULL
+    revision bigint DEFAULT 1 NOT NULL,
+    manual_document_enrichment_override text DEFAULT 'inherit'::text NOT NULL
 );
 
 
@@ -3895,6 +3911,14 @@ ALTER TABLE ONLY public.document_processing_jobs
 
 ALTER TABLE ONLY public.document_sources
     ADD CONSTRAINT document_sources_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: document_type_catalogs document_type_catalogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_type_catalogs
+    ADD CONSTRAINT document_type_catalogs_pkey PRIMARY KEY (workspace_id);
 
 
 --
@@ -7986,6 +8010,14 @@ ALTER TABLE ONLY public.document_processing_jobs
 
 ALTER TABLE ONLY public.document_sources
     ADD CONSTRAINT document_sources_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: document_type_catalogs document_type_catalogs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.document_type_catalogs
+    ADD CONSTRAINT document_type_catalogs_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

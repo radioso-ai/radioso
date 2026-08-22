@@ -8,6 +8,9 @@ import type {
   DocumentProcessingJobEnrichmentOverride,
   DocumentProcessingJobOptions,
 } from "../../modules/documents/contracts/documentContracts.js";
+import type {
+  WorkspaceCanonicalEmbeddingCoverage,
+} from "../../modules/embeddingProfiles/contracts/embeddingCoverage.js";
 
 export type DocumentProcessingJobStatus = "queued" | "processing" | "completed" | "failed" | "skipped";
 // Vectorize jobs make a document queryable (chunk + embed + publish). Enrich jobs
@@ -75,6 +78,9 @@ export interface DocumentProcessingJobRepositoryPort {
       failedJobs: number;
     }>
   >;
+  getWorkspaceCanonicalEmbeddingCoverage(
+    workspaceId: string,
+  ): Promise<WorkspaceCanonicalEmbeddingCoverage>;
   reconcileEmbeddingProfileJobsForWorkspace(input: {
     workspaceId: string;
   }): Promise<{ enqueued: number; skipped: number }>;
@@ -99,6 +105,106 @@ export interface DocumentProcessingJobRepositoryPort {
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
 }
+
+// The canonical-coverage rule, defined once for every read of it.
+//
+// It mirrors reconcileEmbeddingProfileJobsForWorkspace's notion of coverage, or a
+// report disagrees with the work it describes. A canonical row only counts when it
+// belongs to a target space — active or pending — at the document's current revision,
+// so rows left behind by an earlier space or an older revision are gaps rather than
+// coverage. Document eligibility is applied for the same reason: the reconciler never
+// enqueues documents it would not serve.
+//
+// Both fragments are referenced once per query, so Postgres inlines the CTEs and a
+// per-workspace filter still reaches the underlying indexes.
+
+const embeddingTargetSpacesSql = sql`
+  SELECT p.workspace_id, spaces.embedding_space_id
+  FROM workspace_embedding_profiles p
+  CROSS JOIN LATERAL (
+    SELECT DISTINCT embedding_space_id
+    FROM (VALUES
+      (p.active_embedding_space_id),
+      (p.pending_embedding_space_id)
+    ) AS candidates(embedding_space_id)
+    WHERE embedding_space_id IS NOT NULL
+  ) spaces
+`;
+
+const retrievableChunksSql = sql`
+  SELECT c.workspace_id, c.id AS chunk_id, d.revision
+  FROM chunks c
+  JOIN documents d
+    ON d.workspace_id = c.workspace_id
+   AND d.id = c.document_id
+  WHERE d.status = 'ready'
+    AND d.retrieval_enabled = TRUE
+    AND (d.retrieval_expires_at IS NULL OR d.retrieval_expires_at > NOW())
+`;
+
+// Correlated against the `eligible_chunks ec` / `targets t` aliases above.
+//
+// The space match is required, never optional. `targets` is LEFT JOINed, so a workspace
+// with no embedding profile yields a NULL `t.embedding_space_id`, and accepting that as
+// a wildcard let any leftover row — from a space the workspace never targeted — count as
+// coverage. Such a workspace has nothing for retrieval to search and nothing the backfill
+// can enqueue, yet it reported zero missing chunks: the dashboard showed "all chunks
+// indexed" and the workspace dropped out of the gap list the backfill reads, so the script
+// exited claiming there was no work. A NULL target now fails the comparison, which counts
+// every eligible chunk as missing and leaves `hasEmbeddingProfile` to say why.
+const canonicalRowExistsSql = sql`EXISTS (
+  SELECT 1
+  FROM chunk_embeddings ce
+  WHERE ce.workspace_id = ec.workspace_id
+    AND ce.chunk_id = ec.chunk_id
+    AND ce.document_revision = ec.revision
+    AND ce.embedding_space_id = t.embedding_space_id
+)`;
+
+// The per-workspace read references this CTE twice, so PostgreSQL materializes it.
+// Put its tenant scope inside this shared definition rather than relying on either
+// consumer predicate to push through the materialization boundary.
+const currentEmbeddingProfileGapJobsSql = (workspaceId?: string) => {
+  const workspaceScope = workspaceId === undefined
+    ? sql``
+    : sql`AND j.workspace_id = ${workspaceId}`;
+
+  return sql`
+    SELECT j.workspace_id, j.status
+    FROM document_processing_jobs j
+    JOIN documents d
+      ON d.workspace_id = j.workspace_id
+     AND d.id = j.document_id
+     AND d.revision = j.document_revision
+    JOIN workspace_embedding_profiles p
+      ON p.workspace_id = j.workspace_id
+     AND p.generation = j.workspace_profile_generation
+     AND j.embedding_space_id IN (
+       p.active_embedding_space_id,
+       p.pending_embedding_space_id
+     )
+    WHERE j.kind = 'embedding_profile'
+      ${workspaceScope}
+      AND j.status IN ('queued', 'processing', 'failed')
+      AND d.status = 'ready'
+      AND d.retrieval_enabled = TRUE
+      AND (d.retrieval_expires_at IS NULL OR d.retrieval_expires_at > NOW())
+      AND EXISTS (
+        SELECT 1
+        FROM chunks c
+        WHERE c.workspace_id = d.workspace_id
+          AND c.document_id = d.id
+          AND NOT EXISTS (
+            SELECT 1
+            FROM chunk_embeddings ce
+            WHERE ce.workspace_id = c.workspace_id
+              AND ce.chunk_id = c.id
+              AND ce.embedding_space_id = j.embedding_space_id
+              AND ce.document_revision = d.revision
+          )
+      )
+  `;
+};
 
 export interface EmbeddingProfileJobTransactionClient {
   query<T extends QueryResultRow = QueryResultRow>(
@@ -493,13 +599,6 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       failedJobs: number;
     }>
   > {
-    // Mirrors reconcileEmbeddingProfileJobsForWorkspace's notion of coverage, or the
-    // report disagrees with the work it is meant to describe. A canonical row only
-    // counts when it belongs to a target space (active or pending) at the document's
-    // current revision, so rows left behind by an earlier space or an older revision
-    // are gaps rather than coverage. Document eligibility is applied for the same
-    // reason: the reconciler never enqueues documents it would not serve.
-    //
     // hasEmbeddingProfile decides whether the gap is actionable — enqueueing joins
     // workspace_embedding_profiles, so a workspace without one yields no jobs, and
     // reporting the flag keeps that from looking like a successful no-op run.
@@ -513,47 +612,19 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       has_embedding_profile: boolean;
       failed_jobs: string;
     }>`
-      WITH targets AS (
-        SELECT p.workspace_id, spaces.embedding_space_id
-        FROM workspace_embedding_profiles p
-        CROSS JOIN LATERAL (
-          SELECT DISTINCT embedding_space_id
-          FROM (VALUES
-            (p.active_embedding_space_id),
-            (p.pending_embedding_space_id)
-          ) AS candidates(embedding_space_id)
-          WHERE embedding_space_id IS NOT NULL
-        ) spaces
-      ),
-      eligible_chunks AS (
-        SELECT c.workspace_id, c.id AS chunk_id, d.revision
-        FROM chunks c
-        JOIN documents d
-          ON d.workspace_id = c.workspace_id
-         AND d.id = c.document_id
-        WHERE d.status = 'ready'
-          AND d.retrieval_enabled = TRUE
-          AND (d.retrieval_expires_at IS NULL OR d.retrieval_expires_at > NOW())
-      )
+      WITH targets AS (${embeddingTargetSpacesSql}),
+      eligible_chunks AS (${retrievableChunksSql}),
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql()})
       SELECT ec.workspace_id,
              COUNT(DISTINCT ec.chunk_id) AS missing_chunks,
              BOOL_OR(t.workspace_id IS NOT NULL) AS has_embedding_profile,
              (SELECT COUNT(*)
-                FROM document_processing_jobs j
+                FROM current_gap_jobs j
                WHERE j.workspace_id = ec.workspace_id
-                 AND j.kind = 'embedding_profile'
                  AND j.status = 'failed') AS failed_jobs
       FROM eligible_chunks ec
       LEFT JOIN targets t ON t.workspace_id = ec.workspace_id
-      WHERE NOT EXISTS (
-        SELECT 1
-        FROM chunk_embeddings ce
-        WHERE ce.workspace_id = ec.workspace_id
-          AND ce.chunk_id = ec.chunk_id
-          AND ce.document_revision = ec.revision
-          AND (t.embedding_space_id IS NULL
-               OR ce.embedding_space_id = t.embedding_space_id)
-      )
+      WHERE NOT ${canonicalRowExistsSql}
       GROUP BY ec.workspace_id
       ORDER BY COUNT(DISTINCT ec.chunk_id) DESC
     `.execute(this.db);
@@ -564,6 +635,70 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       hasEmbeddingProfile: row.has_embedding_profile,
       failedJobs: Number(row.failed_jobs),
     }));
+  }
+
+  // The same backlog for one workspace, with the denominator the gap list omits.
+  // "4,329 outstanding" reads identically whether a workspace is nearly finished or
+  // has not started, so progress needs both numbers; this is what the dashboard shows
+  // while the backfill drains.
+  async getWorkspaceCanonicalEmbeddingCoverage(
+    workspaceId: string,
+  ): Promise<WorkspaceCanonicalEmbeddingCoverage> {
+    // The coverage rule is shared with listWorkspaceCanonicalEmbeddingGaps rather than
+    // restated, because the two numbers are read against each other — the dashboard's
+    // progress against the backfill script's backlog — and a drifted second copy would
+    // show a workspace as complete while the script still had work to enqueue.
+    //
+    // hasEmbeddingProfile is an independent EXISTS rather than an aggregate over the
+    // join: a workspace with a profile and no chunks yet still has one, and the join
+    // has no row to carry that.
+    const row = await sql<{
+      eligible_chunks: string;
+      missing_chunks: string;
+      has_embedding_profile: boolean;
+      queued_jobs: string;
+      failed_jobs: string;
+    }>`
+      WITH targets AS (${embeddingTargetSpacesSql}),
+      eligible_chunks AS (${retrievableChunksSql}),
+      current_gap_jobs AS (${currentEmbeddingProfileGapJobsSql(workspaceId)}),
+      coverage AS (
+        SELECT COUNT(DISTINCT ec.chunk_id) AS eligible_chunks,
+               COUNT(DISTINCT ec.chunk_id)
+                 FILTER (WHERE NOT ${canonicalRowExistsSql}) AS missing_chunks
+        FROM eligible_chunks ec
+        LEFT JOIN targets t ON t.workspace_id = ec.workspace_id
+        WHERE ec.workspace_id = ${workspaceId}
+      )
+      SELECT coverage.eligible_chunks,
+             coverage.missing_chunks,
+             EXISTS (
+               SELECT 1 FROM workspace_embedding_profiles p
+               WHERE p.workspace_id = ${workspaceId}
+             ) AS has_embedding_profile,
+             (SELECT COUNT(*)
+                FROM current_gap_jobs j
+               WHERE j.workspace_id = ${workspaceId}
+                 AND j.status IN ('queued', 'processing')) AS queued_jobs,
+             (SELECT COUNT(*)
+                FROM current_gap_jobs j
+               WHERE j.workspace_id = ${workspaceId}
+                 AND j.status = 'failed') AS failed_jobs
+      FROM coverage
+    `.execute(this.db);
+
+    const coverage = row.rows[0];
+    const eligibleChunks = Number(coverage?.eligible_chunks ?? 0);
+    const missingChunks = Number(coverage?.missing_chunks ?? 0);
+    return {
+      workspaceId,
+      eligibleChunks,
+      coveredChunks: eligibleChunks - missingChunks,
+      missingChunks,
+      hasEmbeddingProfile: coverage?.has_embedding_profile ?? false,
+      queuedJobs: Number(coverage?.queued_jobs ?? 0),
+      failedJobs: Number(coverage?.failed_jobs ?? 0),
+    };
   }
 
   async reconcileEmbeddingProfileJobsForWorkspace(input: {

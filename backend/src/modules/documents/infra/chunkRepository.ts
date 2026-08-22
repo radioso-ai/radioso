@@ -229,21 +229,41 @@ export class ChunkRepository implements ChunkRepositoryPort {
       date_from: string | null;
       date_to: string | null;
     }>(
-      `SELECT id,
-              document_id,
-              workspace_id,
-              chunk_index,
-              content,
-              search_text,
-              start_offset,
-              end_offset,
-              metadata,
-              created_at,
-              COALESCE(vector_dims(embedding_unbounded), vector_dims(embedding)) AS embedding_dimensions,
-              date_from,
-              date_to
-       FROM chunks
-       WHERE id = $1 AND document_id = $2 AND workspace_id = $3`,
+      // The reported width comes from the canonical row for the workspace's active
+      // embedding space, because that is the vector semantic search actually compares
+      // against. The legacy columns are the fallback for a chunk that has no canonical
+      // row yet, and they can disagree: `chunks.embedding` is fixed at 1536, so a
+      // workspace on a wider model would otherwise be told the wrong number.
+      `SELECT c.id,
+              c.document_id,
+              c.workspace_id,
+              c.chunk_index,
+              c.content,
+              c.search_text,
+              c.start_offset,
+              c.end_offset,
+              c.metadata,
+              c.created_at,
+              COALESCE(
+                (SELECT ce.dimensions
+                   FROM chunk_embeddings ce
+                   JOIN workspace_embedding_profiles p
+                     ON p.workspace_id = ce.workspace_id
+                    AND p.active_embedding_space_id = ce.embedding_space_id
+                  WHERE ce.workspace_id = c.workspace_id
+                    AND ce.chunk_id = c.id
+                    AND ce.document_revision = d.revision
+                  LIMIT 1),
+                vector_dims(c.embedding_unbounded),
+                vector_dims(c.embedding)
+              ) AS embedding_dimensions,
+              c.date_from,
+              c.date_to
+       FROM chunks c
+       JOIN documents d
+         ON d.workspace_id = c.workspace_id
+        AND d.id = c.document_id
+       WHERE c.id = $1 AND c.document_id = $2 AND c.workspace_id = $3`,
       [input.chunkId, input.documentId, input.workspaceId],
     );
 

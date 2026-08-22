@@ -102,6 +102,9 @@ import type {
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
+import type {
+  WorkspaceCanonicalEmbeddingCoverage,
+} from "../../src/modules/embeddingProfiles/contracts/embeddingCoverage.js";
 import type { DocumentProcessingJobOptions } from "../../src/modules/documents/contracts/documentContracts.js";
 import type {
   ConversationRecord,
@@ -3314,6 +3317,29 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     }>
   > {
     return [];
+  }
+
+  // Coverage is a count over chunks and canonical rows, neither of which this fake
+  // holds; the real query is covered by an integration test against Postgres. Tests
+  // that need a non-empty reading set one here.
+  readonly canonicalEmbeddingCoverage = new Map<
+    string,
+    Omit<WorkspaceCanonicalEmbeddingCoverage, "workspaceId">
+  >();
+
+  async getWorkspaceCanonicalEmbeddingCoverage(
+    workspaceId: string,
+  ): Promise<WorkspaceCanonicalEmbeddingCoverage> {
+    const stored = this.canonicalEmbeddingCoverage.get(workspaceId);
+    return {
+      workspaceId,
+      eligibleChunks: stored?.eligibleChunks ?? 0,
+      coveredChunks: stored?.coveredChunks ?? 0,
+      missingChunks: stored?.missingChunks ?? 0,
+      hasEmbeddingProfile: stored?.hasEmbeddingProfile ?? false,
+      queuedJobs: stored?.queuedJobs ?? 0,
+      failedJobs: stored?.failedJobs ?? 0,
+    };
   }
 
   async listQueuedEmbeddingProfileJobsForWorkspace(input: {

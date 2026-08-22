@@ -21,6 +21,11 @@ import { capabilityNames } from "../../src/shared/domain/capabilityPolicy.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 import type { RoutineState, StagedContext, TurnContext } from "@radioso/conversation-contract";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
+import { CUSTOMER_EMAIL_SKILLS_ADAPTER } from "../../src/modules/customerEmail/public.js";
+import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/public.js";
+import { NOTIFY_SKILLS_ADAPTER } from "../../src/modules/notify/public.js";
+import { SLACK_SKILLS_ADAPTER } from "../../src/modules/slackSkills/public.js";
+import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
 
@@ -91,6 +96,61 @@ afterEach(async () => {
 });
 
 describe("RoutineSkillExecutorDispatcher", () => {
+  it.each([
+    ["webhook", WEBHOOK_SKILLS_ADAPTER],
+    ["customer email", CUSTOMER_EMAIL_SKILLS_ADAPTER],
+    ["Slack", SLACK_SKILLS_ADAPTER],
+    ["notify", NOTIFY_SKILLS_ADAPTER],
+    ["external MCP", EXTERNAL_SKILLS_ADAPTER],
+  ])("suppresses the %s executor in probe mode before live dispatch", async (_label, adapter) => {
+    const dispatch = vi.fn(async () => ({
+      disposition: "settled" as const,
+      outcome: { status: "completed" } as unknown as SkillOutcome,
+    }));
+    const registry = new SkillExecutorRegistry();
+    registry.register({ kind: "internal", adapter, executor: { dispatch } });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([
+        skillNamed("opaque_probe_skill", { kind: "internal", adapter, enqueue: false }),
+      ]),
+      registry,
+      { executionMode: "safe_test" },
+    );
+
+    const result = await dispatcher.dispatch({
+      skillName: "opaque_probe_skill",
+      state: routineState({ privateValue: "must-not-leave-process" }),
+      turn,
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      status: "failed",
+      outputs: { skill: "opaque_probe_skill", reason: "suppressed_for_safe_test" },
+    });
+  });
+
+  it("keeps the activated routine and step observable when a probe suppresses its skill", async () => {
+    const exporter = enableTracing();
+    const metricsRegistry = new MetricsRegistry();
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("opaque_probe_skill")]),
+      registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome)),
+      { executionMode: "safe_test", metricsRegistry },
+    );
+
+    await dispatcher.dispatch({ skillName: "opaque_probe_skill", state: routineState({}), turn });
+
+    const span = exporter.spans.find((candidate) => candidate.name === "routine.skill.dispatch");
+    expect(span?.attributes).toMatchObject({
+      "routine.id": "routine-1",
+      "routine.step_id": "invoke_skill",
+      "outcome.status": "failed",
+      "outcome.reason": "suppressed_for_safe_test",
+    });
+    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
+  });
+
   it("resolves a skill by name, dispatches through the registry, and projects the outcome", async () => {
     const outcome = {
       status: "completed",

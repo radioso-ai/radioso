@@ -109,7 +109,9 @@ test.describe("document viewer markdown rendering", () => {
       page.getByRole("heading", { name: "Course Overview", level: 1 }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Edit" }).click();
+    // Exact: the dev build badge puts the branch name in its accessible label, so a
+    // substring match also selects it from any branch whose name contains "edit".
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     const editor = page.locator("#document-content");
     await expect(editor).toHaveJSProperty("tagName", "TEXTAREA");
     await expect(editor).toHaveValue(markdownDocumentContent);

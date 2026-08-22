@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "pnpm run build:workspace-deps && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.json && node ./scripts/copyNonTsAssets.mjs",
+    "build": "pnpm run build:workspace-deps && pnpm run generate:openapi && pnpm run generate:skills && tsc -p tsconfig.runtime.json && node ./scripts/copyNonTsAssets.mjs",
     "build:workspace-deps": "pnpm run build:routine-definition && pnpm run build:routine-document && pnpm run build:conversation-engine && pnpm run build:conversation-defaults && pnpm run build:conversation-tools && pnpm run build:crawler && pnpm run build:census && pnpm run build:mcp",
     "build:routine-definition": "pnpm --dir ../packages/routine-definition run build",
     "build:routine-document": "pnpm --dir ../packages/routine-document run build",
@@ -39,9 +39,10 @@
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",
     "db:types": "bash ./scripts/generate-kysely-types.sh",
     "db:types:check": "bash ./scripts/generate-kysely-types.sh --check",
-    "lint": "pnpm run lint:boundaries && pnpm run lint:no-raw-sql",
+    "lint": "pnpm run lint:boundaries && pnpm run lint:no-raw-sql && pnpm run lint:legacy-chunk-vectors",
     "lint:boundaries": "depcruise --config dependency-cruiser.config.cjs src && node scripts/checkCopilotBoundary.mjs",
     "lint:no-raw-sql": "node scripts/checkNoRawSql.mjs",
+    "lint:legacy-chunk-vectors": "node scripts/checkLegacyChunkVectorReaders.mjs",
     "start": "pnpm run start:http",
     "start:http": "node ./dist/src/httpServer.js",
     "start:worker": "node ./dist/src/documentWorker.js",

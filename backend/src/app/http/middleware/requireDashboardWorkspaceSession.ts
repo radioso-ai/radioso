@@ -1,16 +1,21 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 import { unauthorized } from "../../../shared/domain/errors.js";
-import type { AppDependencies } from "../../server/types.js";
+import type { Env } from "../../config/env.js";
+import type { AccountAccessService } from "../../../modules/account/services/accountAccessService.js";
+import type { AuthService } from "../../../modules/auth/services/authService.js";
+import type { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
 
 const WORKSPACE_HEADER = "x-workspace-id";
 const isBearerAuthorization = (value: string | undefined): boolean =>
   typeof value === "string" && /^bearer(?:\s|$)/i.test(value.trim());
 
-export type DashboardWorkspaceSessionDependencies = Pick<
-  AppDependencies,
-  "env" | "authService" | "accountAccessService" | "workspaceSessionService"
->;
+export interface DashboardWorkspaceSessionDependencies {
+  env: Env;
+  authService: AuthService;
+  accountAccessService: AccountAccessService;
+  workspaceSessionService: WorkspaceSessionService;
+}
 
 /**
  * Dashboard-only workspace authentication. It deliberately has no bearer fallback:

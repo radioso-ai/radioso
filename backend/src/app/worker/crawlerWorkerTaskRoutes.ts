@@ -14,10 +14,24 @@ const recoveryTaskSchema = z.object({
 
 type CrawlerWorkerTaskRouteDependencies = Pick<AppDependencies, "websiteCrawlWorker">;
 
+export interface CrawlerWorkerTaskRouteOptions {
+  now?: () => Date;
+  recoveryRequestBudgetMs?: number;
+  crawlSliceBudgetMs?: number;
+}
+
+const DEFAULT_RECOVERY_REQUEST_BUDGET_MS = 150_000;
+const DEFAULT_CRAWL_SLICE_BUDGET_MS = 120_000;
+
 export const createCrawlerWorkerTaskRoutes = (
   dependencies: CrawlerWorkerTaskRouteDependencies,
+  options: CrawlerWorkerTaskRouteOptions = {},
 ): Router => {
   const router = Router();
+  const now = options.now ?? (() => new Date());
+  const recoveryRequestBudgetMs = options.recoveryRequestBudgetMs ?? DEFAULT_RECOVERY_REQUEST_BUDGET_MS;
+  const crawlSliceBudgetMs = options.crawlSliceBudgetMs ?? DEFAULT_CRAWL_SLICE_BUDGET_MS;
+  const latestFollowUpStartMs = Math.max(0, recoveryRequestBudgetMs - crawlSliceBudgetMs);
 
   router.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok" });
@@ -55,13 +69,24 @@ export const createCrawlerWorkerTaskRoutes = (
     }
 
     try {
+      const recoveryStartedAt = now();
       let processedJobCount = 0;
       for (let index = 0; index < parsed.data.maxJobs; index += 1) {
-        const processed = await dependencies.websiteCrawlWorker.runOnce(new Date());
+        const iterationStartedAt = now();
+        if (
+          index > 0
+          && iterationStartedAt.getTime() - recoveryStartedAt.getTime() >= latestFollowUpStartMs
+        ) {
+          break;
+        }
+        const processed = await dependencies.websiteCrawlWorker.runOnce(iterationStartedAt);
         if (!processed) {
           break;
         }
         processedJobCount += 1;
+        if (processed === "yielded") {
+          break;
+        }
       }
 
       res.status(200).json({ processedJobCount });

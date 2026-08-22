@@ -78,40 +78,55 @@ test("routine editor configures completion export with destination dropdown and 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
 
   await page.getByRole("button", { name: "New routine" }).click();
-  // The Form view shows the full header, including the trigger the Document view edits
-  // through its Starts when row.
-  await page.getByRole("tab", { name: "Form" }).click();
-  await page.getByLabel("Name").fill("Collect pricing intake");
-  await page.getByLabel("Priority").fill("20");
-  await page.getByLabel("Activation trigger").fill("Visitor asks about pricing or wants a quote.");
 
-  await page.getByRole("button", { name: "Add slot" }).click();
-  await page.getByLabel("Slot 1 key").fill("email");
-  await page.getByLabel("Slot 1 type").click();
-  await page.getByRole("option", { name: "email" }).click();
-  await page.getByLabel("Slot 1 description").fill("Visitor email address");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await expect(documentEditor).toBeVisible();
+  // This page also has a destination called Name, so target the routine's own field.
+  await page.locator("#routineName").fill("Collect pricing intake");
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks about pricing or wants a quote.");
+  await documentEditor.getByLabel("Priority", { exact: true }).fill("20");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await page.getByRole("button", { name: "Enable completion export" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const exportInstruction = documentEditor.getByLabel("Step 1 instruction");
+  await exportInstruction.click();
+  await exportInstruction.pressSequentially("Ask for @email");
+  await page.getByRole("option", { name: /Create variable “email”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "email", exact: true }).click();
+  await documentEditor.getByLabel("Slot email type").selectOption("email");
+  await documentEditor.getByLabel("Slot email description").fill("Visitor email address");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await page.getByRole("button", { name: "Enable", exact: true }).click();
   await page.getByLabel("Webhook destination").click();
   await page.getByRole("option", { name: "crm-leads" }).click();
+  // An export with no terminal to fire on is incomplete, so pick the one this routine reaches.
+  await page.locator("#document-completion-export-exportTrigger-complete").click();
 
   await expect(page.getByText('"email": "<email>"')).toBeVisible();
   await expect(page.getByText('"destinationRef": "33333333-3333-4333-8333-333333333333"')).toBeVisible();
 
-  await page.getByLabel("Step 1 id").fill("ask_email");
-  await page.getByLabel("Step 1 instruction").fill("Ask for {{slot.email}} so the team can follow up.");
-  await page.getByRole("button", { name: "Add transition" }).click();
-  await page.getByLabel("Transition 1 target").click();
-  await page.getByRole("option", { name: "complete" }).click();
-  await page.getByLabel("Transition 1 guard").click();
-  await page.getByRole("option", { name: "default" }).click();
-  await page.getByLabel("Terminal 1 id").fill("complete");
-  await page.getByLabel("Terminal 1 instruction").fill("Confirm the request was captured.");
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Condition", exact: true }).click();
+  await documentEditor.getByLabel("Rule kind").selectOption("default");
+  await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  await documentEditor.getByLabel("Step 1 id").fill("ask_email");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Finish ending", exact: true }).click();
+  await documentEditor.getByLabel("complete message").fill("Confirm the request was captured.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
   await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
 
-  const createUpdate = routineUpdates.find((update) => update.method === "POST");
+  const createUpdate = routineUpdates.filter((update) => update.body).at(-1);
   expect(createUpdate).toMatchObject({
     body: {
       completionExport: {

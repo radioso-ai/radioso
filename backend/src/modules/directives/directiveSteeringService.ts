@@ -40,7 +40,7 @@ export interface DirectiveSteerInput {
 }
 
 export interface DirectiveSteeringResult {
-  /** Ordered, bounded steering for the composer (capability-filtered). */
+  /** Ordered steering for the composer; only its contextual portion is bounded. */
   rules: SteeringRule[];
   /**
    * Matched, relationship-resolved directives, for the activity trace and turn
@@ -131,10 +131,11 @@ export class DirectiveSteeringService implements DirectiveSteeringPort {
     // directive never applied, so it can neither exclude nor satisfy others.
     const { kept, omissions: relationshipOmissions } = resolveDirectiveRelationships(allowed);
 
-    // Bound the rendered steering set: rank the survivors by confidence × priority
-    // and keep only what fits the top-k cap and token budget. `matches` stays the
-    // full set (skill binding and the trace still see every match); only `rules`
-    // narrows, and every held-back directive is recorded in `bounded`.
+    // Bound contextual steering: unconditional directives and their dependencies
+    // always render, while the contextual remainder is ranked by confidence ×
+    // priority and fitted to the top-k and token caps. `matches` stays the full set
+    // (skill binding and the trace still see every match); only `rules` narrows,
+    // and every held-back contextual directive is recorded in `bounded`.
     const { kept: rendered, dropped } = boundSteeringMatches(kept, this.steeringBound);
     if (dropped.length > 0) {
       this.logger?.debug(

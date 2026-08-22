@@ -26,6 +26,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { RoutineInvocableSkillNames, SkillExecutorRegistry } from "../skills/public.js";
 import { RoutineSkillExecutorDispatcher } from "./skillDispatcher.js";
+import type { TurnExecutionMode } from "../../shared/domain/turnExecutionMode.js";
 import { createRoutineSkillResolverChain } from "./routineSkillResolverChain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
@@ -81,6 +82,7 @@ export interface RoutineTurnProvider {
     groundedAnswerRenderer?: RoutineGroundedAnswerRenderer;
     throwIfCancelled?: () => void;
     turnPlan?: unknown;
+    executionMode?: TurnExecutionMode;
   }): Promise<{
     routines?: readonly Routine[];
     activator: ConversationRoutineActivator;
@@ -106,6 +108,7 @@ export const createRoutineTurnProvider = (
     groundedAnswerRenderer,
     throwIfCancelled,
     turnPlan,
+    executionMode = "live",
   }) {
     let publishedRegistrations: RoutineRegistration[];
     try {
@@ -306,6 +309,7 @@ export const createRoutineTurnProvider = (
             capabilityGate: (capability) => dependencies.capabilityPolicy.can({ capability, workspaceId }),
             metricsRegistry: dependencies.metricsRegistry ?? null,
             throwIfCancelled,
+            executionMode,
           },
         ),
       ),

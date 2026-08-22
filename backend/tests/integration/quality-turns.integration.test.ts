@@ -168,6 +168,7 @@ describeIfDatabase("quality turns integration", () => {
     const nullSourceConversationId = randomUUID();
     const testChatConversationId = randomUUID();
     const replayConversationId = randomUUID();
+    const rayProbeConversationId = randomUUID();
 
     await database.query(
       `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
@@ -215,6 +216,18 @@ describeIfDatabase("quality turns integration", () => {
       ],
     );
 
+    const rayProbeMessageId = randomUUID();
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel)
+       VALUES ($1, $2, $3, 'operator_copilot_probe')`,
+      [rayProbeConversationId, workspaceId, agentId],
+    );
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, created_at)
+       VALUES ($1, $2, $3, 'assistant', 'Ray probe refusal', 'retrieval.answer', 'no_context', 'completed', $4)`,
+      [rayProbeMessageId, rayProbeConversationId, workspaceId, "2026-05-24T09:00:04.000Z"],
+    );
+
     const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog());
     const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
 
@@ -223,6 +236,7 @@ describeIfDatabase("quality turns integration", () => {
     expect(ids).toContain(nullSourceMessageId);
     expect(ids).not.toContain(testChatMessageId);
     expect(ids).not.toContain(replayMessageId);
+    expect(ids).not.toContain(rayProbeMessageId);
     // Only the two non-operator-test turns count toward the total.
     expect(page.total).toBe(2);
   });

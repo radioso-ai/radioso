@@ -3,6 +3,7 @@ import type { WebsiteCrawlCheckpoint, WebsiteCrawlPolicy } from "./policy.js";
 export interface WebsiteCrawlRequest {
   url: string;
   limit: number;
+  maxDurationMs?: number;
   signal?: AbortSignal;
   policy?: WebsiteCrawlPolicy;
   checkpoint?: WebsiteCrawlCheckpoint;
@@ -22,10 +23,13 @@ export interface WebsiteCrawlPage {
   metadata?: Record<string, unknown>;
 }
 
+export type WebsiteCrawlExecutionOutcome = "completed" | "yielded";
+
 export interface WebsiteCrawlResult {
   provider: string;
   runId?: string | null;
   status?: string | null;
+  outcome?: WebsiteCrawlExecutionOutcome;
   pages: WebsiteCrawlPage[];
   invalidPages?: number;
   skipped?: number;

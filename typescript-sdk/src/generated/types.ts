@@ -607,6 +607,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/ingestion/embedding-coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get canonical embedding coverage for the authenticated workspace */
+        get: operations["getEmbeddingCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/ingestion/embedding-model/cancel": {
         parameters: {
             query?: never;
@@ -3395,6 +3412,19 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        EmbeddingCoverage: {
+            /** @description Chunks in documents retrieval serves: ready, retrieval-enabled and unexpired. */
+            eligibleChunks: number;
+            /** @description Of those, the chunks that have an embedding for the workspace's current model. */
+            coveredChunks: number;
+            missingChunks: number;
+            /** @description False when the workspace has no embedding model set, which is what leaves missing chunks unrepairable. */
+            hasEmbeddingProfile: boolean;
+            /** @description Embedding work still in flight for the current model. Counts only jobs that would close part of the gap, so a queue draining down to zero means indexing is finishing rather than stalling. */
+            queuedJobs: number;
+            /** @description Embedding jobs for the current model that exhausted their attempts. These hold their job key, so the chunks behind them stay missing until the failures are resolved. Jobs left by a superseded model are not counted, because no re-run will ever move them. */
+            failedJobs: number;
         };
         UpdateIngestionSettingsRequest: {
             /** @enum {string} */
@@ -8515,6 +8545,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getEmbeddingCoverage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embedding coverage returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmbeddingCoverage"];
                 };
             };
             /** @description Authentication required */

@@ -1,7 +1,7 @@
 ---
 title: "Ray"
-description: "Use Ray in the dashboard to investigate agent behavior with page context, selected text, and linked activity."
-last_updated: 2026-08-18
+description: "Use Ray in the dashboard to investigate agent behavior, test routine drafts, and review linked activity and proposals."
+last_updated: 2026-08-21
 ---
 
 # Ray
@@ -85,6 +85,37 @@ so the proposal reflects the current configuration. Applied proposals link to
 the target entity, while failed proposals show the reason returned by the
 management service.
 
+## Test a routine draft
+
+Ray can run a representative message through the selected agent before you
+publish a routine draft. For example, ask: “Test the Support agent with ‘I need
+to return a damaged item’ against the draft Returns routine. Did it trigger?”
+
+The test uses the same routing, retrieval, directive, and routine pipeline as a
+normal agent turn. Ray receives the agent's answer, citation references, the
+turn outcome, stable conversation and message ids, and a sanitized trace of the
+stages that ran. The result links to its test conversation. Its serialized
+payload is capped at 32,000 bytes; when the cap removes trace stages, citations,
+or answer text, the result identifies those omissions.
+
+This turn runs with a probe effect policy. Retrieval can supply evidence, and
+the probe conversation keeps its own routine, pending-decision, clarification,
+and directive state so a follow-up can continue the draft flow. External skill
+delivery, queued routine actions, ownership handoffs, customer analytics, and
+conversation summaries stay untouched. The test request, answer, and audit
+record are saved as operator-test traffic, outside the normal customer Activity,
+Quality, and Audience Pulse populations. A follow-up can continue only the probe
+conversation created for the same Ray thread, operator, workspace, and agent.
+
+Testing requires all four permissions: `workspace.agents.read`,
+`workspace.chat.use`, `workspace.history.read`, and
+`workspace.agents.manage`. The rest of Ray remains available with
+`workspace.agents.read`; the test-turn capability appears only when the session
+holds the complete set.
+
+Agent-turn testing is a dashboard Ray capability. The standalone MCP server
+does not expose it.
+
 ## Follow a running turn
 
 While Ray works, activity lines show the UI-safe capability label and its
@@ -132,6 +163,15 @@ setup state with a link to **Settings → Providers**.
   affected turn honestly. The answer identifies the data it could not access.
 - **A proposal is stale** — the target changed after Ray drafted it. Ask Ray
   to prepare the change again and review the updated diff.
+- **Agent-turn testing is unavailable** — your session is missing one of
+  `workspace.chat.use`, `workspace.history.read`, or
+  `workspace.agents.manage` in addition to Ray's agent-read permission.
+- **A routine draft cannot be tested** — confirm that the routine belongs to
+  the selected agent and has Draft or Published status. Archived and superseded
+  definitions are not eligible for a test turn.
+- **A test conversation cannot be continued** — start a fresh test from the
+  current Ray thread. Probe conversations are scoped to the Ray thread,
+  operator, workspace, and agent that created them.
 
 ## Read next
 

@@ -270,6 +270,7 @@ const buildService = (input: {
   pipeline: Record<string, unknown>;
   chatGateway: ChatServiceOptions["chatGateway"];
   staged: ReturnType<typeof countingStagedPorts>;
+  messageRepository?: InMemoryMessageRepository;
   directiveSteering?: ChatServiceOptions["directiveSteering"];
   routine?: {
     routineStore: ChatServiceOptions["routineStore"];
@@ -284,7 +285,7 @@ const buildService = (input: {
 }): ChatService =>
   new ChatService({
     conversationRepository: new InMemoryConversationRepository(),
-    messageRepository: new InMemoryMessageRepository(),
+    messageRepository: input.messageRepository ?? new InMemoryMessageRepository(),
     retrievalTurn: new RetrievalTurnController(input.pipeline as never),
     chatGateway: input.chatGateway,
     auditService: createAuditService(),
@@ -335,6 +336,35 @@ describe("chat service fused turn planning", () => {
     expect(planner.completeCalls()).toBe(1);
     expect(staged.routerClassify).not.toHaveBeenCalled();
     expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("returns a receipt for the user message persisted by the turn", async () => {
+    const staged = countingStagedPorts();
+    const messageRepository = new InMemoryMessageRepository();
+    const service = buildService({
+      planner: plannerFactory({ completions: [planJson({ route: "direct" })] }),
+      pipeline: directPipeline("thanks!"),
+      chatGateway: pipelineChatGateway("You're welcome!"),
+      staged,
+      messageRepository,
+    });
+
+    const receipt = await service.answerWithReceipt({
+      workspaceId: "workspace-1",
+      query: "thanks!",
+      stream: false,
+    });
+    const persistedUserMessage = await messageRepository.findByIdAndWorkspaceId(
+      "workspace-1",
+      receipt.userMessageId,
+    );
+
+    expect(persistedUserMessage).toMatchObject({
+      id: receipt.userMessageId,
+      conversationId: receipt.response.conversationId,
+      role: "user",
+      content: "thanks!",
+    });
   });
 
   it("plans a fresh streaming turn when clarification support is wired but nothing is pending", async () => {

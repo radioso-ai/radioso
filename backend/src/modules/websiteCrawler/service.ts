@@ -66,6 +66,7 @@ export interface WebsiteCrawlPublicationResult {
   provider: string;
   runId: string | null;
   status: string | null;
+  outcome: "completed" | "yielded";
   requestedUrl: string;
   accepted: number;
   skipped: number;
@@ -98,6 +99,7 @@ export class WebsiteCrawlerService {
     url: string;
     limit: number;
     signal?: AbortSignal;
+    maxDurationMs?: number;
     policy?: Partial<WebsiteCrawlPolicy>;
     checkpoint?: WebsiteCrawlCheckpoint | null;
     onCheckpoint?: (checkpoint: WebsiteCrawlCheckpoint) => Promise<void>;
@@ -180,6 +182,7 @@ export class WebsiteCrawlerService {
       provider: this.dependencies.provider.name,
       runId: null,
       status: null,
+      outcome: "completed",
       requestedUrl: safeWebsiteBaseUrl,
       accepted: checkpoint.accepted,
       skipped: checkpoint.skipped,
@@ -368,6 +371,7 @@ export class WebsiteCrawlerService {
           {
             url: websiteBaseUrl,
             limit: remainingLimit,
+            maxDurationMs: input.maxDurationMs,
             signal: crawlSignal,
             policy,
             checkpoint,
@@ -377,11 +381,13 @@ export class WebsiteCrawlerService {
         );
         result.provider = streamResult.provider;
         result.status = streamResult.status ?? null;
+        result.outcome = streamResult.outcome ?? "completed";
         result.runId = streamResult.runId ?? null;
       } else {
         const providerResult = await this.crawlProvider({
           url: websiteBaseUrl,
           limit: remainingLimit,
+          maxDurationMs: input.maxDurationMs,
           signal: crawlSignal,
           policy,
           checkpoint,
@@ -389,6 +395,7 @@ export class WebsiteCrawlerService {
         });
         result.provider = providerResult.provider;
         result.status = providerResult.status ?? null;
+        result.outcome = providerResult.outcome ?? "completed";
         result.runId = providerResult.runId ?? null;
         if (providerResult.invalidPages && providerResult.invalidPages > 0) {
           result.failed += providerResult.invalidPages;
@@ -433,6 +440,10 @@ export class WebsiteCrawlerService {
         });
       }
       throw usageLimitError;
+    }
+
+    if (result.outcome === "yielded") {
+      return result;
     }
 
     await this.auditResult(input, result);
@@ -480,6 +491,7 @@ export class WebsiteCrawlerService {
     url: string;
     limit: number;
     signal?: AbortSignal;
+    maxDurationMs?: number;
     policy?: WebsiteCrawlPolicy;
     checkpoint?: WebsiteCrawlCheckpoint;
     onCheckpointEvent?: (event: WebsiteCrawlCheckpointEvent) => Promise<void>;
@@ -786,6 +798,7 @@ const normalizeProviderResult = (
     provider?: unknown;
     runId?: unknown;
     status?: unknown;
+    outcome?: unknown;
     pages?: unknown;
   };
   if (!Array.isArray(typed.pages)) {
@@ -808,6 +821,7 @@ const normalizeProviderResult = (
     provider: safeProviderText(typed.provider, fallbackProviderName) ?? "unknown",
     runId: safeProviderText(typed.runId),
     status: safeProviderText(typed.status),
+    outcome: typed.outcome === "yielded" ? "yielded" : "completed",
     pages: normalizedPages,
     ...(invalidPages > 0 ? { invalidPages } : {}),
   };

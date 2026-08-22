@@ -19,6 +19,7 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const COPILOT_MODULE = "operatorCopilot";
+const RAY_KNOWLEDGE_PATTERN = /\b(?:AgentTurnTest|OPERATOR_COPILOT_PROBE_SOURCE_CHANNEL|copilotConversationId|operatorUserId|probeUserMessageId)\b/;
 
 // Matches static imports, type imports, re-exports, and dynamic import() specifiers.
 const SPECIFIER_PATTERN = /(?:from\s*|import\s*\(\s*)["']([^"']+)["']/g;
@@ -54,10 +55,23 @@ export const findCopilotBoundaryViolations = (modulesDir) => {
   return violations;
 };
 
+export const findChatRayKnowledgeViolations = (modulesDir) => {
+  const chatDir = join(modulesDir, "chat");
+  return collectTypeScriptFiles(chatDir).flatMap((file) => {
+    const source = readFileSync(file, "utf8");
+    return RAY_KNOWLEDGE_PATTERN.test(source)
+      ? [`${relative(modulesDir, file)} contains Ray/operator-copilot knowledge`]
+      : [];
+  });
+};
+
 // CLI entry (skipped when imported by a test).
 if (import.meta.url === `file://${process.argv[1]}`) {
   const modulesDir = fileURLToPath(new URL("../src/modules", import.meta.url));
-  const offenders = findCopilotBoundaryViolations(modulesDir);
+  const offenders = [
+    ...findCopilotBoundaryViolations(modulesDir),
+    ...findChatRayKnowledgeViolations(modulesDir),
+  ];
   if (offenders.length > 0) {
     console.error("✖ Domain modules must not import the operator copilot (#1056):");
     for (const o of offenders) console.error("  " + o);

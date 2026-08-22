@@ -1,17 +1,24 @@
 import type { Request, RequestHandler, Response } from "express";
 
-import type { AppDependencies } from "../../server/types.js";
 import type {
   AccountPermission,
   AuthenticatedPrincipal,
   PublicChatPermission,
 } from "../../../modules/account/services/accountAccessService.js";
 
-export type PermissionDependencies = {
-  accountAccessService: Pick<AppDependencies["accountAccessService"], "requirePermission">;
-};
+export interface PermissionDependencies {
+  accountAccessService: {
+    requirePermission(input: {
+      accountId?: string | null;
+      userId?: string | null;
+      principal?: AuthenticatedPrincipal | null;
+      permission: AccountPermission | PublicChatPermission;
+      workspaceId?: string | null;
+    }): Promise<void>;
+  };
+}
 
-type WorkspacePermissionDependencies = Pick<AppDependencies, "accountAccessService">;
+type WorkspacePermissionDependencies = PermissionDependencies;
 
 export const requireAccountPermission = (
   dependencies: WorkspacePermissionDependencies,

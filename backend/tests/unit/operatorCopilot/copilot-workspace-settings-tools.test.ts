@@ -53,6 +53,14 @@ const workspaceSettingsPort = () => ({
     { capability: "chat" as const, provider: "openai", model: "gpt-5-mini", token: "llm-token" },
     { capability: "rerank" as const, provider: "claude", model: "claude-sonnet-4-5", token: "llm-token" },
   ]),
+  getEmbeddingCoverage: vi.fn(async () => ({
+    eligibleChunks: 1200,
+    coveredChunks: 900,
+    missingChunks: 300,
+    hasEmbeddingProfile: true,
+    queuedJobs: 4,
+    failedJobs: 1,
+  })),
   getProviderCredentialHealth: vi.fn(async () => ({
     encryptionConfigured: true,
     credentials: [{ provider: "openai", updatedAt: new Date("2026-08-02T09:00:00.000Z"), apiKey: "sk-credential-secret" }],
@@ -96,10 +104,10 @@ describe("workspace settings copilot reader", () => {
   it("declares one read-shaped settings reader", () => {
     const descriptors = createWorkspaceSettingsCopilotTools({ workspaceSettings: workspaceSettingsPort() });
 
-    expect(descriptors.map(({ name, requiredPermission, contributingModule, uiLabel, shape }) => ({ name, requiredPermission, contributingModule, uiLabel, shape }))).toEqual([
+    expect(descriptors.map(({ name, requiredPermissions, contributingModule, uiLabel, shape }) => ({ name, requiredPermissions, contributingModule, uiLabel, shape }))).toEqual([
       {
         name: "workspace_settings",
-        requiredPermission: "workspace.settings.read",
+        requiredPermissions: ["workspace.settings.read"],
         contributingModule: "settings",
         uiLabel: "Reading workspace settings",
         shape: "read",
@@ -107,7 +115,7 @@ describe("workspace settings copilot reader", () => {
     ]);
   });
 
-  it("reads retrieval, ingestion, LLM, credential-health, and general workspace configuration", async () => {
+  it("reads retrieval, ingestion, coverage, LLM, credential-health, and general workspace configuration", async () => {
     const workspaceSettings = workspaceSettingsPort();
     const [descriptor] = createWorkspaceSettingsCopilotTools({ workspaceSettings });
 
@@ -115,6 +123,7 @@ describe("workspace settings copilot reader", () => {
 
     expect(workspaceSettings.getRetrievalDefaults).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getIngestionSettings).toHaveBeenCalledWith("workspace-1");
+    expect(workspaceSettings.getEmbeddingCoverage).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.listLlmModels).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getProviderCredentialHealth).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getGeneralSettings).toHaveBeenCalledWith("workspace-1");
@@ -128,6 +137,16 @@ describe("workspace settings copilot reader", () => {
       ingestion: {
         embeddingModel: "text-embedding-3-small",
         pendingEmbeddingModel: "text-embedding-3-large",
+      },
+      // Counts, not content: how much of the workspace semantic search can actually
+      // reach, which is what a "the agent cannot find this" report usually comes down to.
+      embeddingCoverage: {
+        eligibleChunks: 1200,
+        coveredChunks: 900,
+        missingChunks: 300,
+        hasEmbeddingProfile: true,
+        queuedJobs: 4,
+        failedJobs: 1,
       },
       llmModels: {
         chat: { provider: "openai", model: "gpt-5-mini" },

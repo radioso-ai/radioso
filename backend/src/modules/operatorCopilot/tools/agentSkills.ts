@@ -28,7 +28,7 @@ export interface AgentSkillsCopilotToolDependencies {
 
 export const createAgentSkillsCopilotTools = (deps: AgentSkillsCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "agent_skills", shape: "read", uiLabel: "Reading agent skills", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermission: "workspace.agents.read",
+    name: "agent_skills", shape: "read", uiLabel: "Reading agent skills", contributingModule: "agentSkills", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
     description: "Read the skills configured on an agent and which skill capabilities have a usable connection. Returns each skill's setting key names, never their values.",
     inputSchema, outputSchema,
     createTool: (context) => ({

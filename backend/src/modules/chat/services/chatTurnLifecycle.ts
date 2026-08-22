@@ -55,6 +55,7 @@ import type { CapturedClarificationTransition } from "./clarification/deferredCl
 import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -554,6 +555,8 @@ export class ChatTurnLifecycle {
     presentation: ChatPresentedAnswer;
     answerStartedAt: number;
     stream: boolean;
+    /** Suppresses customer-facing effects while retaining the synthetic messages and trace. */
+    executionMode?: TurnExecutionMode;
     /**
      * The conversation engine's turn trace, present only when the engine ran the
      * turn (flag on). Recorded as audit-only observability alongside the
@@ -580,6 +583,7 @@ export class ChatTurnLifecycle {
     commitClarificationState?: () => Promise<void>;
     clarificationTransition?: CapturedClarificationTransition | null;
   }): Promise<CompletedAssistantTurn> {
+    const safeTestTurn = input.executionMode === "safe_test";
     const presentation = buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
@@ -590,13 +594,24 @@ export class ChatTurnLifecycle {
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,
     });
-
     let assistantMessage: MessageRecord;
     const suspended = input.suspended === true;
-    const auditEvent = suspended
+    const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
       : this.buildAssistantTurnSuccessAuditEvent(presentation.successInput);
-    const ownershipAuditEvent = input.ownershipHandoff
+    const auditEvent = safeTestTurn
+      ? {
+          ...baseAuditEvent,
+          metadata: {
+            ...baseAuditEvent.metadata,
+            executionMode: "safe_test",
+            ...(input.session.conversation.sourceChannel
+              ? { surface: input.session.conversation.sourceChannel }
+              : {}),
+          },
+        }
+      : baseAuditEvent;
+    const ownershipAuditEvent = !safeTestTurn && input.ownershipHandoff
       ? this.buildOwnershipHandoffAuditEvent({
           ...input.ownershipHandoff,
           workspaceId: input.workspaceId,
@@ -615,26 +630,28 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
-        actions: input.actions,
+        actions: safeTestTurn ? undefined : input.actions,
+        // Safe-test turns retain conversation-local state so follow-up turns remain
+        // representative. Customer-facing effects remain suppressed below.
         routineStateTransition: input.routineStateTransition,
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
-        ownershipHandoff: input.ownershipHandoff,
+        ownershipHandoff: safeTestTurn ? undefined : input.ownershipHandoff,
         ownershipAuditEvent,
-        additionalAuditEvent: input.additionalAuditEvent,
+        additionalAuditEvent: safeTestTurn ? undefined : input.additionalAuditEvent,
         transaction: input.transaction,
       });
       this.auditService.logRecorded?.(auditEvent);
-      if (!suspended) {
+      if (!suspended && !safeTestTurn) {
         await this.trackAssistantTurnCompleted(presentation.successInput);
       }
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
       await this.enqueueTurnActions({
-        actions: input.actions,
+        actions: safeTestTurn ? undefined : input.actions,
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         conversationId: input.session.conversation.id,
@@ -644,7 +661,7 @@ export class ChatTurnLifecycle {
       if (input.pendingDecisionTransition && this.pendingDecisionRepository) {
         await this.pendingDecisionRepository.create(input.pendingDecisionTransition);
       }
-      if (input.ownershipHandoff && this.conversationOwnershipRepository) {
+      if (!safeTestTurn && input.ownershipHandoff && this.conversationOwnershipRepository) {
         await this.conversationOwnershipRepository.requestHandoff({
           conversationId: input.session.conversation.id,
           workspaceId: input.workspaceId,
@@ -652,7 +669,10 @@ export class ChatTurnLifecycle {
         });
       }
       await input.commitClarificationState?.();
-      if (suspended) {
+      if (safeTestTurn) {
+        await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
+        await this.auditService.record(auditEvent);
+      } else if (suspended) {
         await this.finalizeSuspendedAssistantTurn(presentation.successInput);
       } else {
         await this.finalizeAssistantTurn(presentation.successInput);
@@ -660,7 +680,7 @@ export class ChatTurnLifecycle {
       if (ownershipAuditEvent) {
         await this.auditService.record(ownershipAuditEvent);
       }
-      if (input.additionalAuditEvent) {
+      if (!safeTestTurn && input.additionalAuditEvent) {
         await this.auditService.record(input.additionalAuditEvent);
       }
     }
@@ -697,7 +717,7 @@ export class ChatTurnLifecycle {
     // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
     // update self-heals on the next turn (each regeneration derives from current
     // state). The updater swallows its own failures; this .catch is a backstop.
-    if (this.conversationSummaryUpdater) {
+    if (this.conversationSummaryUpdater && !safeTestTurn) {
       void this.conversationSummaryUpdater
         .refresh({
           workspaceId: input.workspaceId,
@@ -754,6 +774,7 @@ export class ChatTurnLifecycle {
       accountId?: string;
       conversationId?: string;
       stream: boolean;
+      executionMode?: TurnExecutionMode;
     },
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
@@ -799,8 +820,19 @@ export class ChatTurnLifecycle {
             })
           : undefined,
         errorMessage: error instanceof Error ? error.message : "Unknown error",
+        ...(input.executionMode === "safe_test"
+          ? {
+              executionMode: "safe_test",
+              ...(session?.conversation.sourceChannel
+                ? { surface: session.conversation.sourceChannel }
+                : {}),
+            }
+          : {}),
       },
     });
+    if (input.executionMode === "safe_test") {
+      return;
+    }
     try {
       await this.productAnalyticsService.track({
         eventName: "chat.failed",
@@ -837,6 +869,7 @@ export class ChatTurnLifecycle {
       accountId?: string;
       conversationId?: string;
       stream: boolean;
+      executionMode?: TurnExecutionMode;
     },
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
@@ -861,6 +894,14 @@ export class ChatTurnLifecycle {
         assistantMessageId: existingAssistantMessageId,
         stream: input.stream,
         supersededStage: supersededBy.stage,
+        ...(input.executionMode === "safe_test"
+          ? {
+              executionMode: "safe_test",
+              ...(session?.conversation.sourceChannel
+                ? { surface: session.conversation.sourceChannel }
+                : {}),
+            }
+          : {}),
       },
     });
   }

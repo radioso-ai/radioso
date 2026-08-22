@@ -54,6 +54,10 @@ describe("operator copilot catalog coverage", () => {
     });
   });
 
+  it("maps the authenticated assistant pipeline to the bounded test-turn probe", () => {
+    expect(catalogCoverage.createAssistantChatResponse).toBe("test_agent_turn");
+  });
+
   it("maps safe workspace settings reads to the workspace settings reader", () => {
     expect(catalogCoverage).toMatchObject({
       getPlatformSettings: "workspace_settings",

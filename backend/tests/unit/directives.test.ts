@@ -10,6 +10,7 @@ import {
   inlineSupportedLinksDirective,
   type Directive,
   type DirectiveMatch,
+  type DirectiveMatcherPort,
 } from "../../src/modules/directives/public.js";
 
 const directive = (overrides: Partial<Directive> & Pick<Directive, "name" | "action">): Directive => ({
@@ -25,6 +26,17 @@ class StubCapabilityPolicy implements CapabilityPolicy {
       : { allowed: true };
   }
 }
+
+const matchAllDirectives: DirectiveMatcherPort = {
+  async match({ directives }) {
+    return directives.map((candidate) => ({
+      directive: candidate,
+      selectionMode: "probabilistic" as const,
+      selectionReason: "test match",
+      selectionConfidence: 1,
+    }));
+  },
+};
 
 describe("DirectiveCatalogRegistry", () => {
   it("registers, lists, and gets directives; rejects duplicates", () => {
@@ -143,11 +155,11 @@ describe("DirectiveSteeringService", () => {
     const debug: Array<{ payload: Record<string, unknown>; message: string }> = [];
     const service = new DirectiveSteeringService({
       registry: new DirectiveCatalogRegistry([
-        directive({ name: "high", action: "high", priority: 90 }),
-        directive({ name: "mid", action: "mid", priority: 50 }),
-        directive({ name: "low", action: "low", priority: 10 }),
+        directive({ name: "high", action: "high", priority: 90, condition: { kind: "contextual", description: "high" } }),
+        directive({ name: "mid", action: "mid", priority: 50, condition: { kind: "contextual", description: "mid" } }),
+        directive({ name: "low", action: "low", priority: 10, condition: { kind: "contextual", description: "low" } }),
       ]),
-      matcher: new AlwaysMatchDirectiveMatcher(),
+      matcher: matchAllDirectives,
       capabilityPolicy: new StubCapabilityPolicy(),
       steeringBound: { maxRenderedDirectives: 2, renderedTokenBudget: 1_000_000 },
       logger: {
@@ -181,10 +193,10 @@ describe("DirectiveSteeringService", () => {
   it("does not render a dependent whose dependency was bounded out of the rendered set", async () => {
     const service = new DirectiveSteeringService({
       registry: new DirectiveCatalogRegistry([
-        directive({ name: "expert", action: "expert", priority: 10 }),
-        directive({ name: "detail", action: "detail", priority: 90, dependsOn: ["expert"] }),
+        directive({ name: "expert", action: "expert", priority: 10, condition: { kind: "contextual", description: "expert" } }),
+        directive({ name: "detail", action: "detail", priority: 90, dependsOn: ["expert"], condition: { kind: "contextual", description: "detail" } }),
       ]),
-      matcher: new AlwaysMatchDirectiveMatcher(),
+      matcher: matchAllDirectives,
       capabilityPolicy: new StubCapabilityPolicy(),
       steeringBound: { maxRenderedDirectives: 1, renderedTokenBudget: 1_000_000 },
     });

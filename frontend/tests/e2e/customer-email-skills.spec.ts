@@ -16,6 +16,19 @@ test("routine authoring exposes typed customer email skill outcomes", async ({ p
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     routineUpdates,
+    // The document offers steps from the skill catalog, which carries the email skill and
+    // the typed outcomes a branch can react to.
+    routineSkillCatalog: [{
+      skillName: "support_email_customer",
+      displayName: "Send follow-up email",
+      category: "customer_email",
+      inputs: [],
+      outcomes: [
+        { name: "sent", displayName: "Sent", status: "sent" },
+        { name: "provider_rejected", displayName: "Provider rejected", status: "provider_rejected" },
+      ],
+      hasDataOutputs: false,
+    }],
     emailSkills: [{
       id: "88888888-8888-4888-8888-000000000001",
       workspaceId,
@@ -33,27 +46,36 @@ test("routine authoring exposes typed customer email skill outcomes", async ({ p
   });
 
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}/routines/new`);
-  await page.getByRole("tab", { name: "Form" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Email follow-up");
 
-  await page.getByLabel("Name").fill("Email follow-up");
-  await page.getByLabel("Activation trigger").fill("Visitor asks for an email follow-up.");
-  await page.getByLabel("Step 1 id").fill("send_email");
-  await page.getByLabel("Step 1 kind").click();
-  await page.getByRole("option", { name: "tool" }).click();
-  await page.getByLabel("Step 1 tool reference").fill("support_email_customer");
-  await page.getByLabel("Step 1 instruction").fill("Send the follow-up email.");
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("Visitor asks for an email follow-up.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
-  await page.getByRole("button", { name: "Add transition" }).click();
-  await page.getByLabel("Transition 1 target").click();
-  await page.getByRole("option", { name: "complete" }).click();
-  await page.getByLabel("Transition 1 guard").click();
-  await page.getByRole("option", { name: "outcome" }).click();
-  await page.getByLabel("Transition 1 outcome").click();
-  await expect(page.getByRole("option", { name: "Provider rejected" })).toBeVisible();
-  await page.getByRole("option", { name: "Provider rejected" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Send the follow-up email.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  await documentEditor.getByLabel("Step 1 kind").selectOption("tool");
+  await documentEditor.getByLabel(/catalog item/).selectOption("support_email_customer");
+  await documentEditor.getByLabel("Step 1 id").fill("send_email");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The skill's typed outcomes drive the branch, so the routine can react to a rejection.
+  await documentEditor.getByRole("button", { name: "Send follow-up email", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "Condition", exact: true }).click();
+  await documentEditor.getByLabel("Rule kind").selectOption("outcome");
+  await expect(documentEditor.getByLabel("Outcome status")).toBeVisible();
+  await documentEditor.getByLabel("Outcome status").fill("provider_rejected");
+  await documentEditor.getByLabel("Branch target").selectOption("ending:complete");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect.poll(() => routineUpdates.some((update) => update.method === "POST"), { timeout: 15_000 }).toBe(true);
-  const createUpdate = routineUpdates.find((update) => update.method === "POST");
+  const createUpdate = routineUpdates.filter((update) => update.body).at(-1);
   expect(createUpdate).toMatchObject({
     body: {
       steps: [{

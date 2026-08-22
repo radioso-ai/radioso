@@ -1,10 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
 
-import type { AppDependencies } from "../../../app/server/types.js";
+import type { Env } from "../../../app/config/env.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../../../app/http/middleware/requireWorkspaceSession.js";
 import { requirePublicChatPermission } from "../../../app/http/middleware/requirePermission.js";
-import type { AuthenticatedPrincipal, Permission } from "../../account/public.js";
+import type { AccessGrantService } from "../../accessGrants/public.js";
+import type { AgentService } from "../../agents/public.js";
+import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
+import type { WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import { validateBody } from "../../../app/http/middleware/validate.js";
 import { resolveAnonymousSession } from "../../../app/http/middleware/resolveAnonymousSession.js";
 import { resolvePublicChatSessionSecret } from "../../../app/http/shared/publicChatSessionSecret.js";
@@ -13,7 +16,7 @@ import type { AnswerFeedbackActor } from "../services/answerFeedbackService.js";
 import type { AnswerFeedbackService } from "../services/answerFeedbackService.js";
 
 export interface AnswerFeedbackRouteDependencies {
-  env: Pick<AppDependencies["env"],
+  env: Pick<Env,
     | "NODE_ENV"
     | "PUBLIC_CHAT_SESSION_SECRET"
     | "SESSION_COOKIE_NAME"
@@ -33,23 +36,20 @@ export interface AnswerFeedbackRouteDependencies {
     requirePermission(input: {
       accountId: string;
       userId?: string | null;
-      principal?: AuthenticatedPrincipal | null;
-      permission: Permission;
+      principal?: import("../../account/public.js").AuthenticatedPrincipal | null;
+      permission: import("../../account/public.js").Permission;
       workspaceId?: string | null;
     }): Promise<void>;
   };
   workspaceSessionService: {
     resolve(input: { accountId: string; workspaceId?: string | null }): Promise<{ accountId: string; workspaceId: string }>;
   };
-  workspaceRepository: Pick<AppDependencies["workspaceRepository"],
+  workspaceRepository: Pick<WorkspaceRepositoryPort,
     "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findById"
   >;
-  agentRepository: Pick<AppDependencies["agentRepository"], "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findByIdAndWorkspaceId">;
-  agentService?: Pick<AppDependencies["agentService"], "resolve">;
-  accessGrantService?: Pick<
-    AppDependencies["accessGrantService"],
-    "resolvePublicLaunchGrant" | "evaluate" | "touchGrant" | "recordAuthFailure"
-  >;
+  agentRepository: Pick<AgentRepositoryPort, "findByAnonymousChatToken" | "findByWebsiteEmbedToken" | "findByIdAndWorkspaceId">;
+  agentService?: Pick<AgentService, "resolve">;
+  accessGrantService?: Pick<AccessGrantService, "resolvePublicLaunchGrant" | "evaluate" | "touchGrant" | "recordAuthFailure">;
 }
 
 const feedbackBodySchema = z.object({

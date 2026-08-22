@@ -19,6 +19,7 @@ import { EXTERNAL_SKILLS_ADAPTER } from "../../src/modules/externalSkills/execut
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrievalAnswerSkillExecutor } from "../../src/modules/retrieval/public.js";
 import type { RetrievalPipelineResult } from "../../src/modules/retrieval/services/retrievalPipelineService.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 
 const workspaceId = randomUUID();
 const agentId = randomUUID();
@@ -154,6 +155,90 @@ const retrievalResult = (): RetrievalPipelineResult => ({
 });
 
 describe("RepositoryAgentSkillTurnSkillProvider", () => {
+  it("suppresses directive-bound external MCP execution in probe mode with a structured outcome", async () => {
+    const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "escaped" },
+    }));
+    const metricsRegistry = new MetricsRegistry();
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry([{
+        kind: "internal",
+        adapter: EXTERNAL_SKILLS_ADAPTER,
+        executor: { dispatch },
+      }]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      metricsRegistry,
+    });
+    const session = sessionWithBinding("order_lookup");
+    session.executionMode = "safe_test";
+    const runtime = await provider.forSession(session);
+    const selector = new ChatTurnSkillSelector(
+      [defaultTurnSkill, ...runtime.turnSkills],
+      strategy,
+      { agentSkillStates: runtime.skillStates },
+    );
+
+    const outcome = await selector.select(session).skill.dispatch(session);
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({
+      kind: "agent_skill",
+      skillName: "order_lookup",
+      outcome: {
+        status: "failed",
+        outputs: { skill: "order_lookup", reason: "suppressed_for_safe_test" },
+      },
+    });
+    expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
+    expect(metricsRegistry.renderPrometheus()).toContain('skill_kind="external_mcp"');
+    expect(metricsRegistry.renderPrometheus()).not.toContain("order_lookup");
+  });
+
+  it("suppresses a retrieve binding whose structured execution config targets an external executor", async () => {
+    const dispatch = vi.fn(async (): Promise<SkillDispatchResult> => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "escaped" },
+    }));
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({
+        skillName: "grounded_search",
+        kind: "retrieve",
+        targetType: null,
+        targetId: null,
+        config: {
+          execution: { kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, enqueue: false },
+        },
+      })]),
+      executorRegistry: new SkillExecutorRegistry([{
+        kind: "internal",
+        adapter: EXTERNAL_SKILLS_ADAPTER,
+        executor: { dispatch },
+      }]),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+    });
+    const session = sessionWithBinding("grounded_search");
+    session.executionMode = "safe_test";
+    const runtime = await provider.forSession(session);
+    const tools = runtime.agenticRetrievalToolFactories(session).flatMap((factory) => factory({
+      registry: { record: vi.fn(), resolve: vi.fn(), has: vi.fn() },
+      snippetChars: 48,
+    }));
+
+    const output = await tools[0]!.invoke(
+      { query: "query" },
+      { signal: new AbortController().signal, stepIndex: 0, callId: "call-1" },
+    );
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(output).toMatchObject({
+      ok: false,
+      skillName: "grounded_search",
+      error: "suppressed_for_safe_test",
+    });
+  });
+
   it("registers enabled agent-selectable skills for directive binding selection and dispatch", async () => {
     let invocation: SkillInvocation | undefined;
     const executor: SkillExecutorPort = {

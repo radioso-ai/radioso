@@ -127,6 +127,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
     const incompleteConversation = await createConversation();
     const endCutoffConversation = await createConversation();
     const operatorConversation = await createConversation("authenticated_chat");
+    const rayProbeConversation = await createConversation("operator_copilot_probe");
 
     const legacyQuestionId = "00000000-0000-0000-0000-000000000001";
     await createMessage({
@@ -258,6 +259,13 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       source: "customer",
     });
     await createMessage({
+      conversationId: rayProbeConversation,
+      role: "user",
+      content: "Ray probe traffic",
+      createdAt: "2026-07-11T10:00:00.000Z",
+      source: "customer",
+    });
+    await createMessage({
       conversationId: emailConversation,
       role: "user",
       content: "Non-customer source must be excluded",
@@ -331,6 +339,7 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
   it("listEligibleQuestionIds returns every eligible id in the window, unbounded by any sample policy", async () => {
     const customerConversation = await createConversation();
     const operatorConversation = await createConversation("authenticated_chat");
+    const rayProbeConversation = await createConversation("operator_copilot_probe");
 
     const eligibleIds = await Promise.all(
       Array.from({ length: 5 }, (_unused, index) => createMessage({
@@ -360,6 +369,13 @@ describeIntegration("PostgresAudiencePulseHistorySource", () => {
       role: "user",
       content: "Operator test channel must be excluded",
       createdAt: "2026-07-06T00:00:00.000Z",
+      source: "customer",
+    });
+    await createMessage({
+      conversationId: rayProbeConversation,
+      role: "user",
+      content: "Ray probe channel must be excluded",
+      createdAt: "2026-07-07T00:00:00.000Z",
       source: "customer",
     });
     await createMessage({

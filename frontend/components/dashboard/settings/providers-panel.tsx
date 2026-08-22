@@ -37,9 +37,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LogoSpinner, Spinner } from '@/components/ui/spinner'
+import { useEmbeddingCoverage } from '@/hooks/use-embedding-coverage'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { settingsApi } from '@/lib/api'
 import type { IngestionSettings } from '@/lib/api-types'
+import {
+  summarizeEmbeddingCoverage,
+  type EmbeddingCoverageSummary,
+} from '@/lib/embedding-coverage'
 import {
   capabilityDisplayName,
   emptyEnvProviderAvailability,
@@ -60,6 +65,26 @@ type SaveStateValue = 'idle' | 'saving' | 'saved' | 'error'
 interface SaveState {
   state: SaveStateValue
   message?: string | null
+}
+
+const embeddingCoverageDetail = (summary: EmbeddingCoverageSummary): string => {
+  const indexed = `${summary.coveredChunks.toLocaleString()} of `
+    + `${summary.eligibleChunks.toLocaleString()} chunks indexed`
+  switch (summary.status) {
+    case 'empty':
+      return 'No documents are indexed yet.'
+    case 'complete':
+      return `All ${summary.eligibleChunks.toLocaleString()} chunks are indexed.`
+    case 'unconfigured':
+      return `${indexed}. Set an embedding model to index the rest.`
+    case 'stalled':
+      return `${indexed}. ${summary.failedJobs.toLocaleString()} job(s) failed and will `
+        + 'not retry on their own.'
+    case 'indexing':
+      return summary.queuedJobs > 0
+        ? `${indexed}. ${summary.queuedJobs.toLocaleString()} job(s) queued.`
+        : `${indexed}.`
+  }
 }
 
 type EmbeddingProviderName = 'openai' | 'gemini'
@@ -729,6 +754,7 @@ function EmbeddingModelRow({
   const currentModel = settings.pendingEmbeddingModel ?? settings.embeddingModel
   const [provider, setProvider] = useState<EmbeddingProviderName>(embeddingProviderForModel(currentModel))
   const [model, setModel] = useState<IngestionSettings['embeddingModel']>(currentModel)
+  const coverage = useEmbeddingCoverage(currentModel)
   const [busy, setBusy] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [requestedModel, setRequestedModel] = useState<IngestionSettings['embeddingModel'] | null>(null)
@@ -758,6 +784,7 @@ function EmbeddingModelRow({
   const requestedModelOption = requestedModel
     ? embeddingModelOptions.find((option) => option.value === requestedModel)
     : null
+  const coverageSummary = coverage ? summarizeEmbeddingCoverage(coverage) : null
 
   const openConfirmation = (nextModel: IngestionSettings['embeddingModel']) => {
     if (busy || isPending) return
@@ -881,6 +908,19 @@ function EmbeddingModelRow({
                   Re-indexing queue active. This can take a while; you can keep working while search uses the active model.
                 </p>
               </>
+            ) : null}
+            {coverageSummary && coverageSummary.status !== 'empty' ? (
+              <p
+                className={`text-xs leading-relaxed ${
+                  coverageSummary.status === 'complete'
+                    ? 'text-muted-foreground'
+                    : 'text-amber-700 dark:text-amber-300'
+                }`}
+                data-testid="embedding-coverage-summary"
+                aria-live="polite"
+              >
+                {embeddingCoverageDetail(coverageSummary)}
+              </p>
             ) : null}
           </div>
         </div>

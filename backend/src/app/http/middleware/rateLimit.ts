@@ -1,7 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
 
-import type { AuditService } from "../../../modules/audit/contracts/index.js";
-
 export interface RateLimitAbuseControlPort {
   enforce(input: {
     scope: string;
@@ -12,9 +10,19 @@ export interface RateLimitAbuseControlPort {
   }): Promise<unknown>;
 }
 
+export interface RateLimitAuditPort {
+  record(input: {
+    accountId?: string | null;
+    workspaceId?: string | null;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<unknown>;
+}
+
 interface CreateRateLimitMiddlewareInput {
   service: RateLimitAbuseControlPort;
-  auditService: AuditService;
+  auditService: RateLimitAuditPort;
   scope: string;
   limit: number | ((req: Request, res: Response) => number);
   windowMs: number;

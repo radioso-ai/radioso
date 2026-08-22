@@ -497,16 +497,6 @@ export interface Documents {
   workspace_id: string;
 }
 
-export interface DocumentTypeCatalogs {
-  created_at: Generated<Timestamp>;
-  disabled_built_in_types: Generated<Json>;
-  retired_fields: Generated<Json>;
-  revision: Generated<Int8>;
-  types: Generated<Json>;
-  updated_at: Generated<Timestamp>;
-  workspace_id: string;
-}
-
 export interface DocumentSources {
   config: Generated<Json>;
   created_at: Generated<Timestamp>;
@@ -517,6 +507,16 @@ export interface DocumentSources {
   last_synced_at: Timestamp | null;
   metadata: Generated<Json>;
   name: string;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface DocumentTypeCatalogs {
+  created_at: Generated<Timestamp>;
+  disabled_built_in_types: Generated<Json>;
+  retired_fields: Generated<Json>;
+  revision: Generated<Int8>;
+  types: Generated<Json>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }

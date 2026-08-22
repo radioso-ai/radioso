@@ -24,6 +24,7 @@ describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
   const anonymousId = randomUUID();
   const testChatId = randomUUID();
   const replayId = randomUUID();
+  const rayProbeId = randomUUID();
 
   beforeAll(async () => {
     await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [
@@ -48,8 +49,9 @@ describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
          ($2, $6, NULL),
          ($3, $6, 'anonymous'),
          ($4, $6, 'authenticated_chat'),
-         ($5, $6, 'workbench_replay')`,
-      [embedId, nullSourceId, anonymousId, testChatId, replayId, workspaceId],
+         ($5, $6, 'workbench_replay'),
+         ($7, $6, 'operator_copilot_probe')`,
+      [embedId, nullSourceId, anonymousId, testChatId, replayId, workspaceId, rayProbeId],
     );
   });
 
@@ -65,18 +67,20 @@ describeIntegration("HistoryItemsRepository source scope (Postgres)", () => {
   it("defaults to end_user: keeps real + NULL + anonymous, drops operator-test, total agrees", async () => {
     const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 50 });
     expect(chatIds(page)).toEqual(new Set([embedId, nullSourceId, anonymousId]));
+    expect(chatIds(page)).not.toContain(rayProbeId);
     expect(page.total).toBe(3);
   });
 
   it("operator_test scope returns only the dashboard test chat + workbench replay", async () => {
     const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "operator_test" });
     expect(chatIds(page)).toEqual(new Set([testChatId, replayId]));
+    expect(chatIds(page)).not.toContain(rayProbeId);
     expect(page.total).toBe(2);
   });
 
   it("all scope returns every conversation", async () => {
     const page = await repository.listPageByWorkspaceId(workspaceId, { limit: 50, sourceScope: "all" });
-    expect(chatIds(page)).toEqual(new Set([embedId, nullSourceId, anonymousId, testChatId, replayId]));
-    expect(page.total).toBe(5);
+    expect(chatIds(page)).toEqual(new Set([embedId, nullSourceId, anonymousId, testChatId, replayId, rayProbeId]));
+    expect(page.total).toBe(6);
   });
 });

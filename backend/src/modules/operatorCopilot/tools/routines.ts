@@ -49,7 +49,7 @@ export interface RoutineDefinitionCopilotToolDependencies {
 
 export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
-    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermission: "workspace.agents.read",
+    name: "routine_definition", shape: "read", uiLabel: "Reading routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
     description: "List an agent's routines or read one routine in portable Markdown form.",
     inputSchema: routineDefinitionInputSchema, outputSchema: routineDefinitionOutputSchema,
     createTool: (context) => ({
@@ -192,7 +192,7 @@ export const createRoutineProposalCopilotTools = (deps: RoutineProposalCopilotTo
   const routineAdapter = proposalAdapter(deps.proposalAdapters);
   return [
     {
-      name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermission: "workspace.agents.manage",
+      name: "propose_routine", shape: "propose", uiLabel: "Drafting a routine", contributingModule: "routines", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: "Draft a new routine proposal for the operator to review and apply. This does not change configuration.",
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), intent: z.string().trim().min(1).max(2_000) }).strict(),
       outputSchema: proposalOutputSchema,

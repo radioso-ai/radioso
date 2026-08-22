@@ -6,14 +6,14 @@ import {
   type CopilotToolDescriptor,
 } from "../../../src/modules/operatorCopilot/public.js";
 
-const descriptor = (permission: CopilotToolDescriptor["requiredPermission"]): CopilotToolDescriptor => ({
-  name: `tool_${permission.replaceAll(".", "_")}`,
+const descriptor = (...permissions: CopilotToolDescriptor["requiredPermissions"]): CopilotToolDescriptor => ({
+  name: `tool_${permissions.join("_").replaceAll(".", "_")}`,
   shape: "read",
   uiLabel: "Safe tool label",
   description: "A focused read-only operator capability.",
   inputSchema: z.object({}),
   outputSchema: z.object({}),
-  requiredPermission: permission,
+  requiredPermissions: permissions,
   contributingModule: "test",
   dashboardSubject: { type: "workspace" },
   createTool: () => ({
@@ -32,7 +32,22 @@ describe("filterCopilotToolCatalog", () => {
       new Set(["workspace.agents.read"]),
     );
 
-    expect(catalog.map((tool) => tool.requiredPermission)).toEqual(["workspace.agents.read"]);
+    expect(catalog.map((tool) => tool.requiredPermissions)).toEqual([["workspace.agents.read"]]);
+  });
+
+  it("requires every declared permission before exposing a descriptor", () => {
+    const probe = descriptor(
+      "workspace.agents.read",
+      "workspace.chat.use",
+      "workspace.history.read",
+      "workspace.agents.manage",
+    );
+
+    for (const missing of probe.requiredPermissions) {
+      const granted = new Set(probe.requiredPermissions.filter((permission) => permission !== missing));
+      expect(filterCopilotToolCatalog([probe], granted)).toEqual([]);
+    }
+    expect(filterCopilotToolCatalog([probe], new Set(probe.requiredPermissions))).toEqual([probe]);
   });
 
   it("recognizes every read permission in the initial catalog matrix", () => {
@@ -47,9 +62,9 @@ describe("filterCopilotToolCatalog", () => {
       new Set(["workspace.retrieval.query", "workspace.quality.read"]),
     );
 
-    expect(catalog.map((tool) => tool.requiredPermission)).toEqual([
-      "workspace.retrieval.query",
-      "workspace.quality.read",
+    expect(catalog.map((tool) => tool.requiredPermissions)).toEqual([
+      ["workspace.retrieval.query"],
+      ["workspace.quality.read"],
     ]);
   });
 });

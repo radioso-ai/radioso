@@ -659,6 +659,7 @@ export const buildChatServices = (input: {
     agentSkills: new AgentSkillRepository(input.database.kysely),
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
+    metricsRegistry: input.metricsRegistry,
   });
   const turnClarificationPolicy = {
     floor: 0,
@@ -865,7 +866,6 @@ export const buildChatServices = (input: {
       }),
     },
   );
-
   return {
     abuseControlService,
     answerPresentation,

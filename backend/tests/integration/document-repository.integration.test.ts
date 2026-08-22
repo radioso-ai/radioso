@@ -178,6 +178,42 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(second.source?.externalId).toBe("site-ext-1");
   });
 
+  it("createAndQueue clears stale enrichment provenance when upserting a sourced document", async () => {
+    const first = await repository.createAndQueue(
+      baseCreateInput({
+        sourceId,
+        externalDocumentId: "ext-sourced-enrichment",
+        metadata: { price: 10 },
+      }),
+    );
+    await repository.updateMetadataForRevision({
+      documentId: first.id,
+      workspaceId,
+      revision: first.revision,
+      metadata: { price: 10 },
+      enrichment: {
+        status: "applied",
+        matchedTypeKey: "product",
+        catalogRevision: "3",
+        generatedKeys: ["price"],
+      },
+    });
+
+    const second = await repository.createAndQueue(
+      baseCreateInput({
+        sourceId,
+        externalDocumentId: "ext-sourced-enrichment",
+        title: "Page v2",
+        metadata: { price: 12 },
+      }),
+    );
+
+    expect(second.id).toBe(first.id);
+    expect(second.revision).toBe(2);
+    expect(second.metadata).toEqual({ price: 12 });
+    expect(second.enrichment).toBeNull();
+  });
+
   it("createAndQueue throws conflict when the upsert WHERE guard (matching source_kind) excludes the row", async () => {
     await repository.createAndQueue(
       baseCreateInput({ externalDocumentId: "ext-kind-1", sourceKind: "inline_text" }),

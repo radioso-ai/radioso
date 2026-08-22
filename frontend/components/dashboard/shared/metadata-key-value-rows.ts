@@ -4,12 +4,12 @@
  * rendering, and so the editor component stays presentational.
  */
 
-export type MetadataScalar = string | number | boolean
+export type MetadataScalar = string | number | boolean | null
 export type MetadataRecord = Record<string, MetadataScalar>
 /** What the API hands back: the backend also permits null tag values. */
 export type MetadataReadRecord = Record<string, unknown>
 
-export type MetadataValueType = 'string' | 'number' | 'boolean'
+export type MetadataValueType = 'string' | 'number' | 'boolean' | 'null'
 
 export type MetadataRow = {
   id: string
@@ -57,7 +57,7 @@ export const createMetadataRow = (
 })
 
 const isMetadataScalar = (value: unknown): value is MetadataScalar =>
-  typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+  value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
 
 /**
  * Parses editor text as a metadata number. Blank text and non-finite results
@@ -72,9 +72,9 @@ export const parseMetadataNumber = (text: string): number | null => {
 }
 
 /**
- * Seeds editor rows from a stored record. Null values and any non-scalar value
- * are dropped: the editor authors flat scalars only, and rendering them as text
- * would round-trip "null" or "[object Object]" back into the document.
+ * Seeds editor rows from a stored record. Non-scalar values are dropped: the
+ * editor authors flat scalars only, and rendering objects as text would
+ * round-trip "[object Object]" back into the document.
  */
 export const toRows = (record: MetadataReadRecord | null | undefined): MetadataRow[] => {
   if (!record) return []
@@ -83,8 +83,8 @@ export const toRows = (record: MetadataReadRecord | null | undefined): MetadataR
     return [
       createMetadataRow({
         key,
-        valueType: typeof value as MetadataValueType,
-        value: String(value),
+        valueType: value === null ? 'null' : typeof value as MetadataValueType,
+        value: value === null ? '' : String(value),
       }),
     ]
   })
@@ -109,6 +109,11 @@ export const toRecord = (rows: MetadataRow[]): MetadataRecord => {
 
     if (row.valueType === 'boolean') {
       record[key] = row.value.trim().toLowerCase() === 'true'
+      continue
+    }
+
+    if (row.valueType === 'null') {
+      record[key] = null
       continue
     }
 
@@ -171,6 +176,10 @@ export const changeRowType = (row: MetadataRow, valueType: MetadataValueType): M
 
   if (valueType === 'boolean') {
     return { ...row, valueType, value: row.value.trim().toLowerCase() === 'true' ? 'true' : 'false' }
+  }
+
+  if (valueType === 'null') {
+    return { ...row, valueType, value: '' }
   }
 
   return { ...row, valueType, value: row.value }

@@ -85,4 +85,40 @@ describe("manual metadata edits and extraction ownership", () => {
 
     expect(storedGeneratedKeys(documentRepository, documentId)).toEqual([]);
   });
+
+  it("clears stale ownership when a sourced upsert replaces metadata", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const created = await documentRepository.createAndQueue({
+      workspaceId,
+      title: "Desk lamp",
+      sourceContent: "Desk lamp",
+      markdownContent: "Desk lamp",
+      sourceId: "source-1",
+      externalDocumentId: "desk-lamp",
+      metadata: { price: 10 },
+    });
+    documentRepository.items.set(created.id, {
+      ...created,
+      enrichment: {
+        status: "applied",
+        matchedTypeKey: "product",
+        catalogRevision: "3",
+        generatedKeys: ["price"],
+      },
+    });
+
+    const updated = await documentRepository.createAndQueue({
+      workspaceId,
+      title: "Desk lamp",
+      sourceContent: "Desk lamp",
+      markdownContent: "Desk lamp",
+      sourceId: "source-1",
+      externalDocumentId: "desk-lamp",
+      metadata: { price: 12 },
+    });
+
+    expect(updated.id).toBe(created.id);
+    expect(updated.metadata).toEqual({ price: 12 });
+    expect(updated.enrichment).toBeNull();
+  });
 });

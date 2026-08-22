@@ -20,9 +20,10 @@ describe('metadata rows <-> record transform', () => {
       row({ key: 'region', valueType: 'string', value: 'emea' }),
       row({ key: 'capacity', valueType: 'number', value: '42' }),
       row({ key: 'archived', valueType: 'boolean', value: 'true' }),
+      row({ key: 'cleared', valueType: 'null', value: '' }),
     ])
 
-    expect(record).toEqual({ region: 'emea', capacity: 42, archived: true })
+    expect(record).toEqual({ region: 'emea', capacity: 42, archived: true, cleared: null })
     expect(typeof record.capacity).toBe('number')
     expect(typeof record.archived).toBe('boolean')
   })
@@ -63,12 +64,13 @@ describe('metadata rows <-> record transform', () => {
   })
 
   it('seeds rows from a stored record, preserving each value type', () => {
-    const rows = toRows({ region: 'emea', capacity: 42, archived: false })
+    const rows = toRows({ region: 'emea', capacity: 42, archived: false, cleared: null })
 
     expect(rows.map(({ key, valueType, value }) => ({ key, valueType, value }))).toEqual([
       { key: 'region', valueType: 'string', value: 'emea' },
       { key: 'capacity', valueType: 'number', value: '42' },
       { key: 'archived', valueType: 'boolean', value: 'false' },
+      { key: 'cleared', valueType: 'null', value: '' },
     ])
   })
 
@@ -77,9 +79,9 @@ describe('metadata rows <-> record transform', () => {
     expect(new Set(rows.map((entry) => entry.id)).size).toBe(2)
   })
 
-  it('drops null and non-scalar values when seeding rows', () => {
+  it('drops non-scalar values when seeding rows', () => {
     const rows = toRows({ region: 'emea', cleared: null, nested: { a: 1 }, list: [1, 2] })
-    expect(rows.map((entry) => entry.key)).toEqual(['region'])
+    expect(rows.map((entry) => entry.key)).toEqual(['region', 'cleared'])
   })
 
   it('treats a missing record as no rows', () => {
@@ -88,7 +90,7 @@ describe('metadata rows <-> record transform', () => {
   })
 
   it('round-trips a record through rows unchanged', () => {
-    const original = { region: 'emea', capacity: 42, archived: true }
+    const original = { region: 'emea', capacity: 42, archived: true, cleared: null }
     expect(toRecord(toRows(original))).toEqual(original)
   })
 })
@@ -204,6 +206,13 @@ describe('row retyping', () => {
     })
   })
 
+  it('clears the editor text when switching to null', () => {
+    expect(changeRowType(row({ key: 'a', value: '42' }), 'null')).toMatchObject({
+      valueType: 'null',
+      value: '',
+    })
+  })
+
   it('returns the same row when the type is unchanged', () => {
     const original = row({ key: 'a', value: '42', valueType: 'number' })
     expect(changeRowType(original, 'number')).toBe(original)
@@ -214,6 +223,7 @@ describe('record comparison', () => {
   it('ignores key order but not values or value types', () => {
     expect(areRecordsEqual({ a: '1', b: 2 }, { b: 2, a: '1' })).toBe(true)
     expect(areRecordsEqual({ a: '1' }, { a: 1 })).toBe(false)
+    expect(areRecordsEqual({ a: null }, { a: null })).toBe(true)
     expect(areRecordsEqual({ a: '1' }, { a: '1', b: '2' })).toBe(false)
     expect(areRecordsEqual({}, {})).toBe(true)
   })

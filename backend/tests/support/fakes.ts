@@ -2338,6 +2338,7 @@ export class InMemoryDocumentRepository implements DocumentRepositoryPort {
           sourceContent: record.sourceContent,
           markdownContent: record.markdownContent,
           metadata: record.metadata,
+          enrichment: null,
           sourceId: record.sourceId,
           source: record.source,
           status: "queued",

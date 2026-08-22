@@ -1976,7 +1976,7 @@ export interface paths {
         delete: operations["deleteDocumentSource"];
         options?: never;
         head?: never;
-        /** Update a website source's crawl settings */
+        /** Update a document source's processing settings */
         patch: operations["updateDocumentSource"];
         trace?: never;
     };
@@ -15501,7 +15501,7 @@ export interface operations {
                     "application/json": components["schemas"]["DocumentSourceListItem"];
                 };
             };
-            /** @description Source is not a website or the manually-added bucket */
+            /** @description Request validation failed or crawl settings were sent for a non-website source */
             400: {
                 headers: {
                     [name: string]: unknown;

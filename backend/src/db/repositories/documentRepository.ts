@@ -228,6 +228,10 @@ export class DocumentRepository implements DocumentRepositoryPort {
             failure_reason: null,
             updated_at: currentTimestamp(),
             metadata: eb.ref("excluded.metadata"),
+            // The upsert replaces the document payload. Prior extraction
+            // provenance describes the old metadata/content and must not own
+            // keys on the new revision.
+            enrichment: null,
             source_kind: eb.ref("excluded.source_kind"),
             source_filename: eb.ref("excluded.source_filename"),
             source_mime_type: eb.ref("excluded.source_mime_type"),

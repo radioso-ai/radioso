@@ -33,6 +33,7 @@ const valueTypeLabels: Record<MetadataValueType, string> = {
   string: 'Text',
   number: 'Number',
   boolean: 'True/false',
+  null: 'Empty',
 }
 
 const extractionManagedWarning =
@@ -157,6 +158,15 @@ export function MetadataKeyValueEditor({
                       <SelectItem value="false">False</SelectItem>
                     </SelectContent>
                   </Select>
+                ) : row.valueType === 'null' ? (
+                  <Input
+                    value="null"
+                    readOnly
+                    placeholder="Empty"
+                    aria-label={`${labelPrefix} value ${position}`}
+                    disabled={disabled}
+                    className="text-muted-foreground"
+                  />
                 ) : (
                   <Input
                     value={row.value}
@@ -182,6 +192,7 @@ export function MetadataKeyValueEditor({
                     <SelectItem value="string">{valueTypeLabels.string}</SelectItem>
                     <SelectItem value="number">{valueTypeLabels.number}</SelectItem>
                     <SelectItem value="boolean">{valueTypeLabels.boolean}</SelectItem>
+                    <SelectItem value="null">{valueTypeLabels.null}</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button

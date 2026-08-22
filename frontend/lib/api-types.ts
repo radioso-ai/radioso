@@ -212,7 +212,7 @@ export type DocumentSourceSummary = ApiSchemas['DocumentSourceSummary']
 export type DocumentSourceKind = DocumentSourceSummary['kind']
 export type AgentSourceScope = ApiSchemas['AgentSourceScope']
 /** Hand-authored tag values. The write contract accepts flat JSON scalars only. */
-export type DocumentMetadataRecord = Record<string, string | number | boolean>
+export type DocumentMetadataRecord = Record<string, string | number | boolean | null>
 /** What the read contract returns: the same scalars, plus null. */
 export type DocumentMetadataReadRecord = ApiSchemas['DocumentSourceListItem']['documentMetadata']
 

@@ -261,3 +261,59 @@ describe("schema-driven enrichment", () => {
     expect(result.provenance.generatedKeys).toEqual([]);
   });
 });
+
+describe("disabled built-in types", () => {
+  const eventServiceWith = () =>
+    new DocumentEnrichmentService({
+      gateway: {
+        generate: vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
+          const bodyStart = documentRepresentation.indexOf("Desk lamp\n\nA warm");
+          return Promise.resolve({
+            model: "gpt-5.2",
+            output: {
+              type: "event",
+              confidence: 0.95,
+              facts: [
+                {
+                  id: "sale",
+                  kind: "event_date",
+                  label: "sale",
+                  dateFrom: "2026-09-17",
+                  dateTo: "2026-09-19",
+                  sourceRange: { start: bodyStart, end: bodyStart + 40 },
+                },
+              ],
+            },
+          });
+        }),
+      },
+      strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
+      now: () => new Date("2026-08-21T12:00:00.000Z"),
+    });
+
+  it("applies temporal facts when the event built-in is enabled (fixture guard)", async () => {
+    const service = eventServiceWith();
+
+    const result = await service.enrich(enrichInput());
+
+    expect(result.status).toBe("applied");
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-09-17", dateTo: "2026-09-19" });
+    expect(result.provenance.matchedTypeKey).toBe("event");
+  });
+
+  it("does not apply temporal facts when the event built-in is disabled", async () => {
+    const service = eventServiceWith();
+    const withoutEvent: EnabledDocumentTypesSnapshot = {
+      revision: "5",
+      types: [...builtInDocumentTypes.filter((type) => type.key !== "event"), productType],
+    };
+
+    const result = await service.enrich(enrichInput({ catalog: withoutEvent }));
+
+    expect(result.status).toBe("applied");
+    expect(result.documentMetadata).not.toHaveProperty("dateFrom");
+    expect(result.documentMetadata).not.toHaveProperty("dateTo");
+    expect(result.chunks[0]?.metadata ?? {}).not.toHaveProperty("dateFrom");
+    expect(result.provenance).toMatchObject({ matchedTypeKey: "generic", factCount: 1 });
+  });
+});

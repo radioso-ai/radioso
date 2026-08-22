@@ -294,3 +294,56 @@ test("operator retags an imported document without gaining access to its content
     metadata: { audience: "admins", priority: 2 },
   });
 });
+
+test("operator clears the last tag from an inline document and the update persists it", async ({
+  page,
+}) => {
+  const taggedDocument = {
+    ...existingDocument,
+    id: "doc-tagged",
+    title: "Tagged Doc",
+    metadata: { audience: "admins" },
+    // The editor only opens for manually added inline documents.
+    sourceId: "00000000-0000-0000-0000-000000000001",
+  };
+  const updateRequests: Array<Record<string, unknown>> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    documentList: {
+      documents: [taggedDocument],
+      total: 1,
+      nextCursor: null,
+      hasMore: false,
+    },
+    documentDetails: { [taggedDocument.id]: taggedDocument },
+  });
+
+  await page.route(
+    (url) => url.pathname === `${documentsPath}${taggedDocument.id}`,
+    async (route) => {
+      if (route.request().method() !== "PUT") {
+        await route.fallback();
+        return;
+      }
+      updateRequests.push(route.request().postDataJSON() as Record<string, unknown>);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...taggedDocument, metadata: {}, status: "queued" }),
+      });
+    },
+  );
+
+  await page.goto(`/w/${workspaceKey}/knowledge`);
+  await page.getByRole("button", { name: "Tagged Doc", exact: true }).click();
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: "Properties" }).click();
+  await page.getByRole("button", { name: "Remove metadata 1" }).click();
+  await page.getByRole("button", { name: "Save document", exact: true }).click();
+
+  // Removing the last tag must still send metadata, as an empty object —
+  // omitting the field would make the backend preserve the old tag.
+  await expect.poll(() => updateRequests.length).toBeGreaterThanOrEqual(1);
+  expect(updateRequests.at(-1)).toMatchObject({ metadata: {} });
+});

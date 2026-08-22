@@ -3746,26 +3746,20 @@ export interface components {
         };
         UpdateDocumentTypeCatalogRequest: {
             expectedRevision: string;
-            /** @default [] */
-            types: {
+            types?: {
                 key: string;
                 label: string;
-                /** @default  */
-                description: string;
-                /** @default true */
-                enabled: boolean;
-                /** @default [] */
-                fields: {
+                description?: string;
+                enabled?: boolean;
+                fields?: {
                     key: string;
                     label: string;
                     /** @enum {string} */
                     valueType: "string" | "number" | "date" | "boolean";
-                    /** @default  */
-                    instruction: string;
+                    instruction?: string;
                 }[];
             }[];
-            /** @default [] */
-            disabledBuiltInTypeKeys: string[];
+            disabledBuiltInTypeKeys?: string[];
         };
         Agent: {
             /** Format: uuid */

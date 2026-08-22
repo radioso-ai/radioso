@@ -127,4 +127,28 @@ describeIntegration("DocumentTypeCatalogRepository (Postgres)", () => {
     expect(current?.revision).toBe("2");
     expect(current?.types).toEqual([productType]);
   });
+
+  it("lets exactly one of two concurrent first saves win", async () => {
+    const secondType: OperatorDocumentTypeDefinition = {
+      key: "course",
+      label: "Course",
+      description: "A course page.",
+      enabled: true,
+      fields: [],
+    };
+
+    const [a, b] = await Promise.all([
+      repository.save({ workspaceId, expectedRevision: "1", types: [productType], retiredFields: [], disabledBuiltInTypeKeys: [] }),
+      repository.save({ workspaceId, expectedRevision: "1", types: [secondType], retiredFields: [], disabledBuiltInTypeKeys: [] }),
+    ]);
+
+    const outcomes = [a, b].filter((result) => result !== null);
+    expect(outcomes).toHaveLength(1);
+
+    const stored = await repository.findByWorkspaceId(workspaceId);
+    expect(stored?.revision).toBe("2");
+    expect(stored?.types.map((type) => type.key)).toEqual(
+      outcomes[0]?.types.map((type) => type.key),
+    );
+  });
 });

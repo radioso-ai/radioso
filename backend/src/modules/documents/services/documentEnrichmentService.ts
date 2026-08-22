@@ -178,7 +178,11 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         previousGeneratedKeys,
       });
 
-      const strategyResult = this.strategyRegistry.get(shape).apply({
+      // Temporal strategies run only when the catalog matched that built-in;
+      // a fallback (disabled or unknown type) must not write date tags even if
+      // the model volunteered facts.
+      const strategyShape = matched.type?.payload === "facts" ? normalizeDocumentShape(matched.key, parsed.confidence) : "generic";
+      const strategyResult = this.strategyRegistry.get(strategyShape).apply({
         documentMetadata: applied.documentMetadata,
         chunks: applied.chunks,
         facts: parsed.facts,

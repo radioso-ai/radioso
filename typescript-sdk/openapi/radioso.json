@@ -2840,12 +2840,10 @@
                   "type": "string"
                 },
                 "description": {
-                  "type": "string",
-                  "default": ""
+                  "type": "string"
                 },
                 "enabled": {
-                  "type": "boolean",
-                  "default": true
+                  "type": "boolean"
                 },
                 "fields": {
                   "type": "array",
@@ -2868,8 +2866,7 @@
                         ]
                       },
                       "instruction": {
-                        "type": "string",
-                        "default": ""
+                        "type": "string"
                       }
                     },
                     "required": [
@@ -2878,8 +2875,7 @@
                       "valueType"
                     ],
                     "additionalProperties": false
-                  },
-                  "default": []
+                  }
                 }
               },
               "required": [
@@ -2887,15 +2883,13 @@
                 "label"
               ],
               "additionalProperties": false
-            },
-            "default": []
+            }
           },
           "disabledBuiltInTypeKeys": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "default": []
+            }
           }
         },
         "required": [

@@ -1905,10 +1905,8 @@ components:
                 type: string
               description:
                 type: string
-                default: ""
               enabled:
                 type: boolean
-                default: true
               fields:
                 type: array
                 items:
@@ -1923,23 +1921,19 @@ components:
                       enum: *a13
                     instruction:
                       type: string
-                      default: ""
                   required:
                     - key
                     - label
                     - valueType
                   additionalProperties: false
-                default: []
             required:
               - key
               - label
             additionalProperties: false
-          default: []
         disabledBuiltInTypeKeys:
           type: array
           items:
             type: string
-          default: []
       required:
         - expectedRevision
       additionalProperties: false

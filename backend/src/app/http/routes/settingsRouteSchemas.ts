@@ -151,3 +151,21 @@ export const updateDocumentTypeCatalogSchema = z.object({
   types: z.array(operatorDocumentTypeSchema).optional().default([]),
   disabledBuiltInTypeKeys: z.array(z.string()).optional().default([]),
 }).strict();
+
+// OpenAPI mirror without `.default()`: openapi-typescript renders defaulted
+// properties as required in generated request types, which would force
+// clients to send fields the route happily omits.
+const documentedDocumentTypeFieldSchema = documentTypeFieldSchema.extend({
+  instruction: z.string().optional(),
+});
+
+const documentedOperatorDocumentTypeSchema = operatorDocumentTypeSchema.extend({
+  description: z.string().optional(),
+  enabled: z.boolean().optional(),
+  fields: z.array(documentedDocumentTypeFieldSchema).optional(),
+});
+
+export const documentedUpdateDocumentTypeCatalogSchema = updateDocumentTypeCatalogSchema.extend({
+  types: z.array(documentedOperatorDocumentTypeSchema).optional(),
+  disabledBuiltInTypeKeys: z.array(z.string()).optional(),
+});

@@ -96,18 +96,24 @@ export class DocumentTypeCatalogRepository implements DocumentTypeCatalogReposit
           disabled_built_in_types: toJsonb([...input.disabledBuiltInTypeKeys]),
         })
         .onConflict((oc) =>
-          oc.column("workspace_id").doUpdateSet((eb) => ({
-            revision: eb.ref("excluded.revision"),
-            types: eb.ref("excluded.types"),
-            retired_fields: eb.ref("excluded.retired_fields"),
-            disabled_built_in_types: eb.ref("excluded.disabled_built_in_types"),
-            updated_at: currentTimestamp(),
-          })),
+          oc
+            .column("workspace_id")
+            .doUpdateSet((eb) => ({
+              revision: eb.ref("excluded.revision"),
+              types: eb.ref("excluded.types"),
+              retired_fields: eb.ref("excluded.retired_fields"),
+              disabled_built_in_types: eb.ref("excluded.disabled_built_in_types"),
+              updated_at: currentTimestamp(),
+            }))
+            // Two first-saves race past the row lock (there is no row to lock
+            // yet); the conflict path re-checks the stored revision so the
+            // loser conflicts instead of overwriting the winner.
+            .where("document_type_catalogs.revision", "=", input.expectedRevision),
         )
         .returning(documentTypeCatalogColumns)
-        .executeTakeFirstOrThrow();
+        .executeTakeFirst();
 
-      return mapCatalog(row as DocumentTypeCatalogRow);
+      return row ? mapCatalog(row as DocumentTypeCatalogRow) : null;
     });
   }
 }

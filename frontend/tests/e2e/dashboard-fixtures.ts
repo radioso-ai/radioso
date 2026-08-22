@@ -2348,12 +2348,12 @@ export const installDashboardApiMocks = async (
           ...(body.types ?? []).map((type) => ({
             key: type.key,
             label: type.label,
-            description: type.description,
-            enabled: type.enabled,
+            description: type.description ?? "",
+            enabled: type.enabled ?? true,
             origin: "operator" as const,
             payload: "fields" as const,
             disableable: true,
-            fields: type.fields ?? [],
+            fields: (type.fields ?? []).map((field) => ({ ...field, instruction: field.instruction ?? "" })),
           })),
         ],
       };

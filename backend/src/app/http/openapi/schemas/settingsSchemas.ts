@@ -3,7 +3,7 @@ import { documentTypeFieldValueTypes } from "../../../../modules/documentTypes/c
 import {
   reprocessIngestionBodySchema,
   documentedUpdateIngestionSettingsSchema,
-  updateDocumentTypeCatalogSchema,
+  documentedUpdateDocumentTypeCatalogSchema,
   updateGeneralSettingsSchema,
   updatePlatformSettingsSchema,
   updateSettingsSchema,
@@ -441,7 +441,7 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
 
   const UpdateDocumentTypeCatalogRequestSchema = registry.register(
     "UpdateDocumentTypeCatalogRequest",
-    updateDocumentTypeCatalogSchema,
+    documentedUpdateDocumentTypeCatalogSchema,
   );
 
   Object.assign(schemas, {

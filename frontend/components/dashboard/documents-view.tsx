@@ -686,7 +686,9 @@ export function DocumentsView({
       const payload = {
         title: formValues.title.trim(),
         content: formValues.content.trim(),
-        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+        // Updates always carry metadata so removing the last tag persists as
+        // {}; the backend preserves stored metadata when the field is absent.
+        ...(editingDocumentId || Object.keys(metadata).length > 0 ? { metadata } : {}),
         ...(sourceChanged ? { source: { id: formValues.sourceId } } : {}),
         ...(!editingDocumentId && createEnrichmentChoice !== 'inherit'
           ? { documentEnrichmentOverride: createEnrichmentChoice }

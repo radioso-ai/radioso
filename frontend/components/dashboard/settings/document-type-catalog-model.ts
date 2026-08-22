@@ -167,7 +167,7 @@ export const toCatalogDraft = (catalog: DocumentTypeCatalog): DocumentTypeCatalo
  */
 export const toCatalogUpdateRequest = (
   draft: DocumentTypeCatalogDraft,
-): UpdateDocumentTypeCatalogRequest => ({
+): Required<UpdateDocumentTypeCatalogRequest> => ({
   expectedRevision: draft.revision,
   types: draft.operatorTypes.map((type) => ({
     key: type.key.trim(),

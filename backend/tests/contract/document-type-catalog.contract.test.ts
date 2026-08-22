@@ -256,3 +256,29 @@ describe("document type catalog contract", () => {
     expect(spec).toContain("generatedKeys:");
   });
 });
+
+it("documents catalog update fields with defaults as optional", () => {
+  const spec = JSON.parse(
+    readFileSync(new URL("../../openapi.json", import.meta.url), "utf8"),
+  ) as {
+    components: { schemas: Record<string, { required?: string[]; properties?: Record<string, unknown> }> };
+  };
+
+  const request = spec.components.schemas.UpdateDocumentTypeCatalogRequest;
+  // The route defaults every field but expectedRevision, so generated clients
+  // must be able to omit them; a stricter required list breaks SDK compiles.
+  expect(request.required).toEqual(["expectedRevision"]);
+
+  // openapi-typescript renders `default`-annotated properties as required in
+  // generated types, so the documented request schema must not carry defaults.
+  expect(request.properties?.types).not.toHaveProperty("default");
+  expect(request.properties?.disabledBuiltInTypeKeys).not.toHaveProperty("default");
+
+  const typeSchema = (request.properties?.types as { items?: { required?: string[] } }).items;
+  expect(typeSchema?.required).toEqual(["key", "label"]);
+
+  const fieldSchema = (
+    (typeSchema as { properties?: { fields?: { items?: { required?: string[] } } } }).properties?.fields
+  )?.items;
+  expect(fieldSchema?.required).toEqual(["key", "label", "valueType"]);
+});

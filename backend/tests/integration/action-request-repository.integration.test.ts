@@ -70,11 +70,13 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
   it("markDispatched only affects the matching attempt", async () => {
     const a = await enqueue();
     const [claimed] = await repository.claimPending(10, 300);
-    await repository.markDispatched(claimed!.id, 999); // wrong attempt → no-op
+    // The boolean feeds the push decorator: a superseded claim must report false
+    // so no contact_delivery_changed hint is published for a non-transition.
+    expect(await repository.markDispatched(claimed!.id, 999)).toBe(false); // wrong attempt → no-op
     let status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("in_progress");
 
-    await repository.markDispatched(claimed!.id, claimed!.attempts);
+    expect(await repository.markDispatched(claimed!.id, claimed!.attempts)).toBe(true);
     status = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [a.id]))[0]?.status;
     expect(status).toBe("dispatched");
   });

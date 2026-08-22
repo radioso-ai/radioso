@@ -159,6 +159,42 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
     expect(links).toEqual([{ conversation_id: first.conversationId }]);
   });
 
+  it("publishes conversation.created once when a new Slack conversation is created, not on resume", async () => {
+    const published: Array<{ resourceType: string; resourceId: string; workspaceId: string; changeKind: string }> = [];
+    const busPersistence = new PostgresSlackPersistence(database.kysely, {
+      publish: async (event) => {
+        published.push(event);
+      },
+    });
+    const slackKey = `${teamId}:DM:${randomUUID().slice(0, 6)}`;
+    const input = {
+      workspaceId,
+      installationId,
+      slackKey,
+      agentId,
+      sourceChannel: "slack" as const,
+      channelContext: {
+        provider: "slack" as const,
+        team: { id: teamId },
+        channel: { id: "D-PUSH", type: "im" as const },
+        user: { id: "U-PUSH" },
+      },
+    };
+
+    const first = await busPersistence.getOrCreateConversationLink(input);
+    // Second call resumes the existing link: no new conversation, no event.
+    await busPersistence.getOrCreateConversationLink(input);
+
+    expect(published).toEqual([
+      {
+        resourceType: "conversation",
+        resourceId: first.conversationId,
+        workspaceId,
+        changeKind: "conversation.created",
+      },
+    ]);
+  });
+
   it("upserts a conversation link on the slack_key conflict, updating conversation + installation", async () => {
     const slackKey = `${teamId}:C123:${randomUUID().slice(0, 6)}`;
 

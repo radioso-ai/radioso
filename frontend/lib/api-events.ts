@@ -1,5 +1,10 @@
 import { parseSseEvent } from './api-chat-stream'
-import { API_BASE, requireWorkspaceApiToken } from './api-client'
+import {
+  API_BASE,
+  canRetryWithFreshWorkspaceToken,
+  refreshWorkspaceApiToken,
+  requireWorkspaceApiToken,
+} from './api-client'
 
 export interface WorkspacePushEvent {
   resourceType: string
@@ -133,7 +138,7 @@ export const streamWorkspaceEvents = async (
         return
       }
 
-      const response = await fetch(`${API_BASE}/events`, {
+      let response = await fetch(`${API_BASE}/events`, {
         method: 'GET',
         cache: 'no-store',
         credentials: 'omit',
@@ -143,6 +148,22 @@ export const streamWorkspaceEvents = async (
           'X-Forwarded-Prefix': '/backend',
         },
       })
+      // A cached workspace token can expire while the stream is idle; without
+      // this the reconnect loop would keep replaying the same stale token and
+      // stay 401 until some unrelated request refreshes storage. Mirror the
+      // shared client's one-shot refresh-and-retry.
+      if (canRetryWithFreshWorkspaceToken(response)) {
+        const refreshedHeaders = new Headers({ 'X-Forwarded-Prefix': '/backend' })
+        if (await refreshWorkspaceApiToken(refreshedHeaders) && !signal.aborted) {
+          response = await fetch(`${API_BASE}/events`, {
+            method: 'GET',
+            cache: 'no-store',
+            credentials: 'omit',
+            signal,
+            headers: refreshedHeaders,
+          })
+        }
+      }
       if (!response.ok) {
         throw new Error(`Workspace event stream request failed with status ${response.status}.`)
       }

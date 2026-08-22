@@ -37,6 +37,7 @@ export const HISTORY_RECONCILE_INTERVAL_MS = 60_000
 const HISTORY_CHANGE_KINDS = [
   'conversation.created',
   'conversation.updated',
+  'conversation.contact_delivery_changed',
   'search.created',
 ] as const
 

@@ -12,6 +12,7 @@ import type { ApprovalDecisionService } from "../../../approvals/public.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
 import { ConversationOwnershipRepository, type OperatorReplyService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
+import type { WorkspaceEventBus } from "../../../../shared/events/workspaceEventBus.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,
@@ -44,6 +45,7 @@ type SlackConnectorContext = ConnectorContext & {
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
   conversationOwnershipRepository?: Pick<ConversationOwnershipRepository, "load" | "requestHandoff" | "takeOver" | "transfer" | "handBack">;
+  workspaceEventBus?: Pick<WorkspaceEventBus, "publish">;
 };
 
 export class SlackPlugin implements ConnectorPlugin {
@@ -68,11 +70,12 @@ export class SlackPlugin implements ConnectorPlugin {
       return;
     }
     const db = connectorKyselyDb(context.db);
+    const extendedContext = context as SlackConnectorContext;
     const oauthConnections = new OauthConnectionRepository(db);
     const integrationConnections = new IntegrationConnectionRepository(db);
     const installations = new SlackInstallationRepository(db);
     const bindings = new SlackChannelBindingRepository(db);
-    const persistence = new PostgresSlackPersistence(db);
+    const persistence = new PostgresSlackPersistence(db, extendedContext.workspaceEventBus);
     const staleFailures = await persistence.markStaleInboundEventsFailed({
       olderThan: new Date(Date.now() - 10 * 60 * 1000),
     });
@@ -83,7 +86,6 @@ export class SlackPlugin implements ConnectorPlugin {
       );
     }
     const slackPostOutbox = new ActionRequestRepository(db);
-    const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,
       integrationConnections,

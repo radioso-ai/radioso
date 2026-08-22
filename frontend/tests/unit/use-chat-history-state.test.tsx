@@ -79,7 +79,12 @@ describe('useHistoryListState', () => {
     await renderProbe()
     expect(chatApiMock.listHistory).toHaveBeenCalledWith({ limit: 50, offset: 50 })
     expect(useWorkspaceEventsOptionalMock).toHaveBeenLastCalledWith(
-      ['conversation.created', 'conversation.updated', 'search.created'],
+      [
+        'conversation.created',
+        'conversation.updated',
+        'conversation.contact_delivery_changed',
+        'search.created',
+      ],
       expect.any(Function),
     )
 

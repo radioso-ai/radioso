@@ -69,6 +69,31 @@ export const withConversationPushEvents = <T extends ConversationRepositoryPort>
           });
         };
       }
+      // Guarded so the decorator preserves the method's optionality: repository
+      // doubles (replay/eval) omit it, and AgentConverseService fails closed
+      // when it is absent.
+      if (property === "getOrCreateByAnonymousSession" && typeof target.getOrCreateByAnonymousSession === "function") {
+        const method = target.getOrCreateByAnonymousSession.bind(target);
+        return async (
+          input: Parameters<NonNullable<ConversationRepositoryPort["getOrCreateByAnonymousSession"]>>[0],
+          onCreated?: () => void,
+        ) => {
+          let created = false;
+          const conversation = await method(input, () => {
+            created = true;
+            onCreated?.();
+          });
+          if (created) {
+            await publish(bus, {
+              resourceType: "conversation",
+              resourceId: conversation.id,
+              workspaceId: conversation.workspaceId,
+              changeKind: "conversation.created",
+            });
+          }
+          return conversation;
+        };
+      }
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
